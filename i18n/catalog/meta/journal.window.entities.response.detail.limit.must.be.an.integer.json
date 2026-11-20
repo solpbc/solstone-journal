@@ -1,0 +1,16 @@
+{
+  "description": "Entity action or read refusal in the journal's entities view.",
+  "context": "Journal window, entities view. Entity action or read refusal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c4192fe98d2fd85e1e906d1f872a6eb703d7decf59a51e298fcf9ded591407d1",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

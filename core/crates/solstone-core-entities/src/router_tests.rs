@@ -5572,8 +5572,11 @@ async fn merge_repair_refusals_have_exact_variant_key_sets() {
         }),
         rollback_error: None,
     };
-    let (merge_status, merge) =
-        response_value(crate::router::classify_merge_error(&merge_error)).await;
+    let (merge_status, merge) = response_value(crate::router::classify_merge_error(
+        &merge_error,
+        solstone_core_convey_http::window_catalog::ENGLISH,
+    ))
+    .await;
     assert_eq!(merge_status, 500);
     let merge_keys: BTreeSet<_> = merge.as_object().unwrap().keys().cloned().collect();
     assert_eq!(
@@ -5607,7 +5610,11 @@ async fn merge_classifier_precedence_handles_not_found_and_busy() {
         "Target entity NOT FOUND: target".to_owned(),
     );
     let (not_found_status, not_found_response) =
-        response_value(crate::router::classify_merge_error(&not_found)).await;
+        response_value(crate::router::classify_merge_error(
+            &not_found,
+            solstone_core_convey_http::window_catalog::ENGLISH,
+        ))
+        .await;
     assert_oracle_refusal(
         "_entity_operation_error:282",
         (not_found_status, not_found_response),
@@ -5616,8 +5623,11 @@ async fn merge_classifier_precedence_handles_not_found_and_busy() {
     );
 
     let busy = solstone_core_entity::EntityMergeError::Refused("worker is BUSY".to_owned());
-    let (busy_status, busy_response) =
-        response_value(crate::router::classify_merge_error(&busy)).await;
+    let (busy_status, busy_response) = response_value(crate::router::classify_merge_error(
+        &busy,
+        solstone_core_convey_http::window_catalog::ENGLISH,
+    ))
+    .await;
     assert_oracle_refusal(
         "_entity_operation_error:288",
         (busy_status, busy_response),
@@ -5632,7 +5642,11 @@ async fn classifier_refusal_sites_cover_remaining_message_branches() {
         solstone_core_entity::EntityMergeError::Refused("target entity is hidden".to_owned());
     assert_oracle_refusal(
         "_entity_operation_error:284",
-        response_value(crate::router::classify_merge_error(&blocked)).await,
+        response_value(crate::router::classify_merge_error(
+            &blocked,
+            solstone_core_convey_http::window_catalog::ENGLISH,
+        ))
+        .await,
         "entity_blocked",
         400,
     );
@@ -5642,7 +5656,11 @@ async fn classifier_refusal_sites_cover_remaining_message_branches() {
     );
     assert_oracle_refusal(
         "_entity_operation_error:286",
-        response_value(crate::router::classify_merge_error(&invalid_request)).await,
+        response_value(crate::router::classify_merge_error(
+            &invalid_request,
+            solstone_core_convey_http::window_catalog::ENGLISH,
+        ))
+        .await,
         "invalid_request_value",
         400,
     );
@@ -5652,7 +5670,11 @@ async fn classifier_refusal_sites_cover_remaining_message_branches() {
     );
     assert_oracle_refusal(
         "_entity_operation_error:286",
-        response_value(crate::router::classify_merge_error(&not_a_person)).await,
+        response_value(crate::router::classify_merge_error(
+            &not_a_person,
+            solstone_core_convey_http::window_catalog::ENGLISH,
+        ))
+        .await,
         "invalid_request_value",
         400,
     );
@@ -5660,7 +5682,11 @@ async fn classifier_refusal_sites_cover_remaining_message_branches() {
     let generic = solstone_core_entity::EntityMergeError::Refused(
         "merge failed to publish durable history".to_owned(),
     );
-    let generic_response = response_value(crate::router::classify_merge_error(&generic)).await;
+    let generic_response = response_value(crate::router::classify_merge_error(
+        &generic,
+        solstone_core_convey_http::window_catalog::ENGLISH,
+    ))
+    .await;
     assert_oracle_refusal(
         "_entity_operation_error:289",
         generic_response,
@@ -5676,7 +5702,11 @@ async fn classifier_precedence_prefers_not_found_over_blocked_and_busy() {
     );
     assert_oracle_refusal(
         "_entity_operation_error:282",
-        response_value(crate::router::classify_merge_error(&combined)).await,
+        response_value(crate::router::classify_merge_error(
+            &combined,
+            solstone_core_convey_http::window_catalog::ENGLISH,
+        ))
+        .await,
         "entity_not_found",
         404,
     );
@@ -6973,22 +7003,26 @@ async fn refusal_sites_batch_3_resolution_and_merge_conditions_are_exact() {
     let merge = solstone_core_entity::EntityMergeError::Refused("worker is busy".to_owned());
     assert_oracle_refusal(
         "merge_entities_for_call:985",
-        response_value(crate::router::classify_merge_error(&merge)).await,
+        response_value(crate::router::classify_merge_error(
+            &merge,
+            solstone_core_convey_http::window_catalog::ENGLISH,
+        ))
+        .await,
         "entity_busy",
         503,
     );
     for (site, detail) in [
         (
             "accept_merge_candidate_for_call:924",
-            "merge candidate accept failed",
+            "journal.window.entities.response.detail.merge.candidate.accept.failed",
         ),
         (
             "dismiss_merge_candidate_for_call:958",
-            "merge candidate dismiss failed",
+            "journal.window.entities.response.detail.merge.candidate.dismiss.failed",
         ),
         (
             "record_merge_candidate_for_call:882",
-            "merge candidate record failed",
+            "journal.window.entities.response.detail.merge.candidate.record.failed",
         ),
     ] {
         assert_oracle_refusal(

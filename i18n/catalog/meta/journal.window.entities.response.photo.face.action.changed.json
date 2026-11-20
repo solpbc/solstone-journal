@@ -1,0 +1,16 @@
+{
+  "description": "Photo action refusal in the journal's entities view.",
+  "context": "Journal window, entities view. Photo action refusal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bfc2465d48dbf8abc92f435ee5448a20929fbd5d0d1e72734d745cdc3635e5ef",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

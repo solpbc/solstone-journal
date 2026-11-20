@@ -31,6 +31,7 @@ use solstone_core_journal_io::read_text;
 use solstone_core_journal_io::restore_snapshot;
 use solstone_core_journal_io::write_json;
 use solstone_core_journal_io::write_jsonl;
+use solstone_core_window_catalog::{ENGLISH, strings, text};
 
 use crate::{
     EntityLifecycleError, EntityOperationContext, EntityOperationKind, EntityStoreError,
@@ -137,9 +138,63 @@ fn audit_counts(
     json!({"identity":{"akas_added":akas_added,"emails_added":emails_added,"principal_transferred":principal_transferred},"voiceprints":{"added":stats.voiceprints_added,"skipped_duplicate":stats.voiceprints_skipped_duplicate,"target_total":stats.voiceprints_target_total},"facets":{"moved":stats.facets_moved,"merged":stats.facets_merged,"observations_appended":stats.facets_observations_appended,"observation_relations_rewritten":stats.observation_relations_rewritten},"segments":{"labels_rewritten":stats.segments_labels_rewritten,"corrections_rewritten":stats.segments_corrections_rewritten,"files_scanned":stats.segments_files_scanned,"errors":0},"activities":{"records_rewritten":stats.activities_records_rewritten,"fields_rewritten":stats.activities_fields_rewritten,"files_scanned":stats.activities_files_scanned,"files_rewritten":stats.activities_files_rewritten,"errors":0},"edges":{"rows_folded":null,"self_edges_dropped":null,"error":null}})
 }
 
+#[derive(Clone, Debug)]
+pub enum EntityMergeRefusal {
+    SameEntity,
+    SourceMissing(String),
+    TargetMissing(String),
+    SourceHidden,
+    TargetHidden,
+    BothPrincipal,
+    PrincipalIntoNonPerson,
+    PersonIntoNonPerson,
+}
+
+impl EntityMergeRefusal {
+    pub fn render(&self, locale: &str) -> String {
+        match self {
+            Self::SameEntity => text(
+                locale,
+                "journal.window.entities.response.merge.refusal.same.entity",
+            ),
+            Self::SourceMissing(id) => strings(
+                locale,
+                "journal.window.entities.response.merge.refusal.source.missing",
+                [("id", id)],
+            ),
+            Self::TargetMissing(id) => strings(
+                locale,
+                "journal.window.entities.response.merge.refusal.target.missing",
+                [("id", id)],
+            ),
+            Self::SourceHidden => text(
+                locale,
+                "journal.window.entities.response.merge.refusal.source.hidden",
+            ),
+            Self::TargetHidden => text(
+                locale,
+                "journal.window.entities.response.merge.refusal.target.hidden",
+            ),
+            Self::BothPrincipal => text(
+                locale,
+                "journal.window.entities.response.merge.refusal.both.principal",
+            ),
+            Self::PrincipalIntoNonPerson => text(
+                locale,
+                "journal.window.entities.response.merge.refusal.principal.type",
+            ),
+            Self::PersonIntoNonPerson => text(
+                locale,
+                "journal.window.entities.response.merge.refusal.person.type",
+            ),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum EntityMergeError {
     Refused(String),
+    Rejected(EntityMergeRefusal),
     VoiceprintEncoderMismatch {
         source_entity_id: String,
         target_entity_id: String,
@@ -161,6 +216,7 @@ impl fmt::Display for EntityMergeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Refused(message) => f.write_str(message),
+            Self::Rejected(refusal) => f.write_str(&refusal.render(ENGLISH)),
             Self::VoiceprintEncoderMismatch {
                 source_entity_id,
                 target_entity_id,
@@ -1434,39 +1490,35 @@ fn plan_merge(
     options: EntityMergeOptions,
 ) -> Result<MergePlan, EntityMergeError> {
     if source_id == target_id {
-        return Err(EntityMergeError::Refused(
-            "Source and target must be different entities.".to_owned(),
-        ));
+        return Err(EntityMergeError::Rejected(EntityMergeRefusal::SameEntity));
     }
     let source_dir =
         resolve_entity_dir(journal, source_id).unwrap_or_else(|_| source_id.to_owned());
     let target_dir =
         resolve_entity_dir(journal, target_id).unwrap_or_else(|_| target_id.to_owned());
     let source = read_entity_identity(journal, &source_dir)?
-        .ok_or_else(|| EntityMergeError::Refused(format!("Source entity not found: {source_id}")))?
+        .ok_or_else(|| {
+            EntityMergeError::Rejected(EntityMergeRefusal::SourceMissing(source_id.to_owned()))
+        })?
         .value()
         .clone();
     let target = read_entity_identity(journal, &target_dir)?
-        .ok_or_else(|| EntityMergeError::Refused(format!("Target entity not found: {target_id}")))?
+        .ok_or_else(|| {
+            EntityMergeError::Rejected(EntityMergeRefusal::TargetMissing(target_id.to_owned()))
+        })?
         .value()
         .clone();
-    // The router classifies refusals by their text ("hidden", "both are
-    // marked as you", "isn't a person"); its route tests pin each one.
     if source.get("blocked").and_then(Value::as_bool) == Some(true) {
-        return Err(EntityMergeError::Refused(
-            "can't merge something that's hidden. unhide it first.".to_owned(),
-        ));
+        return Err(EntityMergeError::Rejected(EntityMergeRefusal::SourceHidden));
     }
     if target.get("blocked").and_then(Value::as_bool) == Some(true) {
-        return Err(EntityMergeError::Refused(
-            "can't merge into something that's hidden. unhide it first.".to_owned(),
-        ));
+        return Err(EntityMergeError::Rejected(EntityMergeRefusal::TargetHidden));
     }
     if super::lifecycle::identity_is_principal(&source)
         && super::lifecycle::identity_is_principal(&target)
     {
-        return Err(EntityMergeError::Refused(
-            "can't merge these: both are marked as you.".to_owned(),
+        return Err(EntityMergeError::Rejected(
+            EntityMergeRefusal::BothPrincipal,
         ));
     }
     // A person's voice evidence and speaker names, and the principal flag,
@@ -1475,10 +1527,10 @@ fn plan_merge(
     let is_person =
         |identity: &Value| identity.get("type").and_then(Value::as_str) == Some("Person");
     if is_person(&source) && !is_person(&target) {
-        return Err(EntityMergeError::Refused(if principal_transferred {
-            "can't merge you into something that isn't a person.".to_owned()
+        return Err(EntityMergeError::Rejected(if principal_transferred {
+            EntityMergeRefusal::PrincipalIntoNonPerson
         } else {
-            "can't merge a person into something that isn't a person.".to_owned()
+            EntityMergeRefusal::PersonIntoNonPerson
         }));
     }
     check_aka_cross_references(
@@ -1492,7 +1544,7 @@ fn plan_merge(
     )?;
     let mut after = target.clone();
     let object = after.as_object_mut().ok_or_else(|| {
-        EntityMergeError::Refused(format!("Target entity not found: {target_id}"))
+        EntityMergeError::Rejected(EntityMergeRefusal::TargetMissing(target_id.to_owned()))
     })?;
     let aliases_before = values(&target, "aka");
     let mut alias_values = aliases_before.clone();

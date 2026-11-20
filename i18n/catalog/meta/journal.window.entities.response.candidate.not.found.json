@@ -1,0 +1,16 @@
+{
+  "description": "Entity action or state in the journal's entities view.",
+  "context": "Journal window, entities view. Entity action or state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4e3c9528c7413c4137107c92a4d62179e7e5cbe6aaa1ca101797a94a4376f0d9",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

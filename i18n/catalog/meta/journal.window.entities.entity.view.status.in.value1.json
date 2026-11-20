@@ -1,0 +1,28 @@
+{
+  "description": "Entity view status in the journal's entities view.",
+  "context": "Journal window, entities view. Entity view status.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value1",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "279326d2c489915bdf0c41bffe079d5c02e79134218de1d359fc6b36930fba2e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

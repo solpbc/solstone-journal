@@ -1,0 +1,28 @@
+{
+  "description": "Facet membership count in the journal's entities view.",
+  "context": "Journal window, entities view. Facet membership count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value1",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "be12d72a1ec28028b13b3d0fcce3d59f40842c81e47c96fb4f385d708049dde9",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

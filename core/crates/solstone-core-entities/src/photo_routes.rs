@@ -14,65 +14,68 @@ use axum::{
 use serde::Deserialize;
 use serde_json::json;
 use solstone_core_convey_http::{
+    coalesce::ResponseLocale,
     envelope::error_envelope,
     identity::AccessBasis,
     media::{MediaBody, media_response},
+    window_catalog::{response_locale, text},
 };
 use solstone_core_entity::faceprints as fp;
 use std::{io::Cursor, path::Path, sync::Arc};
 
-fn error(error: photos::Error) -> Response {
+fn error(locale: &str, error: photos::Error) -> Response {
     use fp::ActionError as A;
-    let (code, message, status) = match &error {
+    let (code, message_id, status) = match &error {
         photos::Error::EntityNotFound => (
             "entity_not_found",
-            "that person couldn't be found.",
+            "journal.window.entities.response.photo.entity.not.found",
             StatusCode::NOT_FOUND,
         ),
         photos::Error::KeyNotFound | photos::Error::Action(A::UnknownKey | A::NoEvidence) => (
             "face_not_found",
-            "that photo is no longer available.",
+            "journal.window.entities.response.photo.face.not.found",
             StatusCode::NOT_FOUND,
         ),
         photos::Error::Disabled => (
             "faces_disabled",
-            "turn on photo suggestions before choosing a photo.",
+            "journal.window.entities.response.photo.faces.disabled",
             StatusCode::CONFLICT,
         ),
         photos::Error::Action(A::FacesOn) => (
             "faces_enabled",
-            "turn off photo suggestions before clearing face data.",
+            "journal.window.entities.response.photo.faces.enabled",
             StatusCode::CONFLICT,
         ),
         photos::Error::Action(A::BusySource(_)) => (
             "faces_busy",
-            "face data is busy. try again shortly.",
+            "journal.window.entities.response.photo.faces.busy",
             StatusCode::CONFLICT,
         ),
         photos::Error::Action(A::StaleAction) => (
             "face_action_changed",
-            "this changed since the page loaded. refresh the page.",
+            "journal.window.entities.response.photo.face.action.changed",
             StatusCode::CONFLICT,
         ),
         _ => (
             "faces_read_failed",
-            "those photos couldn't be read. try again.",
+            "journal.window.entities.response.photo.faces.read.failed",
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
     };
     if status == StatusCode::INTERNAL_SERVER_ERROR {
         log::warn!("face request failed: {error:?}");
     }
-    error_envelope(code, message, "", status).into_response()
+    error_envelope(code, text(locale, message_id), "", status).into_response()
 }
 
 async fn result<T: serde::Serialize + Send + 'static>(
+    locale: &str,
     work: impl FnOnce() -> Result<T, photos::Error> + Send + 'static,
 ) -> Response {
     match solstone_core_serving::seam::run_blocking(work).await {
         Ok(Ok(value)) => Json(value).into_response(),
-        Ok(Err(e)) => error(e),
-        Err(e) => error(photos::Error::Read(e.to_string())),
+        Ok(Err(e)) => error(locale, e),
+        Err(e) => error(locale, photos::Error::Read(e.to_string())),
     }
 }
 
@@ -80,14 +83,17 @@ pub(crate) async fn panel(
     Extension(b): Extension<AccessBasis>,
     State(root): State<Arc<RouterState>>,
     RoutePath(id): RoutePath<String>,
+    locale: Option<Extension<ResponseLocale>>,
 ) -> Response {
     if let Some(response) = admitted(&b) {
         return response;
     }
-    result(move || photos::panel(&root, &id)).await
+    let locale = response_locale(locale);
+    result(locale, move || photos::panel(&root, &id)).await
 }
 
 async fn image(
+    locale: &str,
     work: impl FnOnce() -> Result<(Vec<u8>, Option<photos::State>), photos::Error> + Send + 'static,
 ) -> Response {
     match solstone_core_serving::seam::run_blocking(move || {
@@ -118,8 +124,8 @@ async fn image(
             }
             response
         }
-        Ok(Err(e)) => error(e),
-        Err(e) => error(photos::Error::Read(e.to_string())),
+        Ok(Err(e)) => error(locale, e),
+        Err(e) => error(locale, photos::Error::Read(e.to_string())),
     }
 }
 
@@ -127,11 +133,13 @@ pub(crate) async fn photo(
     Extension(b): Extension<AccessBasis>,
     State(root): State<Arc<RouterState>>,
     RoutePath(id): RoutePath<String>,
+    locale: Option<Extension<ResponseLocale>>,
 ) -> Response {
     if let Some(response) = admitted(&b) {
         return response;
     }
-    image(move || {
+    let locale = response_locale(locale);
+    image(locale, move || {
         let photo = photos::photo(&root, &id, None)?;
         Ok((
             photo.jpeg.ok_or(photos::Error::KeyNotFound)?,
@@ -144,11 +152,16 @@ pub(crate) async fn crop(
     Extension(b): Extension<AccessBasis>,
     State(root): State<Arc<RouterState>>,
     RoutePath((id, key)): RoutePath<(String, String)>,
+    locale: Option<Extension<ResponseLocale>>,
 ) -> Response {
     if let Some(response) = admitted(&b) {
         return response;
     }
-    image(move || Ok((photos::crop(&root, &id, &photos::decode_key(&key)?)?, None))).await
+    let locale = response_locale(locale);
+    image(locale, move || {
+        Ok((photos::crop(&root, &id, &photos::decode_key(&key)?)?, None))
+    })
+    .await
 }
 
 #[derive(Deserialize)]
@@ -162,16 +175,22 @@ struct UndoBody {
     token: String,
 }
 
-async fn body<T: serde::de::DeserializeOwned>(request: Request) -> Result<T, Response> {
+async fn body<T: serde::de::DeserializeOwned>(
+    locale: &str,
+    request: Request,
+) -> Result<T, Response> {
     let bytes = axum::body::to_bytes(request.into_body(), 16 * 1024)
         .await
-        .map_err(|_| invalid_body())?;
-    serde_json::from_slice(&bytes).map_err(|_| invalid_body())
+        .map_err(|_| invalid_body(locale))?;
+    serde_json::from_slice(&bytes).map_err(|_| invalid_body(locale))
 }
-fn invalid_body() -> Response {
+fn invalid_body(locale: &str) -> Response {
     error_envelope(
         "invalid_request",
-        "that photo request couldn't be read.",
+        text(
+            locale,
+            "journal.window.entities.response.photo.request.invalid",
+        ),
         "",
         StatusCode::BAD_REQUEST,
     )
@@ -189,16 +208,18 @@ pub(crate) async fn choose(
     Extension(b): Extension<AccessBasis>,
     State(root): State<Arc<RouterState>>,
     RoutePath(id): RoutePath<String>,
+    locale: Option<Extension<ResponseLocale>>,
     request: Request,
 ) -> Response {
     if let Some(response) = admitted(&b) {
         return response;
     }
-    let body: KeyBody = match body(request).await {
+    let locale = response_locale(locale);
+    let body: KeyBody = match body(locale, request).await {
         Ok(b) => b,
         Err(r) => return r,
     };
-    result(move || {
+    result(locale, move || {
         let id = action_id(&root, &id)?;
         let token = fp::choose(&root, &id, &body.key)?;
         Ok(json!({"token": token}))
@@ -209,16 +230,18 @@ pub(crate) async fn reject(
     Extension(b): Extension<AccessBasis>,
     State(root): State<Arc<RouterState>>,
     RoutePath(id): RoutePath<String>,
+    locale: Option<Extension<ResponseLocale>>,
     request: Request,
 ) -> Response {
     if let Some(response) = admitted(&b) {
         return response;
     }
-    let body: KeyBody = match body(request).await {
+    let locale = response_locale(locale);
+    let body: KeyBody = match body(locale, request).await {
         Ok(b) => b,
         Err(r) => return r,
     };
-    result(move || {
+    result(locale, move || {
         let id = action_id(&root, &id)?;
         let token = fp::reject(&root, &id, &body.key)?;
         Ok(json!({"token": token}))
@@ -229,11 +252,13 @@ pub(crate) async fn dismiss(
     Extension(b): Extension<AccessBasis>,
     State(root): State<Arc<RouterState>>,
     RoutePath(id): RoutePath<String>,
+    locale: Option<Extension<ResponseLocale>>,
 ) -> Response {
     if let Some(response) = admitted(&b) {
         return response;
     }
-    result(move || {
+    let locale = response_locale(locale);
+    result(locale, move || {
         let id = action_id(&root, &id)?;
         let token = fp::dismiss(&root, &id)?;
         Ok(json!({"token": token}))
@@ -244,16 +269,18 @@ pub(crate) async fn undo(
     Extension(b): Extension<AccessBasis>,
     State(root): State<Arc<RouterState>>,
     RoutePath(id): RoutePath<String>,
+    locale: Option<Extension<ResponseLocale>>,
     request: Request,
 ) -> Response {
     if let Some(response) = admitted(&b) {
         return response;
     }
-    let body: UndoBody = match body(request).await {
+    let locale = response_locale(locale);
+    let body: UndoBody = match body(locale, request).await {
         Ok(b) => b,
         Err(r) => return r,
     };
-    result(move || {
+    result(locale, move || {
         let id = action_id(&root, &id)?;
         fp::undo(&root, &id, &body.token)?;
         Ok(json!({"state": "undone"}))
@@ -263,11 +290,13 @@ pub(crate) async fn undo(
 pub(crate) async fn clear(
     Extension(b): Extension<AccessBasis>,
     State(root): State<Arc<RouterState>>,
+    locale: Option<Extension<ResponseLocale>>,
     request: Request,
 ) -> Response {
     if let Some(response) = admitted(&b) {
         return response;
     }
+    let locale = response_locale(locale);
     let surface = solstone_core_removals::Surface::of_request(
         solstone_core_removals::Page::Settings,
         request
@@ -275,7 +304,7 @@ pub(crate) async fn clear(
             .get("user-agent")
             .and_then(|v| v.to_str().ok()),
     );
-    result(move || {
+    result(locale, move || {
         let removed = fp::accumulation::clear(&root, surface)?;
         Ok(json!({"removed": removed}))
     })

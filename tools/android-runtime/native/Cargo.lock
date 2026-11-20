@@ -5782,6 +5782,7 @@ dependencies = [
  "solstone-core-removals",
  "solstone-core-segment",
  "solstone-core-time",
+ "solstone-core-window-catalog",
  "solstone-core-trash",
  "unicode-normalization",
  "zip",

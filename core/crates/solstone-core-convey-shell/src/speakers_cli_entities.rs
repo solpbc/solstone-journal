@@ -286,6 +286,7 @@ fn merge_error(error: solstone_core_entity::EntityMergeError) -> Response {
     } else if matches!(
         error,
         solstone_core_entity::EntityMergeError::Refused(_)
+            | solstone_core_entity::EntityMergeError::Rejected(_)
             | solstone_core_entity::EntityMergeError::VoiceprintEncoderMismatch { .. }
     ) {
         err(

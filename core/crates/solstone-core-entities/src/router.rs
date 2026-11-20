@@ -22,7 +22,7 @@ use solstone_core_convey_http::envelope::{ErrorEnvelope, not_found_fallback};
 use solstone_core_convey_http::gate::require_access;
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_convey_http::refusal::MergeRepairRequired;
-use solstone_core_convey_http::window_catalog::response_locale;
+use solstone_core_convey_http::window_catalog::{response_locale, strings, text};
 use solstone_core_entity_matching::{
     EntityNameCandidate, EntityNameMatchOutcome, find_matching_entity_detailed,
 };
@@ -32,12 +32,12 @@ use solstone_core_indexer_query::{
     NETWORK_EVIDENCE_LIMIT_MAX, NETWORK_NEIGHBOR_LIMIT_MAX, NetworkOverviewRequest, NetworkRequest,
     Order, OwnerBoundary, QueryBoundary, SearchHit, SearchRequest, coverage, indexed_entity_ids,
     is_safe_entity_id_component, load_edge_evidence, load_entity_network, load_network_overview,
-    network_bound_detail, search,
+    search,
 };
 
 use crate::model::{
-    ATTENDANCE_KINDS, ENTITY_TYPES, ReasonCode, connections_horizon_note, entities_copy, refusal,
-    refusal_with_status,
+    ATTENDANCE_KINDS, ENTITY_TYPES, ReasonCode, RefusalDetail, connections_horizon_note,
+    entities_copy, refusal, refusal_label, refusal_with_status,
 };
 
 #[derive(Clone)]
@@ -341,6 +341,7 @@ fn api_router_from_state(state: Arc<RouterState>) -> Router {
             "/app/curation/api/facet/dismiss",
             post(dismiss_facet_candidate_route),
         )
+        .layer(axum::middleware::from_fn(crate::model::localize_refusal))
         .with_state(state)
 }
 
@@ -738,19 +739,26 @@ fn resolution_error_response(error: FacetResolutionError) -> Response {
             solstone_core_entity::EntityResolutionError::ResolvedChoiceEntityAbsent { .. },
         ) => refusal(
             ReasonCode::ResolvedChoiceEntityAbsent,
-            "recorded entity choice is absent from this facet",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.recorded.entity.choice.is.absent.from.this.facet",
+            ),
         ),
         FacetResolutionError::Resolution(
             solstone_core_entity::EntityResolutionError::ResolvedChoiceEntityBlocked { .. },
         ) => refusal(
             ReasonCode::ResolvedChoiceEntityBlocked,
-            "recorded entity choice is hidden",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.recorded.entity.choice.is.hidden",
+            ),
         ),
         FacetResolutionError::Resolution(solstone_core_entity::EntityResolutionError::Read(
             solstone_core_entity::EntityStoreError::AmbiguityInvalidRow { path, .. },
         )) => refusal(
             ReasonCode::EntityAmbiguityCorrupt,
-            format!("ambiguity file {} contains a corrupt row", path.display()),
+            RefusalDetail::Formatted(
+                "journal.window.entities.response.formatted.ambiguity.file.value1.contains.a.corrupt.row",
+                vec![("value1", path.display().to_string())],
+            ),
         ),
         FacetResolutionError::Facet(error) => {
             refusal(ReasonCode::EntityOperationFailed, error.to_string())
@@ -775,7 +783,10 @@ async fn resolve_facet_entity_route(
         .map(|name| name.trim())
         .filter(|name| !name.is_empty())
     else {
-        return refusal(ReasonCode::MissingRequiredField, "name is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.name.is.required"),
+        );
     };
     let name = name.to_owned();
     let facet_exists = root.join("facets").join(&facet_name).is_dir();
@@ -804,57 +815,70 @@ async fn resolve_facet_entity_route(
     {
         Ok(Ok(primary)) => primary,
         Ok(Err(error)) => return resolution_error_response(error),
-        Err(_) => return refusal(ReasonCode::EntityOperationFailed, "resolution task failed"),
+        Err(_) => {
+            return refusal(
+                ReasonCode::EntityOperationFailed,
+                RefusalDetail::Catalog(
+                    "journal.window.entities.response.detail.resolution.task.failed",
+                ),
+            );
+        }
     };
 
     let (entities, resolution) = primary;
-    let (blocked, blocked_name) = if resolution.outcome
-        == solstone_core_entity::EntityResolutionOutcome::Resolved
-    {
-        (false, None)
-    } else {
-        let blocked_root = Arc::clone(&root);
-        let blocked_facet = facet_name.clone();
-        let blocked_name_query = name.clone();
-        match solstone_core_serving::seam::run_blocking(move || {
-            let entities = load_facet_resolution_entities(&blocked_root, &blocked_facet, true)?;
-            let entities: Vec<_> = entities
-                .into_iter()
-                .filter(|entity| entity.resolution.blocked)
-                .collect();
-            let resolution_entities: Vec<_> = entities
-                .iter()
-                .map(|entity| entity.resolution.clone())
-                .collect();
-            let resolution = solstone_core_entity::record_entity_resolution(
-                &blocked_root,
-                &blocked_name_query,
-                &resolution_entities,
-                json!({"kind":"facet","facet":blocked_facet}),
-                Value::Null,
-                RESOLUTION_FUZZY_THRESHOLD,
-                true,
-            )
-            .map_err(FacetResolutionError::Resolution)?;
-            Ok::<_, FacetResolutionError>((entities, resolution))
-        })
-        .await
-        {
-            Ok(Ok((entities, resolution)))
-                if resolution.outcome
-                    == solstone_core_entity::EntityResolutionOutcome::Resolved =>
+    let (blocked, blocked_name) =
+        if resolution.outcome == solstone_core_entity::EntityResolutionOutcome::Resolved {
+            (false, None)
+        } else {
+            let blocked_root = Arc::clone(&root);
+            let blocked_facet = facet_name.clone();
+            let blocked_name_query = name.clone();
+            match solstone_core_serving::seam::run_blocking(move || {
+                let entities = load_facet_resolution_entities(&blocked_root, &blocked_facet, true)?;
+                let entities: Vec<_> = entities
+                    .into_iter()
+                    .filter(|entity| entity.resolution.blocked)
+                    .collect();
+                let resolution_entities: Vec<_> = entities
+                    .iter()
+                    .map(|entity| entity.resolution.clone())
+                    .collect();
+                let resolution = solstone_core_entity::record_entity_resolution(
+                    &blocked_root,
+                    &blocked_name_query,
+                    &resolution_entities,
+                    json!({"kind":"facet","facet":blocked_facet}),
+                    Value::Null,
+                    RESOLUTION_FUZZY_THRESHOLD,
+                    true,
+                )
+                .map_err(FacetResolutionError::Resolution)?;
+                Ok::<_, FacetResolutionError>((entities, resolution))
+            })
+            .await
             {
-                let name = resolution
-                    .entity_index
-                    .and_then(|index| entities.get(index))
-                    .map(|entity| entity.resolution.name.clone());
-                (name.is_some(), name)
+                Ok(Ok((entities, resolution)))
+                    if resolution.outcome
+                        == solstone_core_entity::EntityResolutionOutcome::Resolved =>
+                {
+                    let name = resolution
+                        .entity_index
+                        .and_then(|index| entities.get(index))
+                        .map(|entity| entity.resolution.name.clone());
+                    (name.is_some(), name)
+                }
+                Ok(Ok(_)) => (false, None),
+                Ok(Err(error)) => return resolution_error_response(error),
+                Err(_) => {
+                    return refusal(
+                        ReasonCode::EntityOperationFailed,
+                        RefusalDetail::Catalog(
+                            "journal.window.entities.response.detail.resolution.task.failed",
+                        ),
+                    );
+                }
             }
-            Ok(Ok(_)) => (false, None),
-            Ok(Err(error)) => return resolution_error_response(error),
-            Err(_) => return refusal(ReasonCode::EntityOperationFailed, "resolution task failed"),
-        }
-    };
+        };
 
     let (resolved, candidates) = match resolution.outcome {
         solstone_core_entity::EntityResolutionOutcome::Resolved => (
@@ -894,28 +918,55 @@ async fn detect_entity_route(
     }
     let bytes = match axum::body::to_bytes(request.into_body(), usize::MAX).await {
         Ok(bytes) if !bytes.is_empty() => bytes,
-        _ => return refusal(ReasonCode::MissingRequestBody, "No data provided"),
+        _ => {
+            return refusal(
+                ReasonCode::MissingRequestBody,
+                RefusalDetail::Catalog("journal.window.entities.response.detail.no.data.provided"),
+            );
+        }
     };
     let body: Value = match serde_json::from_slice::<Value>(&bytes) {
         Ok(body) => body,
-        Err(_) => return refusal(ReasonCode::MissingRequestBody, "No data provided"),
+        Err(_) => {
+            return refusal(
+                ReasonCode::MissingRequestBody,
+                RefusalDetail::Catalog("journal.window.entities.response.detail.no.data.provided"),
+            );
+        }
     };
     let Some(day) = body.get("day").and_then(Value::as_str) else {
-        return refusal(ReasonCode::MissingRequiredField, "day is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.day.is.required"),
+        );
     };
     let Some(entity_type) = body.get("type").and_then(Value::as_str) else {
-        return refusal(ReasonCode::MissingRequiredField, "type is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.type.is.required"),
+        );
     };
     let Some(entity_query) = body.get("entity").and_then(Value::as_str) else {
-        return refusal(ReasonCode::MissingRequiredField, "entity is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.is.required"),
+        );
     };
     let Some(description) = body.get("description").and_then(Value::as_str) else {
-        return refusal(ReasonCode::MissingRequiredField, "description is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.description.is.required",
+            ),
+        );
     };
     if !solstone_core_entity::is_valid_entity_type(entity_type) {
         return refusal(
             ReasonCode::InvalidEntityType,
-            format!("Invalid entity type {entity_type:?}"),
+            RefusalDetail::Formatted(
+                "journal.window.entities.response.formatted.invalid.entity.type.value1",
+                vec![("value1", format!("{entity_type:?}"))],
+            ),
         );
     }
 
@@ -954,7 +1005,14 @@ async fn detect_entity_route(
     {
         Ok(Ok(primary)) => primary,
         Ok(Err(error)) => return resolution_error_response(error),
-        Err(_) => return refusal(ReasonCode::EntityOperationFailed, "resolution task failed"),
+        Err(_) => {
+            return refusal(
+                ReasonCode::EntityOperationFailed,
+                RefusalDetail::Catalog(
+                    "journal.window.entities.response.detail.resolution.task.failed",
+                ),
+            );
+        }
     };
 
     let (entities, resolution) = primary;
@@ -988,7 +1046,14 @@ async fn detect_entity_route(
         {
             Ok(Ok(blocked)) => blocked,
             Ok(Err(error)) => return resolution_error_response(error),
-            Err(_) => return refusal(ReasonCode::EntityOperationFailed, "resolution task failed"),
+            Err(_) => {
+                return refusal(
+                    ReasonCode::EntityOperationFailed,
+                    RefusalDetail::Catalog(
+                        "journal.window.entities.response.detail.resolution.task.failed",
+                    ),
+                );
+            }
         };
         if blocked.1.outcome == solstone_core_entity::EntityResolutionOutcome::Resolved {
             let name = blocked
@@ -1026,9 +1091,12 @@ async fn detect_entity_route(
     {
         Ok(Ok(_)) => Json(json!({"success":true,"name":response_name})).into_response(),
         Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityExists { .. }))
-        | Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityNotFound { .. })) => {
-            refusal(ReasonCode::InvalidRequestValue, "invalid detected entity")
-        }
+        | Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityNotFound { .. })) => refusal(
+            ReasonCode::InvalidRequestValue,
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.invalid.detected.entity",
+            ),
+        ),
         Ok(Err(solstone_core_facets::FacetEntityWriteError::TrustLock(
             solstone_core_facets::FacetTrustLockError::Lock(
                 solstone_core_entity::LockError::Timeout(_),
@@ -1038,16 +1106,26 @@ async fn detect_entity_route(
             solstone_core_entity::EntityTrustLockError::Lock(
                 solstone_core_entity::LockError::Timeout(_),
             ),
-        ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
+        ))) => refusal(
+            ReasonCode::EntityBusy,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.busy"),
+        ),
         _ => refusal(
             ReasonCode::EntityOperationFailed,
-            "detected entity save failed",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.detected.entity.save.failed",
+            ),
         ),
     }
 }
 
 pub(crate) fn admitted(b: &AccessBasis) -> Option<Response> {
-    (!require_access(b)).then(|| refusal(ReasonCode::AgentUnavailable, "access denied"))
+    (!require_access(b)).then(|| {
+        refusal(
+            ReasonCode::AgentUnavailable,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.access.denied"),
+        )
+    })
 }
 
 async fn state_route(
@@ -1167,7 +1245,10 @@ async fn facet_route(
             "hidden_unreadable": true,
         }))
         .into_response(),
-        _ => refusal(ReasonCode::EntityOperationFailed, "facet read failed"),
+        _ => refusal(
+            ReasonCode::EntityOperationFailed,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.facet.read.failed"),
+        ),
     }
 }
 /// Mark each detected row a hide covers: `hidden: true`, and `hidden_by`
@@ -1208,7 +1289,10 @@ async fn detected_route(
     }
     let day = q.get("day").cloned().unwrap_or_default();
     if day.is_empty() {
-        return refusal(ReasonCode::MissingRequiredField, "day is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.day.is.required"),
+        );
     }
     match solstone_core_serving::seam::run_blocking(move || {
         let mut rows = solstone_core_facets::read_detected_entities(&root, &f, &day)?;
@@ -1221,9 +1305,14 @@ async fn detected_route(
         Ok(Ok(v)) => Json(json!({"total":v.len(),"items":v})).into_response(),
         Ok(Err(solstone_core_facets::FacetEntityWriteError::HiddenUndecidable(_))) => refusal(
             ReasonCode::EntityRecordDamaged,
-            "detections can't be shown here: which names are hidden can't be read",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.detections.can.t.be.shown.here.which.names.are",
+            ),
         ),
-        _ => refusal(ReasonCode::EntityOperationFailed, "detected read failed"),
+        _ => refusal(
+            ReasonCode::EntityOperationFailed,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.detected.read.failed"),
+        ),
     }
 }
 
@@ -1241,7 +1330,10 @@ async fn merge_candidates_route(
     .await
     {
         Ok(Ok(v)) => Json(json!({"total":v.len(),"items":v})).into_response(),
-        _ => refusal(ReasonCode::EntityOperationFailed, "candidate read failed"),
+        _ => refusal(
+            ReasonCode::EntityOperationFailed,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.candidate.read.failed"),
+        ),
     }
 }
 async fn record_merge_candidate_route(
@@ -1254,30 +1346,52 @@ async fn record_merge_candidate_route(
     }
     let bytes = match axum::body::to_bytes(request.into_body(), usize::MAX).await {
         Ok(bytes) => bytes,
-        Err(_) => return refusal(ReasonCode::MissingRequiredField, "facet is required"),
+        Err(_) => {
+            return refusal(
+                ReasonCode::MissingRequiredField,
+                RefusalDetail::Catalog("journal.window.entities.response.detail.facet.is.required"),
+            );
+        }
     };
     let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or_else(|_| json!({}));
     let Some(facet) = body.get("facet").and_then(serde_json::Value::as_str) else {
-        return refusal(ReasonCode::MissingRequiredField, "facet is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.facet.is.required"),
+        );
     };
     let Some(day) = body.get("day").and_then(serde_json::Value::as_str) else {
-        return refusal(ReasonCode::MissingRequiredField, "day is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.day.is.required"),
+        );
     };
     let Some(source) = body.get("source").and_then(serde_json::Value::as_str) else {
-        return refusal(ReasonCode::MissingRequiredField, "source is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.source.is.required"),
+        );
     };
     let Some(target) = body.get("target").and_then(serde_json::Value::as_str) else {
-        return refusal(ReasonCode::MissingRequiredField, "target is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.target.is.required"),
+        );
     };
     let Some(evidence) = body.get("evidence").and_then(serde_json::Value::as_str) else {
-        return refusal(ReasonCode::MissingRequiredField, "evidence is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.evidence.is.required"),
+        );
     };
     let source_slug = solstone_core_entity_matching::entity_slug(source);
     let target_slug = solstone_core_entity_matching::entity_slug(target);
     if source_slug == target_slug {
         return refusal(
             ReasonCode::InvalidRequestValue,
-            "source and target resolve to the same entity.",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.source.and.target.resolve.to.the.same.entity",
+            ),
         );
     }
     let basis = body
@@ -1318,12 +1432,15 @@ async fn record_merge_candidate_route(
         Ok(Ok((row, created))) => {
             Json(json!({"success":true,"row":row,"created":created})).into_response()
         }
-        Ok(Err(error)) => {
-            entity_review_candidate_error_response(error, "merge candidate record failed")
-        }
+        Ok(Err(error)) => entity_review_candidate_error_response(
+            error,
+            "journal.window.entities.response.detail.merge.candidate.record.failed",
+        ),
         _ => refusal(
             ReasonCode::EntityOperationFailed,
-            "merge candidate record failed",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.merge.candidate.record.failed",
+            ),
         ),
     }
 }
@@ -1340,7 +1457,7 @@ fn entity_merge_candidate_error(key: &str, error: impl Into<String>) -> Response
 
 pub(crate) fn entity_review_candidate_error_response(
     error: solstone_core_entity::EntityReviewCandidateError,
-    detail: &'static str,
+    detail_id: &'static str,
 ) -> Response {
     match error {
         solstone_core_entity::EntityReviewCandidateError::TrustLock(
@@ -1350,8 +1467,14 @@ pub(crate) fn entity_review_candidate_error_response(
         )
         | solstone_core_entity::EntityReviewCandidateError::Lock(
             solstone_core_entity::LockError::Timeout(_),
-        ) => refusal(ReasonCode::EntityBusy, "entity busy"),
-        _ => refusal(ReasonCode::EntityOperationFailed, detail),
+        ) => refusal(
+            ReasonCode::EntityBusy,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.busy"),
+        ),
+        _ => refusal(
+            ReasonCode::EntityOperationFailed,
+            RefusalDetail::Catalog(detail_id),
+        ),
     }
 }
 
@@ -1403,16 +1526,36 @@ fn classified_operation_error(detail: String) -> Response {
     }
 }
 
-fn repair_envelope(detail: String) -> ErrorEnvelope {
+fn repair_envelope(detail: String, locale: &str) -> ErrorEnvelope {
     ErrorEnvelope {
-        error: "Entity request refused".to_owned(),
+        error: refusal_label(locale),
         reason_code: ReasonCode::EntityOperationFailed.as_str().to_owned(),
         detail,
     }
 }
 
-pub(crate) fn classify_merge_error(error: &solstone_core_entity::EntityMergeError) -> Response {
+pub(crate) fn classify_merge_error(
+    error: &solstone_core_entity::EntityMergeError,
+    locale: &str,
+) -> Response {
+    use solstone_core_entity::EntityMergeRefusal;
+
     match error {
+        solstone_core_entity::EntityMergeError::Rejected(reason) => {
+            let code = match reason {
+                EntityMergeRefusal::SourceMissing(_) | EntityMergeRefusal::TargetMissing(_) => {
+                    ReasonCode::EntityNotFound
+                }
+                EntityMergeRefusal::SourceHidden | EntityMergeRefusal::TargetHidden => {
+                    ReasonCode::EntityBlocked
+                }
+                EntityMergeRefusal::SameEntity
+                | EntityMergeRefusal::BothPrincipal
+                | EntityMergeRefusal::PrincipalIntoNonPerson
+                | EntityMergeRefusal::PersonIntoNonPerson => ReasonCode::InvalidRequestValue,
+            };
+            refusal(code, RefusalDetail::Merge(reason.clone()))
+        }
         solstone_core_entity::EntityMergeError::Failed {
             failed_phase,
             report,
@@ -1420,7 +1563,7 @@ pub(crate) fn classify_merge_error(error: &solstone_core_entity::EntityMergeErro
         } => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(MergeRepairRequired {
-                envelope: repair_envelope(error.to_string()),
+                envelope: repair_envelope(error.to_string(), locale),
                 failed_phase: failed_phase.clone(),
                 source_id: report.source_id.clone(),
                 target_id: report.target_id.clone(),
@@ -1428,7 +1571,7 @@ pub(crate) fn classify_merge_error(error: &solstone_core_entity::EntityMergeErro
                 mutation_applied: true,
                 source_state: json!({"id": report.source_id}),
                 target_state: json!({"id": report.target_id}),
-                safe_remediation: "Contact an operator to repair this merge.".to_owned(),
+                safe_remediation: text(locale, "journal.window.entities.response.merge.repair"),
             }),
         )
             .into_response(),
@@ -1468,21 +1611,40 @@ fn merge_preview_value(preview: solstone_core_entity::EntityMergePreview) -> ser
 async fn merge_route(
     Extension(b): Extension<AccessBasis>,
     State(root): State<Arc<RouterState>>,
+    locale: Option<Extension<ResponseLocale>>,
     request: Request,
 ) -> Response {
+    let locale = response_locale(locale);
     if let Some(r) = admitted(&b) {
         return r;
     }
     let bytes = match axum::body::to_bytes(request.into_body(), usize::MAX).await {
         Ok(bytes) => bytes,
-        Err(_) => return refusal(ReasonCode::MissingRequiredField, "source_slug is required"),
+        Err(_) => {
+            return refusal(
+                ReasonCode::MissingRequiredField,
+                RefusalDetail::Catalog(
+                    "journal.window.entities.response.detail.source.slug.is.required",
+                ),
+            );
+        }
     };
     let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or_else(|_| json!({}));
     let Some(source_slug) = body.get("source_slug").and_then(serde_json::Value::as_str) else {
-        return refusal(ReasonCode::MissingRequiredField, "source_slug is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.source.slug.is.required",
+            ),
+        );
     };
     let Some(target_slug) = body.get("target_slug").and_then(serde_json::Value::as_str) else {
-        return refusal(ReasonCode::MissingRequiredField, "target_slug is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.target.slug.is.required",
+            ),
+        );
     };
     let commit = body_bool(&body, "commit", false);
     let options = solstone_core_entity::EntityMergeOptions {
@@ -1497,11 +1659,17 @@ async fn merge_route(
         .await
         {
             Ok(Ok(preview)) => Json(merge_preview_value(preview)).into_response(),
-            Ok(Err(error)) if merge_error_is_busy(&error) => {
-                refusal(ReasonCode::EntityBusy, "entity busy")
-            }
-            Ok(Err(error)) => classify_merge_error(&error),
-            Err(_) => refusal(ReasonCode::EntityOperationFailed, "merge preview failed"),
+            Ok(Err(error)) if merge_error_is_busy(&error) => refusal(
+                ReasonCode::EntityBusy,
+                RefusalDetail::Catalog("journal.window.entities.response.detail.entity.busy"),
+            ),
+            Ok(Err(error)) => classify_merge_error(&error, locale),
+            Err(_) => refusal(
+                ReasonCode::EntityOperationFailed,
+                RefusalDetail::Catalog(
+                    "journal.window.entities.response.detail.merge.preview.failed",
+                ),
+            ),
         };
     }
     match solstone_core_serving::seam::run_blocking(move || {
@@ -1517,35 +1685,59 @@ async fn merge_route(
     .await
     {
         Ok(Ok(report)) => Json(merge_report_value(&report)).into_response(),
-        Ok(Err(error)) if merge_error_is_busy(&error) => {
-            refusal(ReasonCode::EntityBusy, "entity busy")
-        }
-        Ok(Err(error)) => classify_merge_error(&error),
-        Err(_) => refusal(ReasonCode::EntityOperationFailed, "merge commit failed"),
+        Ok(Err(error)) if merge_error_is_busy(&error) => refusal(
+            ReasonCode::EntityBusy,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.busy"),
+        ),
+        Ok(Err(error)) => classify_merge_error(&error, locale),
+        Err(_) => refusal(
+            ReasonCode::EntityOperationFailed,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.merge.commit.failed"),
+        ),
     }
 }
 
 async fn accept_merge_candidate_route(
     Extension(b): Extension<AccessBasis>,
     State(root): State<Arc<RouterState>>,
+    locale: Option<Extension<ResponseLocale>>,
     request: Request,
 ) -> Response {
+    let locale = response_locale(locale);
     if let Some(r) = admitted(&b) {
         return r;
     }
     let bytes = match axum::body::to_bytes(request.into_body(), usize::MAX).await {
         Ok(bytes) => bytes,
-        Err(_) => return refusal(ReasonCode::MissingRequiredField, "facet is required"),
+        Err(_) => {
+            return refusal(
+                ReasonCode::MissingRequiredField,
+                RefusalDetail::Catalog("journal.window.entities.response.detail.facet.is.required"),
+            );
+        }
     };
     let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or_else(|_| json!({}));
     let Some(facet) = body.get("facet").and_then(serde_json::Value::as_str) else {
-        return refusal(ReasonCode::MissingRequiredField, "facet is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.facet.is.required"),
+        );
     };
     let Some(source_slug) = body.get("source_slug").and_then(serde_json::Value::as_str) else {
-        return refusal(ReasonCode::MissingRequiredField, "source_slug is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.source.slug.is.required",
+            ),
+        );
     };
     let Some(target_slug) = body.get("target_slug").and_then(serde_json::Value::as_str) else {
-        return refusal(ReasonCode::MissingRequiredField, "target_slug is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.target.slug.is.required",
+            ),
+        );
     };
     let commit = body
         .get("commit")
@@ -1575,8 +1767,23 @@ async fn accept_merge_candidate_route(
     .await
     {
         Ok(Ok(Some(candidate))) => candidate,
-        Ok(Ok(None)) => return entity_merge_candidate_error(&key, "candidate not found"),
-        _ => return refusal(ReasonCode::EntityOperationFailed, "candidate read failed"),
+        Ok(Ok(None)) => {
+            return entity_merge_candidate_error(
+                &key,
+                text(
+                    locale,
+                    "journal.window.entities.response.candidate.not.found",
+                ),
+            );
+        }
+        _ => {
+            return refusal(
+                ReasonCode::EntityOperationFailed,
+                RefusalDetail::Catalog(
+                    "journal.window.entities.response.detail.candidate.read.failed",
+                ),
+            );
+        }
     };
     let status = candidate
         .get("status")
@@ -1587,7 +1794,11 @@ async fn accept_merge_candidate_route(
         if status != "open" {
             return entity_merge_candidate_error(
                 &key,
-                format!("cannot preview candidate with status {status}"),
+                strings(
+                    locale,
+                    "journal.window.entities.response.candidate.status.preview",
+                    [("status", status)],
+                ),
             );
         }
         let preview = solstone_core_serving::seam::run_blocking({
@@ -1621,11 +1832,25 @@ async fn accept_merge_candidate_route(
                 },
             }))
             .into_response(),
-            Ok(Err(error)) if merge_error_is_busy(&error) => {
-                refusal(ReasonCode::EntityBusy, "entity busy")
-            }
-            Ok(Err(error)) => entity_merge_candidate_error(&key, error.to_string()),
-            Err(_) => refusal(ReasonCode::EntityOperationFailed, "merge preview failed"),
+            Ok(Err(error)) if merge_error_is_busy(&error) => refusal(
+                ReasonCode::EntityBusy,
+                RefusalDetail::Catalog("journal.window.entities.response.detail.entity.busy"),
+            ),
+            Ok(Err(error)) => entity_merge_candidate_error(
+                &key,
+                match error {
+                    solstone_core_entity::EntityMergeError::Rejected(reason) => {
+                        reason.render(locale)
+                    }
+                    _ => error.to_string(),
+                },
+            ),
+            Err(_) => refusal(
+                ReasonCode::EntityOperationFailed,
+                RefusalDetail::Catalog(
+                    "journal.window.entities.response.detail.merge.preview.failed",
+                ),
+            ),
         };
     }
 
@@ -1646,7 +1871,11 @@ async fn accept_merge_candidate_route(
     if status != "open" {
         return entity_merge_candidate_error(
             &key,
-            format!("cannot accept candidate with status {status}"),
+            strings(
+                locale,
+                "journal.window.entities.response.candidate.status.accept",
+                [("status", status)],
+            ),
         );
     }
 
@@ -1703,44 +1932,90 @@ async fn accept_merge_candidate_route(
             "merge_id": merge_id,
         }))
         .into_response(),
-        Ok(Ok((_, None, _))) => entity_merge_candidate_error(&key, "candidate not found"),
-        Ok(Err(AcceptError::Merge(error))) if merge_error_is_busy(&error) => {
-            refusal(ReasonCode::EntityBusy, "entity busy")
-        }
-        Ok(Err(AcceptError::Merge(error))) => entity_merge_candidate_error(&key, error.to_string()),
+        Ok(Ok((_, None, _))) => entity_merge_candidate_error(
+            &key,
+            text(
+                locale,
+                "journal.window.entities.response.candidate.not.found",
+            ),
+        ),
+        Ok(Err(AcceptError::Merge(error))) if merge_error_is_busy(&error) => refusal(
+            ReasonCode::EntityBusy,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.busy"),
+        ),
+        Ok(Err(AcceptError::Merge(error))) => entity_merge_candidate_error(
+            &key,
+            match error {
+                solstone_core_entity::EntityMergeError::Rejected(reason) => reason.render(locale),
+                _ => error.to_string(),
+            },
+        ),
         // Why a merge can't be reconciled (a stopped merge that won't settle,
         // a damaged record, a merge that doesn't stand) is the owner's to read.
         Ok(Err(AcceptError::Candidate(
+            solstone_core_entity::EntityReviewCandidateError::NoActiveRecordedMerge,
+        ))) => entity_merge_candidate_error(
+            &key,
+            text(
+                locale,
+                solstone_core_entity::EntityReviewCandidateError::NO_ACTIVE_RECORD,
+            ),
+        ),
+        Ok(Err(AcceptError::Candidate(
             solstone_core_entity::EntityReviewCandidateError::RecordedMerge(error),
         ))) => entity_merge_candidate_error(&key, error),
-        Ok(Err(AcceptError::Candidate(error))) => {
-            entity_review_candidate_error_response(error, "merge candidate accept failed")
-        }
-        Err(_) => refusal(ReasonCode::EntityOperationFailed, "merge commit failed"),
+        Ok(Err(AcceptError::Candidate(error))) => entity_review_candidate_error_response(
+            error,
+            "journal.window.entities.response.detail.merge.candidate.accept.failed",
+        ),
+        Err(_) => refusal(
+            ReasonCode::EntityOperationFailed,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.merge.commit.failed"),
+        ),
     }
 }
 
 async fn dismiss_merge_candidate_route(
     Extension(b): Extension<AccessBasis>,
     State(root): State<Arc<RouterState>>,
+    locale: Option<Extension<ResponseLocale>>,
     request: Request,
 ) -> Response {
+    let locale = response_locale(locale);
     if let Some(r) = admitted(&b) {
         return r;
     }
     let bytes = match axum::body::to_bytes(request.into_body(), usize::MAX).await {
         Ok(bytes) => bytes,
-        Err(_) => return refusal(ReasonCode::MissingRequiredField, "facet is required"),
+        Err(_) => {
+            return refusal(
+                ReasonCode::MissingRequiredField,
+                RefusalDetail::Catalog("journal.window.entities.response.detail.facet.is.required"),
+            );
+        }
     };
     let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or_else(|_| json!({}));
     let Some(facet) = body.get("facet").and_then(serde_json::Value::as_str) else {
-        return refusal(ReasonCode::MissingRequiredField, "facet is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.facet.is.required"),
+        );
     };
     let Some(source_slug) = body.get("source_slug").and_then(serde_json::Value::as_str) else {
-        return refusal(ReasonCode::MissingRequiredField, "source_slug is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.source.slug.is.required",
+            ),
+        );
     };
     let Some(target_slug) = body.get("target_slug").and_then(serde_json::Value::as_str) else {
-        return refusal(ReasonCode::MissingRequiredField, "target_slug is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.target.slug.is.required",
+            ),
+        );
     };
     let facet = facet.to_owned();
     let source_slug = source_slug.to_owned();
@@ -1765,8 +2040,23 @@ async fn dismiss_merge_candidate_route(
     .await
     {
         Ok(Ok(Some(candidate))) => candidate,
-        Ok(Ok(None)) => return entity_merge_candidate_error(&key, "candidate not found"),
-        _ => return refusal(ReasonCode::EntityOperationFailed, "candidate read failed"),
+        Ok(Ok(None)) => {
+            return entity_merge_candidate_error(
+                &key,
+                text(
+                    locale,
+                    "journal.window.entities.response.candidate.not.found",
+                ),
+            );
+        }
+        _ => {
+            return refusal(
+                ReasonCode::EntityOperationFailed,
+                RefusalDetail::Catalog(
+                    "journal.window.entities.response.detail.candidate.read.failed",
+                ),
+            );
+        }
     };
     let status = candidate
         .get("status")
@@ -1784,7 +2074,11 @@ async fn dismiss_merge_candidate_route(
     if status != "open" {
         return entity_merge_candidate_error(
             &key,
-            format!("cannot dismiss candidate with status {status}"),
+            strings(
+                locale,
+                "journal.window.entities.response.candidate.status.dismiss",
+                [("status", status)],
+            ),
         );
     }
     match solstone_core_serving::seam::run_blocking(move || {
@@ -1799,12 +2093,15 @@ async fn dismiss_merge_candidate_route(
             "candidate": candidate,
         }))
         .into_response(),
-        Ok(Err(error)) => {
-            entity_review_candidate_error_response(error, "merge candidate dismiss failed")
-        }
+        Ok(Err(error)) => entity_review_candidate_error_response(
+            error,
+            "journal.window.entities.response.detail.merge.candidate.dismiss.failed",
+        ),
         _ => refusal(
             ReasonCode::EntityOperationFailed,
-            "merge candidate dismiss failed",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.merge.candidate.dismiss.failed",
+            ),
         ),
     }
 }
@@ -1822,7 +2119,10 @@ async fn curation_candidates_route(
     .await
     {
         Ok(Ok(v)) => Json(json!({"total":v.len(),"items":v})).into_response(),
-        _ => refusal(ReasonCode::EntityOperationFailed, "candidate read failed"),
+        _ => refusal(
+            ReasonCode::EntityOperationFailed,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.candidate.read.failed"),
+        ),
     }
 }
 
@@ -1876,14 +2176,21 @@ fn is_valid_facet_slug(slug: &str) -> bool {
 async fn accept_facet_candidate_route(
     Extension(b): Extension<AccessBasis>,
     State(root): State<Arc<RouterState>>,
+    locale: Option<Extension<ResponseLocale>>,
     request: Request,
 ) -> Response {
+    let locale = response_locale(locale);
     if let Some(response) = admitted(&b) {
         return response;
     }
     let bytes = match axum::body::to_bytes(request.into_body(), usize::MAX).await {
         Ok(bytes) => bytes,
-        Err(_) => return refusal(ReasonCode::MissingRequiredField, "Missing name_key"),
+        Err(_) => {
+            return refusal(
+                ReasonCode::MissingRequiredField,
+                RefusalDetail::Catalog("journal.window.entities.response.detail.missing.name.key"),
+            );
+        }
     };
     let body: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
     let Some(name_key) = body
@@ -1891,7 +2198,10 @@ async fn accept_facet_candidate_route(
         .and_then(Value::as_str)
         .filter(|name_key| !name_key.is_empty())
     else {
-        return refusal(ReasonCode::MissingRequiredField, "Missing name_key");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.missing.name.key"),
+        );
     };
     let name_key = name_key.to_owned();
     let candidate = match solstone_core_serving::seam::run_blocking({
@@ -1908,11 +2218,32 @@ async fn accept_facet_candidate_route(
     .await
     {
         Ok(Ok(Some(candidate))) => candidate,
-        Ok(Ok(None)) => return facet_candidate_error(&name_key, "candidate not found"),
-        Ok(Err(error)) if facet_candidate_error_is_busy(&error) => {
-            return refusal(ReasonCode::EntityBusy, "suggestions are busy; try again");
+        Ok(Ok(None)) => {
+            return facet_candidate_error(
+                &name_key,
+                text(
+                    locale,
+                    "journal.window.entities.response.candidate.not.found",
+                ),
+            );
         }
-        _ => return facet_candidate_error(&name_key, "candidate read failed"),
+        Ok(Err(error)) if facet_candidate_error_is_busy(&error) => {
+            return refusal(
+                ReasonCode::EntityBusy,
+                RefusalDetail::Catalog(
+                    "journal.window.entities.response.detail.suggestions.are.busy.try.again",
+                ),
+            );
+        }
+        _ => {
+            return facet_candidate_error(
+                &name_key,
+                text(
+                    locale,
+                    "journal.window.entities.response.candidate.facet.candidate.read.failed",
+                ),
+            );
+        }
     };
     let status = candidate
         .get("status")
@@ -1930,7 +2261,11 @@ async fn accept_facet_candidate_route(
     if status != "open" {
         return facet_candidate_error(
             &name_key,
-            format!("cannot accept candidate with status {status}"),
+            strings(
+                locale,
+                "journal.window.entities.response.candidate.status.accept",
+                [("status", status)],
+            ),
         );
     }
     let raw_name = candidate
@@ -1943,8 +2278,10 @@ async fn accept_facet_candidate_route(
     if !is_valid_facet_slug(&facet_slug) {
         return facet_candidate_error(
             &name_key,
-            format!(
-                "Invalid facet name '{facet_slug}': must be lowercase, start with a letter, and contain only letters, digits, hyphens, or underscores"
+            strings(
+                locale,
+                "journal.window.entities.response.candidate.facet.slug.invalid",
+                [("facet", &facet_slug)],
             ),
         );
     }
@@ -1958,11 +2295,23 @@ async fn accept_facet_candidate_route(
         Ok(Ok(Some(_))) => {
             return facet_candidate_error(
                 &name_key,
-                format!("Facet '{facet_slug}' already exists"),
+                strings(
+                    locale,
+                    "journal.window.entities.response.candidate.facet.already.exists",
+                    [("facet", &facet_slug)],
+                ),
             );
         }
         Ok(Ok(None)) => {}
-        _ => return facet_candidate_error(&name_key, "facet lookup failed"),
+        _ => {
+            return facet_candidate_error(
+                &name_key,
+                text(
+                    locale,
+                    "journal.window.entities.response.candidate.facet.facet.lookup.failed",
+                ),
+            );
+        }
     }
     match solstone_core_serving::seam::run_blocking({
         let root = Arc::clone(&root);
@@ -1974,10 +2323,23 @@ async fn accept_facet_candidate_route(
     {
         Ok(Ok(())) => {}
         Ok(Err(error)) if facet_write_error_is_busy(&error) => {
-            return refusal(ReasonCode::EntityBusy, "suggestions are busy; try again");
+            return refusal(
+                ReasonCode::EntityBusy,
+                RefusalDetail::Catalog(
+                    "journal.window.entities.response.detail.suggestions.are.busy.try.again",
+                ),
+            );
         }
         Ok(Err(error)) => return facet_candidate_error(&name_key, error.to_string()),
-        Err(_) => return facet_candidate_error(&name_key, "facet creation failed"),
+        Err(_) => {
+            return facet_candidate_error(
+                &name_key,
+                text(
+                    locale,
+                    "journal.window.entities.response.candidate.facet.facet.creation.failed",
+                ),
+            );
+        }
     }
     let response_key = name_key.clone();
     match solstone_core_serving::seam::run_blocking(move || {
@@ -1993,25 +2355,47 @@ async fn accept_facet_candidate_route(
             "candidate":candidate,
         }))
         .into_response(),
-        Ok(Ok(None)) => facet_candidate_error(&response_key, "candidate not found"),
-        Ok(Err(error)) if facet_candidate_error_is_busy(&error) => {
-            refusal(ReasonCode::EntityBusy, "suggestions are busy; try again")
-        }
-        _ => facet_candidate_error(&response_key, "candidate accept failed"),
+        Ok(Ok(None)) => facet_candidate_error(
+            &response_key,
+            text(
+                locale,
+                "journal.window.entities.response.candidate.not.found",
+            ),
+        ),
+        Ok(Err(error)) if facet_candidate_error_is_busy(&error) => refusal(
+            ReasonCode::EntityBusy,
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.suggestions.are.busy.try.again",
+            ),
+        ),
+        _ => facet_candidate_error(
+            &response_key,
+            text(
+                locale,
+                "journal.window.entities.response.candidate.facet.candidate.accept.failed",
+            ),
+        ),
     }
 }
 
 async fn dismiss_facet_candidate_route(
     Extension(b): Extension<AccessBasis>,
     State(root): State<Arc<RouterState>>,
+    locale: Option<Extension<ResponseLocale>>,
     request: Request,
 ) -> Response {
+    let locale = response_locale(locale);
     if let Some(response) = admitted(&b) {
         return response;
     }
     let bytes = match axum::body::to_bytes(request.into_body(), usize::MAX).await {
         Ok(bytes) => bytes,
-        Err(_) => return refusal(ReasonCode::MissingRequiredField, "Missing name_key"),
+        Err(_) => {
+            return refusal(
+                ReasonCode::MissingRequiredField,
+                RefusalDetail::Catalog("journal.window.entities.response.detail.missing.name.key"),
+            );
+        }
     };
     let body: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
     let Some(name_key) = body
@@ -2019,7 +2403,10 @@ async fn dismiss_facet_candidate_route(
         .and_then(Value::as_str)
         .filter(|name_key| !name_key.is_empty())
     else {
-        return refusal(ReasonCode::MissingRequiredField, "Missing name_key");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.missing.name.key"),
+        );
     };
     let name_key = name_key.to_owned();
     let candidate = match solstone_core_serving::seam::run_blocking({
@@ -2036,11 +2423,32 @@ async fn dismiss_facet_candidate_route(
     .await
     {
         Ok(Ok(Some(candidate))) => candidate,
-        Ok(Ok(None)) => return facet_candidate_error(&name_key, "candidate not found"),
-        Ok(Err(error)) if facet_candidate_error_is_busy(&error) => {
-            return refusal(ReasonCode::EntityBusy, "suggestions are busy; try again");
+        Ok(Ok(None)) => {
+            return facet_candidate_error(
+                &name_key,
+                text(
+                    locale,
+                    "journal.window.entities.response.candidate.not.found",
+                ),
+            );
         }
-        _ => return facet_candidate_error(&name_key, "candidate read failed"),
+        Ok(Err(error)) if facet_candidate_error_is_busy(&error) => {
+            return refusal(
+                ReasonCode::EntityBusy,
+                RefusalDetail::Catalog(
+                    "journal.window.entities.response.detail.suggestions.are.busy.try.again",
+                ),
+            );
+        }
+        _ => {
+            return facet_candidate_error(
+                &name_key,
+                text(
+                    locale,
+                    "journal.window.entities.response.candidate.facet.candidate.read.failed",
+                ),
+            );
+        }
     };
     let status = candidate
         .get("status")
@@ -2058,7 +2466,11 @@ async fn dismiss_facet_candidate_route(
     if status != "open" {
         return facet_candidate_error(
             &name_key,
-            format!("cannot dismiss candidate with status {status}"),
+            strings(
+                locale,
+                "journal.window.entities.response.candidate.status.dismiss",
+                [("status", status)],
+            ),
         );
     }
     let response_key = name_key.clone();
@@ -2074,11 +2486,26 @@ async fn dismiss_facet_candidate_route(
             "candidate":candidate,
         }))
         .into_response(),
-        Ok(Ok(None)) => facet_candidate_error(&response_key, "candidate not found"),
-        Ok(Err(error)) if facet_candidate_error_is_busy(&error) => {
-            refusal(ReasonCode::EntityBusy, "suggestions are busy; try again")
-        }
-        _ => facet_candidate_error(&response_key, "candidate dismiss failed"),
+        Ok(Ok(None)) => facet_candidate_error(
+            &response_key,
+            text(
+                locale,
+                "journal.window.entities.response.candidate.not.found",
+            ),
+        ),
+        Ok(Err(error)) if facet_candidate_error_is_busy(&error) => refusal(
+            ReasonCode::EntityBusy,
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.suggestions.are.busy.try.again",
+            ),
+        ),
+        _ => facet_candidate_error(
+            &response_key,
+            text(
+                locale,
+                "journal.window.entities.response.candidate.facet.candidate.dismiss.failed",
+            ),
+        ),
     }
 }
 
@@ -2347,13 +2774,18 @@ fn parse_journal_summary_query(
     if offset < 0 {
         return Err(Box::new(refusal(
             ReasonCode::InvalidRequestValue,
-            "offset must not be negative",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.offset.must.not.be.negative",
+            ),
         )));
     }
     if limit < 0 || limit > JOURNAL_SUMMARY_MAX_LIMIT as i64 {
         return Err(Box::new(refusal(
             ReasonCode::InvalidRequestValue,
-            format!("limit must be between 0 and {JOURNAL_SUMMARY_MAX_LIMIT}"),
+            RefusalDetail::Formatted(
+                "journal.window.entities.response.formatted.limit.bounded",
+                vec![("value1", JOURNAL_SUMMARY_MAX_LIMIT.to_string())],
+            ),
         )));
     }
     let bucket =
@@ -2364,7 +2796,9 @@ fn parse_journal_summary_query(
     {
         return Err(Box::new(refusal(
             ReasonCode::InvalidEntityType,
-            "type must be a canonical entity type or other",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.type.must.be.a.canonical.entity.type.or.other",
+            ),
         )));
     }
     let by_name = match query.sort.as_deref().map(str::trim) {
@@ -2373,7 +2807,9 @@ fn parse_journal_summary_query(
         Some(_) => {
             return Err(Box::new(refusal(
                 ReasonCode::InvalidRequestValue,
-                "sort must be activity or name",
+                RefusalDetail::Catalog(
+                    "journal.window.entities.response.detail.sort.must.be.activity.or.name",
+                ),
             )));
         }
     };
@@ -2384,7 +2820,9 @@ fn parse_journal_summary_query(
         Some(_) => {
             return Err(Box::new(refusal(
                 ReasonCode::InvalidRequestValue,
-                "hidden must be include, exclude or only",
+                RefusalDetail::Catalog(
+                    "journal.window.entities.response.detail.hidden.must.be.include.exclude.or.only",
+                ),
             )));
         }
     };
@@ -2589,7 +3027,10 @@ async fn journal_summary_route(
     .await
     {
         Ok(Ok(summary)) => Json(summary).into_response(),
-        _ => refusal(ReasonCode::EntityOperationFailed, "journal read failed"),
+        _ => refusal(
+            ReasonCode::EntityOperationFailed,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.journal.read.failed"),
+        ),
     }
 }
 
@@ -2622,13 +3063,18 @@ async fn journal_tidy_up_route(
     if offset < 0 {
         return refusal(
             ReasonCode::InvalidRequestValue,
-            "offset must not be negative",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.offset.must.not.be.negative",
+            ),
         );
     }
     if limit < 0 || limit > JOURNAL_SUMMARY_MAX_LIMIT as i64 {
         return refusal(
             ReasonCode::InvalidRequestValue,
-            format!("limit must be between 0 and {JOURNAL_SUMMARY_MAX_LIMIT}"),
+            RefusalDetail::Formatted(
+                "journal.window.entities.response.formatted.limit.bounded",
+                vec![("value1", JOURNAL_SUMMARY_MAX_LIMIT.to_string())],
+            ),
         );
     }
     let offset = usize::try_from(offset).unwrap_or_default();
@@ -2639,7 +3085,10 @@ async fn journal_tidy_up_route(
     .await
     {
         Ok(Ok(response)) => Json(response).into_response(),
-        _ => refusal(ReasonCode::EntityOperationFailed, "journal read failed"),
+        _ => refusal(
+            ReasonCode::EntityOperationFailed,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.journal.read.failed"),
+        ),
     }
 }
 
@@ -2671,9 +3120,15 @@ async fn journal_entity_route(
     {
         Ok(Ok(entity)) => match entity {
             Some(entity) => Json(json!({"entity":entity})).into_response(),
-            None => refusal(ReasonCode::EntityNotFound, "entity not found"),
+            None => refusal(
+                ReasonCode::EntityNotFound,
+                RefusalDetail::Catalog("journal.window.entities.response.detail.entity.not.found"),
+            ),
         },
-        _ => refusal(ReasonCode::EntityOperationFailed, "entity read failed"),
+        _ => refusal(
+            ReasonCode::EntityOperationFailed,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.read.failed"),
+        ),
     }
 }
 
@@ -2688,11 +3143,21 @@ async fn update_journal_entity_route(
     }
     let bytes = match axum::body::to_bytes(request.into_body(), usize::MAX).await {
         Ok(bytes) if !bytes.is_empty() => bytes,
-        _ => return refusal(ReasonCode::MissingRequestBody, "No data provided"),
+        _ => {
+            return refusal(
+                ReasonCode::MissingRequestBody,
+                RefusalDetail::Catalog("journal.window.entities.response.detail.no.data.provided"),
+            );
+        }
     };
     let body: serde_json::Value = match serde_json::from_slice::<serde_json::Value>(&bytes) {
         Ok(body) if body.as_object().is_some_and(|body| !body.is_empty()) => body,
-        _ => return refusal(ReasonCode::MissingRequestBody, "No data provided"),
+        _ => {
+            return refusal(
+                ReasonCode::MissingRequestBody,
+                RefusalDetail::Catalog("journal.window.entities.response.detail.no.data.provided"),
+            );
+        }
     };
     let existing = match solstone_core_serving::seam::run_blocking({
         let root = Arc::clone(&root);
@@ -2705,10 +3170,20 @@ async fn update_journal_entity_route(
         Ok(Ok(None)) => {
             return refusal(
                 ReasonCode::EntityNotFound,
-                format!("Entity '{entity_id}' not found"),
+                RefusalDetail::Formatted(
+                    "journal.window.entities.response.formatted.entity.value1.not.found",
+                    vec![("value1", entity_id.to_string())],
+                ),
             );
         }
-        _ => return refusal(ReasonCode::EntityOperationFailed, "entity read failed"),
+        _ => {
+            return refusal(
+                ReasonCode::EntityOperationFailed,
+                RefusalDetail::Catalog(
+                    "journal.window.entities.response.detail.entity.read.failed",
+                ),
+            );
+        }
     };
     let mut updated = existing.clone();
     {
@@ -2734,7 +3209,10 @@ async fn update_journal_entity_route(
             if !solstone_core_entity::is_valid_entity_type(kind) {
                 return refusal(
                     ReasonCode::InvalidEntityType,
-                    format!("Invalid entity type: {kind}"),
+                    RefusalDetail::Formatted(
+                        "journal.window.entities.response.formatted.invalid.entity.type.value1.variant2",
+                        vec![("value1", kind.to_string())],
+                    ),
                 );
             }
             if existing.get("type").and_then(serde_json::Value::as_str) != Some(kind) {
@@ -2803,12 +3281,20 @@ async fn update_journal_entity_route(
             solstone_core_entity::EntityTrustLockError::Lock(
                 solstone_core_entity::LockError::Timeout(_),
             ),
-        ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
+        ))) => refusal(
+            ReasonCode::EntityBusy,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.busy"),
+        ),
         Ok(Err(solstone_core_entity::EntityWriteError::EntityHidden { .. })) => refusal(
             ReasonCode::EntityBlocked,
-            "this entity is hidden, so its names can't change until it is unhidden",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.this.entity.is.hidden.so.its.names.can.t",
+            ),
         ),
-        _ => refusal(ReasonCode::EntityOperationFailed, "entity update failed"),
+        _ => refusal(
+            ReasonCode::EntityOperationFailed,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.update.failed"),
+        ),
     }
 }
 
@@ -2823,11 +3309,23 @@ async fn restore_journal_entity_version_route(
     }
     let bytes = match axum::body::to_bytes(request.into_body(), usize::MAX).await {
         Ok(bytes) => bytes,
-        Err(_) => return refusal(ReasonCode::MissingRequiredField, "version_id is required"),
+        Err(_) => {
+            return refusal(
+                ReasonCode::MissingRequiredField,
+                RefusalDetail::Catalog(
+                    "journal.window.entities.response.detail.version.id.is.required",
+                ),
+            );
+        }
     };
     let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or_else(|_| json!({}));
     let Some(version_id) = body.get("version_id").and_then(serde_json::Value::as_str) else {
-        return refusal(ReasonCode::MissingRequiredField, "version_id is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.version.id.is.required",
+            ),
+        );
     };
     let version_id = version_id.to_owned();
     let present = match solstone_core_serving::seam::run_blocking({
@@ -2839,7 +3337,14 @@ async fn restore_journal_entity_version_route(
     {
         Ok(Ok(Some(_))) => true,
         Ok(Ok(None)) => false,
-        _ => return refusal(ReasonCode::EntityOperationFailed, "entity read failed"),
+        _ => {
+            return refusal(
+                ReasonCode::EntityOperationFailed,
+                RefusalDetail::Catalog(
+                    "journal.window.entities.response.detail.entity.read.failed",
+                ),
+            );
+        }
     };
     if !present {
         return refusal(ReasonCode::EntityNotFound, entity_id);
@@ -2875,23 +3380,41 @@ async fn restore_journal_entity_version_route(
                     solstone_core_entity::LockError::Timeout(_),
                 ),
             ),
-        ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
+        ))) => refusal(
+            ReasonCode::EntityBusy,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.busy"),
+        ),
         Ok(Err(
             solstone_core_entity::EntityLifecycleError::EntityNotFound { .. }
             | solstone_core_entity::EntityLifecycleError::HistoryVersionNotFound { .. },
-        )) => refusal(ReasonCode::EntityNotFound, "history version was not found"),
+        )) => refusal(
+            ReasonCode::EntityNotFound,
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.history.version.was.not.found",
+            ),
+        ),
         Ok(Err(
             solstone_core_entity::EntityLifecycleError::RestoreTargetsRecordedMerge
             | solstone_core_entity::EntityLifecycleError::RestoreCrossesRecordedMerge
             | solstone_core_entity::EntityLifecycleError::RestoreWouldCreateSecondPrincipal {
                 ..
             },
-        )) => refusal(ReasonCode::InvalidRequestValue, "restore is not available"),
+        )) => refusal(
+            ReasonCode::InvalidRequestValue,
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.restore.is.not.available",
+            ),
+        ),
         Ok(Err(solstone_core_entity::EntityLifecycleError::RestoreWhileHidden { .. })) => refusal(
             ReasonCode::EntityBlocked,
-            "This entity is hidden. Unhide it in the entities app first.",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.this.entity.is.hidden.unhide.it.in.the.entities",
+            ),
         ),
-        _ => refusal(ReasonCode::EntityOperationFailed, "entity restore failed"),
+        _ => refusal(
+            ReasonCode::EntityOperationFailed,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.restore.failed"),
+        ),
     }
 }
 
@@ -2930,7 +3453,10 @@ async fn block_journal_entity_route(
             axum::http::StatusCode::BAD_REQUEST,
         ),
         Ok(Err(error)) => refusal(ReasonCode::EntityOperationFailed, error.to_string()),
-        Err(_) => refusal(ReasonCode::EntityOperationFailed, "couldn't hide entity"),
+        Err(_) => refusal(
+            ReasonCode::EntityOperationFailed,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.couldn.t.hide.entity"),
+        ),
     }
 }
 
@@ -2979,7 +3505,12 @@ async fn unblock_journal_entity_route(
             axum::http::StatusCode::BAD_REQUEST,
         ),
         Ok(Err(error)) => refusal(ReasonCode::EntityOperationFailed, error.to_string()),
-        Err(_) => refusal(ReasonCode::EntityOperationFailed, "couldn't unhide entity"),
+        Err(_) => refusal(
+            ReasonCode::EntityOperationFailed,
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.couldn.t.unhide.entity",
+            ),
+        ),
     }
 }
 
@@ -2996,44 +3527,68 @@ async fn block_journal_entities_route(
         Err(_) => {
             return refusal(
                 ReasonCode::InvalidRequestValue,
-                "request body could not be read",
+                RefusalDetail::Catalog(
+                    "journal.window.entities.response.detail.request.body.could.not.be.read",
+                ),
             );
         }
     };
     let value: serde_json::Value = match serde_json::from_slice(&bytes) {
         Ok(v) => v,
-        Err(_) => return refusal(ReasonCode::InvalidRequestValue, "body is not valid JSON"),
+        Err(_) => {
+            return refusal(
+                ReasonCode::InvalidRequestValue,
+                RefusalDetail::Catalog(
+                    "journal.window.entities.response.detail.body.is.not.valid.json",
+                ),
+            );
+        }
     };
     let Some(obj) = value.as_object() else {
         return refusal(
             ReasonCode::InvalidRequestValue,
-            "body must be a JSON object",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.body.must.be.a.json.object",
+            ),
         );
     };
 
     if !obj.contains_key("operation") {
-        return refusal(ReasonCode::MissingRequiredField, "operation is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.operation.is.required"),
+        );
     }
     let Some(operation) = obj.get("operation").and_then(Value::as_str) else {
         return refusal(
             ReasonCode::InvalidRequestValue,
-            "operation must be a string",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.operation.must.be.a.string",
+            ),
         );
     };
     let operation = operation.to_owned();
 
     if !obj.contains_key("ids") {
-        return refusal(ReasonCode::MissingRequiredField, "ids is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.ids.is.required"),
+        );
     }
     let Some(ids_array) = obj.get("ids").and_then(Value::as_array) else {
-        return refusal(ReasonCode::InvalidRequestValue, "ids must be an array");
+        return refusal(
+            ReasonCode::InvalidRequestValue,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.ids.must.be.an.array"),
+        );
     };
     let mut ids = Vec::with_capacity(ids_array.len());
     for item in ids_array {
         let Some(id_str) = item.as_str() else {
             return refusal(
                 ReasonCode::InvalidRequestValue,
-                "ids elements must be strings",
+                RefusalDetail::Catalog(
+                    "journal.window.entities.response.detail.ids.elements.must.be.strings",
+                ),
             );
         };
         ids.push(id_str.to_owned());
@@ -3048,30 +3603,48 @@ async fn block_journal_entities_route(
     .await
     {
         Ok(Ok(report)) => Json(json!(report)).into_response(),
-        Ok(Err(e)) if e.is_lock_timeout() => refusal(ReasonCode::EntityBusy, "entity busy"),
+        Ok(Err(e)) if e.is_lock_timeout() => refusal(
+            ReasonCode::EntityBusy,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.busy"),
+        ),
         Ok(Err(solstone_core_facets::BulkJournalError::InvalidOperationId(id))) => refusal(
             ReasonCode::InvalidRequestValue,
-            format!("invalid operation id: {id}"),
+            RefusalDetail::Formatted(
+                "journal.window.entities.response.formatted.invalid.operation.id.value1",
+                vec![("value1", id.to_string())],
+            ),
         ),
         Ok(Err(solstone_core_facets::BulkJournalError::InvalidIdsCount(count))) => refusal(
             ReasonCode::InvalidRequestValue,
-            format!("invalid ids count: {count}"),
+            RefusalDetail::Formatted(
+                "journal.window.entities.response.formatted.invalid.ids.count.value1",
+                vec![("value1", count.to_string())],
+            ),
         ),
         Ok(Err(solstone_core_facets::BulkJournalError::OperationUndone(op))) => refusal(
             ReasonCode::OperationUndone,
-            format!("operation {op} has already been undone"),
+            RefusalDetail::Formatted(
+                "journal.window.entities.response.formatted.operation.value1.has.already.been.undone",
+                vec![("value1", op.to_string())],
+            ),
         ),
         Ok(Err(solstone_core_facets::BulkJournalError::PrincipalEntityProtected { entity_id })) => {
             refusal(
                 ReasonCode::PrincipalEntityProtected,
-                format!("principal entity is protected from this operation: {entity_id}"),
+                RefusalDetail::Formatted(
+                    "journal.window.entities.response.formatted.principal.entity.is.protected.from.this.operation.value1",
+                    vec![("value1", entity_id.to_string())],
+                ),
             )
         }
         Ok(Err(solstone_core_facets::BulkJournalError::RelationshipsUnreadable { path })) => {
             refusal(ReasonCode::EntityRecordDamaged, path)
         }
         Ok(Err(other)) => refusal(ReasonCode::EntityOperationFailed, other.to_string()),
-        Err(_) => refusal(ReasonCode::EntityOperationFailed, "batch block failed"),
+        Err(_) => refusal(
+            ReasonCode::EntityOperationFailed,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.batch.block.failed"),
+        ),
     }
 }
 
@@ -3088,40 +3661,67 @@ async fn unblock_journal_operation_route(
         Err(_) => {
             return refusal(
                 ReasonCode::InvalidRequestValue,
-                "request body could not be read",
+                RefusalDetail::Catalog(
+                    "journal.window.entities.response.detail.request.body.could.not.be.read",
+                ),
             );
         }
     };
     let value: serde_json::Value = match serde_json::from_slice(&bytes) {
         Ok(v) => v,
-        Err(_) => return refusal(ReasonCode::InvalidRequestValue, "body is not valid JSON"),
+        Err(_) => {
+            return refusal(
+                ReasonCode::InvalidRequestValue,
+                RefusalDetail::Catalog(
+                    "journal.window.entities.response.detail.body.is.not.valid.json",
+                ),
+            );
+        }
     };
     let Some(obj) = value.as_object() else {
         return refusal(
             ReasonCode::InvalidRequestValue,
-            "body must be a JSON object",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.body.must.be.a.json.object",
+            ),
         );
     };
 
     if !obj.contains_key("operation") {
-        return refusal(ReasonCode::MissingRequiredField, "operation is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.operation.is.required"),
+        );
     }
     let Some(operation) = obj.get("operation").and_then(Value::as_str) else {
         return refusal(
             ReasonCode::InvalidRequestValue,
-            "operation must be a string",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.operation.must.be.a.string",
+            ),
         );
     };
     let operation = operation.to_owned();
 
     if !obj.contains_key("limit") {
-        return refusal(ReasonCode::MissingRequiredField, "limit is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.limit.is.required"),
+        );
     }
     let Some(limit_val) = obj.get("limit") else {
-        return refusal(ReasonCode::MissingRequiredField, "limit is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.limit.is.required"),
+        );
     };
     let Some(limit) = limit_val.as_i64() else {
-        return refusal(ReasonCode::InvalidRequestValue, "limit must be an integer");
+        return refusal(
+            ReasonCode::InvalidRequestValue,
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.limit.must.be.an.integer",
+            ),
+        );
     };
 
     match solstone_core_serving::seam::run_blocking(move || {
@@ -3134,24 +3734,39 @@ async fn unblock_journal_operation_route(
     .await
     {
         Ok(Ok(report)) => Json(json!(report)).into_response(),
-        Ok(Err(e)) if e.is_lock_timeout() => refusal(ReasonCode::EntityBusy, "entity busy"),
+        Ok(Err(e)) if e.is_lock_timeout() => refusal(
+            ReasonCode::EntityBusy,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.busy"),
+        ),
         Ok(Err(solstone_core_facets::BulkJournalError::InvalidOperationId(id))) => refusal(
             ReasonCode::InvalidRequestValue,
-            format!("invalid operation id: {id}"),
+            RefusalDetail::Formatted(
+                "journal.window.entities.response.formatted.invalid.operation.id.value1",
+                vec![("value1", id.to_string())],
+            ),
         ),
         Ok(Err(solstone_core_facets::BulkJournalError::InvalidLimit(limit))) => refusal(
             ReasonCode::InvalidRequestValue,
-            format!("invalid limit: {limit}"),
+            RefusalDetail::Formatted(
+                "journal.window.entities.response.formatted.invalid.limit.value1",
+                vec![("value1", limit.to_string())],
+            ),
         ),
         Ok(Err(solstone_core_facets::BulkJournalError::OperationUndone(op))) => refusal(
             ReasonCode::OperationUndone,
-            format!("operation {op} has already been undone"),
+            RefusalDetail::Formatted(
+                "journal.window.entities.response.formatted.operation.value1.has.already.been.undone",
+                vec![("value1", op.to_string())],
+            ),
         ),
         Ok(Err(solstone_core_facets::BulkJournalError::RelationshipsUnreadable { path })) => {
             refusal(ReasonCode::EntityRecordDamaged, path)
         }
         Ok(Err(other)) => refusal(ReasonCode::EntityOperationFailed, other.to_string()),
-        Err(_) => refusal(ReasonCode::EntityOperationFailed, "batch unblock failed"),
+        Err(_) => refusal(
+            ReasonCode::EntityOperationFailed,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.batch.unblock.failed"),
+        ),
     }
 }
 
@@ -3168,7 +3783,10 @@ async fn journal_route(
     .await
     {
         Ok(Ok(records)) => Json(json!({"entities":records})).into_response(),
-        _ => refusal(ReasonCode::EntityOperationFailed, "journal read failed"),
+        _ => refusal(
+            ReasonCode::EntityOperationFailed,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.journal.read.failed"),
+        ),
     }
 }
 
@@ -3191,7 +3809,9 @@ async fn ambiguities_route(
     ) {
         return refusal(
             ReasonCode::InvalidRequestValue,
-            "status must be open or resolved",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.status.must.be.open.or.resolved",
+            ),
         );
     }
     match solstone_core_serving::seam::run_blocking(move || {
@@ -3211,7 +3831,10 @@ async fn ambiguities_route(
             };
             Json(json!({"total":rows.len(),"items":rows})).into_response()
         }
-        _ => refusal(ReasonCode::EntityOperationFailed, "ambiguity read failed"),
+        _ => refusal(
+            ReasonCode::EntityOperationFailed,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.ambiguity.read.failed"),
+        ),
     }
 }
 
@@ -3226,11 +3849,21 @@ async fn resolve_ambiguity_route(
     }
     let bytes = match axum::body::to_bytes(request.into_body(), usize::MAX).await {
         Ok(bytes) => bytes,
-        Err(_) => return refusal(ReasonCode::MissingRequiredField, "entity_id is required"),
+        Err(_) => {
+            return refusal(
+                ReasonCode::MissingRequiredField,
+                RefusalDetail::Catalog(
+                    "journal.window.entities.response.detail.entity.id.is.required",
+                ),
+            );
+        }
     };
     let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or_else(|_| json!({}));
     let Some(entity_id) = body.get("entity_id").and_then(serde_json::Value::as_str) else {
-        return refusal(ReasonCode::MissingRequiredField, "entity_id is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.id.is.required"),
+        );
     };
     let entity_id = entity_id.to_owned();
     let plan = match solstone_core_serving::seam::run_blocking({
@@ -3308,7 +3941,14 @@ async fn resolve_ambiguity_route(
     {
         Ok(Ok(Some(plan))) => plan,
         Ok(Ok(None)) => return refusal(ReasonCode::EntityNotFound, ambiguity_id),
-        _ => return refusal(ReasonCode::InvalidRequestValue, "ambiguity resolve failed"),
+        _ => {
+            return refusal(
+                ReasonCode::InvalidRequestValue,
+                RefusalDetail::Catalog(
+                    "journal.window.entities.response.detail.ambiguity.resolve.failed",
+                ),
+            );
+        }
     };
     let (scope, query, eligible, chosen) = plan;
     let request = solstone_core_entity::AmbiguityChoiceRequest {
@@ -3333,8 +3973,16 @@ async fn resolve_ambiguity_route(
         )))
         | Ok(Err(solstone_core_entity::EntityWriteError::AmbiguityLock(
             solstone_core_entity::LockError::Timeout(_),
-        ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
-        _ => refusal(ReasonCode::InvalidRequestValue, "ambiguity resolve failed"),
+        ))) => refusal(
+            ReasonCode::EntityBusy,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.busy"),
+        ),
+        _ => refusal(
+            ReasonCode::InvalidRequestValue,
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.ambiguity.resolve.failed",
+            ),
+        ),
     }
 }
 
@@ -3371,7 +4019,14 @@ async fn dismiss_ambiguity_route(
     {
         Ok(Ok(Some(row))) => row,
         Ok(Ok(None)) => return refusal(ReasonCode::EntityNotFound, ambiguity_id),
-        _ => return refusal(ReasonCode::EntityOperationFailed, "ambiguity read failed"),
+        _ => {
+            return refusal(
+                ReasonCode::EntityOperationFailed,
+                RefusalDetail::Catalog(
+                    "journal.window.entities.response.detail.ambiguity.read.failed",
+                ),
+            );
+        }
     };
     let status = existing
         .get("status")
@@ -3383,7 +4038,10 @@ async fn dismiss_ambiguity_route(
     if status != "open" {
         return refusal(
             ReasonCode::InvalidRequestValue,
-            format!("cannot dismiss ambiguity with status {status}"),
+            RefusalDetail::Formatted(
+                "journal.window.entities.response.formatted.cannot.dismiss.ambiguity.with.status.value1",
+                vec![("value1", status.to_string())],
+            ),
         );
     }
     match run_entity_write(move || solstone_core_entity::dismiss_ambiguity(&root, &ambiguity_id))
@@ -3392,7 +4050,10 @@ async fn dismiss_ambiguity_route(
         Ok(Ok(Some(ambiguity))) => {
             Json(json!({"status":"dismissed","ambiguity":ambiguity})).into_response()
         }
-        Ok(Ok(None)) => refusal(ReasonCode::EntityNotFound, "ambiguity not found"),
+        Ok(Ok(None)) => refusal(
+            ReasonCode::EntityNotFound,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.ambiguity.not.found"),
+        ),
         Ok(Err(solstone_core_entity::EntityWriteError::TrustLock(
             solstone_core_entity::EntityTrustLockError::Lock(
                 solstone_core_entity::LockError::Timeout(_),
@@ -3400,8 +4061,16 @@ async fn dismiss_ambiguity_route(
         )))
         | Ok(Err(solstone_core_entity::EntityWriteError::AmbiguityLock(
             solstone_core_entity::LockError::Timeout(_),
-        ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
-        _ => refusal(ReasonCode::InvalidRequestValue, "ambiguity dismiss failed"),
+        ))) => refusal(
+            ReasonCode::EntityBusy,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.busy"),
+        ),
+        _ => refusal(
+            ReasonCode::InvalidRequestValue,
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.ambiguity.dismiss.failed",
+            ),
+        ),
     }
 }
 
@@ -3428,7 +4097,14 @@ async fn review_route(
     let (ambiguities, merge_candidates) = match result {
         Ok(Ok(res)) => res,
         Ok(Err(err)) => return refusal(ReasonCode::EntityOperationFailed, err),
-        Err(_) => return refusal(ReasonCode::EntityOperationFailed, "review read failed"),
+        Err(_) => {
+            return refusal(
+                ReasonCode::EntityOperationFailed,
+                RefusalDetail::Catalog(
+                    "journal.window.entities.response.detail.review.read.failed",
+                ),
+            );
+        }
     };
 
     let mut set_aside_ambiguities = Vec::new();
@@ -3549,8 +4225,14 @@ async fn sweep_review_route(
         )))
         | Ok(Err(solstone_core_entity::EntityWriteError::AmbiguityLock(
             solstone_core_entity::LockError::Timeout(_),
-        ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
-        _ => refusal(ReasonCode::EntityOperationFailed, "review sweep failed"),
+        ))) => refusal(
+            ReasonCode::EntityBusy,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.busy"),
+        ),
+        _ => refusal(
+            ReasonCode::EntityOperationFailed,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.review.sweep.failed"),
+        ),
     }
 }
 
@@ -3564,7 +4246,12 @@ async fn restore_review_route(
     }
     let bytes = match axum::body::to_bytes(request.into_body(), usize::MAX).await {
         Ok(bytes) => bytes,
-        Err(_) => return refusal(ReasonCode::MissingRequestBody, "No data provided"),
+        Err(_) => {
+            return refusal(
+                ReasonCode::MissingRequestBody,
+                RefusalDetail::Catalog("journal.window.entities.response.detail.no.data.provided"),
+            );
+        }
     };
     let body: Value = serde_json::from_slice(&bytes).unwrap_or_else(|_| json!({}));
     let target_kind = body
@@ -3575,7 +4262,12 @@ async fn restore_review_route(
     let target = match target_kind {
         "ambiguity" => {
             let Some(ambiguity_id) = body.get("ambiguity_id").and_then(Value::as_str) else {
-                return refusal(ReasonCode::MissingRequiredField, "ambiguity_id is required");
+                return refusal(
+                    ReasonCode::MissingRequiredField,
+                    RefusalDetail::Catalog(
+                        "journal.window.entities.response.detail.ambiguity.id.is.required",
+                    ),
+                );
             };
             solstone_core_entity::ReviewRestoreTarget::Ambiguity {
                 ambiguity_id: ambiguity_id.to_owned(),
@@ -3583,13 +4275,28 @@ async fn restore_review_route(
         }
         "merge_candidate" => {
             let Some(facet) = body.get("facet").and_then(Value::as_str) else {
-                return refusal(ReasonCode::MissingRequiredField, "facet is required");
+                return refusal(
+                    ReasonCode::MissingRequiredField,
+                    RefusalDetail::Catalog(
+                        "journal.window.entities.response.detail.facet.is.required",
+                    ),
+                );
             };
             let Some(source_slug) = body.get("source_slug").and_then(Value::as_str) else {
-                return refusal(ReasonCode::MissingRequiredField, "source_slug is required");
+                return refusal(
+                    ReasonCode::MissingRequiredField,
+                    RefusalDetail::Catalog(
+                        "journal.window.entities.response.detail.source.slug.is.required",
+                    ),
+                );
             };
             let Some(target_slug) = body.get("target_slug").and_then(Value::as_str) else {
-                return refusal(ReasonCode::MissingRequiredField, "target_slug is required");
+                return refusal(
+                    ReasonCode::MissingRequiredField,
+                    RefusalDetail::Catalog(
+                        "journal.window.entities.response.detail.target.slug.is.required",
+                    ),
+                );
             };
             solstone_core_entity::ReviewRestoreTarget::MergeCandidate {
                 facet: facet.to_owned(),
@@ -3597,13 +4304,23 @@ async fn restore_review_route(
                 target_slug: target_slug.to_owned(),
             }
         }
-        _ => return refusal(ReasonCode::InvalidRequestValue, "invalid target kind"),
+        _ => {
+            return refusal(
+                ReasonCode::InvalidRequestValue,
+                RefusalDetail::Catalog(
+                    "journal.window.entities.response.detail.invalid.target.kind",
+                ),
+            );
+        }
     };
 
     let root = Arc::clone(&root);
     match run_entity_write(move || solstone_core_entity::restore_review(&root, &target)).await {
         Ok(Ok(Some(item))) => Json(json!({"ok": true, "item": item})).into_response(),
-        Ok(Ok(None)) => refusal(ReasonCode::EntityNotFound, "review item not found"),
+        Ok(Ok(None)) => refusal(
+            ReasonCode::EntityNotFound,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.review.item.not.found"),
+        ),
         Ok(Err(solstone_core_entity::EntityWriteError::TrustLock(
             solstone_core_entity::EntityTrustLockError::Lock(
                 solstone_core_entity::LockError::Timeout(_),
@@ -3611,8 +4328,14 @@ async fn restore_review_route(
         )))
         | Ok(Err(solstone_core_entity::EntityWriteError::AmbiguityLock(
             solstone_core_entity::LockError::Timeout(_),
-        ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
-        _ => refusal(ReasonCode::EntityOperationFailed, "review restore failed"),
+        ))) => refusal(
+            ReasonCode::EntityBusy,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.busy"),
+        ),
+        _ => refusal(
+            ReasonCode::EntityOperationFailed,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.review.restore.failed"),
+        ),
     }
 }
 
@@ -3626,15 +4349,28 @@ async fn group_resolve_ambiguities_route(
     }
     let bytes = match axum::body::to_bytes(request.into_body(), usize::MAX).await {
         Ok(bytes) => bytes,
-        Err(_) => return refusal(ReasonCode::MissingRequestBody, "No data provided"),
+        Err(_) => {
+            return refusal(
+                ReasonCode::MissingRequestBody,
+                RefusalDetail::Catalog("journal.window.entities.response.detail.no.data.provided"),
+            );
+        }
     };
     let body: Value = serde_json::from_slice(&bytes).unwrap_or_else(|_| json!({}));
     let Some(entity_id) = body.get("entity_id").and_then(Value::as_str) else {
-        return refusal(ReasonCode::MissingRequiredField, "entity_id is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.id.is.required"),
+        );
     };
     let entity_id = entity_id.to_owned();
     let Some(member_ids) = body.get("member_ids").and_then(Value::as_array) else {
-        return refusal(ReasonCode::MissingRequiredField, "member_ids is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.member.ids.is.required",
+            ),
+        );
     };
     let Some(member_ids) = member_ids
         .iter()
@@ -3643,17 +4379,24 @@ async fn group_resolve_ambiguities_route(
     else {
         return refusal(
             ReasonCode::InvalidRequestValue,
-            "member_ids must contain only strings",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.member.ids.must.contain.only.strings",
+            ),
         );
     };
     if member_ids.is_empty() {
         return refusal(
             ReasonCode::InvalidRequestValue,
-            "member_ids must not be empty",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.member.ids.must.not.be.empty",
+            ),
         );
     }
     let Some(revision) = body.get("revision").and_then(Value::as_str) else {
-        return refusal(ReasonCode::MissingRequiredField, "revision is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.revision.is.required"),
+        );
     };
     let revision = revision.to_owned();
 
@@ -3763,8 +4506,14 @@ async fn group_resolve_ambiguities_route(
         )))
         | Ok(Err(solstone_core_entity::EntityWriteError::AmbiguityLock(
             solstone_core_entity::LockError::Timeout(_),
-        ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
-        _ => refusal(ReasonCode::InvalidRequestValue, "group resolve failed"),
+        ))) => refusal(
+            ReasonCode::EntityBusy,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.busy"),
+        ),
+        _ => refusal(
+            ReasonCode::InvalidRequestValue,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.group.resolve.failed"),
+        ),
     }
 }
 
@@ -3778,7 +4527,10 @@ async fn observations_route(
         return r;
     }
     let Some(name) = q.get("name").filter(|name| !name.is_empty()) else {
-        return refusal(ReasonCode::MissingRequiredField, "name is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.name.is.required"),
+        );
     };
     let name = name.to_owned();
     let limit = match q.get("limit") {
@@ -3787,7 +4539,9 @@ async fn observations_route(
             _ => {
                 return refusal(
                     ReasonCode::InvalidRequestValue,
-                    "limit must be between 0 and 200",
+                    RefusalDetail::Catalog(
+                        "journal.window.entities.response.detail.limit.bounded.two.hundred",
+                    ),
                 );
             }
         },
@@ -3799,7 +4553,9 @@ async fn observations_route(
             _ => {
                 return refusal(
                     ReasonCode::InvalidRequestValue,
-                    "offset must be a non-negative integer",
+                    RefusalDetail::Catalog(
+                        "journal.window.entities.response.detail.offset.must.be.a.non.negative.integer",
+                    ),
                 );
             }
         },
@@ -3811,7 +4567,9 @@ async fn observations_route(
             Err(_) => {
                 return refusal(
                     ReasonCode::InvalidRequestValue,
-                    "after_id must be a non-negative integer",
+                    RefusalDetail::Catalog(
+                        "journal.window.entities.response.detail.after.id.must.be.a.non.negative.integer",
+                    ),
                 );
             }
         },
@@ -3820,7 +4578,9 @@ async fn observations_route(
     if offset.is_some() && after_id.is_some() {
         return refusal(
             ReasonCode::InvalidRequestValue,
-            "after_id and offset cannot be used together",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.after.id.and.offset.cannot.be.used.together",
+            ),
         );
     }
     let order = match q.get("order").map(|s| s.as_str()) {
@@ -3849,7 +4609,7 @@ async fn observations_route(
             "items": page.items,
         }))
         .into_response(),
-        Ok(Err(error)) => refusal(ReasonCode::EntityOperationFailed, &error),
+        Ok(Err(error)) => refusal(ReasonCode::EntityOperationFailed, error),
         Err(error) => refusal(ReasonCode::EntityOperationFailed, error.to_string()),
     }
 }
@@ -3903,8 +4663,13 @@ fn merged_entity_refusal(journal_root: &Path, identity_id: &str, successor: &str
         .unwrap_or_else(|| successor.to_owned());
     refusal(
         ReasonCode::EntityMerged,
-        format!(
-            "'{identity_id}' was merged into '{survivor}'. Merges can't be undone, so that name can't be added as a new entity; use '{survivor}' instead."
+        RefusalDetail::Formatted(
+            "!journal.window.entities.response.formatted.value1.was.merged.into.value2.merges.can.t.be",
+            vec![
+                ("value1", identity_id.to_string()),
+                ("value2", survivor.to_string()),
+                ("value3", survivor.to_string()),
+            ],
         ),
     )
 }
@@ -3931,19 +4696,25 @@ pub(crate) fn attach_entity_write_error_response(
         return merged_entity_refusal(journal_root, &identity_id, &successor);
     }
     match error {
-        solstone_core_facets::FacetEntityWriteError::EntityExists { .. } => {
-            refusal(ReasonCode::EntityAlreadyExists, "entity already exists")
-        }
-        solstone_core_facets::FacetEntityWriteError::EntityBlocked { .. } => {
-            refusal(ReasonCode::EntityBlocked, "entity hidden")
-        }
-        solstone_core_facets::FacetEntityWriteError::EntityNotFound { .. } => {
-            refusal(ReasonCode::EntityNotFound, "entity not found")
-        }
+        solstone_core_facets::FacetEntityWriteError::EntityExists { .. } => refusal(
+            ReasonCode::EntityAlreadyExists,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.already.exists"),
+        ),
+        solstone_core_facets::FacetEntityWriteError::EntityBlocked { .. } => refusal(
+            ReasonCode::EntityBlocked,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.hidden"),
+        ),
+        solstone_core_facets::FacetEntityWriteError::EntityNotFound { .. } => refusal(
+            ReasonCode::EntityNotFound,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.not.found"),
+        ),
         error @ solstone_core_facets::FacetEntityWriteError::LinkFolders(
             solstone_core_facets::facet_links::LinkFolderError::NeedsRepair { .. },
         ) => refusal(ReasonCode::EntityOperationFailed, error.to_string()),
-        _ => refusal(ReasonCode::EntityBusy, "entity busy"),
+        _ => refusal(
+            ReasonCode::EntityBusy,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.busy"),
+        ),
     }
 }
 
@@ -3955,20 +4726,27 @@ pub(crate) fn create_entity_write_error_response(
         return merged_entity_refusal(journal_root, &identity_id, &successor);
     }
     match error {
-        solstone_core_facets::FacetEntityWriteError::EntityBlocked { .. } => {
-            refusal(ReasonCode::EntityBlocked, "entity hidden")
-        }
+        solstone_core_facets::FacetEntityWriteError::EntityBlocked { .. } => refusal(
+            ReasonCode::EntityBlocked,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.hidden"),
+        ),
         solstone_core_facets::FacetEntityWriteError::EntityExists { .. } => refusal(
             ReasonCode::EntityAlreadyExists,
-            "Entity with this name already exists in facet",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.entity.with.this.name.already.exists.in.facet",
+            ),
         ),
         error @ solstone_core_facets::FacetEntityWriteError::LinkFolders(
             solstone_core_facets::facet_links::LinkFolderError::NeedsRepair { .. },
         ) => refusal(ReasonCode::EntityOperationFailed, error.to_string()),
-        error if facet_entity_write_error_is_busy(&error) => {
-            refusal(ReasonCode::EntityBusy, "entity busy")
-        }
-        _ => refusal(ReasonCode::EntityOperationFailed, "entity create failed"),
+        error if facet_entity_write_error_is_busy(&error) => refusal(
+            ReasonCode::EntityBusy,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.busy"),
+        ),
+        _ => refusal(
+            ReasonCode::EntityOperationFailed,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.create.failed"),
+        ),
     }
 }
 
@@ -3983,33 +4761,55 @@ async fn attach_route(
     }
     let bytes = match axum::body::to_bytes(request.into_body(), usize::MAX).await {
         Ok(bytes) => bytes,
-        Err(_) => return refusal(ReasonCode::MissingRequestBody, "No data provided"),
+        Err(_) => {
+            return refusal(
+                ReasonCode::MissingRequestBody,
+                RefusalDetail::Catalog("journal.window.entities.response.detail.no.data.provided"),
+            );
+        }
     };
     if bytes.is_empty() {
-        return refusal(ReasonCode::MissingRequestBody, "No data provided");
+        return refusal(
+            ReasonCode::MissingRequestBody,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.no.data.provided"),
+        );
     }
     let body: serde_json::Value = match serde_json::from_slice(&bytes) {
         Ok(body) => body,
-        Err(_) => return refusal(ReasonCode::MissingRequestBody, "No data provided"),
+        Err(_) => {
+            return refusal(
+                ReasonCode::MissingRequestBody,
+                RefusalDetail::Catalog("journal.window.entities.response.detail.no.data.provided"),
+            );
+        }
     };
     let Some(kind) = body
         .get("type")
         .and_then(serde_json::Value::as_str)
         .filter(|v| !v.is_empty())
     else {
-        return refusal(ReasonCode::MissingRequiredField, "type is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.type.is.required"),
+        );
     };
     let Some(name) = body
         .get("name")
         .and_then(serde_json::Value::as_str)
         .filter(|v| !v.is_empty())
     else {
-        return refusal(ReasonCode::MissingRequiredField, "name is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.name.is.required"),
+        );
     };
     if !solstone_core_entity::is_valid_entity_type(kind) {
         return refusal(
             ReasonCode::InvalidEntityType,
-            format!("Invalid entity type '{kind}'"),
+            RefusalDetail::Formatted(
+                "journal.window.entities.response.formatted.invalid.entity.type.value1.variant3",
+                vec![("value1", kind.to_string())],
+            ),
         );
     }
     let description = body
@@ -4041,7 +4841,10 @@ async fn attach_route(
             Json(json!({"id":relationship["entity_id"],"name":name_for_response,"type":kind_for_response,"description":relationship["description"],"attached_at":relationship["attached_at"],"updated_at":relationship["updated_at"]})).into_response()
         }
         Ok(Err(error)) => attach_entity_write_error_response(&refusal_root, error),
-        _ => refusal(ReasonCode::EntityBusy, "entity busy"),
+        _ => refusal(
+            ReasonCode::EntityBusy,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.busy"),
+        ),
     }
 }
 
@@ -4056,11 +4859,21 @@ async fn create_entity_route(
     }
     let bytes = match axum::body::to_bytes(request.into_body(), usize::MAX).await {
         Ok(bytes) if !bytes.is_empty() => bytes,
-        _ => return refusal(ReasonCode::MissingRequestBody, "No data provided"),
+        _ => {
+            return refusal(
+                ReasonCode::MissingRequestBody,
+                RefusalDetail::Catalog("journal.window.entities.response.detail.no.data.provided"),
+            );
+        }
     };
     let body: serde_json::Value = match serde_json::from_slice::<serde_json::Value>(&bytes) {
         Ok(body) if body.as_object().is_some_and(|body| !body.is_empty()) => body,
-        _ => return refusal(ReasonCode::MissingRequestBody, "No data provided"),
+        _ => {
+            return refusal(
+                ReasonCode::MissingRequestBody,
+                RefusalDetail::Catalog("journal.window.entities.response.detail.no.data.provided"),
+            );
+        }
     };
     let kind = body
         .get("type")
@@ -4075,13 +4888,18 @@ async fn create_entity_route(
     if kind.is_empty() || name.is_empty() {
         return refusal(
             ReasonCode::MissingRequiredField,
-            "Type and name are required",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.type.and.name.are.required",
+            ),
         );
     }
     if !solstone_core_entity::is_valid_entity_type(kind) {
         return refusal(
             ReasonCode::InvalidEntityType,
-            format!("Invalid entity type '{kind}'"),
+            RefusalDetail::Formatted(
+                "journal.window.entities.response.formatted.invalid.entity.type.value1.variant3",
+                vec![("value1", kind.to_string())],
+            ),
         );
     }
     let description = body
@@ -4125,7 +4943,10 @@ async fn create_entity_route(
                 .into_response()
         }
         Ok(Err(error)) => create_entity_write_error_response(&refusal_root, error),
-        _ => refusal(ReasonCode::EntityOperationFailed, "entity create failed"),
+        _ => refusal(
+            ReasonCode::EntityOperationFailed,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.create.failed"),
+        ),
     }
 }
 
@@ -4140,17 +4961,35 @@ async fn update_description_route(
     }
     let bytes = match axum::body::to_bytes(request.into_body(), usize::MAX).await {
         Ok(bytes) if !bytes.is_empty() => bytes,
-        _ => return refusal(ReasonCode::MissingRequestBody, "No data provided"),
+        _ => {
+            return refusal(
+                ReasonCode::MissingRequestBody,
+                RefusalDetail::Catalog("journal.window.entities.response.detail.no.data.provided"),
+            );
+        }
     };
     let body: serde_json::Value = match serde_json::from_slice(&bytes) {
         Ok(body) => body,
-        Err(_) => return refusal(ReasonCode::MissingRequestBody, "No data provided"),
+        Err(_) => {
+            return refusal(
+                ReasonCode::MissingRequestBody,
+                RefusalDetail::Catalog("journal.window.entities.response.detail.no.data.provided"),
+            );
+        }
     };
     let Some(entity_id) = body.get("entity_id").and_then(serde_json::Value::as_str) else {
-        return refusal(ReasonCode::MissingRequiredField, "entity_id is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.id.is.required"),
+        );
     };
     let Some(description) = body.get("description").and_then(serde_json::Value::as_str) else {
-        return refusal(ReasonCode::MissingRequiredField, "description is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.description.is.required",
+            ),
+        );
     };
     let entity_id = entity_id.to_owned();
     let description = description.to_owned();
@@ -4165,9 +5004,10 @@ async fn update_description_route(
     .await
     {
         Ok(Ok(entity)) => Json(json!({"success":true,"entity":entity})).into_response(),
-        Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityNotFound { .. })) => {
-            refusal(ReasonCode::EntityNotFound, "entity not found")
-        }
+        Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityNotFound { .. })) => refusal(
+            ReasonCode::EntityNotFound,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.not.found"),
+        ),
         Ok(Err(solstone_core_facets::FacetEntityWriteError::TrustLock(
             solstone_core_facets::FacetTrustLockError::Lock(
                 solstone_core_entity::LockError::Timeout(_),
@@ -4177,10 +5017,15 @@ async fn update_description_route(
             solstone_core_entity::EntityTrustLockError::Lock(
                 solstone_core_entity::LockError::Timeout(_),
             ),
-        ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
+        ))) => refusal(
+            ReasonCode::EntityBusy,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.busy"),
+        ),
         _ => refusal(
             ReasonCode::EntityOperationFailed,
-            "entity description update failed",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.entity.description.update.failed",
+            ),
         ),
     }
 }
@@ -4196,20 +5041,41 @@ async fn update_detected_route(
     }
     let bytes = match axum::body::to_bytes(request.into_body(), usize::MAX).await {
         Ok(bytes) if !bytes.is_empty() => bytes,
-        _ => return refusal(ReasonCode::MissingRequestBody, "No data provided"),
+        _ => {
+            return refusal(
+                ReasonCode::MissingRequestBody,
+                RefusalDetail::Catalog("journal.window.entities.response.detail.no.data.provided"),
+            );
+        }
     };
     let body: serde_json::Value = match serde_json::from_slice(&bytes) {
         Ok(body) => body,
-        Err(_) => return refusal(ReasonCode::MissingRequestBody, "No data provided"),
+        Err(_) => {
+            return refusal(
+                ReasonCode::MissingRequestBody,
+                RefusalDetail::Catalog("journal.window.entities.response.detail.no.data.provided"),
+            );
+        }
     };
     let Some(day) = body.get("day").and_then(serde_json::Value::as_str) else {
-        return refusal(ReasonCode::MissingRequiredField, "day is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.day.is.required"),
+        );
     };
     let Some(entity) = body.get("entity").and_then(serde_json::Value::as_str) else {
-        return refusal(ReasonCode::MissingRequiredField, "entity is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.is.required"),
+        );
     };
     let Some(description) = body.get("description").and_then(serde_json::Value::as_str) else {
-        return refusal(ReasonCode::MissingRequiredField, "description is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.description.is.required",
+            ),
+        );
     };
     let day = day.to_owned();
     let entity = entity.to_owned();
@@ -4220,17 +5086,25 @@ async fn update_detected_route(
     .await
     {
         Ok(Ok(entity)) => Json(json!({"success":true,"entity":entity})).into_response(),
-        Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityNotFound { .. })) => {
-            refusal(ReasonCode::InvalidRequestValue, "detected entity not found")
-        }
+        Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityNotFound { .. })) => refusal(
+            ReasonCode::InvalidRequestValue,
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.detected.entity.not.found",
+            ),
+        ),
         Ok(Err(solstone_core_facets::FacetEntityWriteError::TrustLock(
             solstone_core_facets::FacetTrustLockError::Lock(
                 solstone_core_entity::LockError::Timeout(_),
             ),
-        ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
+        ))) => refusal(
+            ReasonCode::EntityBusy,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.busy"),
+        ),
         _ => refusal(
             ReasonCode::EntityOperationFailed,
-            "detected entity update failed",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.detected.entity.update.failed",
+            ),
         ),
     }
 }
@@ -4245,20 +5119,41 @@ async fn move_route(
     }
     let bytes = match axum::body::to_bytes(request.into_body(), usize::MAX).await {
         Ok(bytes) if !bytes.is_empty() => bytes,
-        _ => return refusal(ReasonCode::MissingRequestBody, "No data provided"),
+        _ => {
+            return refusal(
+                ReasonCode::MissingRequestBody,
+                RefusalDetail::Catalog("journal.window.entities.response.detail.no.data.provided"),
+            );
+        }
     };
     let body: serde_json::Value = match serde_json::from_slice(&bytes) {
         Ok(body) => body,
-        Err(_) => return refusal(ReasonCode::MissingRequestBody, "No data provided"),
+        Err(_) => {
+            return refusal(
+                ReasonCode::MissingRequestBody,
+                RefusalDetail::Catalog("journal.window.entities.response.detail.no.data.provided"),
+            );
+        }
     };
     let Some(entity) = body.get("entity").and_then(serde_json::Value::as_str) else {
-        return refusal(ReasonCode::MissingRequiredField, "entity is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.is.required"),
+        );
     };
     let Some(from_facet) = body.get("from_facet").and_then(serde_json::Value::as_str) else {
-        return refusal(ReasonCode::MissingRequiredField, "from_facet is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.from.facet.is.required",
+            ),
+        );
     };
     let Some(to_facet) = body.get("to_facet").and_then(serde_json::Value::as_str) else {
-        return refusal(ReasonCode::MissingRequiredField, "to_facet is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.to.facet.is.required"),
+        );
     };
     let merge = body
         .get("merge")
@@ -4289,11 +5184,15 @@ async fn move_route(
         .into_response(),
         Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityNotFound { .. })) => refusal(
             ReasonCode::EntityOperationFailed,
-            "Entity data directory not found in source facet.",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.entity.data.directory.not.found.in.source.facet",
+            ),
         ),
         Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityExists { .. })) => refusal(
             ReasonCode::EntityAlreadyExists,
-            "Entity already exists in destination facet. Use --merge to merge.",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.entity.already.exists.in.destination.facet.use.merge.to",
+            ),
         ),
         Ok(Err(error @ solstone_core_facets::FacetEntityWriteError::SameFacet { .. })) => {
             refusal(ReasonCode::InvalidRequestValue, error.to_string())
@@ -4304,7 +5203,10 @@ async fn move_route(
                 solstone_core_facets::facet_links::LinkFolderError::NeedsRepair { .. },
             ),
         )) => refusal(ReasonCode::EntityOperationFailed, error.to_string()),
-        _ => refusal(ReasonCode::EntityOperationFailed, "entity move failed"),
+        _ => refusal(
+            ReasonCode::EntityOperationFailed,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.move.failed"),
+        ),
     }
 }
 
@@ -4322,15 +5224,24 @@ async fn detach_route(
     .await
     {
         Ok(Ok(_)) => Json(json!({"success":true})).into_response(),
-        Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityNotFound { .. })) => {
-            refusal(ReasonCode::EntityNotFound, "Entity not found in facet")
-        }
+        Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityNotFound { .. })) => refusal(
+            ReasonCode::EntityNotFound,
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.entity.not.found.in.facet",
+            ),
+        ),
         Ok(Err(solstone_core_facets::FacetEntityWriteError::TrustLock(
             solstone_core_facets::FacetTrustLockError::Lock(
                 solstone_core_entity::LockError::Timeout(_),
             ),
-        ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
-        _ => refusal(ReasonCode::EntityOperationFailed, "entity detach failed"),
+        ))) => refusal(
+            ReasonCode::EntityBusy,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.busy"),
+        ),
+        _ => refusal(
+            ReasonCode::EntityOperationFailed,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.detach.failed"),
+        ),
     }
 }
 
@@ -4345,11 +5256,21 @@ async fn update_path_description_route(
     }
     let bytes = match axum::body::to_bytes(request.into_body(), usize::MAX).await {
         Ok(bytes) if !bytes.is_empty() => bytes,
-        _ => return refusal(ReasonCode::MissingRequestBody, "No data provided"),
+        _ => {
+            return refusal(
+                ReasonCode::MissingRequestBody,
+                RefusalDetail::Catalog("journal.window.entities.response.detail.no.data.provided"),
+            );
+        }
     };
     let body: serde_json::Value = match serde_json::from_slice::<serde_json::Value>(&bytes) {
         Ok(body) if body.as_object().is_some_and(|body| !body.is_empty()) => body,
-        _ => return refusal(ReasonCode::MissingRequestBody, "No data provided"),
+        _ => {
+            return refusal(
+                ReasonCode::MissingRequestBody,
+                RefusalDetail::Catalog("journal.window.entities.response.detail.no.data.provided"),
+            );
+        }
     };
     let description = body
         .get("description")
@@ -4368,17 +5289,25 @@ async fn update_path_description_route(
     .await
     {
         Ok(Ok(_)) => Json(json!({"success":true})).into_response(),
-        Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityNotFound { .. })) => {
-            refusal(ReasonCode::EntityNotFound, "Entity not found in facet")
-        }
+        Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityNotFound { .. })) => refusal(
+            ReasonCode::EntityNotFound,
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.entity.not.found.in.facet",
+            ),
+        ),
         Ok(Err(solstone_core_facets::FacetEntityWriteError::TrustLock(
             solstone_core_facets::FacetTrustLockError::Lock(
                 solstone_core_entity::LockError::Timeout(_),
             ),
-        ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
+        ))) => refusal(
+            ReasonCode::EntityBusy,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.busy"),
+        ),
         _ => refusal(
             ReasonCode::EntityOperationFailed,
-            "entity description update failed",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.entity.description.update.failed",
+            ),
         ),
     }
 }
@@ -4394,17 +5323,33 @@ async fn observe_route(
     }
     let bytes = match axum::body::to_bytes(request.into_body(), usize::MAX).await {
         Ok(bytes) if !bytes.is_empty() => bytes,
-        _ => return refusal(ReasonCode::MissingRequestBody, "No data provided"),
+        _ => {
+            return refusal(
+                ReasonCode::MissingRequestBody,
+                RefusalDetail::Catalog("journal.window.entities.response.detail.no.data.provided"),
+            );
+        }
     };
     let body: serde_json::Value = match serde_json::from_slice(&bytes) {
         Ok(body) => body,
-        Err(_) => return refusal(ReasonCode::MissingRequestBody, "No data provided"),
+        Err(_) => {
+            return refusal(
+                ReasonCode::MissingRequestBody,
+                RefusalDetail::Catalog("journal.window.entities.response.detail.no.data.provided"),
+            );
+        }
     };
     let Some(name) = body.get("name").and_then(serde_json::Value::as_str) else {
-        return refusal(ReasonCode::MissingRequiredField, "name is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.name.is.required"),
+        );
     };
     let Some(content) = body.get("content").and_then(serde_json::Value::as_str) else {
-        return refusal(ReasonCode::MissingRequiredField, "content is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.content.is.required"),
+        );
     };
     let name = name.to_owned();
     let entity_dir = match solstone_core_serving::seam::run_blocking({
@@ -4435,8 +5380,9 @@ async fn observe_route(
         Ok(Ok((_, Ok(Some(solstone_core_entity::RetiredState::Deleted))))) => {
             return refusal(
                 ReasonCode::EntityNotFound,
-                format!(
-                    "'{name}' isn't in this facet. add it here first, then add notes about it."
+                RefusalDetail::Formatted(
+                    "journal.window.entities.response.formatted.value1.isn.t.in.this.facet.add.it.here",
+                    vec![("value1", name.to_string())],
                 ),
             );
         }
@@ -4448,13 +5394,20 @@ async fn observe_route(
         _ => {
             return refusal(
                 ReasonCode::EntityOperationFailed,
-                "observation entity lookup failed",
+                RefusalDetail::Catalog(
+                    "journal.window.entities.response.detail.observation.entity.lookup.failed",
+                ),
             );
         }
     };
     let (entity_dir, linked) = entity_dir;
     if entity_dir.is_empty() {
-        return refusal(ReasonCode::InvalidRequestValue, "entity name is invalid");
+        return refusal(
+            ReasonCode::InvalidRequestValue,
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.entity.name.is.invalid",
+            ),
+        );
     }
     let content = content.to_owned();
     let source_day = body
@@ -4496,8 +5449,9 @@ async fn observe_route(
             }
             refusal(
                 ReasonCode::EntityNotFound,
-                format!(
-                    "'{name}' isn't in this facet. add it here first, then add notes about it."
+                RefusalDetail::Formatted(
+                    "journal.window.entities.response.formatted.value1.isn.t.in.this.facet.add.it.here",
+                    vec![("value1", name.to_string())],
                 ),
             )
         }
@@ -4513,10 +5467,15 @@ async fn observe_route(
             }
         }))
         .into_response(),
-        Ok(Err(e)) if e.is_lock_timeout() => refusal(ReasonCode::EntityBusy, "entity busy"),
+        Ok(Err(e)) if e.is_lock_timeout() => refusal(
+            ReasonCode::EntityBusy,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.busy"),
+        ),
         Ok(Err(solstone_core_facets::ObservationWriteError::EmptyContent)) => refusal(
             ReasonCode::InvalidRequestValue,
-            "observation content cannot be empty",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.observation.content.cannot.be.empty",
+            ),
         ),
         Ok(Err(e)) => refusal(ReasonCode::EntityOperationFailed, e.to_string()),
         Err(e) => refusal(ReasonCode::EntityOperationFailed, e.to_string()),
@@ -4527,7 +5486,12 @@ async fn observe_route(
 async fn detected_name_body(request: Request) -> Result<String, Response> {
     let bytes = match axum::body::to_bytes(request.into_body(), usize::MAX).await {
         Ok(bytes) if !bytes.is_empty() => bytes,
-        _ => return Err(refusal(ReasonCode::MissingRequestBody, "No data provided")),
+        _ => {
+            return Err(refusal(
+                ReasonCode::MissingRequestBody,
+                RefusalDetail::Catalog("journal.window.entities.response.detail.no.data.provided"),
+            ));
+        }
     };
     let body = serde_json::from_slice::<serde_json::Value>(&bytes).unwrap_or_default();
     body.get("name")
@@ -4535,25 +5499,39 @@ async fn detected_name_body(request: Request) -> Result<String, Response> {
         .map(str::trim)
         .filter(|name| !name.is_empty())
         .map(str::to_owned)
-        .ok_or_else(|| refusal(ReasonCode::MissingRequiredField, "name is required"))
+        .ok_or_else(|| {
+            refusal(
+                ReasonCode::MissingRequiredField,
+                RefusalDetail::Catalog("journal.window.entities.response.detail.name.is.required"),
+            )
+        })
 }
 
 fn hidden_names_refusal(error: &solstone_core_facets::HiddenNamesError) -> Response {
     match error {
-        error if error.is_busy() => refusal(ReasonCode::EntityBusy, "entity busy"),
-        solstone_core_facets::HiddenNamesError::EmptyName => {
-            refusal(ReasonCode::MissingRequiredField, "name is required")
-        }
+        error if error.is_busy() => refusal(
+            ReasonCode::EntityBusy,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.busy"),
+        ),
+        solstone_core_facets::HiddenNamesError::EmptyName => refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.name.is.required"),
+        ),
         solstone_core_facets::HiddenNamesError::Damaged { .. } => refusal(
             ReasonCode::EntityRecordDamaged,
-            "the names hidden in this facet can't be read, so nothing changed",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.the.names.hidden.in.this.facet.can.t.be",
+            ),
         ),
-        solstone_core_facets::HiddenNamesError::Facet(_) => {
-            refusal(ReasonCode::EntityNotFound, "facet not found")
-        }
+        solstone_core_facets::HiddenNamesError::Facet(_) => refusal(
+            ReasonCode::EntityNotFound,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.facet.not.found"),
+        ),
         _ => refusal(
             ReasonCode::EntityOperationFailed,
-            "the name couldn't be changed, so nothing changed",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.the.name.couldn.t.be.changed.so.nothing.changed",
+            ),
         ),
     }
 }
@@ -4593,7 +5571,9 @@ async fn hide_detected_route(
         Ok(Err(error)) => hidden_names_refusal(&error),
         Err(_) => refusal(
             ReasonCode::EntityOperationFailed,
-            "the name couldn't be changed, so nothing changed",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.the.name.couldn.t.be.changed.so.nothing.changed",
+            ),
         ),
     }
 }
@@ -4640,7 +5620,9 @@ async fn unhide_detected_route(
         Ok(Err(error)) => hidden_names_refusal(&error),
         Err(_) => refusal(
             ReasonCode::EntityOperationFailed,
-            "the name couldn't be changed, so nothing changed",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.the.name.couldn.t.be.changed.so.nothing.changed",
+            ),
         ),
     }
 }
@@ -4658,17 +5640,35 @@ async fn aka_route(
     }
     let bytes = match axum::body::to_bytes(request.into_body(), usize::MAX).await {
         Ok(bytes) => bytes,
-        Err(_) => return refusal(ReasonCode::MissingRequiredField, "entity_id is required"),
+        Err(_) => {
+            return refusal(
+                ReasonCode::MissingRequiredField,
+                RefusalDetail::Catalog(
+                    "journal.window.entities.response.detail.entity.id.is.required",
+                ),
+            );
+        }
     };
     let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or_else(|_| json!({}));
     let Some(entity_id) = body.get("entity_id").and_then(serde_json::Value::as_str) else {
-        return refusal(ReasonCode::MissingRequiredField, "entity_id is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.id.is.required"),
+        );
     };
     let Some(aka) = body.get("aka").and_then(serde_json::Value::as_str) else {
-        return refusal(ReasonCode::MissingRequiredField, "aka is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.aka.is.required"),
+        );
     };
     let Some(exclude_name) = body.get("exclude_name").and_then(serde_json::Value::as_str) else {
-        return refusal(ReasonCode::MissingRequiredField, "exclude_name is required");
+        return refusal(
+            ReasonCode::MissingRequiredField,
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.exclude.name.is.required",
+            ),
+        );
     };
     let entity_id = entity_id.to_owned();
     let aka = aka.to_owned();
@@ -4691,7 +5691,13 @@ async fn aka_route(
             conflict_name,
         })) => refusal(
             ReasonCode::EntityAliasConflict,
-            format!("Alias '{alias}' conflicts with entity '{conflict_name}'."),
+            RefusalDetail::Formatted(
+                "journal.window.entities.response.formatted.alias.value1.conflicts.with.entity.value2",
+                vec![
+                    ("value1", alias.to_string()),
+                    ("value2", conflict_name.to_string()),
+                ],
+            ),
         ),
         Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityNotFound { .. })) => {
             refusal(ReasonCode::EntityNotFound, exclude_name)
@@ -4705,16 +5711,23 @@ async fn aka_route(
             solstone_core_entity::EntityTrustLockError::Lock(
                 solstone_core_entity::LockError::Timeout(_),
             ),
-        ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
+        ))) => refusal(
+            ReasonCode::EntityBusy,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.busy"),
+        ),
         Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityWrite(
             solstone_core_entity::EntityWriteError::EntityHidden { .. },
         ))) => refusal(
             ReasonCode::EntityBlocked,
-            "this entity is hidden, so its names can't change until it is unhidden",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.this.entity.is.hidden.so.its.names.can.t",
+            ),
         ),
         _ => refusal(
             ReasonCode::EntityOperationFailed,
-            "entity alias update failed",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.entity.alias.update.failed",
+            ),
         ),
     }
 }
@@ -4730,11 +5743,21 @@ async fn update_entity_route(
     }
     let bytes = match axum::body::to_bytes(request.into_body(), usize::MAX).await {
         Ok(bytes) if !bytes.is_empty() => bytes,
-        _ => return refusal(ReasonCode::MissingRequestBody, "No data provided"),
+        _ => {
+            return refusal(
+                ReasonCode::MissingRequestBody,
+                RefusalDetail::Catalog("journal.window.entities.response.detail.no.data.provided"),
+            );
+        }
     };
     let body: serde_json::Value = match serde_json::from_slice::<serde_json::Value>(&bytes) {
         Ok(body) if body.as_object().is_some_and(|body| !body.is_empty()) => body,
-        _ => return refusal(ReasonCode::MissingRequestBody, "No data provided"),
+        _ => {
+            return refusal(
+                ReasonCode::MissingRequestBody,
+                RefusalDetail::Catalog("journal.window.entities.response.detail.no.data.provided"),
+            );
+        }
     };
     let old_name = body
         .get("old_name")
@@ -4749,7 +5772,9 @@ async fn update_entity_route(
     if old_name.is_empty() || new_name.is_empty() {
         return refusal(
             ReasonCode::MissingRequiredField,
-            "old_name and new_name are required",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.old.name.and.new.name.are.required",
+            ),
         );
     }
     let entity_type = body
@@ -4786,19 +5811,31 @@ async fn update_entity_route(
     .await
     {
         Ok(Ok(entity)) => Json(json!({"success":true,"entity":entity})).into_response(),
-        Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityNotFound { .. })) => {
-            refusal(ReasonCode::EntityNotFound, "Entity not found")
-        }
+        Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityNotFound { .. })) => refusal(
+            ReasonCode::EntityNotFound,
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.entity.not.found.variant2",
+            ),
+        ),
         Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityExists { .. })) => refusal(
             ReasonCode::EntityAlreadyExists,
-            format!("Entity '{new_name_for_detail}' already exists"),
+            RefusalDetail::Formatted(
+                "journal.window.entities.response.formatted.entity.value1.already.exists",
+                vec![("value1", new_name_for_detail.to_string())],
+            ),
         ),
         Ok(Err(solstone_core_facets::FacetEntityWriteError::AkaConflict {
             alias,
             conflict_name,
         })) => refusal(
             ReasonCode::EntityAliasConflict,
-            format!("Alias '{alias}' conflicts with entity '{conflict_name}'"),
+            RefusalDetail::Formatted(
+                "journal.window.entities.response.formatted.alias.value1.conflicts.with.entity.value2.variant2",
+                vec![
+                    ("value1", alias.to_string()),
+                    ("value2", conflict_name.to_string()),
+                ],
+            ),
         ),
         Ok(Err(solstone_core_facets::FacetEntityWriteError::TrustLock(
             solstone_core_facets::FacetTrustLockError::Lock(
@@ -4809,14 +5846,22 @@ async fn update_entity_route(
             solstone_core_entity::EntityTrustLockError::Lock(
                 solstone_core_entity::LockError::Timeout(_),
             ),
-        ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
+        ))) => refusal(
+            ReasonCode::EntityBusy,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.busy"),
+        ),
         Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityWrite(
             solstone_core_entity::EntityWriteError::EntityHidden { .. },
         ))) => refusal(
             ReasonCode::EntityBlocked,
-            "this entity is hidden, so its names can't change until it is unhidden",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.this.entity.is.hidden.so.its.names.can.t",
+            ),
         ),
-        _ => refusal(ReasonCode::EntityOperationFailed, "entity update failed"),
+        _ => refusal(
+            ReasonCode::EntityOperationFailed,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.update.failed"),
+        ),
     }
 }
 
@@ -4926,8 +5971,8 @@ async fn entity_detail_route(
             }
             Json(response).into_response()
         }
-        Ok(Ok(None)) => refusal(ReasonCode::EntityNotFound, "entity not found"),
-        _ => refusal(ReasonCode::EntityOperationFailed, "entity read failed"),
+        Ok(Ok(None)) => refusal(ReasonCode::EntityNotFound, RefusalDetail::Catalog("journal.window.entities.response.detail.entity.not.found")),
+        _ => refusal(ReasonCode::EntityOperationFailed, RefusalDetail::Catalog("journal.window.entities.response.detail.entity.read.failed")),
     }
 }
 async fn grid_route(
@@ -4980,8 +6025,14 @@ async fn grid_route(
                 .unwrap_or(serde_json::Value::Null);
             Json(json!({"coverage":coverage,"days":days,"pending":pending})).into_response()
         }
-        Ok(Ok(None)) => refusal(ReasonCode::EntityNotFound, "entity not found"),
-        _ => refusal(ReasonCode::EntityOperationFailed, "grid read failed"),
+        Ok(Ok(None)) => refusal(
+            ReasonCode::EntityNotFound,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.not.found"),
+        ),
+        _ => refusal(
+            ReasonCode::EntityOperationFailed,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.grid.read.failed"),
+        ),
     }
 }
 async fn history_route(
@@ -5082,8 +6133,14 @@ async fn history_route(
     .await
     {
         Ok(Ok(Some((id, items)))) => Json(json!({"entity_id":id,"items":items})).into_response(),
-        Ok(Ok(None)) => refusal(ReasonCode::EntityNotFound, "entity not found"),
-        _ => refusal(ReasonCode::EntityOperationFailed, "history read failed"),
+        Ok(Ok(None)) => refusal(
+            ReasonCode::EntityNotFound,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.not.found"),
+        ),
+        _ => refusal(
+            ReasonCode::EntityOperationFailed,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.history.read.failed"),
+        ),
     }
 }
 
@@ -5182,7 +6239,7 @@ fn required_index_plate_entity(query: &IndexPlateQuery) -> Result<String, Box<Re
     optional_query_text(query.entity.as_deref()).ok_or_else(|| {
         Box::new(refusal(
             ReasonCode::MissingRequiredField,
-            "entity is required",
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.is.required"),
         ))
     })
 }
@@ -5203,7 +6260,10 @@ fn index_plate_store_error(error: solstone_core_entity::EntityStoreError) -> Res
     match error {
         solstone_core_entity::EntityStoreError::AmbiguityInvalidRow { path, .. } => refusal(
             ReasonCode::EntityAmbiguityCorrupt,
-            format!("ambiguity file {} contains a corrupt row", path.display()),
+            RefusalDetail::Formatted(
+                "journal.window.entities.response.formatted.ambiguity.file.value1.contains.a.corrupt.row",
+                vec![("value1", path.display().to_string())],
+            ),
         ),
         error => refusal(ReasonCode::EntityOperationFailed, error.to_string()),
     }
@@ -5542,7 +6602,12 @@ async fn finish_index_plate(
     match work.await {
         Ok(Ok(outcome)) => index_plate_outcome_response(outcome),
         Ok(Err(error)) => index_plate_error_response(error),
-        Err(_) => refusal(ReasonCode::EntityOperationFailed, "index plate task failed"),
+        Err(_) => refusal(
+            ReasonCode::EntityOperationFailed,
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.index.plate.task.failed",
+            ),
+        ),
     }
 }
 
@@ -5555,7 +6620,10 @@ fn index_plate_integer(
         Some(value) => value.parse::<i64>().map_err(|_| {
             Box::new(refusal(
                 ReasonCode::InvalidRequestValue,
-                format!("{name} must be an integer"),
+                RefusalDetail::Formatted(
+                    "journal.window.entities.response.formatted.value1.must.be.an.integer",
+                    vec![("value1", name.to_string())],
+                ),
             ))
         }),
         None => Ok(default),
@@ -5579,14 +6647,20 @@ fn parse_network_bound(
     if digits_part.is_empty() || !digits_part.chars().all(|c| c.is_ascii_digit()) {
         return Err(Box::new(refusal(
             ReasonCode::InvalidRequestValue,
-            format!("{name} must be an integer"),
+            RefusalDetail::Formatted(
+                "journal.window.entities.response.formatted.value1.must.be.an.integer",
+                vec![("value1", name.to_string())],
+            ),
         )));
     }
     match trimmed.parse::<i64>() {
         Ok(parsed) if (0..=max).contains(&parsed) => Ok(parsed),
         _ => Err(Box::new(refusal(
             ReasonCode::InvalidRequestValue,
-            network_bound_detail(name, max),
+            RefusalDetail::Formatted(
+                "journal.window.entities.response.formatted.query.bound",
+                vec![("value1", name.to_owned()), ("value2", max.to_string())],
+            ),
         ))),
     }
 }
@@ -5638,7 +6712,9 @@ fn parse_entity_search_query(
     {
         return Err(Box::new(refusal(
             ReasonCode::InvalidRequestValue,
-            "since must be a YYYYMMDD day",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.since.must.be.a.yyyymmdd.day",
+            ),
         )));
     }
     let limit = query
@@ -5679,19 +6755,27 @@ fn entity_search_failure_response(failure: EntitySearchFailure) -> Response {
     match failure {
         EntitySearchFailure::ActivityUnavailable => refusal(
             ReasonCode::EntitySearchActivityUnavailable,
-            "detected entity activity is unavailable",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.detected.entity.activity.is.unavailable",
+            ),
         ),
         EntitySearchFailure::IndexBusy => refusal(
             ReasonCode::EntitySearchIndexBusy,
-            "entity search index is busy",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.entity.search.index.is.busy",
+            ),
         ),
         EntitySearchFailure::IndexStale => refusal(
             ReasonCode::EntitySearchIndexStale,
-            "entity search index is stale",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.entity.search.index.is.stale",
+            ),
         ),
         EntitySearchFailure::IndexUnavailable => refusal(
             ReasonCode::EntitySearchIndexUnavailable,
-            "entity search index is unavailable",
+            RefusalDetail::Catalog(
+                "journal.window.entities.response.detail.entity.search.index.is.unavailable",
+            ),
         ),
     }
 }

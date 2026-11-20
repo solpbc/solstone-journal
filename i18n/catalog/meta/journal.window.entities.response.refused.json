@@ -1,0 +1,16 @@
+{
+  "description": "Refusal heading in the journal's entities view.",
+  "context": "Journal window, entities view. Refusal heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "22508e4f22660f5542ba0d77f4c3c03a4c4b5fecdb9feb4ea93beadbecdd4f4d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
