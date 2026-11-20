@@ -175,6 +175,32 @@ fn an_unchanged_history_costs_a_stat_not_a_read() {
 }
 
 #[test]
+fn nightly_recovery_runs_while_hourly_backfill_owns_the_history_lock() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    settled_history(root);
+    let derived = cross::path(root).unwrap();
+    let history_lock = hold_lock(derived.with_extension("backfill"), options()).unwrap();
+
+    let hourly = backfill(root).unwrap();
+    assert!(hourly.yielded);
+    assert!(!derived.exists());
+
+    let daily = reconcile(root).unwrap();
+    assert!(!daily.yielded);
+    assert!(!daily.recovery_failed);
+    assert!(derived.is_file(), "nightly recovery must publish its rules");
+    assert!(
+        !root.join(SCAN_CACHE).exists(),
+        "only the lock holder scans history"
+    );
+
+    drop(history_lock);
+    let daily = reconcile(root).unwrap();
+    assert_eq!((daily.valid, daily.pending, daily.failed), (1, 0, 0));
+}
+
+#[test]
 fn a_changed_screen_or_sidecar_is_read_again() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path();

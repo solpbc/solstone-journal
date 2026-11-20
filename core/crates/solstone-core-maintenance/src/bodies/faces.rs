@@ -5,7 +5,9 @@
 use serde::Serialize;
 use serde_json::Value;
 use solstone_core_entity::faceprints::{self, cross};
-use solstone_core_journal_io::{LockOptions, PathOrDay, contained_path, hold_lock, iter_segments};
+use solstone_core_journal_io::{
+    LockError, LockOptions, PathOrDay, contained_path, hold_lock, iter_segments,
+};
 use solstone_core_segment::output_attempt::OutputClaims;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -385,6 +387,12 @@ fn run(
     let path = cross::path(journal)?;
     let _run = match hold_lock(path.with_extension("backfill"), options()) {
         Ok(lock) => lock,
+        Err(LockError::Timeout(_)) if full_recovery => {
+            // The lock serializes history discovery and its cursor. Recovery
+            // reads committed evidence and takes its own locks.
+            return recover(journal, true, &[], stats);
+        }
+        Err(error) if full_recovery => return Err(error.to_string()),
         Err(_) => {
             stats.yielded = true;
             return Ok(stats);
@@ -469,13 +477,22 @@ fn run(
         backfill.cursor = Some(candidate.key.clone());
         cross::update_backfill(journal, backfill.clone())?;
     }
+    recover(journal, full_recovery, &changed, stats)
+}
+
+fn recover(
+    journal: &Path,
+    full_recovery: bool,
+    changed: &[&Candidate],
+    mut stats: Stats,
+) -> Result<Stats> {
     // Use committed current participation, including owner edits and undo.
     // Reconciliation handles every published activity affected by this batch,
     // and also recovers interruptions from earlier passes.
     let recovery = if full_recovery {
         solstone_core_facets::reconcile_faceprints(journal)
     } else {
-        reconcile_changed(journal, &changed)
+        reconcile_changed(journal, changed)
     };
     stats.added = match recovery {
         Ok(added) => added,
