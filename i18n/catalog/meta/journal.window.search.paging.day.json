@@ -1,0 +1,16 @@
+{
+  "description": "paging day in the journal's search view.",
+  "context": "Journal window, search view. paging day.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b99f8a8e64e1e1acdb8adc15c7c01d9ee67a7119e3de585ea59c49cb24f5381a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "entry stored record in the journal's search view.",
+  "context": "Journal window, search view. entry stored record.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9a6d91195748b35732c5e471d173da72ebd6d176f72f022d2a501ef86e605da4",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

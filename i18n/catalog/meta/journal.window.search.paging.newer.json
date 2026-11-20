@@ -1,0 +1,16 @@
+{
+  "description": "paging newer in the journal's search view.",
+  "context": "Journal window, search view. paging newer.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bd9dd92fbd5a902234b451163a397e7b7d167f2d3a744a971a991b91c139e515",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

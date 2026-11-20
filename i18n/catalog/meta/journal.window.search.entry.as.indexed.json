@@ -1,0 +1,16 @@
+{
+  "description": "entry as indexed in the journal's search view.",
+  "context": "Journal window, search view. entry as indexed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "351fb9239de36b88a021c9ded7c2de469e37d751111778b681d3ddee6a159628",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

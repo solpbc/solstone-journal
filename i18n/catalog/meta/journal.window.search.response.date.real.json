@@ -1,0 +1,28 @@
+{
+  "description": "response date real in the journal's search view.",
+  "context": "Journal window, search view. response date real.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "field",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a69ac985e8cd4c3f2912ea763a672f03678f17a9985ccc61d89d3aac5cf2ef7c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

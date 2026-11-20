@@ -1,0 +1,16 @@
+{
+  "description": "status index empty in the journal's search view.",
+  "context": "Journal window, search view. status index empty.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a95be4e6d7dcf969e41266f5b4f69bf0fec017631be9112f5c0a25795af9f8ce",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

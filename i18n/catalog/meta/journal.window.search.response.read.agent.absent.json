@@ -1,0 +1,16 @@
+{
+  "description": "response read agent absent in the journal's search view.",
+  "context": "Journal window, search view. response read agent absent.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "770e216fc75b802a7c578a4d07a8fc8a602c7a3fb7edd1e5e91316590cadfdb2",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

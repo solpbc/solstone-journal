@@ -1,0 +1,16 @@
+{
+  "description": "link week in the journal's search view.",
+  "context": "Journal window, search view. link week.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "acdcaaff72c1c5047dba3b5a07fdfa3f3387511f804395a3868fb3e64cc7f5f3",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

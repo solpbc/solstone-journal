@@ -1,0 +1,16 @@
+{
+  "description": "entry reindexed in the journal's search view.",
+  "context": "Journal window, search view. entry reindexed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0510eee3124dde571e3cfe623f87899c00a4609e178411bad7afd2503c60a702",
+  "max_length": 109,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "status none in the journal's search view.",
+  "context": "Journal window, search view. status none.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c80219a5c45db025becce43ee8b2e1662849aaceaf2435255581097b336cb7ef",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

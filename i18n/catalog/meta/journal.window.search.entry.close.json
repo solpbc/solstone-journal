@@ -1,0 +1,16 @@
+{
+  "description": "entry close in the journal's search view.",
+  "context": "Journal window, search view. entry close.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "64c32a98fb64c6162e54267e3731d6200efe3df1cc65c48deac6e50ca7f85cda",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

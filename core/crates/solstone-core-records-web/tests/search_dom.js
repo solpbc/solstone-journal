@@ -163,7 +163,7 @@ function createSearchEnvironment() {
   let script = searchHtml.slice(scriptStart, scriptEnd);
   script = script.replace(
     'function renderHit(hit,dayHref){',
-    'window.renderHit = renderHit; window.matchesStatus = matchesStatus; window.COUNT_COPY = COUNT_COPY;\n function renderHit(hit,dayHref){'
+    'window.renderHit = renderHit; window.matchesStatus = matchesStatus;\n function renderHit(hit,dayHref){'
   );
   vm.runInContext(script, context);
 
@@ -214,13 +214,12 @@ test('renderHit drops an agent label the stream label already says, and keeps an
 
 test('the count line takes the one form for one match and one day, and the many form otherwise', () => {
   const env = createSearchEnvironment();
-  const copy = env.window.COUNT_COPY;
   const words = (line) => line.replace(/[0-9,.]/g, ' ').split(/\s+/).filter(Boolean);
   const one = words(env.window.matchesStatus(1, 1));
-  assert.ok(one.includes(copy.match.one) && one.includes(copy.day.one), one.join(' '));
-  assert.ok(!one.includes(copy.match.other) && !one.includes(copy.day.other), one.join(' '));
+  assert.ok(one.includes('match') && one.includes('day'), one.join(' '));
+  assert.ok(!one.includes('matches') && !one.includes('days'), one.join(' '));
   const many = words(env.window.matchesStatus(1200, 3));
-  assert.ok(many.includes(copy.match.other) && many.includes(copy.day.other), many.join(' '));
+  assert.ok(many.includes('matches') && many.includes('days'), many.join(' '));
 });
 
 test('screen-text continuation hits retain their segment citation and direct link', () => {

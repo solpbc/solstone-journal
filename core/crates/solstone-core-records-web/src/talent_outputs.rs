@@ -5,12 +5,18 @@ use std::fs;
 use std::path::Path;
 
 use serde_json::{Value, json};
+use solstone_core_convey_http::window_catalog::text;
 
-pub fn list(journal_root: &Path, day: &str, segment: Option<&str>) -> Result<Value, String> {
-    validate_day(day)?;
+pub fn list(
+    journal_root: &Path,
+    day: &str,
+    segment: Option<&str>,
+    locale: &str,
+) -> Result<Value, String> {
+    validate_day(day, locale)?;
     let day_dir = journal_root.join("chronicle").join(day);
     if let Some(segment) = segment {
-        validate_segment(segment)?;
+        validate_segment(segment, locale)?;
         return Ok(json!({
             "day": day,
             "segment": segment,
@@ -46,11 +52,12 @@ pub fn find(
     agent: &str,
     day: &str,
     segment: Option<&str>,
+    locale: &str,
 ) -> Result<String, FindError> {
-    validate_day(day).map_err(FindError::Invalid)?;
-    validate_agent(agent).map_err(FindError::Invalid)?;
+    validate_day(day, locale).map_err(FindError::Invalid)?;
+    validate_agent(agent, locale).map_err(FindError::Invalid)?;
     let talents = if let Some(segment) = segment {
-        validate_segment(segment).map_err(FindError::Invalid)?;
+        validate_segment(segment, locale).map_err(FindError::Invalid)?;
         journal_root
             .join("chronicle")
             .join(day)
@@ -128,18 +135,18 @@ fn record(path: &Path, name: impl Into<String>) -> Option<Value> {
     }))
 }
 
-fn validate_day(day: &str) -> Result<(), String> {
+fn validate_day(day: &str, locale: &str) -> Result<(), String> {
     if day.len() == 8 && day.bytes().all(|byte| byte.is_ascii_digit()) {
         Ok(())
     } else {
-        Err("day must be YYYYMMDD".into())
+        Err(text(locale, "journal.window.search.response.day.format"))
     }
 }
 
-fn validate_segment(segment: &str) -> Result<(), String> {
+fn validate_segment(segment: &str, locale: &str) -> Result<(), String> {
     let (start, length) = segment
         .split_once('_')
-        .ok_or_else(|| "invalid segment key".to_owned())?;
+        .ok_or_else(|| text(locale, "journal.window.search.response.segment.invalid"))?;
     if start.len() == 6
         && !length.is_empty()
         && start.bytes().all(|byte| byte.is_ascii_digit())
@@ -147,18 +154,21 @@ fn validate_segment(segment: &str) -> Result<(), String> {
     {
         Ok(())
     } else {
-        Err("invalid segment key".into())
+        Err(text(
+            locale,
+            "journal.window.search.response.segment.invalid",
+        ))
     }
 }
 
-fn validate_agent(agent: &str) -> Result<(), String> {
+fn validate_agent(agent: &str, locale: &str) -> Result<(), String> {
     if agent.is_empty()
         || agent.contains(['/', '\\'])
         || std::path::Path::new(agent)
             .components()
             .any(|component| !matches!(component, std::path::Component::Normal(_)))
     {
-        Err("agent must be a bare talent name".into())
+        Err(text(locale, "journal.window.search.response.agent.name"))
     } else {
         Ok(())
     }

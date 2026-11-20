@@ -1,0 +1,16 @@
+{
+  "description": "response index read detail in the journal's search view.",
+  "context": "Journal window, search view. response index read detail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e54f94e071c517207752e84e9004477e267396f4e4bd4ce1d4f7952bf110ffa3",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

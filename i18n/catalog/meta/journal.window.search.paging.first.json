@@ -1,0 +1,16 @@
+{
+  "description": "paging first in the journal's search view.",
+  "context": "Journal window, search view. paging first.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d1b641b27ce8f8e2dbfd00422e12b047812277f1aa96b91eeb6b7cfa00198bf9",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

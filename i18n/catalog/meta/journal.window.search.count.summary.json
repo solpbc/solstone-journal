@@ -1,0 +1,37 @@
+{
+  "description": "count summary in the journal's search view.",
+  "context": "Journal window, search view. count summary.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "matches",
+      "type": "string"
+    },
+    {
+      "name": "days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "217a701f7eb03d02e7634ef1b955b580d352179a0effa67cc4e8d352a26dc1ea",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

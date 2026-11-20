@@ -1,0 +1,16 @@
+{
+  "description": "status index rebuilding in the journal's search view.",
+  "context": "Journal window, search view. status index rebuilding.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "154e222abad4d3f6000c935f0a11b739251cd2c476e1088a2363ebc99b9c76b6",
+  "max_length": 89,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

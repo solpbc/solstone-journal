@@ -1,0 +1,16 @@
+{
+  "description": "link map in the journal's search view.",
+  "context": "Journal window, search view. link map.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "64cca40074e6f95c3b0d4c9cff71fc4ef7779203bbf07b9972a73cd7dcb9673c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

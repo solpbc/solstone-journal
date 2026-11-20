@@ -1,0 +1,16 @@
+{
+  "description": "response entry absent in the journal's search view.",
+  "context": "Journal window, search view. response entry absent.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "06d835a2f117c6c67da02f92e7341f183b600e94b1195ef94525eef69088519d",
+  "max_length": 99,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

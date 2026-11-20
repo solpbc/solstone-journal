@@ -1,0 +1,16 @@
+{
+  "description": "response read file absent in the journal's search view.",
+  "context": "Journal window, search view. response read file absent.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "81481a35cadbe6b9e587651705f17ff1b0844387b79b832d20446158ef9abf39",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

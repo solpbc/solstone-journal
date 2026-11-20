@@ -1,0 +1,16 @@
+{
+  "description": "status initial in the journal's search view.",
+  "context": "Journal window, search view. status initial.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7783afcaddcd8d9883cfa064677f4ec269ca68e85025d1ce74b67f87857b403f",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

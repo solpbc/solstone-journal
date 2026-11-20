@@ -1,0 +1,16 @@
+{
+  "description": "query label in the journal's search view.",
+  "context": "Journal window, search view. query label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6f86e4dea81c1e0847c296fe518979019a6a7c4c4e0c63a63e4a2cac5cc6ff0c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

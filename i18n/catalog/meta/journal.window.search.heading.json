@@ -1,0 +1,16 @@
+{
+  "description": "heading in the journal's search view.",
+  "context": "Journal window, search view. heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ca409a4fa26bcbc31b9a3bfcb34df2180066dafc7b90193e54b035c80bca2466",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

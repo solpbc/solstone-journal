@@ -1,0 +1,37 @@
+{
+  "description": "response filter facet in the journal's search view.",
+  "context": "Journal window, search view. response filter facet.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "available",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ee32245da00a5d79f84690ec4b4a1690ab47350ab4d9f969e5c20e0ec0b18fa5",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

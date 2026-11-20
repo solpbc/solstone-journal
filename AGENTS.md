@@ -447,8 +447,8 @@ Generic software principles (DRY, KISS, YAGNI, single responsibility, small focu
 
 Use `i18n/catalog/source/en-US.ftl` for copy in `solstone-core-convey-shell`,
 `solstone-core-backup-web`, `solstone-core-facets-web`,
-`solstone-core-health-web`, `solstone-core-home-web`, `solstone-core-map-web` and
-`solstone-core-support-web`.
+`solstone-core-health-web`, `solstone-core-home-web`, `solstone-core-map-web`,
+`solstone-core-records-web` and `solstone-core-support-web`.
 This includes Entities window responses from `solstone-core-entities` and
 `solstone-core-entity`, status copy from `solstone-core-system-health` and
 `solstone-core-system`, Home window responses from `solstone-core-home`, and

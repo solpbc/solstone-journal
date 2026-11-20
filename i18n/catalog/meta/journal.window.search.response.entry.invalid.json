@@ -1,0 +1,16 @@
+{
+  "description": "response entry invalid in the journal's search view.",
+  "context": "Journal window, search view. response entry invalid.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a2779d966d225063933cc338f01e69995e6b5367ca6a73c3f889be2a24a2fa91",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

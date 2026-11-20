@@ -1,0 +1,16 @@
+{
+  "description": "paging accessible name in the journal's search view.",
+  "context": "Journal window, search view. paging accessible name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e7d3507acb2a515de402151b973392c3eca6c137420df4afe8d35d21f5b9e481",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

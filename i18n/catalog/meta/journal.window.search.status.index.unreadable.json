@@ -1,0 +1,16 @@
+{
+  "description": "status index unreadable in the journal's search view.",
+  "context": "Journal window, search view. status index unreadable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "00b70d2c0a6b8657e23aeb469ecd38eb1e5d914bfe4385e86d25d31b43f7c55a",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

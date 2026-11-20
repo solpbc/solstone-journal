@@ -4,7 +4,7 @@
 use std::{borrow::Cow, collections::BTreeMap, path::PathBuf};
 
 use axum::{
-    Router,
+    Extension, Router,
     extract::Query,
     http::{StatusCode, header},
     response::{IntoResponse, Redirect, Response},
@@ -13,7 +13,11 @@ use axum::{
 use jiff::{Timestamp, civil::Date};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use solstone_core_convey_http::envelope::error_envelope;
+#[cfg(test)]
+use solstone_core_convey_http::window_catalog::ENGLISH;
+use solstone_core_convey_http::window_catalog::{response_locale, strings, text};
 use solstone_core_format::agent_memory::{Coordinate, SourceKey};
 use solstone_core_indexer_query::{
     IndexAccessError, IndexedEntry, OwnerBoundary, OwnerIndex, QueryBoundary, SearchRequest,
@@ -37,20 +41,36 @@ pub fn router(journal_root: PathBuf) -> Router {
     Router::new()
         .route(
             "/app/search/api/entry",
-            get(move |query: Query<EntryQuery>| entry_api(entry_root.clone(), query)),
+            get(
+                move |query: Query<EntryQuery>, locale: Option<Extension<ResponseLocale>>| {
+                    entry_api(entry_root.clone(), query, response_locale(locale))
+                },
+            ),
         )
         .route(
             "/app/search/api/search",
-            get(move |query: Query<SearchQuery>| search_api(search_root.clone(), query))
-                .layer(solstone_core_convey_http::coalesce::layer()),
+            get(
+                move |query: Query<SearchQuery>, locale: Option<Extension<ResponseLocale>>| {
+                    search_api(search_root.clone(), query, response_locale(locale))
+                },
+            )
+            .layer(solstone_core_convey_http::coalesce::layer()),
         )
         .route(
             "/app/search/api/agents",
-            get(move |query: Query<AgentsQuery>| agents_api(agents_root.clone(), query)),
+            get(
+                move |query: Query<AgentsQuery>, locale: Option<Extension<ResponseLocale>>| {
+                    agents_api(agents_root.clone(), query, response_locale(locale))
+                },
+            ),
         )
         .route(
             "/app/search/api/read",
-            get(move |query: Query<ReadQuery>| read_api(journal_root.clone(), query)),
+            get(
+                move |query: Query<ReadQuery>, locale: Option<Extension<ResponseLocale>>| {
+                    read_api(journal_root.clone(), query, response_locale(locale))
+                },
+            ),
         )
 }
 
@@ -84,31 +104,55 @@ pub(crate) struct SearchQuery {
     pub(crate) owner_view: bool,
 }
 
-async fn search_api(journal_root: PathBuf, Query(query): Query<SearchQuery>) -> Response {
-    match tokio::task::spawn_blocking(move || search_response(journal_root, query)).await {
+async fn search_api(
+    journal_root: PathBuf,
+    Query(query): Query<SearchQuery>,
+    locale: &'static str,
+) -> Response {
+    match tokio::task::spawn_blocking(move || search_response_in(journal_root, query, locale)).await
+    {
         Ok(response) => response,
-        Err(_) => file_read_failed("the search index couldn't be read. try again."),
+        Err(_) => file_read_failed(
+            locale,
+            text(locale, "journal.window.search.response.index.read.detail"),
+        ),
     }
 }
 
+#[cfg(test)]
 pub(crate) fn search_response(journal_root: PathBuf, query: SearchQuery) -> Response {
-    let mut owner_index = match open_owner_index(&journal_root, OwnerBoundary) {
-        Ok(index) => index,
-        Err(error) => return search_failed(&error),
-    };
-    search_response_with_index(&journal_root, &mut owner_index, query)
+    search_response_in(journal_root, query, ENGLISH)
 }
 
+fn search_response_in(journal_root: PathBuf, query: SearchQuery, locale: &str) -> Response {
+    let mut owner_index = match open_owner_index(&journal_root, OwnerBoundary) {
+        Ok(index) => index,
+        Err(error) => return search_failed(&error, locale),
+    };
+    search_response_with_index_in(&journal_root, &mut owner_index, query, locale)
+}
+
+#[cfg(test)]
 pub(crate) fn search_response_with_index(
     journal_root: &std::path::Path,
     owner_index: &mut OwnerIndex,
     query: SearchQuery,
 ) -> Response {
+    search_response_with_index_in(journal_root, owner_index, query, ENGLISH)
+}
+
+fn search_response_with_index_in(
+    journal_root: &std::path::Path,
+    owner_index: &mut OwnerIndex,
+    query: SearchQuery,
+    locale: &str,
+) -> Response {
     let owner_view = query.owner_view;
-    let (day_from, day_to) = match day_range(query.day_from.as_deref(), query.day_to.as_deref()) {
-        Ok(range) => range,
-        Err(detail) => return invalid_day(&detail),
-    };
+    let (day_from, day_to) =
+        match day_range(query.day_from.as_deref(), query.day_to.as_deref(), locale) {
+            Ok(range) => range,
+            Err(detail) => return invalid_day(locale, detail),
+        };
     let request = SearchRequest {
         query: query.q.unwrap_or_default().trim().to_owned(),
         limit: query.limit.unwrap_or(5).clamp(1, 100),
@@ -136,11 +180,11 @@ pub(crate) fn search_response_with_index(
     if let Err(error) = owner_index.admit_possible_names(std::sync::Arc::new(
         move |path: &str, idx: i64, content: &str| admitted.indexed(path, idx, content).is_some(),
     )) {
-        return search_failed(&error);
+        return search_failed(&error, locale);
     }
     let filtered_resolved = match owner_index.resolve_counts(&request, reference) {
         Ok(resolved) => resolved,
-        Err(error) => return search_failed(&error),
+        Err(error) => return search_failed(&error, locale),
     };
 
     let filtered = filtered_resolved.counts;
@@ -157,9 +201,9 @@ pub(crate) fn search_response_with_index(
         filtered.total
     };
     if total == 0
-        && let Some(detail) = unknown_filter(journal_root, &request)
+        && let Some(detail) = unknown_filter(journal_root, &request, locale)
     {
-        return invalid_value(&detail);
+        return invalid_value(locale, detail);
     }
     let total_days = days.len();
     let offset = query.offset.unwrap_or(0);
@@ -169,7 +213,7 @@ pub(crate) fn search_response_with_index(
     let day_hits_vec =
         match owner_index.fetch_day_hits(&filtered_resolved.plan, &page_days, request.limit) {
             Ok(hits) => hits,
-            Err(error) => return search_failed(&error),
+            Err(error) => return search_failed(&error, locale),
         };
     debug_assert_eq!(page.len(), day_hits_vec.len());
 
@@ -217,7 +261,7 @@ pub(crate) fn search_response_with_index(
                     Cow::Borrowed,
                 );
                 let agent_label = if sense.is_some() {
-                    if is_sense_list { "names" } else { "" }.to_owned()
+                    if is_sense_list { text(locale, "journal.window.search.hit.names") } else { String::new() }
                 } else {
                     agent_label(&hit.metadata.agent)
                 };
@@ -347,14 +391,26 @@ struct AgentsQuery {
     segment: Option<String>,
 }
 
-async fn agents_api(journal_root: PathBuf, Query(query): Query<AgentsQuery>) -> Response {
+async fn agents_api(
+    journal_root: PathBuf,
+    Query(query): Query<AgentsQuery>,
+    locale: &'static str,
+) -> Response {
     let day = query.day.unwrap_or_else(|| today_day(&journal_root));
     if !valid_day(&day) {
-        return invalid_day("day must be YYYYMMDD");
+        return invalid_day(
+            locale,
+            text(locale, "journal.window.search.response.day.format"),
+        );
     }
-    match talent_outputs::list(&journal_root, &day, none_if_blank(query.segment).as_deref()) {
+    match talent_outputs::list(
+        &journal_root,
+        &day,
+        none_if_blank(query.segment).as_deref(),
+        locale,
+    ) {
         Ok(value) => axum::Json(value).into_response(),
-        Err(detail) => invalid_value(&detail),
+        Err(detail) => invalid_value(locale, detail),
     }
 }
 
@@ -365,9 +421,16 @@ struct EntryQuery {
     entry_id: i64,
 }
 
-async fn entry_api(journal_root: PathBuf, Query(query): Query<EntryQuery>) -> Response {
+async fn entry_api(
+    journal_root: PathBuf,
+    Query(query): Query<EntryQuery>,
+    locale: &'static str,
+) -> Response {
     if query.path.is_empty() || query.path.len() > 4096 || query.idx < 0 || query.entry_id <= 0 {
-        return invalid_value("invalid entry reference");
+        return invalid_value(
+            locale,
+            text(locale, "journal.window.search.response.entry.invalid"),
+        );
     }
     let path = query.path.clone();
     let result = tokio::task::spawn_blocking(move || {
@@ -392,11 +455,18 @@ async fn entry_api(journal_root: PathBuf, Query(query): Query<EntryQuery>) -> Re
             let content = search_display_text(&path, &content);
             axum::Json(json!({"content": content, "reindexed_since_search": true})).into_response()
         }
-        Ok(Ok(IndexedEntry::TooLarge)) => invalid_value("this entry is too long to display here."),
-        Ok(Ok(IndexedEntry::NotFound)) => {
-            file_not_found("this entry is no longer indexed. search again to refresh the results.")
-        }
-        Ok(Err(_)) | Err(_) => file_read_failed("the search index couldn't be read. try again."),
+        Ok(Ok(IndexedEntry::TooLarge)) => invalid_value(
+            locale,
+            text(locale, "journal.window.search.response.entry.large"),
+        ),
+        Ok(Ok(IndexedEntry::NotFound)) => file_not_found(
+            locale,
+            text(locale, "journal.window.search.response.entry.absent"),
+        ),
+        Ok(Err(_)) | Err(_) => file_read_failed(
+            locale,
+            text(locale, "journal.window.search.response.index.read.detail"),
+        ),
     }
 }
 
@@ -411,18 +481,29 @@ struct ReadQuery {
     max_bytes: Option<u64>,
 }
 
-async fn read_api(journal_root: PathBuf, Query(query): Query<ReadQuery>) -> Response {
+async fn read_api(
+    journal_root: PathBuf,
+    Query(query): Query<ReadQuery>,
+    locale: &'static str,
+) -> Response {
     if query.max_bytes.unwrap_or(MAX_BYTES) != MAX_BYTES {
-        return invalid_value("max_bytes must be 16384 for HTTP reads");
+        return invalid_value(
+            locale,
+            text(locale, "journal.window.search.response.read.bound"),
+        );
     }
     if query.idx.is_some() || query.entry_id.is_some() {
         if query.agent.is_some() || query.day.is_some() || query.segment.is_some() {
-            return invalid_path("an indexed entry cannot be combined with agent, day, or segment");
+            return invalid_path(
+                locale,
+                text(locale, "journal.window.search.response.read.mixed.entry"),
+            );
         }
         let (Some(path), Some(idx), Some(entry_id)) = (query.path, query.idx, query.entry_id)
         else {
             return invalid_value(
-                "an indexed entry requires path, idx, and entry_id from the same search result",
+                locale,
+                text(locale, "journal.window.search.response.read.entry.fields"),
             );
         };
         return entry_api(
@@ -432,76 +513,119 @@ async fn read_api(journal_root: PathBuf, Query(query): Query<ReadQuery>) -> Resp
                 idx,
                 entry_id,
             }),
+            locale,
         )
         .await;
     }
     let rel = if let Some(path) = query.path {
         if query.agent.is_some() || query.day.is_some() || query.segment.is_some() {
-            return invalid_path("path cannot be combined with agent, day, or segment");
+            return invalid_path(
+                locale,
+                text(locale, "journal.window.search.response.read.mixed.file"),
+            );
         }
         if path.starts_with("entity_search:") {
-            return invalid_path("entity results have no file to read");
+            return invalid_path(
+                locale,
+                text(locale, "journal.window.search.response.read.entity"),
+            );
         }
         if has_index_suffix(&path) {
-            return invalid_path("strip the search-result :idx suffix before reading a path");
+            return invalid_path(
+                locale,
+                text(locale, "journal.window.search.response.read.suffix"),
+            );
         }
         path
     } else {
         let Some(agent) = query.agent.filter(|agent| !agent.is_empty()) else {
-            return invalid_value("agent or path is required");
+            return invalid_value(
+                locale,
+                text(locale, "journal.window.search.response.read.required"),
+            );
         };
         let day = query.day.unwrap_or_else(|| today_day(&journal_root));
         if !valid_day(&day) {
-            return invalid_day("day must be YYYYMMDD");
+            return invalid_day(
+                locale,
+                text(locale, "journal.window.search.response.day.format"),
+            );
         }
         match talent_outputs::find(
             &journal_root,
             &agent,
             &day,
             none_if_blank(query.segment).as_deref(),
+            locale,
         ) {
             Ok(path) => path,
-            Err(talent_outputs::FindError::Invalid(detail)) => return invalid_value(&detail),
+            Err(talent_outputs::FindError::Invalid(detail)) => {
+                return invalid_value(locale, detail);
+            }
             Err(talent_outputs::FindError::NotFound) => {
-                return file_not_found("no output of that kind was found for that day");
+                return file_not_found(
+                    locale,
+                    text(locale, "journal.window.search.response.read.agent.absent"),
+                );
             }
         }
     };
     match read_text(&journal_root, &rel) {
         Ok(content) => axum::Json(json!({"path": rel, "content": content})).into_response(),
-        Err(JournalReadError::Path(detail)) => invalid_path(&detail),
-        Err(JournalReadError::NotFound) => file_not_found("journal file not found"),
-        Err(JournalReadError::TooLarge(detail)) => invalid_value(&detail),
-        Err(JournalReadError::Encoding(detail)) => file_read_failed(&detail),
-        Err(JournalReadError::Io) => file_read_failed("unable to read journal file"),
+        Err(JournalReadError::Path(detail)) => invalid_path(locale, detail),
+        Err(JournalReadError::NotFound) => file_not_found(
+            locale,
+            text(locale, "journal.window.search.response.read.file.absent"),
+        ),
+        Err(JournalReadError::TooLarge(detail)) => invalid_value(locale, detail),
+        Err(JournalReadError::Encoding(detail)) => file_read_failed(locale, detail),
+        Err(JournalReadError::Io) => file_read_failed(
+            locale,
+            text(locale, "journal.window.search.response.read.failed"),
+        ),
     }
 }
 
 fn day_range(
     from: Option<&str>,
     to: Option<&str>,
+    locale: &str,
 ) -> Result<(Option<String>, Option<String>), String> {
-    let from = parse_day_bound("day_from", from)?;
-    let to = parse_day_bound("day_to", to)?;
+    let from = parse_day_bound("day_from", from, locale)?;
+    let to = parse_day_bound("day_to", to, locale)?;
     if from
         .as_ref()
         .zip(to.as_ref())
         .is_some_and(|(from, to)| from > to)
     {
-        return Err("day_from must be <= day_to".into());
+        return Err(text(locale, "journal.window.search.response.date.reverse"));
     }
     Ok((from, to))
 }
 
-fn parse_day_bound(name: &str, value: Option<&str>) -> Result<Option<String>, String> {
+fn parse_day_bound(
+    name: &str,
+    value: Option<&str>,
+    locale: &str,
+) -> Result<Option<String>, String> {
     let value = value.unwrap_or("").trim();
     if value.is_empty() || matches!(value, "00000000" | "99999999") {
         return Ok(None);
     }
     if !valid_day(value) {
-        return Err(format!("{name} must be YYYYMMDD"));
+        return Err(strings(
+            locale,
+            "journal.window.search.response.date.format",
+            [("field", name)],
+        ));
     }
-    solstone_core_time::parse_day(value).ok_or_else(|| format!("{name} must be a real day"))?;
+    solstone_core_time::parse_day(value).ok_or_else(|| {
+        strings(
+            locale,
+            "journal.window.search.response.date.real",
+            [("field", name)],
+        )
+    })?;
     Ok(Some(value.to_owned()))
 }
 
@@ -535,23 +659,29 @@ struct Facet {
 /// An empty answer to a facet or agent the journal has none of reads as an
 /// empty journal. Only on that empty answer, name the value and the ones that
 /// exist, so a mistyped filter is never reported as "nothing happened".
-fn unknown_filter(journal_root: &std::path::Path, request: &SearchRequest) -> Option<String> {
+fn unknown_filter(
+    journal_root: &std::path::Path,
+    request: &SearchRequest,
+    locale: &str,
+) -> Option<String> {
     if let Some(facet) = request.facet.as_deref() {
         let known = facets(journal_root);
         if !known.contains_key(facet) {
             let names = known.keys().map(String::as_str).collect::<Vec<_>>();
-            return Some(format!(
-                "there is no facet named {facet}. facets: {}",
-                names.join(", ")
+            return Some(strings(
+                locale,
+                "journal.window.search.response.filter.facet",
+                [("name", facet), ("available", &names.join(", "))],
             ));
         }
     }
     if let Some(agent) = request.agent.as_deref() {
         let known = solstone_core_indexer_query::agents(journal_root, QueryBoundary::Owner).ok()?;
         if !known.iter().any(|name| name == agent) {
-            return Some(format!(
-                "there is no agent named {agent}. agents: {}",
-                known.join(", ")
+            return Some(strings(
+                locale,
+                "journal.window.search.response.filter.agent",
+                [("name", agent), ("available", &known.join(", "))],
             ));
         }
     }
@@ -974,52 +1104,52 @@ fn asset(bytes: &'static [u8]) -> Response {
         .expect("embedded search shell response")
 }
 
-fn invalid_day(detail: &str) -> Response {
+fn invalid_day(locale: &str, detail: impl Into<String>) -> Response {
     error_envelope(
         "invalid_day",
-        "that day couldn't be used.",
+        text(locale, "journal.window.search.response.invalid.day"),
         detail,
         StatusCode::BAD_REQUEST,
     )
     .into_response()
 }
-fn invalid_value(detail: &str) -> Response {
+fn invalid_value(locale: &str, detail: impl Into<String>) -> Response {
     error_envelope(
         "invalid_request_value",
-        "one of those values couldn't be used.",
+        text(locale, "journal.window.search.response.invalid.value"),
         detail,
         StatusCode::BAD_REQUEST,
     )
     .into_response()
 }
-fn invalid_path(detail: &str) -> Response {
+fn invalid_path(locale: &str, detail: impl Into<String>) -> Response {
     error_envelope(
         "invalid_path",
-        "that path couldn't be used.",
+        text(locale, "journal.window.search.response.invalid.path"),
         detail,
         StatusCode::BAD_REQUEST,
     )
     .into_response()
 }
-fn file_not_found(detail: &str) -> Response {
+fn file_not_found(locale: &str, detail: impl Into<String>) -> Response {
     error_envelope(
         "file_not_found",
-        "that file isn't available.",
+        text(locale, "journal.window.search.response.file.not.found"),
         detail,
         StatusCode::NOT_FOUND,
     )
     .into_response()
 }
-fn file_read_failed(detail: &str) -> Response {
+fn file_read_failed(locale: &str, detail: impl Into<String>) -> Response {
     error_envelope(
         "file_read_failed",
-        "that file couldn't be read.",
+        text(locale, "journal.window.search.response.file.read.failed"),
         detail,
         StatusCode::INTERNAL_SERVER_ERROR,
     )
     .into_response()
 }
-fn search_failed(error: &IndexAccessError) -> Response {
+fn search_failed(error: &IndexAccessError, locale: &str) -> Response {
     // The reference publishes the underlying error text here, and `sol call journal search`
     // prints this body verbatim into a talent's context. Discarding it left an owner and a
     // talent unable to tell an absent index from a corrupt one. Every other refusal helper in
@@ -1036,7 +1166,7 @@ fn search_failed(error: &IndexAccessError) -> Response {
     // absent-vs-corrupt distinction.
     error_envelope(
         error.reason(),
-        "couldn't search your journal right now.",
+        text(locale, "journal.window.search.response.search.failed"),
         error.to_string(),
         StatusCode::SERVICE_UNAVAILABLE,
     )
@@ -1069,7 +1199,7 @@ mod search_failure_detail_tests {
         let error = IndexAccessError::Absent {
             path: PathBuf::from("/x/indexer/journal.sqlite"),
         };
-        let response = search_failed(&error);
+        let response = search_failed(&error, ENGLISH);
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
         let body = body_json(response).await;
         assert_eq!(
@@ -1087,7 +1217,7 @@ mod search_failure_detail_tests {
             path: PathBuf::from("/x/indexer/journal.sqlite"),
             detail: "disk I/O error".into(),
         };
-        let response = search_failed(&error);
+        let response = search_failed(&error, ENGLISH);
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
         let body = body_json(response).await;
         assert!(
@@ -1107,7 +1237,7 @@ mod search_failure_detail_tests {
             path: PathBuf::from("/x/indexer/journal.sqlite"),
             detail: "database is locked".into(),
         };
-        let response = search_failed(&error);
+        let response = search_failed(&error, ENGLISH);
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
         let body = body_json(response).await;
         assert_eq!(body["reason_code"], "index_locked");
@@ -1138,7 +1268,7 @@ mod search_failure_detail_tests {
                 "empty_index",
             ),
         ] {
-            let body = body_json(search_failed(&error)).await;
+            let body = body_json(search_failed(&error, ENGLISH)).await;
             assert_eq!(body["reason_code"], reason, "{reason}");
         }
     }
@@ -1602,6 +1732,7 @@ mod facet_reader_tests {
                     idx: screen_hit["idx"].as_i64().unwrap(),
                     entry_id: screen_hit["entry_id"].as_i64().unwrap(),
                 }),
+                ENGLISH,
             )
             .await,
         )
