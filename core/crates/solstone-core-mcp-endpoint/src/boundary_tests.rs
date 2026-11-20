@@ -3753,6 +3753,8 @@ fn type_prefix_token_boundary_prevents_partial_word_match() {
 
 #[test]
 fn person_card_emitted_when_type_not_leading_token() {
+    let description = "Lead architect. ![marker](https://example.invalid/image)";
+    let literal = solstone_core_format::markdown::literal_text(description);
     let journal = tempfile::Builder::new()
         .prefix("entity-person-card-")
         .tempdir_in(crate::test_scratch())
@@ -3765,7 +3767,7 @@ fn person_card_emitted_when_type_not_leading_token() {
         "entity-alice",
         "Alice Smith",
         Some("Person"),
-        Some("Lead architect on platform."),
+        Some(description),
         Some("Joined the foundation team."),
     );
     solstone_core_indexer_store::scan::scan_journal(journal.path(), true).unwrap();
@@ -3792,7 +3794,7 @@ fn person_card_emitted_when_type_not_leading_token() {
     assert_eq!(card["name"], "Alice Smith");
     assert_eq!(card["type"], "Person");
     assert_eq!(card["facet"], FACET_A);
-    assert_eq!(card["description"], "Lead architect on platform.");
+    assert_eq!(card["description"], literal);
     assert_eq!(card["observations"], "Joined the foundation team.");
     assert!(card.get("entity_id").is_none());
     assert!(card.get("aka").is_none());
@@ -3801,7 +3803,7 @@ fn person_card_emitted_when_type_not_leading_token() {
     let entity = probe(&journal, "get_entity", json!({"reference": card_ref})).unwrap();
     assert_eq!(entity["name"], "Alice Smith");
     assert_eq!(entity["type"], "Person");
-    assert_eq!(entity["description"], "Lead architect on platform.");
+    assert_eq!(entity["description"], literal);
 
     let output = dispatch_output(&journal, "search", json!({"query": "Alice Smith"}));
     assert!(output.empty_note.is_none());
@@ -16824,11 +16826,9 @@ fn week_summaries_and_typed_find_share_the_live_kind_and_facet_boundary() {
     let journal = body_record_journal(true);
     let root = journal.path();
     let day = "20260308";
+    let photo_text = "a plum tree in bloom ![marker](https://example.invalid/image)";
     for (path, text) in [
-        (
-            "import.image/130000_300/image_transcript.md",
-            "a plum tree in bloom",
-        ),
+        ("import.image/130000_300/image_transcript.md", photo_text),
         (
             "import.image/140000_300/screenshot_transcript.md",
             "screen only",
@@ -16934,6 +16934,11 @@ fn week_summaries_and_typed_find_share_the_live_kind_and_facet_boundary() {
     let current = probe(&journal, "get_week", week_args.clone()).unwrap();
     assert_eq!(current["days"][0]["summary"]["places"]["items"], json!([]));
     assert_eq!(summary["photos"]["count"], 1, "{summary}");
+    let preview = summary["photos"]["items"][0]["description"]
+        .as_str()
+        .unwrap();
+    assert!(preview.contains("a plum tree in bloom"), "{preview:?}");
+    assert!(!preview.contains("![marker]"), "{preview:?}");
     assert_eq!(
         summary["notes"]["items"][0]["title"], "Orchard inventory",
         "{summary}"
@@ -16955,12 +16960,9 @@ fn week_summaries_and_typed_find_share_the_live_kind_and_facet_boundary() {
         .unwrap();
         let rows = page[field].as_array().unwrap();
         assert_eq!(rows.len(), 1, "{tool}: {page}");
-        assert!(
-            rows[0]["description"]
-                .as_str()
-                .unwrap()
-                .contains("plum tree")
-        );
+        let preview = rows[0]["description"].as_str().unwrap();
+        assert!(preview.contains("a plum tree in bloom"), "{preview:?}");
+        assert!(!preview.contains("![marker]"), "{preview:?}");
         photos.push(rows[0]["reference"].clone());
     }
     let by_kind = probe(&journal, "search", json!({"kind":"photos"})).unwrap();
@@ -16996,6 +16998,17 @@ fn week_summaries_and_typed_find_share_the_live_kind_and_facet_boundary() {
             );
         }
     }
+    grant(&["transcripts", "notes"], ReadScope::WholeJournal);
+    for (field, word) in [
+        ("person", "Anne"),
+        ("activity", "writing"),
+        ("place", "Denver"),
+    ] {
+        assert_eq!(
+            probe(&journal, "search", json!({"day": day, (field): word})),
+            Err(McpProbeError::PermissionDenied),
+        );
+    }
     grant(
         &all,
         ReadScope::Facets {
@@ -17006,6 +17019,12 @@ fn week_summaries_and_typed_find_share_the_live_kind_and_facet_boundary() {
         probe(&journal, "get_week", week_args),
         Err(McpProbeError::PermissionDenied),
     );
+    for tool in ["search", "list_transcripts", "list_activities"] {
+        assert_eq!(
+            probe(&journal, tool, json!({"day": day, "place": "Denver"})),
+            Err(McpProbeError::PermissionDenied),
+        );
+    }
     let listed = probe(
         &journal,
         "search",

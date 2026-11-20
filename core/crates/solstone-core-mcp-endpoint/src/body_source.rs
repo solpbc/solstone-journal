@@ -14,7 +14,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use jiff::civil::{Date, DateTime};
-use jiff::{SignedDuration, Span, ZonedDateTime};
+use jiff::{SignedDuration, Span, Timestamp, ZonedDateTime};
 use serde_json::{Value, json};
 use solstone_core_format::content::body_hidden_days::{HiddenDays, RowDays, read_hidden_days};
 use solstone_core_format::content::body_records::{
@@ -444,12 +444,13 @@ pub(crate) fn week_totals(
                             movement.entry(row.by.clone()).or_default().add_count(&row);
                         }
                         RowKind::Dated if row.record_type == "daily_activity" => {
-                            if let Some(steps) = row.fields.get("steps").and_then(Value::as_f64) {
-                                movement
-                                    .entry(row.by.clone())
-                                    .or_default()
-                                    .steps
-                                    .add(steps, None);
+                            if let Some(steps) = row.fields.get("steps") {
+                                let counts = &mut movement.entry(row.by.clone()).or_default().steps;
+                                if let Some(steps) = steps.as_f64() {
+                                    counts.add(steps, None);
+                                } else {
+                                    counts.note = Some("a stored step count could not be read");
+                                }
                             }
                         }
                         RowKind::Experience if row.experience.as_deref() == Some("sleep") => {
@@ -473,17 +474,24 @@ pub(crate) fn week_totals(
             for (recorder, movement) in movement {
                 let steps = movement.steps.total();
                 let distance_m = movement.distance_m.total();
-                if steps.is_some() || distance_m.is_some() {
+                if steps != Ok(None) || distance_m != Ok(None) {
+                    let mut record = json!({
+                        "source": source_label(&labels, stream), "recorded_by": recorder,
+                        "steps": steps.ok().flatten(), "distance_m": distance_m.ok().flatten(),
+                    });
+                    if let Err(note) = steps {
+                        record["steps_note"] = json!(note);
+                    }
+                    if let Err(note) = distance_m {
+                        record["distance_note"] = json!(note);
+                    }
                     let entry = summaries.entry(day.clone()).or_insert_with(|| json!({}));
                     let list = entry
                         .as_object_mut()
                         .expect("body summary object")
                         .entry("movement")
                         .or_insert_with(|| json!([]));
-                    list.as_array_mut().expect("movement array").push(json!({
-                        "source": source_label(&labels, stream), "recorded_by": recorder,
-                        "steps": steps, "distance_m": distance_m,
-                    }));
+                    list.as_array_mut().expect("movement array").push(record);
                 }
             }
         }
@@ -510,8 +518,8 @@ pub(crate) fn week_totals(
                 .entry("nights")
                 .or_insert_with(|| json!([]));
             list.as_array_mut().expect("nights array").push(json!({
-                "source": source_label(&labels, stream), "to_bed": row.start, "waking": row.end,
-                "asleep_seconds": asleep_seconds,
+                "source": source_label(&labels, stream), "recorded_by": row.by,
+                "to_bed": row.start, "waking": row.end, "asleep_seconds": asleep_seconds,
             }));
         }
     }
@@ -526,67 +534,98 @@ struct Movement {
 
 impl Movement {
     fn add_count(&mut self, row: &BodyRow) {
+        let (counts, scale) = match (row.label.as_str(), row.unit.as_deref()) {
+            ("step count", Some("count") | None) => (&mut self.steps, 1.0),
+            ("distance walking running", Some("km")) => (&mut self.distance_m, 1000.0),
+            ("distance walking running", Some("m")) => (&mut self.distance_m, 1.0),
+            ("distance walking running", Some("mi")) => (&mut self.distance_m, 1609.344),
+            ("step count", _) => {
+                self.steps.note = Some("a stored step count uses an unrecognized unit");
+                return;
+            }
+            ("distance walking running", _) => {
+                self.distance_m.note = Some("a stored distance uses an unrecognized unit");
+                return;
+            }
+            _ => return,
+        };
         let Some(value) = row
             .value
             .as_deref()
             .and_then(|value| value.parse::<f64>().ok())
         else {
+            counts.note = Some("a stored value could not be read");
             return;
         };
-        let interval = row_interval(row);
-        match (row.label.as_str(), row.unit.as_deref()) {
-            ("step count", Some("count") | None) => self.steps.add(value, interval),
-            ("distance walking running", Some("km")) => {
-                self.distance_m.add(value * 1000.0, interval)
-            }
-            ("distance walking running", Some("m")) => self.distance_m.add(value, interval),
-            ("distance walking running", Some("mi")) => {
-                self.distance_m.add(value * 1609.344, interval)
-            }
-            _ => {}
+        let interval = observed_interval(row);
+        if interval.is_none() && (row.start.is_some() || row.end.is_some()) {
+            counts.note = Some("a stored observation's time could not be read");
+            return;
         }
+        counts.add(value * scale, interval);
     }
 }
 
 /// Overlapping observations aren't additive. A total is shown only when the
 /// stored rows for this recorder partition the reported time.
 #[derive(Default)]
-struct Counts(Vec<(f64, Option<(i64, i64)>)>);
+struct Counts {
+    observations: Vec<(f64, Option<(Timestamp, Timestamp)>)>,
+    note: Option<&'static str>,
+}
 
 impl Counts {
-    fn add(&mut self, value: f64, interval: Option<(i64, i64)>) {
+    fn add(&mut self, value: f64, interval: Option<(Timestamp, Timestamp)>) {
         if value.is_finite() && value >= 0.0 {
-            self.0.push((value, interval));
+            self.observations.push((value, interval));
+        } else {
+            self.note = Some("a stored value could not be read");
         }
     }
 
-    fn total(mut self) -> Option<f64> {
-        self.0.sort_by_key(|(_, interval)| *interval);
-        if self.0.is_empty()
-            || self.0.windows(2).any(|pair| match (pair[0].1, pair[1].1) {
-                (Some((_, end)), Some((start, _))) => start < end,
+    fn total(mut self) -> Result<Option<f64>, &'static str> {
+        if let Some(note) = self.note {
+            return Err(note);
+        }
+        if self.observations.is_empty() {
+            return Ok(None);
+        }
+        self.observations.sort_by_key(|(_, interval)| *interval);
+        if self
+            .observations
+            .windows(2)
+            .any(|pair| match (pair[0].1, pair[1].1) {
+                (Some((previous_start, end)), Some((start, _))) => {
+                    start < end || (previous_start == end && start == end)
+                }
                 _ => true,
             })
         {
-            return None;
+            return Err("these stored observations cannot be combined into one total");
         }
-        Some(self.0.iter().map(|(value, _)| value).sum())
+        let total: f64 = self.observations.into_iter().map(|(value, _)| value).sum();
+        if !total.is_finite() {
+            return Err("stored values could not be summed");
+        }
+        Ok(Some(total))
     }
 }
 
-fn row_interval(row: &BodyRow) -> Option<(i64, i64)> {
+/// A count may be measured at one instant, and sub-second samples can be
+/// adjacent without overlapping.
+fn observed_interval(row: &BodyRow) -> Option<(Timestamp, Timestamp)> {
     let start = row
         .start
         .as_deref()
         .and_then(parse_source_time)?
-        .timestamp()
-        .as_second();
-    let end = row
-        .end
-        .as_deref()
-        .and_then(parse_source_time)?
-        .timestamp()
-        .as_second();
+        .timestamp();
+    let end = row.end.as_deref().and_then(parse_source_time)?.timestamp();
+    (end >= start).then_some((start, end))
+}
+
+fn row_interval(row: &BodyRow) -> Option<(i64, i64)> {
+    let (start, end) = observed_interval(row)?;
+    let (start, end) = (start.as_second(), end.as_second());
     (end > start).then_some((start, end))
 }
 
@@ -1600,6 +1639,56 @@ fn strava_day_shown(journal_root: &Path, day: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn movement_totals_distinguish_missing_from_unsummable() {
+        let window = |start, end| {
+            Some((
+                Timestamp::from_second(start).unwrap(),
+                Timestamp::from_second(end).unwrap(),
+            ))
+        };
+        assert_eq!(Counts::default().total(), Ok(None));
+        let mut adjacent = Counts::default();
+        adjacent.add(2.0, window(0, 1));
+        adjacent.add(3.0, window(1, 2));
+        assert_eq!(adjacent.total(), Ok(Some(5.0)));
+
+        let mut mixed = Counts::default();
+        mixed.add(8.0, None);
+        mixed.add(3.0, window(1, 2));
+        assert!(mixed.total().is_err());
+        let mut overlapping = Counts::default();
+        overlapping.add(2.0, window(0, 2));
+        overlapping.add(3.0, window(1, 3));
+        assert!(overlapping.total().is_err());
+        let mut point_overlap = Counts::default();
+        point_overlap.add(2.0, window(1, 1));
+        point_overlap.add(3.0, window(1, 3));
+        assert!(point_overlap.total().is_err());
+
+        let mut movement = Movement::default();
+        let mut distance = BodyRow::new(
+            RowKind::Count,
+            "distance".to_owned(),
+            "apple_health",
+            "HKQuantityTypeIdentifierDistanceWalkingRunning",
+            "distance walking running".to_owned(),
+        );
+        distance.value = Some("7".to_owned());
+        distance.unit = Some("km".to_owned());
+        distance.start = Some("2026-03-08T12:05:00Z".to_owned());
+        distance.end = distance.start.clone();
+        let mut instantaneous = Movement::default();
+        instantaneous.add_count(&distance);
+        assert_eq!(instantaneous.distance_m.total(), Ok(Some(7000.0)));
+        distance.start = None;
+        distance.end = None;
+        movement.add_count(&distance);
+        distance.unit = Some("ft".to_owned());
+        movement.add_count(&distance);
+        assert!(movement.distance_m.total().is_err());
+    }
 
     #[test]
     fn gaps_name_what_no_window_covers_and_a_whole_day_covers_nothing() {

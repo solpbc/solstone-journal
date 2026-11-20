@@ -100,6 +100,7 @@ pub(crate) fn validate(params: Option<&Value>) -> Result<ValidatedSearch, ToolEr
     if (params.query.trim().is_empty()
         && !day_bounded
         && params.kind.is_none()
+        && params.category.is_none()
         && params.person.is_none()
         && params.place.is_none()
         && params.activity.is_none())

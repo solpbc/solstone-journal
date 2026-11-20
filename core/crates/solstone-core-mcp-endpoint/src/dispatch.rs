@@ -449,6 +449,22 @@ fn scope_refusal(
     if let Some(reason) = requirement_refusal(snapshot, entry) {
         return Some((reason, None));
     }
+    if let ValidatedTool::Search(request) | ValidatedTool::Find(_, request) = request {
+        if request.place.is_some() && !matches!(snapshot.scope, ConnectionScope::WholeJournal) {
+            return Some((
+                "filtering by place needs whole-journal access".to_owned(),
+                None,
+            ));
+        }
+        if (request.person.is_some() || request.activity.is_some())
+            && !snapshot.categories.contains(&AdmittedCategory::Facets)
+        {
+            return Some((
+                "filtering by person or activity needs the facets permission".to_owned(),
+                Some(AdmittedCategory::Facets),
+            ));
+        }
+    }
     if !arguments_within_scope(snapshot, request) {
         return Some((
             "the request named a category or facet outside this connection's permission".to_owned(),
@@ -926,13 +942,7 @@ fn get_week(
     let read = crate::tools::week::read_week(journal_root, &request, principal, snapshot)
         .map_err(DispatchError::Tool)?;
     // A said entry's uri and the already-literal preview snippets keep their bytes.
-    Ok(
-        Prepared::new(read.value, read.count, read.targets).served_as_is(&[
-            "uri",
-            "snippet",
-            "description",
-        ]),
-    )
+    Ok(Prepared::new(read.value, read.count, read.targets).served_as_is(&["uri", "snippet"]))
 }
 
 /// The same admitted rows that a kind-filtered search returns. Return the
@@ -1084,33 +1094,34 @@ fn read_batch(
     let mut text_bytes = 0;
     let mut image_bytes = 0;
     for (index, reference) in references.into_iter().enumerate() {
-        let read = match tool {
-            ToolName::Fetch => fetch(
-                journal_root,
-                principal,
-                snapshot,
-                ValidatedFetch { reference },
-            ),
-            ToolName::GetTranscript => get_transcript(
-                journal_root,
-                principal,
-                snapshot,
-                ValidatedGetTranscript {
+        let request = match tool {
+            ToolName::Fetch => ValidatedTool::Fetch(ValidatedFetch { reference }),
+            ToolName::GetTranscript => ValidatedTool::GetTranscript(ValidatedGetTranscript {
+                reference,
+                cursor: None,
+            }),
+            ToolName::GetActivitySources => {
+                ValidatedTool::GetActivitySources(ValidatedGetActivitySources {
                     reference,
                     cursor: None,
-                },
-            ),
-            ToolName::GetActivitySources => crate::tools::activities::execute_get_sources(
-                journal_root,
-                principal,
-                snapshot,
-                ValidatedGetActivitySources {
-                    reference,
-                    cursor: None,
-                },
-            ),
+                })
+            }
             _ => unreachable!("only reference readers are batchable"),
         };
+        if let Some((message, _)) = scope_refusal(
+            journal_root,
+            principal,
+            snapshot,
+            crate::registry::find_tool(tool),
+            &request,
+        ) {
+            items.push(json!({
+                "index": index,
+                "error": {"code": "permission_denied", "message": message},
+            }));
+            continue;
+        }
+        let read = execute_validated(journal_root, principal, snapshot, request);
         let mut item = match read {
             Ok(item) => item,
             Err(error) => {
@@ -1693,22 +1704,16 @@ fn search(
     snapshot: &ConnectionReadSnapshot,
     mut request: ValidatedSearch,
 ) -> Result<Prepared, DispatchError> {
-    let filtered = request.content_kinds.is_some()
+    let filtered = request.category.is_some()
+        || request.content_kinds.is_some()
         || request.activity.is_some()
         || request.person.is_some()
         || request.place.is_some();
-    if filtered
+    let implicit_end = filtered
         && request.query.trim().is_empty()
         && request.day.is_none()
         && request.day_from.is_none()
-        && request.day_to.is_none()
-    {
-        request.day_to = Some(solstone_core_time::day_key(
-            Timestamp::now()
-                .to_zoned_datetime(solstone_core_journal_config::owner_zone(journal_root))
-                .date(),
-        ));
-    }
+        && request.day_to.is_none();
     let boundary =
         boundary(snapshot, None, request.facet_id.as_deref()).filtered_to(request.category);
     let boundary = if let Some(kinds) = &request.content_kinds {
@@ -1777,6 +1782,20 @@ fn search(
             )
         })
         .transpose()?;
+    if implicit_end {
+        // Blank-query browsing is newest-first. On a later page the cursor
+        // already bounds it, so the query identity does not depend on midnight.
+        request.day_to = Some(start_after.as_ref().map_or_else(
+            || {
+                solstone_core_time::day_key(
+                    Timestamp::now()
+                        .to_zoned_datetime(solstone_core_journal_config::owner_zone(journal_root))
+                        .date(),
+                )
+            },
+            |anchor| anchor.day.clone(),
+        ));
+    }
     let mut locations = BTreeMap::new();
     let mut location_documents = BTreeMap::new();
     let may_read_locations = snapshot.categories.contains(&AdmittedCategory::Places)
@@ -2191,7 +2210,12 @@ fn search(
                     value["title"] = json!(title);
                 }
                 if photo {
-                    value["description"] = value["snippet"].clone();
+                    value["description"] = json!(
+                        served_text
+                            .chars()
+                            .take(MAX_SNIPPET_CHARS)
+                            .collect::<String>()
+                    );
                 }
                 if value.get("link").is_none()
                     && solstone_core_journal_io::is_day_key(&hit.metadata.day)
@@ -2346,11 +2370,8 @@ fn search(
         response_val["body_note"] = json!(crate::body_source::BODY_NOT_GRANTED);
     }
     // Each snippet is made literal where it is cut.
-    let mut prepared = Prepared::new(response_val, count, targets).served_as_is(&[
-        "snippet",
-        "query",
-        "description",
-    ]);
+    let mut prepared =
+        Prepared::new(response_val, count, targets).served_as_is(&["snippet", "query"]);
     if count == 0 && body_withheld {
         prepared = prepared.when_empty(crate::body_source::BODY_NOT_GRANTED);
     } else if count == 0 && resolution.status != EntityResolutionStatus::Incomplete {
@@ -2827,11 +2848,21 @@ fn fetch(
                     // `stream`, and the resolver would then cross streams.
                     (cleaned_text, Some(a.hidden), Some(a.record))
                 }
+                // A single chunk still names the whole document after a
+                // reindex. In a split document the numbered position can
+                // move, so the reference must still match that chunk.
                 ActivityAdmit::NotActivity(content)
                     if entry
                         .markdown_fingerprint
                         .as_ref()
-                        .is_some_and(|fingerprint| *fingerprint != digest(&content)) =>
+                        .is_some_and(|fingerprint| *fingerprint != digest(&content))
+                        && (entry.idx != 0
+                            || indexed_path_has_later_chunk(
+                                journal_root,
+                                &boundary,
+                                &entry.path,
+                            )
+                            .map_err(index_error)?) =>
                 {
                     return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
                 }

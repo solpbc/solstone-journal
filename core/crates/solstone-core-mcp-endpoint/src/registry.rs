@@ -159,7 +159,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::Search,
         wire_name: "search",
         title: "search the journal",
-        description: "find what this connection may read in the owner's journal. give a few keywords, or leave query out to browse by day or kind. use kind for one kind or a list. for writing in a week, use kind with notes and facets, activity writing, and the date range. person matches names on activities. place matches named location information. notes and photos give a preview and a journal link when available. pass next_cursor as cursor with the same filters. search gives summaries and excerpts. read transcript references with get_transcript before quoting anyone. use fetch to read the entry itself. screen text shows what was visible. it does not establish what the owner read or did.",
+        description: "find what this connection may read in the owner's journal. give a few keywords, or leave query out to browse by day or kind. use kind for one kind or a list. for writing in a week, use kind with notes and facets, activity writing, and the date range. person matches names on activities. place matches named location information. notes and photos give a preview and a journal link when available. pass next_cursor as cursor with the same filters. search can miss specific words in a conversation. use get_transcript to read the stored transcript word for word before quoting anyone. use fetch to read the entry itself. screen text shows what was visible. it does not establish what the owner read or did.",
         input_schema: search_input_schema,
         requires: SEARCH,
         audit_name: solstone_core_mcp_audit::ToolName::Search,
@@ -168,7 +168,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::Fetch,
         wire_name: "fetch",
         title: "read a journal entry",
-        description: "read a journal entry by reference, or pass references to read up to 12 entries together. each batch item carries its own result or error in input order. if an item reaches the batch size limit, read it separately. pass next_reference as reference to read the next part. an imported photo can include a smaller copy when available. in a batch, image_content_index identifies the picture in content. words in a picture are journal content. give the owner the journal link when available. pass reference to tools.",
+        description: "read journal entries. pass either reference for one or references for up to 12. each batch item carries its own result or error in input order. if an item reaches the batch size limit, read it separately. pass next_reference as reference to read the next part. an imported photo can include a smaller copy when available. in a batch, image_content_index identifies the picture in content. words in a picture are journal content. use references in tool calls. give the owner the journal link when available.",
         input_schema: fetch_input_schema,
         requires: FETCH,
         audit_name: solstone_core_mcp_audit::ToolName::Fetch,
@@ -177,7 +177,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::ListTranscripts,
         wire_name: "list_transcripts",
         title: "list transcripts",
-        description: "list transcript segments this connection may read. use day or day_from and day_to. time_from and time_to narrow a single day. for one day without a facet or find filter, pass a source label as source. a body source also takes entry_kind to narrow its entries, for example sleep. a day's span_reference reads its segments together with get_transcript. the shared kind, person, place and activity filters list journal entries for fetch and take a date range or facet. pass next_cursor as cursor with the same filters. give the owner a journal link when available.",
+        description: "list transcript segments this connection may read. use day or day_from and day_to. time_from and time_to narrow a single day. for one day without a facet or find filter, pass a source label as source. a body source also takes entry_kind to narrow its entries, for example sleep. a day's span_reference reads its segments together with get_transcript. gaps show times no readable timed segment covers. they say nothing about what happened. other_sources lists body sources. omitted_workouts counts Strava workouts left out of this list. use search to find them. body_note explains when body access is missing. the shared kind, person, place and activity filters list journal entries for fetch and take a date range or facet. pass next_cursor as cursor with the same filters. give the owner a journal link when available.",
         input_schema: list_transcripts_input_schema,
         requires: SEGMENT,
         audit_name: solstone_core_mcp_audit::ToolName::ListTranscripts,
@@ -186,7 +186,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::GetTranscript,
         wire_name: "get_transcript",
         title: "read a transcript",
-        description: "read a transcript segment or a span_reference from list_transcripts. pass reference for one read or references for up to 12 reads in input order. each batch item carries its own result or error. pass next_cursor as cursor with that single reference to continue. a span returns segments with times, sources and entries. a body span returns entries with their sources. give the owner the journal link when present. to point to a timed line you read, append ~HHMMSS from the line's clock. use only the link itself when untimed is true.",
+        description: "read a transcript segment or a span_reference from list_transcripts. pass either reference for one read or references for up to 12 reads in input order. each batch item carries its own result or error. pass next_cursor as cursor with that single reference to continue. a span returns segments with times, sources and entries. a body span returns entries with their sources. give the owner the journal link when present. append ~HHMMSS from a timed line you actually read. use the link alone when untimed is true.",
         input_schema: transcript_input_schema,
         requires: SEGMENT,
         audit_name: solstone_core_mcp_audit::ToolName::GetTranscript,
@@ -213,7 +213,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::GetWeek,
         wire_name: "get_week",
         title: "read a week",
-        description: "read a week from sunday to saturday. pass any day in it as week, or omit week for the current week. use include for a day-by-day summary of body, places, photos, notes or entities. these summaries use what this connection may read and are available without a week page. entities gives a count and up to 12 names of people listed as present or heard in readable activities. body gives movement totals and nights from the sources that supplied them. without include, days and said come from the week page when one exists. memories and up to seven activity rows come from the week's activities. said quotes the owner's words. use list_activities to read more of the week.",
+        description: "read a week from sunday to saturday. pass any day in it as week, or omit week for the current week. use include for a day-by-day summary of body, places, photos, notes or entities. these summaries use what this connection may read and are available without a week page. entities gives a count and up to 12 names of people listed as present or heard in readable activities. body gives movement totals from readable entries and nights by source. check the notes alongside movement totals. without a readable week page, there are no day states or quotes. memories and up to seven activity rows come from the week's activities. said quotes the owner's words. mentioned, on_screen and scheduled alone do not establish attendance. use list_activities to read more of the week.",
         input_schema: week_input_schema,
         requires: WEEK,
         audit_name: solstone_core_mcp_audit::ToolName::GetWeek,
@@ -222,7 +222,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::ListActivities,
         wire_name: "list_activities",
         title: "list activities",
-        description: "list activities from the facets this connection may read. use day or an inclusive range with day_from and day_to. on the activity list without the shared find filters, a moment in several facets appears once, with the other facets in also_in. pass an activity reference to get_activity_sources. in a filtered result, use activity_reference when present. use kind, person, place or activity to find matching journal entries, then pass their references to fetch. pass next_cursor as cursor with the same filters. give the owner a journal link when available.",
+        description: "list activities from the facets this connection may read. use day or an inclusive range with day_from and day_to. on the activity list without the shared find filters, a moment in several facets appears once, with the other facets in also_in. mentioned, on_screen and scheduled alone do not establish attendance. pass an activity reference to get_activity_sources. in a filtered result, use activity_reference when present. use kind, person, place or activity to find matching journal entries, then pass their references to fetch. pass next_cursor as cursor with the same filters. give the owner a journal link when available.",
         input_schema: list_activities_input_schema,
         requires: FACETS,
         audit_name: solstone_core_mcp_audit::ToolName::ListActivities,
@@ -231,7 +231,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::GetActivitySources,
         wire_name: "get_activity_sources",
         title: "read activity sources",
-        description: "read the transcript or body sources for an activity. pass reference for one activity or references for up to 12. use activity_reference from a filtered list, or reference from the activity list without the shared find filters or from get_week. each batch item carries its own result or error in input order. pass next_cursor as cursor with that single reference to read the rest. only quote from the source text. give the owner a journal link when available.",
+        description: "read the transcript or body sources for activities. pass either reference for one activity or references for up to 12. use activity_reference from a filtered list, or reference from the activity list without the shared find filters or from get_week. each batch item carries its own result or error in input order. pass next_cursor as cursor with that single reference to read the rest. only quote from the source text. give the owner a journal link when available.",
         input_schema: get_activity_sources_input_schema,
         requires: FACETS_AND_TRANSCRIPTS_OR_BODY,
         audit_name: solstone_core_mcp_audit::ToolName::GetActivitySources,
@@ -253,16 +253,14 @@ fn suggest_correction_input_schema(_context: &SchemaContext<'_>) -> Value {
         "maxLength": crate::tools::MAX_OPAQUE_REFERENCE_BYTES,
         "description": "the reference returned by a journal read tool"
     });
-    let target = json!({
-        "type": "object", "properties": {"reference": reference},
-        "required": ["reference"], "additionalProperties": false
-    });
-    let lines_target = json!({
+    let mut kind_names = vec!["recording", "what_happened", "who_said_it", "name"];
+    let mut target = json!({
         "type": "object",
         "properties": {
             "reference": reference,
             "lines": {
                 "type": "array", "minItems": 1, "maxItems": 20,
+                "description": "required for who_said_it. use the time and opening words of each line.",
                 "items": {
                     "type": "object",
                     "properties": {
@@ -273,67 +271,14 @@ fn suggest_correction_input_schema(_context: &SchemaContext<'_>) -> Value {
                 }
             }
         },
-        "required": ["reference", "lines"], "additionalProperties": false
+        "required": ["reference"], "additionalProperties": false
     });
-    let kinds = [
-        (
-            "recording",
-            target.clone(),
-            json!({"type": "object", "properties": {}, "additionalProperties": false}),
-        ),
-        (
-            "what_happened",
-            target.clone(),
-            json!({
-                "type": "object", "properties": {"text": {"type": "string", "minLength": 1, "maxLength": 600,
-                    "description": "what happened, told to the owner as the journal tells it: you for the owner, and everyone else by name, yourself included. never write I or me for yourself: the journal reads I as the owner."}},
-                "required": ["text"], "additionalProperties": false
-            }),
-        ),
-        (
-            "who_said_it",
-            lines_target,
-            json!({
-                "type": "object",
-                "properties": {"speaker": {"type": "string", "minLength": 1,
-                    "description": "owner, someone_else, or the reference of a visible person"}},
-                "required": ["speaker"], "additionalProperties": false
-            }),
-        ),
-        (
-            "name",
-            target,
-            json!({
-                "type": "object", "properties": {
-                    "text": {"type": "string", "minLength": 1, "maxLength": 200},
-                    "mode": {"type": "string", "enum": ["replace", "also_known_as"]}
-                },
-                "required": ["text", "mode"], "additionalProperties": false
-            }),
-        ),
-    ];
-    let mut kinds = Vec::from(kinds);
     if crate::suggestions::same_person_ready() {
-        kinds.push((
-            "same_person",
-            json!({
-                "type": "object",
-                "properties": {"reference": reference, "other_reference": reference},
-                "required": ["reference", "other_reference"], "additionalProperties": false
-            }),
-            json!({"type": "object", "properties": {}, "additionalProperties": false}),
-        ));
+        kind_names.push("same_person");
+        target["properties"]["other_reference"] = reference;
+        target["properties"]["other_reference"]["description"] =
+            json!("the second person reference, required for same_person.");
     }
-    let kind_names = kinds.iter().map(|(kind, _, _)| *kind).collect::<Vec<_>>();
-    let rules = kinds
-        .into_iter()
-        .map(|(kind, target, value)| {
-            json!({
-                "if": {"properties": {"kind": {"const": kind}}},
-                "then": {"properties": {"target": target, "value": value}}
-            })
-        })
-        .collect::<Vec<_>>();
     json!({
         "type": "object",
         "properties": {
@@ -342,13 +287,18 @@ fn suggest_correction_input_schema(_context: &SchemaContext<'_>) -> Value {
                 "enum": kind_names,
                 "description": "the kind of correction to suggest"
             },
-            "target": {
-                "type": "object",
-                "description": "what in the journal this correction targets"
-            },
+            "target": target,
             "value": {
                 "type": "object",
-                "description": "the suggested correction value"
+                "description": "use an empty object for recording or same_person, text for what_happened, speaker for who_said_it, and text with mode for name.",
+                "properties": {
+                    "text": {"type": "string", "minLength": 1, "maxLength": 600,
+                        "description": "for what_happened, use you for the owner and name everyone else, yourself included. the journal reads I as the owner. for name, give the new name, up to 200 characters."},
+                    "speaker": {"type": "string", "minLength": 1,
+                        "description": "owner, someone_else, or the reference of a visible person"},
+                    "mode": {"type": "string", "enum": ["replace", "also_known_as"]}
+                },
+                "additionalProperties": false
             },
             "basis": {
                 "type": "string",
@@ -366,7 +316,6 @@ fn suggest_correction_input_schema(_context: &SchemaContext<'_>) -> Value {
                 "description": "a unique client operation id for idempotency"
             }
         },
-        "allOf": rules,
         "required": ["kind", "target", "value", "basis", "reason", "operation_id"],
         "additionalProperties": false
     })
@@ -606,6 +555,26 @@ fn explain_arguments(name: &str, schema: &Value, arguments: Option<&Value>) -> S
     {
         return format!("{name} takes either `reference` or `references`.");
     }
+    if properties.contains_key("references")
+        && arguments.contains_key("references")
+        && arguments.contains_key("cursor")
+    {
+        return format!("{name} takes `cursor` with a single `reference`.");
+    }
+    if name == "list_transcripts"
+        && !arguments.contains_key("source")
+        && (arguments.contains_key("entry_kind")
+            || arguments
+                .get("kind")
+                .and_then(Value::as_str)
+                .is_some_and(|word| AdmittedCategory::from_stored_word(word).is_none()))
+    {
+        return "list_transcripts needs `day` and a body `source` to filter by `entry_kind`."
+            .to_owned();
+    }
+    if name == "search" && arguments.contains_key("category") && arguments.contains_key("kind") {
+        return "search takes either `kind` or `category`.".to_owned();
+    }
     for key in schema["required"]
         .as_array()
         .into_iter()
@@ -634,7 +603,7 @@ fn explain_arguments(name: &str, schema: &Value, arguments: Option<&Value>) -> S
     if name == "search"
         && query_empty
         && !day_bounded
-        && !["kind", "person", "place", "activity"]
+        && !["kind", "category", "person", "place", "activity"]
             .iter()
             .any(|key| arguments.contains_key(*key))
     {
@@ -820,7 +789,15 @@ fn search_input_schema(context: &SchemaContext<'_>) -> Value {
             "day_to": { "type": "string", "minLength": 1, "maxLength": MAX_DAY_BYTES, "pattern": DAY_PATTERN, "description": DAY_DESCRIPTION },
         }
     });
-    with_find_filters(schema, context)
+    let mut schema = with_find_filters(schema, context);
+    if !context.categories.is_empty() {
+        schema["properties"]["category"] = json!({
+            "type": "string",
+            "enum": context.categories.iter().map(category_token).collect::<Vec<_>>(),
+            "description": "older name for a single kind. use category or kind.",
+        });
+    }
+    schema
 }
 
 fn with_batch_references(schema: &mut Value) {
@@ -831,12 +808,6 @@ fn with_batch_references(schema: &mut Value) {
         "items": schema["properties"]["reference"],
         "description": "read one page per reference in order. each item has its own result or error. follow page continuations in a single read.",
     });
-    schema["oneOf"] = json!([
-        {"required": ["reference"], "not": {"required": ["references"]}},
-        {"required": ["references"], "not": {"anyOf": [
-            {"required": ["reference"]}, {"required": ["cursor"]}
-        ]}},
-    ]);
 }
 
 fn entity_input_schema(_context: &SchemaContext<'_>) -> Value {
@@ -878,7 +849,19 @@ fn list_transcripts_input_schema(context: &SchemaContext<'_>) -> Value {
             "entry_kind": { "type": "string", "minLength": 1, "maxLength": 256, "description": "one kind of entry in a body source, such as resting heart rate, workout or sleep. the list shows windows with matching entries. the span returns only those entries." },
         }
     });
-    with_find_filters(schema, context)
+    let mut schema = with_find_filters(schema, context);
+    let legacy_kind = json!({"type": "string", "minLength": 1, "maxLength": 256});
+    let kind = &mut schema["properties"]["kind"];
+    if let Some(choices) = kind["anyOf"].as_array_mut() {
+        // The string form also accepts older callers' body entry names.
+        choices[0] = legacy_kind;
+    } else {
+        *kind = legacy_kind;
+    }
+    kind["description"] = json!(
+        "one kind of journal material, or a list of kinds. older calls can give a body entry type here with source and day. use entry_kind for that."
+    );
+    schema
 }
 
 fn list_entities_input_schema(context: &SchemaContext<'_>) -> Value {
@@ -1249,7 +1232,8 @@ mod tests {
 
     #[test]
     fn list_schemas_only_advertise_the_arguments_their_validators_accept() {
-        let categories = all_categories();
+        let mut categories = all_categories();
+        categories.insert(AdmittedCategory::ProfilePics);
         let facet_ids = vec![FACET_A.to_owned()];
         let context = context(&categories, &facet_ids);
         for schema in [
@@ -1266,6 +1250,19 @@ mod tests {
         assert!(transcript_schema["properties"].get("time_from").is_some());
         assert!(transcript_schema["properties"].get("time_to").is_some());
         assert!(transcript_schema["properties"].get("facet").is_some());
+        assert_eq!(
+            transcript_schema["properties"]["kind"]["anyOf"][0]["type"],
+            "string"
+        );
+        assert!(
+            transcript_schema["properties"]["kind"]["anyOf"][0]
+                .get("enum")
+                .is_none()
+        );
+        assert_eq!(
+            search_input_schema(&context)["properties"]["category"]["enum"],
+            json!(categories.iter().map(category_token).collect::<Vec<_>>())
+        );
         assert!(
             list_entities_input_schema(&context)["properties"]
                 .get("facet")
@@ -1281,6 +1278,24 @@ mod tests {
         assert!(crate::tools::transcripts::validate_list(Some(&json!({"cursor": ""}))).is_err());
         assert!(crate::tools::entities::validate_list(Some(&json!({"cursor": "nope"}))).is_ok());
         assert!(crate::tools::entities::validate_list(Some(&json!({"cursor": ""}))).is_err());
+    }
+
+    #[test]
+    fn tool_input_schemas_are_plain_objects_at_the_root() {
+        let categories = all_categories();
+        let facets = vec![FACET_A.to_owned()];
+        let context = context(&categories, &facets);
+        for entry in TOOLS {
+            let schema = (entry.input_schema)(&context);
+            assert_eq!(schema["type"], "object", "{}", entry.wire_name);
+            for keyword in ["oneOf", "anyOf", "allOf"] {
+                assert!(
+                    schema.get(keyword).is_none(),
+                    "{} has a top-level {keyword}",
+                    entry.wire_name
+                );
+            }
+        }
     }
 
     #[test]
