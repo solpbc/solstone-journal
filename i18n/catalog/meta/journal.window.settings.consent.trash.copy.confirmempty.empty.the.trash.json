@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy confirmEmpty in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy confirmEmpty.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7f83c519c041f3803225e1f7e28990498292fbbf997347a4ffb5e70c714dac83",
+  "max_length": 60,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

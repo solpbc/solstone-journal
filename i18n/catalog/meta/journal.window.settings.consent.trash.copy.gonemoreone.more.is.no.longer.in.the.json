@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy goneMoreOne in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy goneMoreOne.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7296b05472af9c739956b24b9dfcfba47367ae18765fcd47fe74d09d7ddb2708",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

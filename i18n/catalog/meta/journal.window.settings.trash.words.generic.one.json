@@ -1,0 +1,16 @@
+{
+  "description": "Trash singular mixed-kind noun in the journal's settings view.",
+  "context": "Journal window, settings view. Trash singular mixed-kind noun.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "932fdf06fa3b4a83c59505a3ac1711c9bf3743d17d0a541a1eb0a6e3d043d126",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

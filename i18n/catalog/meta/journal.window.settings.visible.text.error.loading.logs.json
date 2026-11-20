@@ -1,0 +1,16 @@
+{
+  "description": "Visible text in the journal's settings view.",
+  "context": "Journal window, settings view. Visible text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bbd23a6b4ef0d29ce3c97fbbab3b7cf05f3117a7ba85542e3d681f2f2837501e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

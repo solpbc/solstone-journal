@@ -1,0 +1,28 @@
+{
+  "description": "storage mark failure in the journal's settings view.",
+  "context": "Journal window, settings view. storage mark failure.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9d8775e4f9b61ea38e2db1bad02854ccccc4f578f5ca446d7e87e891d0b39e3f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

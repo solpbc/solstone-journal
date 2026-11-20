@@ -1,0 +1,16 @@
+{
+  "description": "removal action facet merge in the journal's settings view.",
+  "context": "Journal window, settings view. removal action facet merge.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "79ce20d2569bd0163d270cdb8b7a8c0bea446faabba39def47e9d4ac20f68dfe",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

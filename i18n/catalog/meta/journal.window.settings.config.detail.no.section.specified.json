@@ -1,0 +1,16 @@
+{
+  "description": "Response text in the journal's settings view.",
+  "context": "Journal window, settings view. Response text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "910161398d6a260a6e925e9d23b552942d2cd047ff2e6c842e3dde6d12fe2f68",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

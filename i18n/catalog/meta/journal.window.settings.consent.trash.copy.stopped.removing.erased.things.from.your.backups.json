@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy stopped in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy stopped.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0c9142d5d3ef51805f4dff54d5ad95cf61c4445d675fa4fb0cacf50f6a159863",
+  "max_length": 131,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

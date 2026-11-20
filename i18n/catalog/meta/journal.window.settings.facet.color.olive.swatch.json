@@ -1,0 +1,16 @@
+{
+  "description": "facet color olive swatch in the journal's settings view.",
+  "context": "Journal window, settings view. facet color olive swatch.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2768715550abadeb0b396f2c2383041e27c22199df045a9a41144beb964ee01c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

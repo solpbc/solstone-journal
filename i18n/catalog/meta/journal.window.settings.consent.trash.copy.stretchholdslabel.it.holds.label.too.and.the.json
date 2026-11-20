@@ -1,0 +1,23 @@
+{
+  "description": "Consent trash copy stretchHoldsLabel in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy stretchHoldsLabel.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8c9419fd0fdef257a8e3860f8054710d010d798579802a15b37538f5e7507c0a",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{label}"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Config invalid section message in the journal's settings view.",
+  "context": "Journal window, settings view. Config invalid section message.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "eab3d7fd1b7d9705dc88663efa336938a9d8220f35fd6adda1b62aba39648fce",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

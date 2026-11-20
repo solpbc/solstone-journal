@@ -1,0 +1,16 @@
+{
+  "description": "Settings stt no local stt recovery in the journal's settings view.",
+  "context": "Journal window, settings view. Settings stt no local stt recovery.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f6427e9ba576d7904055977774fd2623792378c652ca4061e81a21f327a85938",
+  "max_length": 192,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

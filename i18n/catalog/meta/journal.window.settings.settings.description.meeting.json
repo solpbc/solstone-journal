@@ -1,0 +1,16 @@
+{
+  "description": "Settings description in the journal's settings view.",
+  "context": "Journal window, settings view. Settings description.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "338260c4836f5a25038ad3dc40f50bb62aa33dbe92ff6015fa1ce4e3f701cd62",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

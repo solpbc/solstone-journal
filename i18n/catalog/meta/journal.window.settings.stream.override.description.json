@@ -1,0 +1,16 @@
+{
+  "description": "stream override description in the journal's settings view.",
+  "context": "Journal window, settings view. stream override description.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f0d794ee339369913bb179f0d5fdd73ccd8d295368ae2da51f174fe3da168ca7",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

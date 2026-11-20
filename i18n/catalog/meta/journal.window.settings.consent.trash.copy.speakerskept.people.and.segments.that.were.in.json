@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy speakersKept in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy speakersKept.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "626a5a2364a4d79d4c4e243a616953660c65e6d876d6b2399c3d6dbc7c6e1980",
+  "max_length": 105,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy range in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy range.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "722fe7e858500b5b09f5e77b1b057783da21eb1ea6d42825689f4cd5cb6d6e23",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

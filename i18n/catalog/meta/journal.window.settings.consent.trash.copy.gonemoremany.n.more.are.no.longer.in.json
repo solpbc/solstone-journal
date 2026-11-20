@@ -1,0 +1,23 @@
+{
+  "description": "Consent trash copy goneMoreMany in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy goneMoreMany.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "036fb51aacd9284d04b98ecb413687387e6ca27a61931c3903f99b6a377abab9",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{n}"
+    }
+  ]
+}

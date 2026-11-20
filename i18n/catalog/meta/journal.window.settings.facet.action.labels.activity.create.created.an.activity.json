@@ -1,0 +1,16 @@
+{
+  "description": "facet action labels activity create in the journal's settings view.",
+  "context": "Journal window, settings view. facet action labels activity create.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "01522200ce093732540934d04c2da5e6c42944fdafc6dfefeb29147955c49852",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

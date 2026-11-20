@@ -1,0 +1,16 @@
+{
+  "description": "storage storage measure in the journal's settings view.",
+  "context": "Journal window, settings view. storage storage measure.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e171490da9b2376adc66b695b9651972d95d16c690b9efa6128843accd041477",
+  "max_length": 108,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

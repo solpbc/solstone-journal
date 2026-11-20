@@ -1,0 +1,28 @@
+{
+  "description": "Settings stt explicit local low template in the journal's settings view.",
+  "context": "Journal window, settings view. Settings stt explicit local low template.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c30c4f6f63b328c96e32cbadee52024ceeb167cbc40b944e2a352f0bf889891b",
+  "max_length": 154,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{ram_gb}"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "GB"
+    }
+  ]
+}

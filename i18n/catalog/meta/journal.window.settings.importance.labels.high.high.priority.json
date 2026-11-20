@@ -1,0 +1,16 @@
+{
+  "description": "importance labels high in the journal's settings view.",
+  "context": "Journal window, settings view. importance labels high.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2e032b7476155bc83d718913821991ba1e58a00deaa3d50eb08e88a3d8914850",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

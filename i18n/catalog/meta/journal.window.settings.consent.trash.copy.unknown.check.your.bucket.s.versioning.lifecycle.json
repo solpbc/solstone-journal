@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy unknown in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy unknown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "efc6b23a6f5e0f56286386f6457fe454c344cbad18f979e00b31691cf75c9125",
+  "max_length": 123,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

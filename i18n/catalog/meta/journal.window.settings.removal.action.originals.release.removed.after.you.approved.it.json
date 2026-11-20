@@ -1,0 +1,16 @@
+{
+  "description": "removal action originals release in the journal's settings view.",
+  "context": "Journal window, settings view. removal action originals release.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b14d97d44349feceee3dab636a408c23c238c5957f9a51a5bfef5a1988c67636",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

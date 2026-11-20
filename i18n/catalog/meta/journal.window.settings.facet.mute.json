@@ -1,0 +1,16 @@
+{
+  "description": "facet mute in the journal's settings view.",
+  "context": "Journal window, settings view. facet mute.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "70415d34d3e5137d5abc06e01bd656cc333e31e619a2e8fc715a9954145a4e41",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

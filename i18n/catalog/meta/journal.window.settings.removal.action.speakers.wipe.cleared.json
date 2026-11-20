@@ -1,0 +1,16 @@
+{
+  "description": "removal action speakers wipe in the journal's settings view.",
+  "context": "Journal window, settings view. removal action speakers wipe.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "38e422e7458604adf8c98a4d60753c7cd91e76d8164b03382c141da71cd49c57",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

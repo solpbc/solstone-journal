@@ -1,0 +1,16 @@
+{
+  "description": "removal source text in the journal's settings view.",
+  "context": "Journal window, settings view. removal source text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "065e05ff4e2f9f7688719f7946c2df17b2a4eafa86c29a182cde7c0ae6d90d12",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

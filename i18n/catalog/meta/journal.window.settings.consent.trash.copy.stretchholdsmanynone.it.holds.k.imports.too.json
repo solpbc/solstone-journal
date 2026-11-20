@@ -1,0 +1,23 @@
+{
+  "description": "Consent trash copy stretchHoldsManyNone in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy stretchHoldsManyNone.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "98b075ebee5ac6395504717d1807425c2b9f39a8b4601592f18c80b05600d40b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{k}"
+    }
+  ]
+}

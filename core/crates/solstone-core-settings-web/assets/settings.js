@@ -2,30 +2,21 @@
 // Copyright (c) 2026 sol pbc
 
 (function (global) {
-  // --- owner-facing strings ---
-  const REDACTION_RULE_SINGULAR = 'rule';
-  const REDACTION_RULE_PLURAL = 'rules';
-  const VISION_CATEGORY_SINGULAR = 'category';
-  const VISION_CATEGORY_PLURAL = 'categories';
-  const STREAM_OVERRIDE_SINGULAR = 'override';
-  const STREAM_OVERRIDE_PLURAL = 'overrides';
-  // --- end owner-facing strings ---
-
   function countLine(count, singular, plural) {
     const number = Math.max(0, Math.trunc(Number(count) || 0));
-    return `${number} ${number === 1 ? singular : plural}`;
+    return global.JournalI18n.render(number === 1 ? singular : plural, [['count', String(number)]]);
   }
 
   function redactionRulesLine(count) {
-    return countLine(count, REDACTION_RULE_SINGULAR, REDACTION_RULE_PLURAL);
+    return countLine(count, 'journal.window.settings.redaction.one', 'journal.window.settings.redaction.many');
   }
 
   function visionCategoriesLine(count) {
-    return countLine(count, VISION_CATEGORY_SINGULAR, VISION_CATEGORY_PLURAL);
+    return countLine(count, 'journal.window.settings.vision.category.one', 'journal.window.settings.vision.category.many');
   }
 
   function streamOverridesLine(count) {
-    return countLine(count, STREAM_OVERRIDE_SINGULAR, STREAM_OVERRIDE_PLURAL);
+    return countLine(count, 'journal.window.settings.stream.override.one', 'journal.window.settings.stream.override.many');
   }
 
   function buildStreamOverridesDrawerProps(streams, perStream) {
@@ -34,11 +25,11 @@
     if (streamCount === 0) return null;
     const overrides = perStream && typeof perStream === 'object' ? perStream : {};
     const configuredCount = streamList.filter((stream) => overrides[stream?.name]?.raw_media).length;
-    const bodyHtml = '<p style="color: var(--ink-soft); font-size: 0.85em; margin: 0 0 1em 0;">override the global retention mode for individual streams.</p><div id="streamOverridesList"></div>';
+    const bodyHtml = '<p style="color: var(--ink-soft); font-size: 0.85em; margin: 0 0 1em 0;">' + global.JournalI18n.renderHtml('journal.window.settings.stream.override.description') + '</p><div id="streamOverridesList"></div>';
     return {
       id: 'stream-overrides',
       open: false,
-      label: 'per-stream overrides',
+      label: global.JournalI18n.render('journal.window.settings.stream.override.label'),
       line: streamOverridesLine(configuredCount),
       bodyHtml,
     };
@@ -102,8 +93,13 @@
       swatch.hidden = !color;
     }
     if (muteAction) {
-      muteAction.textContent = muted ? 'unmute' : 'mute';
-      muteAction.setAttribute('aria-label', `${muted ? 'unmute' : 'mute'} ${title}`);
+      muteAction.textContent = muted
+        ? global.JournalI18n.render('journal.window.settings.facet.unmute')
+        : global.JournalI18n.render('journal.window.settings.facet.mute');
+      const actionLabel = muted
+        ? global.JournalI18n.render('journal.window.settings.facet.unmute.name', [['title', title]])
+        : global.JournalI18n.render('journal.window.settings.facet.mute.name', [['title', title]]);
+      muteAction.setAttribute('aria-label', actionLabel);
     }
     return container;
   }

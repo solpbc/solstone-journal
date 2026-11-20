@@ -1,0 +1,16 @@
+{
+  "description": "importance labels ignore in the journal's settings view.",
+  "context": "Journal window, settings view. importance labels ignore.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "97a907ba439291a7ce9ea025617368a6395ee667fdde762eb930087be2cf09db",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

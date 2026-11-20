@@ -1,0 +1,16 @@
+{
+  "description": "Button label in the journal's settings view.",
+  "context": "Journal window, settings view. Button label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "83010f04eae109d71997d8842b28e5cfea46f295e079bfe0b00fa1dc196a2905",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

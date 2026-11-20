@@ -1,0 +1,28 @@
+{
+  "description": "Settings config transcribe boolean in the journal's settings view.",
+  "context": "Journal window, settings view. Settings config transcribe boolean.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "field",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "855fba04c8ac2dba48f6e716a7b1391837c2bfa9f5d4dc48cd7891f8f86efcc5",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

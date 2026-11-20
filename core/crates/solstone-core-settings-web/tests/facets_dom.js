@@ -5,7 +5,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
-const { loadWindowCatalog } = require('../../solstone-core-convey-shell/tests/journal_catalog_dom.js');
+const { loadWindowCatalog, journalContext } = require('../../solstone-core-convey-shell/tests/journal_catalog_dom.js');
 
 const crateDir = process.argv[2];
 assert.ok(crateDir, 'crate directory argument is required');
@@ -37,16 +37,21 @@ function dataKey(attribute) {
   return attribute.slice(5).replace(/-([a-z])/g, (_, character) => character.toUpperCase());
 }
 
+function decodeMarkup(value) {
+  const entities = { amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'", apos: "'" };
+  return value.replace(/&(amp|lt|gt|quot|#39|apos);/g, (_, entity) => entities[entity]);
+}
+
 function parseAttributes(source, element) {
   const pattern = /([^\s=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g;
   let match;
   while ((match = pattern.exec(source))) {
-    element.setAttribute(match[1], match[2] ?? match[3] ?? match[4] ?? '');
+    element.setAttribute(match[1], decodeMarkup(match[2] ?? match[3] ?? match[4] ?? ''));
   }
 }
 
 function appendText(element, text) {
-  const value = text.replace(/\s+/g, ' ').trim();
+  const value = decodeMarkup(text).replace(/\s+/g, ' ').trim();
   if (!value) return;
   element._ownText = (element._ownText ? element._ownText + ' ' : '') + value;
 }
@@ -348,7 +353,8 @@ function createHarness() {
   const workspace = fs.readFileSync(path.join(crateDir, 'assets', 'workspace.html'), 'utf8');
   const scriptMatch = workspace.match(/<script>([\s\S]*)<\/script>\s*$/);
   assert.ok(scriptMatch, 'workspace contains one executable inline script');
-  parseHtml(workspace.slice(0, scriptMatch.index), document.body);
+  const markup = journalContext({}).JournalI18n.renderWorkspace(workspace.slice(0, scriptMatch.index));
+  parseHtml(markup, document.body);
 
   const requests = [];
   const facets = initialFacets();

@@ -1,0 +1,23 @@
+{
+  "description": "Granola response busy in the journal's settings view.",
+  "context": "Journal window, settings view. Granola response busy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5cb6ad1041efe4d244976f4ec7832154dc31ef7105e37ebd667d5350935204e7",
+  "max_length": 99,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "Granola"
+    }
+  ]
+}

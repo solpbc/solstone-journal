@@ -1,0 +1,16 @@
+{
+  "description": "removal surface body in the journal's settings view.",
+  "context": "Journal window, settings view. removal surface body.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1655c095ff85e514bb2996f7d77eb904eb589c7da41771d09ddaf952ed521d1d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

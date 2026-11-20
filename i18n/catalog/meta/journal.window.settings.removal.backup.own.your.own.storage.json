@@ -1,0 +1,16 @@
+{
+  "description": "removal backup own in the journal's settings view.",
+  "context": "Journal window, settings view. removal backup own.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7f80e1e5364e16af7c3ae72afb487f1eafcce05f538e82530e8327af939854c9",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

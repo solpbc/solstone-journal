@@ -1,0 +1,28 @@
+{
+  "description": "Settings config unknown section in the journal's settings view.",
+  "context": "Journal window, settings view. Settings config unknown section.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "section",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "dc1bf596aa1bfacd395f348024965aebf2aa7aa7ce1acc5d711ad30c55dd182a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Consent facet delete copy stays in the journal's settings view.",
+  "context": "Journal window, settings view. Consent facet delete copy stays.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d49acb7fe6fd49ee148d14dae19500fc20afe91a4131e26f04284387ad19553b",
+  "max_length": 185,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

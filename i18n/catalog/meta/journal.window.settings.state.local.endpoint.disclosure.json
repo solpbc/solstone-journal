@@ -1,0 +1,16 @@
+{
+  "description": "Settings local endpoint disclosure in the journal's settings view.",
+  "context": "Journal window, settings view. Settings local endpoint disclosure.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f3d8582559975f575ebfe8fbc2482032c75eccdff2949002039ee13d0b9aaaa8",
+  "max_length": 144,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

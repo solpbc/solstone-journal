@@ -1,0 +1,16 @@
+{
+  "description": "Built-in activity name in the journal's settings view.",
+  "context": "Journal window, settings view. Built-in activity name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0d7867bc960d598df8e2d439615215acc1d5478c3cf7e50ac9e2a5ca1e4ef088",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

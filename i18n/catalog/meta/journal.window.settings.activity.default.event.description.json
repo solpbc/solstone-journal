@@ -1,0 +1,16 @@
+{
+  "description": "Built-in activity description in the journal's settings view.",
+  "context": "Journal window, settings view. Built-in activity description.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1fbb67633ed195611be6c786bfb5bf6043f4325634b70d63851e7ab30f7d743f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

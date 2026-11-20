@@ -1,0 +1,16 @@
+{
+  "description": "facet color gold swatch in the journal's settings view.",
+  "context": "Journal window, settings view. facet color gold swatch.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d6633090c50108f6654161ec827a78d9e49b6132728fd8eebc9b4e6e1b72bd04",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

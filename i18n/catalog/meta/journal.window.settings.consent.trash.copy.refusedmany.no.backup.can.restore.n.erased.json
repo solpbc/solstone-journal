@@ -1,0 +1,23 @@
+{
+  "description": "Consent trash copy refusedMany in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy refusedMany.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "11d999674b06f6ab965a51a2e2005786c0bb0fc805c5cc7d47b8eef71fef388e",
+  "max_length": 115,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{n}"
+    }
+  ]
+}

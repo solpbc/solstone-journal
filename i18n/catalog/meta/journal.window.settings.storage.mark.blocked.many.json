@@ -1,0 +1,28 @@
+{
+  "description": "storage mark blocked many in the journal's settings view.",
+  "context": "Journal window, settings view. storage mark blocked many.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e150bbc578972fb7e92460f9dd45930a5cf43792ee75b91ca0c09211bdc92c8b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

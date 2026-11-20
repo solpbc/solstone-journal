@@ -1,0 +1,23 @@
+{
+  "description": "Consent facet delete copy message in the journal's settings view.",
+  "context": "Journal window, settings view. Consent facet delete copy message.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "024cd5918955c73223bb7f9f14d3432260efa61657ece6eb30c1b4d7c58f7ab1",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{date}"
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+{
+  "description": "Visible text in the journal's settings view.",
+  "context": "Journal window, settings view. Visible text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "59a431d55b92b3dcd588964f3f8078407727c33d79576b24ead83eb9ecc7f599",
+  "max_length": 286,
+  "risk": "legal",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "parakeet-cpp"
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": "\n"
+    },
+    {
+      "name": "slot3",
+      "kind": "whitespace",
+      "value": "            "
+    },
+    {
+      "name": "slot4",
+      "kind": "accepted-input",
+      "value": "updates.solstone.app"
+    },
+    {
+      "name": "slot5",
+      "kind": "accepted-input",
+      "value": "parakeet.cpp"
+    },
+    {
+      "name": "slot6",
+      "kind": "accepted-input",
+      "value": "MIT"
+    },
+    {
+      "name": "slot7",
+      "kind": "whitespace",
+      "value": "\n"
+    },
+    {
+      "name": "slot8",
+      "kind": "whitespace",
+      "value": "            "
+    },
+    {
+      "name": "slot9",
+      "kind": "accepted-input",
+      "value": "CC-BY-4.0"
+    },
+    {
+      "name": "slot10",
+      "kind": "accepted-input",
+      "value": "THIRD_PARTY_NOTICES.md"
+    }
+  ]
+}

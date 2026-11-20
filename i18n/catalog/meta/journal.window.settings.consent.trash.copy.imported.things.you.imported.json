@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy imported in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy imported.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ce7ff2b3d7bc11f4329b8ce545b632560b83af3ed910749c55323cc38942d45c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

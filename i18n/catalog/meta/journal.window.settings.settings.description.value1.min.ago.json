@@ -1,0 +1,28 @@
+{
+  "description": "Settings description in the journal's settings view.",
+  "context": "Journal window, settings view. Settings description.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "value1",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a0feb60da7a175170f644bc3353aeb9e6235d7bce517e2dbd96bf05f121226df",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Link label in the journal's settings view.",
+  "context": "Journal window, settings view. Link label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "91a3e2ee1dc3e256d96335d614c320669fc540e0fdc7082b1cd762a6ff157b2f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

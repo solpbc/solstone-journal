@@ -1,0 +1,16 @@
+{
+  "description": "facet color dark in the journal's settings view.",
+  "context": "Journal window, settings view. facet color dark.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "550e72f40ca21c968190ba22029d7c2a2184a825ddc18bdc41eec382011951d5",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

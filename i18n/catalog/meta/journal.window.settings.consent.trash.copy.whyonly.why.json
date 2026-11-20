@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy whyOnly in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy whyOnly.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f1bd079111ad85e116181dd0c4f57dc5d5bc80016a39be14eb3766f4d5a87694",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

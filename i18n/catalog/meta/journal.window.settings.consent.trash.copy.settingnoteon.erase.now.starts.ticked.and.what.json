@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy settingNoteOn in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy settingNoteOn.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "46289b01674e0ca1f5158a410fb837284b34f30b5891700c0d1e207aa1f48874",
+  "max_length": 126,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "trash kind label facet file unfinished in the journal's settings view.",
+  "context": "Journal window, settings view. trash kind label facet file unfinished.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d56f943ce3132fb5f3f7f16f5a18b56c5b3f4240a5579d61902a28eef5320e55",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

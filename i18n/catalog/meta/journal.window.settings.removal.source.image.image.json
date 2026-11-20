@@ -1,0 +1,16 @@
+{
+  "description": "removal source image in the journal's settings view.",
+  "context": "Journal window, settings view. removal source image.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "79947a7ad19c6a801a06a177e1518dab8b2fc5b5e0495b6351ac8b457016f37a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

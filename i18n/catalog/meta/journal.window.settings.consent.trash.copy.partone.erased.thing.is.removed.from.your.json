@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy partOne in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy partOne.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a98325dba1bb0642768868e907b038f85ee1eef2d955e72a72d503ae92865934",
+  "max_length": 117,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy waitOffline in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy waitOffline.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7c83f2af94ece40aefa48c4f60aa2483b175580f018ec6367045b480864357f4",
+  "max_length": 102,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Trash backup retry time in the journal's settings view.",
+  "context": "Journal window, settings view. Trash backup retry time.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0d34f4236a7749ca10f5c0e4b1b20bc087df42507e70fbb77f0dc98957176dee",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

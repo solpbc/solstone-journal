@@ -1,0 +1,16 @@
+{
+  "description": "facet action labels facet update in the journal's settings view.",
+  "context": "Journal window, settings view. facet action labels facet update.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "23df51f97a819e1a661f382e61155c0f3055e6258bc66a8ef518b3c522cb1045",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

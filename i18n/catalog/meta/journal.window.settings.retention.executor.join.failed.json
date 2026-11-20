@@ -1,0 +1,16 @@
+{
+  "description": "Retention executor detail in the journal's settings view.",
+  "context": "Journal window, settings view. Retention executor detail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "03eb6451a91ee9cba65b418bee12b3a4af53f424cfa1ded4d3a62aec26558e67",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -11208,3 +11208,2111 @@ journal.window.stats.visible.text.since.your.journal.began = since your journal 
 journal.window.stats.visible.text.the.chart.shows.the.daily.summary = the chart shows the daily summary. selected-day totals include the latest entries, so they may briefly differ from the chart.
 
 journal.window.stats.visible.text.the.last.days.split.two.ways = the last 30 days, split two ways: by facet below, then by activity.
+
+journal.window.settings.accessible.name.close = close
+
+journal.window.settings.accessible.name.close.add.custom.activity = close add custom activity
+
+journal.window.settings.accessible.name.close.add.facet = close add facet
+
+journal.window.settings.accessible.name.facet.settings = facet settings
+
+journal.window.settings.accessible.name.settings.section = settings section
+
+journal.window.settings.accessible.name.settings.sections = settings sections
+
+journal.window.settings.activities.detail.either.id.or.name.is.required = Either id or name is required
+
+journal.window.settings.activities.detail.icon.must.be.a.lucide.name = icon must be a { $slot1 } name; send emoji in emoji
+
+journal.window.settings.activities.detail.invalid.priority = invalid priority
+
+journal.window.settings.activities.detail.name.is.required.for.custom.activities = name is required for custom activities
+
+journal.window.settings.activity.default.add = click to add
+
+journal.window.settings.activity.default.ai.conversation.description = Conversations with AI assistants like ChatGPT, Claude, and Gemini
+
+journal.window.settings.activity.default.ai.conversation.name = AI Conversation
+
+journal.window.settings.activity.default.appointment.description = an appointment on your calendar
+
+journal.window.settings.activity.default.appointment.name = appointment
+
+journal.window.settings.activity.default.browsing.description = Web browsing, research, and reading online
+
+journal.window.settings.activity.default.browsing.name = Browsing
+
+journal.window.settings.activity.default.call.description = a call you have planned
+
+journal.window.settings.activity.default.call.name = call
+
+journal.window.settings.activity.default.celebration.description = a celebration on the calendar
+
+journal.window.settings.activity.default.celebration.name = celebration
+
+journal.window.settings.activity.default.coding.description = Programming, code review, and debugging
+
+journal.window.settings.activity.default.coding.name = Coding
+
+journal.window.settings.activity.default.deadline.description = a deadline you are working toward
+
+journal.window.settings.activity.default.deadline.name = deadline
+
+journal.window.settings.activity.default.design.description = Design tools and image editing
+
+journal.window.settings.activity.default.design.name = Design
+
+journal.window.settings.activity.default.doctor.appointment.description = a medical appointment on your calendar
+
+journal.window.settings.activity.default.doctor.appointment.name = doctor appointment
+
+journal.window.settings.activity.default.email.description = Email reading and composition
+
+journal.window.settings.activity.default.email.name = Email
+
+journal.window.settings.activity.default.errand.description = an errand you plan to do
+
+journal.window.settings.activity.default.errand.name = errand
+
+journal.window.settings.activity.default.event.description = an event you plan to attend
+
+journal.window.settings.activity.default.event.name = event
+
+journal.window.settings.activity.default.gaming.description = Games and entertainment
+
+journal.window.settings.activity.default.gaming.name = Gaming
+
+journal.window.settings.activity.default.media.description = Watching or listening to shows, podcasts and recordings
+
+journal.window.settings.activity.default.media.name = Media
+
+journal.window.settings.activity.default.meeting.description = Video calls, in-person meetings, and conferences
+
+journal.window.settings.activity.default.meeting.name = Meetings
+
+journal.window.settings.activity.default.messaging.description = Chat, Slack, Discord, and text messaging
+
+journal.window.settings.activity.default.messaging.name = Messaging
+
+journal.window.settings.activity.default.music.description = Music listening and audio
+
+journal.window.settings.activity.default.music.name = Music
+
+journal.window.settings.activity.default.planning.description = Scheduling, calendar management, meeting preparation, and agenda setting
+
+journal.window.settings.activity.default.planning.name = Planning
+
+journal.window.settings.activity.default.productivity.description = Spreadsheets, slides, and task management
+
+journal.window.settings.activity.default.productivity.name = Productivity
+
+journal.window.settings.activity.default.reading.description = Books, PDFs, articles, highlights, and documentation
+
+journal.window.settings.activity.default.reading.name = Reading
+
+journal.window.settings.activity.default.reminder.description = a reminder for something upcoming
+
+journal.window.settings.activity.default.reminder.name = reminder
+
+journal.window.settings.activity.default.social.description = Social media browsing and interaction
+
+journal.window.settings.activity.default.social.name = Social Media
+
+journal.window.settings.activity.default.terminal.description = Command line and shell sessions
+
+journal.window.settings.activity.default.terminal.name = Terminal
+
+journal.window.settings.activity.default.travel.description = travel you have planned
+
+journal.window.settings.activity.default.travel.name = travel
+
+journal.window.settings.activity.default.video.description = Watching videos and streaming content on screen
+
+journal.window.settings.activity.default.video.name = Video
+
+journal.window.settings.activity.default.writing.description = Documents, notes, and long-form writing
+
+journal.window.settings.activity.default.writing.name = Writing
+
+journal.window.settings.activity.icon.placeholder = e.g., 🔬
+
+journal.window.settings.button.label.about = about
+
+journal.window.settings.button.label.activities = activities
+
+journal.window.settings.button.label.activity.log = activity log
+
+journal.window.settings.button.label.add = + add
+
+journal.window.settings.button.label.add.activity = add activity
+
+journal.window.settings.button.label.add.custom.activity = + add custom activity
+
+journal.window.settings.button.label.add.variant2 = add
+
+journal.window.settings.button.label.api.keys = API keys
+
+journal.window.settings.button.label.appearance = appearance
+
+journal.window.settings.button.label.apply.color = apply color
+
+journal.window.settings.button.label.apply.icon = apply icon
+
+journal.window.settings.button.label.build.the.list = build the list
+
+journal.window.settings.button.label.cancel = cancel
+
+journal.window.settings.button.label.check.now = check now
+
+journal.window.settings.button.label.clean.up.logs = clean up logs
+
+journal.window.settings.button.label.connect = connect
+
+journal.window.settings.button.label.copy = copy
+
+journal.window.settings.button.label.delete.logs = delete logs
+
+journal.window.settings.button.label.disconnect = disconnect
+
+journal.window.settings.button.label.done = done
+
+journal.window.settings.button.label.erase.face.data = erase face data…
+
+journal.window.settings.button.label.erase.face.data.variant2 = erase face data
+
+journal.window.settings.button.label.facets = facets
+
+journal.window.settings.button.label.guide = guide
+
+journal.window.settings.button.label.load.older = load older
+
+journal.window.settings.button.label.local.access = local access
+
+journal.window.settings.button.label.mute = mute
+
+journal.window.settings.button.label.preview = preview
+
+journal.window.settings.button.label.profile = profile
+
+journal.window.settings.button.label.show.older = show older
+
+journal.window.settings.button.label.storage = storage
+
+journal.window.settings.button.label.sync = sync
+
+journal.window.settings.button.label.transcription = transcription
+
+journal.window.settings.button.label.trash = trash
+
+journal.window.settings.button.label.try.again = try again
+
+journal.window.settings.button.label.turn.on = turn on
+
+journal.window.settings.button.label.use.a.new.key = use a new key
+
+journal.window.settings.button.label.use.emoji.instead = use emoji instead
+
+journal.window.settings.button.label.vision = vision
+
+journal.window.settings.config.detail.also.removing.erased.things.from.backups = also removing erased things from backups is on or off
+
+journal.window.settings.config.detail.backend = Invalid backend:{ $slot1 }{ $backend }. Must be one of:{ $slot2 }{ $allowed }
+
+journal.window.settings.config.detail.erase.window.days = days before the trash erases must be a whole number from{ $slot1 }{ $min }{ $slot2 }to{ $slot3 }{ $max }
+
+journal.window.settings.config.detail.faces.enabled.must.be.a.boolean = faces.enabled must be a boolean
+
+journal.window.settings.config.detail.home.timezone.must.be.a.name = home timezone must be a name like { $slot1 }
+
+journal.window.settings.config.detail.macos.backend = Invalid backend: { $slot1 } can't run on a mac. Use { $slot2 }.
+
+journal.window.settings.config.detail.no.section.specified = No section specified
+
+journal.window.settings.config.detail.owner.name.must.not.be.a = owner name must not be a path
+
+journal.window.settings.config.detail.photo.suggestions.run.only.in.a = photo suggestions run only in a journal on a computer
+
+journal.window.settings.config.detail.providers.byo.thinking.budget.must.be = providers.byo_thinking_budget must be one of: 0, 8192, 16384, 32768
+
+journal.window.settings.config.detail.request.must.be.an.object = request must be an object
+
+journal.window.settings.config.detail.section.must.be.an.object = section must be an object
+
+journal.window.settings.config.detail.transcribe.boolean = { $field }{ $slot1 }must be a boolean
+
+journal.window.settings.config.detail.transcribe.parakeet.cpp.device.must.be = transcribe.parakeet-cpp.device must be one of: auto, cpu
+
+journal.window.settings.config.detail.unknown.section = Unknown section:{ $slot1 }{ $section }
+
+journal.window.settings.consent.facet.delete.copy.back.back = back
+
+journal.window.settings.consent.facet.delete.copy.busy.something.else.is.changing.it.right = something else is changing it right now. try again in a minute.
+
+journal.window.settings.consent.facet.delete.copy.button.delete.this.facet = delete this facet
+
+journal.window.settings.consent.facet.delete.copy.cancel.cancel = cancel
+
+journal.window.settings.consent.facet.delete.copy.erasenow.erase.now = erase now
+
+journal.window.settings.consent.facet.delete.copy.gone.it.s.no.longer.in.your = it's no longer in your journal.
+
+journal.window.settings.consent.facet.delete.copy.last.facet.your.journal.needs.at.least.one = your journal needs at least one facet that isn't muted.
+
+journal.window.settings.consent.facet.delete.copy.last.your.journal.needs.at.least.one = your journal needs at least one facet that isn't muted. to delete this one, unmute or add another facet first.
+
+journal.window.settings.consent.facet.delete.copy.lead.this.erases.everything.in.the.facet = this erases everything in the facet:
+
+journal.window.settings.consent.facet.delete.copy.lead.this.moves.everything.in.the.facet = this moves everything in the facet:
+
+journal.window.settings.consent.facet.delete.copy.list.its.activity.log = its activity log
+
+journal.window.settings.consent.facet.delete.copy.list.its.settings.and.the.activities.it = its settings and the activities it looks for
+
+journal.window.settings.consent.facet.delete.copy.list.the.activities.it.found.and.what = the activities it found, and what was written about them
+
+journal.window.settings.consent.facet.delete.copy.list.the.notes.it.keeps.about.its = the notes it keeps about its entities
+
+journal.window.settings.consent.facet.delete.copy.message.erases.date.unless.you.recover.it = erases { $slot1 } unless you recover it.
+
+journal.window.settings.consent.facet.delete.copy.message.it.may.already.be.back.in = it may already be back in your journal. reload to check.
+
+journal.window.settings.consent.facet.delete.copy.message.it.may.already.be.erased.reload = it may already be erased. reload to check.
+
+journal.window.settings.consent.facet.delete.copy.message.it.may.already.be.in.the = it may already be in the trash. reload to check.
+
+journal.window.settings.consent.facet.delete.copy.message.it.s.back.in.your.journal = it's back in your journal.
+
+journal.window.settings.consent.facet.delete.copy.message.it.s.in.the.trash.you = it's in the trash. you can try again from there.
+
+journal.window.settings.consent.facet.delete.copy.message.it.s.still.in.the.trash = it's still in the trash. you can try again from there.
+
+journal.window.settings.consent.facet.delete.copy.message.it.s.still.in.your.journal = it's still in your journal.
+
+journal.window.settings.consent.facet.delete.copy.movetotrash.move.to.trash = move to trash
+
+journal.window.settings.consent.facet.delete.copy.newname.a.new.facet.you.give.this = a new facet you give this name will hold those segments.
+
+journal.window.settings.consent.facet.delete.copy.noun.facet = facet
+
+journal.window.settings.consent.facet.delete.copy.opentrash.open.trash = open trash
+
+journal.window.settings.consent.facet.delete.copy.reach.it.leaves.your.journal.now.and = it leaves your journal now and can't be recovered.
+
+journal.window.settings.consent.facet.delete.copy.reach.it.leaves.your.journal.now.and.variant2 = it leaves your journal now and waits in the trash, then it's erased. you can recover it until then.
+
+journal.window.settings.consent.facet.delete.copy.recover.recover = recover
+
+journal.window.settings.consent.facet.delete.copy.recovering.if.you.recover.it.what.came = if you recover it, what came into your journal while it was in the trash isn't sorted into it, and a segment it shared with another facet may not come back to it.
+
+journal.window.settings.consent.facet.delete.copy.stays.segments.sorted.into.it.and.the = segments sorted into it, and the entities attached to it, stay in your journal. summaries elsewhere in your journal aren't erased and may still mention it.
+
+journal.window.settings.consent.facet.delete.copy.stays.segments.sorted.into.it.and.the.variant2 = segments sorted into it, and the entities attached to it, stay in your journal. summaries elsewhere in your journal stay where they are and may still mention it.
+
+journal.window.settings.consent.facet.delete.copy.title.couldn.t.erase.that.noun = couldn't erase that { $slot1 }
+
+journal.window.settings.consent.facet.delete.copy.title.couldn.t.move.that.to.the = couldn't move that to the trash
+
+journal.window.settings.consent.facet.delete.copy.title.couldn.t.recover.that.noun = couldn't recover that { $slot1 }
+
+journal.window.settings.consent.facet.delete.copy.title.delete.this.facet = delete this facet?
+
+journal.window.settings.consent.facet.delete.copy.title.erase.this.facet.now = erase this facet now?
+
+journal.window.settings.consent.facet.delete.copy.title.moved.to.the.trash = moved to the trash
+
+journal.window.settings.consent.facet.delete.copy.title.noun.erased.from.your.journal = { $slot1 } erased from your journal
+
+journal.window.settings.consent.facet.delete.copy.title.noun.recovered = { $slot1 } recovered
+
+journal.window.settings.consent.facet.delete.copy.title.your.journal.didn.t.answer = your journal didn't answer
+
+journal.window.settings.consent.settings.feedback.close.local.access = close local access
+
+journal.window.settings.consent.settings.feedback.close.local.access.to.this.computer = close local access to this computer?
+
+journal.window.settings.consent.settings.feedback.keep.it.closed = keep it closed
+
+journal.window.settings.consent.settings.feedback.keep.it.open = keep it open
+
+journal.window.settings.consent.settings.feedback.open.your.journal.to.everyone.on = open your journal to everyone on this computer?
+
+journal.window.settings.consent.settings.feedback.yes.open.it = yes, open it
+
+journal.window.settings.consent.trash.copy.agentmany.anything.an.agent.already.read.stays = anything an agent already read stays with them.
+
+journal.window.settings.consent.trash.copy.agentone.anything.an.agent.already.read.stays = anything an agent already read stays with it.
+
+journal.window.settings.consent.trash.copy.attaching.this.stopped.part.way.through.being = this stopped part way through being recovered. your journal keeps trying to finish putting it back.
+
+journal.window.settings.consent.trash.copy.audio.audio = audio
+
+journal.window.settings.consent.trash.copy.backuplink.backup = backup →
+
+journal.window.settings.consent.trash.copy.body.body.data = body data
+
+journal.window.settings.consent.trash.copy.bodyempty.n.things.can.t.be.recovered = { $slot1 } { $slot2 } can't be recovered after this.
+
+journal.window.settings.consent.trash.copy.bodymany.they.can.t.be.recovered.after = they can't be recovered after this.
+
+journal.window.settings.consent.trash.copy.bodyone.it.can.t.be.recovered.after = it can't be recovered after this.
+
+journal.window.settings.consent.trash.copy.bodyspan.first.to.last = { $slot1 } to { $slot2 }
+
+journal.window.settings.consent.trash.copy.busy.something.else.is.changing.this.right = something else is changing this right now. try again in a minute.
+
+journal.window.settings.consent.trash.copy.cancel.cancel = cancel
+
+journal.window.settings.consent.trash.copy.cleared.cleared.day = cleared { $slot1 }
+
+journal.window.settings.consent.trash.copy.confirmempty.empty.the.trash = empty the trash?
+
+journal.window.settings.consent.trash.copy.confirmmany.erase.n.things.now = erase { $slot1 } { $slot2 } now?
+
+journal.window.settings.consent.trash.copy.confirmone.erase.this.thing.now = erase this { $slot1 } now?
+
+journal.window.settings.consent.trash.copy.detaching.this.stopped.part.way.into.the = this stopped part way into the trash. your journal keeps trying to finish moving it.
+
+journal.window.settings.consent.trash.copy.elsewhere.backups.your.journal.made.while.it = backups your journal made while it was in another folder are left as they are.
+
+journal.window.settings.consent.trash.copy.emptyfailed.couldn.t.empty.the.trash.what = couldn't empty the trash. what's listed here is still in it. try again.
+
+journal.window.settings.consent.trash.copy.emptytrash.empty.trash = empty trash
+
+journal.window.settings.consent.trash.copy.entityhidden.hidden = hidden
+
+journal.window.settings.consent.trash.copy.entityhiddenback.recovering.puts.it.back.hidden = recovering puts it back hidden.
+
+journal.window.settings.consent.trash.copy.entitysamename.another.entity.with.this.name.is = another entity with this name is in your journal now. recovering puts this one back beside it.
+
+journal.window.settings.consent.trash.copy.erased.erased.n.things.from.your.journal = erased { $slot1 } { $slot2 } from your journal.
+
+journal.window.settings.consent.trash.copy.erasefailedmany.couldn.t.erase.those.so.they = couldn't erase those, so they're still in the trash. try again.
+
+journal.window.settings.consent.trash.copy.erasefailedone.couldn.t.erase.that.so.it = couldn't erase that, so it's still in the trash. try again.
+
+journal.window.settings.consent.trash.copy.erasenow.erase.now = erase now
+
+journal.window.settings.consent.trash.copy.eraseson.erases.date = erases { $slot1 }
+
+journal.window.settings.consent.trash.copy.erasingsoon.erasing.soon = erasing soon
+
+journal.window.settings.consent.trash.copy.error.couldn.t.load.your.trash.reload = couldn't load your trash. reload the page to try again.
+
+journal.window.settings.consent.trash.copy.facetmany.in.n.facets = in { $slot1 } facets
+
+journal.window.settings.consent.trash.copy.facetone.in.facet = in 1 facet
+
+journal.window.settings.consent.trash.copy.facetreplaces.another.facet.with.this.name.is = another facet with this name is in your journal now. recovering erases it, with everything in it, and puts this one back.
+
+journal.window.settings.consent.trash.copy.failedone.couldn.t.remove.erased.thing.from = couldn't remove 1 erased thing from your backups this time. your journal tries again { $slot1 }.
+
+journal.window.settings.consent.trash.copy.gonemany.those.are.no.longer.in.the = those are no longer in the trash.
+
+journal.window.settings.consent.trash.copy.gonemoremany.n.more.are.no.longer.in = { $slot1 } more are no longer in the trash.
+
+journal.window.settings.consent.trash.copy.gonemoreone.more.is.no.longer.in.the = 1 more is no longer in the trash.
+
+journal.window.settings.consent.trash.copy.goneone.that.s.no.longer.in.the = that's no longer in the trash.
+
+journal.window.settings.consent.trash.copy.hidden.files.the.key.your.journal.uses.for = the key your journal uses for B2 can't delete files, so B2 hid the copies instead. they stay in your bucket until you delete them there or a lifecycle rule removes hidden files.
+
+journal.window.settings.consent.trash.copy.imported.things.you.imported = things you imported
+
+journal.window.settings.consent.trash.copy.importgone.its.import.is.no.longer.in = its import is no longer in your journal, so this can't be recovered.
+
+journal.window.settings.consent.trash.copy.importintrash.recover.its.import.from.the.trash = recover its import from the trash first, then this.
+
+journal.window.settings.consent.trash.copy.importtrashed.its.import.is.in.the.trash = its import is in the trash. recover the import first, then this.
+
+journal.window.settings.consent.trash.copy.importtrashedlabel.its.import.label.is.in.the = its import, { $slot1 }, is in the trash. recover that first, then this.
+
+journal.window.settings.consent.trash.copy.later.later = later
+
+journal.window.settings.consent.trash.copy.legacy.archive.media.your.journal.archived.before.it = media your journal archived before it noted where each file sits can't be taken out of that archive safely, so that archive keeps it.
+
+journal.window.settings.consent.trash.copy.location.location = location
+
+journal.window.settings.consent.trash.copy.locks.your.bucket.can.lock.files.against = your bucket can lock files against deletion, so the copies stay there until any lock ends and you delete those versions or your provider's own rules remove them.
+
+journal.window.settings.consent.trash.copy.mademany.some.of.what.was.made.from = some of what was made from them elsewhere in your journal may still mention them.
+
+journal.window.settings.consent.trash.copy.madeone.some.of.what.was.made.from = some of what was made from it elsewhere in your journal may still mention it.
+
+journal.window.settings.consent.trash.copy.mentionsmany.anything.elsewhere.in.your.journal.that = anything elsewhere in your journal that mentions them isn't erased.
+
+journal.window.settings.consent.trash.copy.mentionsone.anything.elsewhere.in.your.journal.that = anything elsewhere in your journal that mentions it isn't erased.
+
+journal.window.settings.consent.trash.copy.mergedinto.merged.into.title = merged into { $slot1 }
+
+journal.window.settings.consent.trash.copy.mergegone.the.facet.these.were.merged.into = the facet these were merged into is no longer in your journal, so they can't be recovered.
+
+journal.window.settings.consent.trash.copy.mergelive.where.both.facets.had.a.file = where both facets had a file of the same name, the merge kept { $slot1 }'s. recovering erases { $slot2 }'s and puts the other facet's in its place.
+
+journal.window.settings.consent.trash.copy.mergenomanifest.recovering.puts.these.back.where.the = recovering puts these back where the merge left them, outside any facet.
+
+journal.window.settings.consent.trash.copy.mergetrashed.the.facet.these.were.merged.into = the facet these were merged into, { $slot1 }, is in the trash. recover that first, then this.
+
+journal.window.settings.consent.trash.copy.nametaken.this.can.t.be.recovered.while = this can't be recovered while a different file is in its place in the segment.
+
+journal.window.settings.consent.trash.copy.originalsgomany.their.original.media.in.the.trash = their original media in the trash is erased with them.
+
+journal.window.settings.consent.trash.copy.originalsgoone.its.original.media.in.the.trash = its original media in the trash is erased with it.
+
+journal.window.settings.consent.trash.copy.originalslive.recovering.puts.it.back.in.its = recovering puts it back in its segment. if your retention settings still mark it, it's back on home's list the next time that list rebuilds.
+
+journal.window.settings.consent.trash.copy.originalssegmentgone.its.segment.is.no.longer.in = its segment is no longer in your journal, so this can't be recovered.
+
+journal.window.settings.consent.trash.copy.originalssegmenttrashed.its.segment.is.in.the.trash = its segment is in the trash. recover the segment first, then this.
+
+journal.window.settings.consent.trash.copy.originalsstaysmany.their.segments.and.everything.made.from = their segments and everything made from them aren't erased with them.
+
+journal.window.settings.consent.trash.copy.originalsstaysone.its.segment.and.everything.made.from = its segment and everything made from it aren't erased with it.
+
+journal.window.settings.consent.trash.copy.other.other.things.in.your.journal = other things in your journal
+
+journal.window.settings.consent.trash.copy.partialerasemany.erased.done.of.n.the.others = erased { $slot1 } of { $slot2 }. the others couldn't be erased and are still in the trash.
+
+journal.window.settings.consent.trash.copy.partialeraseone.erased.done.of.n.the.other = erased { $slot1 } of { $slot2 }. the other couldn't be erased and is still in the trash.
+
+journal.window.settings.consent.trash.copy.partialrecovermany.recovered.done.of.n.the.others = recovered { $slot1 } of { $slot2 }. the others couldn't be recovered and are still in the trash.
+
+journal.window.settings.consent.trash.copy.partialrecoverone.recovered.done.of.n.the.other = recovered { $slot1 } of { $slot2 }. the other couldn't be recovered and is still in the trash.
+
+journal.window.settings.consent.trash.copy.partmany.n.erased.things.are.removed.from = { $slot1 } erased things are removed from your backups, except some older ones that still hold them.
+
+journal.window.settings.consent.trash.copy.partone.erased.thing.is.removed.from.your = 1 erased thing is removed from your backups, except some older ones that still hold it.
+
+journal.window.settings.consent.trash.copy.range.choose.a.number.from.to = choose a number from 1 to 30.
+
+journal.window.settings.consent.trash.copy.recordingintrash.recover.its.segment.from.the.trash = recover its segment from the trash first, then this.
+
+journal.window.settings.consent.trash.copy.recover.recover = recover
+
+journal.window.settings.consent.trash.copy.recovered.recovered.n.things = recovered { $slot1 } { $slot2 }.
+
+journal.window.settings.consent.trash.copy.recoverfailedmany.couldn.t.recover.those.so.they = couldn't recover those, so they're still in the trash. try again.
+
+journal.window.settings.consent.trash.copy.recoverfailedone.couldn.t.recover.that.so.it = couldn't recover that, so it's still in the trash. try again.
+
+journal.window.settings.consent.trash.copy.recoverstuckmany.couldn.t.recover.those.so.they = couldn't recover those, so they're still in the trash.
+
+journal.window.settings.consent.trash.copy.recoverstuckone.couldn.t.recover.that.so.it = couldn't recover that, so it's still in the trash.
+
+journal.window.settings.consent.trash.copy.redirected.this.facet.s.name.now.leads = this facet's name now leads to another facet, so it can't be recovered.
+
+journal.window.settings.consent.trash.copy.refused.your.storage.said.no.or.said = your storage said no, or said yes and kept them. if the key your journal uses can't delete files, give it that permission. your journal tries again { $slot1 }.
+
+journal.window.settings.consent.trash.copy.refusedmany.no.backup.can.restore.n.erased = no backup can restore { $slot1 } erased things, but your storage didn't delete their copies.
+
+journal.window.settings.consent.trash.copy.refusedone.no.backup.can.restore.erased.thing = no backup can restore 1 erased thing, but your storage didn't delete its copies.
+
+journal.window.settings.consent.trash.copy.replaceconfirm.recover.and.replace = recover and replace
+
+journal.window.settings.consent.trash.copy.replaceone.another.facet.with.this.name.is = another facet with this name is in your journal now. recovering erases it, with everything in it, and puts this one back.
+
+journal.window.settings.consent.trash.copy.replacesomemany.k.facets.you.picked.each.have = { $slot1 } facets you picked each have another with the same name in your journal now. recovering erases those, with everything in them, and puts these back.
+
+journal.window.settings.consent.trash.copy.replacesomeone.facet.you.picked.has.another.with = 1 facet you picked has another with the same name in your journal now. recovering erases that one, with everything in it, and puts this one back.
+
+journal.window.settings.consent.trash.copy.replacetitle.recover.and.replace = recover and replace?
+
+journal.window.settings.consent.trash.copy.returned.the.same.segment.is.back.in = the same segment is back in your journal. recovering replaces that copy.
+
+journal.window.settings.consent.trash.copy.returnedimport.some.of.what.it.brought.in = some of what it brought in is back in your journal. recovering replaces those copies.
+
+journal.window.settings.consent.trash.copy.returnedworkout.the.same.workout.is.back.in = the same workout is back in your journal. recovering replaces that copy.
+
+journal.window.settings.consent.trash.copy.running.removing.n.erased.things.from.your = removing { $slot1 } erased things from your backups…
+
+journal.window.settings.consent.trash.copy.runningone.removing.erased.thing.from.your.backups = removing 1 erased thing from your backups…
+
+journal.window.settings.consent.trash.copy.screen.screen = screen
+
+journal.window.settings.consent.trash.copy.segmentmany.n.segments = { $slot1 } segments
+
+journal.window.settings.consent.trash.copy.segmentone.n.segment = { $slot1 } segment
+
+journal.window.settings.consent.trash.copy.selected.n.selected = { $slot1 } selected
+
+journal.window.settings.consent.trash.copy.settinglabel.also.remove.erased.things.from.your = also remove erased things from your backups
+
+journal.window.settings.consent.trash.copy.settingmore.how.this.works = how this works
+
+journal.window.settings.consent.trash.copy.settingmorelines.each.backup.that.holds.it.is = each backup that holds it is rewritten without it, then the storage it took up is cleared, where your storage allows it. no backup is lost, and you can still restore your journal to any of them.
+
+journal.window.settings.consent.trash.copy.settingmorelines.erase.always.happens.on.time.in = erase always happens on time in your journal. if backup is paused or your storage can't be reached, your backups follow when they can.
+
+journal.window.settings.consent.trash.copy.settingmorelines.if.something.you.kept.is.identical = if something you kept is identical to what you erased, such as a copy of the same file, that part stays, as part of what you kept.
+
+journal.window.settings.consent.trash.copy.settingmorelines.it.doesn.t.reach.a.place = it doesn't reach a place your backup lived before, backups your journal made while it was in another folder, media your journal archived before it noted where each file sits, copies your other devices made, or what was erased before your journal could do this.
+
+journal.window.settings.consent.trash.copy.settingmorelines.lines.your.journal.wrote.about.it = lines your journal wrote about it into things you keep, such as a person's details, can stay in backups from before the erase.
+
+journal.window.settings.consent.trash.copy.settingmorelines.this.covers.the.backups.at.the = this covers the backups at the place your backup lives now, including backups kept from before you restored this journal, and media archives. a media archive keeps the media you still have.
+
+journal.window.settings.consent.trash.copy.settingnoteoff.erase.now.shows.the.choice.unticked = erase now shows the choice unticked each time. what the trash erases on its date stays in your backups.
+
+journal.window.settings.consent.trash.copy.settingnoteon.erase.now.starts.ticked.and.what = erase now starts ticked, and what the trash erases on its date is removed from your backups too.
+
+journal.window.settings.consent.trash.copy.sortedmany.segments.sorted.into.them.stay.in = segments sorted into them stay in your journal.
+
+journal.window.settings.consent.trash.copy.sortedone.segments.sorted.into.it.stay.in = segments sorted into it stay in your journal.
+
+journal.window.settings.consent.trash.copy.speakerskept.people.and.segments.that.were.in = people and segments that were in the trash when it was cleared kept theirs.
+
+journal.window.settings.consent.trash.copy.speakersreplaces.recovering.puts.back.what.was.cleared = recovering puts back what was cleared, replacing what's been redone since for the same segments and people, including speakers you named.
+
+journal.window.settings.consent.trash.copy.staysmany.no.backup.can.restore.n.erased = no backup can restore { $slot1 } erased things, but copies of them stay in your bucket.
+
+journal.window.settings.consent.trash.copy.staysmany.summaries.made.from.them.elsewhere.in = summaries made from them elsewhere in your journal aren't erased and may still mention them.
+
+journal.window.settings.consent.trash.copy.staysone.no.backup.can.restore.erased.thing = no backup can restore 1 erased thing, but copies of it stay in your bucket.
+
+journal.window.settings.consent.trash.copy.staysone.summaries.made.from.it.elsewhere.in = summaries made from it elsewhere in your journal aren't erased and may still mention it.
+
+journal.window.settings.consent.trash.copy.stopped.removing.erased.things.from.your.backups = removing erased things from your backups stopped part way. your journal picks it up again on its own.
+
+journal.window.settings.consent.trash.copy.stretchblocked.part.of.it.comes.from.an = part of it comes from an import that's in the trash. recover the import first, then this.
+
+journal.window.settings.consent.trash.copy.stretchblockedlabel.part.of.it.comes.from.label = part of it comes from { $slot1 }, an import that's in the trash. recover that first, then this.
+
+journal.window.settings.consent.trash.copy.stretcherasesmany.the.k.imports.it.holds.and = the { $slot1 } imports it holds, and the files they kept, are erased with it.
+
+journal.window.settings.consent.trash.copy.stretcherasesmanynone.the.k.imports.it.holds.are = the { $slot1 } imports it holds are erased with it.
+
+journal.window.settings.consent.trash.copy.stretcherasesone.the.import.it.holds.and.the = the import it holds, and the file it kept, are erased with it.
+
+journal.window.settings.consent.trash.copy.stretcherasesonenone.the.import.it.holds.is.erased = the import it holds is erased with it.
+
+journal.window.settings.consent.trash.copy.stretchfinishing.this.is.still.moving.into.the = this is still moving into the trash. try again once it's done.
+
+journal.window.settings.consent.trash.copy.stretchfinishing.this.stopped.part.way.into.the = this stopped part way into the trash. your journal keeps trying to finish moving it, and you can recover or erase it once it has.
+
+journal.window.settings.consent.trash.copy.stretchholdslabel.it.holds.label.too.and.the = it holds { $slot1 } too, and the file it kept.
+
+journal.window.settings.consent.trash.copy.stretchholdsmany.it.holds.k.imports.too.and = it holds { $slot1 } imports too, and the files they kept.
+
+journal.window.settings.consent.trash.copy.stretchholdsmanynone.it.holds.k.imports.too = it holds { $slot1 } imports too.
+
+journal.window.settings.consent.trash.copy.stretchholdsone.it.holds.an.import.too = it holds an import too.
+
+journal.window.settings.consent.trash.copy.stretchimportintrash.recover.the.import.part.of.it = recover the import part of it comes from first. it's in the trash.
+
+journal.window.settings.consent.trash.copy.taken.this.can.t.be.recovered.because = this can't be recovered, because another entity in your journal is in its place.
+
+journal.window.settings.consent.trash.copy.unknown.check.your.bucket.s.versioning.lifecycle = check your bucket's versioning, lifecycle and lock settings to make sure the copies are gone.
+
+journal.window.settings.consent.trash.copy.unknownmany.no.backup.can.restore.n.erased = no backup can restore { $slot1 } erased things. your journal couldn't confirm their copies are gone from your bucket.
+
+journal.window.settings.consent.trash.copy.unknownone.no.backup.can.restore.erased.thing = no backup can restore 1 erased thing. your journal couldn't confirm its copies are gone from your bucket.
+
+journal.window.settings.consent.trash.copy.versions.your.storage.keeps.earlier.versions.of = your storage keeps earlier versions of deleted files, so the copies stay in your bucket until you delete those versions or your provider's own rules remove them.
+
+journal.window.settings.consent.trash.copy.waitbusy.this.starts.when.the.backup.that = this starts when the backup that's running now finishes.
+
+journal.window.settings.consent.trash.copy.waitingmany.n.erased.things.are.waiting.to = { $slot1 } erased things are waiting to be removed from your backups.
+
+journal.window.settings.consent.trash.copy.waitingone.erased.thing.is.waiting.to.be = 1 erased thing is waiting to be removed from your backups.
+
+journal.window.settings.consent.trash.copy.waitingownmanymany.the.w.segments.from.them.that = the { $slot1 } segments from them that wait in the trash on their own are erased with them.
+
+journal.window.settings.consent.trash.copy.waitingownmanyone.the.segment.from.them.that.waits = the segment from them that waits in the trash on its own is erased with them.
+
+journal.window.settings.consent.trash.copy.waitingownonemany.the.w.segments.from.it.that = the { $slot1 } segments from it that wait in the trash on their own are erased with it.
+
+journal.window.settings.consent.trash.copy.waitingownoneone.the.segment.from.it.that.waits = the segment from it that waits in the trash on its own is erased with it.
+
+journal.window.settings.consent.trash.copy.waitoffline.your.journal.can.t.reach.your = your journal can't reach your backup storage right now. it keeps trying.
+
+journal.window.settings.consent.trash.copy.waitpaused.backup.is.paused.so.this.happens = backup is paused, so this happens once you resume it.
+
+journal.window.settings.consent.trash.copy.waitsboth.recover.the.segments.and.imports.it = recover the segments and imports it cleared voice data from first. they're in the trash.
+
+journal.window.settings.consent.trash.copy.waitsfacetmany.recover.title.and.n.others.from = recover { $slot1 } and { $slot2 } others from the trash first, then this.
+
+journal.window.settings.consent.trash.copy.waitsfacetnone.recover.title.from.the.trash.first = recover { $slot1 } from the trash first, then this.
+
+journal.window.settings.consent.trash.copy.waitsfacetone.recover.title.and.other.from.the = recover { $slot1 } and 1 other from the trash first, then this.
+
+journal.window.settings.consent.trash.copy.waitsimportmany.recover.the.n.imports.it.cleared = recover the { $slot1 } imports it cleared voice data from first. they're in the trash.
+
+journal.window.settings.consent.trash.copy.waitsimportone.recover.the.import.it.cleared.voice = recover the import it cleared voice data from first. it's in the trash.
+
+journal.window.settings.consent.trash.copy.waitspersonmany.recover.name.and.n.others.from = recover { $slot1 } and { $slot2 } others from the trash first, then this.
+
+journal.window.settings.consent.trash.copy.waitspersonnone.recover.name.from.the.trash.first = recover { $slot1 } from the trash first, then this.
+
+journal.window.settings.consent.trash.copy.waitspersonone.recover.name.and.other.from.the = recover { $slot1 } and 1 other from the trash first, then this.
+
+journal.window.settings.consent.trash.copy.waitssegmentmany.recover.the.n.segments.it.cleared = recover the { $slot1 } segments it cleared voice data from first. they're in the trash.
+
+journal.window.settings.consent.trash.copy.waitssegmentone.recover.the.segment.it.cleared.voice = recover the segment it cleared voice data from first. it's in the trash.
+
+journal.window.settings.consent.trash.copy.why.why.and.what.you.can.do = why, and what you can do
+
+journal.window.settings.consent.trash.copy.whyonly.why = why
+
+journal.window.settings.disclosure.label.how.this.works = how this works
+
+journal.window.settings.disclosure.label.how.to.find.it = how to find it
+
+journal.window.settings.disclosure.label.how.to.get.your.key = how to get your key
+
+journal.window.settings.disclosure.label.installation.and.licenses = installation and licenses
+
+journal.window.settings.facet.action.labels.activity.add.added.an.activity = added an activity
+
+journal.window.settings.facet.action.labels.activity.create.created.an.activity = created an activity
+
+journal.window.settings.facet.action.labels.activity.remove.removed.an.activity = removed an activity
+
+journal.window.settings.facet.action.labels.activity.update.updated.an.activity = updated an activity
+
+journal.window.settings.facet.action.labels.entity.add.aka.added.another.name = added another name
+
+journal.window.settings.facet.action.labels.entity.attach.attached.an.entity = attached an entity
+
+journal.window.settings.facet.action.labels.entity.detach.detached.an.entity = detached an entity
+
+journal.window.settings.facet.action.labels.entity.update.updated.an.entity = updated an entity
+
+journal.window.settings.facet.action.labels.facet.create.created.this.facet = created this facet
+
+journal.window.settings.facet.action.labels.facet.mute.muted.this.facet = muted this facet
+
+journal.window.settings.facet.action.labels.facet.rename.renamed.this.facet = renamed this facet
+
+journal.window.settings.facet.action.labels.facet.unmute.unmuted.this.facet = unmuted this facet
+
+journal.window.settings.facet.action.labels.facet.update.updated.this.facet = updated this facet
+
+journal.window.settings.facet.color.bronze = bronze
+
+journal.window.settings.facet.color.burnt.orange = burnt orange
+
+journal.window.settings.facet.color.dark = dark
+
+journal.window.settings.facet.color.forest = forest
+
+journal.window.settings.facet.color.gold.swatch = gold swatch
+
+journal.window.settings.facet.color.gold.warning = gold warning
+
+journal.window.settings.facet.color.olive.swatch = olive swatch
+
+journal.window.settings.facet.color.orange.gold = orange gold
+
+journal.window.settings.facet.color.orange.green = orange green
+
+journal.window.settings.facet.color.orange.swatch = orange swatch
+
+journal.window.settings.facet.color.success = success
+
+journal.window.settings.facet.color.warning = warning
+
+journal.window.settings.facet.mute = mute
+
+journal.window.settings.facet.mute.name = mute{ $slot1 }{ $title }
+
+journal.window.settings.facet.unmute = unmute
+
+journal.window.settings.facet.unmute.name = unmute{ $slot1 }{ $title }
+
+journal.window.settings.facets.detail.backups.must.be.true.or.false = backups must be true or false
+
+journal.window.settings.facets.detail.consent.is.required = consent is required
+
+journal.window.settings.facets.detail.consent.must.be.boolean = consent must be boolean
+
+journal.window.settings.facets.detail.consent.must.be.true = consent must be true
+
+journal.window.settings.facets.detail.erase.must.be.true.or.false = erase must be true or false
+
+journal.window.settings.facets.detail.invalid.or.existing.facet.title = invalid or existing facet title
+
+journal.window.settings.facets.detail.new.name.is.required = new_name is required
+
+journal.window.settings.facets.detail.title.is.required = Title is required
+
+journal.window.settings.facets.detail.title.must.start.with.a.letter = Title must start with a letter.
+
+journal.window.settings.facets.detail.unknown.lucide.icon = unknown { $slot1 } icon
+
+journal.window.settings.facets.response.delete.busy = that facet couldn't be moved to the trash right now, so nothing was deleted.
+
+journal.window.settings.field.label.aliases = aliases
+
+journal.window.settings.field.label.audio.with.no.speech = audio with no speech
+
+journal.window.settings.field.label.backend = backend
+
+journal.window.settings.field.label.bio = bio
+
+journal.window.settings.field.label.color = color
+
+journal.window.settings.field.label.custom.color = custom color:
+
+journal.window.settings.field.label.description = description
+
+journal.window.settings.field.label.device = device
+
+journal.window.settings.field.label.email.addresses = email addresses
+
+journal.window.settings.field.label.erase.after = erase after
+
+journal.window.settings.field.label.frames.read.in.detail = frames read in detail
+
+journal.window.settings.field.label.full.name = full name
+
+journal.window.settings.field.label.home.timezone = home timezone
+
+journal.window.settings.field.label.hourly.sync = hourly sync
+
+journal.window.settings.field.label.icon = icon
+
+journal.window.settings.field.label.icon.emoji = icon (emoji)
+
+journal.window.settings.field.label.instructions = instructions
+
+journal.window.settings.field.label.keep.audio.with.no.speech = keep audio with no speech
+
+journal.window.settings.field.label.keep.originals = keep originals
+
+journal.window.settings.field.label.leave.out.other.voices = leave out other voices
+
+journal.window.settings.field.label.log.retention = log retention
+
+journal.window.settings.field.label.lucide.icon = lucide icon
+
+journal.window.settings.field.label.model.version = model version
+
+journal.window.settings.field.label.name = name
+
+journal.window.settings.field.label.older.than = older than
+
+journal.window.settings.field.label.open.to.this.computer = open to this computer
+
+journal.window.settings.field.label.operational.logs = operational logs
+
+journal.window.settings.field.label.original.media = original media
+
+journal.window.settings.field.label.personal.api.key = personal API key
+
+journal.window.settings.field.label.preferred.name = preferred name
+
+journal.window.settings.field.label.pronouns = pronouns
+
+journal.window.settings.field.label.search.icons = search icons
+
+journal.window.settings.field.label.speech.processing = speech processing
+
+journal.window.settings.field.label.stream.filter.optional = stream filter (optional)
+
+journal.window.settings.field.label.suggest.profile.pics.from.your.meetings = suggest profile pics from your meetings
+
+journal.window.settings.field.label.timeout.seconds = timeout (seconds)
+
+journal.window.settings.field.or.control.label.days = days
+
+journal.window.settings.field.or.control.label.detection.hints.and.level.guidance = detection hints and level guidance
+
+journal.window.settings.field.or.control.label.enter.api.key = enter API key
+
+journal.window.settings.field.or.control.label.key.available.from.system.environment = key available from system environment
+
+journal.window.settings.field.or.control.label.key.configured.enter.new.value.to = key configured (enter new value to replace)
+
+journal.window.settings.field.placeholder.add.a.redaction.rule = add a redaction rule…
+
+journal.window.settings.field.placeholder.brief.description.of.this.activity = brief description of this activity
+
+journal.window.settings.field.placeholder.custom = custom
+
+journal.window.settings.field.placeholder.detection.hints.and.level.guidance.for = detection hints and level guidance for the model
+
+journal.window.settings.field.placeholder.e.g.a.software.engineer.interested = e.g., a software engineer interested in AI
+
+journal.window.settings.field.placeholder.e.g.america.new.york = e.g., { $slot1 }
+
+journal.window.settings.field.placeholder.e.g.nickname1.nickname2 = e.g., nickname1, nickname2
+
+journal.window.settings.field.placeholder.e.g.research = e.g., research
+
+journal.window.settings.field.placeholder.e.g.work.company.com.personal = e.g., { $slot1 }, { $slot2 }
+
+journal.window.settings.field.placeholder.enter.access.token = enter access token
+
+journal.window.settings.field.placeholder.paste.emoji = paste emoji
+
+journal.window.settings.field.placeholder.search.by.name.or.tag = search by name or tag
+
+journal.window.settings.field.placeholder.your.full.name = your full name
+
+journal.window.settings.field.placeholder.your.preferred.name = your preferred name
+
+journal.window.settings.granola.checking.now = checking now…
+
+journal.window.settings.granola.last.added = last added
+
+journal.window.settings.granola.last.checked = last checked
+
+journal.window.settings.granola.meetings = meetings
+
+journal.window.settings.granola.meetings.in.journal = { $count }{ $slot1 }in your journal
+
+journal.window.settings.granola.meetings.none = none yet
+
+journal.window.settings.granola.paste.access = { $slot1 } turned that key away. API access needs { $slot2 } or Enterprise, and on Enterprise an admin may need to allow it.
+
+journal.window.settings.granola.paste.key = { $slot1 } didn't accept that key. copy it again from { $slot2 }, or create a new one.
+
+journal.window.settings.granola.response.access = { $slot1 } turned this key away. API access needs { $slot2 } or Enterprise, and on Enterprise an admin can turn it off.
+
+journal.window.settings.granola.response.busy = your journal is already checking { $slot1 }. try again when it finishes.
+
+journal.window.settings.granola.response.invalidkey = that isn't a complete { $slot1 } personal API key. it starts with { $slot2 }.
+
+journal.window.settings.granola.response.key = { $slot1 } no longer accepts this key. it may have been revoked or reached its expiration date. add a new key to carry on.
+
+journal.window.settings.granola.response.limited = { $slot1 } asked your journal to slow down. it will try again on its next check.
+
+journal.window.settings.granola.response.response = { $slot1 } sent something your journal couldn't read. it will try again on its next check.
+
+journal.window.settings.granola.response.stopped = the check stopped before it finished. your journal will pick it up on its next check.
+
+journal.window.settings.granola.response.storage = your journal couldn't save what came from { $slot1 }. check that this computer has free space.
+
+journal.window.settings.granola.response.transcript = { $slot1 } didn't include a meeting's transcript. your journal will try again on its next check.
+
+journal.window.settings.granola.response.unavailable = couldn't reach { $slot1 }. your journal will try again on its next check.
+
+journal.window.settings.granola.state.words.attention.needs.attention = needs attention
+
+journal.window.settings.granola.state.words.off.off = off
+
+journal.window.settings.granola.state.words.on.on = on
+
+journal.window.settings.granola.state.words.ready.ready.to.set.up = ready to set up
+
+journal.window.settings.granola.state.words.setting.up.setting.up = setting up
+
+journal.window.settings.granola.stays.many = stay
+
+journal.window.settings.granola.stays.one = stays
+
+journal.window.settings.group.label.ai = AI
+
+journal.window.settings.group.label.data = data
+
+journal.window.settings.group.label.devices = devices
+
+journal.window.settings.group.label.help = help
+
+journal.window.settings.group.label.identity = identity
+
+journal.window.settings.group.label.overview = overview
+
+journal.window.settings.group.label.this.computer = this computer
+
+journal.window.settings.http.activity.not.found.activity.not.found.in.facet = Activity not found in facet
+
+journal.window.settings.http.activity.not.found.that.activity.isn.t.in.the = that activity isn't in the facet.
+
+journal.window.settings.http.activity.protected.cannot.remove.always.on.activity = Cannot remove always-on activity
+
+journal.window.settings.http.activity.protected.that.activity.couldn.t.be.removed = that activity couldn't be removed.
+
+journal.window.settings.http.activity.settings.unavailable.the.saved.settings.were.left.unchanged = the saved settings were left unchanged
+
+journal.window.settings.http.activity.settings.unavailable.those.activity.settings.couldn.t.be = those activity settings couldn't be read.
+
+journal.window.settings.http.config.busy.settings.configuration.is.busy = settings configuration is busy
+
+journal.window.settings.http.config.busy.those.settings.couldn.t.be.saved = those settings couldn't be saved right now because they were busy. try again in a moment.
+
+journal.window.settings.http.detail.something.went.wrong.try.again.and = something went wrong — try again, and if it persists, check the health dashboard
+
+journal.window.settings.http.facet.not.found.facet.not.found = Facet not found
+
+journal.window.settings.http.facet.not.found.that.facet.isn.t.in.your = that facet isn't in your journal.
+
+journal.window.settings.http.invalid.config.value.that.setting.couldn.t.be.saved = that setting couldn't be saved because one value was invalid.
+
+journal.window.settings.http.invalid.request.value.one.of.those.values.couldn.t = one of those values couldn't be used.
+
+journal.window.settings.http.last.enabled.facet.unmute.or.add.another.facet.first = unmute or add another facet first, then try again
+
+journal.window.settings.http.last.enabled.facet.your.journal.needs.at.least.one = your journal needs at least one facet that isn't muted.
+
+journal.window.settings.http.missing.request.body.no.data.provided = No data provided
+
+journal.window.settings.http.missing.request.body.that.request.had.no.data.in = that request had no data in it.
+
+journal.window.settings.http.missing.required.field.a.required.field.is.missing = a required field is missing.
+
+journal.window.settings.http.owner.voice.consent.required.only.the.journal.s.owner.can = only the journal's owner can turn this on.
+
+journal.window.settings.http.owner.voice.consent.required.turn.on.leave.out.other.voices = turn on "leave out other voices" in settings, transcription; it asks for confirmation.
+
+journal.window.settings.http.plaud.validation.unavailable.live.plaud.validation.is.not.available = live { $slot1 } validation is not available in the native settings surface
+
+journal.window.settings.http.plaud.validation.unavailable.that.plaud.token.can.t.be = that { $slot1 } token can't be validated in this version.
+
+journal.window.settings.http.retired.facet.names.unreadable.run.solstone.journal.facet.doctor.fix = run `{ $slot1 }` on the computer your journal is on, then try again
+
+journal.window.settings.http.retired.facet.names.unreadable.your.journal.s.record.of.past = your journal's record of past facet names couldn't be read, so no facet was added.
+
+journal.window.settings.http.settings.operation.failed.with.detail.those.settings.couldn.t.be.saved = those settings couldn't be saved.
+
+journal.window.settings.importance.labels.high.high.priority = high priority
+
+journal.window.settings.importance.labels.ignore.ignored = ignored
+
+journal.window.settings.importance.labels.low.low.priority = low priority
+
+journal.window.settings.importance.labels.normal.normal = normal
+
+journal.window.settings.link.label.api.keys = API keys
+
+journal.window.settings.link.label.confidential.setup = confidential setup
+
+journal.window.settings.link.label.configure.in.api.keys = configure in API keys
+
+journal.window.settings.link.label.facets = facets
+
+journal.window.settings.link.label.set.up.your.voice.first = set up your voice first
+
+journal.window.settings.link.label.settings = settings
+
+journal.window.settings.logs.deleted = deleted
+
+journal.window.settings.logs.directories = { $count }{ $slot1 }cache dir(s)
+
+journal.window.settings.logs.files = { $count }{ $slot1 }file(s)
+
+journal.window.settings.logs.no.deletions = no deletions
+
+journal.window.settings.logs.preview = preview
+
+journal.window.settings.logs.skipped = { $count }{ $slot1 }skipped
+
+journal.window.settings.option.label.about = about
+
+journal.window.settings.option.label.all.streams = all streams
+
+journal.window.settings.option.label.api.keys = API keys
+
+journal.window.settings.option.label.auto.detect.best.available.runtime = auto - detect best available runtime
+
+journal.window.settings.option.label.auto.use.gpu.if.available.else = auto - use { $slot1 } if available, else { $slot2 }
+
+journal.window.settings.option.label.confidential.processing = confidential processing
+
+journal.window.settings.option.label.cpu.force.processor.runtime = { $slot1 } - force processor runtime
+
+journal.window.settings.option.label.cuda.force.nvidia.runtime = { $slot1 } - force { $slot2 } runtime
+
+journal.window.settings.option.label.facets = facets
+
+journal.window.settings.option.label.guide = guide
+
+journal.window.settings.option.label.high = High
+
+journal.window.settings.option.label.journal.default = journal default
+
+journal.window.settings.option.label.keep.everything = keep everything
+
+journal.window.settings.option.label.list.originals.for.removal.after.n = list originals for removal after N days
+
+journal.window.settings.option.label.list.originals.for.removal.after.processing = list originals for removal after processing
+
+journal.window.settings.option.label.local.access = local access
+
+journal.window.settings.option.label.local.model = local model
+
+journal.window.settings.option.label.low = Low
+
+journal.window.settings.option.label.normal = Normal
+
+journal.window.settings.option.label.profile = profile
+
+journal.window.settings.option.label.select.pronouns = select pronouns…
+
+journal.window.settings.option.label.storage = storage
+
+journal.window.settings.option.label.support = support
+
+journal.window.settings.option.label.sync = sync
+
+journal.window.settings.option.label.transcription = transcription
+
+journal.window.settings.option.label.trash = trash
+
+journal.window.settings.option.label.use.global.default = use global default
+
+journal.window.settings.option.label.v3.parakeet.tdt.b = v3 - { $slot1 } 0.6B
+
+journal.window.settings.option.label.vision = vision
+
+journal.window.settings.redaction.many = { $count }{ $slot1 }rules
+
+journal.window.settings.redaction.one = { $count }{ $slot1 }rule
+
+journal.window.settings.removal.action.backup.erase.partly.removed.from.your.backups.except.some = removed from your backups, except some older ones that still hold it
+
+journal.window.settings.removal.action.backup.erase.removed.from.your.backups = removed from your backups
+
+journal.window.settings.removal.action.backup.erase.shared.removed.from.your.backups = removed from your backups
+
+journal.window.settings.removal.action.backup.erase.stays.removed.from.your.backups.but.copies = removed from your backups, but copies may stay in storage
+
+journal.window.settings.removal.action.backup.off.deleted.when.you.turned.off.backup = deleted when you turned off backup
+
+journal.window.settings.removal.action.detected.entities.delete.deleted = deleted
+
+journal.window.settings.removal.action.entity.delete.deleted = deleted
+
+journal.window.settings.removal.action.facet.delete.deleted = deleted
+
+journal.window.settings.removal.action.facet.merge.merged.into.another.facet = merged into another facet
+
+journal.window.settings.removal.action.fallback.label.removed = removed
+
+journal.window.settings.removal.action.finish.stopped.finished.deleting = finished deleting
+
+journal.window.settings.removal.action.import.delete.deleted = deleted
+
+journal.window.settings.removal.action.memory.delete.deleted = deleted
+
+journal.window.settings.removal.action.note.backup.erase.shared.a.part.identical.to.something.you = a part identical to something you kept stays, as part of what you kept.
+
+journal.window.settings.removal.action.originals.release.removed.after.you.approved.it = removed after you approved it
+
+journal.window.settings.removal.action.segment.delete.deleted = deleted
+
+journal.window.settings.removal.action.speakers.wipe.cleared = cleared
+
+journal.window.settings.removal.action.stretch.delete.deleted = deleted
+
+journal.window.settings.removal.action.voice.only.release.removed.because.leave.out.other.voices = removed because "leave out other voices" was on
+
+journal.window.settings.removal.action.workout.delete.deleted = deleted
+
+journal.window.settings.removal.backup.operated.storage.sol.pbc.operates = storage { $slot1 } operates
+
+journal.window.settings.removal.backup.own.your.own.storage = your own storage
+
+journal.window.settings.removal.copy.empty.nothing.has.been.removed.since.your = nothing has been removed since your journal started keeping this history. anything removed before then isn't listed.
+
+journal.window.settings.removal.copy.erasedonitsdate.erased.on.its.date = erased on its date
+
+journal.window.settings.removal.copy.error.couldn.t.load.your.removal.history = couldn't load your removal history. reload the page to try again.
+
+journal.window.settings.removal.copy.foldboth.how.erasing.what.was.in.the = { $slot1 }, erasing what was in the way, except notes in facets no longer in your journal
+
+journal.window.settings.removal.copy.folderasing.how.erasing.what.was.in.the = { $slot1 }, erasing what was in the way
+
+journal.window.settings.removal.copy.foldexcept.how.except.notes.in.facets.no = { $slot1 }, except notes in facets no longer in your journal
+
+journal.window.settings.removal.copy.footall.anything.removed.before.your.journal.started = anything removed before your journal started keeping this history isn't listed.
+
+journal.window.settings.removal.copy.footsome.showing.the.newest.shown.of.total = showing the newest { $slot1 } of { $slot2 }.
+
+journal.window.settings.removal.copy.mixed.n.things = { $slot1 } things
+
+journal.window.settings.removal.copy.namenotkept.its.name.isn.t.kept = its name isn't kept
+
+journal.window.settings.removal.detail.the.selection.couldn.t.be.read = the selection couldn't be read
+
+journal.window.settings.removal.event.erased.erased = erased
+
+journal.window.settings.removal.event.recovered.recovered = recovered
+
+journal.window.settings.removal.event.trashed.moved.to.the.trash = moved to the trash
+
+journal.window.settings.removal.imported.label.imported.day = imported { $slot1 }
+
+journal.window.settings.removal.kind.backup.backup.copies = backup copies
+
+journal.window.settings.removal.kind.detected.entities.detected.entities = detected entities
+
+journal.window.settings.removal.kind.detected.entities.detected.entity = detected entity
+
+journal.window.settings.removal.kind.entity.entities = entities
+
+journal.window.settings.removal.kind.entity.entity = entity
+
+journal.window.settings.removal.kind.facet.facet = facet
+
+journal.window.settings.removal.kind.facet.facets = facets
+
+journal.window.settings.removal.kind.facet.file.files.from.a.facet.merge = files from a facet merge
+
+journal.window.settings.removal.kind.fallback.label.other.things = other things
+
+journal.window.settings.removal.kind.fallback.label.something.else = something else
+
+journal.window.settings.removal.kind.group.originals.original.media.from.n.segments = original media from { $slot1 } segments
+
+journal.window.settings.removal.kind.import.import = import
+
+journal.window.settings.removal.kind.import.imports = imports
+
+journal.window.settings.removal.kind.memory.memories.agents.saved = memories agents saved
+
+journal.window.settings.removal.kind.memory.memory.an.agent.saved = memory an agent saved
+
+journal.window.settings.removal.kind.original.original.media = original media
+
+journal.window.settings.removal.kind.original.originals = originals
+
+journal.window.settings.removal.kind.originals.original.media = original media
+
+journal.window.settings.removal.kind.segment.segment = segment
+
+journal.window.settings.removal.kind.segment.segments = segments
+
+journal.window.settings.removal.kind.speakers.what.your.journal.keeps.about.voices = what your journal keeps about voices
+
+journal.window.settings.removal.kind.workout.workout = workout
+
+journal.window.settings.removal.kind.workout.workouts = workouts
+
+journal.window.settings.removal.response.action.failure = your journal couldn't finish that. reload your trash to check.
+
+journal.window.settings.removal.response.busy = that is already being recovered or erased
+
+journal.window.settings.removal.response.finishing = it's in the trash, which will finish putting it away
+
+journal.window.settings.removal.response.gone = that is no longer in the trash
+
+journal.window.settings.removal.response.missing = there is no such{ $slot1 }{ $kind }{ $slot2 }in your journal
+
+journal.window.settings.removal.response.unavailable = your trash couldn't be changed
+
+journal.window.settings.removal.response.unreadable = your trash couldn't be read.
+
+journal.window.settings.removal.source.audio.archive.audio.archive = audio archive
+
+journal.window.settings.removal.source.audio.audio = audio
+
+journal.window.settings.removal.source.document.document = document
+
+journal.window.settings.removal.source.ics.calendar = calendar
+
+journal.window.settings.removal.source.image.image = image
+
+journal.window.settings.removal.source.journal.archive.journal = journal
+
+journal.window.settings.removal.source.quick.quick.import = quick import
+
+journal.window.settings.removal.source.recording.meeting.audio = meeting audio
+
+journal.window.settings.removal.source.text.text = text
+
+journal.window.settings.removal.surface.activities.in.activities = in activities
+
+journal.window.settings.removal.surface.agents.in.agents = in agents
+
+journal.window.settings.removal.surface.backup.in.backup = in backup
+
+journal.window.settings.removal.surface.body.in.body = in body
+
+journal.window.settings.removal.surface.cli.from.the.command.line = from the command line
+
+journal.window.settings.removal.surface.entities.in.entities = in entities
+
+journal.window.settings.removal.surface.home.in.home = in home
+
+journal.window.settings.removal.surface.import.in.import = in import
+
+journal.window.settings.removal.surface.settings.in.settings = in settings
+
+journal.window.settings.removal.surface.speakers.in.speakers = in speakers
+
+journal.window.settings.removal.surface.transcripts.in.transcripts = in transcripts
+
+journal.window.settings.retention.detail.days.must.be.a.positive.integer = days must be a positive integer
+
+journal.window.settings.retention.detail.enabled.must.be.a.boolean = enabled must be a boolean
+
+journal.window.settings.retention.detail.invalid.days = Invalid days for{ $slot1 }{ $name }
+
+journal.window.settings.retention.detail.invalid.mode = Invalid mode:{ $slot1 }{ $mode }
+
+journal.window.settings.retention.detail.invalid.stream.mode = Invalid mode for{ $slot1 }{ $name }:{ $slot2 }{ $mode }
+
+journal.window.settings.retention.detail.journal.logs.must.be.an.object = journal_logs must be an object
+
+journal.window.settings.retention.detail.mark.failure = could not build the list:{ $slot1 }{ $detail }
+
+journal.window.settings.retention.detail.per.stream.must.be.an.object = per_stream must be an object
+
+journal.window.settings.retention.detail.request.body.must.be.an.object = request body must be an object
+
+journal.window.settings.retention.executor.could.not.run = the retention tool could not run:{ $slot1 }{ $detail }.
+
+journal.window.settings.retention.executor.excess.output = the retention tool produced too much output.
+
+journal.window.settings.retention.executor.join.failed = the retention tool could not run: task join failed.
+
+journal.window.settings.retention.executor.no.stderr = { $slot1 }no { $slot2 }{ $slot3 }
+
+journal.window.settings.retention.executor.override = { $variable }{ $slot1 }points at{ $slot2 }{ $path }, which is not an executable file
+
+journal.window.settings.retention.executor.path.missing = { $binary }{ $slot1 }is not on { $slot2 }. Every removal of the owner's media goes through it, so nothing is deleted without it. Install the core binaries, or set{ $slot3 }{ $variable }{ $slot4 }to an absolute path.
+
+journal.window.settings.retention.executor.receipt.not.object = the retention tool's receipt was not an object.
+
+journal.window.settings.retention.executor.receipt.rejected = the retention tool was rejected (exit{ $slot1 }{ $code }):{ $slot2 }{ $receipt }
+
+journal.window.settings.retention.executor.receipt.unreadable = the retention tool produced no readable receipt (exit{ $slot1 }{ $code }):{ $slot2 }{ $detail }.
+
+journal.window.settings.retention.executor.refused.without.entry = the retention tool refused without naming an entry.
+
+journal.window.settings.retention.executor.stderr.failed = the retention tool could not run: { $slot1 } reader failed.
+
+journal.window.settings.retention.executor.stderr.unavailable = the retention tool could not run: { $slot1 } unavailable.
+
+journal.window.settings.retention.executor.stdout.failed = the retention tool could not run: { $slot1 } reader failed.
+
+journal.window.settings.retention.executor.stdout.unavailable = the retention tool could not run: { $slot1 } unavailable.
+
+journal.window.settings.retention.executor.timeout = the retention tool did not finish within 60s.
+
+journal.window.settings.retention.unknown.error = unknown error
+
+journal.window.settings.save.failed = Save failed
+
+journal.window.settings.save.not.saved = not saved
+
+journal.window.settings.section.heading.about = about
+
+journal.window.settings.section.heading.activities = activities
+
+journal.window.settings.section.heading.activity.log = activity log
+
+journal.window.settings.section.heading.add.a.facet = add a facet
+
+journal.window.settings.section.heading.add.custom.activity = add custom activity
+
+journal.window.settings.section.heading.api.keys = API keys
+
+journal.window.settings.section.heading.appearance = appearance
+
+journal.window.settings.section.heading.build.the.list = build the list
+
+journal.window.settings.section.heading.choose.lucide.icon = choose lucide icon
+
+journal.window.settings.section.heading.choose.theme.color = choose theme color
+
+journal.window.settings.section.heading.clean.up.logs = clean up logs
+
+journal.window.settings.section.heading.devices = devices
+
+journal.window.settings.section.heading.erase.all.face.data = erase all face data?
+
+journal.window.settings.section.heading.facets = facets
+
+journal.window.settings.section.heading.guide = guide
+
+journal.window.settings.section.heading.local.access = local access
+
+journal.window.settings.section.heading.profile = profile
+
+journal.window.settings.section.heading.removal.history = removal history
+
+journal.window.settings.section.heading.sync = sync
+
+journal.window.settings.section.heading.transcription = transcription
+
+journal.window.settings.section.heading.trash = trash
+
+journal.window.settings.section.heading.turn.on.leave.out.other.voices = turn on "leave out other voices"?
+
+journal.window.settings.section.heading.vision = vision
+
+journal.window.settings.section.heading.your.original.media.audio.video.screen = your original media (audio, video, screen frames)
+
+journal.window.settings.settings.action.failure.failed.to.add.facet = failed to add facet
+
+journal.window.settings.settings.action.failure.failed.to.load.facets = failed to load facets
+
+journal.window.settings.settings.action.failure.speech.processing.was.not.confirmed = speech processing was not confirmed
+
+journal.window.settings.settings.content.cleanup.complete = cleanup complete
+
+journal.window.settings.settings.content.no.description = no description
+
+journal.window.settings.settings.content.no.description.set = no description set
+
+journal.window.settings.settings.content.no.instructions = no instructions
+
+journal.window.settings.settings.content.save.failed = Save failed
+
+journal.window.settings.settings.content.unknown.error = unknown error
+
+journal.window.settings.settings.content.would.be.deleted = would be deleted
+
+journal.window.settings.settings.copy.heading.couldn.t.load.settings = couldn't load settings
+
+journal.window.settings.settings.copy.heading.couldn.t.load.storage.settings = couldn't load storage settings
+
+journal.window.settings.settings.copy.heading.couldn.t.load.sync.settings = Couldn't load sync settings
+
+journal.window.settings.settings.copy.heading.couldn.t.load.transcription.settings = couldn't load transcription settings
+
+journal.window.settings.settings.copy.heading.couldn.t.load.vision.settings = couldn't load vision settings
+
+journal.window.settings.settings.copy.message.click.to.update.facet.bar = click to update facet bar
+
+journal.window.settings.settings.copy.statustext.currently.keep.everything = currently: keep everything.
+
+journal.window.settings.settings.copy.statustext.currently.keep.everything.except.audio.with = currently: keep everything except audio with no speech.
+
+journal.window.settings.settings.copy.statustext.currently.list.originals.for.removal.after = currently: list originals for removal after processing.
+
+journal.window.settings.settings.copy.statustext.currently.list.originals.for.removal.after.variant2 = currently: list originals for removal after processing, except audio with no speech.
+
+journal.window.settings.settings.copy.statustext.currently.list.originals.for.removal.after.variant3 = currently: list originals for removal after{ $slot1 }{ $value1 }{ $slot2 }{ $value2 }, except audio with no speech.
+
+journal.window.settings.settings.copy.statustext.currently.list.originals.for.removal.after.variant4 = currently: list originals for removal after{ $slot1 }{ $value1 }{ $slot2 }{ $value2 }, and audio with no speech after processing.
+
+journal.window.settings.settings.copy.text.face.data.couldn.t.be.erased = face data couldn't be erased.
+
+journal.window.settings.settings.copy.text.loading.settings = loading settings…
+
+journal.window.settings.settings.copy.text.profile.pic.suggestions.are.on.so = profile pic suggestions are on, so nothing was erased. turn them off first.
+
+journal.window.settings.settings.copy.text.your.journal.is.using.face.data = your journal is using face data right now, so nothing was erased. try again in a minute.
+
+journal.window.settings.settings.copy.title.reload.to.apply = reload to apply
+
+journal.window.settings.settings.description.face.data.erased = face data erased.
+
+journal.window.settings.settings.description.hour.ago = 1 hour ago
+
+journal.window.settings.settings.description.just.now = just now
+
+journal.window.settings.settings.description.meeting = 1 meeting
+
+journal.window.settings.settings.description.there.was.no.face.data.to = there was no face data to erase.
+
+journal.window.settings.settings.description.value1.hours.ago = { $value1 }{ $slot1 }hours ago
+
+journal.window.settings.settings.description.value1.min.ago = { $value1 }{ $slot1 }min ago
+
+journal.window.settings.settings.feedback.add.a.facet = add a facet
+
+journal.window.settings.settings.feedback.add.a.facet.variant2 = + add a facet
+
+journal.window.settings.settings.feedback.add.failed = add failed
+
+journal.window.settings.settings.feedback.bringing.in.your.meetings.from.granola = bringing in your meetings from { $slot1 }…
+
+journal.window.settings.settings.feedback.bringing.in.your.meetings.from.granola.variant2 = bringing in your meetings from { $slot1 }.{ $slot2 }{ $value1 }{ $slot3 }so far.
+
+journal.window.settings.settings.feedback.check.now = check now
+
+journal.window.settings.settings.feedback.checking = checking…
+
+journal.window.settings.settings.feedback.checking.the.key = checking the key…
+
+journal.window.settings.settings.feedback.cleanup.failed = cleanup failed
+
+journal.window.settings.settings.feedback.connect = connect
+
+journal.window.settings.settings.feedback.couldn.t.confirm.the.change.the = couldn't confirm the change. the stored choice is shown.
+
+journal.window.settings.settings.feedback.couldn.t.load.the.stored.choice = couldn't load the stored choice. reload settings to try again.
+
+journal.window.settings.settings.feedback.couldn.t.refresh.storage.settings.showing = couldn't refresh storage settings. showing last known state.
+
+journal.window.settings.settings.feedback.couldn.t.save.the.key.try = couldn't save the key. try again.
+
+journal.window.settings.settings.feedback.creation.failed = creation failed
+
+journal.window.settings.settings.feedback.disconnected.the.value1.from.granola.value2 = disconnected. the{ $slot1 }{ $value1 }{ $slot2 }from { $slot3 }{ $slot4 }{ $value2 }{ $slot5 }in your journal. connect again to keep them up to date; nothing comes in twice.
+
+journal.window.settings.settings.feedback.enter.a.positive.number.of.days = enter a positive number of days.
+
+journal.window.settings.settings.feedback.error.loading.configuration = Error loading configuration
+
+journal.window.settings.settings.feedback.icon.search.failed = icon search failed
+
+journal.window.settings.settings.feedback.invalid.input = invalid input
+
+journal.window.settings.settings.feedback.load.failed = Load Failed
+
+journal.window.settings.settings.feedback.loading.icons = loading icons…
+
+journal.window.settings.settings.feedback.maximum.of.rules.allowed = maximum of 50 rules allowed
+
+journal.window.settings.settings.feedback.name.is.required = name is required
+
+journal.window.settings.settings.feedback.new.personal.api.key = new personal API key
+
+journal.window.settings.settings.feedback.no.icons.available = no icons available
+
+journal.window.settings.settings.feedback.no.icons.match = no icons match
+
+journal.window.settings.settings.feedback.nothing.in.your.journal.was.changed = nothing in your journal was changed.
+
+journal.window.settings.settings.feedback.paste.your.personal.api.key.from = paste your personal API key from { $slot1 } first.
+
+journal.window.settings.settings.feedback.personal.api.key = personal API key
+
+journal.window.settings.settings.feedback.remove.failed = remove failed
+
+journal.window.settings.settings.feedback.rule.must.be.characters.or.less = rule must be 200 characters or less
+
+journal.window.settings.settings.feedback.save.failed = save failed
+
+journal.window.settings.settings.feedback.the.value1.already.in.your.journal = the{ $slot1 }{ $value1 }{ $slot2 }already in your journal{ $slot3 }{ $value2 }.
+
+journal.window.settings.settings.feedback.update.failed = update failed
+
+journal.window.settings.settings.feedback.use.this.key = use this key
+
+journal.window.settings.settings.feedback.validation.error = validation error
+
+journal.window.settings.settings.feedback.your.journal.will.bring.in.your = your journal will bring in your meetings from { $slot1 } within the hour.
+
+journal.window.settings.state.local.endpoint.disclosure = inference runs on the endpoint you configured; your requests, including screen content for vision, are sent there.
+
+journal.window.settings.state.stt.detected.memory.template = { $slot1 } { $slot2 } of free memory detected on this machine.
+
+journal.window.settings.state.stt.detected.memory.unknown = free memory on this machine could not be detected.
+
+journal.window.settings.state.stt.explicit.local.low.template = free memory is below { $slot1 } { $slot2 }. local transcription can still run, but this machine may be slow or unstable while it does.
+
+journal.window.settings.state.stt.local.requirements.template = local transcription needs about { $slot1 } { $slot2 } of free memory for the on-device model (transcription, speaker labels, and overlap detection).
+
+journal.window.settings.state.stt.local.unsupported = local transcription is not available on this platform.
+
+journal.window.settings.state.stt.no.local.stt.recovery = free up memory on this machine or use a supported platform to transcribe locally. with confidential processing enabled, transcription runs on the service instead.
+
+journal.window.settings.storage.day = day
+
+journal.window.settings.storage.days = days
+
+journal.window.settings.storage.history.read = the removal history couldn't be read.
+
+journal.window.settings.storage.keep.nudge = { $slot1 }your journal is set to always retain original media, so nothing is added to the list automatically.
+
+journal.window.settings.storage.mark.blocked.many = { $count }{ $slot1 }segments blocked.
+
+journal.window.settings.storage.mark.blocked.one = { $count }{ $slot1 }segment blocked.
+
+journal.window.settings.storage.mark.days = unreadable chronicle days:{ $slot1 }{ $days }.
+
+journal.window.settings.storage.mark.failure = error:{ $slot1 }{ $detail }
+
+journal.window.settings.storage.mark.new = New items:{ $slot1 }{ $count }.
+
+journal.window.settings.storage.mark.no.media.many = { $count }{ $slot1 }segments with no original media.
+
+journal.window.settings.storage.mark.no.media.one = { $count }{ $slot1 }segment with no original media.
+
+journal.window.settings.storage.mark.not.ready.many = { $count }{ $slot1 }segments not ready yet.
+
+journal.window.settings.storage.mark.not.ready.one = { $count }{ $slot1 }segment not ready yet.
+
+journal.window.settings.storage.mark.total = on the removal list:{ $slot1 }{ $count }.
+
+journal.window.settings.storage.storage.config = storage settings couldn't be read.
+
+journal.window.settings.storage.storage.measure = storage use couldn't be measured. your retention settings are still available.
+
+journal.window.settings.storage.warning.disk = disk is{ $slot1 }{ $current }% full (threshold:{ $slot2 }{ $threshold }%). you can adjust your retention settings, or build the list to see what original media is ready for removal.
+
+journal.window.settings.storage.warning.media = raw media is{ $slot1 }{ $current }{ $slot2 }{ $slot3 } (threshold:{ $slot4 }{ $threshold }{ $slot5 }{ $slot6 }). you can adjust your retention settings, or build the list to see what original media is ready for removal.
+
+journal.window.settings.stream.override.description = override the global retention mode for individual streams.
+
+journal.window.settings.stream.override.label = per-stream overrides
+
+journal.window.settings.stream.override.many = { $count }{ $slot1 }overrides
+
+journal.window.settings.stream.override.one = { $count }{ $slot1 }override
+
+journal.window.settings.sync.detail.plaud.enabled.must.be.a.boolean = plaud.enabled must be a boolean
+
+journal.window.settings.sync.detail.plaud.must.be.an.object = plaud must be an object
+
+journal.window.settings.tooltip.double.click.to.edit = double-click to edit
+
+journal.window.settings.tooltip.double.click.to.edit.instructions = double-click to edit instructions
+
+journal.window.settings.tooltip.remove = remove
+
+journal.window.settings.tooltip.show.token = show token
+
+journal.window.settings.transcribe.backend.description.on.device.speech.recognition.via.parakeet.tdt = On-device speech recognition via { $slot1 }: a { $slot2 } helper on a mac, the { $slot3 } server on linux and windows.
+
+journal.window.settings.transcribe.backend.description.on.device.speech.recognition.via.the.parakeet = On-device speech recognition via the { $slot1 } server (mudler/{ $slot2 }), on linux and windows. `{ $slot3 }` downloads it and its speech model on linux; on windows they come with the journal.
+
+journal.window.settings.transcribe.backend.description.parakeet.tdt.runs.on.this.device.with = { $slot1 } runs on this device with the speech model included in the app.
+
+journal.window.settings.transcribe.backend.label.parakeet.cpp.local.processing = { $slot1 } - local processing
+
+journal.window.settings.transcribe.backend.label.parakeet.cpp.local.processing.linux.and.windows = { $slot1 } - local processing (linux and windows)
+
+journal.window.settings.transcribe.backend.label.parakeet.local.processing = { $slot1 } - local processing
+
+journal.window.settings.transcribe.memory.detected = { $available }{ $slot1 }{ $slot2 } of free memory detected on this machine.
+
+journal.window.settings.transcribe.memory.requirement = local transcription needs about{ $slot1 }{ $floor }{ $slot2 }{ $slot3 } of free memory.
+
+journal.window.settings.transcribe.memory.unknown = free memory on this machine could not be detected.
+
+journal.window.settings.transcribe.runtime.linux.parakeet.cpp = { $slot1 } { $slot2 }
+
+journal.window.settings.transcribe.runtime.macos.coreml.helper = { $slot1 } { $slot2 } helper
+
+journal.window.settings.transcribe.runtime.on.device.parakeet.tdt = on-device { $slot1 }
+
+journal.window.settings.transcribe.runtime.unsupported = unsupported
+
+journal.window.settings.transcribe.runtime.windows.parakeet.cpp = { $slot1 } { $slot2 }
+
+journal.window.settings.trash.backups.when = at{ $slot1 }{ $time }
+
+journal.window.settings.trash.copy.empty.the.trash.is.empty = the trash is empty.
+
+journal.window.settings.trash.copy.failed.couldn.t.remove.n.erased.things = couldn't remove { $slot1 } erased things from your backups this time. your journal tries again { $slot2 }.
+
+journal.window.settings.trash.copy.loading.loading = loading…
+
+journal.window.settings.trash.copy.selectall.select.all = select all
+
+journal.window.settings.trash.kind.label.entity.entity = entity
+
+journal.window.settings.trash.kind.label.facet.facet = facet
+
+journal.window.settings.trash.kind.label.facet.file.files.a.facet.merge.left.out = files a facet merge left out
+
+journal.window.settings.trash.kind.label.facet.file.unfinished.files.from.a.facet.merge.that = files from a facet merge that didn't finish
+
+journal.window.settings.trash.kind.label.import.import = import
+
+journal.window.settings.trash.kind.label.memory.memory.an.agent.saved = memory an agent saved
+
+journal.window.settings.trash.kind.label.originals.audio.original.audio = original audio
+
+journal.window.settings.trash.kind.label.originals.original.media = original media
+
+journal.window.settings.trash.kind.label.originals.screen.original.screen.media = original screen media
+
+journal.window.settings.trash.kind.label.segment.segment = segment
+
+journal.window.settings.trash.kind.label.speakers.what.your.journal.keeps.about.voices = what your journal keeps about voices
+
+journal.window.settings.trash.kind.label.stretch.stretch.of.time = stretch of time
+
+journal.window.settings.trash.kind.label.workout.workout = workout
+
+journal.window.settings.trash.words.entity.entities = entities
+
+journal.window.settings.trash.words.entity.entity = entity
+
+journal.window.settings.trash.words.facet.facet = facet
+
+journal.window.settings.trash.words.facet.facets = facets
+
+journal.window.settings.trash.words.generic.many = things
+
+journal.window.settings.trash.words.generic.one = thing
+
+journal.window.settings.trash.words.import.import = import
+
+journal.window.settings.trash.words.import.imports = imports
+
+journal.window.settings.trash.words.memory.memories = memories
+
+journal.window.settings.trash.words.memory.memory = memory
+
+journal.window.settings.trash.words.segment.segment = segment
+
+journal.window.settings.trash.words.segment.segments = segments
+
+journal.window.settings.trash.words.stretch.stretch.of.time = stretch of time
+
+journal.window.settings.trash.words.stretch.stretches.of.time = stretches of time
+
+journal.window.settings.trash.words.workout.workout = workout
+
+journal.window.settings.trash.words.workout.workouts = workouts
+
+journal.window.settings.validation.invalid = invalid
+
+journal.window.settings.visible.text.a.bookmark.to.value1.shows.a = a bookmark to{ $slot1 }{ $value1 }{ $slot2 }shows a page asking you to open your journal from the journal app or with solstone journal open. this browser keeps access until your journal restarts; any other browser needs a new one-time link.
+
+journal.window.settings.visible.text.a.line.when.you.remove.something = a line when you remove something, and again if it comes back from the trash or is erased: what it was, when, and where. this history never keeps what was in it.
+
+journal.window.settings.visible.text.abort.parakeet.model.work.if.it = abort { $slot1 } model work if it exceeds this timeout
+
+journal.window.settings.visible.text.about.this.many.for.each.screen = about this many for each screen, in each 5 minute recording. more frames means more detail and more tokens.
+
+journal.window.settings.visible.text.action.log = action log
+
+journal.window.settings.visible.text.add.activity = add activity
+
+journal.window.settings.visible.text.agents.you.connect.to.your.journal = agents you connect to your journal can receive a person's profile pic, and a suggested one arrives marked as suggested. you can turn profile pics off for each agent. a connected agent that may see only some facets gets one only when it came from a meeting in one of them.
+
+journal.window.settings.visible.text.ai = AI
+
+journal.window.settings.visible.text.all.default.activities.attached = all default activities attached
+
+journal.window.settings.visible.text.and.click = , and click
+
+journal.window.settings.visible.text.and.paste.it.below = , and paste it below.
+
+journal.window.settings.visible.text.anyone.using.this.computer.and.any = anyone using this computer, and any program running on it, will be able to open your journal, read it and change it, without a link from you.
+
+journal.window.settings.visible.text.api.access.comes.with.granola.business = API access comes with { $slot1 } and Enterprise. { $slot2 } doesn't include it.
+
+journal.window.settings.visible.text.api.key.not.configured = API key not configured.
+
+journal.window.settings.visible.text.apps.that.have.their.own.settings = apps that have their own settings. open one to set it up or change how it works.
+
+journal.window.settings.visible.text.attached.activities = attached activities
+
+journal.window.settings.visible.text.audio.is.waiting.set.up.your = audio is waiting. set up your voice again, or turn this mode off to process it.
+
+journal.window.settings.visible.text.automatically.sync.and.import.material.from = automatically sync and import material from your { $slot1 } device every hour.
+
+journal.window.settings.visible.text.background.errors.that.weren.t.shown = background errors that weren't shown as notifications.
+
+journal.window.settings.visible.text.backup = backup
+
+journal.window.settings.visible.text.brief.description.of.yourself.used.in = brief description of yourself used in AI templates
+
+journal.window.settings.visible.text.build.the.list.of.original.media = build the list of original media ready for removal, based on your retention settings. building the list does not delete anything.
+
+journal.window.settings.visible.text.building.the.list = building the list…
+
+journal.window.settings.visible.text.by.class = by class
+
+journal.window.settings.visible.text.by.day = by day
+
+journal.window.settings.visible.text.cache.dir.s = cache dir(s) (
+
+journal.window.settings.visible.text.categories = categories
+
+journal.window.settings.visible.text.checking = checking…
+
+journal.window.settings.visible.text.choose = choose
+
+journal.window.settings.visible.text.choose.a.lucide.override.or.keep = choose a { $slot1 } override, or keep using the emoji
+
+journal.window.settings.visible.text.choose.whether.to.keep.your.original = choose whether to keep your original audio, video, and screen frames, or list them for removal after processing.
+
+journal.window.settings.visible.text.clean.up.operational.logs.older.than = clean up operational logs older than the specified number of days. this does not affect your original media or your journal.
+
+journal.window.settings.visible.text.cleans.up.operational.logs.this.does = cleans up operational logs. this does not affect your original media or your journal.
+
+journal.window.settings.visible.text.click = click
+
+journal.window.settings.visible.text.click.to.change.emoji = click to change emoji
+
+journal.window.settings.visible.text.click.to.choose.a.color = click to choose a color
+
+journal.window.settings.visible.text.click.your.workspace.name.at.the = click your workspace name at the bottom left, then
+
+journal.window.settings.visible.text.closed.only.your.account.on.this = closed: only your account on this computer can open your journal. other accounts see a page that shows nothing from it. programs running as a service, as another account or inside WSL can't reach it. agents you've connected and devices you've paired keep their own access. an administrator on this computer can still reach your journal's folder.
+
+journal.window.settings.visible.text.closed.to.open.your.journal.in = closed: to open your journal in a browser, use a one-time link from the journal app on a mac or from solstone journal open. other accounts on this computer see a page that shows nothing from your journal.
+
+journal.window.settings.visible.text.color = color
+
+journal.window.settings.visible.text.comma.separated.alternative.names.that.may = comma-separated alternative names that may appear in transcripts
+
+journal.window.settings.visible.text.comma.separated.email.addresses.for.participant = comma-separated email addresses for participant detection
+
+journal.window.settings.visible.text.compacted = compacted
+
+journal.window.settings.visible.text.confidential.processing.needs = confidential processing needs
+
+journal.window.settings.visible.text.configure.automatic.syncing.of.material.from = configure automatic syncing of material from external devices.
+
+journal.window.settings.visible.text.configure.service.tokens.for.imports.tokens = configure service tokens for imports. tokens are stored in your journal config.
+
+journal.window.settings.visible.text.configure.which.activities.are.observed.for = configure which activities are observed for this facet.
+
+journal.window.settings.visible.text.configure.your.plaud.token.in = configure your { $slot1 } token in
+
+journal.window.settings.visible.text.copied = copied
+
+journal.window.settings.visible.text.copy = copy
+
+journal.window.settings.visible.text.copy.the.key.which.starts.with = copy the key, which starts with
+
+journal.window.settings.visible.text.couldn.t.confirm.which.choice.is = couldn't confirm which choice is saved. reload the page to check.
+
+journal.window.settings.visible.text.couldn.t.copy.select.the.text = couldn't copy. select the text and copy it.
+
+journal.window.settings.visible.text.couldn.t.disconnect.granola.try.again = couldn't disconnect { $slot1 }. try again.
+
+journal.window.settings.visible.text.couldn.t.load.devices.try.again = couldn't load devices. try again.
+
+journal.window.settings.visible.text.couldn.t.load.granola.reopen.sync = couldn't load { $slot1 }. reopen sync settings to try again.
+
+journal.window.settings.visible.text.couldn.t.load.your.versions.try = couldn't load your versions. try again.
+
+journal.window.settings.visible.text.currently.keep.audio.with.no.speech = currently: keep audio with no speech.
+
+journal.window.settings.visible.text.currently.keep.everything = currently: keep everything.
+
+journal.window.settings.visible.text.currently.keep.operational.logs.days = currently: keep operational logs 30 days
+
+journal.window.settings.visible.text.currently.keep.operational.logs.indefinitely = currently: keep operational logs indefinitely.
+
+journal.window.settings.visible.text.currently.keep.operational.logs.value1.days = currently: keep operational logs{ $slot1 }{ $value1 }{ $slot2 }days
+
+journal.window.settings.visible.text.currently.list.audio.with.no.speech = currently: list audio with no speech for removal after processing.
+
+journal.window.settings.visible.text.currently.list.audio.with.no.speech.variant2 = currently: list audio with no speech for removal after processing.
+
+journal.window.settings.visible.text.customize.how.this.facet.appears.in = customize how this facet appears in the interface.
+
+journal.window.settings.visible.text.data = data
+
+journal.window.settings.visible.text.days = days
+
+journal.window.settings.visible.text.deleting = deleting…
+
+journal.window.settings.visible.text.derived.content = derived content
+
+journal.window.settings.visible.text.devices = devices
+
+journal.window.settings.visible.text.devices.already.paired.and.agents.already = devices already paired and agents already connected keep their access, so look over your devices and your agents in case another account added one.
+
+journal.window.settings.visible.text.disabled.for.ignored.categories = disabled for ignored categories
+
+journal.window.settings.visible.text.disconnecting.stops.new.meetings.from.coming = disconnecting stops new meetings from coming in. meetings already in your journal stay.
+
+journal.window.settings.visible.text.double.click.or.press.enter.to = double-click or press Enter to edit
+
+journal.window.settings.visible.text.error = Error
+
+journal.window.settings.visible.text.error.loading.activities = error loading activities
+
+journal.window.settings.visible.text.error.loading.categories = error loading categories
+
+journal.window.settings.visible.text.error.loading.logs = error loading logs
+
+journal.window.settings.visible.text.error.variant2 = error
+
+journal.window.settings.visible.text.errors = errors
+
+journal.window.settings.visible.text.facet = facet
+
+journal.window.settings.visible.text.facets.keep.parts.of.your.life = facets keep parts of your life separate inside one journal.
+
+journal.window.settings.visible.text.facets.keep.parts.of.your.life.variant2 = facets keep parts of your life separate inside one journal, work and home, say, without needing two journals.
+
+journal.window.settings.visible.text.failed.to.load.facets = failed to load facets.
+
+journal.window.settings.visible.text.from.now.on.after.each.recording = from now on, after each recording is processed, your journal deletes its original audio for good. your words, when you said them and who was speaking are kept. some of your words may be missed, and those can't be brought back.
+
+journal.window.settings.visible.text.how.long.things.wait.in.the = how long things wait in the trash before they're erased. what's already in the trash keeps its date.
+
+journal.window.settings.visible.text.how.much.each.kind.of.screen = how much each kind of screen matters, and the instructions the model follows when it reads one. double-click an instruction to edit it.
+
+journal.window.settings.visible.text.iana.timezone.identifier = { $slot1 } timezone identifier
+
+journal.window.settings.visible.text.identity = identity
+
+journal.window.settings.visible.text.import.audio.from.plaud.recorder.paste = import audio from { $slot1 } recorder. paste the token from your { $slot2 } web session. it's kept in your journal and used only to fetch your recordings from { $slot3 }.
+
+journal.window.settings.visible.text.installed.parakeet.model.version.for.local = installed { $slot1 } model version for local transcription
+
+journal.window.settings.visible.text.instructions.the.model.follows.when.describing = instructions the model follows when describing your screens. these rules do not apply to screen text. screen text masks some passwords and other secrets, but can miss them. double-click a rule to edit it.
+
+journal.window.settings.visible.text.it.matches.a.face.to.a = it matches a face to a person only when the face sits beside their name or alone in their video tile. a picture is theirs only once you choose it.
+
+journal.window.settings.visible.text.it.runs.on.this.computer.on = it runs on this computer, on frames from your meeting recordings.
+
+journal.window.settings.visible.text.keeps.your.words.in.your.journal = keeps your words in your journal and leaves out stretches where only other people speak. other voices may remain, and some of your words may be missed.
+
+journal.window.settings.visible.text.leave.out.other.voices.is.on = "leave out other voices" is on, so your journal deletes each recording's original audio once it's processed from now on, and these settings don't change that.
+
+journal.window.settings.visible.text.list.originals.for.removal.after.processing = list originals for removal after processing
+
+journal.window.settings.visible.text.lists.original.media.ready.for.removal = lists original media ready for removal, based on your retention settings.
+
+journal.window.settings.visible.text.loading = loading…
+
+journal.window.settings.visible.text.loading.settings = loading settings…
+
+journal.window.settings.visible.text.loading.storage.settings = loading storage settings…
+
+journal.window.settings.visible.text.loading.your.facets = loading your facets…
+
+journal.window.settings.visible.text.loading.your.versions = loading your versions...
+
+journal.window.settings.visible.text.local.access.is.closed = local access is closed.
+
+journal.window.settings.visible.text.local.access.is.open = local access is open.
+
+journal.window.settings.visible.text.local.speech.uses.parakeet = local speech uses { $slot1 }.
+
+journal.window.settings.visible.text.log.retention.is.off.operational.logs = log retention is off. operational logs are kept indefinitely.
+
+journal.window.settings.visible.text.make.an.encrypted.copy.only.you = make an encrypted copy only you can read
+
+journal.window.settings.visible.text.manage.original.media.retention.and.view = manage original-media retention and view storage usage.
+
+journal.window.settings.visible.text.manage.what.ai.models.your.journal = manage what AI models your journal uses
+
+journal.window.settings.visible.text.manually.clean.up.operational.logs.older = manually clean up operational logs older than a specified number of days.
+
+journal.window.settings.visible.text.measuring.storage.use.you.can.edit = measuring storage use… you can edit retention settings while this runs.
+
+journal.window.settings.visible.text.muted = muted
+
+journal.window.settings.visible.text.network = network
+
+journal.window.settings.visible.text.newest.first = newest first
+
+journal.window.settings.visible.text.no.actions.logged = no actions logged
+
+journal.window.settings.visible.text.no.activities.attached.yet = no activities attached yet
+
+journal.window.settings.visible.text.no.activities.attached.yet.add.activities = no activities attached yet. add activities below.
+
+journal.window.settings.visible.text.no.categories = no categories
+
+journal.window.settings.visible.text.no.description = no description
+
+journal.window.settings.visible.text.no.description.set = no description set
+
+journal.window.settings.visible.text.no.description.set.variant2 = No description set
+
+journal.window.settings.visible.text.no.extraction.guidance = no extraction guidance
+
+journal.window.settings.visible.text.no.facets.yet = no facets yet.
+
+journal.window.settings.visible.text.no.instructions = no instructions
+
+journal.window.settings.visible.text.no.operational.logs.to.clean.up = no operational logs to clean up.
+
+journal.window.settings.visible.text.no.paired.devices = no paired devices.
+
+journal.window.settings.visible.text.no.redaction.rules.configured = no redaction rules configured
+
+journal.window.settings.visible.text.no.speech.left.out.today = no speech left out today
+
+journal.window.settings.visible.text.nothing.new.to.add.to.the = nothing new to add to the list.
+
+journal.window.settings.visible.text.nothing.new.to.add.to.the.variant2 = nothing new to add to the list. on the removal list:{ $slot1 }{ $value1 }.
+
+journal.window.settings.visible.text.nothing.on.this.computer.has.reached = nothing on this computer has reached your journal without a browser since it started.
+
+journal.window.settings.visible.text.notifications = notifications
+
+journal.window.settings.visible.text.open = open ›
+
+journal.window.settings.visible.text.open.anyone.using.this.computer.and = open: anyone using this computer, and any program running on it, can open your journal at{ $slot1 }{ $value1 }.
+
+journal.window.settings.visible.text.open.the.granola.app.on.your = open the { $slot1 } app on your computer.
+
+journal.window.settings.visible.text.operational.log.file.s.and = operational-log file(s) and
+
+journal.window.settings.visible.text.optional = (optional)
+
+journal.window.settings.visible.text.overview = overview
+
+journal.window.settings.visible.text.parakeet.cpp.and.its.speech.model = { $slot1 } and its speech model come with the journal and run on your{ $slot2 }{ $slot3 }computer's processor, so there's nothing to install. see { $slot4 }.
+
+journal.window.settings.visible.text.parakeet.cpp.can.t.run.on = { $slot1 } can't run on a mac. choose "{ $slot2 } - local processing" to{ $slot3 }{ $slot4 }transcribe on this mac.
+
+journal.window.settings.visible.text.parakeet.cpp.fetches.two.artifacts.into = { $slot1 } fetches two artifacts into this journal's provider cache before it{ $slot2 }{ $slot3 }can run, both from { $slot4 }: the { $slot5 } server binary ({ $slot6 }){ $slot7 }{ $slot8 }and the speech model ({ $slot9 }). see { $slot10 }. install with
+
+journal.window.settings.visible.text.parakeet.tdt.runs.on.this.device = { $slot1 } runs on this device. its speech model comes with the app.
+
+journal.window.settings.visible.text.personal.notes.covers.the.notes.you = Personal notes covers the notes you own and the ones shared with you. on { $slot1 }, an admin may need to allow API access first.
+
+journal.window.settings.visible.text.platform.default = platform default:
+
+journal.window.settings.visible.text.preferred.name.or.nickname.to.be = preferred name or nickname to be used when addressing you
+
+journal.window.settings.visible.text.preview = preview
+
+journal.window.settings.visible.text.pronouns.for.use.in.templates.subject = pronouns for use in templates (subject/object/possessive/reflexive)
+
+journal.window.settings.visible.text.purged = { $slot1 }purged
+
+journal.window.settings.visible.text.raw.media = raw media
+
+journal.window.settings.visible.text.reach.your.journal.from.your.other = reach your journal from your other devices
+
+journal.window.settings.visible.text.recent.actions.and.changes.to.this = recent actions and changes to this facet.
+
+journal.window.settings.visible.text.redaction.rules = redaction rules
+
+journal.window.settings.visible.text.results = results
+
+journal.window.settings.visible.text.retention.log.line.s = retention-log line(s)
+
+journal.window.settings.visible.text.retry = retry
+
+journal.window.settings.visible.text.runtime.preference.for.parakeet.on.this = runtime preference for { $slot1 } on this host
+
+journal.window.settings.visible.text.runtime.preference.for.the.parakeet.cpp = runtime preference for the { $slot1 } server on this host
+
+journal.window.settings.visible.text.saved = saved
+
+journal.window.settings.visible.text.see.in.health = see in health ›
+
+journal.window.settings.visible.text.segments = segments
+
+journal.window.settings.visible.text.sign.in.to.plaud.s.web = 1) sign in to { $slot1 }'s web portal. 2) open your browser's console. 3) copy the token shown there into the field above.
+
+journal.window.settings.visible.text.speech.left.out.today.value1.across = speech left out today:{ $slot1 }{ $value1 }{ $slot2 }across 1 recording
+
+journal.window.settings.visible.text.speech.left.out.today.value1.across.variant2 = speech left out today:{ $slot1 }{ $value1 }{ $slot2 }across{ $slot3 }{ $value2 }{ $slot4 }recordings
+
+journal.window.settings.visible.text.speech.to.text.backend.and.processing = speech-to-text backend and processing settings.
+
+journal.window.settings.visible.text.speech.to.text.engine.to.use = speech-to-text engine to use for transcription
+
+journal.window.settings.visible.text.storage.use.couldn.t.be.measured = storage use couldn't be measured. your retention settings are still available.{ $slot1 }
+
+journal.window.settings.visible.text.sync.and.import.plaud.material.every = sync and import { $slot1 } material every hour
+
+journal.window.settings.visible.text.system = { $slot1 }(system)
+
+journal.window.settings.visible.text.the.face.details.it.uses.to = the face details it uses to tell people apart stay in your journal. they're never sent to the agents you connect; only a profile pic is.
+
+journal.window.settings.visible.text.the.words.are.saved.but.the = the words are saved, but the original audio hasn't been deleted yet. your journal will try again.
+
+journal.window.settings.visible.text.then = , then
+
+journal.window.settings.visible.text.these.programs.reached.your.journal.without = these programs reached your journal without a browser since it started, and will stop working until they're updated:
+
+journal.window.settings.visible.text.things.you.delete.wait.here.until = things you delete wait here until the date beside them, then they're erased. recovering one puts it back in your journal.
+
+journal.window.settings.visible.text.thinking = thinking
+
+journal.window.settings.visible.text.this.computer = this computer
+
+journal.window.settings.visible.text.this.device.hasn.t.reported.versions = this device hasn't reported versions.
+
+journal.window.settings.visible.text.this.erases.every.face.your.journal = this erases every face your journal found in your meeting recordings, the profile pics you chose for people and your answers about faces, and the merge suggestions that came from faces, including any copies in the trash. it can't be undone.
+
+journal.window.settings.visible.text.this.runs.after.audio.arrives.in = this runs after audio arrives in your journal. once a recording is processed, your journal deletes its original audio, including the parts with your voice. audio processed before you turned this on, and existing backups, are unchanged. a backup made before processing may still hold the original audio.
+
+journal.window.settings.visible.text.this.setting.could.not.be.read = this setting could not be read. try again shortly.
+
+journal.window.settings.visible.text.tick = , tick
+
+journal.window.settings.visible.text.to.enable.sync = to enable sync.
+
+journal.window.settings.visible.text.to.erase.the.face.data.your = to erase the face data your journal has found, turn this off first.
+
+journal.window.settings.visible.text.try.again = try again
+
+journal.window.settings.visible.text.turn.this.on.if.you.want = turn this on if you want a local copy of the originals in your journal.
+
+journal.window.settings.visible.text.turning.this.off.stops.new.reading = turning this off stops new reading.
+
+journal.window.settings.visible.text.unavailable = unavailable
+
+journal.window.settings.visible.text.under.api = under API.
+
+journal.window.settings.visible.text.unsupported = unsupported
+
+journal.window.settings.visible.text.use.emoji = use emoji
+
+journal.window.settings.visible.text.valid = { $slot1 }✓ valid
+
+journal.window.settings.visible.text.value1.not.configured = { $value1 }{ $slot1 }not configured.
+
+journal.window.settings.visible.text.what.happens.to.the.audio = what happens to the audio
+
+journal.window.settings.visible.text.what.the.solstone.app.reads.from = what the solstone app reads from your screen, how closely, and what reaches your journal.
+
+journal.window.settings.visible.text.when.no.speech.is.found.in = when no speech is found in a piece of audio, this setting decides whether it's kept or listed for removal after processing, whatever you chose for original media, including per-stream overrides. nothing is deleted until you say so.
+
+journal.window.settings.visible.text.whether.other.accounts.and.programs.on = whether other accounts and programs on this computer can open your journal without a link from you.
+
+journal.window.settings.visible.text.whether.other.accounts.and.programs.on.variant2 = whether other accounts and programs on this computer can open your journal.
+
+journal.window.settings.visible.text.with.raw.media = { $slot1 }with raw media ·{ $slot2 }
+
+journal.window.settings.visible.text.would.be.compacted = would be compacted
+
+journal.window.settings.visible.text.you.can.change.both.later = you can change both later.
+
+journal.window.settings.visible.text.your.browser.your.programs.and.the = your browser, your programs and the agents you've connected keep working. programs running as a service, as another account or inside WSL won't reach your journal.
+
+journal.window.settings.visible.text.your.choice.could.not.be.saved = your choice could not be saved. please try again.
+
+journal.window.settings.visible.text.your.full.legal.or.formal.name = your full legal or formal name
+
+journal.window.settings.visible.text.your.granola.meetings.come.into.your = your { $slot1 } meetings come into your journal at the times they happened, with their transcripts and notes. new and edited meetings follow within the hour.
+
+journal.window.settings.visible.text.your.identity.information.used.in.ai = your identity information used in AI templates and transcription.
+
+journal.window.settings.visible.text.your.journal.keeps.the.key.and = your journal keeps the key and uses it only to read your notes from { $slot1 }.
+
+journal.window.settings.visible.text.your.journal.looks.for.faces.in = your journal looks for faces in your meeting recordings and suggests a profile pic for the people in them. you choose the picture, or none.
+
+journal.window.settings.visible.text.your.meetings.stay.in.your.journal = your meetings stay in your journal, and nothing comes in twice.
+
+journal.window.settings.visible.text.your.past.meeting.recordings.are.read = your past meeting recordings are read a little at a time, in the background, while they're still in your journal.
+
+journal.window.settings.visible.text.your.people.their.names.and.your = your people, their names and your recordings stay. a backup made before now may still hold face data.
+
+journal.window.settings.vision.category.label.browsing = browsing
+
+journal.window.settings.vision.category.label.calendar = calendar
+
+journal.window.settings.vision.category.label.code = code
+
+journal.window.settings.vision.category.label.gaming = gaming
+
+journal.window.settings.vision.category.label.media = media
+
+journal.window.settings.vision.category.label.meeting = meeting
+
+journal.window.settings.vision.category.label.messaging = messaging
+
+journal.window.settings.vision.category.label.productivity = productivity
+
+journal.window.settings.vision.category.label.reading = reading
+
+journal.window.settings.vision.category.label.social = social
+
+journal.window.settings.vision.category.label.terminal = terminal
+
+journal.window.settings.vision.category.lower = lower{ $slot1 }{ $label }
+
+journal.window.settings.vision.category.many = { $count }{ $slot1 }categories
+
+journal.window.settings.vision.category.one = { $count }{ $slot1 }category
+
+journal.window.settings.vision.category.raise = raise{ $slot1 }{ $label }
+
+journal.window.settings.vision.category.reset = reset{ $slot1 }{ $label }{ $slot2 }to the default
+
+journal.window.settings.vision.detail.categories.must.be.an.object = categories must be an object
+
+journal.window.settings.vision.detail.category.config.must.be.an.object = category config must be an object
+
+journal.window.settings.vision.detail.each.redact.rule.must.be.characters = each redact rule must be 200 characters or fewer
+
+journal.window.settings.vision.detail.extraction = extraction for{ $slot1 }{ $name }{ $slot2 }must be a string
+
+journal.window.settings.vision.detail.importance = Invalid importance for{ $slot1 }{ $name }:{ $slot2 }{ $importance }. Must be one of: { $slot3 }
+
+journal.window.settings.vision.detail.max.extractions.must.be.an.integer = max_extractions must be an integer between 5 and 100
+
+journal.window.settings.vision.detail.redact.may.contain.at.most.rules = redact may contain at most 50 rules
+
+journal.window.settings.vision.detail.redact.must.be.a.list.of = redact must be a list of strings
+
+journal.window.settings.vision.detail.unknown.category = Unknown category:{ $slot1 }{ $name }

@@ -1,0 +1,23 @@
+{
+  "description": "Retention executor detail in the journal's settings view.",
+  "context": "Journal window, settings view. Retention executor detail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2bafe98b8193e002e8a923dea5d50336d62e3401773912180f43810eb1f3b2c0",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "stderr"
+    }
+  ]
+}

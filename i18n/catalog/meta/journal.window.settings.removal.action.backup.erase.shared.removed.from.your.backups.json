@@ -1,0 +1,16 @@
+{
+  "description": "removal action backup erase shared in the journal's settings view.",
+  "context": "Journal window, settings view. removal action backup erase shared.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fbf7026ebb7901d8511e86dd0017d3e5d5425b16fafa60ba71928165444fb039",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

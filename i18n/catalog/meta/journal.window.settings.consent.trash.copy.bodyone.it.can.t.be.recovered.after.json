@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy bodyOne in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy bodyOne.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1f5913666fbf625ae8af65289684f7705f2ce6c4b393e47bf254950177398a5b",
+  "max_length": 63,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

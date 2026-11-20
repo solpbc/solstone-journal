@@ -1,0 +1,16 @@
+{
+  "description": "Trash gone in the journal's settings view.",
+  "context": "Journal window, settings view. Trash gone.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9837d2ca5125601d8215b7375283b3300cace06917580e0d077a69ec6b3e08fa",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

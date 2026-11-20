@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy busy in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy busy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4f9705c4aba60675668fd85d87f840c7a160000d02fa7d1f0f667ada5b3e9b7b",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

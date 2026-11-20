@@ -1,0 +1,16 @@
+{
+  "description": "Settings feedback in the journal's settings view.",
+  "context": "Journal window, settings view. Settings feedback.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "304555481a3c290e070d192fb886dad65835223a3a4b6c2fedfa695850a92d74",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

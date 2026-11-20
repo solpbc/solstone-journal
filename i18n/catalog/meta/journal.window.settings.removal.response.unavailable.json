@@ -1,0 +1,16 @@
+{
+  "description": "Trash unavailable in the journal's settings view.",
+  "context": "Journal window, settings view. Trash unavailable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a81be72f72f54fe09999283f9bcdc9d2cc6a6098bff5d0fe64c93195bd77ca85",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy stretchErasesOne in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy stretchErasesOne.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3b2b34655eaff3596f5b0184078b763d06cdd84873d25744c0e2de686c54f15f",
+  "max_length": 92,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

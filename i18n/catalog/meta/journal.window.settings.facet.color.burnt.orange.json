@@ -1,0 +1,16 @@
+{
+  "description": "facet color burnt orange in the journal's settings view.",
+  "context": "Journal window, settings view. facet color burnt orange.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0b5f7a66e79cbc8c44de7f080658c3f676f92b1a251b6702bbf9fc3da1c51f3e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

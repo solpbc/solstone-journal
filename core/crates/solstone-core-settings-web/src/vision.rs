@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use axum::{body::Bytes, response::Response};
 use serde_json::{Map, Value, json};
+use solstone_core_convey_http::window_catalog::{strings, text};
 use solstone_core_journal_config_write::{
     JournalConfigMutation, LockError, LockOptions, mutate_journal_config,
 };
@@ -17,7 +18,7 @@ use crate::{
     request_body::{JsonBody, json_body},
 };
 
-pub async fn get(journal_root: PathBuf) -> Response {
+pub async fn get(locale: &str, journal_root: PathBuf) -> Response {
     let config = solstone_core_journal_config::read_journal_config(&journal_root)
         .expect("session gate handled corrupt config")
         .config
@@ -27,7 +28,7 @@ pub async fn get(journal_root: PathBuf) -> Response {
     let mut defaults = Map::new();
     for (name, metadata) in registry.as_object().expect("category registry") {
         defaults.insert(name.clone(), json!({
-            "label": metadata.get("label").cloned().unwrap_or_else(|| json!(name)),
+            "label": category_label(locale, name, metadata),
             "group": metadata.get("group").cloned().unwrap_or_else(|| json!("Screen Analysis")),
             "extraction": metadata.get("extraction").cloned().unwrap_or_else(|| json!("")),
             "importance": metadata.get("importance").cloned().unwrap_or_else(|| json!("normal")),
@@ -41,12 +42,40 @@ pub async fn get(journal_root: PathBuf) -> Response {
     }))
 }
 
-pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Bytes) -> Response {
+fn category_label(locale: &str, name: &str, metadata: &Value) -> Value {
+    let message = match name {
+        "browsing" => "journal.window.settings.vision.category.label.browsing",
+        "calendar" => "journal.window.settings.vision.category.label.calendar",
+        "code" => "journal.window.settings.vision.category.label.code",
+        "gaming" => "journal.window.settings.vision.category.label.gaming",
+        "media" => "journal.window.settings.vision.category.label.media",
+        "meeting" => "journal.window.settings.vision.category.label.meeting",
+        "messaging" => "journal.window.settings.vision.category.label.messaging",
+        "productivity" => "journal.window.settings.vision.category.label.productivity",
+        "reading" => "journal.window.settings.vision.category.label.reading",
+        "social" => "journal.window.settings.vision.category.label.social",
+        "terminal" => "journal.window.settings.vision.category.label.terminal",
+        _ => {
+            return metadata
+                .get("label")
+                .cloned()
+                .unwrap_or_else(|| json!(name));
+        }
+    };
+    json!(text(locale, message))
+}
+
+pub async fn update(
+    locale: &str,
+    journal_root: PathBuf,
+    lock_options: LockOptions,
+    body: Bytes,
+) -> Response {
     let JsonBody::Value(Value::Object(request)) = json_body(body) else {
-        return missing_request_body();
+        return missing_request_body(locale);
     };
     if request.is_empty() {
-        return missing_request_body();
+        return missing_request_body(locale);
     }
     if let Some(value) = request.get("max_extractions")
         && (!value.is_i64()
@@ -54,7 +83,13 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
                 .as_i64()
                 .is_none_or(|value| !(5..=100).contains(&value)))
     {
-        return invalid_config_value("max_extractions must be an integer between 5 and 100");
+        return invalid_config_value(
+            locale,
+            text(
+                locale,
+                "journal.window.settings.vision.detail.max.extractions.must.be.an.integer",
+            ),
+        );
     }
     let redact = match request.get("redact") {
         Some(Value::Array(values))
@@ -73,26 +108,65 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
             )
         }
         Some(Value::Array(values)) if values.len() > 50 => {
-            return invalid_config_value("redact may contain at most 50 rules");
+            return invalid_config_value(
+                locale,
+                text(
+                    locale,
+                    "journal.window.settings.vision.detail.redact.may.contain.at.most.rules",
+                ),
+            );
         }
         Some(Value::Array(_)) => {
-            return invalid_config_value("each redact rule must be 200 characters or fewer");
+            return invalid_config_value(
+                locale,
+                text(
+                    locale,
+                    "journal.window.settings.vision.detail.each.redact.rule.must.be.characters",
+                ),
+            );
         }
-        Some(_) => return invalid_config_value("redact must be a list of strings"),
+        Some(_) => {
+            return invalid_config_value(
+                locale,
+                text(
+                    locale,
+                    "journal.window.settings.vision.detail.redact.must.be.a.list.of",
+                ),
+            );
+        }
         None => None,
     };
     let registry = solstone_core_describe_categories::category_registry();
     if let Some(categories) = request.get("categories") {
         let Some(categories) = categories.as_object() else {
-            return invalid_config_value("categories must be an object");
+            return invalid_config_value(
+                locale,
+                text(
+                    locale,
+                    "journal.window.settings.vision.detail.categories.must.be.an.object",
+                ),
+            );
         };
         for (name, override_value) in categories {
             if registry.get(name).is_none() {
-                return invalid_config_value(format!("Unknown category: {name}"));
+                return invalid_config_value(
+                    locale,
+                    strings(
+                        locale,
+                        "journal.window.settings.vision.detail.unknown.category",
+                        [("name", name)],
+                    ),
+                );
             };
             if !override_value.is_null() {
                 let Some(value) = override_value.as_object() else {
-                    return invalid_config_value("category config must be an object");
+                    return invalid_config_value(
+                        locale,
+                        text(
+                            locale,
+                            "journal.window.settings.vision.detail.category.config.must.be.an.object",
+                        ),
+                    );
                 };
                 if let Some(importance) = value.get("importance")
                     && !matches!(
@@ -100,16 +174,30 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
                         Some("high" | "normal" | "low" | "ignore")
                     )
                 {
-                    return invalid_config_value(format!(
-                        "Invalid importance for {name}: {}. Must be one of: high, ignore, low, normal",
-                        importance.as_str().unwrap_or_default()
-                    ));
+                    return invalid_config_value(
+                        locale,
+                        strings(
+                            locale,
+                            "journal.window.settings.vision.detail.importance",
+                            [
+                                ("name", name),
+                                ("importance", importance.as_str().unwrap_or_default()),
+                            ],
+                        ),
+                    );
                 }
                 if value
                     .get("extraction")
                     .is_some_and(|value| !value.is_string())
                 {
-                    return invalid_config_value(format!("extraction for {name} must be a string"));
+                    return invalid_config_value(
+                        locale,
+                        strings(
+                            locale,
+                            "journal.window.settings.vision.detail.extraction",
+                            [("name", name)],
+                        ),
+                    );
                 }
             }
         }
@@ -196,13 +284,13 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
                 )
                 .is_err()
             {
-                return settings_operation_failed();
+                return settings_operation_failed(locale);
             }
-            get(journal_root).await
+            get(locale, journal_root).await
         }
         Err(solstone_core_journal_config_write::ConfigMutationError::Lock(LockError::Timeout(
             _,
-        ))) => config_busy(),
-        Err(_) => settings_operation_failed(),
+        ))) => config_busy(locale),
+        Err(_) => settings_operation_failed(locale),
     }
 }

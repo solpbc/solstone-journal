@@ -1,0 +1,16 @@
+{
+  "description": "facet action labels facet unmute in the journal's settings view.",
+  "context": "Journal window, settings view. facet action labels facet unmute.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5ee350ed42a3ccebf7e06c0c171b97794acdce23ed8e7a7854404d93a041f360",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

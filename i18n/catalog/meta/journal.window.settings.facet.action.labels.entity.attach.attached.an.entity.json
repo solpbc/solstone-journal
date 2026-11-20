@@ -1,0 +1,16 @@
+{
+  "description": "facet action labels entity attach in the journal's settings view.",
+  "context": "Journal window, settings view. facet action labels entity attach.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1337f7cbf90215ee51d66611796ed45428c8f1a2ce0349b821ca444eae6b6e77",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

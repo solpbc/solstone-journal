@@ -1,0 +1,16 @@
+{
+  "description": "Field label in the journal's settings view.",
+  "context": "Journal window, settings view. Field label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a2f5cd49175a114cd6ee1fa079ee98c9708b50f2593618a61ea3a47c94387527",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

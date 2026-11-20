@@ -1,0 +1,16 @@
+{
+  "description": "trash kind label facet file in the journal's settings view.",
+  "context": "Journal window, settings view. trash kind label facet file.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2f2dabfddc90c0e193d247d459fa85a885e4dbd17a60bdefde4f044e99021c14",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

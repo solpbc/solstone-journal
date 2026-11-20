@@ -1,0 +1,28 @@
+{
+  "description": "Settings vision unknown category in the journal's settings view.",
+  "context": "Journal window, settings view. Settings vision unknown category.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "02a3d506fe11a0c259c0d5fca3616c5d02bdc57f89ce367a792b0924c3304b95",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

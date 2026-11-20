@@ -1,0 +1,16 @@
+{
+  "description": "removal source quick in the journal's settings view.",
+  "context": "Journal window, settings view. removal source quick.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2a4c1f02b3ff26a996d0cd2e3cf58ce9cc3953aa4f1d084ecacb01beba4a2740",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

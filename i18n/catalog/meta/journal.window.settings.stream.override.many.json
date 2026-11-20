@@ -1,0 +1,28 @@
+{
+  "description": "stream override many in the journal's settings view.",
+  "context": "Journal window, settings view. stream override many.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d78101b366fcef381d8ef7f0f3f7178716bdd09a70a940308f1a88f513efb4d4",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

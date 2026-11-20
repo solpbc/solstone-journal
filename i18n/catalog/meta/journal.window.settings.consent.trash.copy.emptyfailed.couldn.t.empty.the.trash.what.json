@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy emptyFailed in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy emptyFailed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4313661977b1e83fa733e385551f8a03bc3c691e6764017ab6414ec79b1838fe",
+  "max_length": 101,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

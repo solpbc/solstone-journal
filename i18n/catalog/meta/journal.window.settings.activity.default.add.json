@@ -1,0 +1,16 @@
+{
+  "description": "activity default add in the journal's settings view.",
+  "context": "Journal window, settings view. activity default add.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d29f94945e46d3289168b56a9e9b88d3136c38bf0d1ea14e780fa4feb4cba6f6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

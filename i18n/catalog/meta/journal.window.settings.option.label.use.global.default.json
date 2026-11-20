@@ -1,0 +1,16 @@
+{
+  "description": "Option label in the journal's settings view.",
+  "context": "Journal window, settings view. Option label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3b9c027747a20a6c1f21ea6401dd13bad6b114a6321cf8cf265aadfd34b0465c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

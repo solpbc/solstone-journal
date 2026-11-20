@@ -1,0 +1,42 @@
+{
+  "description": "Settings config trash days in the journal's settings view.",
+  "context": "Journal window, settings view. Settings config trash days.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "min",
+      "type": "string"
+    },
+    {
+      "name": "max",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1a1eb379a36855ada9f683cb08226e34047e1460fe4bfdaeac6493ed0e2a58b8",
+  "max_length": 107,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot3",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

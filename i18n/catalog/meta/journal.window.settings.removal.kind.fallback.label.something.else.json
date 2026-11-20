@@ -1,0 +1,16 @@
+{
+  "description": "removal kind fallback label in the journal's settings view.",
+  "context": "Journal window, settings view. removal kind fallback label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "64365bba73c942f567754cc5bb019ae1721ceeaaaab6eaabf768bca36c128e47",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

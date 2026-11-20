@@ -1,0 +1,23 @@
+{
+  "description": "Option label in the journal's settings view.",
+  "context": "Journal window, settings view. Option label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f89b3ec01cd03e5e10ad2b928a8ce7b2933dbda2c2ffc29802bb0da98c9b5ea3",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "Parakeet TDT"
+    }
+  ]
+}

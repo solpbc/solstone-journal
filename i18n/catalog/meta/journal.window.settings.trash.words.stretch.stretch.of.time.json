@@ -1,0 +1,16 @@
+{
+  "description": "trash words stretch in the journal's settings view.",
+  "context": "Journal window, settings view. trash words stretch.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "eee21042441ee5b39b4dbae5282b4019c9a3b9261dea3a6ae63df8063c8afc92",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

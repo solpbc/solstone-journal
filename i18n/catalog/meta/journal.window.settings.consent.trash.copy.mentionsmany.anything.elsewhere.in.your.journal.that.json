@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy mentionsMany in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy mentionsMany.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "270b973fc79d75ac51a6e37cdcf94ac516e8915e879ab2a450db3bf99af9386c",
+  "max_length": 97,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

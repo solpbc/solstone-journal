@@ -1,0 +1,16 @@
+{
+  "description": "removal action note backup erase shared in the journal's settings view.",
+  "context": "Journal window, settings view. removal action note backup erase shared.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7a24047616f258fe9c1691f299a202406479fd190d915fd7ca13124156239aa8",
+  "max_length": 101,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

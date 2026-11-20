@@ -1,0 +1,16 @@
+{
+  "description": "trash kind label originals audio in the journal's settings view.",
+  "context": "Journal window, settings view. trash kind label originals audio.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bcc4a2e034cb135dc706793f91b27ce6b7afaba875b99405707eeab134dd31c5",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

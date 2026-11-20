@@ -1,0 +1,23 @@
+{
+  "description": "transcribe backend label parakeet local processing in the journal's settings view.",
+  "context": "Journal window, settings view. transcribe backend label parakeet local processing.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d37e5a8b11fcc26f13ec9f76c7f7c780f8d2302ee0de9fb28e76c4a2058ea801",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "Parakeet"
+    }
+  ]
+}

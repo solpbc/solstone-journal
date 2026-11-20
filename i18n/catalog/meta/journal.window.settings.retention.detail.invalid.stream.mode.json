@@ -1,0 +1,37 @@
+{
+  "description": "Settings retention invalid stream mode in the journal's settings view.",
+  "context": "Journal window, settings view. Settings retention invalid stream mode.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "mode",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "90e94c74ee28614542babb40c9af2785bcb12c103041d298c721f147bc323d7e",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

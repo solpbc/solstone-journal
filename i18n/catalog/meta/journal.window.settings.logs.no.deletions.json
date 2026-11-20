@@ -1,0 +1,16 @@
+{
+  "description": "logs no deletions in the journal's settings view.",
+  "context": "Journal window, settings view. logs no deletions.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1a51052225aaf6312748e3a46b8b2434d7620ec093ceea31be56bd524aa7a8d8",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Field or control label in the journal's settings view.",
+  "context": "Journal window, settings view. Field or control label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3b71c96d864d05c2f0da493da914f509ab31e9138b57fda1b8f5bc41ddf1cbb6",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

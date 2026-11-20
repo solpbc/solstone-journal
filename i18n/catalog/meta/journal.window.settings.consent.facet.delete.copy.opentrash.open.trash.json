@@ -1,0 +1,16 @@
+{
+  "description": "Consent facet delete copy openTrash in the journal's settings view.",
+  "context": "Journal window, settings view. Consent facet delete copy openTrash.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "15f8b00a2cffe3567597bcc8fd13d2173bfe7f5a7f844791091dd758ebd0edd2",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy sortedMany in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy sortedMany.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a6f85c2bece71047547c8137c28e285750e424c2c1883c9116ec5180583f1ec5",
+  "max_length": 77,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

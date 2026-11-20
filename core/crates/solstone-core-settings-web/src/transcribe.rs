@@ -3,6 +3,8 @@
 
 use std::path::PathBuf;
 
+use solstone_core_convey_http::window_catalog::{resolve_table, strings, text};
+
 use axum::response::Response;
 use serde_json::json;
 use solstone_core_sense::memory::{MemoryProbe, SystemMemoryProbe};
@@ -10,7 +12,7 @@ use solstone_core_system::stt_backend_choice::{SttRuntimeKind, stt_host_policy};
 
 use crate::{config, http::json_response};
 
-pub async fn get(journal_root: PathBuf) -> Response {
+pub async fn get(locale: &str, journal_root: PathBuf) -> Response {
     let config_value = solstone_core_journal_config::read_journal_config(&journal_root)
         .expect("session gate handled corrupt config")
         .config
@@ -21,12 +23,12 @@ pub async fn get(journal_root: PathBuf) -> Response {
     );
     let available = SystemMemoryProbe.available_bytes();
     let mut response = json!({
-        "backends": backend_metadata(std::env::consts::OS, std::env::consts::ARCH),
+        "backends": backend_metadata(locale, std::env::consts::OS, std::env::consts::ARCH),
         "api_keys": {"parakeet": true, "parakeet-cpp": true},
         "config": transcribe,
-        "runtime_label": runtime_label(std::env::consts::OS, std::env::consts::ARCH),
+        "runtime_label": runtime_label(locale, std::env::consts::OS, std::env::consts::ARCH),
         "parakeet_uses_cpp": parakeet_uses_cpp(std::env::consts::OS, std::env::consts::ARCH),
-        "resource": transcribe_resource(std::env::consts::OS, std::env::consts::ARCH, available),
+        "resource": transcribe_resource(locale, std::env::consts::OS, std::env::consts::ARCH, available),
     });
     if parakeet_embedded(std::env::consts::OS, std::env::consts::ARCH) {
         response["parakeet_embedded"] = json!(true);
@@ -51,7 +53,12 @@ pub fn parakeet_cpp_bundled_on(os: &str) -> bool {
     os == "windows"
 }
 
-fn transcribe_resource(os: &str, arch: &str, available: Option<u64>) -> serde_json::Value {
+fn transcribe_resource(
+    locale: &str,
+    os: &str,
+    arch: &str,
+    available: Option<u64>,
+) -> serde_json::Value {
     let available_gb =
         available.map(|bytes| (bytes as f64 / 1024_f64.powi(3) * 10.0).round() / 10.0);
     let floor = stt_host_policy(os, arch).local_floor_bytes;
@@ -70,8 +77,8 @@ fn transcribe_resource(os: &str, arch: &str, available: Option<u64>) -> serde_js
     json!({
         "min_ram_gb": floor_gb,
         "available_memory_gb": available_gb,
-        "requirement": format!("local transcription needs about {floor_gb} GB of free memory."),
-        "detected": available_gb.map(|value| format!("{value} GB of free memory detected on this machine.")).unwrap_or_else(|| "free memory on this machine could not be detected.".to_owned()),
+        "requirement": strings(locale, "journal.window.settings.transcribe.memory.requirement", [("floor", &floor_gb.to_string())]),
+        "detected": available_gb.map(|value| strings(locale, "journal.window.settings.transcribe.memory.detected", [("available", &value.to_string())])).unwrap_or_else(|| text(locale, "journal.window.settings.transcribe.memory.unknown")),
         "needs_setup": available.is_some_and(|value| value < floor_bytes),
         "notice": "",
     })
@@ -81,29 +88,41 @@ fn parakeet_embedded(os: &str, arch: &str) -> bool {
     stt_host_policy(os, arch).runtime_kind == Some(SttRuntimeKind::MobileEmbeddedCpp)
 }
 
-fn backend_metadata(os: &str, arch: &str) -> serde_json::Value {
-    if parakeet_embedded(os, arch) {
+fn backend_metadata(locale: &str, os: &str, arch: &str) -> serde_json::Value {
+    let mut backends = if parakeet_embedded(os, arch) {
         // Keep the legacy explicit C++ choice visible only when already saved;
         // both names reach the same embedded recognizer on mobile.
-        return json!([
-            {"name": "parakeet", "label": "Parakeet - local processing", "description": "Parakeet TDT runs on this device with the speech model included in the app.", "env_key": null, "settings": []},
-            {"name": "parakeet-cpp", "label": "parakeet.cpp - local processing", "description": "Parakeet TDT runs on this device with the speech model included in the app.", "env_key": null, "settings": []},
-        ]);
-    }
-    json!([
-        {"name": "parakeet", "label": "Parakeet - local processing", "description": "On-device speech recognition via Parakeet TDT: a Core ML helper on a mac, the parakeet.cpp server on linux and windows.", "env_key": null, "settings": ["model_version", "device", "timeout_sec"]},
-        {"name": "parakeet-cpp", "label": "parakeet.cpp - local processing (linux and windows)", "description": "On-device speech recognition via the parakeet.cpp server (mudler/parakeet.cpp), on linux and windows. `solstone journal install-provider parakeet` downloads it and its speech model on linux; on windows they come with the journal.", "env_key": null, "settings": ["device"]},
-    ])
+        json!([
+            {"name": "parakeet", "label": "journal.window.settings.transcribe.backend.label.parakeet.local.processing", "description": "journal.window.settings.transcribe.backend.description.parakeet.tdt.runs.on.this.device.with", "env_key": null, "settings": []},
+            {"name": "parakeet-cpp", "label": "journal.window.settings.transcribe.backend.label.parakeet.cpp.local.processing", "description": "journal.window.settings.transcribe.backend.description.parakeet.tdt.runs.on.this.device.with", "env_key": null, "settings": []},
+        ])
+    } else {
+        json!([
+        {"name": "parakeet", "label": "journal.window.settings.transcribe.backend.label.parakeet.local.processing", "description": "journal.window.settings.transcribe.backend.description.on.device.speech.recognition.via.parakeet.tdt", "env_key": null, "settings": ["model_version", "device", "timeout_sec"]},
+        {"name": "parakeet-cpp", "label": "journal.window.settings.transcribe.backend.label.parakeet.cpp.local.processing.linux.and.windows", "description": "journal.window.settings.transcribe.backend.description.on.device.speech.recognition.via.the.parakeet", "env_key": null, "settings": ["device"]},
+        ])
+    };
+    resolve_table(locale, &mut backends);
+    backends
 }
 
-pub fn runtime_label(os: &str, arch: &str) -> &'static str {
-    match stt_host_policy(os, arch).runtime_kind {
-        Some(SttRuntimeKind::MacosCoreml) => "macOS CoreML helper",
-        Some(SttRuntimeKind::LinuxCpp) => "Linux parakeet.cpp",
-        Some(SttRuntimeKind::WindowsCpp) => "Windows parakeet.cpp",
-        Some(SttRuntimeKind::MobileEmbeddedCpp) => "on-device Parakeet TDT",
-        None => "unsupported",
-    }
+fn runtime_label(locale: &str, os: &str, arch: &str) -> String {
+    let id = match stt_host_policy(os, arch).runtime_kind {
+        Some(SttRuntimeKind::MacosCoreml) => {
+            "journal.window.settings.transcribe.runtime.macos.coreml.helper"
+        }
+        Some(SttRuntimeKind::LinuxCpp) => {
+            "journal.window.settings.transcribe.runtime.linux.parakeet.cpp"
+        }
+        Some(SttRuntimeKind::WindowsCpp) => {
+            "journal.window.settings.transcribe.runtime.windows.parakeet.cpp"
+        }
+        Some(SttRuntimeKind::MobileEmbeddedCpp) => {
+            "journal.window.settings.transcribe.runtime.on.device.parakeet.tdt"
+        }
+        None => "journal.window.settings.transcribe.runtime.unsupported",
+    };
+    text(locale, id)
 }
 
 /// Whether the `parakeet` backend runs the parakeet.cpp server on this host:
@@ -118,18 +137,22 @@ mod tests {
         backend_metadata, parakeet_cpp_bundled_on, parakeet_embedded, parakeet_uses_cpp,
         runtime_label, transcribe_resource,
     };
+    use solstone_core_convey_http::window_catalog::ENGLISH;
 
     #[test]
     fn mobile_projects_the_bundled_recognizer_without_desktop_controls() {
         for os in ["android", "ios"] {
             assert!(parakeet_embedded(os, "aarch64"));
-            assert_eq!(runtime_label(os, "aarch64"), "on-device Parakeet TDT");
+            assert_eq!(
+                runtime_label(ENGLISH, os, "aarch64"),
+                "on-device Parakeet TDT"
+            );
             assert!(!parakeet_uses_cpp(os, "aarch64"));
             assert_eq!(
-                transcribe_resource(os, "aarch64", None)["needs_setup"],
+                transcribe_resource(ENGLISH, os, "aarch64", None)["needs_setup"],
                 false
             );
-            for entry in backend_metadata(os, "aarch64").as_array().unwrap() {
+            for entry in backend_metadata(ENGLISH, os, "aarch64").as_array().unwrap() {
                 assert_eq!(entry["settings"], serde_json::json!([]));
                 assert!(matches!(
                     entry["name"].as_str(),
@@ -149,21 +172,39 @@ mod tests {
 
     #[test]
     fn ac12_runtime_label_has_all_three_branches() {
-        assert_eq!(runtime_label("darwin", "arm64"), "macOS CoreML helper");
-        assert_eq!(runtime_label("linux", "x86_64"), "Linux parakeet.cpp");
-        assert_eq!(runtime_label("windows", "x86_64"), "Windows parakeet.cpp");
-        assert_eq!(runtime_label("windows", "aarch64"), "Windows parakeet.cpp");
-        assert_eq!(runtime_label("windows", "armv7l"), "unsupported");
+        assert_eq!(
+            runtime_label(ENGLISH, "darwin", "arm64"),
+            "macOS CoreML helper"
+        );
+        assert_eq!(
+            runtime_label(ENGLISH, "linux", "x86_64"),
+            "Linux parakeet.cpp"
+        );
+        assert_eq!(
+            runtime_label(ENGLISH, "windows", "x86_64"),
+            "Windows parakeet.cpp"
+        );
+        assert_eq!(
+            runtime_label(ENGLISH, "windows", "aarch64"),
+            "Windows parakeet.cpp"
+        );
+        assert_eq!(runtime_label(ENGLISH, "windows", "armv7l"), "unsupported");
     }
 
     #[test]
     fn runtime_label_for_macos_aarch64_is_coreml_helper() {
-        assert_eq!(runtime_label("macos", "aarch64"), "macOS CoreML helper");
+        assert_eq!(
+            runtime_label(ENGLISH, "macos", "aarch64"),
+            "macOS CoreML helper"
+        );
     }
 
     #[test]
     fn runtime_label_for_linux_aarch64_is_parakeet_cpp() {
-        assert_eq!(runtime_label("linux", "aarch64"), "Linux parakeet.cpp");
+        assert_eq!(
+            runtime_label(ENGLISH, "linux", "aarch64"),
+            "Linux parakeet.cpp"
+        );
     }
 
     #[test]
@@ -182,11 +223,11 @@ mod tests {
         const GIB: u64 = 1024 * 1024 * 1024;
         for os in ["linux", "windows"] {
             assert_eq!(
-                transcribe_resource(os, "x86_64", Some(3 * GIB))["needs_setup"],
+                transcribe_resource(ENGLISH, os, "x86_64", Some(3 * GIB))["needs_setup"],
                 true
             );
             assert_eq!(
-                transcribe_resource(os, "x86_64", Some(5 * GIB))["needs_setup"],
+                transcribe_resource(ENGLISH, os, "x86_64", Some(5 * GIB))["needs_setup"],
                 false
             );
         }
@@ -194,11 +235,11 @@ mod tests {
 
     #[test]
     fn apple_silicon_does_not_require_free_ram_setup() {
-        let resource = transcribe_resource("darwin", "arm64", Some(1));
+        let resource = transcribe_resource(ENGLISH, "darwin", "arm64", Some(1));
         assert_eq!(resource["min_ram_gb"], 0);
         assert_eq!(resource["needs_setup"], false);
         assert_eq!(resource["requirement"], "");
-        let resource = transcribe_resource("macos", "aarch64", Some(1));
+        let resource = transcribe_resource(ENGLISH, "macos", "aarch64", Some(1));
         assert_eq!(resource["needs_setup"], false);
     }
 
@@ -217,10 +258,10 @@ mod tests {
             ("linux", "riscv64", None, false, "unsupported"),
             ("unknown", "x86_64", None, false, "unsupported"),
         ] {
-            assert_eq!(runtime_label(os, arch), label, "{os}/{arch}");
+            assert_eq!(runtime_label(ENGLISH, os, arch), label, "{os}/{arch}");
             assert_eq!(parakeet_uses_cpp(os, arch), cpp, "{os}/{arch}");
             for available in [None, Some(0), Some(4 * GIB - 1), Some(4 * GIB)] {
-                let resource = transcribe_resource(os, arch, available);
+                let resource = transcribe_resource(ENGLISH, os, arch, available);
                 assert_eq!(resource["min_ram_gb"], serde_json::json!(min_ram));
                 assert_eq!(
                     resource["needs_setup"],

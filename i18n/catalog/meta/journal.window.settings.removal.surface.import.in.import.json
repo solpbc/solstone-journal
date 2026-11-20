@@ -1,0 +1,16 @@
+{
+  "description": "removal surface import in the journal's settings view.",
+  "context": "Journal window, settings view. removal surface import.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cf0c1dc318ef312e8b6ebf8b298d5f059016526cdb2a3e14df8fbcae50c29894",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "facet action labels activity update in the journal's settings view.",
+  "context": "Journal window, settings view. facet action labels activity update.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "55a10547e97172701438f3f909fde1587f0b75c63a319a4d3aee6400664d410f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

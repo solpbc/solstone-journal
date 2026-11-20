@@ -1,0 +1,16 @@
+{
+  "description": "Accessible name in the journal's settings view.",
+  "context": "Journal window, settings view. Accessible name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "27d9e87fe120eb3ceb2b36af016011474e512ecbef249251f0c4df897513deb2",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

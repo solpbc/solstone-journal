@@ -1,0 +1,16 @@
+{
+  "description": "facet color bronze in the journal's settings view.",
+  "context": "Journal window, settings view. facet color bronze.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3ccb2b2c5abf1e7dd3ebce9e53f0aaba755b7d74d7b0336fc8eedcbd1e77f723",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

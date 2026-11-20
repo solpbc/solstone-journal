@@ -1,0 +1,37 @@
+{
+  "description": "storage warning disk in the journal's settings view.",
+  "context": "Journal window, settings view. storage warning disk.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "current",
+      "type": "string"
+    },
+    {
+      "name": "threshold",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7996755eb0e62b947abb4894ffdbcf07655fd2eb26587e57b17abc72aeb48dcf",
+  "max_length": 193,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

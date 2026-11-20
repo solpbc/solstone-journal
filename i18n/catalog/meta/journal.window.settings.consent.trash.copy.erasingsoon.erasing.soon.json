@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy erasingSoon in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy erasingSoon.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "61a3347554f96f7891e32f4f5d3fd0e17e412195e717c7da1e8652583a9fb386",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

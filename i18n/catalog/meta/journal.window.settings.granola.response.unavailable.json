@@ -1,0 +1,23 @@
+{
+  "description": "Granola response unavailable in the journal's settings view.",
+  "context": "Journal window, settings view. Granola response unavailable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1c1a41862dcdaa73879035aa816af253bf0fafd63971a4fb9efbbe571e759834",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "Granola"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "removal surface backup in the journal's settings view.",
+  "context": "Journal window, settings view. removal surface backup.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "519663bb5120bc4177f7845e32677d3d15fd59c27dc411baedd282d1275e3149",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

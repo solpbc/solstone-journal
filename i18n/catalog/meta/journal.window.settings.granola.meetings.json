@@ -1,0 +1,16 @@
+{
+  "description": "granola meetings in the journal's settings view.",
+  "context": "Journal window, settings view. granola meetings.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9c79f5d923ad2ca8d9b5dd8a7bc1210c3da3bda06ff3ea32a243a1a866b13e9f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

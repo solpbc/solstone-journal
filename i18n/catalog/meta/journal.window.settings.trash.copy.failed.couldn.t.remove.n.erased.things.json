@@ -1,0 +1,28 @@
+{
+  "description": "trash copy failed in the journal's settings view.",
+  "context": "Journal window, settings view. trash copy failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "728ddf5b23206f51e6868d0963029510eca6fe63687362f26d3d8c255012a104",
+  "max_length": 125,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{n}"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "{when}"
+    }
+  ]
+}

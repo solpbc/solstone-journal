@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy settingMoreLines in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy settingMoreLines.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "285cc47b5f5f6f60333b86e2057772f09ab13fa306e7ff09e8a50f928481ca4f",
+  "max_length": 160,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "description": "Retention receipt missing stderr placeholder in the journal's settings view.",
+  "context": "Journal window, settings view. Retention receipt missing stderr placeholder.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "09fb0ad6c7b836fd5e4b67a3b0af7177db6185d8add80b7c74fed7724cf29b8b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "<"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "stderr"
+    },
+    {
+      "name": "slot3",
+      "kind": "accepted-input",
+      "value": ">"
+    }
+  ]
+}

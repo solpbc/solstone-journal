@@ -1,0 +1,16 @@
+{
+  "description": "facet color orange swatch in the journal's settings view.",
+  "context": "Journal window, settings view. facet color orange swatch.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b96d0610c048b157a03ebb0a10f42d52662bcaebc68a2587c9383bf6a3d3eda6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

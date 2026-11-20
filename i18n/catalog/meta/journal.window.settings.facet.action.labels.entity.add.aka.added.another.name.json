@@ -1,0 +1,16 @@
+{
+  "description": "facet action labels entity add aka in the journal's settings view.",
+  "context": "Journal window, settings view. facet action labels entity add aka.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b37528e3bb24fc927f78aea523db5a619d9b1826cbdd0c88b0cf65658452f13a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

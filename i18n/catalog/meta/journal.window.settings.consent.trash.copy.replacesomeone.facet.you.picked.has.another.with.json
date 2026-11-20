@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy replaceSomeOne in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy replaceSomeOne.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2e8982cf93539129a72ed806ed9b23afed05a8551682de1cb737e03538fec3a1",
+  "max_length": 175,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

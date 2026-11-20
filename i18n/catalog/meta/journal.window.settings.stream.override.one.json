@@ -1,0 +1,28 @@
+{
+  "description": "stream override one in the journal's settings view.",
+  "context": "Journal window, settings view. stream override one.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bcb3e392f51addce00fd26b1556a42e542fff5c3132d65a9f990761e4c7770e5",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

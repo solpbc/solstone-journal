@@ -1,0 +1,28 @@
+{
+  "description": "Granola response access in the journal's settings view.",
+  "context": "Journal window, settings view. Granola response access.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fa592cacf2ea164139639b1b4164ede1ad97ee7a8c66a08064621090f53907d1",
+  "max_length": 152,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "Granola"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "Granola Business"
+    }
+  ]
+}

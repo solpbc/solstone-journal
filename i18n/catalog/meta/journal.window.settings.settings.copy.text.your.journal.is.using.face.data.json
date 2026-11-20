@@ -1,0 +1,16 @@
+{
+  "description": "Settings copy text in the journal's settings view.",
+  "context": "Journal window, settings view. Settings copy text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9f884718090cd2c0de83e316bc0d5114111d03ddaa37bd390f9adb8387b876be",
+  "max_length": 118,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

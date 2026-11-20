@@ -1,0 +1,28 @@
+{
+  "description": "vision category many in the journal's settings view.",
+  "context": "Journal window, settings view. vision category many.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "24ff11b5308cc0781150feaa6af0ad6c02416c6cdcd650a1e85be5ffd37d6c4e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

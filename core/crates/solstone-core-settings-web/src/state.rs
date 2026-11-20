@@ -1,31 +1,26 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::path::Path;
-
 use axum::response::Response;
-use serde_json::{Map, Value, json};
+use serde_json::json;
+use solstone_core_convey_http::window_catalog::resolve_table;
 
 use crate::http::json_response;
 
-mod settings_copy {
-    include!(concat!(env!("OUT_DIR"), "/settings_copy.rs"));
-}
-mod install_copy {
-    include!(concat!(env!("OUT_DIR"), "/install_copy.rs"));
-}
-
-pub async fn get(journal_root: std::path::PathBuf) -> Response {
-    json_response(payload(&journal_root))
-}
-
-pub fn payload(_journal_root: &Path) -> Value {
-    json!({
-        "settings_copy": constants(settings_copy::COPY_JSON),
-        "install_copy": constants(install_copy::COPY_JSON),
-    })
-}
-
-fn constants(source: &str) -> Map<String, Value> {
-    serde_json::from_str(source).expect("generated Python copy constants")
+pub async fn get(locale: &str) -> Response {
+    let mut payload = json!({
+        "settings_copy": {
+            "LOCAL_ENDPOINT_DISCLOSURE": "!journal.window.settings.state.local.endpoint.disclosure",
+        },
+        "install_copy": {
+            "STT_LOCAL_REQUIREMENTS_TEMPLATE": "journal.window.settings.state.stt.local.requirements.template",
+            "STT_LOCAL_UNSUPPORTED": "journal.window.settings.state.stt.local.unsupported",
+            "STT_DETECTED_MEMORY_TEMPLATE": "journal.window.settings.state.stt.detected.memory.template",
+            "STT_DETECTED_MEMORY_UNKNOWN": "journal.window.settings.state.stt.detected.memory.unknown",
+            "STT_NO_LOCAL_STT_RECOVERY": "!journal.window.settings.state.stt.no.local.stt.recovery",
+            "STT_EXPLICIT_LOCAL_LOW_TEMPLATE": "journal.window.settings.state.stt.explicit.local.low.template",
+        },
+    });
+    resolve_table(locale, &mut payload);
+    json_response(payload)
 }

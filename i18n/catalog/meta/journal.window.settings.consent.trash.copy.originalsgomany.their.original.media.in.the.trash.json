@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy originalsGoMany in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy originalsGoMany.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3af299c698fa88de8c5ee6546c3af16880df1ae5e93f6e9867955a470af56c3a",
+  "max_length": 84,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

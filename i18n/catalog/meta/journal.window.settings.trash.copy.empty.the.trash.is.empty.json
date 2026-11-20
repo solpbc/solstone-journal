@@ -1,0 +1,16 @@
+{
+  "description": "trash copy empty in the journal's settings view.",
+  "context": "Journal window, settings view. trash copy empty.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "500955bed97d62b2e64a3159ef44a94043e17ecd900a03d0264dfd6d16255861",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -17,13 +17,14 @@ pub async fn get() -> Response {
 }
 
 pub async fn post(
+    locale: &str,
     journal_root: std::path::PathBuf,
     lock_options: LockOptions,
     _body: Bytes,
 ) -> Response {
     let config = match solstone_core_journal_config::read_journal_config(&journal_root) {
         Ok(config) => config.config.unwrap_or_default(),
-        Err(_) => return settings_operation_failed(),
+        Err(_) => return settings_operation_failed(locale),
     };
     let token = config
         .get("env")
@@ -32,7 +33,7 @@ pub async fn post(
         .unwrap_or_default()
         .trim();
     if !token.is_empty() {
-        return plaud_validation_unavailable();
+        return plaud_validation_unavailable(locale);
     }
     match mutate_journal_config(&journal_root, lock_options, |config| {
         let existing = config
@@ -46,8 +47,8 @@ pub async fn post(
         Ok(_) => json_response(json!({"success": true, "key_validation": {}})),
         Err(solstone_core_journal_config_write::ConfigMutationError::Lock(LockError::Timeout(
             _,
-        ))) => config_busy(),
-        Err(_) => settings_operation_failed(),
+        ))) => config_busy(locale),
+        Err(_) => settings_operation_failed(locale),
     }
 }
 

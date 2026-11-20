@@ -1,0 +1,16 @@
+{
+  "description": "removal copy empty in the journal's settings view.",
+  "context": "Journal window, settings view. removal copy empty.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "11ce6cb196e9701e73b311c33dfcd8024239086a11d3def13a2b8ed7df8d7cfe",
+  "max_length": 146,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

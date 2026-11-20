@@ -1,0 +1,37 @@
+{
+  "description": "Settings config backend in the journal's settings view.",
+  "context": "Journal window, settings view. Settings config backend.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "backend",
+      "type": "string"
+    },
+    {
+      "name": "allowed",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6de46c02b18ba2719b93505e259d36b1acf6bcb5044f14778486bbd57fa0c1ff",
+  "max_length": 89,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

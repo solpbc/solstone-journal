@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy recoverFailedOne in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy recoverFailedOne.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2e3795900ea70b4bbb3a92fd3638b4a99eb98f597cbbac147aed9213d237ae23",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

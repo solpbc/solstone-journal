@@ -1,0 +1,16 @@
+{
+  "description": "Settings stt local unsupported in the journal's settings view.",
+  "context": "Journal window, settings view. Settings stt local unsupported.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "15a53827b1b37512d5ec771e12504f9fa66bd89255ac54d6cdc599ab588422dc",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

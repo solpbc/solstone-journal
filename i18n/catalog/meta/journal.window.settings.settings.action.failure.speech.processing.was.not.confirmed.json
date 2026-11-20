@@ -1,0 +1,16 @@
+{
+  "description": "Settings action failure in the journal's settings view.",
+  "context": "Journal window, settings view. Settings action failure.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3d483b886433ef94f1c77e44fb5463ae9a779e786173b4d2f2800383b4a76d0b",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "description": "Settings vision importance in the journal's settings view.",
+  "context": "Journal window, settings view. Settings vision importance.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "importance",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c1557cd6020320c56d76479e2bc0642c7980f71291f5e886337bce2e934c8b43",
+  "max_length": 122,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot3",
+      "kind": "accepted-input",
+      "value": "high, ignore, low, normal"
+    }
+  ]
+}

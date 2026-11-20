@@ -1,0 +1,16 @@
+{
+  "description": "save not saved in the journal's settings view.",
+  "context": "Journal window, settings view. save not saved.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f173d8593494f659797e46eafa7c5e37f789f59d3817bfafa40817767476ea7f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

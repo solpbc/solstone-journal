@@ -1,0 +1,28 @@
+{
+  "description": "redaction one in the journal's settings view.",
+  "context": "Journal window, settings view. redaction one.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "17b918d7112bc3da8a4c7c758f4422f1d4aa16e14f7e9ec4728cf1e2a1eaefbc",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

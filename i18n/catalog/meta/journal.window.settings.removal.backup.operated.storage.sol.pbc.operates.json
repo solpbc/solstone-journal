@@ -1,0 +1,23 @@
+{
+  "description": "removal backup operated in the journal's settings view.",
+  "context": "Journal window, settings view. removal backup operated.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2f43996e11cf935505acced8878cf42002f45bf2dfa0e7557ad21cd1ef1bbf9a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "mark-word",
+      "value": "sol pbc"
+    }
+  ]
+}

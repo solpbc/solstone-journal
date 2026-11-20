@@ -1,0 +1,16 @@
+{
+  "description": "removal copy error in the journal's settings view.",
+  "context": "Journal window, settings view. removal copy error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5e19662568be3590eb91f6925119008eeb49d8fd1086e3d48001268216da787b",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

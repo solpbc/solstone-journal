@@ -1,0 +1,28 @@
+{
+  "description": "Consent trash copy partialEraseMany in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy partialEraseMany.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2db49f81437d1dbe667353d018f65bbe1f6fb511a1d3f4c39302f7fab6a2240d",
+  "max_length": 109,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{done}"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "{n}"
+    }
+  ]
+}

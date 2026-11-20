@@ -1,0 +1,16 @@
+{
+  "description": "granola checking now in the journal's settings view.",
+  "context": "Journal window, settings view. granola checking now.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1fdb708bf05d901b346404002efc4d9b09d1425a2b116513b040ab6a1ee29e76",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

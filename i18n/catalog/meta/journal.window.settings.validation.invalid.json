@@ -1,0 +1,16 @@
+{
+  "description": "validation invalid in the journal's settings view.",
+  "context": "Journal window, settings view. validation invalid.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d2c78e643a22ed0088d31cd6102c36a4dc4841112ab0f32e13c033fe53a5fe8d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

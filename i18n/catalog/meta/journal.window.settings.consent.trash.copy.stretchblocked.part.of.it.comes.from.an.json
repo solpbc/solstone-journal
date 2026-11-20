@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy stretchBlocked in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy stretchBlocked.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "58c5b57ff39081b1b86ea41e29940e3ce78bf651b006f01470cfb3acf33e4e2f",
+  "max_length": 119,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

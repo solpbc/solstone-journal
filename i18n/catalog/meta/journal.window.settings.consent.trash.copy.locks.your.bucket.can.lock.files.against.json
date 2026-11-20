@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy locks in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy locks.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f77f99c61fb4e26177291cc088bc5721fd4fb19bed395e4fc74d33cfe26d8a49",
+  "max_length": 191,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

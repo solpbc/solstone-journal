@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy nameTaken in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy nameTaken.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1c686c858fee77851dc93d61f1f91354b4ec1f94b2b46b6f4227e07499b27be9",
+  "max_length": 108,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

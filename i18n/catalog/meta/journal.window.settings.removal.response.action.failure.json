@@ -1,0 +1,16 @@
+{
+  "description": "Trash action failure in the journal's settings view.",
+  "context": "Journal window, settings view. Trash action failure.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3bcea06836c21694e4f1e209b842697149e1db01e0feb8574d6d240cd71948c2",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

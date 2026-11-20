@@ -1,0 +1,16 @@
+{
+  "description": "removal action fallback label in the journal's settings view.",
+  "context": "Journal window, settings view. removal action fallback label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a2bb7a261f624415bcac7d48538b9306dc6068633871ab4f378f4df941f37529",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

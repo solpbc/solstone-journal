@@ -1,0 +1,38 @@
+{
+  "description": "transcribe memory requirement in the journal's settings view.",
+  "context": "Journal window, settings view. transcribe memory requirement.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "floor",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d4dfde1795fb37d937e187ec318d86af2c47a7911df2c17204231d609ec8f388",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot3",
+      "kind": "accepted-input",
+      "value": "GB"
+    }
+  ]
+}

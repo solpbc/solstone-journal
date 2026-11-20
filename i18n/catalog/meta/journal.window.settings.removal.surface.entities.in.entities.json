@@ -1,0 +1,16 @@
+{
+  "description": "removal surface entities in the journal's settings view.",
+  "context": "Journal window, settings view. removal surface entities.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8db074461c01aeae4bdfd26435c469638c3ba37d21f7c07d2b53d2bbf4dfb737",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Settings retention invalid days in the journal's settings view.",
+  "context": "Journal window, settings view. Settings retention invalid days.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "59e3ce9ff694f5ff7a7d8ff2dafabf0dd80b1bfdb208dac54ccf946ab5c7c5b9",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

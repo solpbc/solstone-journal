@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy stretchHoldsOne in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy stretchHoldsOne.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b0d9297493b46d4f173ecd93ed8f490b1006fc85a81f23120b10d15190d4de88",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

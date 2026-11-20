@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy redirected in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy redirected.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ad0a46edb829b91bb84249a3045dd93de46624a998fa86b5eebcf149b083819b",
+  "max_length": 101,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

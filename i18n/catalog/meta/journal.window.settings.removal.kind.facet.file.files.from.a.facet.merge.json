@@ -1,0 +1,16 @@
+{
+  "description": "removal kind facet file in the journal's settings view.",
+  "context": "Journal window, settings view. removal kind facet file.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "af4f371e862d83599c69150c24656d1f91848c599803e31959fcfb6abbe767bd",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

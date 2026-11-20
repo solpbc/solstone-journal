@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy sortedOne in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy sortedOne.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "74b0275accda84858a9b0d6834b49dd24fd93dfb36659855a2bb28025f0267cb",
+  "max_length": 75,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

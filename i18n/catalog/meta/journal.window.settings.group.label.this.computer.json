@@ -1,0 +1,16 @@
+{
+  "description": "Group label in the journal's settings view.",
+  "context": "Journal window, settings view. Group label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5172ef146327df8197c9941d8373d3d480fb51916b49c67c26fdb221dde54aeb",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

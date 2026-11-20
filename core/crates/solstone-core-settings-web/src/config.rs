@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use solstone_core_convey_http::window_catalog::{strings, text};
+
 use std::path::PathBuf;
 
 use axum::{body::Bytes, response::Response};
@@ -25,14 +27,14 @@ use crate::{
 const RETIRED_SUPPORT_CONFIG_KEYS: &[&str] =
     &["enabled", "proactive", "anonymous_feedback", "portal_url"];
 
-pub async fn get(journal_root: PathBuf) -> Response {
+pub async fn get(locale: &str, journal_root: PathBuf) -> Response {
     let config = solstone_core_journal_config::read_journal_config(&journal_root)
         .expect("session gate handled corrupt config")
         .config
         .unwrap_or_default();
     match project_public_config(config) {
         Ok(config) => json_response(Value::Object(config)),
-        Err(()) => settings_operation_failed(),
+        Err(()) => settings_operation_failed(locale),
     }
 }
 
@@ -74,15 +76,26 @@ pub(crate) const FACES_AVAILABLE: bool = !cfg!(any(target_os = "android", target
 /// Off, then the three budgets an owner can choose on the "your own model" lane.
 const BYO_THINKING_BUDGETS: [u64; 4] = [0, 8192, 16384, 32768];
 
-pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Bytes) -> Response {
+pub async fn update(
+    locale: &str,
+    journal_root: PathBuf,
+    lock_options: LockOptions,
+    body: Bytes,
+) -> Response {
     let JsonBody::Value(request) = json_body(body) else {
-        return missing_request_body();
+        return missing_request_body(locale);
     };
     let Some(request) = request.as_object() else {
-        return invalid_config_value("request must be an object");
+        return invalid_config_value(
+            locale,
+            text(
+                locale,
+                "journal.window.settings.config.detail.request.must.be.an.object",
+            ),
+        );
     };
     if request.is_empty() {
-        return missing_request_body();
+        return missing_request_body(locale);
     }
     // Only the settings page's confirmation step sends this; it is never stored.
     let owner_voice_consent = request.get("owner_voice_consent") == Some(&Value::Bool(true));
@@ -111,7 +124,13 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
         data = identity.clone();
     }
     let Some(section) = section else {
-        return missing_required_field("No section specified");
+        return missing_required_field(
+            locale,
+            text(
+                locale,
+                "journal.window.settings.config.detail.no.section.specified",
+            ),
+        );
     };
     let allowed: &[&str] = match section.as_str() {
         "identity" => &[
@@ -140,13 +159,22 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
             solstone_core_trash::ERASE_AFTER_DAYS_KEY,
             solstone_core_trash::ERASE_FROM_BACKUPS_KEY,
         ],
-        _ => return invalid_config_value(format!("Unknown section: {section}")),
+        _ => {
+            return invalid_config_value(
+                locale,
+                strings(
+                    locale,
+                    "journal.window.settings.config.detail.unknown.section",
+                    [("section", &section)],
+                ),
+            );
+        }
     };
     if section == "transcribe" {
         if let Some(error) = data.get("backend").and_then(|value| {
-            backend_validation_error_on(value, std::env::consts::OS, std::env::consts::ARCH)
+            backend_validation_error_on(locale, value, std::env::consts::OS, std::env::consts::ARCH)
         }) {
-            return invalid_config_value(error);
+            return invalid_config_value(locale, error);
         }
         if let Some(device) = data
             .get("parakeet-cpp")
@@ -156,12 +184,23 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
         {
             // The transcribe stage refuses any other value at run time.
             return invalid_config_value(
-                "transcribe.parakeet-cpp.device must be one of: auto, cpu",
+                locale,
+                text(
+                    locale,
+                    "journal.window.settings.config.detail.transcribe.parakeet.cpp.device.must.be",
+                ),
             );
         }
         for key in ["preserve_all", "confidential_audio", "owner_voice_only"] {
             if data.contains_key(key) && !data[key].is_boolean() {
-                return invalid_config_value(format!("transcribe.{key} must be a boolean"));
+                return invalid_config_value(
+                    locale,
+                    strings(
+                        locale,
+                        "journal.window.settings.config.detail.transcribe.boolean",
+                        [("field", &format!("transcribe.{key}"))],
+                    ),
+                );
             }
         }
     }
@@ -169,10 +208,22 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
         && let Some(enabled) = data.get("enabled")
     {
         if !enabled.is_boolean() {
-            return invalid_config_value("faces.enabled must be a boolean");
+            return invalid_config_value(
+                locale,
+                text(
+                    locale,
+                    "journal.window.settings.config.detail.faces.enabled.must.be.a.boolean",
+                ),
+            );
         }
         if enabled == &Value::Bool(true) && !FACES_AVAILABLE {
-            return invalid_config_value("photo suggestions run only in a journal on a computer");
+            return invalid_config_value(
+                locale,
+                text(
+                    locale,
+                    "journal.window.settings.config.detail.photo.suggestions.run.only.in.a",
+                ),
+            );
         }
     }
     if section == "providers"
@@ -183,7 +234,11 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
         })
     {
         return invalid_config_value(
-            "providers.byo_thinking_budget must be one of: 0, 8192, 16384, 32768",
+            locale,
+            text(
+                locale,
+                "journal.window.settings.config.detail.providers.byo.thinking.budget.must.be",
+            ),
         );
     }
     if section == "identity"
@@ -193,7 +248,13 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
                 .is_some_and(is_path_shaped_name)
         })
     {
-        return invalid_config_value("owner name must not be a path");
+        return invalid_config_value(
+            locale,
+            text(
+                locale,
+                "journal.window.settings.config.detail.owner.name.must.not.be.a",
+            ),
+        );
     }
     if section == "identity"
         && let Some(timezone) = data.get("timezone")
@@ -201,14 +262,20 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
             zone.trim().is_empty() || solstone_core_journal_config::parse_zone(zone).is_some()
         })
     {
-        return invalid_config_value("home timezone must be a name like America/Denver");
+        return invalid_config_value(
+            locale,
+            text(
+                locale,
+                "journal.window.settings.config.detail.home.timezone.must.be.a.name",
+            ),
+        );
     }
     if section == "processing"
         && let Err(error) = solstone_core_journal_config::processing::validate_processing(Some(
             &Value::Object(data.clone()),
         ))
     {
-        return invalid_config_value(error);
+        return invalid_config_value(locale, error);
     }
     if section == solstone_core_trash::SETTINGS_SECTION
         && let Some(days) = data.get(solstone_core_trash::ERASE_AFTER_DAYS_KEY)
@@ -218,18 +285,36 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
                 .contains(&days)
         })
     {
-        return invalid_config_value(format!(
-            "days before the trash erases must be a whole number from {} to {}",
-            solstone_core_trash::MIN_ERASE_AFTER_DAYS,
-            solstone_core_trash::MAX_ERASE_AFTER_DAYS
-        ));
+        return invalid_config_value(
+            locale,
+            strings(
+                locale,
+                "journal.window.settings.config.detail.erase.window.days",
+                [
+                    (
+                        "min",
+                        &solstone_core_trash::MIN_ERASE_AFTER_DAYS.to_string(),
+                    ),
+                    (
+                        "max",
+                        &solstone_core_trash::MAX_ERASE_AFTER_DAYS.to_string(),
+                    ),
+                ],
+            ),
+        );
     }
     if section == solstone_core_trash::SETTINGS_SECTION
         && data
             .get(solstone_core_trash::ERASE_FROM_BACKUPS_KEY)
             .is_some_and(|value| !value.is_boolean())
     {
-        return invalid_config_value("also removing erased things from backups is on or off");
+        return invalid_config_value(
+            locale,
+            text(
+                locale,
+                "journal.window.settings.config.detail.also.removing.erased.things.from.backups",
+            ),
+        );
     }
     let data_for_write = data.clone();
     let section_for_write = section.clone();
@@ -240,7 +325,10 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
         let Some(target) = target.as_object_mut() else {
             return JournalConfigMutation {
                 changed: false,
-                value: Err("section must be an object".to_owned()),
+                value: Err(text(
+                    locale,
+                    "journal.window.settings.config.detail.section.must.be.an.object",
+                )),
             };
         };
         let mut changed = false;
@@ -330,23 +418,23 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
         Ok(value) => match value.value {
             Ok(config) => config,
             Err(error) if error == OWNER_VOICE_CONSENT_REFUSAL => {
-                return owner_voice_consent_required();
+                return owner_voice_consent_required(locale);
             }
-            Err(error) => return invalid_config_value(error),
+            Err(error) => return invalid_config_value(locale, error),
         },
         Err(error) => {
             return match error {
                 solstone_core_journal_config_write::ConfigMutationError::Lock(
                     LockError::Timeout(_),
-                ) => config_busy(),
-                _ => settings_operation_failed(),
+                ) => config_busy(locale),
+                _ => settings_operation_failed(locale),
             };
         }
     };
     if section == "identity"
         && solstone_core_entity::ensure_configured_principal(&journal_root).is_err()
     {
-        return settings_operation_failed();
+        return settings_operation_failed(locale);
     }
     if !changed_fields.is_empty() {
         let owner_voice_enabled = changed_fields
@@ -374,7 +462,7 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
         )
         .is_err()
         {
-            return settings_operation_failed();
+            return settings_operation_failed(locale);
         }
     }
     let key_validation = config
@@ -388,7 +476,7 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
         Ok(public) => json_response(
             json!({"config": public, "key_validation": key_validation, "success": true}),
         ),
-        Err(()) => settings_operation_failed(),
+        Err(()) => settings_operation_failed(locale),
     }
 }
 
@@ -464,14 +552,19 @@ fn project_faces(faces: Option<&Value>, available: bool) -> Option<Value> {
 /// saving that backend there would leave the journal with no transcription.
 fn backend_refusal_on(backend: &str, os: &str) -> Option<&'static str> {
     (backend == "parakeet-cpp" && matches!(os, "macos" | "darwin"))
-        .then_some("Invalid backend: parakeet-cpp can't run on a mac. Use parakeet.")
+        .then_some("journal.window.settings.config.detail.macos.backend")
 }
 
 fn embedded_speech_on(os: &str, arch: &str) -> bool {
     stt_host_policy(os, arch).runtime_kind == Some(SttRuntimeKind::MobileEmbeddedCpp)
 }
 
-fn backend_validation_error_on(value: &Value, os: &str, arch: &str) -> Option<String> {
+fn backend_validation_error_on(
+    locale: &str,
+    value: &Value,
+    os: &str,
+    arch: &str,
+) -> Option<String> {
     let backend = value.as_str().unwrap_or_default();
     let embedded = embedded_speech_on(os, arch);
     if !matches!(backend, "parakeet" | "parakeet-cpp") && !(embedded && backend == "confidential") {
@@ -480,11 +573,13 @@ fn backend_validation_error_on(value: &Value, os: &str, arch: &str) -> Option<St
         } else {
             "parakeet, parakeet-cpp"
         };
-        return Some(format!(
-            "Invalid backend: {backend}. Must be one of: {allowed}"
+        return Some(strings(
+            locale,
+            "journal.window.settings.config.detail.backend",
+            [("backend", backend), ("allowed", allowed)],
         ));
     }
-    backend_refusal_on(backend, os).map(ToOwned::to_owned)
+    backend_refusal_on(backend, os).map(|id| text(locale, id))
 }
 
 pub fn project_transcribe(value: Value, include_confidential_audio: bool) -> Value {
@@ -587,13 +682,25 @@ mod tests {
             for arch in ["aarch64", "arm64"] {
                 for backend in ["parakeet", "parakeet-cpp", "confidential"] {
                     assert!(
-                        super::backend_validation_error_on(&json!(backend), os, arch).is_none(),
+                        super::backend_validation_error_on(
+                            solstone_core_convey_http::window_catalog::ENGLISH,
+                            &json!(backend),
+                            os,
+                            arch
+                        )
+                        .is_none(),
                         "{os}/{arch}: {backend}"
                     );
                 }
                 for value in [json!("unknown"), json!(null), json!(true), json!(1)] {
                     assert!(
-                        super::backend_validation_error_on(&value, os, arch).is_some(),
+                        super::backend_validation_error_on(
+                            solstone_core_convey_http::window_catalog::ENGLISH,
+                            &value,
+                            os,
+                            arch
+                        )
+                        .is_some(),
                         "{os}/{arch}: {value}"
                     );
                 }
@@ -609,15 +716,33 @@ mod tests {
             ("ios", "x86_64"),
         ] {
             assert!(
-                super::backend_validation_error_on(&json!("confidential"), os, arch).is_some(),
+                super::backend_validation_error_on(
+                    solstone_core_convey_http::window_catalog::ENGLISH,
+                    &json!("confidential"),
+                    os,
+                    arch
+                )
+                .is_some(),
                 "{os}/{arch}"
             );
             assert!(
-                super::backend_validation_error_on(&json!("parakeet"), os, arch).is_none(),
+                super::backend_validation_error_on(
+                    solstone_core_convey_http::window_catalog::ENGLISH,
+                    &json!("parakeet"),
+                    os,
+                    arch
+                )
+                .is_none(),
                 "{os}/{arch}"
             );
             assert_eq!(
-                super::backend_validation_error_on(&json!("parakeet-cpp"), os, arch).is_some(),
+                super::backend_validation_error_on(
+                    solstone_core_convey_http::window_catalog::ENGLISH,
+                    &json!("parakeet-cpp"),
+                    os,
+                    arch
+                )
+                .is_some(),
                 os == "macos",
                 "{os}/{arch}"
             );

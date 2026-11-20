@@ -1,0 +1,16 @@
+{
+  "description": "removal copy nameNotKept in the journal's settings view.",
+  "context": "Journal window, settings view. removal copy nameNotKept.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "362d911dfe24626611bd91c69d1f0e9dc9d5ac9fdb7f59ef36814ac8e60980f6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

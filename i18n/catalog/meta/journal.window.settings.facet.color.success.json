@@ -1,0 +1,16 @@
+{
+  "description": "facet color success in the journal's settings view.",
+  "context": "Journal window, settings view. facet color success.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fd8c136513b8505f74f2ef81c2ca5753a8dee229562fe5fe36c0620b73f45a96",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

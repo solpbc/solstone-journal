@@ -1,0 +1,23 @@
+{
+  "description": "transcribe backend label parakeet cpp local processing linux and windows in the journal's settings view.",
+  "context": "Journal window, settings view. transcribe backend label parakeet cpp local processing linux and windows.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "adcfb0028a3edbcc08613b5533d7f947a147edae3d0850f311616f76b814ab36",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "parakeet.cpp"
+    }
+  ]
+}

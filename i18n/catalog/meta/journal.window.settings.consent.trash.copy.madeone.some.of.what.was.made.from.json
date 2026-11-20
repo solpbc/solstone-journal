@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy madeOne in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy madeOne.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4c4265f2bf3528ab42cc6b1983d80d46c874aa09b792937ae369ee41f47e0503",
+  "max_length": 107,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

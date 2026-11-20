@@ -1,0 +1,16 @@
+{
+  "description": "Vision category name in the journal's settings view.",
+  "context": "Journal window, settings view. Vision category name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e5b99d31ee18c11b1afa15bef8f99b9ce601a891bbde35d41c8d57780ba287aa",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

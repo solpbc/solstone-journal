@@ -1,0 +1,16 @@
+{
+  "description": "Consent facet delete copy lead in the journal's settings view.",
+  "context": "Journal window, settings view. Consent facet delete copy lead.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bb332a2d0c204b9dbc7f478170d4ab0a2a92659cb82031b2f17b54bf4e6edb4c",
+  "max_length": 66,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

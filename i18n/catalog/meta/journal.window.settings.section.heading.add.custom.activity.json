@@ -1,0 +1,16 @@
+{
+  "description": "Section heading in the journal's settings view.",
+  "context": "Journal window, settings view. Section heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1b358d2e4ba916644178382740b4f8fb78e27b3cb25795585f339712fa11c84d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy stretchImportInTrash in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy stretchImportInTrash.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "54e387bd2bad04c366d335fb2c75a8da04a09b5bd5f87121a2fdbc1a4fdc7e68",
+  "max_length": 96,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

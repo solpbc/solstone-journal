@@ -1,0 +1,16 @@
+{
+  "description": "facet action labels entity detach in the journal's settings view.",
+  "context": "Journal window, settings view. facet action labels entity detach.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7eae98b10420d9bed9628c514375eefe46b78461c9054ea23513a8ac914acac6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

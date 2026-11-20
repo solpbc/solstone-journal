@@ -3,6 +3,8 @@
 
 //! The trash page: what waits in the trash, and recover, erase now and empty.
 
+use solstone_core_convey_http::window_catalog::{strings, text};
+
 use std::path::{Path, PathBuf};
 
 use axum::body::Bytes;
@@ -16,7 +18,7 @@ use crate::http::{invalid_config_value, json_response};
 
 /// Everything in the trash, newest first, with the days the setting holds
 /// for what is trashed from now on.
-pub async fn list(journal_root: PathBuf) -> Response {
+pub async fn list(locale: &'static str, journal_root: PathBuf) -> Response {
     match tokio::task::spawn_blocking(move || {
         let items = solstone_core_trash::list(&journal_root).map_err(|error| error.to_string())?;
         let unfinished =
@@ -97,8 +99,8 @@ pub async fn list(journal_root: PathBuf) -> Response {
     .await
     {
         Ok(Ok(payload)) => json_response(payload),
-        Ok(Err(detail)) => unreadable(detail),
-        Err(error) => unreadable(error.to_string()),
+        Ok(Err(detail)) => unreadable(locale, detail),
+        Err(error) => unreadable(locale, error.to_string()),
     }
 }
 
@@ -212,8 +214,15 @@ fn stretch_blocked(members: &[&Item], listed: &[Item]) -> Option<Value> {
     })
 }
 
-fn unreadable(detail: String) -> Response {
-    crate::storage::read_failed("trash_unreadable", "your trash couldn't be read.", detail)
+fn unreadable(locale: &str, detail: String) -> Response {
+    crate::storage::read_failed(
+        "trash_unreadable",
+        text(
+            locale,
+            "journal.window.settings.removal.response.unreadable",
+        ),
+        detail,
+    )
 }
 
 /// One item as the page shows it: what it is, never what it holds. `listed` is
@@ -614,11 +623,11 @@ pub fn backups_view(journal_root: &Path) -> Result<Value, String> {
 }
 
 /// Backup's state for the choice in an erase-now confirm, on every page.
-pub async fn backups(journal_root: PathBuf) -> Response {
+pub async fn backups(locale: &'static str, journal_root: PathBuf) -> Response {
     match tokio::task::spawn_blocking(move || backups_view(&journal_root)).await {
         Ok(Ok(view)) => json_response(view),
-        Ok(Err(error)) => unreadable(error),
-        Err(error) => unreadable(error.to_string()),
+        Ok(Err(error)) => unreadable(locale, error),
+        Err(error) => unreadable(locale, error.to_string()),
     }
 }
 
@@ -648,8 +657,14 @@ fn parse(body: &Bytes) -> Option<Selection> {
     serde_json::from_slice(body).ok()
 }
 
-fn unreadable_selection() -> Response {
-    invalid_config_value("the selection couldn't be read")
+fn unreadable_selection(locale: &str) -> Response {
+    invalid_config_value(
+        locale,
+        text(
+            locale,
+            "journal.window.settings.removal.detail.the.selection.couldn.t.be.read",
+        ),
+    )
 }
 
 fn page_surface(page: Option<&str>) -> Surface {
@@ -665,13 +680,13 @@ fn page_surface(page: Option<&str>) -> Surface {
 }
 
 /// Put each selected item back where it was, all under one operation.
-pub async fn recover(journal_root: PathBuf, body: Bytes) -> Response {
+pub async fn recover(locale: &'static str, journal_root: PathBuf, body: Bytes) -> Response {
     let Some(selection) = parse(&body) else {
-        return unreadable_selection();
+        return unreadable_selection(locale);
     };
     let surface = page_surface(selection.page.as_deref());
     let ids = recover_order(&journal_root, selection.ids);
-    run(journal_root, ids, move |root, id, operation| {
+    run(locale, journal_root, ids, move |root, id, operation| {
         solstone_core_import::trash_kinds::with_kinds(root, |kinds| match stretch_of(root, id) {
             // A stretch comes back whole, as one act, or not at all.
             Some(stretch) => solstone_core_trash::recover_stretch(
@@ -731,13 +746,13 @@ fn recover_order(journal_root: &Path, ids: Vec<String>) -> Vec<String> {
 }
 
 /// Erase each selected item now, all under one operation.
-pub async fn erase(journal_root: PathBuf, body: Bytes) -> Response {
+pub async fn erase(locale: &'static str, journal_root: PathBuf, body: Bytes) -> Response {
     let Some(selection) = parse(&body) else {
-        return unreadable_selection();
+        return unreadable_selection(locale);
     };
     let ids = erase_order(&journal_root, selection.ids);
     let backups = selection.backups;
-    run(journal_root, ids, move |root, id, operation| {
+    run(locale, journal_root, ids, move |root, id, operation| {
         erase_one(root, id, Action::Erase, operation, backups)
     })
     .await
@@ -804,9 +819,9 @@ fn erase_order(journal_root: &Path, ids: Vec<String>) -> Vec<String> {
 }
 
 /// Erase everything in the trash.
-pub async fn empty(journal_root: PathBuf, body: Bytes) -> Response {
+pub async fn empty(locale: &'static str, journal_root: PathBuf, body: Bytes) -> Response {
     let Some(selection) = parse(&body) else {
-        return unreadable_selection();
+        return unreadable_selection(locale);
     };
     let backups = selection.backups;
     let ids = match tokio::task::spawn_blocking({
@@ -819,10 +834,10 @@ pub async fn empty(journal_root: PathBuf, body: Bytes) -> Response {
             &journal_root,
             items.into_iter().map(|item| item.id).collect(),
         ),
-        Ok(Err(error)) => return unreadable(error.to_string()),
-        Err(error) => return unreadable(error.to_string()),
+        Ok(Err(error)) => return unreadable(locale, error.to_string()),
+        Err(error) => return unreadable(locale, error.to_string()),
     };
-    run(journal_root, ids, move |root, id, operation| {
+    run(locale, journal_root, ids, move |root, id, operation| {
         erase_one(root, id, Action::EmptyTrash, operation, backups)
     })
     .await
@@ -831,6 +846,7 @@ pub async fn empty(journal_root: PathBuf, body: Bytes) -> Response {
 /// Run one act per id, each on its own: one that fails never stops the rest.
 /// The ids are one owner act, so every item records under one operation.
 async fn run(
+    locale: &'static str,
     journal_root: PathBuf,
     ids: Vec<String>,
     act: impl Fn(&Path, &str, &OperationId) -> Result<Vec<String>, TrashError> + Send + 'static,
@@ -859,7 +875,7 @@ async fn run(
                 }
                 Err(error) => {
                     log::warn!("trash item {id}: {error}");
-                    let mut row = json!({"id": id, "reason": owner_reason(&error)});
+                    let mut row = json!({"id": id, "reason": owner_reason(locale, &error)});
                     if let Some(detail) = refusal(&error) {
                         row["reason"] = detail.get("code").cloned().unwrap_or(Value::Null);
                         row["detail"] = detail;
@@ -875,7 +891,10 @@ async fn run(
         Ok(payload) => json_response(payload),
         Err(error) => crate::storage::read_failed(
             "trash_act_failed",
-            "your journal couldn't finish that. reload your trash to check.",
+            text(
+                locale,
+                "journal.window.settings.removal.response.action.failure",
+            ),
             error.to_string(),
         ),
     }
@@ -893,10 +912,23 @@ fn refusal(error: &TrashError) -> Option<Value> {
 }
 
 /// The reason a page can show: the trash's own words, never a path.
-fn owner_reason(error: &TrashError) -> String {
+fn owner_reason(locale: &str, error: &TrashError) -> String {
     match error {
-        TrashError::Io(_) | TrashError::UnknownKind => "your trash couldn't be changed".to_owned(),
-        error => error.to_string(),
+        TrashError::Io(_) | TrashError::UnknownKind => text(
+            locale,
+            "journal.window.settings.removal.response.unavailable",
+        ),
+        TrashError::Missing(kind) => strings(
+            locale,
+            "journal.window.settings.removal.response.missing",
+            [("kind", kind)],
+        ),
+        TrashError::NotInTrash => text(locale, "journal.window.settings.removal.response.gone"),
+        TrashError::InFlight => text(locale, "journal.window.settings.removal.response.busy"),
+        TrashError::Unfinished(_) => {
+            text(locale, "journal.window.settings.removal.response.finishing")
+        }
+        TrashError::Held(detail) => detail.clone(),
     }
 }
 

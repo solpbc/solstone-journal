@@ -1,0 +1,16 @@
+{
+  "description": "Disclosure label in the journal's settings view.",
+  "context": "Journal window, settings view. Disclosure label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "55d237986a8c31799e82770b37ec7ef3207ee682ae4690870b01ec95dc4ce55d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

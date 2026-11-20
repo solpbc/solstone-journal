@@ -1,0 +1,28 @@
+{
+  "description": "removal copy footSome in the journal's settings view.",
+  "context": "Journal window, settings view. removal copy footSome.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1378cb5e6841c50ec3e3c0b7bfd8f735f49e1ce1973ffb2e2fec439901f56086",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{shown}"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "{total}"
+    }
+  ]
+}

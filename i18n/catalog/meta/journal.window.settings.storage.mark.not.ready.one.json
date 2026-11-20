@@ -1,0 +1,28 @@
+{
+  "description": "storage mark not ready one in the journal's settings view.",
+  "context": "Journal window, settings view. storage mark not ready one.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "95ecf36a77ed1ca45b6e25505ac902a8808f00102f200e102c76717b97c68d1b",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

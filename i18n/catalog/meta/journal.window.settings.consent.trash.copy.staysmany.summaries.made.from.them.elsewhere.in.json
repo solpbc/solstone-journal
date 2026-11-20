@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy staysMany in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy staysMany.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a8ecdd565913ca4f9541fc0412769c765185572a2bfbd3b3b46eb656d5fc4053",
+  "max_length": 122,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy stretchFinishing in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy stretchFinishing.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e7564e0a61f0d790757e76a4f1aca5be54ac10539367c702762b46515624da2c",
+  "max_length": 159,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

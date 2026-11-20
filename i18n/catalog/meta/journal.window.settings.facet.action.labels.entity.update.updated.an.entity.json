@@ -1,0 +1,16 @@
+{
+  "description": "facet action labels entity update in the journal's settings view.",
+  "context": "Journal window, settings view. facet action labels entity update.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a9e0177805a02d87376de4a5103829b594ed035e8ebc59be408730ac83a2d777",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

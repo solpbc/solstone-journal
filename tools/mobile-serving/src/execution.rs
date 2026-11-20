@@ -206,16 +206,14 @@ impl solstone_core_settings_web::SourceSyncAuthority for SettingsSync {
         let ingress = self.0.clone();
         Box::pin(async move { submit_operation(ingress, Operation::SettingsSync(None)).await })
     }
-    fn update(&self, body: axum::body::Bytes) -> solstone_core_settings_web::SourceSyncResponse {
+    fn update(
+        &self,
+        changes: Vec<(&'static str, bool)>,
+    ) -> solstone_core_settings_web::SourceSyncResponse {
         let ingress = self.0.clone();
-        Box::pin(async move {
-            match solstone_core_settings_web::parse_sync_update(body) {
-                Ok(changes) => {
-                    submit_operation(ingress, Operation::SettingsSync(Some(changes))).await
-                }
-                Err(error) => *error,
-            }
-        })
+        Box::pin(
+            async move { submit_operation(ingress, Operation::SettingsSync(Some(changes))).await },
+        )
     }
 }
 

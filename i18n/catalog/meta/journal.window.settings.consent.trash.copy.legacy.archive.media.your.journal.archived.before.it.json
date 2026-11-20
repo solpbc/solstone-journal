@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy legacy archive in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy legacy archive.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f756ef0c88dc066d0b457afdb54820ebaadc38cb1c5e61a309e41c5def6582e9",
+  "max_length": 163,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

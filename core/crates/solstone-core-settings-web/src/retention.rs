@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use solstone_core_convey_http::window_catalog::{strings, text};
+
 use std::{collections::BTreeMap, path::PathBuf};
 
 use axum::{body::Bytes, response::Response};
@@ -89,11 +91,11 @@ fn count(value: Option<&Value>) -> i64 {
     value.and_then(Value::as_i64).unwrap_or(0)
 }
 
-fn reason(value: Option<&Value>) -> String {
-    value
-        .and_then(Value::as_str)
-        .unwrap_or("unknown error")
-        .to_owned()
+fn reason(locale: &str, value: Option<&Value>) -> String {
+    value.and_then(Value::as_str).map_or_else(
+        || text(locale, "journal.window.settings.retention.unknown.error"),
+        str::to_owned,
+    )
 }
 
 fn human_bytes(bytes: i64) -> String {
@@ -111,7 +113,7 @@ fn human_bytes(bytes: i64) -> String {
     format!("{value:.1} PiB")
 }
 
-fn compaction_result(stats: Option<&Map<String, Value>>, dry_run: bool) -> Value {
+fn compaction_result(locale: &str, stats: Option<&Map<String, Value>>, dry_run: bool) -> Value {
     let stats = stats.cloned().unwrap_or_default();
     let bytes_freed = if !dry_run && !python_truthy(stats.get("rewritten").unwrap_or(&Value::Null))
     {
@@ -125,7 +127,7 @@ fn compaction_result(stats: Option<&Map<String, Value>>, dry_run: bool) -> Value
         .into_iter()
         .flatten()
         .filter_map(Value::as_object)
-        .map(|error| reason(error.get("reason")))
+        .map(|error| reason(locale, error.get("reason")))
         .collect::<Vec<_>>();
     json!({
         "exists": python_truthy(stats.get("exists").unwrap_or(&Value::Null)),
@@ -158,7 +160,12 @@ fn empty_prune_result(enabled: bool, dry_run: Value, days: i64) -> Option<Value>
     }))
 }
 
-fn prune_result_from_receipt(receipt: &Value, dry_run: Value, days: i64) -> Option<Value> {
+fn prune_result_from_receipt(
+    locale: &str,
+    receipt: &Value,
+    dry_run: Value,
+    days: i64,
+) -> Option<Value> {
     let plan = receipt
         .get("detail")
         .and_then(Value::as_object)
@@ -182,7 +189,7 @@ fn prune_result_from_receipt(receipt: &Value, dry_run: Value, days: i64) -> Opti
             .into_iter()
             .flatten()
             .filter_map(Value::as_object)
-            .map(|error| Value::String(reason(error.get("reason"))))
+            .map(|error| Value::String(reason(locale, error.get("reason"))))
             .collect::<Vec<_>>();
         by_class.insert(
             name.clone(),
@@ -221,7 +228,7 @@ fn prune_result_from_receipt(receipt: &Value, dry_run: Value, days: i64) -> Opti
         .flatten()
         .filter_map(Value::as_object)
         .map(|error| {
-            let reason = reason(error.get("reason"));
+            let reason = reason(locale, error.get("reason"));
             json!({
                 "class": error.get("class").cloned().unwrap_or(Value::Null),
                 "path": error.get("path").cloned().unwrap_or(Value::Null),
@@ -279,6 +286,7 @@ fn prune_result_from_receipt(receipt: &Value, dry_run: Value, days: i64) -> Opti
     let partial_error = !errors.is_empty();
     let compactions = plan.get("compactions").and_then(Value::as_object);
     let retention_log = compaction_result(
+        locale,
         compactions
             .and_then(|compactions| compactions.get("retention_log"))
             .and_then(Value::as_object),
@@ -315,7 +323,12 @@ fn prune_result_from_receipt(receipt: &Value, dry_run: Value, days: i64) -> Opti
     }))
 }
 
-fn prune_response(journal_root: &std::path::Path, result: Value, dry_run: bool) -> Response {
+fn prune_response(
+    locale: &str,
+    journal_root: &std::path::Path,
+    result: Value,
+    dry_run: bool,
+) -> Response {
     if !dry_run
         && solstone_core_facets::append_action_log(
             journal_root,
@@ -331,7 +344,7 @@ fn prune_response(journal_root: &std::path::Path, result: Value, dry_run: bool) 
         )
         .is_err()
     {
-        settings_operation_failed()
+        settings_operation_failed(locale)
     } else {
         json_response(result)
     }
@@ -393,41 +406,66 @@ pub(crate) fn describe_mark_receipt(before: &Value, after: &Value, stream: Optio
     json!({"marked":marked,"standing_total":after_marks.len(),"held":held,"no_media":no_media,"not_eligible":not_eligible,"unreadable_days":after.get("plan").and_then(|value| value.get("unreadable_days")).cloned().unwrap_or_else(|| json!([]))})
 }
 
-pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Bytes) -> Response {
+pub async fn update(
+    locale: &str,
+    journal_root: PathBuf,
+    lock_options: LockOptions,
+    body: Bytes,
+) -> Response {
     let JsonBody::Value(Value::Object(request)) = json_body(body) else {
-        return missing_request_body();
+        return missing_request_body(locale);
     };
     if request.is_empty() {
-        return missing_request_body();
+        return missing_request_body(locale);
     }
     if let Some(mode) = request.get("raw_media")
         && !matches!(mode.as_str(), Some("keep" | "days" | "processed"))
     {
-        return invalid_config_value(format!(
-            "Invalid mode: {}",
-            mode.as_str().unwrap_or_default()
-        ));
+        return invalid_config_value(
+            locale,
+            strings(
+                locale,
+                "journal.window.settings.retention.detail.invalid.mode",
+                [("mode", mode.as_str().unwrap_or_default())],
+            ),
+        );
     }
 
     if let Some(mode) = request.get("empty_audio")
         && !matches!(mode.as_str(), Some("keep" | "processed"))
     {
-        return invalid_config_value(format!(
-            "Invalid mode: {}",
-            mode.as_str().unwrap_or_default()
-        ));
+        return invalid_config_value(
+            locale,
+            strings(
+                locale,
+                "journal.window.settings.retention.detail.invalid.mode",
+                [("mode", mode.as_str().unwrap_or_default())],
+            ),
+        );
     }
     if let Some(days) = request.get("raw_media_days")
         && !days.is_null()
         && (!days.is_i64() || days.as_i64().is_some_and(|days| days < 1))
         && !days.is_boolean()
     {
-        return invalid_config_value("days must be a positive integer");
+        return invalid_config_value(
+            locale,
+            text(
+                locale,
+                "journal.window.settings.retention.detail.days.must.be.a.positive.integer",
+            ),
+        );
     }
     let mut per_stream = None;
     if let Some(value) = request.get("per_stream") {
         let Some(streams) = value.as_object() else {
-            return invalid_config_value("per_stream must be an object");
+            return invalid_config_value(
+                locale,
+                text(
+                    locale,
+                    "journal.window.settings.retention.detail.per.stream.must.be.an.object",
+                ),
+            );
         };
         let mut normalized = Map::new();
         for (name, value) in streams {
@@ -437,17 +475,28 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
             if let Some(mode) = stream.get("raw_media")
                 && !matches!(mode.as_str(), Some("keep" | "days" | "processed"))
             {
-                return invalid_config_value(format!(
-                    "Invalid mode for {name}: {}",
-                    mode.as_str().unwrap_or_default()
-                ));
+                return invalid_config_value(
+                    locale,
+                    strings(
+                        locale,
+                        "journal.window.settings.retention.detail.invalid.stream.mode",
+                        [("name", name), ("mode", mode.as_str().unwrap_or_default())],
+                    ),
+                );
             }
             if let Some(days) = stream.get("raw_media_days")
                 && !days.is_null()
                 && (!days.is_i64() || days.as_i64().is_some_and(|days| days < 1))
                 && !days.is_boolean()
             {
-                return invalid_config_value(format!("Invalid days for {name}"));
+                return invalid_config_value(
+                    locale,
+                    strings(
+                        locale,
+                        "journal.window.settings.retention.detail.invalid.days",
+                        [("name", name)],
+                    ),
+                );
             }
             normalized.insert(name.clone(), value.clone());
         }
@@ -455,15 +504,33 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
     }
     if let Some(value) = request.get("journal_logs") {
         let Some(logs) = value.as_object() else {
-            return invalid_config_value("journal_logs must be an object");
+            return invalid_config_value(
+                locale,
+                text(
+                    locale,
+                    "journal.window.settings.retention.detail.journal.logs.must.be.an.object",
+                ),
+            );
         };
         if logs.get("enabled").is_some_and(|value| !value.is_boolean()) {
-            return invalid_config_value("enabled must be a boolean");
+            return invalid_config_value(
+                locale,
+                text(
+                    locale,
+                    "journal.window.settings.retention.detail.enabled.must.be.a.boolean",
+                ),
+            );
         }
         if let Some(days) = logs.get("days")
             && (!days.is_i64() || days.is_boolean() || days.as_i64().is_some_and(|days| days < 1))
         {
-            return invalid_config_value("days must be a positive integer");
+            return invalid_config_value(
+                locale,
+                text(
+                    locale,
+                    "journal.window.settings.retention.detail.days.must.be.a.positive.integer",
+                ),
+            );
         }
     }
     match mutate_journal_config(&journal_root, lock_options, |config| {
@@ -563,21 +630,29 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
                 )
                 .is_err()
             {
-                return settings_operation_failed();
+                return settings_operation_failed(locale);
             }
             json_response(json!({"success":true,"retention":transaction.value.1}))
         }
         Err(solstone_core_journal_config_write::ConfigMutationError::Lock(LockError::Timeout(
             _,
-        ))) => config_busy(),
-        Err(_) => settings_operation_failed(),
+        ))) => config_busy(locale),
+        Err(_) => settings_operation_failed(locale),
     }
 }
 
-pub async fn purge(journal_root: PathBuf, body: Bytes) -> Response {
+pub async fn purge(locale: &'static str, journal_root: PathBuf, body: Bytes) -> Response {
     let request = match json_body(body) {
         JsonBody::Value(Value::Object(value)) => value,
-        JsonBody::Value(_) => return invalid_request_value("request body must be an object"),
+        JsonBody::Value(_) => {
+            return invalid_request_value(
+                locale,
+                text(
+                    locale,
+                    "journal.window.settings.retention.detail.request.body.must.be.an.object",
+                ),
+            );
+        }
         JsonBody::Missing | JsonBody::Invalid => Map::new(),
     };
     let stream = request
@@ -589,12 +664,17 @@ pub async fn purge(journal_root: PathBuf, body: Bytes) -> Response {
         .config
         .unwrap_or_default();
     let policy = policy_from_journal_config(&config);
-    let before = match retention_executor::marks(journal_root.clone()).await {
+    let before = match retention_executor::marks(locale, journal_root.clone()).await {
         Ok(value) => value,
         Err(error) => {
-            return settings_operation_failed_with_detail(format!(
-                "could not build the list: {error}"
-            ));
+            return settings_operation_failed_with_detail(
+                locale,
+                strings(
+                    locale,
+                    "journal.window.settings.retention.detail.mark.failure",
+                    [("detail", &error.detail(locale))],
+                ),
+            );
         }
     };
     if !policy_would_release(&policy) {
@@ -605,6 +685,7 @@ pub async fn purge(journal_root: PathBuf, body: Bytes) -> Response {
     let now = Timestamp::now();
     let policy = serde_json::to_string(&policy).expect("policy JSON");
     match retention_executor::mark(
+        locale,
         journal_root.clone(),
         ZonedDateTime::now().strftime("%Y-%m-%d").to_string(),
         solstone_core_time::utc_z(now, solstone_core_time::Precision::Secs),
@@ -625,34 +706,53 @@ pub async fn purge(journal_root: PathBuf, body: Bytes) -> Response {
             )
             .is_err()
             {
-                return settings_operation_failed();
+                return settings_operation_failed(locale);
             }
             json_response(response)
         }
-        Err(error) => {
-            settings_operation_failed_with_detail(format!("could not build the list: {error}"))
-        }
+        Err(error) => settings_operation_failed_with_detail(
+            locale,
+            strings(
+                locale,
+                "journal.window.settings.retention.detail.mark.failure",
+                [("detail", &error.detail(locale))],
+            ),
+        ),
     }
 }
 
-pub async fn prune_logs(journal_root: PathBuf, body: Bytes) -> Response {
+pub async fn prune_logs(locale: &'static str, journal_root: PathBuf, body: Bytes) -> Response {
     let request = match json_body(body) {
         JsonBody::Value(Value::Object(value)) => value,
-        JsonBody::Value(_) => return invalid_config_value("request body must be an object"),
+        JsonBody::Value(_) => {
+            return invalid_config_value(
+                locale,
+                text(
+                    locale,
+                    "journal.window.settings.retention.detail.request.body.must.be.an.object",
+                ),
+            );
+        }
         JsonBody::Missing | JsonBody::Invalid => Map::new(),
     };
     let days = request.get("days");
     if let Some(days) = days
         && (!days.is_i64() || days.is_boolean() || days.as_i64().is_some_and(|days| days < 1))
     {
-        return invalid_config_value("days must be a positive integer");
+        return invalid_config_value(
+            locale,
+            text(
+                locale,
+                "journal.window.settings.retention.detail.days.must.be.a.positive.integer",
+            ),
+        );
     }
     let config = solstone_core_journal_config::read_journal_config(&journal_root)
         .expect("session gate handled corrupt config")
         .config
         .unwrap_or_default();
     let Ok(log_retention) = log_retention_config(&config) else {
-        return settings_operation_failed();
+        return settings_operation_failed(locale);
     };
     let effective = days.and_then(Value::as_i64).unwrap_or(log_retention.days);
     let dry_run = request
@@ -662,9 +762,10 @@ pub async fn prune_logs(journal_root: PathBuf, body: Bytes) -> Response {
     let dry_run_truthy = python_truthy(&dry_run);
     if !log_retention.enabled {
         return empty_prune_result(false, dry_run, effective)
-            .map_or_else(settings_operation_failed, json_response);
+            .map_or_else(|| settings_operation_failed(locale), json_response);
     }
     match retention_executor::prune_logs(
+        locale,
         journal_root.clone(),
         ZonedDateTime::now().strftime("%Y-%m-%d").to_string(),
         effective.to_string(),
@@ -672,21 +773,22 @@ pub async fn prune_logs(journal_root: PathBuf, body: Bytes) -> Response {
     )
     .await
     {
-        Ok(receipt) => prune_result_from_receipt(&receipt, dry_run.clone(), effective)
-            .map_or_else(settings_operation_failed, |result| {
-                prune_response(&journal_root, result, dry_run_truthy)
-            }),
+        Ok(receipt) => prune_result_from_receipt(locale, &receipt, dry_run.clone(), effective)
+            .map_or_else(
+                || settings_operation_failed(locale),
+                |result| prune_response(locale, &journal_root, result, dry_run_truthy),
+            ),
         // Reference contract: a refusal still carries a useful prune result.
         // Do not unify this with executor unavailability below.
         Err(ExecutorError::Refused(refused)) => {
-            prune_result_from_receipt(&refused.0, dry_run, effective)
-                .map_or_else(settings_operation_failed, |result| {
-                    prune_response(&journal_root, result, dry_run_truthy)
-                })
+            prune_result_from_receipt(locale, &refused.0, dry_run, effective).map_or_else(
+                || settings_operation_failed(locale),
+                |result| prune_response(locale, &journal_root, result, dry_run_truthy),
+            )
         }
         // Reference contract: an unavailable executor is the generic envelope.
         // Do not unify this with the receipt-bearing refusal arm above.
-        Err(ExecutorError::Unavailable(_)) => settings_operation_failed(),
+        Err(ExecutorError::Unavailable(_)) => settings_operation_failed(locale),
     }
 }
 
@@ -718,7 +820,13 @@ mod tests {
                 },
             },
         });
-        let preview = prune_result_from_receipt(&receipt, json!(true), 7).expect("preview");
+        let preview = prune_result_from_receipt(
+            solstone_core_convey_http::window_catalog::ENGLISH,
+            &receipt,
+            json!(true),
+            7,
+        )
+        .expect("preview");
         assert_eq!(preview["files_deleted"], 1);
         assert_eq!(preview["bytes_freed"], 42);
         assert_eq!(preview["by_class"]["oplog_retention"]["files_deleted"], 1);
@@ -756,8 +864,13 @@ mod tests {
                 },
             },
         });
-        let executed =
-            prune_result_from_receipt(&executed_receipt, json!(false), 7).expect("execution");
+        let executed = prune_result_from_receipt(
+            solstone_core_convey_http::window_catalog::ENGLISH,
+            &executed_receipt,
+            json!(false),
+            7,
+        )
+        .expect("execution");
         assert_eq!(executed["files_deleted"], 1);
         assert_eq!(executed["bytes_freed"], 42);
         assert_eq!(

@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy waitsSegmentOne in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy waitsSegmentOne.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dc061f8ec9684fda93b68d132aaf277272932725c0eefb164e238f37a0870fb9",
+  "max_length": 102,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

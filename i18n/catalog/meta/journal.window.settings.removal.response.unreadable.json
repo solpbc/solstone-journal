@@ -1,0 +1,16 @@
+{
+  "description": "Trash unreadable in the journal's settings view.",
+  "context": "Journal window, settings view. Trash unreadable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "278cc19e80a25dac98f464bab5f2c977510b26f2f3b8ba57c6991c292c1cc011",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

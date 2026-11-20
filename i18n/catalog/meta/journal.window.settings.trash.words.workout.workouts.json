@@ -1,0 +1,16 @@
+{
+  "description": "trash words workout in the journal's settings view.",
+  "context": "Journal window, settings view. trash words workout.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9efefbf940861c193c32725e867a6866618ed5fda276e107e62aac1d41adb1ba",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

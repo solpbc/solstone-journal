@@ -1,0 +1,16 @@
+{
+  "description": "removal kind backup in the journal's settings view.",
+  "context": "Journal window, settings view. removal kind backup.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4b9f57370e6f448c884e5f515f13a413894f6f65a99869c739104e252233a016",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

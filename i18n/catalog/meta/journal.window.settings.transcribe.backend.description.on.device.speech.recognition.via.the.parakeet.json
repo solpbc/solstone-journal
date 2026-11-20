@@ -1,0 +1,33 @@
+{
+  "description": "transcribe backend description on device speech recognition via the parakeet in the journal's settings view.",
+  "context": "Journal window, settings view. transcribe backend description on device speech recognition via the parakeet.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "eefc8f1b43becdab25f0b6852e604af167081e7342b6f7bbe0c4a032705fd72c",
+  "max_length": 259,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "parakeet.cpp"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "parakeet.cpp"
+    },
+    {
+      "name": "slot3",
+      "kind": "command",
+      "value": "solstone journal install-provider parakeet"
+    }
+  ]
+}

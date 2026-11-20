@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy detaching in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy detaching.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9a5516bccfb5f2a61c77414d1f8c5221b015202379eac0b0eeda71d8f14ef834",
+  "max_length": 114,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

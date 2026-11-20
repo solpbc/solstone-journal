@@ -1,0 +1,16 @@
+{
+  "description": "Trash busy in the journal's settings view.",
+  "context": "Journal window, settings view. Trash busy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cad894d2d5d5dac91abf1d7a0ea242050322d4a76e50219b48db887d976b0931",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

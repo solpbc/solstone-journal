@@ -1,0 +1,16 @@
+{
+  "description": "removal surface transcripts in the journal's settings view.",
+  "context": "Journal window, settings view. removal surface transcripts.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ea903ff74e9147611341a72dba1100b8386b91d1804fbf734d8d00570f16da6b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

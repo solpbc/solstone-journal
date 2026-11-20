@@ -1,0 +1,16 @@
+{
+  "description": "importance labels normal in the journal's settings view.",
+  "context": "Journal window, settings view. importance labels normal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "84426114dbd5f070516f8b80cfc290519712f69ffd72779f3b94c711483eca88",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "storage history read in the journal's settings view.",
+  "context": "Journal window, settings view. storage history read.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "187f5f9c18b920c4f97b23e39d56dced6351fdf1ee2c16ab14fc94cedb70bca7",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

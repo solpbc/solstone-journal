@@ -1,0 +1,16 @@
+{
+  "description": "removal action backup off in the journal's settings view.",
+  "context": "Journal window, settings view. removal action backup off.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7c5075eb2fbef7a97bd7beba075073ac2f59479fcafb8d5883a989385866958b",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Granola paste access in the journal's settings view.",
+  "context": "Journal window, settings view. Granola paste access.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "852a71bca3c615c91f57e43b87dc7d8295835bffbf63df23cc419fc6bcc0e56b",
+  "max_length": 157,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "Granola"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "Granola Business"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "storage mark days in the journal's settings view.",
+  "context": "Journal window, settings view. storage mark days.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1df3666990ba414aaa7beb6e57a0219c7dc3493f517846b93a4abf46bc3138cc",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

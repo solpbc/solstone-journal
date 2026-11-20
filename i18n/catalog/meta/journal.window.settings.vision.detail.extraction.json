@@ -1,0 +1,33 @@
+{
+  "description": "Settings vision extraction in the journal's settings view.",
+  "context": "Journal window, settings view. Settings vision extraction.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f77a2cf5b1026a55b6234194d4d9395f659642fb552b1547f402180991299b7e",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    },
+    {
+      "name": "slot2",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

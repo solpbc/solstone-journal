@@ -1,0 +1,16 @@
+{
+  "description": "trash words entity in the journal's settings view.",
+  "context": "Journal window, settings view. trash words entity.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "36311e47b5cc91f90b1eccefe8483ce9e83c51eaef08bb530600bbe4e552185f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

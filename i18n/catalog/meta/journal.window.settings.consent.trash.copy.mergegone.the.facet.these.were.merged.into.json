@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy mergeGone in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy mergeGone.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9657a10e7a9f1d2f3fba05cc3588ed9ea49426a0de79fd9a99b454b97af29090",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

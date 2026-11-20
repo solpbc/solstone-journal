@@ -8,23 +8,24 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde_json::{Map, Value, json};
+use solstone_core_convey_http::window_catalog::{strings, text};
 use solstone_core_retention::policy::{policy_from_journal_config, policy_would_release};
 
 use crate::http::json_response;
 
-pub async fn get(journal_root: PathBuf) -> Response {
+pub async fn get(locale: &'static str, journal_root: PathBuf) -> Response {
     match tokio::task::spawn_blocking(move || {
         let summary = solstone_core_retention::compute_storage_summary(&journal_root)
             .map_err(|error| error.to_string())?;
         let config = read_config(&journal_root)?;
         let mut payload = config_payload(&journal_root, &config);
         payload["summary"] = json!({"raw_media_bytes": summary.raw_media_bytes, "raw_media_human": summary.raw_media_human(), "derived_bytes": summary.derived_bytes, "derived_human": summary.derived_human(), "total_segments": summary.total_segments, "segments_with_raw": summary.segments_with_raw, "segments_purged": summary.segments_purged});
-        payload["warnings"] = json!(storage_warnings(&summary, config.get("retention").and_then(Value::as_object), &config, disk_percent(&journal_root)));
+        payload["warnings"] = json!(storage_warnings(locale, &summary, config.get("retention").and_then(Value::as_object), &config, disk_percent(&journal_root)));
         Ok::<_, String>(payload)
     }).await {
         Ok(Ok(payload)) => json_response(payload),
-        Ok(Err(detail)) => read_failed("storage_measurement_failed", "storage use couldn't be measured. your retention settings are still available.", detail),
-        Err(error) => read_failed("storage_measurement_failed", "storage use couldn't be measured. your retention settings are still available.", error.to_string()),
+        Ok(Err(detail)) => read_failed("storage_measurement_failed", text(locale, "journal.window.settings.storage.storage.measure"), detail),
+        Err(error) => read_failed("storage_measurement_failed", text(locale, "journal.window.settings.storage.storage.measure"), error.to_string()),
     }
 }
 
@@ -33,7 +34,7 @@ const REMOVAL_HISTORY_LIMIT: usize = 200;
 
 /// The newest entries of the journal's deletion record, newest first, and how
 /// many it holds. Read only: nothing here changes the record.
-pub async fn removals(journal_root: PathBuf) -> Response {
+pub async fn removals(locale: &'static str, journal_root: PathBuf) -> Response {
     match tokio::task::spawn_blocking(move || {
         solstone_core_removals::history(&journal_root, REMOVAL_HISTORY_LIMIT)
             .map_err(|error| error.to_string())
@@ -43,18 +44,18 @@ pub async fn removals(journal_root: PathBuf) -> Response {
         Ok(Ok(history)) => json_response(json!(history)),
         Ok(Err(detail)) => read_failed(
             "removal_history_unreadable",
-            "the removal history couldn't be read.",
+            text(locale, "journal.window.settings.storage.history.read"),
             detail,
         ),
         Err(error) => read_failed(
             "removal_history_unreadable",
-            "the removal history couldn't be read.",
+            text(locale, "journal.window.settings.storage.history.read"),
             error.to_string(),
         ),
     }
 }
 
-pub async fn get_config(journal_root: PathBuf) -> Response {
+pub async fn get_config(locale: &'static str, journal_root: PathBuf) -> Response {
     match read_config(&journal_root) {
         Ok(config) => {
             let keep_empty_audio = policy_from_journal_config(&config)
@@ -69,7 +70,7 @@ pub async fn get_config(journal_root: PathBuf) -> Response {
         }
         Err(detail) => read_failed(
             "storage_config_failed",
-            "storage settings couldn't be read.",
+            text(locale, "journal.window.settings.storage.storage.config"),
             detail,
         ),
     }
@@ -81,7 +82,7 @@ fn read_config(journal_root: &std::path::Path) -> Result<Map<String, Value>, Str
         .map_err(|error| error.to_string())
 }
 
-pub(crate) fn read_failed(code: &str, message: &str, detail: String) -> Response {
+pub(crate) fn read_failed(code: &str, message: impl Into<String>, detail: String) -> Response {
     solstone_core_convey_http::envelope::error_envelope(
         code,
         message,
@@ -125,6 +126,7 @@ fn streams(journal_root: &std::path::Path) -> Vec<Value> {
 }
 
 fn storage_warnings(
+    locale: &str,
     summary: &solstone_core_retention::StorageSummary,
     retention: Option<&Map<String, Value>>,
     config: &Map<String, Value>,
@@ -132,7 +134,7 @@ fn storage_warnings(
 ) -> Vec<Value> {
     let retention = retention.cloned().unwrap_or_default();
     let keep_mode = !policy_would_release(&policy_from_journal_config(config));
-    let nudge = " your journal is set to always retain original media, so nothing is added to the list automatically.";
+    let nudge = text(locale, "journal.window.settings.storage.keep.nudge");
     let mut warnings = Vec::new();
     let disk_threshold = retention
         .get("storage_warning_disk_percent")
@@ -146,11 +148,16 @@ fn storage_warnings(
     if let (Some(threshold), Some(current)) = (disk_threshold, disk_percent)
         && current >= threshold
     {
-        let mut message = format!(
-            "disk is {current}% full (threshold: {threshold}%). you can adjust your retention settings, or build the list to see what original media is ready for removal."
+        let mut message = strings(
+            locale,
+            "journal.window.settings.storage.warning.disk",
+            [
+                ("current", &current.to_string()),
+                ("threshold", &threshold.to_string()),
+            ],
         );
         if keep_mode {
-            message.push_str(nudge);
+            message.push_str(&nudge);
         }
         warnings.push(json!({"level": "warning", "type": "disk_percent", "message": message, "current": current, "threshold": threshold}));
     }
@@ -160,11 +167,16 @@ fn storage_warnings(
     {
         let current = round(summary.raw_media_bytes as f64 / 1024_f64.powi(3), 2);
         if current >= threshold {
-            let mut message = format!(
-                "raw media is {current} GiB (threshold: {threshold} GiB). you can adjust your retention settings, or build the list to see what original media is ready for removal."
+            let mut message = strings(
+                locale,
+                "journal.window.settings.storage.warning.media",
+                [
+                    ("current", &current.to_string()),
+                    ("threshold", &threshold.to_string()),
+                ],
             );
             if keep_mode {
-                message.push_str(nudge);
+                message.push_str(&nudge);
             }
             warnings.push(json!({"level": "warning", "type": "raw_media_gb", "message": message, "current": current, "threshold": threshold}));
         }
@@ -198,6 +210,7 @@ fn round(value: f64, places: i32) -> f64 {
 
 #[cfg(test)]
 mod tests {
+    use solstone_core_convey_http::window_catalog::ENGLISH;
     use std::fs;
 
     use serde_json::{Map, Value, json};
@@ -219,8 +232,8 @@ mod tests {
         fs::create_dir(root.join("config")).unwrap();
         fs::write(root.join("config/journal.json"), r#"{"retention":{"raw_media":"days","raw_media_days":14,"per_stream":{"phone":{"raw_media":"days"}},"journal_logs":{"enabled":false,"days":9}}}"#).unwrap();
         let before = fs::read(root.join("config/journal.json")).unwrap();
-        let mut config = body(super::get_config(root.to_owned()).await).await;
-        let full = body(super::get(root.to_owned()).await).await;
+        let mut config = body(super::get_config(ENGLISH, root.to_owned()).await).await;
+        let full = body(super::get(ENGLISH, root.to_owned()).await).await;
         assert_eq!(config["retention"]["keep_empty_audio"], false);
         assert!(full["retention"].get("keep_empty_audio").is_none());
         config["retention"]
@@ -235,8 +248,11 @@ mod tests {
             14
         );
         fs::write(root.join("chronicle"), "cannot scan").unwrap();
-        assert_eq!(super::get_config(root.to_owned()).await.status(), 200);
-        let failed = super::get(root.to_owned()).await;
+        assert_eq!(
+            super::get_config(ENGLISH, root.to_owned()).await.status(),
+            200
+        );
+        let failed = super::get(ENGLISH, root.to_owned()).await;
         assert_eq!(failed.status(), 500);
         assert_eq!(
             body(failed).await["reason_code"],
@@ -261,7 +277,7 @@ mod tests {
                 serde_json::to_string(&conf).unwrap(),
             )
             .unwrap();
-            let response = body(super::get_config(root.to_owned()).await).await;
+            let response = body(super::get_config(ENGLISH, root.to_owned()).await).await;
             assert_eq!(response["retention"]["keep_empty_audio"], true);
         }
         // 2. no legacy + stored processed -> false
@@ -277,7 +293,7 @@ mod tests {
                 serde_json::to_string(&conf).unwrap(),
             )
             .unwrap();
-            let response = body(super::get_config(root.to_owned()).await).await;
+            let response = body(super::get_config(ENGLISH, root.to_owned()).await).await;
             assert_eq!(response["retention"]["keep_empty_audio"], false);
         }
         // 3. no legacy + stored keep -> true
@@ -293,7 +309,7 @@ mod tests {
                 serde_json::to_string(&conf).unwrap(),
             )
             .unwrap();
-            let response = body(super::get_config(root.to_owned()).await).await;
+            let response = body(super::get_config(ENGLISH, root.to_owned()).await).await;
             assert_eq!(response["retention"]["keep_empty_audio"], true);
         }
         // 4. no retention at all -> false
@@ -309,7 +325,7 @@ mod tests {
                 serde_json::to_string(&conf).unwrap(),
             )
             .unwrap();
-            let response = body(super::get_config(root.to_owned()).await).await;
+            let response = body(super::get_config(ENGLISH, root.to_owned()).await).await;
             assert_eq!(response["retention"]["keep_empty_audio"], false);
         }
     }
@@ -319,11 +335,14 @@ mod tests {
         let temporary = TempDir::new().unwrap();
         let root = temporary.path();
         fs::create_dir(root.join("config")).unwrap();
-        let config = body(super::get_config(root.to_owned()).await).await;
+        let config = body(super::get_config(ENGLISH, root.to_owned()).await).await;
         assert_eq!(config["retention"]["raw_media"], "keep");
         assert_eq!(config["retention"]["journal_logs"]["days"], 30);
         fs::write(root.join("config/journal.json"), "{").unwrap();
-        assert_eq!(super::get_config(root.to_owned()).await.status(), 500);
+        assert_eq!(
+            super::get_config(ENGLISH, root.to_owned()).await.status(),
+            500
+        );
         assert_eq!(
             fs::read_to_string(root.join("config/journal.json")).unwrap(),
             "{"
@@ -342,6 +361,7 @@ mod tests {
         }))
         .expect("config object");
         let warnings = storage_warnings(
+            ENGLISH,
             &summary,
             config.get("retention").and_then(Value::as_object),
             &config,
@@ -354,6 +374,7 @@ mod tests {
         assert_eq!(warnings[1]["threshold"], 1.0);
         assert!(warnings[1]["message"].as_str().unwrap().contains("1 GiB"));
         let history_only = storage_warnings(
+            ENGLISH,
             &summary,
             config.get("retention").and_then(Value::as_object),
             &config,
@@ -364,6 +385,7 @@ mod tests {
         let below_threshold = solstone_core_retention::StorageSummary::default();
         assert!(
             storage_warnings(
+                ENGLISH,
                 &below_threshold,
                 config.get("retention").and_then(Value::as_object),
                 &config,
@@ -397,6 +419,7 @@ mod tests {
         }))
         .unwrap();
         let w1 = storage_warnings(
+            ENGLISH,
             &summary,
             config1.get("retention").and_then(Value::as_object),
             &config1,
@@ -410,6 +433,7 @@ mod tests {
         }))
         .unwrap();
         let w2 = storage_warnings(
+            ENGLISH,
             &summary,
             config2.get("retention").and_then(Value::as_object),
             &config2,
@@ -424,6 +448,7 @@ mod tests {
         }))
         .unwrap();
         let w3 = storage_warnings(
+            ENGLISH,
             &summary,
             config3.get("retention").and_then(Value::as_object),
             &config3,
@@ -437,6 +462,7 @@ mod tests {
         }))
         .unwrap();
         let w4 = storage_warnings(
+            ENGLISH,
             &summary,
             config4.get("retention").and_then(Value::as_object),
             &config4,

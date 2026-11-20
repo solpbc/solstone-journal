@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy waitBusy in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy waitBusy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d43734cbbb9042c7231b846d61e46fa6a74872e63f9e3c92a9511266eb7f553f",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

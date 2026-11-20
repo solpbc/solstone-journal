@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy agentOne in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy agentOne.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9054864cc23044bd9a7894138bdc5858eafedad34923c9dd81aa10c5a67fb57c",
+  "max_length": 75,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

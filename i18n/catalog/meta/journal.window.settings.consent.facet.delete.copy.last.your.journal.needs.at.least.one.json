@@ -1,0 +1,16 @@
+{
+  "description": "Consent facet delete copy last in the journal's settings view.",
+  "context": "Journal window, settings view. Consent facet delete copy last.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "44a37b2e258e01eeb7cabc21b9a59de3888db3723a1d2446f02f0417fcc18dc1",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

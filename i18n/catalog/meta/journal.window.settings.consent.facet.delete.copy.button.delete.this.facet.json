@@ -1,0 +1,16 @@
+{
+  "description": "Consent facet delete copy button in the journal's settings view.",
+  "context": "Journal window, settings view. Consent facet delete copy button.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8b81b698c4f7d0e1b052eb65ebc41bdda60ecd80f61c361ccb03664c1e5b3170",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

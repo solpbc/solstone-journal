@@ -1,0 +1,16 @@
+{
+  "description": "facet unmute in the journal's settings view.",
+  "context": "Journal window, settings view. facet unmute.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e04068747d4358c5063aa17bfcd78d8356abba58268e5b00175b807a4115b1e9",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy returnedWorkout in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy returnedWorkout.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ef079ad113fb703e94ee19566b1643cc260b2e3f68d18f6277a4d6c866fae40e",
+  "max_length": 102,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "facet color orange gold in the journal's settings view.",
+  "context": "Journal window, settings view. facet color orange gold.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "63f7fa54b4f6a3af6cf1adba955aa421bea2425d2fb19bde7e3fee24a8ca19e6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

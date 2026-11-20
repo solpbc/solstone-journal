@@ -1,0 +1,16 @@
+{
+  "description": "removal event trashed in the journal's settings view.",
+  "context": "Journal window, settings view. removal event trashed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e8691e7bab93a8c5f891dc2715249ab6f09496bdbb52b94f4e0b8c8adefac2f0",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

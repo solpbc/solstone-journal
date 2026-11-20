@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy agentMany in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy agentMany.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1864b0882e4c3f145a53133711b6e3e03cc75208357d4984fbea577afdc5d806",
+  "max_length": 77,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

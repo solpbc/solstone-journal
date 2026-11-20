@@ -1,8 +1,8 @@
 [
   {
     "id": "meeting",
-    "name": "Meetings",
-    "description": "Video calls, in-person meetings, and conferences",
+    "name": "journal.window.settings.activity.default.meeting.name",
+    "description": "journal.window.settings.activity.default.meeting.description",
     "emoji": "📅",
     "icon": "users",
     "always_on": true,
@@ -10,96 +10,96 @@
   },
   {
     "id": "call",
-    "name": "call",
-    "description": "a call you have planned",
+    "name": "journal.window.settings.activity.default.call.name",
+    "description": "journal.window.settings.activity.default.call.description",
     "emoji": "📞",
     "icon": "phone",
     "instructions": "Not detected automatically."
   },
   {
     "id": "deadline",
-    "name": "deadline",
-    "description": "a deadline you are working toward",
+    "name": "journal.window.settings.activity.default.deadline.name",
+    "description": "journal.window.settings.activity.default.deadline.description",
     "emoji": "⏰",
     "icon": "alarm-clock",
     "instructions": "Not detected automatically."
   },
   {
     "id": "appointment",
-    "name": "appointment",
-    "description": "an appointment on your calendar",
+    "name": "journal.window.settings.activity.default.appointment.name",
+    "description": "journal.window.settings.activity.default.appointment.description",
     "emoji": "📌",
     "icon": "pin",
     "instructions": "Not detected automatically."
   },
   {
     "id": "event",
-    "name": "event",
-    "description": "an event you plan to attend",
+    "name": "journal.window.settings.activity.default.event.name",
+    "description": "journal.window.settings.activity.default.event.description",
     "emoji": "🎟️",
     "icon": "ticket",
     "instructions": "Not detected automatically."
   },
   {
     "id": "travel",
-    "name": "travel",
-    "description": "travel you have planned",
+    "name": "journal.window.settings.activity.default.travel.name",
+    "description": "journal.window.settings.activity.default.travel.description",
     "emoji": "✈️",
     "icon": "plane",
     "instructions": "Not detected automatically."
   },
   {
     "id": "reminder",
-    "name": "reminder",
-    "description": "a reminder for something upcoming",
+    "name": "journal.window.settings.activity.default.reminder.name",
+    "description": "journal.window.settings.activity.default.reminder.description",
     "emoji": "🔔",
     "icon": "bell",
     "instructions": "Not detected automatically."
   },
   {
     "id": "errand",
-    "name": "errand",
-    "description": "an errand you plan to do",
+    "name": "journal.window.settings.activity.default.errand.name",
+    "description": "journal.window.settings.activity.default.errand.description",
     "emoji": "🧾",
     "icon": "receipt",
     "instructions": "Not detected automatically."
   },
   {
     "id": "celebration",
-    "name": "celebration",
-    "description": "a celebration on the calendar",
+    "name": "journal.window.settings.activity.default.celebration.name",
+    "description": "journal.window.settings.activity.default.celebration.description",
     "emoji": "🎉",
     "icon": "party-popper",
     "instructions": "Not detected automatically."
   },
   {
     "id": "doctor_appointment",
-    "name": "doctor appointment",
-    "description": "a medical appointment on your calendar",
+    "name": "journal.window.settings.activity.default.doctor.appointment.name",
+    "description": "journal.window.settings.activity.default.doctor.appointment.description",
     "emoji": "🩺",
     "icon": "stethoscope",
     "instructions": "Not detected automatically."
   },
   {
     "id": "coding",
-    "name": "Coding",
-    "description": "Programming, code review, and debugging",
+    "name": "journal.window.settings.activity.default.coding.name",
+    "description": "journal.window.settings.activity.default.coding.description",
     "emoji": "💻",
     "icon": "code-xml",
     "instructions": "Levels: high=writing or debugging code, medium=reading/reviewing code, low=IDE or editor open but not focused. Detect via: editors, terminals with dev tools, AI coding assistants, git operations. Includes focused code reading and thinking."
   },
   {
     "id": "browsing",
-    "name": "Browsing",
-    "description": "Web browsing, research, and reading online",
+    "name": "journal.window.settings.activity.default.browsing.name",
+    "description": "journal.window.settings.activity.default.browsing.description",
     "emoji": "🌐",
     "icon": "globe",
     "instructions": "Levels: high=actively navigating/researching, medium=reading a page, low=browser open but idle. Detect via: browser tabs, URL changes, search queries."
   },
   {
     "id": "email",
-    "name": "Email",
-    "description": "Email reading and composition",
+    "name": "journal.window.settings.activity.default.email.name",
+    "description": "journal.window.settings.activity.default.email.description",
     "emoji": "📧",
     "icon": "mail",
     "always_on": true,
@@ -107,8 +107,8 @@
   },
   {
     "id": "messaging",
-    "name": "Messaging",
-    "description": "Chat, Slack, Discord, and text messaging",
+    "name": "journal.window.settings.activity.default.messaging.name",
+    "description": "journal.window.settings.activity.default.messaging.description",
     "emoji": "💬",
     "icon": "messages-square",
     "always_on": true,
@@ -116,96 +116,96 @@
   },
   {
     "id": "ai_conversation",
-    "name": "AI Conversation",
-    "description": "Conversations with AI assistants like ChatGPT, Claude, and Gemini",
+    "name": "journal.window.settings.activity.default.ai.conversation.name",
+    "description": "journal.window.settings.activity.default.ai.conversation.description",
     "emoji": "🤖",
     "icon": "bot",
     "instructions": "Levels: high=actively prompting and reading responses, medium=reviewing AI output or refining prompts, low=AI chat open but idle. Detect via: AI assistant interfaces (ChatGPT, Claude, Gemini), imported AI conversation transcripts, prompt-response patterns. Do not confuse with messaging — AI conversation involves a human interacting with an AI model, not person-to-person chat."
   },
   {
     "id": "writing",
-    "name": "Writing",
-    "description": "Documents, notes, and long-form writing",
+    "name": "journal.window.settings.activity.default.writing.name",
+    "description": "journal.window.settings.activity.default.writing.description",
     "emoji": "✍️",
     "icon": "pencil-line",
     "instructions": "Levels: high=actively composing text, medium=editing/revising, low=document open but not being edited. Detect via: document editors, note apps, text content changing."
   },
   {
     "id": "reading",
-    "name": "Reading",
-    "description": "Books, PDFs, articles, highlights, and documentation",
+    "name": "journal.window.settings.activity.default.reading.name",
+    "description": "journal.window.settings.activity.default.reading.description",
     "emoji": "📖",
     "icon": "book-open",
     "instructions": "Levels: high=focused reading, medium=skimming content, low=document open but attention elsewhere. Detect via: PDF viewers, article pages, documentation sites, reading apps, imported book highlights and annotations. Do not use for reading code — that is coding."
   },
   {
     "id": "video",
-    "name": "Video",
-    "description": "Watching videos and streaming content on screen",
+    "name": "journal.window.settings.activity.default.video.name",
+    "description": "journal.window.settings.activity.default.video.description",
     "emoji": "🎬",
     "icon": "clapperboard",
     "instructions": "Levels: high=actively watching, medium=video playing while doing something else, low=video paused or minimized. Detect via: video player UI, streaming sites, playback controls."
   },
   {
     "id": "media",
-    "name": "Media",
-    "description": "Watching or listening to shows, podcasts and recordings",
+    "name": "journal.window.settings.activity.default.media.name",
+    "description": "journal.window.settings.activity.default.media.description",
     "emoji": "📺",
     "icon": "tv",
     "instructions": "Levels: high=media is most of what was heard, medium=media playing while something else happens, low=media faintly in the background. Detect via: a show, film, podcast, broadcast, audiobook or recording heard with no screen showing it."
   },
   {
     "id": "gaming",
-    "name": "Gaming",
-    "description": "Games and entertainment",
+    "name": "journal.window.settings.activity.default.gaming.name",
+    "description": "journal.window.settings.activity.default.gaming.description",
     "emoji": "🎮",
     "icon": "gamepad-2",
     "instructions": "Levels: high=actively playing, medium=in menus or waiting, low=game open but tabbed out. Detect via: game window, controller input, game UI elements."
   },
   {
     "id": "social",
-    "name": "Social Media",
-    "description": "Social media browsing and interaction",
+    "name": "journal.window.settings.activity.default.social.name",
+    "description": "journal.window.settings.activity.default.social.description",
     "emoji": "📱",
     "icon": "share-2",
     "instructions": "Levels: high=posting or actively engaging, medium=scrolling feed, low=social app open but idle. Detect via: social media sites/apps, feed content, post composition."
   },
   {
     "id": "planning",
-    "name": "Planning",
-    "description": "Scheduling, calendar management, meeting preparation, and agenda setting",
+    "name": "journal.window.settings.activity.default.planning.name",
+    "description": "journal.window.settings.activity.default.planning.description",
     "emoji": "📋",
     "icon": "calendar-check",
     "instructions": "Levels: high=actively scheduling or preparing agendas, medium=reviewing calendar or event details, low=calendar visible but not being interacted with. Detect via: calendar apps, scheduling interfaces, event creation, imported calendar events, meeting invitations, agenda drafting. Use for scheduling and preparation work. Do not confuse with meeting — planning is the preparation, meeting is the actual synchronous interaction."
   },
   {
     "id": "productivity",
-    "name": "Productivity",
-    "description": "Spreadsheets, slides, and task management",
+    "name": "journal.window.settings.activity.default.productivity.name",
+    "description": "journal.window.settings.activity.default.productivity.description",
     "emoji": "📊",
     "icon": "chart-column",
     "instructions": "Levels: high=actively editing or organizing, medium=reviewing data, low=app open but not focused. Detect via: spreadsheet/slide editors, project management tools, task boards."
   },
   {
     "id": "terminal",
-    "name": "Terminal",
-    "description": "Command line and shell sessions",
+    "name": "journal.window.settings.activity.default.terminal.name",
+    "description": "journal.window.settings.activity.default.terminal.description",
     "emoji": "⌨️",
     "icon": "terminal",
     "instructions": "Levels: high=running commands or scripts, medium=reading output, low=terminal open but idle. Detect via: shell prompts, command output, tmux/screen sessions. If terminal use is clearly coding-related, prefer coding instead."
   },
   {
     "id": "design",
-    "name": "Design",
-    "description": "Design tools and image editing",
+    "name": "journal.window.settings.activity.default.design.name",
+    "description": "journal.window.settings.activity.default.design.description",
     "emoji": "🎨",
     "icon": "palette",
     "instructions": "Levels: high=actively creating or editing, medium=reviewing designs, low=design tool open but idle. Detect via: design apps (Figma, Photoshop, etc), canvas editing."
   },
   {
     "id": "music",
-    "name": "Music",
-    "description": "Music listening and audio",
+    "name": "journal.window.settings.activity.default.music.name",
+    "description": "journal.window.settings.activity.default.music.description",
     "emoji": "🎵",
     "icon": "music",
     "instructions": "Levels: high=actively choosing or browsing music, medium=playlist running while working, low=ambient background audio. Detect via: music player UI, audio playback indicators."

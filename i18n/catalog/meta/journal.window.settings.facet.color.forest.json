@@ -1,0 +1,16 @@
+{
+  "description": "facet color forest in the journal's settings view.",
+  "context": "Journal window, settings view. facet color forest.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3ec3b847c4fdda4f3ca5ebd274ece0ab043f2b6c0cf894f44f4222108e1212c8",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

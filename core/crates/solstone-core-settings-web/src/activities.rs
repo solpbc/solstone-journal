@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use solstone_core_convey_http::window_catalog::{ENGLISH, resolve_table, text};
+
 use std::path::PathBuf;
 
 use axum::{body::Bytes, extract::Path, http::StatusCode, response::Response};
@@ -20,24 +22,29 @@ mod default_activities {
     include!(concat!(env!("OUT_DIR"), "/default_activities.rs"));
 }
 
-pub async fn defaults() -> Response {
-    json_response(json!({"activities": default_records()}))
+pub async fn defaults(locale: &str) -> Response {
+    json_response(json!({"activities": default_records(locale)}))
 }
 
-pub async fn for_facet(journal_root: PathBuf, Path(facet_name): Path<String>) -> Response {
+pub async fn for_facet(
+    locale: &str,
+    journal_root: PathBuf,
+    Path(facet_name): Path<String>,
+) -> Response {
     if facets::facet(&journal_root, &facet_name).is_none() {
-        return facet_not_found();
+        return facet_not_found(locale);
     }
+    let defaults = default_records(locale);
     let mut activities =
         match solstone_core_facets::read_activity_definitions(&journal_root, &facet_name) {
-            Ok(rows) => rows.into_iter().map(attached_record).collect::<Vec<_>>(),
-            Err(_) => return activity_settings_unavailable(),
+            Ok(rows) => rows
+                .into_iter()
+                .map(|row| attached_record(locale, row))
+                .collect::<Vec<_>>(),
+            Err(_) => return activity_settings_unavailable(locale),
         };
     if activities.is_empty() {
-        activities = default_records()
-            .into_iter()
-            .map(default_for_facet)
-            .collect();
+        activities = defaults.iter().cloned().map(default_for_facet).collect();
     }
     let existing: Vec<String> = activities
         .iter()
@@ -48,23 +55,32 @@ pub async fn for_facet(journal_root: PathBuf, Path(facet_name): Path<String>) ->
                 .map(ToOwned::to_owned)
         })
         .collect();
-    for default in always_on_records() {
+    for default in defaults
+        .iter()
+        .filter(|activity| activity["always_on"].as_bool() == Some(true))
+        .cloned()
+    {
         if !existing.iter().any(|id| default["id"].as_str() == Some(id)) {
             activities.push(default_for_facet(default));
         }
     }
-    json_response(json!({"activities": activities, "defaults": default_records()}))
+    json_response(json!({"activities": activities, "defaults": defaults}))
 }
 
-pub async fn add(journal_root: PathBuf, Path(facet_name): Path<String>, body: Bytes) -> Response {
+pub async fn add(
+    locale: &str,
+    journal_root: PathBuf,
+    Path(facet_name): Path<String>,
+    body: Bytes,
+) -> Response {
     if facets::facet(&journal_root, &facet_name).is_none() {
-        return facet_not_found();
+        return facet_not_found(locale);
     }
     let JsonBody::Value(Value::Object(data)) = json_body(body) else {
-        return missing_request_body();
+        return missing_request_body(locale);
     };
     if data.is_empty() {
-        return missing_request_body();
+        return missing_request_body(locale);
     }
     let id = data
         .get("id")
@@ -73,26 +89,50 @@ pub async fn add(journal_root: PathBuf, Path(facet_name): Path<String>, body: By
         .or_else(|| data.get("name").and_then(Value::as_str).map(slug))
         .unwrap_or_default();
     if id.is_empty() {
-        return missing_required_field("Either id or name is required");
+        return missing_required_field(
+            locale,
+            text(
+                locale,
+                "journal.window.settings.activities.detail.either.id.or.name.is.required",
+            ),
+        );
     }
     let known = raw_default_records()
         .into_iter()
         .any(|record| record["id"].as_str() == Some(&id));
     if !known && data.get("name").and_then(Value::as_str).is_none() {
-        return missing_required_field("name is required for custom activities");
+        return missing_required_field(
+            locale,
+            text(
+                locale,
+                "journal.window.settings.activities.detail.name.is.required.for.custom.activities",
+            ),
+        );
     }
     if data
         .get("priority")
         .is_some_and(|value| !matches!(value.as_str(), Some("high" | "normal" | "low")))
     {
-        return invalid_config_value("invalid priority");
+        return invalid_config_value(
+            locale,
+            text(
+                locale,
+                "journal.window.settings.activities.detail.invalid.priority",
+            ),
+        );
     }
     if let Some(icon) = data.get("icon")
         && (!icon.is_string()
             || (!icon.as_str().is_some_and(str::is_empty)
                 && icons::svg(icon.as_str(), "").is_none()))
     {
-        return invalid_config_value("icon must be a Lucide name; send emoji in emoji");
+        return invalid_config_value(
+            locale,
+            text(
+                locale,
+                "journal.window.settings.activities.detail.icon.must.be.a.lucide.name",
+            ),
+        );
     }
     let mut row = Map::new();
     row.insert("id".to_owned(), Value::String(id.clone()));
@@ -161,43 +201,56 @@ pub async fn add(journal_root: PathBuf, Path(facet_name): Path<String>, body: By
             )
             .is_err()
             {
-                return settings_operation_failed();
+                return settings_operation_failed(locale);
             }
             let mut response =
-                json_response(json!({"success":true,"activity":attached_record(activity)}));
+                json_response(json!({"success":true,"activity":attached_record(locale, activity)}));
             *response.status_mut() = StatusCode::CREATED;
             response
         }
-        Err(_) => settings_operation_failed(),
+        Err(_) => settings_operation_failed(locale),
     }
 }
 
 pub async fn update(
+    locale: &str,
     journal_root: PathBuf,
     Path((facet_name, activity_id)): Path<(String, String)>,
     body: Bytes,
 ) -> Response {
     if facets::facet(&journal_root, &facet_name).is_none() {
-        return facet_not_found();
+        return facet_not_found(locale);
     };
     let JsonBody::Value(Value::Object(data)) = json_body(body) else {
-        return missing_request_body();
+        return missing_request_body(locale);
     };
     if data.is_empty() {
-        return missing_request_body();
+        return missing_request_body(locale);
     }
     if data
         .get("priority")
         .is_some_and(|value| !matches!(value.as_str(), Some("high" | "normal" | "low")))
     {
-        return invalid_config_value("invalid priority");
+        return invalid_config_value(
+            locale,
+            text(
+                locale,
+                "journal.window.settings.activities.detail.invalid.priority",
+            ),
+        );
     }
     if let Some(icon) = data.get("icon")
         && (!icon.is_string()
             || (!icon.as_str().is_some_and(str::is_empty)
                 && icons::svg(icon.as_str(), "").is_none()))
     {
-        return invalid_config_value("icon must be a Lucide name; send emoji in emoji");
+        return invalid_config_value(
+            locale,
+            text(
+                locale,
+                "journal.window.settings.activities.detail.icon.must.be.a.lucide.name",
+            ),
+        );
     }
     let updates = data
         .iter()
@@ -237,28 +290,29 @@ pub async fn update(
             )
             .is_err()
             {
-                return settings_operation_failed();
+                return settings_operation_failed(locale);
             }
-            json_response(json!({"success":true,"activity":attached_record(activity)}))
+            json_response(json!({"success":true,"activity":attached_record(locale, activity)}))
         }
-        Ok(None) => activity_not_found(),
-        Err(_) => settings_operation_failed(),
+        Ok(None) => activity_not_found(locale),
+        Err(_) => settings_operation_failed(locale),
     }
 }
 
 pub async fn remove(
+    locale: &str,
     journal_root: PathBuf,
     Path((facet_name, activity_id)): Path<(String, String)>,
     _body: Bytes,
 ) -> Response {
     if facets::facet(&journal_root, &facet_name).is_none() {
-        return facet_not_found();
+        return facet_not_found(locale);
     };
     if always_on_records()
         .iter()
         .any(|row| row["id"].as_str() == Some(&activity_id))
     {
-        return crate::http::activity_protected();
+        return crate::http::activity_protected(locale);
     }
     match solstone_core_facets::remove_activity_attaching(
         &journal_root,
@@ -278,12 +332,12 @@ pub async fn remove(
             )
             .is_err()
             {
-                return settings_operation_failed();
+                return settings_operation_failed(locale);
             }
             json_response(json!({"success":true}))
         }
-        Ok(false) => activity_not_found(),
-        Err(_) => settings_operation_failed(),
+        Ok(false) => activity_not_found(locale),
+        Err(_) => settings_operation_failed(locale),
     }
 }
 
@@ -357,8 +411,11 @@ fn only_bare_defaults(rows: &[Value]) -> bool {
         })
 }
 
-fn default_records() -> Vec<Value> {
-    raw_default_records()
+fn default_records(locale: &str) -> Vec<Value> {
+    stored_default_records(locale)
+        .into_iter()
+        .map(public_record)
+        .collect()
 }
 
 fn always_on_records() -> Vec<Value> {
@@ -378,26 +435,29 @@ fn default_for_facet(mut record: Value) -> Value {
 }
 
 fn raw_default_records() -> Vec<Value> {
-    stored_default_records()
-        .into_iter()
-        .map(public_record)
-        .collect()
+    default_records(ENGLISH)
 }
 
-fn stored_default_records() -> Vec<Value> {
-    serde_json::from_str::<Vec<Value>>(default_activities::JSON)
-        .expect("generated default activities")
+fn stored_default_records(locale: &str) -> Vec<Value> {
+    let mut records = serde_json::from_str::<Vec<Value>>(default_activities::JSON)
+        .expect("generated default activities");
+    for record in &mut records {
+        resolve_table(locale, &mut record["name"]);
+        // The editor and writers still receive the source description.
+        resolve_table(ENGLISH, &mut record["description"]);
+    }
+    records
 }
 
 /// Project a stored facet row for the page. Attaching a default stores only its
 /// id and the owner's overrides, so the default's name, description and icons
 /// are filled back in, and a missing priority reads as normal.
-fn attached_record(row: Value) -> Value {
+fn attached_record(locale: &str, row: Value) -> Value {
     let Value::Object(stored) = row else {
         return public_record(row);
     };
     let id = stored.get("id").and_then(Value::as_str).unwrap_or_default();
-    let default = stored_default_records()
+    let default = stored_default_records(locale)
         .into_iter()
         .find(|record| record["id"].as_str() == Some(id));
     let known = default.is_some();

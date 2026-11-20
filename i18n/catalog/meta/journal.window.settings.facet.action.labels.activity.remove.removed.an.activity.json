@@ -1,0 +1,16 @@
+{
+  "description": "facet action labels activity remove in the journal's settings view.",
+  "context": "Journal window, settings view. facet action labels activity remove.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b08c1103e57013bedb7e204db41f06e619324ab89536a87ed1ac2d6c7f7a5c6f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

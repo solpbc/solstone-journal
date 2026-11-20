@@ -1,0 +1,16 @@
+{
+  "description": "removal kind memory in the journal's settings view.",
+  "context": "Journal window, settings view. removal kind memory.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3731e2ca4e1eb072f41e93ea5eceb5e9b66415ae5d4c665d13e6bf283b5c69d0",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Visible text in the journal's settings view.",
+  "context": "Journal window, settings view. Visible text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "310b178801bb4bad35eb2c22494b897b7383091b137a7eb69856f14fbb462f5e",
+  "max_length": 118,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "Granola Business"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "Granola Basic"
+    }
+  ]
+}

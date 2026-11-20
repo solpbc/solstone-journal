@@ -1,0 +1,28 @@
+{
+  "description": "redaction many in the journal's settings view.",
+  "context": "Journal window, settings view. redaction many.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c443e55f82108db6066174dfdd097db557bc173df575c050b81e76b987dbf47b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

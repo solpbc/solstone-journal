@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy originalsSegmentTrashed in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy originalsSegmentTrashed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a9ec0023e8d96d0ba44e590cf7082dbf03a46265c1dee9f3fdb221b112cce05d",
+  "max_length": 96,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

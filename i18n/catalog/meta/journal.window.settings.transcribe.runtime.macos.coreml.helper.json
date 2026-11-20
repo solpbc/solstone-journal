@@ -1,0 +1,28 @@
+{
+  "description": "transcribe runtime macos coreml helper in the journal's settings view.",
+  "context": "Journal window, settings view. transcribe runtime macos coreml helper.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "33eac61f57d2aea774550f35b7f7f9c35334b97f552d0accb5a840822167932d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "macOS"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "CoreML"
+    }
+  ]
+}

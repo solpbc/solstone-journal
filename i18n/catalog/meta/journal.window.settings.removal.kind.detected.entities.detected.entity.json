@@ -1,0 +1,16 @@
+{
+  "description": "removal kind detected entities in the journal's settings view.",
+  "context": "Journal window, settings view. removal kind detected entities.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "31c3d3963632d7ffad7713f5d1db89736ea5cf59100509f34725c77faa0ae343",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

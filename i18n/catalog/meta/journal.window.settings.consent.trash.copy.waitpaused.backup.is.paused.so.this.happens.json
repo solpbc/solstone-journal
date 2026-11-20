@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy waitPaused in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy waitPaused.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2c3cbeede60c01b75ab414a64519c0e24edb428bed3c387ef11498755b10f4df",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

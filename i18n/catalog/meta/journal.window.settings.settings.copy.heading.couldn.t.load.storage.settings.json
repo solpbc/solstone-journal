@@ -1,0 +1,16 @@
+{
+  "description": "Settings copy heading in the journal's settings view.",
+  "context": "Journal window, settings view. Settings copy heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9dbeef15362dd7c5817d06efd12f7e74e78783838ca9ee3e37f9304a9df07833",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

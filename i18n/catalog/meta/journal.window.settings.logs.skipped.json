@@ -1,0 +1,28 @@
+{
+  "description": "logs skipped in the journal's settings view.",
+  "context": "Journal window, settings view. logs skipped.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "909ea09b71c92420961b8066144dc56c12a172936d9702d63852b9a84a38bcde",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

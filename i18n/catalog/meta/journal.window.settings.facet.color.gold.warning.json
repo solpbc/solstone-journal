@@ -1,0 +1,16 @@
+{
+  "description": "facet color gold warning in the journal's settings view.",
+  "context": "Journal window, settings view. facet color gold warning.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6f6c6f34f11b584b5aa669bfcfdffa390a846f18f8c02bc6b8a236e528f64b02",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

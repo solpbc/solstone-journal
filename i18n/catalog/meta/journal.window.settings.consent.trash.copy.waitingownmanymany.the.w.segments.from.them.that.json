@@ -1,0 +1,23 @@
+{
+  "description": "Consent trash copy waitingOwnManyMany in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy waitingOwnManyMany.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4d9eeb3e54b30f31b4340a8c5f6b3a6e5d43ad3833d85f99e8c4c30c5ed900cd",
+  "max_length": 114,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{w}"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Consent Settings feedback in the journal's settings view.",
+  "context": "Journal window, settings view. Consent Settings feedback.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "797ebc338ed171417be38d0f3b3ad29693926d8a2f390d42103f08f9c8dec69a",
+  "max_length": 60,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

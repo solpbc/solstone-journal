@@ -11,6 +11,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde_json::{Value, json};
+use solstone_core_convey_http::window_catalog::text;
 use solstone_core_import::granola;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -18,10 +19,26 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// A sync this server started is still running. The hourly run is its own process.
 static SYNCING: AtomicBool = AtomicBool::new(false);
 
-fn failed(error: granola::Error) -> Response {
-    refused(error, error.message())
+fn failed(locale: &str, error: granola::Error) -> Response {
+    refused(error, response_text(locale, error))
 }
-fn refused(error: granola::Error, message: &str) -> Response {
+
+fn response_text(locale: &str, error: granola::Error) -> String {
+    let id = match error {
+        granola::Error::InvalidKey => "journal.window.settings.granola.response.invalidkey",
+        granola::Error::Key => "journal.window.settings.granola.response.key",
+        granola::Error::Access => "journal.window.settings.granola.response.access",
+        granola::Error::Limited => "journal.window.settings.granola.response.limited",
+        granola::Error::Unavailable => "journal.window.settings.granola.response.unavailable",
+        granola::Error::Response => "journal.window.settings.granola.response.response",
+        granola::Error::Transcript => "journal.window.settings.granola.response.transcript",
+        granola::Error::Storage => "journal.window.settings.granola.response.storage",
+        granola::Error::Busy => "journal.window.settings.granola.response.busy",
+        granola::Error::Stopped => "journal.window.settings.granola.response.stopped",
+    };
+    text(locale, id)
+}
+fn refused(error: granola::Error, message: String) -> Response {
     (
         StatusCode::BAD_REQUEST,
         axum::Json(json!({"error":message,"code":error.code()})),
@@ -29,15 +46,11 @@ fn refused(error: granola::Error, message: &str) -> Response {
         .into_response()
 }
 /// What a key Granola refuses means while the owner is pasting it.
-const fn pasted(error: granola::Error) -> &'static str {
+fn pasted(locale: &str, error: granola::Error) -> String {
     match error {
-        granola::Error::Key => {
-            "Granola didn't accept that key. copy it again from Granola, or create a new one."
-        }
-        granola::Error::Access => {
-            "Granola turned that key away. API access needs Granola Business or Enterprise, and on Enterprise an admin may need to allow it."
-        }
-        other => other.message(),
+        granola::Error::Key => text(locale, "journal.window.settings.granola.paste.key"),
+        granola::Error::Access => text(locale, "journal.window.settings.granola.paste.access"),
+        other => response_text(locale, other),
     }
 }
 /// Run the source in the background unless this server already is.
@@ -61,38 +74,38 @@ fn start_sync(root: PathBuf) -> bool {
     });
     true
 }
-pub async fn get(root: PathBuf) -> Response {
+pub async fn get(locale: &str, root: PathBuf) -> Response {
     match granola::status(&root) {
         Ok(mut value) => {
             value["syncing"] = json!(SYNCING.load(Ordering::SeqCst));
             json_response(value)
         }
-        Err(error) => failed(error),
+        Err(error) => failed(locale, error),
     }
 }
-pub async fn connect(root: PathBuf, body: Bytes) -> Response {
+pub async fn connect(locale: &str, root: PathBuf, body: Bytes) -> Response {
     let JsonBody::Value(value) = json_body(body) else {
-        return failed(granola::Error::InvalidKey);
+        return failed(locale, granola::Error::InvalidKey);
     };
     let Some(key) = value
         .get("api_key")
         .and_then(Value::as_str)
         .map(|key| key.trim().to_owned())
     else {
-        return failed(granola::Error::InvalidKey);
+        return failed(locale, granola::Error::InvalidKey);
     };
     if let Err(error) = granola::validate_key(&key) {
-        return failed(error);
+        return failed(locale, error);
     }
     // A key Granola refuses never replaces the saved one. If Granola can't be
     // asked right now, the key is saved and the sync reports what it finds.
     let probe = key.clone();
     match tokio::task::spawn_blocking(move || granola::check_key(&probe)).await {
         Ok(Err(error @ (granola::Error::Key | granola::Error::Access))) => {
-            return refused(error, pasted(error));
+            return refused(error, pasted(locale, error));
         }
         Ok(_) => {}
-        Err(_) => return failed(granola::Error::Storage),
+        Err(_) => return failed(locale, granola::Error::Storage),
     }
     let sync_root = root.clone();
     let result = tokio::task::spawn_blocking(move || change(&root, Some(&key))).await;
@@ -101,30 +114,30 @@ pub async fn connect(root: PathBuf, body: Bytes) -> Response {
             start_sync(sync_root);
             json_response(json!({"success":true}))
         }
-        Ok(Err(error)) => failed(error),
-        Err(_) => failed(granola::Error::Storage),
+        Ok(Err(error)) => failed(locale, error),
+        Err(_) => failed(locale, granola::Error::Storage),
     }
 }
 /// Check Granola now rather than at the next hourly run.
-pub async fn sync_now(root: PathBuf) -> Response {
+pub async fn sync_now(locale: &str, root: PathBuf) -> Response {
     let status_root = root.clone();
     match tokio::task::spawn_blocking(move || granola::status(&status_root)).await {
         Ok(Ok(value)) if value["connected"] == json!(true) => {}
-        Ok(Ok(_)) => return failed(granola::Error::InvalidKey),
-        Ok(Err(error)) => return failed(error),
-        Err(_) => return failed(granola::Error::Storage),
+        Ok(Ok(_)) => return failed(locale, granola::Error::InvalidKey),
+        Ok(Err(error)) => return failed(locale, error),
+        Err(_) => return failed(locale, granola::Error::Storage),
     }
     if !start_sync(root) {
-        return failed(granola::Error::Busy);
+        return failed(locale, granola::Error::Busy);
     }
     json_response(json!({"success":true}))
 }
-pub async fn disconnect(root: PathBuf) -> Response {
+pub async fn disconnect(locale: &str, root: PathBuf) -> Response {
     let result = tokio::task::spawn_blocking(move || change(&root, None)).await;
     match result {
         Ok(Ok(())) => json_response(json!({"success":true})),
-        Ok(Err(error)) => failed(error),
-        Err(_) => failed(granola::Error::Storage),
+        Ok(Err(error)) => failed(locale, error),
+        Err(_) => failed(locale, granola::Error::Storage),
     }
 }
 fn change(root: &std::path::Path, key: Option<&str>) -> Result<(), granola::Error> {

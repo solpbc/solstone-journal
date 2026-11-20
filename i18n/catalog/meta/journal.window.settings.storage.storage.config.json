@@ -1,0 +1,16 @@
+{
+  "description": "storage storage config in the journal's settings view.",
+  "context": "Journal window, settings view. storage storage config.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "975154fd63f2c61790b2972a4e149e3884e4a664870d1c6e3f886a7ad67c334e",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

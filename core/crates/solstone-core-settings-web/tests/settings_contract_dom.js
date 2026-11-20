@@ -770,7 +770,7 @@ function makePage(env, address = '/app/settings/', { answers } = {}) {
     entry: () => entries[index],
     place(name = 'settings') {
       main.replaceChildren();
-      parseInto(doc, main, name === 'settings' ? env.markup : HOME_MARKUP);
+      parseInto(doc, main, name === 'settings' ? window.JournalI18n.renderWorkspace(env.markup) : HOME_MARKUP);
     },
     loadScripts() {
       env.scripts.forEach(([name, source]) => vm.runInContext(source, context, { filename: name }));

@@ -1,0 +1,16 @@
+{
+  "description": "Settings stt detected memory unknown in the journal's settings view.",
+  "context": "Journal window, settings view. Settings stt detected memory unknown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "241af12dda7438035ae468aac512fbcb4710349027c83489e9fe44af453f87fc",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

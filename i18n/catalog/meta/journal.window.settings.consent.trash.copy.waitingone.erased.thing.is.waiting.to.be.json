@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy waitingOne in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy waitingOne.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "719206fde44b30ab32fff42e9dbdc3cdfc89ce74ef5ffd72918ed520571f54ef",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

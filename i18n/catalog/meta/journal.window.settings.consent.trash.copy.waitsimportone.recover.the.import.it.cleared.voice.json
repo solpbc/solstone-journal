@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy waitsImportOne in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy waitsImportOne.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e9a9c1ce18ab33c8dd8290da4ec99a92fafc6f289a27a9f45f3016c59c7d2d6d",
+  "max_length": 101,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

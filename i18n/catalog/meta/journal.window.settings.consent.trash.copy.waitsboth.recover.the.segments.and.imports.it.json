@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy waitsBoth in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy waitsBoth.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "777e6072eb112cfabd2baadf61ada2ac2d1e0d49c9173e2ff643402a088dd419",
+  "max_length": 118,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

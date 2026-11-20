@@ -1,0 +1,28 @@
+{
+  "description": "Vision category raise accessible name in the journal's settings view.",
+  "context": "Journal window, settings view. Vision category raise accessible name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "label",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "907f731726b9bc48453a53b78e6ffa5f6de2dc9eb6efb67f6f0f9147eef20524",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

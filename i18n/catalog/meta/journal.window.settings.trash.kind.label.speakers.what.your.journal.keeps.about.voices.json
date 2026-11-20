@@ -1,0 +1,16 @@
+{
+  "description": "trash kind label speakers in the journal's settings view.",
+  "context": "Journal window, settings view. trash kind label speakers.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3fa4287636e2718a99a83e5bef069ab3980910f84681370cd11cd936dbe8ed49",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

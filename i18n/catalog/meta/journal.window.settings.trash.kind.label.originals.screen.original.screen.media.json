@@ -1,0 +1,16 @@
+{
+  "description": "trash kind label originals screen in the journal's settings view.",
+  "context": "Journal window, settings view. trash kind label originals screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0126219a608f46362a75556955868031056493c97a9991975d2ea28f9eb1fcc7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

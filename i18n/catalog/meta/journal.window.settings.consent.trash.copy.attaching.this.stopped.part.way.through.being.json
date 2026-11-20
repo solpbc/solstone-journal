@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy attaching in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy attaching.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c95aa2a7877d3cf58bb0a64f9aa6b853504e859b553c1e5eb83dc44b867bc1f3",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

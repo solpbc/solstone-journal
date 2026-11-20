@@ -1,0 +1,16 @@
+{
+  "description": "stream override label in the journal's settings view.",
+  "context": "Journal window, settings view. stream override label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "46555b9ce14731838f93955e1b160dce549af11c2dd3c2521137ed473e177934",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

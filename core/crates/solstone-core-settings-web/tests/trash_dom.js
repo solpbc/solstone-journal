@@ -7,6 +7,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { loadWindowCatalog, journalContext } = require('../../solstone-core-convey-shell/tests/journal_catalog_dom.js');
 
 const crateDir = process.argv[2];
 const html = fs.readFileSync(path.join(crateDir, 'assets/workspace.html'), 'utf8');
@@ -80,12 +81,16 @@ const sandbox = {
 };
 sandbox.settingsPage = document;
 vm.createContext(sandbox);
+loadWindowCatalog(sandbox);
 // The landings go through settings' one landing, as the page has it.
 const land = html.slice(html.indexOf('function settingsLand('), html.indexOf('function settingsHeld('));
 assert.ok(land.includes('SolFocus.refocus'), 'the settings landing is sliced');
 vm.runInContext(`${sourceNames}\n${land}\n${html.slice(start, end)};this.api={trashLandings,TRASH_COPY,TRASH_WORDS,renderTrash,loadTrash,trashEraseDate,trashResultLine,trashConfirmCopy,setupTrash,saveTrashDays,renderTrashBackups,trashSelected,trashWord,trashRowNote,REMOVAL_SOURCE,REMOVAL_IMPORTED,TRASH_KIND_LABEL};`, sandbox);
 const { api } = sandbox;
 const C = api.TRASH_COPY;
+const trashWords = Object.fromEntries(Object.entries(api.TRASH_WORDS)
+  .filter(([kind]) => kind !== 'generic')
+  .map(([kind, ids]) => [kind, ids.map(id => window.JournalI18n.renderEnglish(id))]));
 api.setupTrash();
 
 const LATER = '2099-11-15T00:00:00.000Z';
@@ -138,10 +143,10 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
   assert.ok(!impRow.textContent.includes(C.returned));
   assert.deepStrictEqual(quals(bareRow), [api.REMOVAL_IMPORTED.replace('{day}', '20261102')], 'no file name and an unknown source leave no empty qualifier');
   assert.ok(bareRow.textContent.includes(C.segmentOne.replace('{n}', 1)));
-  assert.strictEqual(api.trashWord([imp('i')], 1), api.TRASH_WORDS.import[0]);
-  assert.strictEqual(api.trashWord([imp('i'), imp('j')], 2), api.TRASH_WORDS.import[1]);
-  assert.ok(!Object.values(api.TRASH_WORDS).flat().includes(api.trashWord([imp('i'), seg('a')], 2)), 'a mixed selection takes neither kind\'s word');
-  assert.strictEqual(api.trashWord([{ kind: 'workout' }], 1), api.TRASH_WORDS.workout[0]);
+  assert.strictEqual(api.trashWord([imp('i')], 1), trashWords.import[0]);
+  assert.strictEqual(api.trashWord([imp('i'), imp('j')], 2), trashWords.import[1]);
+  assert.ok(!Object.values(trashWords).flat().includes(api.trashWord([imp('i'), seg('a')], 2)), 'a mixed selection takes neither kind\'s word');
+  assert.strictEqual(api.trashWord([{ kind: 'workout' }], 1), trashWords.workout[0]);
   answers['/app/settings/api/trash'] = { erase_after_days: 7, items: [seg('a', { replaces: true }), mem('b')] };
   await api.loadTrash();
 
@@ -308,11 +313,11 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
     const tricky = await rowOf(merge('m5', 'live', "a$&b"));
     assert.ok(lines(tricky, 'trash-returned')[0].includes('a$&b'), 'a title is filled in as it is');
   }
-  assert.strictEqual(api.trashWord([ent('a')], 1), api.TRASH_WORDS.entity[0]);
-  assert.strictEqual(api.trashWord([ent('a'), ent('b')], 2), api.TRASH_WORDS.entity[1]);
-  assert.strictEqual(api.trashWord([fac('a'), fac('b')], 2), api.TRASH_WORDS.facet[1]);
-  assert.ok(!Object.values(api.TRASH_WORDS).flat().includes(api.trashWord([wipe('a')], 1)), 'the wipe takes thing');
-  assert.ok(!Object.values(api.TRASH_WORDS).flat().includes(api.trashWord([ent('a'), fac('b')], 2)), 'a mix takes things');
+  assert.strictEqual(api.trashWord([ent('a')], 1), trashWords.entity[0]);
+  assert.strictEqual(api.trashWord([ent('a'), ent('b')], 2), trashWords.entity[1]);
+  assert.strictEqual(api.trashWord([fac('a'), fac('b')], 2), trashWords.facet[1]);
+  assert.ok(!Object.values(trashWords).flat().includes(api.trashWord([wipe('a')], 1)), 'the wipe takes thing');
+  assert.ok(!Object.values(trashWords).flat().includes(api.trashWord([ent('a'), fac('b')], 2)), 'a mix takes things');
 
   // Rows that stopped part way lead the list, with no box, and nothing counts them.
   answers['/app/settings/api/trash'] = { erase_after_days: 7, items: [seg('a')], stopped: [{ ...ent('s1'), state: 'detaching' }, { ...fac('s2'), state: 'attaching' }, { ...seg('s3'), state: 'erasing' }] };
@@ -399,8 +404,8 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
     assert.deepStrictEqual(lines(await rowOf(orig('o5', { segment_state: 'trashed' })), 'trash-returned'), [C.originalsSegmentTrashed]);
     assert.deepStrictEqual(lines(await rowOf(orig('o6', { segment_state: 'gone' })), 'trash-returned'), [C.originalsSegmentGone]);
     assert.deepStrictEqual(lines(await rowOf(orig('o7', { segment_state: undefined })), 'trash-returned'), [], 'no state: no line');
-    assert.ok(!Object.values(api.TRASH_WORDS).flat().includes(api.trashWord([orig('a')], 1)), 'originals take thing');
-    assert.ok(!Object.values(api.TRASH_WORDS).flat().includes(api.trashWord([orig('a'), orig('b')], 2)), 'and things');
+    assert.ok(!Object.values(trashWords).flat().includes(api.trashWord([orig('a')], 1)), 'originals take thing');
+    assert.ok(!Object.values(trashWords).flat().includes(api.trashWord([orig('a'), orig('b')], 2)), 'and things');
 
     // A stopped one reads as part 2a's stopped rows.
     answers['/app/settings/api/trash'] = { erase_after_days: 7, items: [], stopped: [{ ...orig('s1', { modalities: ['screen'] }), state: 'detaching' }] };
@@ -556,8 +561,7 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
   assert.strictEqual(saves.length, 2);
 
   // History rows read by event; a timer erase reads as its own line.
-  const hist = {};
-  vm.createContext(hist);
+  const hist = journalContext({});
   vm.runInContext(`
     const REMOVAL_COPY = { erasedOnItsDate: 'TIMER' };
     const REMOVAL_ACTION = { segment_delete: 'STAGE1' };
@@ -577,10 +581,10 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
   assert.strictEqual(hist.removalHow({ ...web, event: 'removed', action: 'segment_delete' }), 'STAGE1 IN-SETTINGS');
 
   // An import's line: the kind, its source, the day it came in from its id; never its file.
-  const rows = {};
-  vm.createContext(rows);
-  rows.document = document;
-  rows.window = { JournalFormat: { day: (key) => `d${key}` } };
+  const rows = journalContext({
+    document,
+    window: { JournalFormat: { day: (key) => `d${key}` } },
+  });
   vm.runInContext(`${html.slice(html.indexOf('// Removal history:'), html.indexOf('function renderRemovalHistory'))}
     this.removalWhat = removalWhat; this.removalGroupWhat = removalGroupWhat; this.REMOVAL_KIND = REMOVAL_KIND; this.REMOVAL_SOURCE = REMOVAL_SOURCE; this.REMOVAL_KIND_GROUP = REMOVAL_KIND_GROUP;`, rows);
   const historyLine = (unit) => {
@@ -629,8 +633,7 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
 
   // What a recover erased in its way folds into the recover's how-line and
   // leaves the group's count.
-  const fold = {};
-  vm.createContext(fold);
+  const fold = journalContext({});
   vm.runInContext(`
     const REMOVAL_COPY = { foldErasing: '{how}+ERASING', foldExcept: '{how}+EXCEPT', foldBoth: '{how}+BOTH' };
     function removalHow(entry) { return 'HOW:' + entry.event; }

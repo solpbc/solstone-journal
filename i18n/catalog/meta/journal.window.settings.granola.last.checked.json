@@ -1,0 +1,16 @@
+{
+  "description": "granola last checked in the journal's settings view.",
+  "context": "Journal window, settings view. granola last checked.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5839c17409b0d1123bfe88df304e00f59ce30f8de3a67de8d3065ad4e502faa8",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

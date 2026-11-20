@@ -1,0 +1,16 @@
+{
+  "description": "facet color warning in the journal's settings view.",
+  "context": "Journal window, settings view. facet color warning.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "83eb0bfdccfd138d753e475c5d64520601de69e5c8632340e7d5b0502b40b389",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

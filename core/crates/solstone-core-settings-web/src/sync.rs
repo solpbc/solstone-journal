@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use solstone_core_convey_http::window_catalog::text;
+
 use std::path::PathBuf;
 
 use axum::{body::Bytes, response::Response};
@@ -34,20 +36,20 @@ fn status(entry: Option<&Value>, available: bool) -> Value {
     json!({"available": available, "enabled": values.and_then(|values| values.get("enabled")).and_then(Value::as_bool).unwrap_or(entry.is_some()), "configured": entry.is_some()})
 }
 
-pub async fn update(journal_root: PathBuf, body: Bytes) -> Response {
-    let changes = match parse_sync_update(body) {
+pub async fn update(locale: &str, journal_root: PathBuf, body: Bytes) -> Response {
+    let changes = match parse_sync_update_in(locale, body) {
         Ok(changes) => changes,
         Err(error) => return *error,
     };
     let path = journal_root.join("config/schedules.json");
     let _lock = match hold_lock(&path, LockOptions::default()) {
         Ok(lock) => lock,
-        Err(_) => return settings_operation_failed(),
+        Err(_) => return settings_operation_failed(locale),
     };
     let mut schedules = match read_json_durable::<Value>(ArtifactId::SchedulesConfig, &path) {
         Ok(DurableRead::Present(Value::Object(map))) => map,
         Ok(DurableRead::Absent) => serde_json::Map::new(),
-        _ => return settings_operation_failed(),
+        _ => return settings_operation_failed(locale),
     };
     let mut changed_fields = serde_json::Map::new();
     for (service, enabled) in changes {
@@ -77,7 +79,7 @@ pub async fn update(journal_root: PathBuf, body: Bytes) -> Response {
         )
         .is_err()
     {
-        return settings_operation_failed();
+        return settings_operation_failed(locale);
     }
     drop(_lock);
     if !changed_fields.is_empty()
@@ -91,7 +93,7 @@ pub async fn update(journal_root: PathBuf, body: Bytes) -> Response {
         )
         .is_err()
     {
-        return settings_operation_failed();
+        return settings_operation_failed(locale);
     }
     get(journal_root).await
 }
@@ -106,23 +108,40 @@ pub fn source_sync_plaud_available(config: &serde_json::Map<String, Value>) -> b
 }
 
 pub fn parse_sync_update(body: Bytes) -> Result<Vec<(&'static str, bool)>, Box<Response>> {
+    parse_sync_update_in(solstone_core_convey_http::window_catalog::ENGLISH, body)
+}
+
+fn parse_sync_update_in(
+    locale: &str,
+    body: Bytes,
+) -> Result<Vec<(&'static str, bool)>, Box<Response>> {
     let JsonBody::Value(Value::Object(request)) = json_body(body) else {
-        return Err(Box::new(missing_request_body()));
+        return Err(Box::new(missing_request_body(locale)));
     };
     if request.is_empty() {
-        return Err(Box::new(missing_request_body()));
+        return Err(Box::new(missing_request_body(locale)));
     }
     let mut changes = Vec::new();
     if let Some(value) = request.get("plaud") {
         let Some(value) = value.as_object() else {
             return Err(Box::new(invalid_config_value(
-                "plaud must be an object".to_owned(),
+                locale,
+                text(
+                    locale,
+                    "journal.window.settings.sync.detail.plaud.must.be.an.object",
+                )
+                .to_owned(),
             )));
         };
         if let Some(enabled) = value.get("enabled") {
             let Some(enabled) = enabled.as_bool() else {
                 return Err(Box::new(invalid_config_value(
-                    "plaud.enabled must be a boolean".to_owned(),
+                    locale,
+                    text(
+                        locale,
+                        "journal.window.settings.sync.detail.plaud.enabled.must.be.a.boolean",
+                    )
+                    .to_owned(),
                 )));
             };
             changes.push(("plaud", enabled));
@@ -142,12 +161,63 @@ pub(crate) async fn get_routed(
 }
 
 pub(crate) async fn update_routed(
+    locale: &str,
     root: PathBuf,
     delegate: Option<axum::Extension<crate::SourceSyncDelegate>>,
     body: Bytes,
 ) -> Response {
     match delegate {
-        Some(axum::Extension(delegate)) => delegate.update(body).await,
-        None => update(root, body).await,
+        Some(axum::Extension(delegate)) => match parse_sync_update_in(locale, body) {
+            Ok(changes) => delegate.update(changes).await,
+            Err(error) => *error,
+        },
+        None => update(locale, root, body).await,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{SourceSyncAuthority, SourceSyncDelegate, SourceSyncResponse};
+    use axum::http::StatusCode;
+    use solstone_core_convey_http::window_catalog::ENGLISH;
+    use std::sync::Arc;
+
+    struct SourceAuthority;
+
+    impl SourceSyncAuthority for SourceAuthority {
+        fn get(&self) -> SourceSyncResponse {
+            unreachable!("the test only sends updates")
+        }
+
+        fn update(&self, changes: Vec<(&'static str, bool)>) -> SourceSyncResponse {
+            assert_eq!(changes, [("plaud", false)]);
+            Box::pin(async { json_response(json!({"saved": true})) })
+        }
+    }
+
+    #[tokio::test]
+    async fn sync_update_validates_before_dispatching_to_the_embedded_authority() {
+        let delegate = SourceSyncDelegate::new(Arc::new(SourceAuthority));
+        let send = |body: &'static str| {
+            update_routed(
+                ENGLISH,
+                PathBuf::new(),
+                Some(axum::Extension(delegate.clone())),
+                Bytes::from_static(body.as_bytes()),
+            )
+        };
+
+        let invalid = send(r#"{"plaud":{"enabled":"invalid"}}"#).await;
+        assert_eq!(invalid.status(), StatusCode::BAD_REQUEST);
+        let body = axum::body::to_bytes(invalid.into_body(), usize::MAX)
+            .await
+            .expect("invalid update body");
+        let payload: Value = serde_json::from_slice(&body).expect("invalid update JSON");
+        assert_eq!(payload["reason_code"], "invalid_config_value");
+        assert_eq!(payload["detail"], "plaud.enabled must be a boolean");
+
+        let valid = send(r#"{"plaud":{"enabled":false}}"#).await;
+        assert_eq!(valid.status(), StatusCode::OK);
     }
 }

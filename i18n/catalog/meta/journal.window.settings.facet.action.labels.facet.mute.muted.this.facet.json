@@ -1,0 +1,16 @@
+{
+  "description": "facet action labels facet mute in the journal's settings view.",
+  "context": "Journal window, settings view. facet action labels facet mute.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4132218e2bf77a9622bd082789813b2dd191f8a78e68283c7f4a511066a42c74",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

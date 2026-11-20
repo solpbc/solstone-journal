@@ -1,0 +1,16 @@
+{
+  "description": "Facet trash busy response in the journal's settings view.",
+  "context": "Journal window, settings view. Facet trash busy response.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b5de25e6c5d740be7cc54b627c226709c5213e8a48079953df75fe68443c0cac",
+  "max_length": 106,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

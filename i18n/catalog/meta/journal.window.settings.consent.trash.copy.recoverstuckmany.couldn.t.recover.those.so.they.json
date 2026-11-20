@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy recoverStuckMany in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy recoverStuckMany.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bc43a19e8a7d98935758b32e2eab729da8ae3174c657cba8219b9c2aa6d2a74a",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

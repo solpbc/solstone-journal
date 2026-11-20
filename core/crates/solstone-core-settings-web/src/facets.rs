@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use solstone_core_convey_http::window_catalog::text;
+
 use solstone_core_removals::{Action, Page, Surface};
 use solstone_core_trash::TrashError;
 use std::collections::HashMap;
@@ -61,9 +63,13 @@ pub async fn muted(journal_root: PathBuf) -> Response {
     json_response(json!({"facets": facets}))
 }
 
-pub async fn get_one(journal_root: PathBuf, Path(facet_name): Path<String>) -> Response {
+pub async fn get_one(
+    locale: &str,
+    journal_root: PathBuf,
+    Path(facet_name): Path<String>,
+) -> Response {
     let Some(mut config) = facet(&journal_root, &facet_name) else {
-        return facet_not_found();
+        return facet_not_found(locale);
     };
     let config = config.as_object_mut().expect("facet config object");
     config
@@ -82,9 +88,9 @@ pub async fn get_one(journal_root: PathBuf, Path(facet_name): Path<String>) -> R
     json_response(json!({"facet": facet_name, "config": config}))
 }
 
-pub async fn create(journal_root: PathBuf, body: Bytes) -> Response {
+pub async fn create(locale: &str, journal_root: PathBuf, body: Bytes) -> Response {
     let JsonBody::Value(Value::Object(data)) = json_body(body) else {
-        return missing_request_body();
+        return missing_request_body(locale);
     };
     let Some(title) = data
         .get("title")
@@ -92,7 +98,13 @@ pub async fn create(journal_root: PathBuf, body: Bytes) -> Response {
         .map(str::trim)
         .filter(|value| !value.is_empty())
     else {
-        return missing_required_field("Title is required");
+        return missing_required_field(
+            locale,
+            text(
+                locale,
+                "journal.window.settings.facets.detail.title.is.required",
+            ),
+        );
     };
     let slug = title
         .to_ascii_lowercase()
@@ -113,7 +125,13 @@ pub async fn create(journal_root: PathBuf, body: Bytes) -> Response {
             .next()
             .is_some_and(|value| value.is_ascii_lowercase())
     {
-        return invalid_request_value("Title must start with a letter.");
+        return invalid_request_value(
+            locale,
+            text(
+                locale,
+                "journal.window.settings.facets.detail.title.must.start.with.a.letter",
+            ),
+        );
     }
     // Any declaration at that name, readable or damaged, blocks a new facet
     // there: a damaged one is the owner's to repair, never a cue to add a
@@ -122,7 +140,13 @@ pub async fn create(journal_root: PathBuf, body: Bytes) -> Response {
         solstone_core_facets::observe_facet_destination(&journal_root, &slug),
         Ok(solstone_core_facets::DestinationObservation::Absent)
     ) {
-        return invalid_config_value("invalid or existing facet title");
+        return invalid_config_value(
+            locale,
+            text(
+                locale,
+                "journal.window.settings.facets.detail.invalid.or.existing.facet.title",
+            ),
+        );
     }
     // A name that leads to a facet it was merged or renamed into is never
     // given to a new facet: the new one takes the next free name. The title is
@@ -134,9 +158,9 @@ pub async fn create(journal_root: PathBuf, body: Bytes) -> Response {
         Ok(None) => slug,
         Ok(Some(_)) => match solstone_core_facets::first_free_facet_name(&journal_root, &slug) {
             Ok(name) => name,
-            Err(_) => return settings_operation_failed(),
+            Err(_) => return settings_operation_failed(locale),
         },
-        Err(_) => return retired_facet_names_unreadable(),
+        Err(_) => return retired_facet_names_unreadable(locale),
     };
     let emoji = data.get("emoji").and_then(Value::as_str).unwrap_or("📦");
     let color = data
@@ -153,7 +177,13 @@ pub async fn create(journal_root: PathBuf, body: Bytes) -> Response {
         && (icon.is_none()
             || icon.is_some_and(|icon| !icon.is_empty() && icons::svg(Some(icon), "").is_none()))
     {
-        return invalid_request_value("unknown Lucide icon");
+        return invalid_request_value(
+            locale,
+            text(
+                locale,
+                "journal.window.settings.facets.detail.unknown.lucide.icon",
+            ),
+        );
     }
     let consent = data
         .get("consent")
@@ -192,7 +222,7 @@ pub async fn create(journal_root: PathBuf, body: Bytes) -> Response {
             )
             .is_err()
             {
-                return settings_operation_failed();
+                return settings_operation_failed(locale);
             }
             // Segments name facets by name, so a new facet given an earlier
             // facet's name holds that name's segments once their stored
@@ -218,25 +248,26 @@ pub async fn create(journal_root: PathBuf, body: Bytes) -> Response {
             *response.status_mut() = StatusCode::CREATED;
             response
         }
-        Err(_) => settings_operation_failed(),
+        Err(_) => settings_operation_failed(locale),
     }
 }
 
 pub async fn update(
+    locale: &str,
     journal_root: PathBuf,
     Path(facet_name): Path<String>,
     body: Bytes,
 ) -> Response {
     let JsonBody::Value(Value::Object(data)) = json_body(body) else {
-        return missing_request_body();
+        return missing_request_body(locale);
     };
     if data.is_empty() {
-        return missing_request_body();
+        return missing_request_body(locale);
     }
     let Some(current) =
         facet(&journal_root, &facet_name).and_then(|value| value.as_object().cloned())
     else {
-        return facet_not_found();
+        return facet_not_found(locale);
     };
     let title = data
         .get("title")
@@ -269,7 +300,13 @@ pub async fn update(
                 .and_then(Value::as_str)
                 .is_some_and(|icon| !icon.is_empty() && icons::svg(Some(icon), "").is_none()))
     {
-        return invalid_request_value("unknown Lucide icon");
+        return invalid_request_value(
+            locale,
+            text(
+                locale,
+                "journal.window.settings.facets.detail.unknown.lucide.icon",
+            ),
+        );
     }
     let mut changed_fields = Map::new();
     for (key, value) in [
@@ -306,7 +343,7 @@ pub async fn update(
     )
     .is_err()
     {
-        return settings_operation_failed();
+        return settings_operation_failed(locale);
     }
     if !changed_fields.is_empty()
         && solstone_core_facets::append_action_log(
@@ -319,15 +356,15 @@ pub async fn update(
         )
         .is_err()
     {
-        return settings_operation_failed();
+        return settings_operation_failed(locale);
     }
     if let Some(muted) = data.get("muted").and_then(Value::as_bool) {
         match solstone_core_facets::set_facet_muted(&journal_root, &facet_name, muted) {
             Ok(()) => {}
             Err(solstone_core_facets::FacetWriteError::LastEnabledFacet { .. }) => {
-                return last_enabled_facet();
+                return last_enabled_facet(locale);
             }
-            Err(_) => return settings_operation_failed(),
+            Err(_) => return settings_operation_failed(locale),
         }
     }
     if let Some(muted) = data.get("muted").and_then(Value::as_bool)
@@ -346,7 +383,7 @@ pub async fn update(
         )
         .is_err()
     {
-        return settings_operation_failed();
+        return settings_operation_failed(locale);
     }
     let config = facet(&journal_root, &facet_name).unwrap_or(Value::Null);
     json_response(json!({"success":true,"facet":facet_name,"config":config}))
@@ -354,12 +391,15 @@ pub async fn update(
 
 /// A facet delete the journal refused: `reason` is the code the page turns
 /// into its words, `error` short words for a client that shows them.
-fn delete_refused(status: StatusCode, reason: &str) -> Response {
-    let error = match reason {
-        "last_facet" => "your journal needs at least one facet that isn't muted.",
-        "gone" => "that facet isn't in your journal.",
-        _ => "that facet couldn't be moved to the trash right now, so nothing was deleted.",
+fn delete_refused(locale: &str, status: StatusCode, reason: &str) -> Response {
+    let message = match reason {
+        "last_facet" => {
+            "journal.window.settings.http.last.enabled.facet.your.journal.needs.at.least.one"
+        }
+        "gone" => "journal.window.settings.http.facet.not.found.that.facet.isn.t.in.your",
+        _ => "journal.window.settings.facets.response.delete.busy",
     };
+    let error = text(locale, message);
     (
         status,
         axum::Json(json!({"success": false, "reason": reason, "error": error})),
@@ -369,40 +409,69 @@ fn delete_refused(status: StatusCode, reason: &str) -> Response {
 
 /// Move a facet to the trash; `{"erase": true}` erases it at once.
 pub async fn delete(
+    locale: &str,
     journal_root: PathBuf,
     Path(facet_name): Path<String>,
     headers: axum::http::HeaderMap,
     body: Bytes,
 ) -> Response {
     let JsonBody::Value(Value::Object(data)) = json_body(body) else {
-        return missing_request_body();
+        return missing_request_body(locale);
     };
     let Some(consent) = data.get("consent") else {
-        return missing_required_field("consent is required");
+        return missing_required_field(
+            locale,
+            text(
+                locale,
+                "journal.window.settings.facets.detail.consent.is.required",
+            ),
+        );
     };
     if consent != &Value::Bool(true) {
-        return invalid_request_value("consent must be true");
+        return invalid_request_value(
+            locale,
+            text(
+                locale,
+                "journal.window.settings.facets.detail.consent.must.be.true",
+            ),
+        );
     }
     let erase = match data.get("erase") {
         None => false,
         Some(Value::Bool(erase)) => *erase,
-        Some(_) => return invalid_request_value("erase must be true or false"),
+        Some(_) => {
+            return invalid_request_value(
+                locale,
+                text(
+                    locale,
+                    "journal.window.settings.facets.detail.erase.must.be.true.or.false",
+                ),
+            );
+        }
     };
     // And remove it from the backups too, as the owner chose with erase now.
     let backups = match data.get("backups") {
         None => false,
         Some(Value::Bool(backups)) => *backups,
-        Some(_) => return invalid_request_value("backups must be true or false"),
+        Some(_) => {
+            return invalid_request_value(
+                locale,
+                text(
+                    locale,
+                    "journal.window.settings.facets.detail.backups.must.be.true.or.false",
+                ),
+            );
+        }
     };
     if facet(&journal_root, &facet_name).is_none() {
-        return delete_refused(StatusCode::NOT_FOUND, "gone");
+        return delete_refused(locale, StatusCode::NOT_FOUND, "gone");
     }
     // Refuse before logging a delete that will not happen; the trash re-checks
     // under the facet lock.
     if solstone_core_facets::observe_declared_facet_inventory(&journal_root)
         .is_ok_and(|inventory| inventory.enabled == [facet_name.as_str()])
     {
-        return delete_refused(StatusCode::CONFLICT, "last_facet");
+        return delete_refused(locale, StatusCode::CONFLICT, "last_facet");
     }
     if solstone_core_facets::append_action_log(
         &journal_root,
@@ -414,7 +483,7 @@ pub async fn delete(
     )
     .is_err()
     {
-        return settings_operation_failed();
+        return settings_operation_failed(locale);
     }
     // No page calls this route yet; the command line does, so the surface is
     // read from the request rather than assumed.
@@ -483,26 +552,27 @@ pub async fn delete(
             "trash": trash,
         })),
         Ok(Err(error)) => match solstone_core_facets::facet_trash::failure_key(&error).as_str() {
-            "gone" => delete_refused(StatusCode::NOT_FOUND, "gone"),
-            key @ ("last_facet" | "busy") => delete_refused(StatusCode::CONFLICT, key),
+            "gone" => delete_refused(locale, StatusCode::NOT_FOUND, "gone"),
+            key @ ("last_facet" | "busy") => delete_refused(locale, StatusCode::CONFLICT, key),
             _ => {
                 log::warn!("facet delete: {error}");
-                settings_operation_failed()
+                settings_operation_failed(locale)
             }
         },
-        Err(_) => settings_operation_failed(),
+        Err(_) => settings_operation_failed(locale),
     }
 }
 
 /// Renaming a facet changes its title. The facet's name, which commands and
 /// agent permissions use, never changes.
 pub async fn rename(
+    locale: &str,
     journal_root: PathBuf,
     Path(facet_name): Path<String>,
     body: Bytes,
 ) -> Response {
     let JsonBody::Value(Value::Object(data)) = json_body(body) else {
-        return missing_request_body();
+        return missing_request_body(locale);
     };
     let Some(new_title) = data
         .get("new_name")
@@ -510,13 +580,25 @@ pub async fn rename(
         .map(str::trim)
         .filter(|value| !value.is_empty())
     else {
-        return missing_required_field("new_name is required");
+        return missing_required_field(
+            locale,
+            text(
+                locale,
+                "journal.window.settings.facets.detail.new.name.is.required",
+            ),
+        );
     };
     if !data.get("consent").is_none_or(Value::is_boolean) {
-        return invalid_config_value("consent must be boolean");
+        return invalid_config_value(
+            locale,
+            text(
+                locale,
+                "journal.window.settings.facets.detail.consent.must.be.boolean",
+            ),
+        );
     }
     let Some(previous) = facet(&journal_root, &facet_name) else {
-        return facet_not_found();
+        return facet_not_found(locale);
     };
     let old_title = previous
         .get("title")
@@ -549,8 +631,10 @@ pub async fn rename(
             );
             json_response(json!({"success":true,"facet":facet_name,"title":new_title}))
         }
-        Err(solstone_core_facets::FacetWriteError::DeclarationMissing { .. }) => facet_not_found(),
-        Err(_) => settings_operation_failed(),
+        Err(solstone_core_facets::FacetWriteError::DeclarationMissing { .. }) => {
+            facet_not_found(locale)
+        }
+        Err(_) => settings_operation_failed(locale),
     }
 }
 

@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy originalsLive in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy originalsLive.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "22d871622bd49dd37c137f6d30588945e559dc9e43b2714a722b1cdc35baf308",
+  "max_length": 170,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

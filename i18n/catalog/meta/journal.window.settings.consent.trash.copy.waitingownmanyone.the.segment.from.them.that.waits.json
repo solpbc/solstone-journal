@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy waitingOwnManyOne in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy waitingOwnManyOne.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3d5774abc0bcc96333193c73a2991459b38eb4fc921ed85a8eb1d02a8e6a3bf3",
+  "max_length": 107,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Settings copy message in the journal's settings view.",
+  "context": "Journal window, settings view. Settings copy message.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b57a6a0eda696f2599b8a55b29fcb80e13806f2d8a4fcec8addd85e17f80f9f0",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

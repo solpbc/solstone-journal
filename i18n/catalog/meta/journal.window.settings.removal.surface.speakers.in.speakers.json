@@ -1,0 +1,16 @@
+{
+  "description": "removal surface speakers in the journal's settings view.",
+  "context": "Journal window, settings view. removal surface speakers.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5fe2194657622142e47980e1d3c51dcdc92bf09b08a927982c4227984278bb89",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

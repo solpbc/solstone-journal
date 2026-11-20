@@ -1,0 +1,16 @@
+{
+  "description": "Custom activity icon example in the journal's settings view.",
+  "context": "Journal window, settings view. Custom activity icon example.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f52484abb4388bc9d0a896a396b9a9a98276f265038b88ace07662b9c507e9ea",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

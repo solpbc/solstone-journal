@@ -1,0 +1,16 @@
+{
+  "description": "removal action finish stopped in the journal's settings view.",
+  "context": "Journal window, settings view. removal action finish stopped.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "121c6baccd15f7616b9274aa9c35dfee31c4a2a5822b90f4621f4ecc79a53b21",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

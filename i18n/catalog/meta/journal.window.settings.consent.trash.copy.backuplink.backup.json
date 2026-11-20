@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy backupLink in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy backupLink.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5ddf11956681d98a1ce6f699a689823c53b2fcf1d3fccd6df2b1a52b669b162e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

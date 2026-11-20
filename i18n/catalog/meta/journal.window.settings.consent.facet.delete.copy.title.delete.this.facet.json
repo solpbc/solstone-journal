@@ -1,0 +1,16 @@
+{
+  "description": "Consent facet delete copy title in the journal's settings view.",
+  "context": "Journal window, settings view. Consent facet delete copy title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e6bff47d97c7078d62ca30ac9b6ddedddcb8f86f34aacfcf1c0e12dc48402bdc",
+  "max_length": 60,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

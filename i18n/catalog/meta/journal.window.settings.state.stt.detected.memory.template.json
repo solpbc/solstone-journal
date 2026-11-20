@@ -1,0 +1,28 @@
+{
+  "description": "Settings stt detected memory template in the journal's settings view.",
+  "context": "Journal window, settings view. Settings stt detected memory template.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7d076d4a343ad94a165236771901e0e7d928dd5dc159f5c2afc8bc69c9f848e6",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{available_gb}"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "GB"
+    }
+  ]
+}

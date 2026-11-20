@@ -1,0 +1,23 @@
+{
+  "description": "removal copy foldBoth in the journal's settings view.",
+  "context": "Journal window, settings view. removal copy foldBoth.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "131bc0e02204a5c6dcaa56a82a11a4dfd5d7ec7331eb8de7b170b5316681a746",
+  "max_length": 114,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{how}"
+    }
+  ]
+}

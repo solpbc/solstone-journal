@@ -1,0 +1,28 @@
+{
+  "description": "Option label in the journal's settings view.",
+  "context": "Journal window, settings view. Option label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c719084c45ee95da1f8f920a646fae02eb6696edf9976874afa13142dfc58627",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "CUDA"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "NVIDIA"
+    }
+  ]
+}

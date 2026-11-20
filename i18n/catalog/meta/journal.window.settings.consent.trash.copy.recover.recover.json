@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy recover in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy recover.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1280c00767eba1cc74e3d9ab47d22851cca9cd69363b3aac8a28218bab805423",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

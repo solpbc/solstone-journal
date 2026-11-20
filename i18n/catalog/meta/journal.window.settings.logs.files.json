@@ -1,0 +1,28 @@
+{
+  "description": "logs files in the journal's settings view.",
+  "context": "Journal window, settings view. logs files.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b9cd9538daa98400710e646515efd3e28c7668e83b50d8b0264540957d5d538a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

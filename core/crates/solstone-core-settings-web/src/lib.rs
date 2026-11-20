@@ -6,9 +6,10 @@
 use std::path::PathBuf;
 
 use axum::{
-    Router,
+    Extension, Router,
     routing::{get, post, put},
 };
+use solstone_core_convey_http::{coalesce::ResponseLocale, window_catalog::response_locale};
 use solstone_core_journal_io::LockOptions;
 
 mod activities;
@@ -44,7 +45,6 @@ pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: Lock
     let config_get_root = journal_root.clone();
     let config_put_root = journal_root.clone();
     let config_post_root = journal_root.clone();
-    let state_root = journal_root.clone();
     let convey_root = journal_root.clone();
     let transcribe_root = journal_root.clone();
     let processing_root = journal_root.clone();
@@ -86,28 +86,50 @@ pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: Lock
         .route("/app/settings/", get(assets::shell))
         .route(
             "/app/settings/api/granola",
-            get(move || granola::get(granola_get_root.clone()))
-                .post(move |body| granola::connect(granola_connect_root.clone(), body))
-                .delete(move || granola::disconnect(granola_disconnect_root.clone())),
+            get(move |locale: Option<Extension<ResponseLocale>>| {
+                granola::get(response_locale(locale), granola_get_root.clone())
+            })
+            .post(move |locale: Option<Extension<ResponseLocale>>, body| {
+                granola::connect(response_locale(locale), granola_connect_root.clone(), body)
+            })
+            .delete(move |locale: Option<Extension<ResponseLocale>>| {
+                granola::disconnect(response_locale(locale), granola_disconnect_root.clone())
+            }),
         )
         .route(
             "/app/settings/api/granola/sync",
-            post(move || granola::sync_now(granola_sync_root.clone())),
+            post(move |locale: Option<Extension<ResponseLocale>>| {
+                granola::sync_now(response_locale(locale), granola_sync_root.clone())
+            }),
         )
         .route("/app/settings/workspace", get(assets::workspace))
         .route("/app/settings/static/settings.js", get(assets::settings_js))
         .route("/app/settings/facets/{slug}", get(assets::shell))
         .route(
             "/app/settings/api/state",
-            get(move || state::get(state_root.clone())),
+            get(|locale: Option<Extension<ResponseLocale>>| state::get(response_locale(locale))),
         )
         .route(
             "/app/settings/api/config",
-            get(move || config::get(config_get_root.clone()))
-                .put(move |body| config::update(config_put_root.clone(), config_lock_options, body))
-                .post(move |body| {
-                    config::update(config_post_root.clone(), config_lock_options, body)
-                }),
+            get(move |locale: Option<Extension<ResponseLocale>>| {
+                config::get(response_locale(locale), config_get_root.clone())
+            })
+            .put(move |locale: Option<Extension<ResponseLocale>>, body| {
+                config::update(
+                    response_locale(locale),
+                    config_put_root.clone(),
+                    config_lock_options,
+                    body,
+                )
+            })
+            .post(move |locale: Option<Extension<ResponseLocale>>, body| {
+                config::update(
+                    response_locale(locale),
+                    config_post_root.clone(),
+                    config_lock_options,
+                    body,
+                )
+            }),
         )
         .route(
             "/app/settings/api/convey/status",
@@ -115,7 +137,9 @@ pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: Lock
         )
         .route(
             "/app/settings/api/transcribe",
-            get(move || transcribe::get(transcribe_root.clone())),
+            get(move |locale: Option<Extension<ResponseLocale>>| {
+                transcribe::get(response_locale(locale), transcribe_root.clone())
+            }),
         )
         .route(
             "/app/settings/api/transcribe/owner-voice",
@@ -127,13 +151,27 @@ pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: Lock
         )
         .route(
             "/app/settings/api/validate-keys",
-            get(keys::get)
-                .post(move |body| keys::post(keys_root.clone(), config_lock_options, body)),
+            get(keys::get).post(move |locale: Option<Extension<ResponseLocale>>, body| {
+                keys::post(
+                    response_locale(locale),
+                    keys_root.clone(),
+                    config_lock_options,
+                    body,
+                )
+            }),
         )
         .route(
             "/app/settings/api/vision",
-            get(move || vision::get(vision_get_root.clone())).put(move |body| {
-                vision::update(vision_put_root.clone(), config_lock_options, body)
+            get(move |locale: Option<Extension<ResponseLocale>>| {
+                vision::get(response_locale(locale), vision_get_root.clone())
+            })
+            .put(move |locale: Option<Extension<ResponseLocale>>, body| {
+                vision::update(
+                    response_locale(locale),
+                    vision_put_root.clone(),
+                    config_lock_options,
+                    body,
+                )
             }),
         )
         .route(
@@ -146,38 +184,93 @@ pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: Lock
         )
         .route(
             "/app/settings/api/facet/{facet_name}",
-            get(move |path| facets::get_one(facet_get_root.clone(), path))
-                .put(move |path, body| facets::update(facet_put_root.clone(), path, body))
-                .delete(move |path, headers, body| {
-                    facets::delete(facet_delete_root.clone(), path, headers, body)
-                }),
+            get(move |locale: Option<Extension<ResponseLocale>>, path| {
+                facets::get_one(response_locale(locale), facet_get_root.clone(), path)
+            })
+            .put(
+                move |locale: Option<Extension<ResponseLocale>>, path, body| {
+                    facets::update(response_locale(locale), facet_put_root.clone(), path, body)
+                },
+            )
+            .delete(
+                move |locale: Option<Extension<ResponseLocale>>, path, headers, body| {
+                    facets::delete(
+                        response_locale(locale),
+                        facet_delete_root.clone(),
+                        path,
+                        headers,
+                        body,
+                    )
+                },
+            ),
         )
         .route(
             "/app/settings/api/facet",
-            post(move |body| facets::create(facet_create_root.clone(), body)),
+            post(move |locale: Option<Extension<ResponseLocale>>, body| {
+                facets::create(response_locale(locale), facet_create_root.clone(), body)
+            }),
         )
         .route(
             "/app/settings/api/facet/{facet_name}/rename",
-            post(move |path, body| facets::rename(facet_rename_root.clone(), path, body)),
+            post(
+                move |locale: Option<Extension<ResponseLocale>>, path, body| {
+                    facets::rename(
+                        response_locale(locale),
+                        facet_rename_root.clone(),
+                        path,
+                        body,
+                    )
+                },
+            ),
         )
         .route(
             "/app/settings/api/activities/defaults",
-            get(activities::defaults),
+            get(|locale: Option<Extension<ResponseLocale>>| {
+                activities::defaults(response_locale(locale))
+            }),
         )
         .route(
             "/app/settings/api/facet/{facet_name}/activities",
-            get(move |path| activities::for_facet(facet_activities_get_root.clone(), path)).post(
-                move |path, body| activities::add(facet_activities_add_root.clone(), path, body),
+            get(move |locale: Option<Extension<ResponseLocale>>, path| {
+                activities::for_facet(
+                    response_locale(locale),
+                    facet_activities_get_root.clone(),
+                    path,
+                )
+            })
+            .post(
+                move |locale: Option<Extension<ResponseLocale>>, path, body| {
+                    activities::add(
+                        response_locale(locale),
+                        facet_activities_add_root.clone(),
+                        path,
+                        body,
+                    )
+                },
             ),
         )
         .route(
             "/app/settings/api/facet/{facet_name}/activities/{activity_id}",
-            put(move |path, body| {
-                activities::update(facet_activities_update_root.clone(), path, body)
-            })
-            .delete(move |path, body| {
-                activities::remove(facet_activities_delete_root.clone(), path, body)
-            }),
+            put(
+                move |locale: Option<Extension<ResponseLocale>>, path, body| {
+                    activities::update(
+                        response_locale(locale),
+                        facet_activities_update_root.clone(),
+                        path,
+                        body,
+                    )
+                },
+            )
+            .delete(
+                move |locale: Option<Extension<ResponseLocale>>, path, body| {
+                    activities::remove(
+                        response_locale(locale),
+                        facet_activities_delete_root.clone(),
+                        path,
+                        body,
+                    )
+                },
+            ),
         )
         .route(
             "/app/settings/api/logs",
@@ -189,45 +282,71 @@ pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: Lock
         )
         .route(
             "/app/settings/api/storage/removals",
-            get(move || storage::removals(removals_root.clone())),
+            get(move |locale: Option<Extension<ResponseLocale>>| {
+                storage::removals(response_locale(locale), removals_root.clone())
+            }),
         )
         .route(
             "/app/settings/api/trash",
-            get(move || trash::list(trash_list_root.clone())),
+            get(move |locale: Option<Extension<ResponseLocale>>| {
+                trash::list(response_locale(locale), trash_list_root.clone())
+            }),
         )
         .route(
             "/app/settings/api/trash/recover",
-            post(move |body| trash::recover(trash_recover_root.clone(), body)),
+            post(move |locale: Option<Extension<ResponseLocale>>, body| {
+                trash::recover(response_locale(locale), trash_recover_root.clone(), body)
+            }),
         )
         .route(
             "/app/settings/api/trash/erase",
-            post(move |body| trash::erase(trash_erase_root.clone(), body)),
+            post(move |locale: Option<Extension<ResponseLocale>>, body| {
+                trash::erase(response_locale(locale), trash_erase_root.clone(), body)
+            }),
         )
         .route(
             "/app/settings/api/trash/empty",
-            post(move |body| trash::empty(trash_empty_root.clone(), body)),
+            post(move |locale: Option<Extension<ResponseLocale>>, body| {
+                trash::empty(response_locale(locale), trash_empty_root.clone(), body)
+            }),
         )
         .route(
             "/app/settings/api/trash/backups",
-            get(move || trash::backups(trash_backups_root.clone())),
+            get(move |locale: Option<Extension<ResponseLocale>>| {
+                trash::backups(response_locale(locale), trash_backups_root.clone())
+            }),
         )
         .route(
             "/app/settings/api/storage/config",
-            get(move || storage::get_config(storage_config_root.clone())),
+            get(move |locale: Option<Extension<ResponseLocale>>| {
+                storage::get_config(response_locale(locale), storage_config_root.clone())
+            }),
         )
         .route(
             "/app/settings/api/storage",
-            get(move || storage::get(storage_root.clone())).put(move |body| {
-                retention::update(storage_put_root.clone(), config_lock_options, body)
+            get(move |locale: Option<Extension<ResponseLocale>>| {
+                storage::get(response_locale(locale), storage_root.clone())
+            })
+            .put(move |locale: Option<Extension<ResponseLocale>>, body| {
+                retention::update(
+                    response_locale(locale),
+                    storage_put_root.clone(),
+                    config_lock_options,
+                    body,
+                )
             }),
         )
         .route(
             "/app/settings/api/storage/list",
-            post(move |body| retention::purge(purge_root.clone(), body)),
+            post(move |locale: Option<Extension<ResponseLocale>>, body| {
+                retention::purge(response_locale(locale), purge_root.clone(), body)
+            }),
         )
         .route(
             "/app/settings/api/storage/prune-logs",
-            post(move |body| retention::prune_logs(prune_logs_root.clone(), body)),
+            post(move |locale: Option<Extension<ResponseLocale>>, body| {
+                retention::prune_logs(response_locale(locale), prune_logs_root.clone(), body)
+            }),
         )
         .route(
             "/app/settings/api/sync",
@@ -237,8 +356,15 @@ pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: Lock
                 },
             )
             .put(
-                move |delegate: Option<axum::Extension<SourceSyncDelegate>>, body| {
-                    sync::update_routed(sync_put_root.clone(), delegate, body)
+                move |locale: Option<Extension<ResponseLocale>>,
+                      delegate: Option<axum::Extension<SourceSyncDelegate>>,
+                      body| {
+                    sync::update_routed(
+                        response_locale(locale),
+                        sync_put_root.clone(),
+                        delegate,
+                        body,
+                    )
                 },
             ),
         )

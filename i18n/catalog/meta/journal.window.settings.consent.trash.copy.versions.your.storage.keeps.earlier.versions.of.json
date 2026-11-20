@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy versions in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy versions.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "93cfaa80e571e2a2f27175cbc424c0c25f356b4d41215b94bbd9a1906fbc5d3a",
+  "max_length": 191,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

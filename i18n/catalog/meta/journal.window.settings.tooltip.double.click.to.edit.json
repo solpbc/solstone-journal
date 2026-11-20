@@ -1,0 +1,16 @@
+{
+  "description": "Tooltip in the journal's settings view.",
+  "context": "Journal window, settings view. Tooltip.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "42e42e737d712ec457b02eddc325c808f183066e7333c64941cda0d618398594",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

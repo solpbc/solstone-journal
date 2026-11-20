@@ -1,0 +1,16 @@
+{
+  "description": "facet color orange green in the journal's settings view.",
+  "context": "Journal window, settings view. facet color orange green.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "72a5798738865f949ca5d2f4bb54c78e6cca30fef5a3946fd83ddc1976fd2383",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

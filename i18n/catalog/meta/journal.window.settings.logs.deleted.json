@@ -1,0 +1,16 @@
+{
+  "description": "logs deleted in the journal's settings view.",
+  "context": "Journal window, settings view. logs deleted.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b6088eb39334d742f0fa4a18f01efd4187c5ba111259b2d82de40073c66f8089",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

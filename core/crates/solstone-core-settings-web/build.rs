@@ -24,22 +24,6 @@ fn read_json(path: &Path) -> Value {
     })
 }
 
-fn read_object(path: &Path) -> serde_json::Map<String, Value> {
-    match read_json(path) {
-        Value::Object(value) => value,
-        _ => panic!("settings data asset {} is a JSON object", path.display()),
-    }
-}
-
-fn write_constants(path: &Path, constants: &serde_json::Map<String, Value>) {
-    let json = serde_json::to_string(constants).expect("copy constants serialize");
-    fs::write(
-        path,
-        format!("pub const COPY_JSON: &str = r##\"{json}\"##;\n"),
-    )
-    .expect("generated copy constants write");
-}
-
 fn write_value(path: &Path, value: &Value) {
     let json = serde_json::to_string(value).expect("data serializes");
     fs::write(path, format!("pub const JSON: &str = r##\"{json}\"##;\n"))
@@ -48,11 +32,6 @@ fn write_value(path: &Path, value: &Value) {
 
 fn main() {
     let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("manifest directory"));
-    let modules = [
-        (manifest.join("assets/copy.json"), "settings_copy.rs"),
-        (manifest.join("assets/install_copy.json"), "install_copy.rs"),
-        (manifest.join("assets/backup_copy.json"), "backup_copy.rs"),
-    ];
     let output = PathBuf::from(env::var_os("OUT_DIR").expect("output directory"));
     let mut source_names = fs::read_dir(manifest.join("src"))
         .expect("settings source directory")
@@ -67,10 +46,6 @@ fn main() {
     )
     .expect("settings source manifest");
     println!("cargo:rerun-if-changed={}", manifest.join("src").display());
-    for (path, generated) in modules {
-        println!("cargo:rerun-if-changed={}", path.display());
-        write_constants(&output.join(generated), &read_object(&path));
-    }
     let activities = manifest.join("assets/default_activities.json");
     println!("cargo:rerun-if-changed={}", activities.display());
     let activity_defaults = read_json(&activities);
@@ -94,13 +69,7 @@ fn main() {
         .tree(
             "/app/settings/static",
             "assets",
-            &[
-                "workspace.html",
-                "backup_copy.json",
-                "copy.json",
-                "default_activities.json",
-                "install_copy.json",
-            ],
+            &["workspace.html", "default_activities.json"],
         )
         .emit();
 }

@@ -632,12 +632,18 @@ fn prune_logs_replay_refuses_even_when_a_host_executor_is_resolvable() {
             // The staged host is genuinely hostile: the production resolver
             // finds the planted executor before the pin is applied.
             assert!(
-                crate::retention_executor::binary().is_ok(),
+                crate::retention_executor::binary(
+                    solstone_core_convey_http::window_catalog::ENGLISH
+                )
+                .is_ok(),
                 "staged host must resolve an executor, or this twin proves nothing"
             );
             crate::retention_tests::without_executor(|| {
                 assert!(
-                    crate::retention_executor::binary().is_err(),
+                    crate::retention_executor::binary(
+                        solstone_core_convey_http::window_catalog::ENGLISH
+                    )
+                    .is_err(),
                     "the pin must make the executor unresolvable"
                 );
                 crate::retention_tests::run_async(request(

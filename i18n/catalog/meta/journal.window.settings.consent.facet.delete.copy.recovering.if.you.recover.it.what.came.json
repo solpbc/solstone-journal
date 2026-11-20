@@ -1,0 +1,16 @@
+{
+  "description": "Consent facet delete copy recovering in the journal's settings view.",
+  "context": "Journal window, settings view. Consent facet delete copy recovering.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "37738842a0a877bbc8d467cda3a18ab5741b0be59e7ce897d094310adb072a06",
+  "max_length": 192,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

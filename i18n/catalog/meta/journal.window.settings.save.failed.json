@@ -1,0 +1,16 @@
+{
+  "description": "save failed in the journal's settings view.",
+  "context": "Journal window, settings view. save failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "824cc37acb0b05a5a379d9f69cf68362a5e72709260e4cf23a2a9e6cca7320c7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

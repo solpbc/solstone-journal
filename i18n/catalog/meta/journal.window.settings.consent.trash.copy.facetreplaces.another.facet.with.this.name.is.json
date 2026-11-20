@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy facetReplaces in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy facetReplaces.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9457fe8b8bdf48ac03d3cfc1aa2e0c9647307e599153e4c9ca9613cb243bf361",
+  "max_length": 151,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

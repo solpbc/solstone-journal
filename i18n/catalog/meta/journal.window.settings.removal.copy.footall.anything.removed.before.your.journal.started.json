@@ -1,0 +1,16 @@
+{
+  "description": "removal copy footAll in the journal's settings view.",
+  "context": "Journal window, settings view. removal copy footAll.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "33227e8e2e3bfae71884c465d86a3f2a9a5a1b3b0f3565a9d0fd3201a289a566",
+  "max_length": 109,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

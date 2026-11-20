@@ -1,0 +1,16 @@
+{
+  "description": "Consent facet delete copy list in the journal's settings view.",
+  "context": "Journal window, settings view. Consent facet delete copy list.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "34e22da4ec4b5e34f2917ad42e72c617ee78f2f4ad2ad1d6d914e386894116f4",
+  "max_length": 60,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

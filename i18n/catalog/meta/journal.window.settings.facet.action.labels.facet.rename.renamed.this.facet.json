@@ -1,0 +1,16 @@
+{
+  "description": "facet action labels facet rename in the journal's settings view.",
+  "context": "Journal window, settings view. facet action labels facet rename.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5520aac31a71bb4e0548d885c7186c935df8bc876ac593f4d347c7d19a9f7c03",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

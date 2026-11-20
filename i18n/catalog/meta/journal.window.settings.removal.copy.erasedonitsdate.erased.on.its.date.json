@@ -1,0 +1,16 @@
+{
+  "description": "removal copy erasedOnItsDate in the journal's settings view.",
+  "context": "Journal window, settings view. removal copy erasedOnItsDate.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "34f30eeaf4660e45674e14fa4d724b16d6102ba909c28733592ad058fffffc92",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

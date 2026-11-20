@@ -3,14 +3,14 @@
 
 //! The embedded owner's maintained recurrence authority, without an importer dependency.
 
-use axum::{body::Bytes, response::Response};
+use axum::response::Response;
 use std::{future::Future, pin::Pin, sync::Arc};
 
 pub type SourceSyncResponse = Pin<Box<dyn Future<Output = Response> + Send + 'static>>;
 
 pub trait SourceSyncAuthority: Send + Sync {
     fn get(&self) -> SourceSyncResponse;
-    fn update(&self, body: Bytes) -> SourceSyncResponse;
+    fn update(&self, changes: Vec<(&'static str, bool)>) -> SourceSyncResponse;
 }
 
 #[derive(Clone)]
@@ -23,7 +23,7 @@ impl SourceSyncDelegate {
     pub async fn get(&self) -> Response {
         self.0.get().await
     }
-    pub async fn update(&self, body: Bytes) -> Response {
-        self.0.update(body).await
+    pub async fn update(&self, changes: Vec<(&'static str, bool)>) -> Response {
+        self.0.update(changes).await
     }
 }

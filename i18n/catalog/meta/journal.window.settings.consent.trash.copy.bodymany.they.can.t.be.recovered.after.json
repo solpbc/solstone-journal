@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy bodyMany in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy bodyMany.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "10904444f0ab3b91501abde5af5daa6660a464113eb1e043a303936f653d9d18",
+  "max_length": 65,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

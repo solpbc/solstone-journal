@@ -1,0 +1,28 @@
+{
+  "description": "Consent trash copy confirmMany in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy confirmMany.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c06a4aee7dc7efb49ce304ab9479ec19cb87ee8b0674163d0b07f70c0a5c40fa",
+  "max_length": 60,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{n}"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "{things}"
+    }
+  ]
+}

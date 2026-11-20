@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy replaceTitle in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy replaceTitle.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "36ec1b22d99c538c1fcac61fa51125d2d7e7845519d018339485a7099484cfdf",
+  "max_length": 60,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

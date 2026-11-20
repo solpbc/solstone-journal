@@ -1,0 +1,23 @@
+{
+  "description": "Consent trash copy mergedInto in the journal's settings view.",
+  "context": "Journal window, settings view. Consent trash copy mergedInto.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1382b0ed58272c3ffe6e8740daf861fa98c21d74ed5885ae7e4142058e36866d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "{title}"
+    }
+  ]
+}

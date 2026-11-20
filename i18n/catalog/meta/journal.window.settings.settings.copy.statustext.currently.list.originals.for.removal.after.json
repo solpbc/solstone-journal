@@ -1,0 +1,16 @@
+{
+  "description": "Settings copy statusText in the journal's settings view.",
+  "context": "Journal window, settings view. Settings copy statusText.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "46176dcef4869fb925e82554251eca73036e435790bb5e79cfca7f32f984dca7",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
