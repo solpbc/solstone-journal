@@ -561,11 +561,59 @@ class RegistryAdditionInsideClosure(unittest.TestCase):
         with self.assertRaisesRegex(refresh.RefreshError, "--admit-closure-addition"):
             self.check(admitted=frozenset())
 
+    named = frozenset({("webview", "1.0.0")})
+
     def test_copyleft_in_closure_addition_refuses_even_when_named(self):
         self.assertEqual(self.check(), {self.webview})
         for license in ("GPL-3.0-only", "MIT AND LGPL-2.1-or-later", None):
             with self.assertRaisesRegex(refresh.RefreshError, "permissive"):
-                refresh.require_permissive_additions(self.meta(license), [self.lock_row()])
+                refresh.require_permissive_additions(
+                    self.meta(license), [self.lock_row()], elect_permissive=self.named
+                )
+
+    def test_named_flat_disjunction_elects_its_permissive_alternative(self):
+        for license, elected in (
+            ("Apache-2.0 OR GPL-2.0-only", "Apache-2.0"),
+            ("GPL-3.0-only OR MIT AND Unicode-3.0", "MIT AND Unicode-3.0"),
+            ("MIT/LGPL-2.1", "MIT"),
+        ):
+            found = refresh.require_permissive_additions(
+                self.meta(license), [self.lock_row()], elect_permissive=self.named
+            )
+            self.assertIn(("webview", "1.0.0"), found)
+            self.assertEqual(refresh.elected_permissive_alternative(license), elected)
+
+    def test_unnamed_flat_disjunction_with_copyleft_still_refuses(self):
+        with self.assertRaisesRegex(refresh.RefreshError, "permissive"):
+            refresh.require_permissive_additions(
+                self.meta("Apache-2.0 OR GPL-2.0-only"), [self.lock_row()]
+            )
+        other = frozenset({("other", "1.0.0")})
+        with self.assertRaisesRegex(refresh.RefreshError, "permissive"):
+            refresh.require_permissive_additions(
+                self.meta("Apache-2.0 OR GPL-2.0-only"), [self.lock_row()], elect_permissive=other
+            )
+
+    def test_named_parenthesized_or_with_disjunction_refuses(self):
+        for license in (
+            "(Apache-2.0 OR GPL-2.0-only)",
+            "(MIT OR GPL-2.0-only) AND Apache-2.0",
+            "Apache-2.0 WITH LLVM-exception OR GPL-2.0-only",
+            "GPL-2.0-only WITH Classpath-exception-2.0 OR MIT",
+            "MIT AND GPL-2.0-only OR LGPL-2.1",
+            "MIT AND OR GPL-2.0-only",
+            "OR GPL-2.0-only",
+            "GPL-2.0-only with Classpath-exception-2.0 OR MIT",
+            "MIT OR GPL-2.0-only AND",
+            "MIT OR GPL-2.0-only Classpath-exception-2.0",
+            "MIT OR GPL-2.0-only and LGPL-2.1",
+            "MIT or GPL-2.0-only",
+            "MIT AND AND Apache-2.0 OR GPL-2.0-only",
+        ):
+            with self.assertRaisesRegex(refresh.RefreshError, "permissive"):
+                refresh.require_permissive_additions(
+                    self.meta(license), [self.lock_row()], elect_permissive=self.named
+                )
 
     def test_named_package_outside_the_closure_refuses(self):
         old, new = self.graphs()

@@ -51,7 +51,10 @@ reproduce, so it is never admitted on measurement alone: the operator names
 each one with `--admit-closure-addition NAME@VERSION` after reviewing its
 licence, and the closure must grow by exactly the named packages and nothing
 else. A named package still has to be a checksummed registry addition with a
-wholly permissive licence expression. It is vendored into the archive like an
+wholly permissive licence expression, or a flat disjunction (`A OR B`, no
+parentheses or WITH) with one alternative made only of permissive
+identifiers: the named review elects that alternative, and the refresh report
+records it under `licence_elections`. It is vendored into the archive like an
 addition outside the closure, recorded as a notice population row, and its
 licence texts are added to the NOTICES file and indexed by byte range. The texts
 come from the crate archive; a crate that publishes none gets them from its
@@ -1422,9 +1425,10 @@ def cargo_git_checkout(source: str, revision: str) -> Path:
     return candidates[0]
 
 
-# Licence identifiers an added package outside the Windows notice closure may
-# carry without review. Anything else, including a copyleft or unknown
-# identifier anywhere in the expression, refuses.
+# Licence identifiers an added, promoted or upgraded registry package may carry.
+# Anything else, including a copyleft or unknown identifier anywhere in the
+# expression, refuses, except the elected flat disjunction of a named in-closure
+# addition (`elected_permissive_alternative`).
 PERMISSIVE_LICENSE_IDS = frozenset(
     {
         "0BSD",
@@ -1462,10 +1466,59 @@ def vendored_package_metadata(
     return {"packages": packages}
 
 
+def licence_ids(expression: str | None) -> set[str]:
+    """Every licence identifier an SPDX expression names, operators dropped."""
+    return {
+        token
+        for token in (expression or "").replace("(", " ").replace(")", " ").replace("/", " OR ").split()
+        if token not in {"OR", "AND", "WITH"}
+    }
+
+
+def elected_permissive_alternative(expression: str | None) -> str | None:
+    """The first alternative of a flat SPDX disjunction made only of
+    permissive identifiers (one, or several joined by AND), or None.
+
+    Only the plain `A OR B` shape is read, and every alternative must be
+    well formed (`id` or `id AND id ...`): parentheses, WITH in any case, an
+    operator in the wrong case or place, an empty alternative or a single
+    alternative return None, so they stay under the wholly-permissive rule."""
+    if not expression or "(" in expression or ")" in expression:
+        return None
+    operators = {"OR", "AND", "WITH"}
+    tokens = expression.replace("/", " OR ").split()
+    alternatives: list[list[str]] = [[]]
+    for token in tokens:
+        if token == "OR":
+            alternatives.append([])
+        else:
+            alternatives[-1].append(token)
+    if len(alternatives) < 2:
+        return None
+    for alternative in alternatives:
+        if len(alternative) % 2 == 0 or not all(
+            token.upper() not in operators if index % 2 == 0 else token == "AND"
+            for index, token in enumerate(alternative)
+        ):
+            return None
+    for alternative in alternatives:
+        if all(token in PERMISSIVE_LICENSE_IDS for token in alternative[::2]):
+            return " ".join(alternative)
+    return None
+
+
 def require_permissive_additions(
-    meta: dict[str, Any], added: list[dict[str, Any]]
+    meta: dict[str, Any],
+    added: list[dict[str, Any]],
+    elect_permissive: frozenset[tuple[str, str]] = frozenset(),
 ) -> dict[tuple[str, str], dict[str, Any]]:
-    """Return the manifest table for each added package after checking its licence."""
+    """Return the manifest table for each added package after checking its licence.
+
+    Every identifier in the expression must be permissive, with one scoped
+    exception: a package named in `elect_permissive` (a reviewed
+    `--admit-closure-addition`) may declare a flat disjunction with one wholly
+    permissive alternative, which that named review elects. Unnamed packages,
+    parentheses and WITH keep the wholly-permissive rule."""
     by_id = {(p["name"], p["version"]): p for p in meta["packages"] if p.get("source")}
     found = {}
     for row in added:
@@ -1475,11 +1528,11 @@ def require_permissive_additions(
                 f"no manifest describes added package {row['name']} {row['version']}"
             )
         expression = package.get("license") or ""
-        ids = {
-            token
-            for token in expression.replace("(", " ").replace(")", " ").replace("/", " OR ").split()
-            if token not in {"OR", "AND", "WITH"}
-        }
+        ids = licence_ids(expression)
+        if ((row["name"], row["version"]) in elect_permissive
+                and elected_permissive_alternative(expression) is not None):
+            found[(row["name"], row["version"])] = package
+            continue
         if not ids or not ids <= PERMISSIVE_LICENSE_IDS:
             raise RefreshError(
                 f"added package {row['name']} {row['version']} declares licence "
@@ -2559,7 +2612,9 @@ def refresh(
                 vendor_root = Path(scratch) / "vendor"
                 run_cargo_vendor(repo, vendor_root)
             added_metadata = require_permissive_additions(
-                vendored_package_metadata(vendor_root, added_external), added_external
+                vendored_package_metadata(vendor_root, added_external),
+                added_external,
+                elect_permissive=admissions,
             )
             added_rows, added_members, added_texts = added_package_rows(
                 added_external,
@@ -2910,6 +2965,16 @@ def refresh(
             }
             for row in added_rows
             if row["windows_notice_population"]
+        ],
+        "licence_elections": [
+            {
+                "identity": row["identity"],
+                "license_expression": row["license_expression"],
+                "elected": elected_permissive_alternative(row["license_expression"]),
+            }
+            for row in added_rows
+            if row["windows_notice_population"]
+            and not licence_ids(row["license_expression"]) <= PERMISSIVE_LICENSE_IDS
         ],
         "promoted_existing_packages": [row["identity"] for row in promoted_rows],
         "removed_packages": [
