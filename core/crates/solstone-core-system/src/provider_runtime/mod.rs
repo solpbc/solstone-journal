@@ -55,8 +55,9 @@ pub use placement::{
 };
 pub use readiness::{
     PARAKEET_CPP_PROBE_TIMEOUT, ParakeetCppArtifacts, ParakeetCppReadiness,
-    check_parakeet_coreml_cache, check_parakeet_cpp_files, classify_parakeet_cpp_probe_failure,
-    parakeet_cpp_artifacts, probe_parakeet_cpp_binary,
+    check_parakeet_coreml_cache, check_parakeet_coreml_cache_in, check_parakeet_cpp_files,
+    check_parakeet_cpp_files_in, classify_parakeet_cpp_probe_failure, parakeet_cpp_artifacts,
+    parakeet_cpp_artifacts_in, probe_parakeet_cpp_binary,
 };
 pub use reconcile::{ProviderRuntimeCoordinator, ReconcileContext};
 pub use retry::{schedule_cleanup_retry, schedule_launch_retry};

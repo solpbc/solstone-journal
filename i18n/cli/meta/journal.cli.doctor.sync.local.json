@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for sync local.",
+  "context": "Journal command-line text for sync local.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "host",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "835a89f29a9b50946fc2755d00191e194c3dd11e2e4ac58c2eb6bca990acd2d1",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

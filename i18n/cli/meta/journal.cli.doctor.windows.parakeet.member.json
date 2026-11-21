@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for windows parakeet member.",
+  "context": "Journal command-line text for windows parakeet member.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "member",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6349be0529ed08b9dfa8834491ac278c3f551b19235310c92d15de98534faa39",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "parakeet_name",
+      "kind": "accepted-input",
+      "value": "Parakeet"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for unretryable transcribe input cannot read segment dir.",
+  "context": "Journal command-line text for unretryable transcribe input cannot read segment dir.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6071cdf8e9f5797476cb92e6e8f5c5b9fa0880de8ac482d8b5955315159f83f5",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

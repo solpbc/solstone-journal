@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for durability heading unresolved.",
+  "context": "Journal command-line text for durability heading unresolved.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8db7dec6a2a98f07c7740f7cfeed7286b6350bb9045f1e78a58c54a618991703",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

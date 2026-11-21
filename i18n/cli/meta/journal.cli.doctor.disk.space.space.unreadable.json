@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for disk space free space is not readable at.",
+  "context": "Journal command-line text for disk space free space is not readable at.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1ded53c495ba829804b47b3a20b2374f82a9d817ae6d8101e3717a92af41f448",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

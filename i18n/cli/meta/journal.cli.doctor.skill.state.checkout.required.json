@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for skill state router skill state is only available from a source checkout.",
+  "context": "Journal command-line text for skill state router skill state is only available from a source checkout.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "39603db176589fb8b34dea31bd749b4eda6cbfb4b50a303783762fcabb79207c",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

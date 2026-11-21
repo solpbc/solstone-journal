@@ -1,0 +1,54 @@
+{
+  "description": "Journal command-line text for backlog inventory whole current.",
+  "context": "Journal command-line text for backlog inventory whole current.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "inspected",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "oldest",
+      "type": "string"
+    },
+    {
+      "name": "newest",
+      "type": "string"
+    },
+    {
+      "name": "as_of",
+      "type": "string"
+    },
+    {
+      "name": "bands",
+      "type": "string"
+    },
+    {
+      "name": "holds",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "3204a95a29fbe7946aefd62e17f405bb1d6c718979b5d78c07cac5172dcd11bb",
+  "max_length": 381,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

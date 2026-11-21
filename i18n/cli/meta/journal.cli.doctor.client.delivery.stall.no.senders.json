@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for client delivery stall the solstone app hasn t added anything to your journal yet.",
+  "context": "Journal command-line text for client delivery stall the solstone app hasn t added anything to your journal yet.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e570073f14263ba974b5de8e5b8d3cb62759566b073f68f1ac493594eca6019a",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "brand",
+      "kind": "mark-word",
+      "value": "solstone"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for index fix failed files.",
+  "context": "Journal command-line text for index fix failed files.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e029ab7e20670821a3a821973b83d6e2ef3036036798806def5b4a44aebe08f0",
+  "max_length": 109,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal indexer status"
+    }
+  ]
+}

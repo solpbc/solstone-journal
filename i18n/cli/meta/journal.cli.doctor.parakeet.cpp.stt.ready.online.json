@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for parakeet cpp stt ready parakeet cpp ready server model match the signed package server reachable.",
+  "context": "Journal command-line text for parakeet cpp stt ready parakeet cpp ready server model match the signed package server reachable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9c2ed2a5ea1002d1c23f0c1e308da1bfa108418a3b3beac3b24d5e77ba423410",
+  "max_length": 115,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "backend_name",
+      "kind": "accepted-input",
+      "value": "parakeet-cpp"
+    }
+  ]
+}

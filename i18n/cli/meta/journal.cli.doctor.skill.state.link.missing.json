@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for skill state missing at.",
+  "context": "Journal command-line text for skill state missing at.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "skill",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e2e373b594a51ce0b8186386d7c66023d4676bb32d87fa5eb2545d15415c6893",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

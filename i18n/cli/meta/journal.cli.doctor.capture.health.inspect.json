@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for capture health open app health to inspect each device.",
+  "context": "Journal command-line text for capture health open app health to inspect each device.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c3ef0e79e97adeb1368391b93a0860a644637159b4ee74674b053a8b0f43b99b",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "health_path",
+      "kind": "url",
+      "value": "/app/health"
+    }
+  ]
+}

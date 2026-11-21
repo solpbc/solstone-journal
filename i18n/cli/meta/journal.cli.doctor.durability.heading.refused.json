@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for durability heading refused.",
+  "context": "Journal command-line text for durability heading refused.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7ac36e25bf59aead775afc772473d304903baf5eb07e6263e80b5377b875e1cf",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

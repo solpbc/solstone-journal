@@ -1,0 +1,45 @@
+{
+  "description": "Journal command-line text for capture recent sources.",
+  "context": "Journal command-line text for capture recent sources.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "client",
+      "type": "string"
+    },
+    {
+      "name": "hours",
+      "type": "string"
+    },
+    {
+      "name": "sources",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "4c795ec18bcd89bef4bed9db1692ac223f8f1a5b2ae56389e74271f2ec9f2d73",
+  "max_length": 253,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  },
+  "protected_slots": [
+    {
+      "name": "brand",
+      "kind": "mark-word",
+      "value": "solstone"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for durability heading aside.",
+  "context": "Journal command-line text for durability heading aside.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4d50249ca9a0a2f8065496d52f1705cf9a098abce84e0272f81e54a93406cb38",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

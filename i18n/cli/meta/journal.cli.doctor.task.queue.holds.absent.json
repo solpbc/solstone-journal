@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for task queue holds no in flight or held task partition records present.",
+  "context": "Journal command-line text for task queue holds no in flight or held task partition records present.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9a74e1fca7100d44481527ca22a445c9449efb5999a04ceb0cbd230364a557ea",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

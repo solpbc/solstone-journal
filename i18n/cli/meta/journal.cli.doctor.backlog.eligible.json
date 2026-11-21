@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for backlog eligible.",
+  "context": "Journal command-line text for backlog eligible.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "location",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "eea8fd65b74b5395994cd7924095cf259859a9fbda5adf19b37fc5c80afd4b64",
+  "max_length": 105,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

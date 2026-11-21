@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for service identity service unit is malformed no executable target in.",
+  "context": "Journal command-line text for service identity service unit is malformed no executable target in.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c2fddde38b93c4e075eaa7aa9ac57e50b86997f59063ef83eeb6c8eefc5d66ea",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

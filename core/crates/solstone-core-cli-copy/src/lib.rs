@@ -12,7 +12,7 @@ mod compiled {
 }
 
 pub use compiled::Value;
-use solstone_core_window_catalog::{ENGLISH, cli_locale};
+pub use solstone_core_window_catalog::{ENGLISH, cli_locale};
 
 pub fn render_for(locale: &str, id: &str, args: &[(&str, Value<'_>)]) -> String {
     let (locale, id) = id
@@ -36,4 +36,55 @@ pub fn text(id: &str) -> String {
 
 pub fn strings<const N: usize>(id: &str, args: [(&str, &str); N]) -> String {
     render(id, &args.map(|(name, value)| (name, Value::String(value))))
+}
+
+/// Render terminal messages whose arguments use Rust's display formatting.
+pub fn display<const N: usize>(id: &str, args: [(&str, &dyn std::fmt::Display); N]) -> String {
+    display_for(cli_locale(), id, args)
+}
+
+pub fn display_for<const N: usize>(
+    locale: &str,
+    id: &str,
+    args: [(&str, &dyn std::fmt::Display); N],
+) -> String {
+    let values = args.map(|(name, value)| (name, value.to_string()));
+    render_for(
+        locale,
+        id,
+        &values
+            .each_ref()
+            .map(|(name, value)| (*name, Value::String(value))),
+    )
+}
+
+/// Keep diagnostic facts available when a probe result outlives its caller.
+#[derive(Debug, Clone)]
+pub struct Diagnostic {
+    id: &'static str,
+    values: Vec<(&'static str, String)>,
+}
+
+impl Diagnostic {
+    pub fn new<const N: usize>(
+        id: &'static str,
+        values: [(&'static str, &dyn std::fmt::Display); N],
+    ) -> Self {
+        Self {
+            id,
+            values: values
+                .into_iter()
+                .map(|(name, value)| (name, value.to_string()))
+                .collect(),
+        }
+    }
+
+    pub fn render(&self, locale: &str) -> String {
+        let args: Vec<_> = self
+            .values
+            .iter()
+            .map(|(name, value)| (*name, Value::String(value)))
+            .collect();
+        render_for(locale, self.id, &args)
+    }
 }

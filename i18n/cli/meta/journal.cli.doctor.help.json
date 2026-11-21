@@ -1,0 +1,113 @@
+{
+  "description": "Journal command-line text for help.",
+  "context": "Journal command-line text for help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9618b81f0bcce940608f0207e1de95d903be5d7e491c1db0c8e1d4190a8ac9a8",
+  "max_length": 823,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal doctor [-h] [--verbose] [--json] [--jsonl] [--port PORT]\n                      [--readiness]"
+    },
+    {
+      "name": "build_command",
+      "kind": "command",
+      "value": "cargo run --manifest-path core/Cargo.toml -p solstone-core-doctor --bin solstone-core-doctor"
+    },
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal doctor"
+    },
+    {
+      "name": "brand",
+      "kind": "mark-word",
+      "value": "solstone"
+    },
+    {
+      "name": "port",
+      "kind": "accepted-input",
+      "value": "5015"
+    },
+    {
+      "name": "help_option",
+      "kind": "accepted-input",
+      "value": "-h, --help"
+    },
+    {
+      "name": "help_gap",
+      "kind": "whitespace",
+      "value": "         "
+    },
+    {
+      "name": "indent",
+      "kind": "whitespace",
+      "value": "  "
+    },
+    {
+      "name": "verbose_option",
+      "kind": "accepted-input",
+      "value": "--verbose"
+    },
+    {
+      "name": "verbose_gap",
+      "kind": "whitespace",
+      "value": "          "
+    },
+    {
+      "name": "json_option",
+      "kind": "accepted-input",
+      "value": "--json"
+    },
+    {
+      "name": "json_gap",
+      "kind": "whitespace",
+      "value": "             "
+    },
+    {
+      "name": "jsonl_option",
+      "kind": "accepted-input",
+      "value": "--jsonl"
+    },
+    {
+      "name": "jsonl_gap",
+      "kind": "whitespace",
+      "value": "            "
+    },
+    {
+      "name": "port_option",
+      "kind": "accepted-input",
+      "value": "--port PORT"
+    },
+    {
+      "name": "port_gap",
+      "kind": "whitespace",
+      "value": "        "
+    },
+    {
+      "name": "readiness_option",
+      "kind": "accepted-input",
+      "value": "--readiness"
+    },
+    {
+      "name": "readiness_gap",
+      "kind": "whitespace",
+      "value": "        "
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for index fix errors.",
+  "context": "Journal command-line text for index fix errors.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ba96275bf6899a9f5f111308406d0aa29f71b34efe353176b589a09b052da06f",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal indexer --rescan"
+    }
+  ]
+}

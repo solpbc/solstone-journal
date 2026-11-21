@@ -9,6 +9,8 @@
 //! nothing — so this check covers both degradations rather than adding a
 //! second unread one.
 
+use solstone_core_cli_copy as copy;
+
 use crate::{
     context::CheckContext,
     vocabulary::{Check, RunnerResult, Status, make_result, truncate},
@@ -34,14 +36,14 @@ fn day_names(value: Option<&Value>, key: Option<&str>) -> Vec<String> {
 
 /// The first recorded cause, so the owner is handed the file to look at rather
 /// than sent somewhere else to find it.
-fn first_cause(value: Option<&Value>) -> Option<(String, String)> {
+fn first_cause(value: Option<&Value>) -> Option<(Option<&str>, &str)> {
     let Some(Value::Array(rows)) = value else {
         return None;
     };
     let row = rows.first()?;
     let cause = row.get("cause").and_then(Value::as_str)?;
-    let day = row.get("day").and_then(Value::as_str).unwrap_or("that day");
-    Some((day.to_owned(), cause.to_owned()))
+    let day = row.get("day").and_then(Value::as_str);
+    Some((day, cause))
 }
 
 fn listed(days: &[String]) -> String {
@@ -52,7 +54,10 @@ fn listed(days: &[String]) -> String {
         .collect::<Vec<_>>()
         .join(", ");
     if days.len() > SHOWN {
-        format!("{shown}, and {} more", days.len() - SHOWN)
+        copy::display(
+            "journal.cli.doctor.sources.days.more",
+            [("days", &shown), ("more", &(days.len() - SHOWN))],
+        )
     } else {
         shown
     }
@@ -68,7 +73,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         return Ok(make_result(
             check,
             Status::Skip,
-            "couldn't check — no statistics to read",
+            copy::text("journal.cli.doctor.journal.sources.readable.stats.missing"),
             None::<String>,
         ));
     };
@@ -77,7 +82,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         return Ok(make_result(
             check,
             Status::Skip,
-            "couldn't check — the statistics aren't readable",
+            copy::text("journal.cli.doctor.journal.sources.readable.stats.invalid"),
             None::<String>,
         ));
     };
@@ -109,11 +114,11 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         return Ok(make_result(
             check,
             Status::Warn,
-            format!(
-                "couldn't check — the statistics are {} hours old",
-                age.as_hours()
+            copy::display(
+                "journal.cli.doctor.sources.statistics.stale",
+                [("hours", &age.as_hours())],
             ),
-            Some("run solstone journal journal-stats; check the health logs if it persists"),
+            Some(copy::text("journal.cli.doctor.sources.statistics.refresh")),
         ));
     }
 
@@ -121,7 +126,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         return Ok(make_result(
             check,
             Status::Skip,
-            "couldn't check — the statistics predate this version",
+            copy::text("journal.cli.doctor.journal.sources.readable.stats.predates"),
             None::<String>,
         ));
     }
@@ -134,7 +139,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         return Ok(make_result(
             check,
             Status::Ok,
-            "the last scan found no unreadable days",
+            copy::text("journal.cli.doctor.journal.sources.readable.healthy"),
             None::<String>,
         ));
     }
@@ -150,35 +155,51 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         // Carry the cause.  ⛔ Do not send the owner elsewhere for a reason this
         // line is already holding: the verbose flag unfilters ok and skipped
         // rows, it does not surface a per-day reason.
-        let mut line = format!(
-            "{} day(s) couldn't be scanned ({})",
-            unreadable.len(),
-            listed(&unreadable)
-        );
-        // ⚠ `cause` is an internal error string of unbounded length. Bound it
-        // the way every sibling check bounds owner-visible detail.
-        //
-        // ⛔ Carry the DAY with it. Only the first cause is shown while the
-        // line lists every affected day, so without its own day an owner
-        // repairs one file, re-runs, sees the same warning and reads it as the
-        // repair having failed rather than as days still outstanding.
-        if let Some((day, cause)) = first_cause(document.get("evidence_unreadable_days")) {
-            let cause = truncate(&cause, 400);
-            // ⛔ Only claim a file was named when the cause actually names a
-            // path. A day key that parses as 8 digits but is not a calendar
-            // date renders "invalid day 20260230; expected YYYYMMDD", and a
-            // `Validation` cause carries a bare message -- a fix line saying
-            // "the file named above" then points at nothing the owner can see.
+        let line = if let Some((day, cause)) = first_cause(document.get("evidence_unreadable_days"))
+        {
+            let cause = truncate(cause, 400);
             named_a_file = cause.contains(std::path::MAIN_SEPARATOR);
-            line.push_str(&format!(": {day}: {cause}"));
-        }
+            match day {
+                Some(day) => context.report_form.counted(
+                    "journal.cli.doctor.sources.unreadable.cause",
+                    &[("quantity", unreadable.len() as u64)],
+                    &[
+                        ("count", &unreadable.len()),
+                        ("days", &(listed(&unreadable))),
+                        ("day", &day),
+                        ("cause", &cause),
+                    ],
+                ),
+                None => context.report_form.counted(
+                    "journal.cli.doctor.sources.unreadable.undated",
+                    &[("quantity", unreadable.len() as u64)],
+                    &[
+                        ("count", &unreadable.len()),
+                        ("days", &(listed(&unreadable))),
+                        ("cause", &cause),
+                    ],
+                ),
+            }
+        } else {
+            context.report_form.counted(
+                "journal.cli.doctor.sources.unreadable",
+                &[("quantity", unreadable.len() as u64)],
+                &[
+                    ("count", &unreadable.len()),
+                    ("days", &(listed(&unreadable))),
+                ],
+            )
+        };
         parts.push(line);
     }
     if !fold_failed.is_empty() {
-        parts.push(format!(
-            "{} day(s) didn't finish processing ({})",
-            fold_failed.len(),
-            listed(&fold_failed)
+        parts.push(context.report_form.counted(
+            "journal.cli.doctor.sources.fold.failed",
+            &[("quantity", fold_failed.len() as u64)],
+            &[
+                ("count", &fold_failed.len()),
+                ("days", &(listed(&fold_failed))),
+            ],
         ));
     }
     // ⛔ `is_day_key` admits ANY eight ascii digits, so a folder named
@@ -196,17 +217,9 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         Status::Warn,
         parts.join("; "),
         Some(match (every_day_is_a_date, named_a_file) {
-            (false, _) => {
-                "check the day folders named above — a name that is not a calendar date is not a \
-                 day the journal can process"
-            }
-            (true, true) => {
-                "repair the file named above, then run solstone journal reprocess <day> for each listed \
-                 day that has already ended"
-            }
-            (true, false) => {
-                "run solstone journal reprocess <day> for each listed day that has already ended"
-            }
+            (false, _) => copy::text("journal.cli.doctor.journal.sources.readable.inspect.folders"),
+            (true, true) => copy::text("journal.cli.doctor.journal.sources.readable.repair.files"),
+            (true, false) => copy::text("journal.cli.doctor.journal.sources.readable.reprocess"),
         }),
     ))
 }

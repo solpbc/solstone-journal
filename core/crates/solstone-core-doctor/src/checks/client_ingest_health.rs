@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
+
 use crate::{
     checks::common,
     context::CheckContext,
     vocabulary::{Check, RunnerResult, Status, make_result, truncate},
 };
+use solstone_core_cli_copy as copy;
 
 use solstone_core_sol_link::ledger::IngestRejection;
 
@@ -22,7 +24,10 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             return Ok(make_result(
                 check,
                 Status::Skip,
-                format!("device records unavailable: {error}"),
+                copy::display(
+                    "journal.cli.doctor.devices.unavailable",
+                    [("error", &error)],
+                ),
                 None::<String>,
             ));
         }
@@ -31,7 +36,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         return Ok(make_result(
             check,
             Status::Skip,
-            "no registered devices",
+            copy::text("journal.cli.doctor.devices.absent"),
             None::<String>,
         ));
     }
@@ -39,12 +44,14 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         .iter()
         .filter_map(|record| {
             record.ingest_rejection.as_ref().map(|rejection| {
-                format!(
-                    "device {} failing ingest: {}, {}x since {}",
-                    record.cid,
-                    rejection.reason_code,
-                    rejection.active_count,
-                    rejection_date(rejection)
+                copy::display(
+                    "journal.cli.doctor.client.ingest.health.rejection",
+                    [
+                        ("device", &record.cid),
+                        ("reason", &rejection.reason_code),
+                        ("attempts", &rejection.active_count),
+                        ("since", &(rejection_date(rejection))),
+                    ],
                 )
             })
         })
@@ -53,7 +60,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         Ok(make_result(
             check,
             Status::Ok,
-            "no devices failing ingest",
+            copy::text("journal.cli.doctor.client.ingest.health.healthy"),
             None::<String>,
         ))
     } else {
@@ -61,7 +68,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             check,
             Status::Warn,
             truncate(&failures.join("; "), 400),
-            Some("update or restart the device, then confirm a valid upload clears the rejection"),
+            Some(copy::text("journal.cli.doctor.client.ingest.health.repair")),
         ))
     }
 }

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for status warn.",
+  "context": "Journal command-line text for status warn.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "64fab2901822ea7bb3cee537518e38d29e0ac74eab9603b5a27bea8540fd3187",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

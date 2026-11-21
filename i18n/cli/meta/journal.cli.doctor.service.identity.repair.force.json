@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for service identity run solstone journal setup force from this install to refresh the service.",
+  "context": "Journal command-line text for service identity run solstone journal setup force from this install to refresh the service.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4a6bc065614b15d96d10b1b01cdaed9223b7bcd064b24cba9b63614bfd2615d8",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "setup_command",
+      "kind": "command",
+      "value": "solstone journal setup --force"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for service identity service target mismatch.",
+  "context": "Journal command-line text for service identity service target mismatch.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "mismatch",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c11845a0900a9f214fe50bc9f4fb185abeeff6a3b76fd6082bd5db7bd69d8672",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

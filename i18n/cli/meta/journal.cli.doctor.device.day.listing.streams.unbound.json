@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for device day listing no device streams bound.",
+  "context": "Journal command-line text for device day listing no device streams bound.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d3ae25899ed83790abf2082db8c9ef072bc2e36eabea983bd90838daf34a62fe",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

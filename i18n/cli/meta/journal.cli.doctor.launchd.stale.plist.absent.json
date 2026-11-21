@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for launchd stale plist launchd plist absent.",
+  "context": "Journal command-line text for launchd stale plist launchd plist absent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f766d2b00c74c77fec7acbd776bc07850695e6404eb2bdbaad14326a2c21197b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

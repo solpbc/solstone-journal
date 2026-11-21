@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for durability action refused.",
+  "context": "Journal command-line text for durability action refused.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "84d1e1fe62773054ed9c2f1bb366d817736c2c4308b1fa2965629373071bb6d3",
+  "max_length": 158,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

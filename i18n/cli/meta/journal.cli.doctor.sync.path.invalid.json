@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for sync path invalid.",
+  "context": "Journal command-line text for sync path invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c78a0910ebe93a9cb36e9e02d2e6ebf43c75c88ccb938ebb54b53d1941bb3f3c",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

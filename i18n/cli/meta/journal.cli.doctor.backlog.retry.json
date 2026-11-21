@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for backlog retry.",
+  "context": "Journal command-line text for backlog retry.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "location",
+      "type": "string"
+    },
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "99a8ea91716ecdea1840f93a627c8fbc80a05a06f22e6393274a9187a687fbab",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

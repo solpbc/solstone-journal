@@ -1,0 +1,34 @@
+{
+  "description": "Journal command-line text for orphan pdf found.",
+  "context": "Journal command-line text for orphan pdf found.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "paths",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "81e48d36a88536bc3fb27ac8dc96996b4886673554d13c90dab07b56ee7a397a",
+  "max_length": 231,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

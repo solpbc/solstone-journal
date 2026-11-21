@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for durability more.",
+  "context": "Journal command-line text for durability more.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "be2fd4bbf856fc6f969d9a430dd57bc18274fc671d96ebb62e1859c411c76083",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

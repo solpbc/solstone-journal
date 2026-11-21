@@ -1155,26 +1155,54 @@ pub fn check_parakeet_coreml_cache_doctor(
     os_name: &str,
     arch: &str,
 ) -> Result<PathBuf, String> {
-    require_coreml_host(os_name, arch)
-        .map_err(|error| format!("parakeet check failed: {error}"))?;
+    check_parakeet_coreml_cache_doctor_in(
+        home_dir,
+        config,
+        os_name,
+        arch,
+        solstone_core_cli_copy::ENGLISH,
+    )
+}
+
+pub fn check_parakeet_coreml_cache_doctor_in(
+    home_dir: &Path,
+    config: &JournalConfigRead,
+    os_name: &str,
+    arch: &str,
+    locale: &str,
+) -> Result<PathBuf, String> {
+    require_coreml_host(os_name, arch).map_err(|error| {
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.doctor.parakeet.coreml.failed",
+            [("error", &error)],
+        )
+    })?;
     let _admission =
         hold_parakeet_coreml_read_admission(home_dir).map_err(|error| error.to_string())?;
     let sentinel =
         read_valid_parakeet_coreml_sentinel(home_dir, os_name, arch).ok_or_else(|| {
-            format!(
-                "parakeet check failed: sentinel not ready at {}",
-                default_parakeet_coreml_cache_dir(home_dir)
-                    .join(".install-complete")
-                    .display()
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.doctor.parakeet.coreml.sentinel",
+                [(
+                    "path",
+                    &(default_parakeet_coreml_cache_dir(home_dir)
+                        .join(".install-complete")
+                        .display()),
+                )],
             )
         })?;
 
     let configured = parakeet_coreml_cache_dir(config, home_dir);
     if sentinel.cache_dir() != configured {
-        return Err(format!(
-            "parakeet check failed: installed cache {} does not match configured {}",
-            sentinel.cache_dir().display(),
-            configured.display()
+        return Err(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.doctor.parakeet.coreml.configured",
+            [
+                ("installed", &(sentinel.cache_dir().display())),
+                ("configured", &configured.display()),
+            ],
         ));
     }
 
@@ -1183,29 +1211,39 @@ pub fn check_parakeet_coreml_cache_doctor(
         for file in sentinel.files() {
             let path = model_root.join(&file.file);
             let meta = fs::metadata(&path).map_err(|error| {
-                format!(
-                    "parakeet check failed: asset missing: {}: {error}",
-                    file.file
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.doctor.parakeet.coreml.missing.error",
+                    [("file", &file.file), ("error", &error)],
                 )
             })?;
             if !meta.is_file() || meta.len() != file.size_bytes {
-                return Err(format!(
-                    "parakeet check failed: asset size mismatch for {}: expected {}, found {}",
-                    file.file,
-                    file.size_bytes,
-                    meta.len()
+                return Err(solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.doctor.parakeet.coreml.size",
+                    [
+                        ("file", &file.file),
+                        ("expected", &file.size_bytes),
+                        ("found", &meta.len()),
+                    ],
                 ));
             }
             let actual_sha = sha256_file(&path).map_err(|error| {
-                format!(
-                    "parakeet check failed: failed to read {}: {error}",
-                    file.file
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.doctor.parakeet.coreml.unreadable",
+                    [("file", &file.file), ("error", &error)],
                 )
             })?;
             if actual_sha != file.sha256 {
-                return Err(format!(
-                    "parakeet check failed: asset digest mismatch for {}: expected {}, found {}",
-                    file.file, file.sha256, actual_sha
+                return Err(solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.doctor.parakeet.coreml.digest",
+                    [
+                        ("file", &file.file),
+                        ("expected", &file.sha256),
+                        ("found", &actual_sha),
+                    ],
                 ));
             }
         }
@@ -1216,9 +1254,10 @@ pub fn check_parakeet_coreml_cache_doctor(
         let rows = rows().map_err(|error| error.to_string())?;
         for row in rows {
             if !model_root.join(row.filename).is_file() {
-                return Err(format!(
-                    "parakeet check failed: asset missing: {}",
-                    row.filename
+                return Err(solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.doctor.parakeet.coreml.missing",
+                    [("file", &row.filename)],
                 ));
             }
         }

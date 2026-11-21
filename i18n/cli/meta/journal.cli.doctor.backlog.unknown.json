@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for backlog unknown.",
+  "context": "Journal command-line text for backlog unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "aae3f4fe13e61ed1cd5b1f0a74a107fc74958c1c0fa018d000e459194da1c059",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

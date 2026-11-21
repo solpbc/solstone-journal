@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for backlog hold retry.",
+  "context": "Journal command-line text for backlog hold retry.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    },
+    {
+      "name": "unit",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "42116556c30899156a1ff9a6a9cb4434d7fdd6f4d62cf0f1cd0069a2bae2b881",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

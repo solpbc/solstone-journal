@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for storage inspection log.",
+  "context": "Journal command-line text for storage inspection log.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f75a9960de928ab080b4eec374dc6bb5e8df7f3a596b6ffc5a0daac1d47799f0",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

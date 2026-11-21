@@ -1,0 +1,41 @@
+{
+  "description": "Journal command-line text for capture trouble sources.",
+  "context": "Journal command-line text for capture trouble sources.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "client",
+      "type": "string"
+    },
+    {
+      "name": "sources",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "b334e93d24d3e227adaa02f2c3be5af07267b229bc3924285d0965b6bac07a4c",
+  "max_length": 249,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  },
+  "protected_slots": [
+    {
+      "name": "brand",
+      "kind": "mark-word",
+      "value": "solstone"
+    }
+  ]
+}

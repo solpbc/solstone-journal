@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use solstone_core_cli_copy as copy;
+
 use std::path::PathBuf;
 
 use crate::{
@@ -8,7 +10,7 @@ use crate::{
     vocabulary::{Check, RunnerResult, Status, make_result},
 };
 
-const REPAIR: &str = "run solstone journal service uninstall, then run solstone journal service install separately to reinstall a headless background service";
+const REPAIR: &str = "journal.cli.doctor.launchd.stale.plist.repair";
 
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     let path = context
@@ -18,7 +20,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         return Ok(make_result(
             check,
             Status::Skip,
-            "launchd plist absent",
+            copy::text("journal.cli.doctor.launchd.stale.plist.absent"),
             None::<String>,
         ));
     }
@@ -28,9 +30,13 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             return Ok(make_result(
                 check,
                 Status::Fail,
-                format!("could not parse plist: plist::Error: {error}"),
-                Some(REPAIR),
-            ));
+                copy::display(
+                    "journal.cli.doctor.launchd.stale.plist.invalid",
+                    [("error", &error)],
+                ),
+                Some(copy::text(REPAIR)),
+            )
+            .changing_service());
         }
     };
     let executable = value
@@ -43,26 +49,31 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         return Ok(make_result(
             check,
             Status::Fail,
-            "plist is missing ProgramArguments[0]",
-            Some(REPAIR),
-        ));
+            copy::text("journal.cli.doctor.launchd.stale.plist.arguments.missing"),
+            Some(copy::text(REPAIR)),
+        )
+        .changing_service());
     };
     let executable = PathBuf::from(executable);
     if !executable.exists() {
         return Ok(make_result(
             check,
             Status::Fail,
-            format!(
-                "plist points to missing executable: {}",
-                executable.display()
+            copy::display(
+                "journal.cli.doctor.launchd.stale.plist.target.missing",
+                [("path", &executable.display())],
             ),
-            Some(REPAIR),
-        ));
+            Some(copy::text(REPAIR)),
+        )
+        .changing_service());
     }
     Ok(make_result(
         check,
         Status::Ok,
-        format!("launchd plist target exists ({})", executable.display()),
+        copy::display(
+            "journal.cli.doctor.launchd.stale.plist.target.exists",
+            [("path", &executable.display())],
+        ),
         None::<String>,
     ))
 }

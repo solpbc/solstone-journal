@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for orphan segment pdf add a readable transcript md beside the pdf original then re run.",
+  "context": "Journal command-line text for orphan segment pdf add a readable transcript md beside the pdf original then re run.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "40479b8f4adb81bf4f65367f38d20ef3e68aa576b385609247d5a020c5953ff1",
+  "max_length": 124,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "doctor_command",
+      "kind": "command",
+      "value": "solstone journal doctor"
+    },
+    {
+      "name": "transcript_file",
+      "kind": "accepted-input",
+      "value": "*_transcript.md"
+    }
+  ]
+}

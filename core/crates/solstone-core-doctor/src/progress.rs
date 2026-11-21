@@ -8,6 +8,8 @@
 //! on a slow disk, finishes, and a check that stops is named in what setup
 //! keeps. The report on stdout is unchanged.
 
+use solstone_core_cli_copy as copy;
+
 use std::io::Write;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -53,7 +55,11 @@ pub(crate) fn checking(name: &str) {
     let Some(elapsed) = clock().as_ref().map(|clock| clock.started.elapsed()) else {
         return;
     };
-    line(elapsed, format_args!("checking {name}"));
+    let seconds = format!("{:.1}", elapsed.as_secs_f64());
+    line(copy::display(
+        "journal.cli.doctor.progress.check",
+        [("seconds", &seconds), ("name", &name)],
+    ));
 }
 
 fn hashing(member: &str, hashed: u64, total: u64) {
@@ -71,19 +77,21 @@ fn hashing(member: &str, hashed: u64, total: u64) {
         now.duration_since(clock.started)
     };
     const MB: u64 = 1024 * 1024;
-    line(
-        elapsed,
-        format_args!("verifying {member}: {} of {} MB", hashed / MB, total / MB),
-    );
+    let seconds = format!("{:.1}", elapsed.as_secs_f64());
+    line(copy::display(
+        "journal.cli.doctor.progress.hash",
+        [
+            ("seconds", &seconds),
+            ("member", &member),
+            ("hashed", &(hashed / MB)),
+            ("total", &(total / MB)),
+        ],
+    ));
 }
 
-fn line(elapsed: Duration, text: std::fmt::Arguments<'_>) {
-    // A closed stderr must not fail the check that is reporting.
-    let _ = writeln!(
-        std::io::stderr().lock(),
-        "{DOCTOR_PROGRESS_PREFIX}{:.1}s {text}",
-        elapsed.as_secs_f64()
-    );
+fn line(text: String) {
+    // The setup runner recognizes this prefix even when the report is localized.
+    let _ = writeln!(std::io::stderr().lock(), "{DOCTOR_PROGRESS_PREFIX}{text}");
 }
 
 fn clock() -> std::sync::MutexGuard<'static, Option<Clock>> {

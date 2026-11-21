@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for unretryable transcribe input first row in is not valid utf 8.",
+  "context": "Journal command-line text for unretryable transcribe input first row in is not valid utf 8.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2cb6b8e3dbad9168a4b363b28df0a22e63d1378c0d45a48bda5d0db0d3441b02",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

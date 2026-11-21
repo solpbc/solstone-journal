@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for config dir readable home directory is not readable and writable.",
+  "context": "Journal command-line text for config dir readable home directory is not readable and writable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1dc127d5b16158824e9a2a73b40198b9b19532881e9ae398248b8628755d645a",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

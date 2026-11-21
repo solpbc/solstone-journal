@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for local bin solstone reachable run solstone journal setup to install the managed solstone wrapper.",
+  "context": "Journal command-line text for local bin solstone reachable run solstone journal setup to install the managed solstone wrapper.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f6529e9b69eaf2756cdf7ef2725bf43d426aa6523c2e8a627d6e29b6478f804e",
+  "max_length": 96,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "setup_command",
+      "kind": "command",
+      "value": "solstone journal setup"
+    },
+    {
+      "name": "brand",
+      "kind": "mark-word",
+      "value": "solstone"
+    }
+  ]
+}

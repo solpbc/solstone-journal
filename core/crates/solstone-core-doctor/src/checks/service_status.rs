@@ -119,14 +119,13 @@ pub enum Unavailable {
 }
 
 impl Unavailable {
-    /// Short cause, for a diagnostic line.
-    pub const fn as_str(self) -> &'static str {
+    pub(crate) fn key(self) -> &'static str {
         match self {
-            Self::NoSocket => "nothing is listening",
-            Self::Unverifiable => "can't tell whether anything is listening",
-            Self::ProbeRuntime => "nothing answered",
-            Self::Timeout => "took too long to answer",
-            Self::Transport => "the connection dropped",
+            Self::NoSocket => "absent",
+            Self::Unverifiable => "unknown",
+            Self::ProbeRuntime => "runtime",
+            Self::Timeout => "timeout",
+            Self::Transport => "transport",
         }
     }
 }

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for backup snapshot unknown.",
+  "context": "Journal command-line text for backup snapshot unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2642526c3fad2ee76ba9d4b61184c7918fd26f1c4e0c8484492f2e4b15ca7ce4",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

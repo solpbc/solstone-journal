@@ -1,27 +1,35 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
+
+use crate::vocabulary::ReportForm;
 use crate::{
     checks::service_status::{self, Unavailable},
     context::CheckContext,
     vocabulary::{Check, RunnerResult, Status, make_result},
 };
 use serde_json::Value;
+use solstone_core_cli_copy as copy;
 
 const MAX_REPORTED_ERRORS: u64 = 99;
 
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     match service_status::fetch_observe_status(context) {
-        Ok(status) => from_status(check, &status),
+        Ok(status) => evaluate(check, &status, context.report_form),
         Err(error) => unavailable(check, error),
     }
 }
 
+#[cfg(test)]
 pub(crate) fn from_status(check: Check, status: &Value) -> RunnerResult {
+    evaluate(check, status, ReportForm::Human)
+}
+
+fn evaluate(check: Check, status: &Value, form: ReportForm) -> RunnerResult {
     let Some(count) = status.get("recent_error_count").and_then(Value::as_u64) else {
         return Ok(make_result(
             check,
             Status::Warn,
-            "Sense status is incomplete: no valid nonnegative dispatch error count",
+            copy::text("journal.cli.doctor.sense.dispatch.count.invalid"),
             None::<String>,
         ));
     };
@@ -29,7 +37,7 @@ pub(crate) fn from_status(check: Check, status: &Value) -> RunnerResult {
         return Ok(make_result(
             check,
             Status::Warn,
-            "Sense status is incomplete: dispatch error count is outside its supported range",
+            copy::text("journal.cli.doctor.sense.dispatch.count.out.of.range"),
             None::<String>,
         ));
     }
@@ -37,7 +45,7 @@ pub(crate) fn from_status(check: Check, status: &Value) -> RunnerResult {
         return Ok(make_result(
             check,
             Status::Ok,
-            "no Sense dispatch errors since the last successful handler sync",
+            copy::text("journal.cli.doctor.sense.dispatch.clear"),
             None::<String>,
         ));
     }
@@ -47,38 +55,33 @@ pub(crate) fn from_status(check: Check, status: &Value) -> RunnerResult {
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|reason| !reason.is_empty());
-    let count_detail = if count == MAX_REPORTED_ERRORS {
-        "at least 99".to_owned()
-    } else {
-        count.to_string()
+    let detail = match (count == MAX_REPORTED_ERRORS, reason) {
+        (true, Some(reason)) => copy::display(
+            "journal.cli.doctor.sense.dispatch.capped.reason",
+            [("reason", &reason)],
+        ),
+        (true, None) => copy::text("journal.cli.doctor.sense.dispatch.capped.unknown"),
+        (false, Some(reason)) => form.counted(
+            "journal.cli.doctor.sense.dispatch.errors.reason",
+            &[("quantity", count)],
+            &[("count", &count), ("reason", &reason)],
+        ),
+        (false, None) => form.counted(
+            "journal.cli.doctor.sense.dispatch.errors.unknown",
+            &[("quantity", count)],
+            &[("count", &count)],
+        ),
     };
-    match reason {
-        Some(reason) => Ok(make_result(
-            check,
-            Status::Warn,
-            format!(
-                "{count_detail} Sense dispatch errors since the last successful handler sync; latest reason: {reason}"
-            ),
-            None::<String>,
-        )),
-        None => Ok(make_result(
-            check,
-            Status::Warn,
-            format!(
-                "{count_detail} Sense dispatch errors since the last successful handler sync; latest reason unavailable"
-            ),
-            None::<String>,
-        )),
-    }
+    Ok(make_result(check, Status::Warn, detail, None::<String>))
 }
 
 fn unavailable(check: Check, error: Unavailable) -> RunnerResult {
     Ok(make_result(
         check,
         Status::Warn,
-        format!(
-            "could not confirm Sense dispatch health: {}",
-            error.as_str()
+        copy::display(
+            "journal.cli.doctor.sense.dispatch.unreachable",
+            [("cause", &error.key())],
         ),
         None::<String>,
     ))

@@ -70,10 +70,20 @@ pub struct DailyCoverage {
 }
 
 pub fn package_roots() -> Result<(PathBuf, PathBuf), String> {
+    package_roots_in(solstone_core_cli_copy::ENGLISH)
+}
+
+pub fn package_roots_in(locale: &str) -> Result<(PathBuf, PathBuf), String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let directory = exe.parent().ok_or("executable has no parent")?;
+    let directory = exe.parent().ok_or_else(|| {
+        solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.doctor.package.executable.parent",
+            &[],
+        )
+    })?;
     let root = solstone_core_journal::resolve_installation_root_from_executable_dir(directory)
-        .ok_or_else(|| solstone_core_journal::describe_package_roots_miss(directory))?;
+        .ok_or_else(|| solstone_core_journal::describe_package_roots_miss_in(directory, locale))?;
     Ok((root.join("solstone/talent"), root.join("solstone/apps")))
 }
 

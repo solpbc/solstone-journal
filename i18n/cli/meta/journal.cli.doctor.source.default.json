@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for source default.",
+  "context": "Journal command-line text for source default.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "68da07cd3d070c773083ccdf29d9bb95e30597e4668da7d0971007aaf476543b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for service running no reader for the service registration.",
+  "context": "Journal command-line text for service running no reader for the service registration.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "56c181b344aca68da60655592badffb2fd5b3888dc7aed8e2bb9feb0096bd67b",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

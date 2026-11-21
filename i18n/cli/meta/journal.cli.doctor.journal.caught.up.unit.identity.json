@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for journal caught up couldn t read daily unit file on day record identity does not.",
+  "context": "Journal command-line text for journal caught up couldn t read daily unit file on day record identity does not.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "file_name",
+      "type": "string"
+    },
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d81807fbc2414d7468f8d7674dafb97f5bfecf2d02f31a3eeea86d847d6580b5",
+  "max_length": 133,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -5004,6 +5004,7 @@ dependencies = [
  "solstone-core-backup",
  "solstone-core-brain",
  "solstone-core-callosum",
+ "solstone-core-cli-copy",
  "solstone-core-distribution",
  "solstone-core-facets",
  "solstone-core-ingest",
@@ -5021,6 +5022,7 @@ dependencies = [
  "solstone-core-system-health",
  "solstone-core-time",
  "solstone-core-transcribe",
+ "solstone-core-window-catalog",
  "tempfile",
  "tokio",
  "windows-sys 0.61.2",
@@ -5668,6 +5670,7 @@ name = "solstone-core-journal"
 version = "2.0.86"
 dependencies = [
  "serde_json",
+ "solstone-core-cli-copy",
  "toml_edit",
 ]
 
@@ -5882,6 +5885,7 @@ dependencies = [
  "solstone-core-artifact-download",
  "solstone-core-assets",
  "solstone-core-brain",
+ "solstone-core-cli-copy",
  "solstone-core-distribution",
  "solstone-core-installed-payload",
  "solstone-core-journal-config",
@@ -6874,6 +6878,7 @@ dependencies = [
  "solstone-core-assets",
  "solstone-core-brain",
  "solstone-core-callosum",
+ "solstone-core-cli-copy",
  "solstone-core-distribution",
  "solstone-core-facets",
  "solstone-core-format",
@@ -6910,6 +6915,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "solstone-core-cli-copy",
  "solstone-core-depict",
  "solstone-core-format",
  "solstone-core-generate",
@@ -7160,6 +7166,7 @@ dependencies = [
  "solstone-core-brain",
  "solstone-core-callosum",
  "solstone-core-ced-analyze",
+ "solstone-core-cli-copy",
  "solstone-core-distribution",
  "solstone-core-format",
  "solstone-core-installation-identity",

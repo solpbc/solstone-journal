@@ -38,6 +38,8 @@ pub enum CliError {
     SupervisorUnavailable,
     /// The sibling speaker-analysis runtime is missing an executable or model asset.
     SpeakersInstallation { message: String },
+    /// A failed installation check, with its original diagnostic for display in another language.
+    SpeakersPrerequisite { detail: String, message: String },
 }
 
 impl CliError {
@@ -47,14 +49,16 @@ impl CliError {
             Self::Usage { .. } => 2,
             Self::SupervisorSpawnedUnavailable => 75,
             Self::SupervisorUnavailable => 1,
-            Self::SpeakersInstallation { .. } => 78,
+            Self::SpeakersInstallation { .. } | Self::SpeakersPrerequisite { .. } => 78,
         }
     }
 
     /// Stderr text, deliberately absent for supervisor-spawned temporary failure.
     pub fn message(&self) -> Option<&str> {
         match self {
-            Self::Usage { message } | Self::SpeakersInstallation { message } => Some(message),
+            Self::Usage { message }
+            | Self::SpeakersInstallation { message }
+            | Self::SpeakersPrerequisite { message, .. } => Some(message),
             Self::SupervisorUnavailable => Some(SUPERVISOR_MESSAGE),
             Self::SupervisorSpawnedUnavailable => None,
         }
@@ -194,6 +198,19 @@ where
 /// Check the native helper and pinned model assets for host diagnostics.
 pub fn check_speakers_analyze_installation() -> Result<(), CliError> {
     crate::speakers_installation::validate_speakers_analyze_runtime().map(|_| ())
+}
+
+/// Run host diagnostics using the caller's display language.
+pub fn check_speakers_analyze_installation_in(locale: &str) -> Result<(), CliError> {
+    #[cfg(windows)]
+    {
+        crate::speakers_installation::validate_speakers_analyze_runtime_in(locale).map(|_| ())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = locale;
+        check_speakers_analyze_installation()
+    }
 }
 
 /// The repair guidance paired with speakers-analyze installation failures.
@@ -443,14 +460,41 @@ fn is_out_of_space(error: &(dyn std::error::Error + 'static)) -> bool {
     false
 }
 
-pub(crate) fn installation_error(detail: impl Into<String>) -> CliError {
-    CliError::SpeakersInstallation {
-        message: format!(
-            "Speakers-analyze installation is incomplete ({}). Repair: {}.",
-            detail.into(),
-            speakers_analyze_repair_text()
-        ),
+pub fn speakers_installation_detail_in(error: &CliError, locale: &str) -> Option<String> {
+    match error {
+        CliError::SpeakersPrerequisite { detail, .. } => Some(prerequisite_message(detail, locale)),
+        _ => error.message().map(str::to_owned),
     }
+}
+
+fn prerequisite_message(detail: &str, locale: &str) -> String {
+    if cfg!(target_os = "macos") {
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.doctor.speakers.installation.app",
+            [("detail", &detail)],
+        )
+    } else {
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.doctor.speakers.installation.journal",
+            [("detail", &detail)],
+        )
+    }
+}
+
+pub fn speakers_repair_in(locale: &str) -> String {
+    if cfg!(target_os = "macos") {
+        solstone_core_cli_copy::render_for(locale, "journal.cli.doctor.speakers.reinstall.app", &[])
+    } else {
+        solstone_core_cli_copy::render_for(locale, "journal.cli.doctor.parakeet.reinstall", &[])
+    }
+}
+
+pub(crate) fn installation_error(detail: impl Into<String>) -> CliError {
+    let detail = detail.into();
+    let message = prerequisite_message(&detail, solstone_core_cli_copy::ENGLISH);
+    CliError::SpeakersPrerequisite { detail, message }
 }
 
 fn usage(message: &str) -> CliError {

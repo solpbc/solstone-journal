@@ -1,0 +1,43 @@
+{
+  "description": "Journal command-line text for backup attempt refused.",
+  "context": "Journal command-line text for backup attempt refused.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "outcome",
+      "type": "string"
+    },
+    {
+      "name": "date",
+      "type": "string"
+    },
+    {
+      "name": "history",
+      "type": "string"
+    },
+    {
+      "name": "association",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "eb5466e13a8a9d15040aeb432895120bda028c9f4009c2f7d0da935eadf9381a",
+  "max_length": 433,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "outcome",
+    "type": "string",
+    "enum_values": [
+      "success",
+      "incomplete",
+      "failed"
+    ],
+    "enum_default": "failed"
+  }
+}

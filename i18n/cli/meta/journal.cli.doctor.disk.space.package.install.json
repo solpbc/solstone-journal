@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for disk space a package install is replaced in place when it updates so no.",
+  "context": "Journal command-line text for disk space a package install is replaced in place when it updates so no.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4a251a8a0b57ebdbbf26cdea0b75dca42143c12f2eb107b85c5646630b1eca94",
+  "max_length": 115,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for skill state stale router skill link at.",
+  "context": "Journal command-line text for skill state stale router skill link at.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "277686df1e551e52aeaa4a2b06c45b03d1b0065b06c6a12cb0689c33bcd50f49",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

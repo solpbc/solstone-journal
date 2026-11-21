@@ -1,0 +1,35 @@
+{
+  "description": "Journal command-line text for backlog caught capped.",
+  "context": "Journal command-line text for backlog caught capped.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day_count",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "unit_count",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "efba443e47cba4951ba6703425cf79d4fe642df1b12b3c787b7b4c633e17c4c7",
+  "max_length": 342,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "day_count",
+    "type": "cardinal"
+  }
+}

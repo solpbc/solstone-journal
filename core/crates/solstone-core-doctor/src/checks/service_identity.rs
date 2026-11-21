@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use solstone_core_cli_copy as copy;
+
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -15,7 +17,7 @@ use crate::{
     vocabulary::{Check, RunnerResult, Status, make_result},
 };
 
-const REPAIR: &str = "run solstone journal setup to reinstall the service";
+const REPAIR: &str = "journal.cli.doctor.service.identity.repair";
 
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     if context.platform == crate::vocabulary::Platform::Windows {
@@ -25,7 +27,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         return Ok(make_result(
             check,
             Status::Skip,
-            "no local journal service",
+            copy::text("journal.cli.doctor.service.absent"),
             None::<String>,
         ));
     };
@@ -33,7 +35,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         return Ok(make_result(
             check,
             Status::Skip,
-            "no local journal service",
+            copy::text("journal.cli.doctor.service.absent"),
             None::<String>,
         ));
     }
@@ -46,12 +48,13 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         return Ok(make_result(
             check,
             Status::Fail,
-            format!(
-                "service unit is malformed: no executable target in {}",
-                path.display()
+            copy::display(
+                "journal.cli.doctor.service.identity.target.absent",
+                [("path", &path.display())],
             ),
-            Some(REPAIR),
-        ));
+            Some(copy::text(REPAIR)),
+        )
+        .changing_service());
     };
     let raw = &parts[0];
     let resolved = resolve_service_target(raw);
@@ -60,9 +63,9 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         return Ok(make_result(
             check,
             Status::Ok,
-            format!(
-                "service target matches current install: {raw} -> {}",
-                resolved.display()
+            copy::display(
+                "journal.cli.doctor.service.identity.target.current",
+                [("raw", &raw), ("path", &resolved.display())],
             ),
             None::<String>,
         ));
@@ -70,13 +73,19 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     Ok(make_result(
         check,
         Status::Fail,
-        format!(
-            "service target mismatch: {raw} resolves to {}, expected {}",
-            resolved.display(),
-            expected_solstone.display()
+        copy::display(
+            "journal.cli.doctor.service.identity.target.mismatch",
+            [
+                ("raw", &raw),
+                ("resolved", &resolved.display()),
+                ("expected", &expected_solstone.display()),
+            ],
         ),
-        Some("run solstone journal setup --force from this install to refresh the service"),
-    ))
+        Some(copy::text(
+            "journal.cli.doctor.service.identity.repair.force",
+        )),
+    )
+    .changing_service())
 }
 
 /// The Windows service is a Task Scheduler registration rather than a unit
@@ -87,13 +96,16 @@ fn windows(context: &CheckContext, check: Check) -> RunnerResult {
         WindowsServiceRegistration::Absent => Ok(make_result(
             check,
             Status::Skip,
-            "no local journal service",
+            copy::text("journal.cli.doctor.service.absent"),
             None::<String>,
         )),
         WindowsServiceRegistration::Unreadable(reason) => Ok(make_result(
             check,
             Status::Skip,
-            format!("couldn't read the journal's service registration — {reason}"),
+            copy::display(
+                "journal.cli.doctor.service.registration.unreadable",
+                [("reason", &reason)],
+            ),
             None::<String>,
         )),
         WindowsServiceRegistration::Present {
@@ -102,7 +114,10 @@ fn windows(context: &CheckContext, check: Check) -> RunnerResult {
         } => Ok(make_result(
             check,
             Status::Ok,
-            format!("service target matches current install: {command}"),
+            copy::display(
+                "journal.cli.doctor.service.identity.windows.current",
+                [("command", &command)],
+            ),
             None::<String>,
         )),
         WindowsServiceRegistration::Present {
@@ -111,9 +126,15 @@ fn windows(context: &CheckContext, check: Check) -> RunnerResult {
         } => Ok(make_result(
             check,
             Status::Fail,
-            format!("service target mismatch: {mismatch}"),
-            Some("run solstone journal setup --force from this install to refresh the service"),
-        )),
+            copy::display(
+                "journal.cli.doctor.service.identity.windows.mismatch",
+                [("mismatch", &mismatch)],
+            ),
+            Some(copy::text(
+                "journal.cli.doctor.service.identity.repair.force",
+            )),
+        )
+        .changing_service()),
     }
 }
 

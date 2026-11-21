@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for backup status backup status unavailable invalid pause setting.",
+  "context": "Journal command-line text for backup status backup status unavailable invalid pause setting.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7c0786e3d758b420936232ab2a80f35c64cc6334ea955bc802ca72fe8e636405",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

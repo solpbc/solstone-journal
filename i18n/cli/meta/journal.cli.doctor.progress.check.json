@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for progress check.",
+  "context": "Journal command-line text for progress check.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "seconds",
+      "type": "string"
+    },
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9172a8092022a3d0fd45f8dfc118dcaa33a5aa65a6d5cff2682dbfb050361044",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

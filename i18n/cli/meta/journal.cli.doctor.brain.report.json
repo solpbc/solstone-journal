@@ -1,0 +1,59 @@
+{
+  "description": "Journal command-line text for brain report.",
+  "context": "Journal command-line text for brain report.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "headline",
+      "type": "string"
+    },
+    {
+      "name": "state",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    },
+    {
+      "name": "component",
+      "type": "string"
+    },
+    {
+      "name": "age",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b6b30c19b6552be122896aafdc53c9bcf631c17b2138df9e6be5a69b6ae04831",
+  "max_length": 159,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "state_key",
+      "kind": "accepted-input",
+      "value": "state"
+    },
+    {
+      "name": "reason_key",
+      "kind": "accepted-input",
+      "value": "reason"
+    },
+    {
+      "name": "component_key",
+      "kind": "accepted-input",
+      "value": "component"
+    },
+    {
+      "name": "age_key",
+      "kind": "accepted-input",
+      "value": "evidence_age"
+    }
+  ]
+}

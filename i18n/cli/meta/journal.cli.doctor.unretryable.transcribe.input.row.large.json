@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for unretryable transcribe input first row in exceeds byte limit.",
+  "context": "Journal command-line text for unretryable transcribe input first row in exceeds byte limit.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "38554169beb4bc647831e3e8f6d5bd9b6eaa1f6e78c787a5387ac5eca04ab86b",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for default stt ready parakeet not supported on this platform.",
+  "context": "Journal command-line text for default stt ready parakeet not supported on this platform.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "17279a7c7a8cb7e7625cfee1f2122109c57c09ec42fa0b2c3294829a51de0648",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

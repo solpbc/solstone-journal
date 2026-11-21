@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for journal dir writable journal path exists but is not a directory.",
+  "context": "Journal command-line text for journal dir writable journal path exists but is not a directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "45d7bd8dde4eea1ed30a7b82a4d668430c0b90a06198aff9992b3fad4127f180",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

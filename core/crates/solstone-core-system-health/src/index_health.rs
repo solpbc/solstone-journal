@@ -133,11 +133,26 @@ pub fn evaluate_index_health_with(
     journal: &Path,
     observations: &IndexingObservations,
 ) -> IndexHealth {
+    evaluate_index_health_with_in(journal, observations, ENGLISH)
+}
+
+pub fn evaluate_index_health_with_in(
+    journal: &Path,
+    observations: &IndexingObservations,
+    locale: &str,
+) -> IndexHealth {
     match inspect_index(journal) {
-        Ok(status) => evaluate_index_health_of(journal, &status, observations),
+        Ok(status) => evaluate_index_health_of_in(journal, &status, observations, locale),
         Err(error) => {
-            log::warn!("search index status unavailable: {error}");
-            with_work_list(journal, unmeasured(ENGLISH), ENGLISH)
+            log::warn!(
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.doctor.search.log.unavailable",
+                    [("error", &(error))]
+                )
+            );
+            with_work_list(journal, unmeasured(locale), locale)
         }
     }
 }
@@ -463,7 +478,14 @@ fn with_work_list(journal: &Path, mut health: IndexHealth, locale: &str) -> Inde
             }
         }
         Err(error) => {
-            log::warn!("search work list could not be read: {error}");
+            log::warn!(
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.doctor.search.log.work",
+                    [("error", &(error))]
+                )
+            );
             health.state = IndexHealthState::Failing;
             health.failure = Some(IndexFailure::ScanFailed);
             health.text = text(
@@ -485,7 +507,14 @@ fn with_work_list(journal: &Path, mut health: IndexHealth, locale: &str) -> Inde
                 );
             }
             Ok(None) => {}
-            Err(error) => log::warn!("last finished search check could not be read: {error}"),
+            Err(error) => log::warn!(
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.doctor.search.log.finished",
+                    [("error", &(error))]
+                )
+            ),
         }
     }
     if health.check_overdue

@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for unretryable transcribe input first row in is not valid json.",
+  "context": "Journal command-line text for unretryable transcribe input first row in is not valid json.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1446c92256395a2328ee67503285dab1e029d54431b9910177ab567c830ca5d6",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

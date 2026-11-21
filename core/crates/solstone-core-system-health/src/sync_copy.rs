@@ -4,12 +4,9 @@
 //! Terminal-safe presentation of descriptor-bound sync scan results.
 
 use std::ffi::OsString;
-use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use solstone_core_journal_io::{FlatDirectoryError, JournalEntryKind};
-#[cfg(unix)]
-use solstone_core_system::lifecycle::ADMISSION_WAIT_TRANSIENT_COPY;
 use solstone_core_system::lifecycle::{
     HeartbeatClassification, SyncCheckResult, SyncIncompleteSnapshotReason, SyncScanFailure,
     SyncUnsafeReason, is_admission_wait_marker_filename_candidate,
@@ -40,23 +37,27 @@ pub enum SyncRescanDiagnosis {
 pub const HEARTBEAT_WITHOUT_WAIT_MARKER_COPY: &str = "Installation: needs attention\na recent heartbeat from another run is present.\nwait a moment, then try again.";
 pub const ADMISSION_WAIT_UNVERIFIABLE_COPY: &str = "Installation: needs attention\nstartup status couldn't be verified.\nwait a moment, then try again.";
 
-/// Format the passive waiting state from the lifecycle-owned transient copy.
+/// Format the passive waiting state.
 #[must_use]
-#[cfg(unix)]
 pub fn format_admission_waiting_copy() -> String {
-    format!("Installation: waiting\n{ADMISSION_WAIT_TRANSIENT_COPY}")
+    admission_waiting_in(solstone_core_cli_copy::ENGLISH)
 }
 
-/// Non-Unix platforms cannot inspect an admission wait marker.
-#[must_use]
-#[cfg(not(unix))]
-pub fn format_admission_waiting_copy() -> String {
-    ADMISSION_WAIT_UNVERIFIABLE_COPY.to_owned()
+fn admission_waiting_in(locale: &str) -> String {
+    if cfg!(unix) {
+        solstone_core_cli_copy::render_for(locale, "journal.cli.doctor.sync.waiting", &[])
+    } else {
+        solstone_core_cli_copy::render_for(locale, "journal.cli.doctor.sync.unverifiable", &[])
+    }
 }
 
 /// Format the locked terminal copy for a descriptor-bound sync scan failure.
 #[must_use]
 pub fn format_sync_scan_failure_copy(failure: &SyncScanFailure) -> String {
+    format_sync_scan_failure_copy_in(failure, solstone_core_cli_copy::ENGLISH)
+}
+
+pub fn format_sync_scan_failure_copy_in(failure: &SyncScanFailure, locale: &str) -> String {
     match failure {
         SyncScanFailure::UnsafeEntry {
             folder,
@@ -65,40 +66,41 @@ pub fn format_sync_scan_failure_copy(failure: &SyncScanFailure) -> String {
             reason,
             source,
         } => format_unsafe_named_entry(
+            locale,
             folder,
             name,
-            entry_kind_description(*kind),
-            unsafe_reason(reason, source.as_deref()),
+            &entry_kind_description(*kind, locale),
+            unsafe_reason(reason, source.as_deref(), locale),
         ),
         SyncScanFailure::IncompleteSnapshot {
             folder,
             name,
             reason,
         } => format_unsafe_named_entry(
+            locale,
             folder,
             name,
-            "changed or disappeared during inspection",
-            incomplete_snapshot_reason(reason),
+            &solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.doctor.sync.entry.replaced",
+                &[],
+            ),
+            incomplete_snapshot_reason(reason, locale),
         ),
-        SyncScanFailure::DirectoryBinding { path, reason, .. } => format!(
-            "Installation: needs attention\n\
-             part of your journal can't be checked safely.\n\
-             check the path named under details. it needs to be an ordinary folder inside your journal that you can open before you try again.\n\n\
-             details:\n\
-             path: {}\n\
-             reason: {}",
-            sanitize_path(path),
-            flat_directory_reason(reason.as_ref()),
-        ),
-        SyncScanFailure::CountCapExceeded { folder, .. } => format!(
-            "Installation: needs attention\n\
-             your journal has too many items to check safely.\n\
-             review the items in your journal's `health/sync` folder. move only items you know do not belong there until 256 or fewer remain, then try again.\n\n\
-             details:\n\
-             folder: {}\n\
-             items found: more than 256\n\
-             maximum checked: 256",
-            sanitize_path(folder),
+        SyncScanFailure::DirectoryBinding { path, reason, .. } => {
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.doctor.sync.folder.unsafe",
+                [
+                    ("path", &(sanitize_path(path))),
+                    ("reason", &(flat_directory_reason(reason.as_ref(), locale))),
+                ],
+            )
+        }
+        SyncScanFailure::CountCapExceeded { folder, .. } => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.doctor.sync.folder.full",
+            [("folder", &(sanitize_path(folder)))],
         ),
     }
 }
@@ -111,27 +113,50 @@ pub fn describe_sync_rescan(
     now: f64,
     process_source: &dyn ProcessInstanceSource,
 ) -> SyncRescanDiagnosis {
+    describe_sync_rescan_in(
+        journal,
+        self_filename,
+        now,
+        process_source,
+        solstone_core_cli_copy::ENGLISH,
+    )
+}
+
+pub fn describe_sync_rescan_in(
+    journal: &Path,
+    self_filename: &str,
+    now: f64,
+    process_source: &dyn ProcessInstanceSource,
+    locale: &str,
+) -> SyncRescanDiagnosis {
     #[cfg(not(any(unix, windows)))]
     {
         let _ = (journal, self_filename, now, process_source);
-        return SyncRescanDiagnosis::Unsafe(
-            "Installation: needs attention\nsync rescan capability is unavailable on this platform."
-                .to_owned(),
-        );
+        return SyncRescanDiagnosis::Unsafe(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.doctor.sync.unsupported",
+            &[],
+        ));
     }
     #[cfg(any(unix, windows))]
     {
         match rescan_sync_read_only(journal, self_filename, None, now) {
             Ok(SyncRescan::Absent) => SyncRescanDiagnosis::Clean(None),
             Ok(SyncRescan::Complete(result)) => {
-                diagnose_complete_rescan(result, now, process_source)
+                diagnose_complete_rescan_in(locale, result, now, process_source)
             }
             Err(failure) if admission_wait_marker_scan_failure(&failure) => {
                 SyncRescanDiagnosis::AdmissionWaitNeedsAttention(
-                    ADMISSION_WAIT_UNVERIFIABLE_COPY.to_owned(),
+                    solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.doctor.sync.unverifiable",
+                        &[],
+                    ),
                 )
             }
-            Err(failure) => SyncRescanDiagnosis::Unsafe(format_sync_scan_failure_copy(&failure)),
+            Err(failure) => {
+                SyncRescanDiagnosis::Unsafe(format_sync_scan_failure_copy_in(&failure, locale))
+            }
         }
     }
 }
@@ -147,7 +172,8 @@ fn admission_wait_marker_scan_failure(failure: &SyncScanFailure) -> bool {
     is_admission_wait_marker_filename_candidate(name)
 }
 
-fn diagnose_complete_rescan(
+fn diagnose_complete_rescan_in(
+    locale: &str,
     result: SyncCheckResult,
     now: f64,
     _process_source: &dyn ProcessInstanceSource,
@@ -184,11 +210,11 @@ fn diagnose_complete_rescan(
     }
     if has_unverifiable_marker {
         return SyncRescanDiagnosis::AdmissionWaitNeedsAttention(
-            ADMISSION_WAIT_UNVERIFIABLE_COPY.to_owned(),
+            solstone_core_cli_copy::render_for(locale, "journal.cli.doctor.sync.unverifiable", &[]),
         );
     }
     if has_waiting_marker {
-        return SyncRescanDiagnosis::Waiting(format_admission_waiting_copy());
+        return SyncRescanDiagnosis::Waiting(admission_waiting_in(locale));
     }
     if result.live_peer_observations.iter().any(|peer| {
         matches!(
@@ -198,42 +224,52 @@ fn diagnose_complete_rescan(
         )
     }) {
         return SyncRescanDiagnosis::AdmissionWaitNeedsAttention(
-            ADMISSION_WAIT_UNVERIFIABLE_COPY.to_owned(),
+            solstone_core_cli_copy::render_for(locale, "journal.cli.doctor.sync.unverifiable", &[]),
         );
     }
     if result.is_boot_conflict() {
-        return SyncRescanDiagnosis::HeartbeatNeedsAttention(
-            HEARTBEAT_WITHOUT_WAIT_MARKER_COPY.to_owned(),
-        );
+        return SyncRescanDiagnosis::HeartbeatNeedsAttention(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.doctor.sync.heartbeat",
+            &[],
+        ));
     }
     SyncRescanDiagnosis::Clean(Some(result))
 }
 
 fn format_unsafe_named_entry(
+    locale: &str,
     folder: &Path,
     name: &OsString,
     entry_type: &str,
     reason: String,
 ) -> String {
     let path = joined_path(folder, name);
-    let mut output = format!(
-        "Installation: needs attention\n\
-         your journal contains an item that can't be checked safely.\n\
-         move the item named under details out of your journal's `health/sync` folder, then try again.\n\n\
-         details:\n\
-         path: {}\n\
-         type: {entry_type}\n\
-         reason: {reason}",
-        sanitize_path(&path),
-    );
     if name.to_str().is_none() {
-        let _ = write!(
-            output,
-            "\nname bytes: {}",
-            sanitize_os_bytes_for_terminal(name.as_encoded_bytes())
-        );
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.doctor.sync.entry.unsafe.bytes",
+            [
+                ("path", &(sanitize_path(&path))),
+                ("entry_type", &entry_type),
+                ("reason", &reason),
+                (
+                    "bytes",
+                    &(sanitize_os_bytes_for_terminal(name.as_encoded_bytes())),
+                ),
+            ],
+        )
+    } else {
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.doctor.sync.entry.unsafe",
+            [
+                ("path", &(sanitize_path(&path))),
+                ("entry_type", &entry_type),
+                ("reason", &reason),
+            ],
+        )
     }
-    output
 }
 
 fn joined_path(folder: &Path, name: &OsString) -> PathBuf {
@@ -250,88 +286,164 @@ fn sanitize_display(value: &impl std::fmt::Display) -> String {
     sanitize_os_bytes_for_terminal(value.to_string().as_bytes())
 }
 
-fn unsafe_reason(reason: &SyncUnsafeReason, source: Option<&FlatDirectoryError>) -> String {
-    let reason = sanitize_display(reason);
+fn unsafe_reason(
+    reason: &SyncUnsafeReason,
+    source: Option<&FlatDirectoryError>,
+    locale: &str,
+) -> String {
+    let reason = match reason {
+        SyncUnsafeReason::NonRegular { kind } => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.doctor.sync.reason.nonregular",
+            [("kind", &(format!("{kind:?}")))],
+        ),
+        SyncUnsafeReason::OversizedRegular { size, limit } => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.doctor.sync.reason.oversized",
+            [("size", &size), ("limit", &limit)],
+        ),
+        SyncUnsafeReason::Unreadable { .. } => {
+            solstone_core_cli_copy::render_for(locale, "journal.cli.doctor.sync.reason.read", &[])
+        }
+    };
     match source {
-        Some(source) => format!("{reason}: {}", flat_directory_reason(source)),
+        Some(source) => format!("{reason}: {}", flat_directory_reason(source, locale)),
         None => reason,
     }
 }
 
-fn incomplete_snapshot_reason(reason: &SyncIncompleteSnapshotReason) -> String {
+fn incomplete_snapshot_reason(reason: &SyncIncompleteSnapshotReason, locale: &str) -> String {
     match reason {
         SyncIncompleteSnapshotReason::DisappearedDuringObservation => {
-            "entry disappeared during observation".to_owned()
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.doctor.sync.reason.disappeared",
+                &[],
+            )
         }
-        SyncIncompleteSnapshotReason::ReplacedDuringObservation { source } => format!(
-            "entry changed during observation: {}",
-            flat_directory_reason(source.as_ref())
-        ),
+        SyncIncompleteSnapshotReason::ReplacedDuringObservation { source } => {
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.doctor.sync.entry.changed",
+                [("reason", &(flat_directory_reason(source.as_ref(), locale)))],
+            )
+        }
     }
 }
 
-fn flat_directory_reason(error: &FlatDirectoryError) -> String {
+fn flat_directory_reason(error: &FlatDirectoryError, locale: &str) -> String {
     match error {
-        FlatDirectoryError::InvalidRelativePath { path, reason } => format!(
-            "invalid flat-directory path {}: {}",
-            sanitize_path(path),
-            sanitize_display(reason)
+        FlatDirectoryError::InvalidRelativePath { path, reason } => {
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.doctor.sync.path.invalid",
+                [
+                    ("path", &(sanitize_path(path))),
+                    ("reason", &(sanitize_display(reason))),
+                ],
+            )
+        }
+        FlatDirectoryError::InvalidName { name, reason } => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.doctor.sync.entry.invalid",
+            [
+                (
+                    "entry",
+                    &(sanitize_os_bytes_for_terminal(name.as_encoded_bytes())),
+                ),
+                ("reason", &(sanitize_display(reason))),
+            ],
         ),
-        FlatDirectoryError::InvalidName { name, reason } => format!(
-            "invalid flat-directory entry {}: {}",
-            sanitize_os_bytes_for_terminal(name.as_encoded_bytes()),
-            sanitize_display(reason)
+        FlatDirectoryError::NotDirectory { path } => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.doctor.sync.directory.required",
+            [("path", &(sanitize_path(path)))],
         ),
-        FlatDirectoryError::NotDirectory { path } => format!(
-            "flat-directory descendant is not a directory: {}",
-            sanitize_path(path)
+        FlatDirectoryError::SymlinkRefused { path } => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.doctor.sync.symlink",
+            [("path", &(sanitize_path(path)))],
         ),
-        FlatDirectoryError::SymlinkRefused { path } => format!(
-            "flat-directory descendant is a symlink: {}",
-            sanitize_path(path)
-        ),
-        FlatDirectoryError::NotRegular { path } => format!(
-            "flat-directory entry is not a regular file: {}",
-            sanitize_path(path)
+        FlatDirectoryError::NotRegular { path } => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.doctor.sync.file.required",
+            [("path", &(sanitize_path(path)))],
         ),
         FlatDirectoryError::SizeLimitExceeded {
             path,
             kind,
             size,
             limit,
-        } => format!(
-            "flat-directory entry exceeds observed-read limit: {} is {kind:?}, {size} bytes exceeds {limit}",
-            sanitize_path(path)
+        } => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.doctor.sync.size",
+            [
+                ("path", &(sanitize_path(path))),
+                ("kind", &(format!("{:?}", kind))),
+                ("size", &size),
+                ("limit", &limit),
+            ],
         ),
-        FlatDirectoryError::IdentityChanged { path } => {
-            format!("flat-directory identity changed: {}", sanitize_path(path))
-        }
-        FlatDirectoryError::EnumerationChanged { path } => format!(
-            "flat-directory entry vanished while listing: {}",
-            sanitize_path(path)
+        FlatDirectoryError::IdentityChanged { path } => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.doctor.sync.identity.changed",
+            [("path", &(sanitize_path(path)))],
+        ),
+        FlatDirectoryError::EnumerationChanged { path } => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.doctor.sync.entry.vanished",
+            [("path", &(sanitize_path(path)))],
         ),
         FlatDirectoryError::Io {
             operation,
             path,
             source,
-        } => format!(
-            "{operation} failed for {}: {}",
-            sanitize_path(path),
-            sanitize_display(source)
+        } => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.doctor.sync.io",
+            [
+                ("operation", &operation),
+                ("path", &(sanitize_path(path))),
+                ("reason", &(sanitize_display(source))),
+            ],
         ),
     }
 }
 
-fn entry_kind_description(kind: JournalEntryKind) -> &'static str {
+fn entry_kind_description(kind: JournalEntryKind, locale: &str) -> String {
     match kind {
-        JournalEntryKind::RegularFile => "regular file",
-        JournalEntryKind::Directory => "directory",
-        JournalEntryKind::Symlink => "symbolic link",
-        JournalEntryKind::Fifo => "named pipe",
-        JournalEntryKind::Socket => "Unix socket",
-        JournalEntryKind::CharacterDevice => "character device",
-        JournalEntryKind::BlockDevice => "block device",
-        JournalEntryKind::Other => "other filesystem object",
+        JournalEntryKind::RegularFile => solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.doctor.sync.kind.regularfile",
+            &[],
+        ),
+        JournalEntryKind::Directory => solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.doctor.sync.kind.directory",
+            &[],
+        ),
+        JournalEntryKind::Symlink => {
+            solstone_core_cli_copy::render_for(locale, "journal.cli.doctor.sync.kind.symlink", &[])
+        }
+        JournalEntryKind::Fifo => {
+            solstone_core_cli_copy::render_for(locale, "journal.cli.doctor.sync.kind.fifo", &[])
+        }
+        JournalEntryKind::Socket => {
+            solstone_core_cli_copy::render_for(locale, "journal.cli.doctor.sync.kind.socket", &[])
+        }
+        JournalEntryKind::CharacterDevice => solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.doctor.sync.kind.characterdevice",
+            &[],
+        ),
+        JournalEntryKind::BlockDevice => solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.doctor.sync.kind.blockdevice",
+            &[],
+        ),
+        JournalEntryKind::Other => {
+            solstone_core_cli_copy::render_for(locale, "journal.cli.doctor.sync.kind.other", &[])
+        }
     }
 }
 
@@ -355,7 +467,7 @@ mod tests {
     };
 
     use super::{
-        SyncRescanDiagnosis, diagnose_complete_rescan, format_admission_waiting_copy,
+        SyncRescanDiagnosis, diagnose_complete_rescan_in, format_admission_waiting_copy,
         format_sync_scan_failure_copy,
     };
 
@@ -465,7 +577,8 @@ mod tests {
             },
         };
         assert!(matches!(
-            diagnose_complete_rescan(
+            diagnose_complete_rescan_in(
+                solstone_core_cli_copy::ENGLISH,
                 complete(HeartbeatClassification::AdmissionWaitMarker(marker), false),
                 100.0,
                 &source,
@@ -499,7 +612,8 @@ mod tests {
             },
         };
         assert!(matches!(
-            diagnose_complete_rescan(
+            diagnose_complete_rescan_in(
+                solstone_core_cli_copy::ENGLISH,
                 SyncCheckResult {
                     snapshot: SyncSnapshot::default(),
                     peer_observations: vec![live, malformed],
@@ -519,7 +633,8 @@ mod tests {
             result: InspectResult::Unverifiable,
         };
         assert!(matches!(
-            diagnose_complete_rescan(
+            diagnose_complete_rescan_in(
+                solstone_core_cli_copy::ENGLISH,
                 complete(HeartbeatClassification::AdmissionWaitMarker(marker), false),
                 100.0,
                 &source,
@@ -538,7 +653,8 @@ mod tests {
             journal_path: "/journal".to_owned(),
         };
         assert!(matches!(
-            diagnose_complete_rescan(
+            diagnose_complete_rescan_in(
+                solstone_core_cli_copy::ENGLISH,
                 complete(HeartbeatClassification::SchemaV1(heartbeat), true),
                 100.0,
                 &source,
@@ -546,7 +662,8 @@ mod tests {
             SyncRescanDiagnosis::HeartbeatNeedsAttention(_)
         ));
         assert!(matches!(
-            diagnose_complete_rescan(
+            diagnose_complete_rescan_in(
+                solstone_core_cli_copy::ENGLISH,
                 complete(HeartbeatClassification::BoundedMalformed, true),
                 100.0,
                 &source,
@@ -561,7 +678,8 @@ mod tests {
             result: InspectResult::Absent,
         };
         assert!(matches!(
-            diagnose_complete_rescan(
+            diagnose_complete_rescan_in(
+                solstone_core_cli_copy::ENGLISH,
                 complete_with_mtime(
                     HeartbeatClassification::AdmissionWaitMarker(marker()),
                     false,
@@ -573,7 +691,8 @@ mod tests {
             SyncRescanDiagnosis::Clean(_)
         ));
         assert!(matches!(
-            diagnose_complete_rescan(
+            diagnose_complete_rescan_in(
+                solstone_core_cli_copy::ENGLISH,
                 complete(HeartbeatClassification::AdmissionWaitMarkerMalformed, false),
                 100.0,
                 &source,

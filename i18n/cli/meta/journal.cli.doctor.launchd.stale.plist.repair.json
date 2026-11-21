@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for launchd stale plist run solstone journal service uninstall then run solstone journal service install separately.",
+  "context": "Journal command-line text for launchd stale plist run solstone journal service uninstall then run solstone journal service install separately.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a76902bf2348b0c559c36fc5415d9b0d15d271ba095dacd04efdc81169e1350d",
+  "max_length": 143,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "uninstall_command",
+      "kind": "command",
+      "value": "solstone journal service uninstall"
+    },
+    {
+      "name": "install_command",
+      "kind": "command",
+      "value": "solstone journal service install"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for device day listing the journal can read the last days for every bound device.",
+  "context": "Journal command-line text for device day listing the journal can read the last days for every bound device.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8dd203d66010770bc95ddd2137985e9e5b24a02c5256d181306bd8629f698e9e",
+  "max_length": 99,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

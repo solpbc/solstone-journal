@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for sync kind fifo.",
+  "context": "Journal command-line text for sync kind fifo.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "00f901a482e468bc17a74cb83052b8352472a23e280df5d8e8bf44a7afb9417a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

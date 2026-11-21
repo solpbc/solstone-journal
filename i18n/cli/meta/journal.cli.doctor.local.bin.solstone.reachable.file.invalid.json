@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for local bin solstone reachable is not a file.",
+  "context": "Journal command-line text for local bin solstone reachable is not a file.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "78de0215fc687aaebe14b2984168e0437cd186bce436da878ba7d760320e28fe",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

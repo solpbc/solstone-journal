@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for vad spawn.",
+  "context": "Journal command-line text for vad spawn.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "cause",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "425cbac3aa51896acdaab6104ff93d733d333ca0bf99081dec7b7d6e77380b89",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "vad",
+      "kind": "accepted-input",
+      "value": "VAD"
+    }
+  ]
+}

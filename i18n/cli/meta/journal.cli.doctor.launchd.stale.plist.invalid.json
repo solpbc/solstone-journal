@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for launchd stale plist could not parse plist plist error.",
+  "context": "Journal command-line text for launchd stale plist could not parse plist plist error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2cfa23961b884a1d83bf3bd7fe053ef91205ac9209103471fc8373cb6b0d8888",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "plist_error",
+      "kind": "accepted-input",
+      "value": "plist::Error"
+    }
+  ]
+}

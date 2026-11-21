@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for journal caught up whole journal inspection unavailable.",
+  "context": "Journal command-line text for journal caught up whole journal inspection unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "eb7a656a5424ee0d184850ad00ac59031e1e0c525f86344bd130860e37654132",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

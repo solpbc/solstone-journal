@@ -1,0 +1,43 @@
+{
+  "description": "Journal command-line text for backlog pending oldest.",
+  "context": "Journal command-line text for backlog pending oldest.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "pending_count",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "stuck_count",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "pending",
+      "type": "string"
+    },
+    {
+      "name": "stuck",
+      "type": "string"
+    },
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "fb4eddd01ffbb4dd69c8e6add921c8e0d9314277900a01afe56d4d0e6a99aca0",
+  "max_length": 352,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "pending_count",
+    "type": "cardinal"
+  }
+}

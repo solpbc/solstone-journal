@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for sync unverifiable.",
+  "context": "Journal command-line text for sync unverifiable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f25482c5fd1432a646e201ff8f3af2e9e9c5530da042577f34649ddb6b56e833",
+  "max_length": 151,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "newline",
+      "kind": "accepted-input",
+      "value": "\n"
+    }
+  ]
+}

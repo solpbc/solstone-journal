@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for holds scope unknown.",
+  "context": "Journal command-line text for holds scope unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0779d3cf6e6d5b4952cc70a57d90d9b12874b056beef8e5055ebeb4bc78118eb",
+  "max_length": 116,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

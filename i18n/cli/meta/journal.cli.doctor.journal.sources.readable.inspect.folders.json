@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for journal sources readable check the day folders named above a name that is not a.",
+  "context": "Journal command-line text for journal sources readable check the day folders named above a name that is not a.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "09bcadf2d6f7b911dba98b6bfe0365227ff1600ded45d0eee0b34fc861718d07",
+  "max_length": 139,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

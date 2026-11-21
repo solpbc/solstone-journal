@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for journal caught up couldn t fully determine failed to read daily configs.",
+  "context": "Journal command-line text for journal caught up couldn t fully determine failed to read daily configs.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fbee23fd9ba3b4fee67972823f3fe68a217b38ba4d19950838f1af6c02936eeb",
+  "max_length": 98,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

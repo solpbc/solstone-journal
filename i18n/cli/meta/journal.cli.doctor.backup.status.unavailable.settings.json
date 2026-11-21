@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for backup status backup status unavailable settings unreadable.",
+  "context": "Journal command-line text for backup status backup status unavailable settings unreadable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0ce928768a3930220021d6c0697ba27e21f1801ee67a241e7b746ca83fe3950c",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

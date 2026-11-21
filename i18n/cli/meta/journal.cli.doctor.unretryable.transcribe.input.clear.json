@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for unretryable transcribe input 0 recordings the journal will not retry on its own handler reason.",
+  "context": "Journal command-line text for unretryable transcribe input 0 recordings the journal will not retry on its own handler reason.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "handler",
+      "type": "string"
+    },
+    {
+      "name": "reason_code",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "93da9b800b9839a126ba08f48189957ca86469d0ebbf0e4ffaae97098424604d",
+  "max_length": 137,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "reason_key",
+      "kind": "accepted-input",
+      "value": "reason_code"
+    }
+  ]
+}

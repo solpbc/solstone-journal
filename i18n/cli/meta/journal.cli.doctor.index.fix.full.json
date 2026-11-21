@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for index fix full.",
+  "context": "Journal command-line text for index fix full.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d13c1f81c670a03dac29609e99b5819930bb71c8962493aa13a675a14c42699f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal indexer --rescan-full"
+    }
+  ]
+}

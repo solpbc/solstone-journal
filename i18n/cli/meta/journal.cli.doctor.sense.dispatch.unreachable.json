@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for sense dispatch unreachable.",
+  "context": "Journal command-line text for sense dispatch unreachable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "cause",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "7001bc3819920c99a9053df3c107eb0d63c0c4b492fcfe325f006438746e89db",
+  "max_length": 447,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "cause",
+    "type": "string",
+    "enum_values": [
+      "absent",
+      "unknown",
+      "runtime",
+      "timeout",
+      "transport"
+    ],
+    "enum_default": "transport"
+  }
+}

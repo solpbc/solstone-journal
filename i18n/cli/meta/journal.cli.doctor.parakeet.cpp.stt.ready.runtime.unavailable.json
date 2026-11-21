@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for parakeet cpp stt ready parakeet cpp cannot start openmp runtime unavailable libgomp so 1.",
+  "context": "Journal command-line text for parakeet cpp stt ready parakeet cpp cannot start openmp runtime unavailable libgomp so 1.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9b03ad6a95ac2571da1722f52c730d12e0cf3e5626af8fb43e45a79d4f43b04c",
+  "max_length": 110,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "runtime_file",
+      "kind": "accepted-input",
+      "value": "libgomp.so.1"
+    },
+    {
+      "name": "backend_name",
+      "kind": "accepted-input",
+      "value": "parakeet-cpp"
+    },
+    {
+      "name": "openmp",
+      "kind": "accepted-input",
+      "value": "OpenMP"
+    }
+  ]
+}

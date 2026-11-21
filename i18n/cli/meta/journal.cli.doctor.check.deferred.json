@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for check deferred.",
+  "context": "Journal command-line text for check deferred.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "set",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "285b9e71a3df1b886b2e53cd7af01419829b5183b25669c4d7e2ba59881487af",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

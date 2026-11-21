@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for local bin solstone reachable reinstall the journal to restore solstone exe.",
+  "context": "Journal command-line text for local bin solstone reachable reinstall the journal to restore solstone exe.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "de55258a564df5d793aad604b281d5f73c035d8efdd0dbf3a814b8f19dee4435",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "executable",
+      "kind": "accepted-input",
+      "value": "solstone.exe"
+    }
+  ]
+}

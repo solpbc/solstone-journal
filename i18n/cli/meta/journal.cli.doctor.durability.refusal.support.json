@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for durability refusal support.",
+  "context": "Journal command-line text for durability refusal support.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "generation",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "da1b9537c3d1182b80e713c8437fc50a11a5ba18c8468f052d1009908f14a357",
+  "max_length": 201,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

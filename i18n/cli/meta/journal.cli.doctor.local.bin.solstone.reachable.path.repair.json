@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for local bin solstone reachable put local bin earlier on path or run solstone journal setup to.",
+  "context": "Journal command-line text for local bin solstone reachable put local bin earlier on path or run solstone journal setup to.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "83084f916f22b883ce86edab3d80f3c6364121f0602bf90621896a260b1129f4",
+  "max_length": 136,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "setup_command",
+      "kind": "command",
+      "value": "solstone journal setup"
+    },
+    {
+      "name": "bin_dir",
+      "kind": "accepted-input",
+      "value": "~/.local/bin"
+    },
+    {
+      "name": "path_variable",
+      "kind": "accepted-input",
+      "value": "PATH"
+    }
+  ]
+}

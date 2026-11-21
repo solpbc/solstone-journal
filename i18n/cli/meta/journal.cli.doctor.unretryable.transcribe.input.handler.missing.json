@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for unretryable transcribe input processing record in missing handler field.",
+  "context": "Journal command-line text for unretryable transcribe input processing record in missing handler field.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "09fc8382f766b74656b6770b665f3163acbd05c2fb0f2fd93349479a7fe5a9de",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

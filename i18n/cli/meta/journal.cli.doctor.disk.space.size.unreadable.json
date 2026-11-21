@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for disk space could not measure installation tree at.",
+  "context": "Journal command-line text for disk space could not measure installation tree at.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f9c8555dda641de121f06afd9d305d1a3f26fe9e172e8299132436400f436c73",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

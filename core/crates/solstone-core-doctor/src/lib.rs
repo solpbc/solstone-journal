@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
+
+use solstone_core_cli_copy as copy;
 pub mod args;
 pub mod checks;
 pub mod context;
@@ -11,6 +13,14 @@ use context::CheckContext;
 use registry::{Battery, RegistryEntry};
 use vocabulary::*;
 pub fn run(args: &args::DoctorArgs, context: &CheckContext) -> Vec<CheckResult> {
+    let context = &CheckContext {
+        report_form: if args.json || args.jsonl {
+            ReportForm::Structured
+        } else {
+            ReportForm::Human
+        },
+        ..context.clone()
+    };
     let battery = if args.readiness {
         Battery::JournalReadiness
     } else {
@@ -39,7 +49,10 @@ fn run_entry(entry: &RegistryEntry, context: &CheckContext) -> Option<CheckResul
         let mut r = make_result(
             entry.check,
             Status::Skip,
-            format!("not supported on {}", context.platform.tag()),
+            copy::display(
+                "journal.cli.doctor.platform.unsupported",
+                [("platform", &context.platform.tag())],
+            ),
             None::<String>,
         );
         r.platform = Some(context.platform.tag().into());
@@ -49,7 +62,7 @@ fn run_entry(entry: &RegistryEntry, context: &CheckContext) -> Option<CheckResul
         return Some(make_result(
             entry.check,
             Status::Skip,
-            format!("deferred check set: {set}"),
+            copy::display("journal.cli.doctor.check.deferred", [("set", &set)]),
             None::<String>,
         ));
     }
@@ -58,15 +71,6 @@ fn run_entry(entry: &RegistryEntry, context: &CheckContext) -> Option<CheckResul
     r.severity = entry.check.severity;
     Some(r)
 }
-const POINTER: &str = "resolve the macOS supervisor conflict first: ";
-const WARN_POINTER: &str =
-    "resolve the macOS supervisor topology warning before changing the journal service";
-const UNSAFE: &[&str] = &[
-    "journal setup",
-    "journal service install",
-    "journal service start",
-    "journal service restart",
-];
 fn apply_conflict_policy(results: &mut [CheckResult]) {
     let conflict = results
         .iter()
@@ -81,16 +85,9 @@ fn apply_conflict_policy(results: &mut [CheckResult]) {
             continue;
         }
         if conflict.status == Status::Fail && conflict.execution_error.is_none() {
-            result.fix = Some(format!(
-                "{POINTER}{}",
-                conflict.fix.as_deref().unwrap_or_default()
-            ))
-        } else if result
-            .fix
-            .as_ref()
-            .is_some_and(|f| UNSAFE.iter().any(|s| f.contains(s)))
-        {
-            result.fix = Some(WARN_POINTER.into())
+            result.fix.clone_from(&conflict.conflict_guidance);
+        } else if result.changes_service {
+            result.fix = Some(copy::text("journal.cli.doctor.service.conflict.warning"));
         }
     }
 }
@@ -98,6 +95,8 @@ fn apply_conflict_policy(results: &mut [CheckResult]) {
 mod tests {
     use super::*;
     use std::fs;
+    const WARN_POINTER: &str =
+        "resolve the macOS supervisor topology warning before changing the journal service";
 
     fn context() -> checks::test_support::StagedContext {
         checks::test_support::context_with_prefix("solstone-doctor-test-")
@@ -159,6 +158,7 @@ mod tests {
                 Err(ExecutionError {
                     kind: "Oops".into(),
                     message: "bad".into(),
+                    localized_message: None,
                 })
             },
             &context(),
@@ -258,7 +258,8 @@ mod tests {
                 Status::Fail,
                 "x",
                 Some("solstone journal service start"),
-            ),
+            )
+            .changing_service(),
             make_result(
                 Check {
                     name: "no-fix",
@@ -270,6 +271,8 @@ mod tests {
                 None::<String>,
             ),
         ];
+        r[0].conflict_guidance =
+            Some("resolve the macOS supervisor conflict first: foreign fix".into());
         apply_conflict_policy(&mut r);
         assert_eq!(
             r[1].fix.as_deref(),
@@ -296,11 +299,13 @@ mod tests {
                 Status::Fail,
                 "x",
                 Some("solstone journal service start"),
-            ),
+            )
+            .changing_service(),
         ];
         execution_error[0].execution_error = Some(ExecutionError {
             kind: "Boom".into(),
             message: "x".into(),
+            localized_message: None,
         });
         apply_conflict_policy(&mut execution_error);
         assert_eq!(execution_error[1].fix.as_deref(), Some(WARN_POINTER));
@@ -376,7 +381,8 @@ mod tests {
                 Status::Fail,
                 "x",
                 Some("solstone journal service start"),
-            ),
+            )
+            .changing_service(),
             make_result(
                 Check {
                     name: "none",
@@ -407,11 +413,13 @@ mod tests {
                 Status::Fail,
                 "x",
                 Some("solstone journal service start"),
-            ),
+            )
+            .changing_service(),
         ];
         execution[0].execution_error = Some(ExecutionError {
             kind: "X".into(),
             message: "x".into(),
+            localized_message: None,
         });
         apply_conflict_policy(&mut execution);
         assert_eq!(execution[1].fix.as_deref(), Some(WARN_POINTER));
@@ -435,7 +443,8 @@ mod tests {
                 Status::Fail,
                 "x",
                 Some("solstone journal service restart"),
-            ),
+            )
+            .changing_service(),
             make_result(
                 Check {
                     name: "safe",
@@ -471,7 +480,8 @@ mod tests {
                     Status::Fail,
                     "x",
                     Some("solstone journal service start"),
-                ),
+                )
+                .changing_service(),
             ];
             apply_conflict_policy(&mut rows);
             assert_eq!(
@@ -479,16 +489,19 @@ mod tests {
                 Some("solstone journal service start")
             );
         }
-        let mut absent = vec![make_result(
-            Check {
-                name: "x",
-                severity: Severity::Blocker,
-                platforms: &[],
-            },
-            Status::Fail,
-            "x",
-            Some("solstone journal service start"),
-        )];
+        let mut absent = vec![
+            make_result(
+                Check {
+                    name: "x",
+                    severity: Severity::Blocker,
+                    platforms: &[],
+                },
+                Status::Fail,
+                "x",
+                Some("solstone journal service start"),
+            )
+            .changing_service(),
+        ];
         apply_conflict_policy(&mut absent);
         assert_eq!(
             absent[0].fix.as_deref(),
@@ -708,4 +721,9 @@ mod tests {
         .unwrap();
         assert_eq!(result.status, Status::Fail);
     }
+}
+
+/// The context failure reported by the command-line dispatcher.
+pub fn context_error(error: &str) -> String {
+    copy::strings("journal.cli.doctor.context.failed", [("error", error)])
 }

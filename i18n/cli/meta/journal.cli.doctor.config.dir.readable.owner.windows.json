@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for config dir readable the windows owner base is only readable on windows.",
+  "context": "Journal command-line text for config dir readable the windows owner base is only readable on windows.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d0dd8e2db168a30091e7d4aa8c7045d3ed4c7b5f92719f32cbcc5860df6c3d5a",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

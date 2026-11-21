@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for client delivery stall open app health to inspect the rejected upload.",
+  "context": "Journal command-line text for client delivery stall open app health to inspect the rejected upload.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "24271f2cf8d8d13a25c49848f540bdf9a521f33fd094b627ec672d8b9ecd8143",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "health_path",
+      "kind": "url",
+      "value": "/app/health"
+    }
+  ]
+}

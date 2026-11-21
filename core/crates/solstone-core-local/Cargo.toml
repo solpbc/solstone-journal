@@ -26,6 +26,7 @@ test-hooks = ["runtime-fetch-test"]
 test-fixture-pin = ["solstone-core-distribution/test-fixture-pin"]
 
 [dependencies]
+solstone-core-cli-copy.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 ureq.workspace = true

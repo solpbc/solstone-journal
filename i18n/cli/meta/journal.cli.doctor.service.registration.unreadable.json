@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for service registration unreadable.",
+  "context": "Journal command-line text for service registration unreadable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "49a9560f41608cd7424795a44d41918bbfa54dc42bac5707318d11bd5559fbe6",
+  "max_length": 94,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

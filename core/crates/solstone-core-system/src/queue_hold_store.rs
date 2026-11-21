@@ -317,6 +317,22 @@ pub fn classify_task_queue_holds(
     current_boot: Option<&str>,
     platform: HoldPlatform,
 ) -> Vec<TaskQueueHoldFinding> {
+    classify_task_queue_holds_in(
+        journal_root,
+        processes,
+        current_boot,
+        platform,
+        solstone_core_cli_copy::ENGLISH,
+    )
+}
+
+pub fn classify_task_queue_holds_in(
+    journal_root: &Path,
+    processes: &dyn ProcessInstanceSource,
+    current_boot: Option<&str>,
+    platform: HoldPlatform,
+    locale: &str,
+) -> Vec<TaskQueueHoldFinding> {
     if !journal_root.is_absolute() {
         return Vec::new();
     }
@@ -335,7 +351,11 @@ pub fn classify_task_queue_holds(
                 path: in_flight,
                 is_fail: true,
                 is_warn: false,
-                detail: format!("cannot list in-flight holds directory: {err}"),
+                detail: solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.doctor.holds.unreadable",
+                    [("error", &err)],
+                ),
                 action: None,
             });
             return findings;
@@ -352,12 +372,20 @@ pub fn classify_task_queue_holds(
         }
 
         if !scope_path.is_dir() {
-            let action = format!("remove {}: it holds nothing", scope_path.display());
+            let action = solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.doctor.holds.remove",
+                [("path", &scope_path.display())],
+            );
             findings.push(TaskQueueHoldFinding {
                 path: scope_path,
                 is_fail: false,
                 is_warn: true,
-                detail: "stray non-directory in task-queue in-flight path".to_owned(),
+                detail: solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.doctor.holds.stray",
+                    &[],
+                ),
                 action: Some(action),
             });
             continue;
@@ -370,8 +398,11 @@ pub fn classify_task_queue_holds(
                     path: scope_path,
                     is_fail: false,
                     is_warn: true,
-                    detail: "unrecognized scope directory format; the journal still holds any task recorded in it"
-                        .to_owned(),
+                    detail: solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.doctor.holds.scope.unknown",
+                        &[],
+                    ),
                     action: None,
                 });
                 continue;
@@ -391,7 +422,11 @@ pub fn classify_task_queue_holds(
                     path: scope_path,
                     is_fail: true,
                     is_warn: false,
-                    detail: format!("cannot list scope directory: {err}"),
+                    detail: solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.doctor.holds.scope.unreadable",
+                        [("error", &err)],
+                    ),
                     action: None,
                 });
                 continue;
@@ -408,12 +443,20 @@ pub fn classify_task_queue_holds(
             }
             let is_json_file = rec_name_str.ends_with(".json") && !rec_path.is_dir();
             if !is_json_file {
-                let action = format!("remove {}: it holds nothing", rec_path.display());
+                let action = solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.doctor.holds.remove",
+                    [("path", &rec_path.display())],
+                );
                 findings.push(TaskQueueHoldFinding {
                     path: rec_path,
                     is_fail: false,
                     is_warn: true,
-                    detail: "non-record entry in scope directory".to_owned(),
+                    detail: solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.doctor.holds.record.stray",
+                        &[],
+                    ),
                     action: Some(action),
                 });
                 continue;
@@ -425,8 +468,11 @@ pub fn classify_task_queue_holds(
                     path: rec_path,
                     is_fail: false,
                     is_warn: true,
-                    detail: "invalid partition file name in scope directory; the journal still reads it as a task record"
-                        .to_owned(),
+                    detail: solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.doctor.holds.record.filename",
+                        &[],
+                    ),
                     action: None,
                 });
                 continue;
@@ -439,7 +485,11 @@ pub fn classify_task_queue_holds(
                         path: rec_path,
                         is_fail: true,
                         is_warn: false,
-                        detail: format!("cannot read record: {err}"),
+                        detail: solstone_core_cli_copy::display_for(
+                            locale,
+                            "journal.cli.doctor.holds.record.unreadable",
+                            [("error", &err)],
+                        ),
                         action: None,
                     });
                     continue;
@@ -451,7 +501,11 @@ pub fn classify_task_queue_holds(
                     path: rec_path,
                     is_fail: true,
                     is_warn: false,
-                    detail: "record file is empty".to_owned(),
+                    detail: solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.doctor.holds.record.empty",
+                        &[],
+                    ),
                     action: None,
                 });
                 continue;
@@ -464,7 +518,11 @@ pub fn classify_task_queue_holds(
                         path: rec_path,
                         is_fail: true,
                         is_warn: false,
-                        detail: format!("cannot parse record: {err}"),
+                        detail: solstone_core_cli_copy::display_for(
+                            locale,
+                            "journal.cli.doctor.holds.record.invalid",
+                            [("error", &err)],
+                        ),
                         action: None,
                     });
                     continue;
@@ -484,7 +542,11 @@ pub fn classify_task_queue_holds(
                     path: rec_path,
                     is_fail: false,
                     is_warn: true,
-                    detail: format!("held partition {}", record.partition),
+                    detail: solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.doctor.holds.partition",
+                        [("partition", &record.partition)],
+                    ),
                     action: None,
                 });
             } else {
@@ -498,9 +560,10 @@ pub fn classify_task_queue_holds(
                             path: rec_path,
                             is_fail: false,
                             is_warn: true,
-                            detail: format!(
-                                "partition {} was running when the journal stopped; the journal holds it at its next start until its processes are gone",
-                                record.partition
+                            detail: solstone_core_cli_copy::display_for(
+                                locale,
+                                "journal.cli.doctor.holds.partition.stopped",
+                                [("partition", &record.partition)],
                             ),
                             action: None,
                         });

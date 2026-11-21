@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for config dir readable could not locate the owner base.",
+  "context": "Journal command-line text for config dir readable could not locate the owner base.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "218e8991893103d9983e132857ce5365d27c03ad09af7e8d652acab9837632be",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

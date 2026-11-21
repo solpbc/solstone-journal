@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for windows parakeet verification.",
+  "context": "Journal command-line text for windows parakeet verification.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "deb97ead926bb3bf9bf696c35178d28b80176acec1173d44e59fce78a66d2b53",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "parakeet_name",
+      "kind": "accepted-input",
+      "value": "Parakeet"
+    }
+  ]
+}

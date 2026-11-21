@@ -1,0 +1,75 @@
+{
+  "description": "Journal command-line text for package layout.",
+  "context": "Journal command-line text for package layout.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "directory",
+      "type": "string"
+    },
+    {
+      "name": "ancestor",
+      "type": "string"
+    },
+    {
+      "name": "site",
+      "type": "string"
+    },
+    {
+      "name": "checkout",
+      "type": "string"
+    },
+    {
+      "name": "bundle",
+      "type": "string"
+    },
+    {
+      "name": "layout",
+      "type": "string"
+    },
+    {
+      "name": "template",
+      "type": "string"
+    },
+    {
+      "name": "install",
+      "type": "string"
+    },
+    {
+      "name": "embedded",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "168e6e6bdd613e2ff86dcd3dbe26c2fafec055bbca5f8d8e57ed2db73dbf9d6d",
+  "max_length": 431,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "pyproject",
+      "kind": "accepted-input",
+      "value": "pyproject.toml"
+    },
+    {
+      "name": "git_dir",
+      "kind": "accepted-input",
+      "value": ".git"
+    },
+    {
+      "name": "journal_payload",
+      "kind": "accepted-input",
+      "value": "JournalPayload"
+    },
+    {
+      "name": "newline",
+      "kind": "accepted-input",
+      "value": "\n"
+    }
+  ]
+}

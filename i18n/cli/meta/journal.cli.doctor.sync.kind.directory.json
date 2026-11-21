@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for sync kind directory.",
+  "context": "Journal command-line text for sync kind directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "11575895ab588e47ea2a74ead6acb717dbbe3e023c889fcd75c2c2b93b29d806",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for package missing.",
+  "context": "Journal command-line text for package missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "root",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0dd9a75ffb851853dd722c18f6ad4a0581328df6cb04bb9e62141da6332995e7",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

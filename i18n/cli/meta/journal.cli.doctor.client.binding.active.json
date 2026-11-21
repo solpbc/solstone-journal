@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for client binding active client records unbound 0 certificate cid binding is authoritative.",
+  "context": "Journal command-line text for client binding active client records unbound 0 certificate cid binding is authoritative.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "records",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b95b9b1b00d3e29f39586e5a48e86ba45ea7c732abbf8296ae1b73b567f0ba71",
+  "max_length": 125,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "certificate_term",
+      "kind": "accepted-input",
+      "value": "certificate cid"
+    }
+  ]
+}

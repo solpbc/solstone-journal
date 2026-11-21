@@ -166,12 +166,7 @@ pub fn resolve_vad_binary() -> Result<PathBuf, TranscribeError> {
     }
 }
 
-/// Resolve the VAD helper from an executable path and environment lookup.
-///
-/// `lookup_env` is the single `SOLSTONE_VAD_BINARY` branch shared by transcription
-/// and doctor. Pass `install_bin_dir.join("solstone-core")` as the executable to
-/// use the journal-host bindir as the sibling directory.
-#[cfg(not(windows))]
+#[cfg(any(not(windows), test))]
 pub(crate) fn vad_binary_candidate_from<F>(
     current_executable: Result<PathBuf, io::Error>,
     lookup_env: F,
@@ -179,13 +174,42 @@ pub(crate) fn vad_binary_candidate_from<F>(
 where
     F: Fn(&str) -> Option<String>,
 {
+    vad_binary_candidate_from_in(
+        current_executable,
+        lookup_env,
+        solstone_core_cli_copy::ENGLISH,
+    )
+}
+
+/// Resolve the VAD helper from an executable path and environment lookup.
+///
+/// `lookup_env` is the single `SOLSTONE_VAD_BINARY` branch shared by transcription
+/// and doctor. Pass `install_bin_dir.join("solstone-core")` as the executable to
+/// use the journal-host bindir as the sibling directory.
+#[cfg(not(windows))]
+pub(crate) fn vad_binary_candidate_from_in<F>(
+    current_executable: Result<PathBuf, io::Error>,
+    lookup_env: F,
+    locale: &str,
+) -> Result<PathBuf, TranscribeError>
+where
+    F: Fn(&str) -> Option<String>,
+{
     let executable = current_executable.map_err(|error| TranscribeError::VadBinary {
-        detail: format!("could not determine current executable for VAD helper: {error}"),
+        detail: solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.doctor.vad.executable",
+            [("error", &(error))],
+        ),
     })?;
     let directory = executable
         .parent()
         .ok_or_else(|| TranscribeError::VadBinary {
-            detail: "current executable has no parent directory for VAD helper lookup".to_owned(),
+            detail: solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.doctor.vad.parent",
+                &[],
+            ),
         })?;
     Ok(vad_binary_candidate(directory, lookup_env))
 }
@@ -431,17 +455,25 @@ pub fn resolve_vad_binary() -> Result<PathBuf, TranscribeError> {
 }
 
 #[cfg(windows)]
-pub(crate) fn vad_binary_candidate_from<F>(
+pub(crate) fn vad_binary_candidate_from_in<F>(
     current_executable: Result<PathBuf, io::Error>,
     _lookup_env: F,
+    locale: &str,
 ) -> Result<PathBuf, TranscribeError>
 where
     F: Fn(&str) -> Option<String>,
 {
     let executable = current_executable.map_err(|error| TranscribeError::VadBinary {
-        detail: format!("could not determine current executable for VAD helper: {error}"),
+        detail: solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.doctor.vad.executable",
+            [("error", &(error))],
+        ),
     })?;
-    let binary = resolve_vad_binary()?;
+    let binary =
+        solstone_core_local::install::onnx_readiness::verified_windows_onnx_package_in(locale)
+            .map_err(|detail| TranscribeError::VadBinary { detail })?
+            .vad_worker;
     if !executable
         .parent()
         .zip(binary.parent())
@@ -452,7 +484,11 @@ where
         })
     {
         return Err(TranscribeError::VadBinary {
-            detail: "VAD helper lookup is outside the running signed app payload".to_owned(),
+            detail: solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.doctor.vad.layout",
+                &[],
+            ),
         });
     }
     Ok(binary)

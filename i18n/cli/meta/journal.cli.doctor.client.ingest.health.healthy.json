@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for client ingest health no devices failing ingest.",
+  "context": "Journal command-line text for client ingest health no devices failing ingest.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "db11b963c10a891128ff8fa27c7ab46d126f0f6fb7152e10919f0bf3e08a5347",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

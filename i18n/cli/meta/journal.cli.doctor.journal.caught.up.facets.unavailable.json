@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for journal caught up couldn t fully determine failed to read facets.",
+  "context": "Journal command-line text for journal caught up couldn t fully determine failed to read facets.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bbe11947401084a4c640c450365c07108057d1782c3025fbdb0816e3b0cd8258",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for client ingest health device failing ingest x since.",
+  "context": "Journal command-line text for client ingest health device failing ingest x since.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "device",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    },
+    {
+      "name": "attempts",
+      "type": "string"
+    },
+    {
+      "name": "since",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fba5f48f3bd6182d315fb07910df87fbf7e96983bea60e779bdc2063db044fb1",
+  "max_length": 111,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

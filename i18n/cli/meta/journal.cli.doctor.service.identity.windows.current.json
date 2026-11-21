@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for service identity service target matches current install command.",
+  "context": "Journal command-line text for service identity service target matches current install command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d4a0af89502b3c833ed203b0ec5d923a83b1f649e9a3fc315409b7580f45a6b1",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for parakeet cpp platform.",
+  "context": "Journal command-line text for parakeet cpp platform.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "os",
+      "type": "string"
+    },
+    {
+      "name": "arch",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c0a679ed3ba0a3324f5ab9779cf85d92f104af31d74a2138d935f34b07c793e6",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "parakeet_cpp",
+      "kind": "accepted-input",
+      "value": "parakeet-cpp"
+    }
+  ]
+}

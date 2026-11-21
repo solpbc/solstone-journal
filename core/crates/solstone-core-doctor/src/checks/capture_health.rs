@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
+
 use crate::{
     checks::common,
     context::CheckContext,
     vocabulary::{Check, CheckResult, RunnerResult, Status, make_result, truncate},
 };
+use solstone_core_cli_copy as copy;
 use solstone_core_sol_link::client_status::{
     ClientAssessment, ClientCaptureState, ClientInspection,
 };
@@ -24,21 +26,21 @@ pub(crate) fn result_from_assessment(inspection: ClientInspection, check: Check)
         make_result(
             check,
             Status::Skip,
-            "rollup=unknown; device list unavailable",
+            copy::text("journal.cli.doctor.capture.health.registry.unavailable"),
             None::<String>,
         )
     } else if common::activity_unavailable(&inspection) {
         make_result(
             check,
             Status::Skip,
-            "rollup=unknown; device activity unavailable",
+            copy::text("journal.cli.doctor.capture.health.data.unavailable"),
             None::<String>,
         )
     } else if common::assessed_capture_rows(&inspection).is_none_or(|rows| rows.is_empty()) {
         make_result(
             check,
             Status::Skip,
-            "rollup=no_senders; the solstone app hasn't added anything to your journal yet",
+            copy::text("journal.cli.doctor.capture.health.no.senders"),
             None::<String>,
         )
     } else {
@@ -61,19 +63,22 @@ pub(crate) fn result_from_assessment(inspection: ClientInspection, check: Check)
                     .iter()
                     .all(|row| row.capture_state == ClientCaptureState::Active)
                 {
-                    "rollup=active; the solstone app on every device that has added to your journal is current"
+                    copy::text("journal.cli.doctor.capture.health.active")
                 } else {
-                    "rollup=quiet; no rejected uploads recorded; see devices for last delivery times"
+                    copy::text("journal.cli.doctor.capture.health.quiet")
                 },
                 None::<String>,
             )
         } else {
-            let detail = format!("rollup=attention; {}", common::join_capped(&clauses, ", "));
+            let detail = copy::display(
+                "journal.cli.doctor.capture.rollup",
+                [("devices", &(common::join_capped(&clauses, ", ")))],
+            );
             make_result(
                 check,
                 Status::Warn,
                 truncate(&detail, 400),
-                Some("open /app/health to inspect each device"),
+                Some(copy::text("journal.cli.doctor.capture.health.inspect")),
             )
         }
     };
@@ -82,26 +87,47 @@ pub(crate) fn result_from_assessment(inspection: ClientInspection, check: Check)
 }
 
 fn capture_clause(row: &ClientAssessment) -> String {
-    let base = match row.capture_elapsed_ms {
-        Some(age) => format!(
-            "the solstone app on {} last added {}h ago",
-            common::client_name(row),
-            age / HOUR_MS
-        ),
-        None => format!(
-            "the solstone app on {} is having trouble adding",
-            common::client_name(row)
-        ),
-    };
     let names = common::needs_attention_source_names(row);
-    common::with_source_attention(base, &names)
+    match (row.capture_elapsed_ms, names.is_empty()) {
+        (Some(age), true) => copy::display(
+            "journal.cli.doctor.capture.recent",
+            [
+                ("client", &(common::client_name(row))),
+                ("hours", &(age / HOUR_MS)),
+            ],
+        ),
+        (Some(age), false) => crate::vocabulary::ReportForm::Human.counted(
+            "journal.cli.doctor.capture.recent.sources",
+            &[("quantity", names.len() as u64)],
+            &[
+                ("client", &(common::client_name(row))),
+                ("hours", &(age / HOUR_MS)),
+                ("sources", &(names.join(", "))),
+            ],
+        ),
+        (None, true) => copy::display(
+            "journal.cli.doctor.capture.trouble",
+            [("client", &(common::client_name(row)))],
+        ),
+        (None, false) => crate::vocabulary::ReportForm::Human.counted(
+            "journal.cli.doctor.capture.trouble.sources",
+            &[("quantity", names.len() as u64)],
+            &[
+                ("client", &(common::client_name(row))),
+                ("sources", &(names.join(", "))),
+            ],
+        ),
+    }
 }
 
 fn source_attention_clause(row: &ClientAssessment) -> Option<String> {
     let names = common::needs_attention_source_names(row);
     let sources = common::format_attention_sources(&names)?;
-    Some(format!(
-        "the solstone app on {} is having trouble adding {sources}",
-        common::client_name(row)
+    Some(copy::display(
+        "journal.cli.doctor.capture.sources",
+        [
+            ("client", &(common::client_name(row))),
+            ("sources", &sources),
+        ],
     ))
 }

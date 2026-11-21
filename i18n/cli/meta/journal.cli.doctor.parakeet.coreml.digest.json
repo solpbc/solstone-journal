@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for parakeet coreml digest.",
+  "context": "Journal command-line text for parakeet coreml digest.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "file",
+      "type": "string"
+    },
+    {
+      "name": "expected",
+      "type": "string"
+    },
+    {
+      "name": "found",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "85014f2f42698c9705afd82a372247530dbaad0f3e477c6f0716683a7fc0de0c",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

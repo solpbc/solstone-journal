@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for windows onnx verification.",
+  "context": "Journal command-line text for windows onnx verification.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "88d05b01a716579ded7f2b6f2e414715cae65b3b32b28008fb8ac442c2676f58",
+  "max_length": 93,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "onnx",
+      "kind": "accepted-input",
+      "value": "ONNX"
+    }
+  ]
+}

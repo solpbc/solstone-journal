@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for backup status backup status unavailable invalid on off setting.",
+  "context": "Journal command-line text for backup status backup status unavailable invalid on off setting.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "af36f12710744b59f9c1874dcc65a4b735c25c61fe68c96aa6ecf8a894667d9a",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

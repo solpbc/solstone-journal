@@ -26,7 +26,8 @@ pub mod queue;
 pub mod queue_hold;
 pub mod queue_hold_store;
 pub use queue_hold_store::{
-    HoldPlatform, TaskQueueHoldFinding, classify_task_queue_holds, current_boot_identity,
+    HoldPlatform, TaskQueueHoldFinding, classify_task_queue_holds, classify_task_queue_holds_in,
+    current_boot_identity,
 };
 pub mod priority;
 pub mod request;

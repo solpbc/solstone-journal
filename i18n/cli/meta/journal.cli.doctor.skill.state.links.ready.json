@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for skill state router skills solstone journal are installed and current.",
+  "context": "Journal command-line text for skill state router skills solstone journal are installed and current.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "655c4ca950405f288dbc2d95d95ae4d328d22bb1723131864943d834b7092530",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "brand",
+      "kind": "mark-word",
+      "value": "solstone"
+    }
+  ]
+}

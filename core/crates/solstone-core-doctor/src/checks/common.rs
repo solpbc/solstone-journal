@@ -1,16 +1,26 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
+
 use crate::context::CheckContext;
 use crate::vocabulary::{
     AssessedClientFact, ClientDeliveryFacts, ClientRegistryState, UnassessedClientFact,
 };
+use solstone_core_cli_copy as copy;
 use solstone_core_journal_config::read_journal_config;
 use solstone_core_sol_link::client_status::{
     ClientActivityState, ClientAssessment, ClientCaptureState, ClientInspection, ClientReach,
     ConnectionFreshness, SourceDelivery, inspect_clients_at,
 };
+pub(crate) fn config_error(error: &solstone_core_journal_config::ConfigLoadError) -> String {
+    let solstone_core_journal_config::ConfigLoadError::Corrupt { path, .. } = error;
+    solstone_core_window_catalog::strings(
+        solstone_core_window_catalog::cli_locale(),
+        "journal.window.facets.awareness.response.detail.unreadable.settings",
+        [("settings_path", &path.display().to_string())],
+    )
+}
 pub fn config_backend(context: &CheckContext) -> Result<Option<String>, String> {
-    let read = read_journal_config(&context.journal_path).map_err(|error| error.to_string())?;
+    let read = read_journal_config(&context.journal_path).map_err(|error| config_error(&error))?;
     Ok(read.config.and_then(|config| {
         config
             .get("transcribe")
@@ -28,9 +38,10 @@ pub fn clients(context: &CheckContext) -> Result<Vec<ClientAssessment>, String> 
         ClientInspection::Empty { clients, .. } | ClientInspection::Ready { clients, .. } => {
             Ok(clients)
         }
-        ClientInspection::LedgerUnavailable { reason, .. } => {
-            Err(format!("authorized client ledger unavailable: {reason:?}"))
-        }
+        ClientInspection::LedgerUnavailable { reason, .. } => Err(copy::display(
+            "journal.cli.doctor.clients.ledger.unavailable",
+            [("reason", &(format!("{reason:?}")))],
+        )),
     }
 }
 
@@ -164,8 +175,12 @@ pub(crate) fn reach_name(row: &ClientAssessment) -> &'static str {
     }
 }
 
-pub(crate) fn source_display_name(source: &str) -> &str {
-    if source.is_empty() { "default" } else { source }
+pub(crate) fn source_display_name(source: &str) -> String {
+    if source.is_empty() {
+        copy::text("journal.cli.doctor.source.default")
+    } else {
+        source.to_owned()
+    }
 }
 
 /// Names of `NeedsAttention` sources on a multi-source device. Empty when the
@@ -177,7 +192,7 @@ pub(crate) fn needs_attention_source_names(row: &ClientAssessment) -> Vec<String
     row.source_delivery
         .iter()
         .filter(|(_, delivery)| delivery.state == SourceDelivery::NeedsAttention)
-        .map(|(source, _)| source_display_name(source).to_owned())
+        .map(|(source, _)| source_display_name(source))
         .collect()
 }
 
@@ -189,20 +204,19 @@ pub(crate) fn format_attention_sources(names: &[String]) -> Option<String> {
     }
 }
 
-pub(crate) fn with_source_attention(base: String, names: &[String]) -> String {
-    match format_attention_sources(names) {
-        Some(sources) if names.len() == 1 => format!("{base} ({sources} needs attention)"),
-        Some(sources) => format!("{base} ({sources} need attention)"),
-        None => base,
-    }
-}
-
 pub(crate) fn join_capped(clauses: &[String], separator: &str) -> String {
     let named = clauses.iter().take(3).cloned().collect::<Vec<_>>();
     let extra = clauses.len().saturating_sub(3);
     if extra == 0 {
         named.join(separator)
     } else {
-        format!("{}{separator}+{extra} more", named.join(separator))
+        copy::display(
+            "journal.cli.doctor.devices.more",
+            [
+                ("devices", &(named.join(separator))),
+                ("separator", &separator),
+                ("extra", &extra),
+            ],
+        )
     }
 }

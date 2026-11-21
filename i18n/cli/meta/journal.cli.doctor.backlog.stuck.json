@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for backlog stuck.",
+  "context": "Journal command-line text for backlog stuck.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f3c6cd8bb1cd0e4de9538b5e92520bdc3971febd25ca5150359f32ac15a51ec7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

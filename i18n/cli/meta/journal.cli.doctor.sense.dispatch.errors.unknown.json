@@ -1,0 +1,30 @@
+{
+  "description": "Journal command-line text for sense dispatch errors unknown.",
+  "context": "Journal command-line text for sense dispatch errors unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "9ca0257ea92f4761018901b4aa645d4784ff7fce3518640517c9a174d7aa6901",
+  "max_length": 267,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

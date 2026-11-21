@@ -303,9 +303,10 @@ pub fn brain_reason_text_in(reason: Option<&str>, locale: &str) -> String {
             locale,
             "journal.window.thinking.thinking.brain.reason.hardware.verification.is.unavailable",
         ),
-        Some("nvattest_integrity_failed") => {
-            solstone_core_installed_payload::guidance::PACKAGE_MISMATCH.to_owned()
-        }
+        Some("nvattest_integrity_failed") => text(
+            locale,
+            "journal.window.backup.response.tool.package.mismatch",
+        ),
         Some("chatgpt_not_eligible") => text(
             locale,
             "journal.window.thinking.thinking.brain.reason.this.chatgpt.account.isn.t.eligible",
@@ -407,7 +408,7 @@ fn brain_age(
         strings(
             locale,
             "journal.window.thinking.brain.age.s",
-            [("age", &(seconds).to_string())],
+            [("age", &seconds.to_string())],
         )
     } else if seconds < 3_600 {
         strings(

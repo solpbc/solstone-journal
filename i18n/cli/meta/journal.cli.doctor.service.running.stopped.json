@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for service running service installed but not running.",
+  "context": "Journal command-line text for service running service installed but not running.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7eae882d0973b7f769181a88299cff2e055902533deeb7171c79326f205483ea",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

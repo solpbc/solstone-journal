@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
+
 use crate::{
     context::CheckContext,
     vocabulary::{Check, RunnerResult, Status, make_result},
 };
+use solstone_core_cli_copy as copy;
 
 #[cfg(unix)]
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
@@ -43,7 +45,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         return Ok(make_result(
             check,
             Status::Ok,
-            "no macOS supervisor conflict (native check: foreign-launcher scan only; no competing KeepAlive launcher found)",
+            copy::text("journal.cli.doctor.supervisor.conflict.clear"),
             None::<String>,
         ));
     }
@@ -59,20 +61,27 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         })
         .collect::<Vec<_>>()
         .join("; ");
-    let fix = format!(
-        "remove foreign launchers targeting /Applications/solstone.app: {commands}; then rerun solstone journal doctor"
-    );
     let count = foreign.len();
-    let noun = if count == 1 { "launcher" } else { "launchers" };
-    let verb = if count == 1 { "targets" } else { "target" };
-    Ok(make_result(
+    let mut result = make_result(
         check,
         Status::Fail,
-        format!(
-            "macOS supervisor conflict: {count} foreign KeepAlive {noun} {verb} /Applications/solstone.app"
+        crate::vocabulary::ReportForm::Human.counted(
+            "journal.cli.doctor.supervisor.conflict.report",
+            &[("quantity", count as u64)],
+            &[("count", &count)],
         ),
-        Some(fix),
-    ))
+        Some(context.report_form.counted(
+            "journal.cli.doctor.supervisor.conflict.repair",
+            &[("quantity", count as u64)],
+            &[("commands", &commands)],
+        )),
+    );
+    result.conflict_guidance = Some(context.report_form.counted(
+        "journal.cli.doctor.supervisor.conflict.resolve",
+        &[("quantity", count as u64)],
+        &[("commands", &commands)],
+    ));
+    Ok(result)
 }
 
 #[cfg(not(unix))]
@@ -80,7 +89,7 @@ pub fn run(_context: &CheckContext, check: Check) -> RunnerResult {
     Ok(make_result(
         check,
         Status::Skip,
-        "not supported on windows",
+        copy::text("journal.cli.doctor.supervisor.conflict.unsupported"),
         None::<String>,
     ))
 }

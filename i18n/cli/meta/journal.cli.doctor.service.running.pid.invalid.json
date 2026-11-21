@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for service running probe child pid does not fit a process group id.",
+  "context": "Journal command-line text for service running probe child pid does not fit a process group id.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a87c3c3268097f87fb5c440e089489161187a0b107a8ba1afbd41d517c55d129",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

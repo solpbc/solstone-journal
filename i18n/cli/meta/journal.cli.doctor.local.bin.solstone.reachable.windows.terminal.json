@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for local bin solstone reachable open a new terminal window and try again if solstone is still.",
+  "context": "Journal command-line text for local bin solstone reachable open a new terminal window and try again if solstone is still.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "356256b65df278224e3675c6e9aa64091551e42263977aad8185666b6c059225",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "brand",
+      "kind": "mark-word",
+      "value": "solstone"
+    }
+  ]
+}

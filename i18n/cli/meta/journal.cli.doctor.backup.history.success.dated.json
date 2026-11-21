@@ -1,0 +1,38 @@
+{
+  "description": "Journal command-line text for backup history success dated.",
+  "context": "Journal command-line text for backup history success dated.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "snapshot",
+      "type": "string"
+    },
+    {
+      "name": "date",
+      "type": "string"
+    },
+    {
+      "name": "seconds",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "908a80c558f048d69e12eb90baf133277a791d1300ccefb951bd2120ff865dd5",
+  "max_length": 349,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

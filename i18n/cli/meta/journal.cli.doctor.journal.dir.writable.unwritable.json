@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for journal dir writable journal dir not writable.",
+  "context": "Journal command-line text for journal dir writable journal dir not writable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5342cebb8ff73e0d7ac51e0cb1732f64895facaa0a108a59fe0de5f3165ca168",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

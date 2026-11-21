@@ -1,0 +1,54 @@
+{
+  "description": "Journal command-line text for durability closed restarted.",
+  "context": "Journal command-line text for durability closed restarted.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "generation",
+      "type": "string"
+    },
+    {
+      "name": "successor",
+      "type": "string"
+    },
+    {
+      "name": "time",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "exited",
+      "type": "string"
+    },
+    {
+      "name": "retired",
+      "type": "string"
+    },
+    {
+      "name": "never",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "59d07fd5a7c65f93a15be2cfcad368a95bde0b6504186ba4eb2347a1262c86f8",
+  "max_length": 579,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

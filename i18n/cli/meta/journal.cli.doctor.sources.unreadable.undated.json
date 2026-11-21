@@ -1,0 +1,38 @@
+{
+  "description": "Journal command-line text for sources unreadable undated.",
+  "context": "Journal command-line text for sources unreadable undated.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "days",
+      "type": "string"
+    },
+    {
+      "name": "cause",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "301a821f2279ffcf1206a0aca1c7c01bed798a869d1b4f7ea47f673f452c8253",
+  "max_length": 211,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

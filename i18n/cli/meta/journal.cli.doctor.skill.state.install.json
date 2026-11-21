@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for skill state run solstone skills install project.",
+  "context": "Journal command-line text for skill state run solstone skills install project.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4260ed8b7e6283a9d8ddd535ea738fbc31ae06cd6367a7a84861a1ac6cafab90",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "skills_command",
+      "kind": "command",
+      "value": "solstone skills install --project ."
+    }
+  ]
+}

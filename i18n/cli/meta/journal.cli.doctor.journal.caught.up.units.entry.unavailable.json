@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for journal caught up couldn t fully determine failed to read daily unit entry for.",
+  "context": "Journal command-line text for journal caught up couldn t fully determine failed to read daily unit entry for.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d2bd5ec34fbd33c2829ba17d20902f70f9831ed066bddb65404ac50c71dc8698",
+  "max_length": 114,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for orphan segment pdf chronicle directory unavailable.",
+  "context": "Journal command-line text for orphan segment pdf chronicle directory unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a52dfc95aeb995a88bc746c696705ee9a8386dabffb049ba7664b850f072f5fa",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

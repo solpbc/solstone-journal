@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
+
 use crate::{
     checks::parakeet_cpp_stt_ready,
     context::CheckContext,
     vocabulary::{Check, RunnerResult, Status, make_result},
 };
+use solstone_core_cli_copy as copy;
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     let config = match solstone_core_journal_config::read_journal_config(&context.journal_path) {
         Ok(value) => value,
@@ -12,8 +14,8 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             return Ok(make_result(
                 check,
                 Status::Fail,
-                error.to_string(),
-                Some("repair or restore config/journal.json from a backup"),
+                super::common::config_error(&error),
+                Some(copy::text("journal.cli.doctor.config.restore")),
             ));
         }
     };
@@ -27,9 +29,9 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         return Ok(make_result(
             check,
             Status::Skip,
-            format!(
-                "configured backend is {}; parakeet readiness not applicable",
-                backend.unwrap()
+            copy::display(
+                "journal.cli.doctor.default.stt.ready.backend",
+                [("backend", &backend.unwrap())],
             ),
             None::<String>,
         ));
@@ -41,32 +43,34 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         return parakeet_cpp_stt_ready::ready(context, check);
     }
     if context.platform == crate::vocabulary::Platform::Darwin && context.host_arch == "arm64" {
-        return match solstone_core_system::provider_runtime::check_parakeet_coreml_cache(
+        return match solstone_core_system::provider_runtime::check_parakeet_coreml_cache_in(
             &context.home_dir,
             &config,
             "darwin",
             "arm64",
+            context.report_form.locale(),
         ) {
             Ok(path) => Ok(make_result(
                 check,
                 Status::Ok,
-                format!("parakeet model ready at {}", path.display()),
+                copy::display(
+                    "journal.cli.doctor.default.stt.ready.other.model.ready",
+                    [("path", &path.display())],
+                ),
                 None::<String>,
             )),
             Err(error) => Ok(make_result(
                 check,
                 Status::Warn,
                 error,
-                Some(
-                    "CoreML parakeet model is not downloaded — fetch it with: solstone journal install-models",
-                ),
+                Some(copy::text("journal.cli.doctor.default.stt.ready.download")),
             )),
         };
     }
     Ok(make_result(
         check,
         Status::Skip,
-        "parakeet not supported on this platform",
+        copy::text("journal.cli.doctor.default.stt.ready.unsupported"),
         None::<String>,
     ))
 }

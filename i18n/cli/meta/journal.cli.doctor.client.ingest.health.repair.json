@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for client ingest health update or restart the device then confirm a valid upload clears the.",
+  "context": "Journal command-line text for client ingest health update or restart the device then confirm a valid upload clears the.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4b9e21cda7d66878ea497729509591054d7ef65e8f032ce97db5fdf78e7b46eb",
+  "max_length": 110,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

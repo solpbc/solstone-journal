@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for service running unreachable.",
+  "context": "Journal command-line text for service running unreachable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "cause",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "bce3ab368d6e25978dd1d8e0cbad823d1bd8ca73c6092cf6b1421892b4a5ef19",
+  "max_length": 362,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "cause",
+    "type": "string",
+    "enum_values": [
+      "absent",
+      "unknown",
+      "runtime",
+      "timeout",
+      "transport"
+    ],
+    "enum_default": "transport"
+  }
+}

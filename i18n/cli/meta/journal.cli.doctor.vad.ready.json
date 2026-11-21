@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for vad ready.",
+  "context": "Journal command-line text for vad ready.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "79813311a1aa94971aed31a24b7cf30b183ff7c8964dc18189685c73a8873cde",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "vad",
+      "kind": "accepted-input",
+      "value": "VAD"
+    }
+  ]
+}

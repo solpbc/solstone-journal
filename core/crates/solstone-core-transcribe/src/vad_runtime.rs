@@ -21,7 +21,7 @@ use solstone_core_system_health::{
     sanitize_os_bytes_for_terminal_bounded, unresolved_library,
 };
 
-use crate::audio::vad_binary_candidate_from;
+use crate::audio::vad_binary_candidate_from_in;
 
 const ERROR_SCHEMA: &str = "solstone-vad-error-v1";
 const MALFORMED_REQUEST: &str = "malformed-request";
@@ -73,8 +73,17 @@ pub fn probe_from_executable(
     current_executable: Result<PathBuf, io::Error>,
     timeout: Duration,
 ) -> VadRuntimeStatus {
-    match vad_binary_candidate_from(current_executable, |name| std::env::var(name).ok()) {
-        Ok(path) => probe_vad_runtime(&path, timeout),
+    probe_from_executable_in(current_executable, timeout, solstone_core_cli_copy::ENGLISH)
+}
+
+pub fn probe_from_executable_in(
+    current_executable: Result<PathBuf, io::Error>,
+    timeout: Duration,
+    locale: &str,
+) -> VadRuntimeStatus {
+    match vad_binary_candidate_from_in(current_executable, |name| std::env::var(name).ok(), locale)
+    {
+        Ok(path) => probe_vad_runtime_in(&path, timeout, locale),
         Err(error) => VadRuntimeStatus::Unresolved {
             cause: error.to_string(),
         },
@@ -82,8 +91,12 @@ pub fn probe_from_executable(
 }
 
 /// Run the closed-stdin launch probe against one helper path.
-#[cfg(not(windows))]
 pub fn probe_vad_runtime(binary: &Path, timeout: Duration) -> VadRuntimeStatus {
+    probe_vad_runtime_in(binary, timeout, solstone_core_cli_copy::ENGLISH)
+}
+
+#[cfg(not(windows))]
+pub fn probe_vad_runtime_in(binary: &Path, timeout: Duration, _locale: &str) -> VadRuntimeStatus {
     let path = binary.to_path_buf();
     if !binary.is_file() {
         return VadRuntimeStatus::Missing { path };
@@ -162,29 +175,76 @@ pub fn vad_runtime_repair_for(status: &VadRuntimeStatus) -> Option<&'static str>
     }
 }
 
+pub fn repair_in(status: &VadRuntimeStatus, locale: &str) -> Option<String> {
+    match (status, cfg!(target_os = "macos")) {
+        (VadRuntimeStatus::Ready, _) => None,
+        (VadRuntimeStatus::Timeout { .. }, true) => Some(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.doctor.vad.repair.restart.app",
+            &[],
+        )),
+        (VadRuntimeStatus::Timeout { .. }, false) => Some(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.doctor.vad.repair.restart",
+            &[],
+        )),
+        (_, true) => Some(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.doctor.vad.repair.install.app",
+            &[],
+        )),
+        (_, false) => Some(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.doctor.vad.repair.install",
+            &[],
+        )),
+    }
+}
+
 pub fn status_detail(status: &VadRuntimeStatus) -> String {
+    status_detail_in(status, solstone_core_cli_copy::ENGLISH)
+}
+
+pub fn status_detail_in(status: &VadRuntimeStatus, locale: &str) -> String {
     match status {
-        VadRuntimeStatus::Ready => "VAD helper launchable (closed-stdin usage contract)".to_owned(),
-        VadRuntimeStatus::Missing { path } => {
-            format!("VAD helper binary is missing: {}", path.display())
+        VadRuntimeStatus::Ready => {
+            solstone_core_cli_copy::render_for(locale, "journal.cli.doctor.vad.ready", &[])
         }
-        VadRuntimeStatus::Loader { library, .. } => {
-            format!("VAD helper could not load {library}")
-        }
-        VadRuntimeStatus::Timeout { timeout, .. } => {
-            format!("VAD helper did not exit within {timeout:?}")
-        }
-        VadRuntimeStatus::Spawn { cause, .. } => {
-            format!("VAD helper could not be executed: {cause}")
-        }
+        VadRuntimeStatus::Missing { path } => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.doctor.vad.missing",
+            [("path", &path.display())],
+        ),
+        VadRuntimeStatus::Loader { library, .. } => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.doctor.vad.loader",
+            [("library", &library)],
+        ),
+        VadRuntimeStatus::Timeout { timeout, .. } => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.doctor.vad.timeout",
+            [("timeout", &(format!("{:?}", timeout)))],
+        ),
+        VadRuntimeStatus::Spawn { cause, .. } => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.doctor.vad.spawn",
+            [("cause", &cause)],
+        ),
         VadRuntimeStatus::Contract {
             exit_code, stderr, ..
-        } => format!(
-            "VAD helper ran but did not report closed-stdin usage contract (exit {exit_code:?}): {stderr}"
+        } => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.doctor.vad.contract",
+            [
+                ("exit_code", &(format!("{:?}", exit_code))),
+                ("stderr", &stderr),
+            ],
         ),
-        VadRuntimeStatus::Unresolved { cause } => {
-            format!("could not resolve the VAD helper path: {cause}")
-        }
+        VadRuntimeStatus::Unresolved { cause } => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.doctor.vad.unresolved",
+            [("cause", &cause)],
+        ),
     }
 }
 
@@ -468,13 +528,13 @@ mod tests {
 pub const VAD_RUNTIME_PROBE_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[cfg(windows)]
-pub fn probe_vad_runtime(binary: &Path, timeout: Duration) -> VadRuntimeStatus {
+pub fn probe_vad_runtime_in(binary: &Path, timeout: Duration, locale: &str) -> VadRuntimeStatus {
     use crate::windows_onnx::{
-        ONNX_STDERR_LIMIT, ONNX_STDOUT_LIMIT, OnnxHelper, OnnxHelperError, run_onnx_helper,
+        ONNX_STDERR_LIMIT, ONNX_STDOUT_LIMIT, OnnxHelper, OnnxHelperError, run_onnx_helper_in,
     };
     use solstone_core_system::process::{BoundedHelperBudget, BoundedHelperError};
     let path = binary.to_path_buf();
-    match run_onnx_helper(
+    match run_onnx_helper_in(
         OnnxHelper::Vad,
         binary,
         &[],
@@ -485,6 +545,7 @@ pub fn probe_vad_runtime(binary: &Path, timeout: Duration) -> VadRuntimeStatus {
             stderr_limit_bytes: ONNX_STDERR_LIMIT,
         },
         solstone_core_system::process::BoundedHelperResources::new(),
+        locale,
     ) {
         Ok(output) => classify_finished(
             path,
@@ -513,7 +574,14 @@ pub fn probe_vad_runtime(binary: &Path, timeout: Duration) -> VadRuntimeStatus {
             }
         }
         Err(error) => {
-            log::warn!("VAD helper probe failed: {error:?}");
+            log::warn!(
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.doctor.vad.probe.log",
+                    [("error", &(format!("{error:?}")))]
+                )
+            );
             VadRuntimeStatus::Spawn {
                 path,
                 cause: error.to_string(),

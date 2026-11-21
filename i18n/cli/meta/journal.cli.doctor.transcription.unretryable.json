@@ -1,0 +1,54 @@
+{
+  "description": "Journal command-line text for transcription unretryable.",
+  "context": "Journal command-line text for transcription unretryable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "handler",
+      "type": "string"
+    },
+    {
+      "name": "reason_code",
+      "type": "string"
+    },
+    {
+      "name": "identities",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "e7f08616d73a40dbecde7c81cc4c30aaaecffb14a1746f736c34dc547af3324d",
+  "max_length": 359,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  },
+  "protected_slots": [
+    {
+      "name": "handler_key",
+      "kind": "accepted-input",
+      "value": "handler"
+    },
+    {
+      "name": "reason_key",
+      "kind": "accepted-input",
+      "value": "reason_code"
+    }
+  ]
+}

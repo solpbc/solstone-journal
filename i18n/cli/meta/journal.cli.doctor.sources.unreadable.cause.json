@@ -1,0 +1,42 @@
+{
+  "description": "Journal command-line text for sources unreadable cause.",
+  "context": "Journal command-line text for sources unreadable cause.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "days",
+      "type": "string"
+    },
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "cause",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "85f340b57ea28c62c8dc556c4fa6585216aedd7a818269b8fbfa7b998e743d0f",
+  "max_length": 211,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for sync folder unsafe.",
+  "context": "Journal command-line text for sync folder unsafe.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "19b4e6fbb52c9d51b4e3b540aac0a2c91f7bf34f497cddb1e94c793d61e88feb",
+  "max_length": 349,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "newline",
+      "kind": "accepted-input",
+      "value": "\n"
+    }
+  ]
+}

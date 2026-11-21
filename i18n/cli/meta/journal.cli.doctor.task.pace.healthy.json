@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for task pace tasks on pace.",
+  "context": "Journal command-line text for task pace tasks on pace.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1cc1c999f3e095acfed9130fbca13d2e2ac277d8da0ee4cc28f7f9bb8ceb6e36",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

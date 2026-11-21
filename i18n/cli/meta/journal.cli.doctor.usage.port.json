@@ -1,0 +1,38 @@
+{
+  "description": "Journal command-line text for usage port.",
+  "context": "Journal command-line text for usage port.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6a959bb9e75910b5904a81ce3c744c1f2d8e25373322c2719ec5f7a97b1d4748",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal doctor [-h] [--verbose] [--json] [--jsonl] [--port PORT]\n                      [--readiness]"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    },
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal doctor"
+    },
+    {
+      "name": "port_flag",
+      "kind": "flag",
+      "value": "--port"
+    }
+  ]
+}

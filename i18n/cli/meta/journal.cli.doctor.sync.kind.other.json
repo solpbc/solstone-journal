@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for sync kind other.",
+  "context": "Journal command-line text for sync kind other.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d88560a17760a1068179a116f96573a0b58d60e158f112d164f28be8ad746b95",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

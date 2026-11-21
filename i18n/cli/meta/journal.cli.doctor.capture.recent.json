@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for capture recent.",
+  "context": "Journal command-line text for capture recent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "client",
+      "type": "string"
+    },
+    {
+      "name": "hours",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "17720e152e6475f89586681ad9b0b74ad1f4f28d5e45765fd7daecde8ff43cf1",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "brand",
+      "kind": "mark-word",
+      "value": "solstone"
+    }
+  ]
+}

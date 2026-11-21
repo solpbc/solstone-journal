@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for sync reason read.",
+  "context": "Journal command-line text for sync reason read.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ed0dd8461bc92de307bb9bcfa54071677a96a0327742f92b7d84c8fcc6aee316",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

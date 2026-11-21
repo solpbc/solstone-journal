@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for disk space installation tree size overflow at.",
+  "context": "Journal command-line text for disk space installation tree size overflow at.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "439fded5d60d68eeb345785a9fbe176c4be701ce2183a696b905fa0793114bef",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for journal caught up couldn t fully determine couldn t locate the daily processing definitions.",
+  "context": "Journal command-line text for journal caught up couldn t fully determine couldn t locate the daily processing definitions.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f481072ad26b66866daa4aa1cc336a9c19a901d9b861f96e22f4c5de425cb161",
+  "max_length": 118,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for journal caught up open health to see waiting work and any spending confirmation reprocess a.",
+  "context": "Journal command-line text for journal caught up open health to see waiting work and any spending confirmation reprocess a.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cdae50ae353faff2ce93af41367b0ba8f15e2ca92895b735bb5c119ce81ad33f",
+  "max_length": 147,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use solstone_core_cli_copy as copy;
+
 #[cfg(unix)]
 use std::fs;
 use std::{
@@ -16,8 +18,8 @@ use crate::{
 };
 
 const MISSING_LOCAL_BIN_SOLSTONE_FIX: &str =
-    "run solstone journal setup to install the managed solstone wrapper";
-const PATH_SOLSTONE_FIX: &str = "put ~/.local/bin earlier on PATH, or run solstone journal setup to repoint the managed wrapper";
+    "journal.cli.doctor.local.bin.solstone.reachable.wrapper.install";
+const PATH_SOLSTONE_FIX: &str = "journal.cli.doctor.local.bin.solstone.reachable.path.repair";
 
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     // Python's shutil.which reads the process PATH; this check intentionally
@@ -46,9 +48,9 @@ fn run_with_path(context: &CheckContext, check: Check, path: Option<OsString>) -
             return Ok(make_result(
                 check,
                 Status::Ok,
-                format!(
-                    "~/.local/bin/solstone symlinks to PATH solstone at {}",
-                    which.display()
+                copy::display(
+                    "journal.cli.doctor.local.bin.solstone.reachable.symlink.ready",
+                    [("path", &which.display())],
                 ),
                 None::<String>,
             ));
@@ -57,7 +59,10 @@ fn run_with_path(context: &CheckContext, check: Check, path: Option<OsString>) -
             return Ok(make_result(
                 check,
                 Status::Ok,
-                format!("~/.local/bin/solstone is on PATH at {}", local.display()),
+                copy::display(
+                    "journal.cli.doctor.local.bin.solstone.reachable.path.ready",
+                    [("path", &local.display())],
+                ),
                 None::<String>,
             ));
         }
@@ -65,20 +70,30 @@ fn run_with_path(context: &CheckContext, check: Check, path: Option<OsString>) -
 
     let mut failures = Vec::new();
     let local_problem = if !local.exists() {
-        failures.push(format!("{} is missing", local.display()));
+        failures.push(copy::display(
+            "journal.cli.doctor.local.bin.solstone.reachable.file.missing",
+            [("path", &local.display())],
+        ));
         true
     } else if !local.is_file() {
-        failures.push(format!("{} is not a file", local.display()));
+        failures.push(copy::display(
+            "journal.cli.doctor.local.bin.solstone.reachable.file.invalid",
+            [("path", &local.display())],
+        ));
         true
     } else {
         false
     };
     match which {
-        None => failures.push("solstone is not on PATH".into()),
-        Some(which) => failures.push(format!(
-            "PATH solstone resolves to {}, expected {}",
-            resolve_non_strict(&which).display(),
-            resolve_non_strict(&local).display()
+        None => failures.push(copy::text(
+            "journal.cli.doctor.local.bin.solstone.reachable.path.absent",
+        )),
+        Some(which) => failures.push(copy::display(
+            "journal.cli.doctor.local.bin.solstone.reachable.path.mismatch",
+            [
+                ("resolved", &(resolve_non_strict(&which).display())),
+                ("expected", &(resolve_non_strict(&local).display())),
+            ],
         )),
     }
     Ok(make_result(
@@ -86,15 +101,17 @@ fn run_with_path(context: &CheckContext, check: Check, path: Option<OsString>) -
         Status::Warn,
         failures.join("; "),
         Some(if local_problem {
-            MISSING_LOCAL_BIN_SOLSTONE_FIX
+            copy::text(MISSING_LOCAL_BIN_SOLSTONE_FIX)
         } else {
-            PATH_SOLSTONE_FIX
+            copy::text(PATH_SOLSTONE_FIX)
         }),
-    ))
+    )
+    .changing_service())
 }
 
-const WINDOWS_NOT_ON_PATH_FIX: &str = "open a new terminal window and try again; if solstone is still not found, reinstall the journal";
-const WINDOWS_MISSING_FIX: &str = "reinstall the journal to restore solstone.exe";
+const WINDOWS_NOT_ON_PATH_FIX: &str =
+    "journal.cli.doctor.local.bin.solstone.reachable.windows.terminal";
+const WINDOWS_MISSING_FIX: &str = "journal.cli.doctor.local.bin.solstone.reachable.windows.repair";
 
 /// Windows has no managed wrapper: the installer puts the package's own `bin`
 /// on the owner's `Path`, so the same question -- does `solstone` on PATH
@@ -111,16 +128,19 @@ fn windows(
         return Ok(make_result(
             check,
             Status::Warn,
-            format!("{} is missing", expected.display()),
-            Some(WINDOWS_MISSING_FIX),
+            copy::display(
+                "journal.cli.doctor.local.bin.solstone.reachable.file.missing",
+                [("path", &expected.display())],
+            ),
+            Some(copy::text(WINDOWS_MISSING_FIX)),
         ));
     }
     let Some(found) = which_windows(path, pathext) else {
         return Ok(make_result(
             check,
             Status::Warn,
-            "solstone is not on PATH",
-            Some(WINDOWS_NOT_ON_PATH_FIX),
+            copy::text("journal.cli.doctor.local.bin.solstone.reachable.path.absent"),
+            Some(copy::text(WINDOWS_NOT_ON_PATH_FIX)),
         ));
     };
     let expected_resolved = resolve_non_strict(&expected);
@@ -129,22 +149,29 @@ fn windows(
         return Ok(make_result(
             check,
             Status::Ok,
-            format!("solstone is on PATH at {}", expected.display()),
+            copy::display(
+                "journal.cli.doctor.local.bin.solstone.reachable.windows.ready",
+                [("path", &expected.display())],
+            ),
             None::<String>,
         ));
     }
     Ok(make_result(
         check,
         Status::Warn,
-        format!(
-            "PATH solstone resolves to {}, expected {}",
-            found_resolved.display(),
-            expected_resolved.display()
+        copy::display(
+            "journal.cli.doctor.local.bin.solstone.reachable.path.mismatch",
+            [
+                ("resolved", &found_resolved.display()),
+                ("expected", &expected_resolved.display()),
+            ],
         ),
-        Some(format!(
-            "put {} ahead of {} on your PATH",
-            context.install_bin_dir.display(),
-            found.parent().unwrap_or(&found).display()
+        Some(copy::display(
+            "journal.cli.doctor.local.bin.solstone.reachable.windows.path.priority",
+            [
+                ("install_dir", &context.install_bin_dir.display()),
+                ("other_dir", &(found.parent().unwrap_or(&found).display())),
+            ],
         )),
     ))
 }
@@ -243,11 +270,19 @@ mod tests {
         let result = run_with_path(&staged, check, Some(bin.into())).unwrap();
         assert_eq!(result.status, Status::Warn);
         assert!(result.detail.contains("is missing"));
-        assert_eq!(result.fix.as_deref(), Some(MISSING_LOCAL_BIN_SOLSTONE_FIX));
+        assert_eq!(
+            result.fix.as_deref(),
+            Some("run solstone journal setup to install the managed solstone wrapper")
+        );
 
         executable(&local);
         let result = run_with_path(&staged, check, None).unwrap();
         assert_eq!(result.status, Status::Warn);
-        assert_eq!(result.fix.as_deref(), Some(PATH_SOLSTONE_FIX));
+        assert_eq!(
+            result.fix.as_deref(),
+            Some(
+                "put ~/.local/bin earlier on PATH, or run solstone journal setup to repoint the managed wrapper"
+            )
+        );
     }
 }

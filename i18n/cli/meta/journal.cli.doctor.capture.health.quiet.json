@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for capture health rollup quiet no rejected uploads recorded see devices for last delivery times.",
+  "context": "Journal command-line text for capture health rollup quiet no rejected uploads recorded see devices for last delivery times.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "991984064c31fa6fefe8095cc4fe1af48397496964c417516198ab49270792f1",
+  "max_length": 110,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "rollup",
+      "kind": "accepted-input",
+      "value": "rollup=quiet"
+    }
+  ]
+}

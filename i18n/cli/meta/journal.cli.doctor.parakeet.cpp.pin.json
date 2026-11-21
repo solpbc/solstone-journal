@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for parakeet cpp pin.",
+  "context": "Journal command-line text for parakeet cpp pin.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "key",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e60551f8e7a9007321a26768a9a0a5c4ed1f518dff12e17cfe4f3d1fc573ab7b",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "parakeet_cpp",
+      "kind": "accepted-input",
+      "value": "parakeet-cpp"
+    }
+  ]
+}

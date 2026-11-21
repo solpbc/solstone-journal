@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for launchd stale plist plist points to missing executable.",
+  "context": "Journal command-line text for launchd stale plist plist points to missing executable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e3a1fdc669b34d6ba2d2fbf7e82eb8b0133ce0623134ccf3e2f43eb1b13cf938",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -51,6 +51,7 @@ fn context() -> (CheckContext, tempfile::TempDir) {
     let root = dir.path();
     (
         CheckContext {
+            report_form: solstone_core_doctor::vocabulary::ReportForm::Structured,
             home_dir: root.join("home"),
             install_bin_dir: root.join("install/bin"),
             journal_path: root.join("journal"),
@@ -279,6 +280,7 @@ fn poison_battery_context(root: &Path) -> CheckContext {
     fs::set_permissions(&journal_path, fs::Permissions::from_mode(0o700))
         .expect("make poison-battery journal private");
     CheckContext {
+        report_form: solstone_core_doctor::vocabulary::ReportForm::Structured,
         home_dir: root.join("home"),
         install_bin_dir: root.join("install/bin"),
         journal_path,

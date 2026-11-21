@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for client transport refusal no devices had requests turned away in the last 7 days.",
+  "context": "Journal command-line text for client transport refusal no devices had requests turned away in the last 7 days.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "411516aea926aa4db29a3691bac282d22c34467838eacb0555455126c3e136ff",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for sync reason disappeared.",
+  "context": "Journal command-line text for sync reason disappeared.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "eff7c3d1326f51e56385ef9c179c87ac3962b579529ca13d5fc84e828d870ca6",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

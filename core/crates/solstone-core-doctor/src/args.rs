@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
+
+use solstone_core_cli_copy as copy;
 use std::ffi::{OsStr, OsString};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DoctorArgs {
@@ -10,35 +12,15 @@ pub struct DoctorArgs {
     pub readiness: bool,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DoctorUsageError(pub String);
-/// The usage the owner-facing `journal doctor` error path prints.
-/// It names `journal doctor`, not `solstone-core doctor`, because that is the
-/// command the owner typed before the journal dispatcher execed the native sibling.
-pub const USAGE: &str = concat!(
-    "usage: solstone journal doctor [-h] [--verbose] [--json] [--jsonl] [--port PORT]\n",
-    "                      [--readiness]\n",
-);
-
-/// The help `journal doctor` prints in the owner-facing command vocabulary.
-/// It names `journal doctor`, not `solstone-core doctor`, because that is the
-/// command the owner typed before the journal dispatcher execed the native sibling.
-pub const HELP: &str = concat!(
-    "usage: solstone journal doctor [-h] [--verbose] [--json] [--jsonl] [--port PORT]\n",
-    "                      [--readiness]\n",
-    "\n",
-    "Run solstone diagnostics.\n",
-    "\n",
-    "options:\n",
-    "  -h, --help         show this help message and exit\n",
-    "  --verbose          print every check result\n",
-    "  --json             emit JSON instead of text\n",
-    "  --jsonl            emit one-JSON-per-line events instead of text\n",
-    "  --port PORT        port to probe (default: 5015)\n",
-    "  --readiness        run the setup readiness battery\n",
-    "\n",
-    "If 'solstone journal doctor' is unavailable, build the native doctor from this checkout:\n",
-    "cargo run --manifest-path core/Cargo.toml -p solstone-core-doctor --bin solstone-core-doctor\n",
-);
+pub struct DoctorUsageError(&'static str);
+impl DoctorUsageError {
+    pub fn message(&self) -> String {
+        copy::text(self.0)
+    }
+}
+pub fn help() -> String {
+    copy::text("journal.cli.doctor.help")
+}
 pub fn parse_doctor_args(args: &[OsString]) -> Result<DoctorArgs, DoctorUsageError> {
     let mut parsed = DoctorArgs {
         verbose: false,
@@ -60,16 +42,14 @@ pub fn parse_doctor_args(args: &[OsString]) -> Result<DoctorArgs, DoctorUsageErr
                     .get(i)
                     .and_then(|v| v.to_str())
                     .and_then(|v| v.parse().ok())
-                    .ok_or_else(|| DoctorUsageError("--port requires an integer".into()))?
+                    .ok_or(DoctorUsageError("journal.cli.doctor.usage.port"))?
             }
-            _ => return Err(DoctorUsageError("unexpected argument".into())),
+            _ => return Err(DoctorUsageError("journal.cli.doctor.usage.argument")),
         }
         i += 1;
     }
     if parsed.json && parsed.jsonl {
-        return Err(DoctorUsageError(
-            "--json and --jsonl are mutually exclusive".into(),
-        ));
+        return Err(DoctorUsageError("journal.cli.doctor.usage.formats"));
     }
     Ok(parsed)
 }

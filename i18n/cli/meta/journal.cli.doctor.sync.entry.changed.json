@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for sync entry changed.",
+  "context": "Journal command-line text for sync entry changed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c8e5058b1fc28c025e4fd88cadd07c2f17cdf2fbe63d7d12c5dc576f7ff8f7ab",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

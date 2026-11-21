@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for backlog change recorded.",
+  "context": "Journal command-line text for backlog change recorded.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "location",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4d6c54d156be52a51c2704fd9497588aea9c17a4ad06d61f50ac950a597436d3",
+  "max_length": 131,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

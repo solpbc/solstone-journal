@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for sync unsupported.",
+  "context": "Journal command-line text for sync unsupported.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "eef427424654eb50d8beb74d023e1045a67051a3fd3d9968772d99d7c43a6f7a",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "newline",
+      "kind": "accepted-input",
+      "value": "\n"
+    }
+  ]
+}

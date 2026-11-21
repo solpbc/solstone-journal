@@ -50,6 +50,7 @@ pub type WindowsServiceProbe = fn(&CheckContext) -> WindowsServiceRegistration;
 
 #[derive(Debug, Clone)]
 pub struct CheckContext {
+    pub report_form: crate::vocabulary::ReportForm,
     pub home_dir: PathBuf,
     pub install_bin_dir: PathBuf,
     pub journal_path: PathBuf,
@@ -84,9 +85,9 @@ impl CheckContext {
         let install_bin_dir = executable
             .parent()
             .ok_or_else(|| {
-                format!(
-                    "could not determine executable directory: {}",
-                    executable.display()
+                solstone_core_cli_copy::display(
+                    "journal.cli.doctor.executable.directory",
+                    [("path", &executable.display())],
                 )
             })?
             .to_path_buf();
@@ -123,6 +124,7 @@ impl CheckContext {
         // machine "unknown".
         let hostname = solstone_core_system::lifecycle::local_hostname();
         Ok(Self {
+            report_form: crate::vocabulary::ReportForm::Human,
             callosum_socket_path: journal_path.join("health/callosum.sock"),
             home_dir,
             install_bin_dir,

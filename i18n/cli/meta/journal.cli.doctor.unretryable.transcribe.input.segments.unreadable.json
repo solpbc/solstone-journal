@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for unretryable transcribe input failed to list segments for day.",
+  "context": "Journal command-line text for unretryable transcribe input failed to list segments for day.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c89d15fd6b4fadf08acfa8d1461d4eb1682641e584964a7555e84546a7c09984",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

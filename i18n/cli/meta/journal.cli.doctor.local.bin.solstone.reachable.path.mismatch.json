@@ -1,0 +1,37 @@
+{
+  "description": "Journal command-line text for local bin solstone reachable path solstone resolves to expected.",
+  "context": "Journal command-line text for local bin solstone reachable path solstone resolves to expected.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "resolved",
+      "type": "string"
+    },
+    {
+      "name": "expected",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8d37752315789f8b81abccc4643f855eff597b1ab412793db92efb5db52a116e",
+  "max_length": 111,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "brand",
+      "kind": "mark-word",
+      "value": "solstone"
+    },
+    {
+      "name": "path_variable",
+      "kind": "accepted-input",
+      "value": "PATH"
+    }
+  ]
+}

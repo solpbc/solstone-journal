@@ -75,6 +75,20 @@ pub struct ExecutionError {
     #[serde(rename = "type")]
     pub kind: String,
     pub message: String,
+    #[serde(skip)]
+    pub(crate) localized_message: Option<String>,
+}
+
+impl ExecutionError {
+    pub(crate) fn localized(kind: &str, diagnostic: solstone_core_cli_copy::Diagnostic) -> Self {
+        let locale = solstone_core_cli_copy::cli_locale();
+        Self {
+            kind: kind.into(),
+            message: diagnostic.render(solstone_core_cli_copy::ENGLISH),
+            localized_message: (locale != solstone_core_cli_copy::ENGLISH)
+                .then(|| diagnostic.render(locale)),
+        }
+    }
 }
 #[derive(Debug, Clone, Serialize)]
 pub struct CheckResult {
@@ -83,6 +97,10 @@ pub struct CheckResult {
     pub status: Status,
     pub detail: String,
     pub fix: Option<String>,
+    #[serde(skip)]
+    pub(crate) changes_service: bool,
+    #[serde(skip)]
+    pub(crate) conflict_guidance: Option<String>,
     #[serde(skip_serializing)]
     pub platform: Option<String>,
     pub execution_error: Option<ExecutionError>,
@@ -93,6 +111,13 @@ pub struct CheckResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub backlog_days: Option<BacklogDays>,
 }
+impl CheckResult {
+    pub(crate) fn changing_service(mut self) -> Self {
+        self.changes_service = true;
+        self
+    }
+}
+
 /// The days behind `journal_caught_up`'s counts, oldest first.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct BacklogDays {
@@ -112,11 +137,63 @@ pub fn make_result(
         status,
         detail: detail.into(),
         fix: fix.map(Into::into),
+        changes_service: false,
+        conflict_guidance: None,
         platform: None,
         execution_error: None,
         client_delivery: None,
         heals: None,
         backlog_days: None,
+    }
+}
+
+/// Choose count forms for the human report or its backwards-compatible English wire fields.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReportForm {
+    Human,
+    Structured,
+    CanonicalEnglish,
+}
+
+impl ReportForm {
+    pub(crate) fn locale(self) -> &'static str {
+        if self == Self::CanonicalEnglish {
+            solstone_core_window_catalog::ENGLISH
+        } else {
+            solstone_core_window_catalog::cli_locale()
+        }
+    }
+
+    pub(crate) fn counted(
+        self,
+        id: &str,
+        counts: &[(&str, u64)],
+        values: &[(&str, &dyn std::fmt::Display)],
+    ) -> String {
+        use solstone_core_cli_copy::{Value, render_for};
+        use solstone_core_window_catalog::ENGLISH;
+        let legacy = self != Self::Human && self.locale() == ENGLISH;
+        let strings: Vec<_> = values
+            .iter()
+            .map(|(name, value)| (*name, value.to_string()))
+            .collect();
+        let mut args: Vec<_> = strings
+            .iter()
+            .map(|(name, value)| (*name, Value::String(value)))
+            .collect();
+        for &(name, count) in counts {
+            // In existing English JSON fields the default branch carries the original wording.
+            // Large inputs keep their trailing digits for languages with modulo-based plural rules.
+            let quantity = if legacy && count == 1 {
+                0
+            } else if count > i32::MAX as u64 {
+                1_000_000 + count % 1_000_000
+            } else {
+                count
+            };
+            args.push((name, Value::Cardinal(quantity as i64)));
+        }
+        render_for(self.locale(), id, &args)
     }
 }
 pub fn truncate(text: &str, limit: usize) -> String {
@@ -146,10 +223,21 @@ pub fn run_check(
         Ok(result) => result,
         Err(error) => {
             let message = truncate(&error.message, 512);
-            let detail = if message.is_empty() {
-                format!("check execution failed: {}", error.kind)
+            let diagnostic = error
+                .localized_message
+                .as_deref()
+                .map(|text| truncate(text, 512));
+            let diagnostic = diagnostic.as_deref().unwrap_or(&message);
+            let detail = if diagnostic.is_empty() {
+                solstone_core_cli_copy::display(
+                    "journal.cli.doctor.execution.error",
+                    [("kind", &error.kind)],
+                )
             } else {
-                format!("check execution failed: {}: {message}", error.kind)
+                solstone_core_cli_copy::display(
+                    "journal.cli.doctor.execution.error.detail",
+                    [("kind", &error.kind), ("error", &diagnostic)],
+                )
             };
             CheckResult {
                 name: check.name,
@@ -157,10 +245,13 @@ pub fn run_check(
                 status: Status::Fail,
                 detail,
                 fix: None,
+                changes_service: false,
+                conflict_guidance: None,
                 platform: None,
                 execution_error: Some(ExecutionError {
                     kind: error.kind,
                     message,
+                    localized_message: None,
                 }),
                 client_delivery: None,
                 heals: None,
@@ -169,6 +260,7 @@ pub fn run_check(
         }
     }
 }
+
 pub fn results_failed(results: &[CheckResult]) -> bool {
     results.iter().any(|r| {
         r.execution_error.is_some() || (r.severity == Severity::Blocker && r.status == Status::Fail)
@@ -199,11 +291,17 @@ pub fn summary_counts(results: &[CheckResult]) -> BTreeMap<&'static str, usize> 
     counts
 }
 pub fn status_label(result: &CheckResult) -> String {
-    if result.execution_error.is_some() {
-        "ERROR".into()
+    let id = if result.execution_error.is_some() {
+        "journal.cli.doctor.status.error"
     } else {
-        format!("{:?}", result.status).to_uppercase()
-    }
+        match result.status {
+            Status::Ok => "journal.cli.doctor.status.ok",
+            Status::Fail => "journal.cli.doctor.status.fail",
+            Status::Warn => "journal.cli.doctor.status.warn",
+            Status::Skip => "journal.cli.doctor.status.skip",
+        }
+    };
+    solstone_core_cli_copy::text(id)
 }
 
 #[cfg(test)]

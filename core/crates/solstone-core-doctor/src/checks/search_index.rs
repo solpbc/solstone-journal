@@ -4,13 +4,21 @@
 //! Reports the search index health value. Read-only: the index is measured
 //! against the disk, never opened for writing.
 
-use solstone_core_system_health::{IndexFailure, IndexHealthState, evaluate_index_health};
+use solstone_core_cli_copy as copy;
+
+use solstone_core_system_health::{
+    IndexFailure, IndexHealthState, evaluate_index_health_with_in, read_indexing_observations,
+};
 
 use crate::context::CheckContext;
 use crate::vocabulary::{Check, RunnerResult, Status, make_result};
 
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
-    let health = evaluate_index_health(&context.journal_path, context.now);
+    let health = evaluate_index_health_with_in(
+        &context.journal_path,
+        &read_indexing_observations(&context.journal_path, context.now),
+        solstone_core_window_catalog::cli_locale(),
+    );
     let (status, fix) = match (health.state, health.failure) {
         (IndexHealthState::Failing, Some(failure)) => (Status::Warn, fix_for(failure)),
         (IndexHealthState::Failing, None) => (Status::Warn, None),
@@ -18,48 +26,32 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         // them. Warn only when that is what the detail line says.
         (IndexHealthState::Behind, None) if health.retained > 0 && health.pending == 0 => (
             Status::Warn,
-            Some("run solstone journal indexer --rescan-full"),
+            Some(copy::text("journal.cli.doctor.index.fix.full")),
         ),
         // The daily check has run since it last finished, two days ago or
         // more, without finishing: its own errors say why.
         (IndexHealthState::Behind, None) if health.check_overdue => (
             Status::Warn,
-            Some("run solstone journal indexer --rescan and check its errors"),
+            Some(copy::text("journal.cli.doctor.index.fix.errors")),
         ),
         _ => (Status::Ok, None),
     };
     Ok(make_result(check, status, health.text, fix))
 }
 
-fn fix_for(failure: IndexFailure) -> Option<&'static str> {
+fn fix_for(failure: IndexFailure) -> Option<String> {
     match failure {
-        IndexFailure::MembershipsMissing => {
-            Some("run solstone journal indexer --reset --rescan-full")
-        }
-        IndexFailure::StampUnreadable => Some(
-            "search rebuilds its index from your journal once the damage is confirmed; if it persists, run solstone journal indexer --reset --rescan-full",
-        ),
-        IndexFailure::DamageCheck => Some(
-            "search is checking this itself and rebuilds if the damage is confirmed; run solstone journal indexer status for details",
-        ),
+        IndexFailure::MembershipsMissing => Some(copy::text("journal.cli.doctor.index.fix.reset")),
+        IndexFailure::StampUnreadable => Some(copy::text("journal.cli.doctor.index.fix.rebuild")),
+        IndexFailure::DamageCheck => Some(copy::text("journal.cli.doctor.index.fix.checking")),
         IndexFailure::ClassificationStalled => {
-            Some("run solstone journal indexer --rescan and check its warnings")
+            Some(copy::text("journal.cli.doctor.index.fix.warnings"))
         }
-        IndexFailure::FailedFiles => Some(
-            "search retries these updates at its daily check; run solstone journal indexer status for details",
-        ),
-        IndexFailure::FailedWork => Some(
-            "search retries this work every hour; run solstone journal indexer status for details",
-        ),
-        IndexFailure::FailedDeletions => Some(
-            "search keeps retrying these removals; run solstone journal indexer status for details",
-        ),
-        IndexFailure::Unreadable => Some(
-            "search rebuilds its index from your journal once the damage is confirmed; if it persists, run solstone journal indexer --reset --rescan-full",
-        ),
-        IndexFailure::NewerGeneration => Some("update solstone to the newest version"),
-        IndexFailure::ScanFailed => {
-            Some("run solstone journal indexer --rescan and check its errors")
-        }
+        IndexFailure::FailedFiles => Some(copy::text("journal.cli.doctor.index.fix.failed.files")),
+        IndexFailure::FailedWork => Some(copy::text("journal.cli.doctor.index.fix.failed.work")),
+        IndexFailure::FailedDeletions => Some(copy::text("journal.cli.doctor.index.fix.deletions")),
+        IndexFailure::Unreadable => Some(copy::text("journal.cli.doctor.index.fix.rebuild")),
+        IndexFailure::NewerGeneration => Some(copy::text("journal.cli.doctor.index.fix.upgrade")),
+        IndexFailure::ScanFailed => Some(copy::text("journal.cli.doctor.index.fix.errors")),
     }
 }

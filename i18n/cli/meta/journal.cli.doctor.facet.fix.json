@@ -1,0 +1,38 @@
+{
+  "description": "Journal command-line text for facet fix.",
+  "context": "Journal command-line text for facet fix.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "unrouted_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "261296a9217abac270773cd57bf0929bf07d0c56fa6a73749d1c0d38e7a1aef4",
+  "max_length": 386,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "unrouted_quantity",
+    "type": "cardinal"
+  },
+  "protected_slots": [
+    {
+      "name": "doctor_command",
+      "kind": "command",
+      "value": "solstone journal facet doctor"
+    },
+    {
+      "name": "logs_command",
+      "kind": "command",
+      "value": "solstone journal talent logs"
+    }
+  ]
+}

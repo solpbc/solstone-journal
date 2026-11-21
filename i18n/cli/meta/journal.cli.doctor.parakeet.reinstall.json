@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for parakeet reinstall.",
+  "context": "Journal command-line text for parakeet reinstall.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1e9fd05948b73dd8701ca197b17b77d206397991dc75e83e2de147937570b694",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

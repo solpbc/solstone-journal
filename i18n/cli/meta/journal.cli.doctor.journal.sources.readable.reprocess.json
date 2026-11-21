@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for journal sources readable run solstone journal reprocess day for each listed day that has already.",
+  "context": "Journal command-line text for journal sources readable run solstone journal reprocess day for each listed day that has already.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a21959d605792ef1b63148a9320133078222b7b94e41ff3116d68794ddb4e078",
+  "max_length": 101,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "reprocess_command",
+      "kind": "command",
+      "value": "solstone journal reprocess <day>"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for service conflict warning.",
+  "context": "Journal command-line text for service conflict warning.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d70b4fa9033766aaa08bd60244898ff68e3f432e6b040e81f8917845993f3d91",
+  "max_length": 113,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

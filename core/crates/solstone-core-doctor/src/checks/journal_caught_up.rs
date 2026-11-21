@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
+
 use crate::{
     context::CheckContext,
     vocabulary::{BacklogDays, Check, RunnerResult, Status, make_result},
 };
-const CANT_TELL: &str = "re-run solstone journal doctor; check the health logs if it persists";
+use solstone_core_cli_copy as copy;
+const CANT_TELL: &str = "journal.cli.doctor.journal.caught.up.repair";
 
 fn shell_argument(value: &str) -> String {
     if !value.is_empty()
@@ -21,31 +23,27 @@ fn shell_argument(value: &str) -> String {
     format!("'{escaped}'")
 }
 
-fn unfinished_suffix(days: &[solstone_core_system_health::BacklogDay]) -> String {
+fn append_unfinished(detail: &mut String, days: &[solstone_core_system_health::BacklogDay]) {
     let unfinished = solstone_core_system_health::aggregate_unfinished_from_days(days);
     if unfinished.activities > 0 {
-        let act_str = if unfinished.activities == 1 {
-            "1 activity".to_owned()
-        } else {
-            format!("{} activities", unfinished.activities)
-        };
-        let day_str = if unfinished.day_count == 1 {
-            "1 completed day".to_owned()
-        } else {
-            format!("{} completed days", unfinished.day_count)
-        };
-        format!("; {act_str} on {day_str} couldn't finish processing")
-    } else {
-        String::new()
+        detail.push_str("; ");
+        detail.push_str(&crate::vocabulary::ReportForm::Human.counted(
+            "journal.cli.doctor.backlog.unfinished",
+            &[
+                ("activity_count", unfinished.activities as u64),
+                ("day_count", unfinished.day_count as u64),
+            ],
+            &[
+                ("activities", &unfinished.activities),
+                ("days", &unfinished.day_count),
+            ],
+        ));
     }
 }
 
 /// Every result read from the backlog carries the days behind its counts, so
 /// a reader has the set rather than deriving it.
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
-    let mut days = None;
-    let mut result = evaluate(context, check, &mut days)?;
-    result.backlog_days = days;
     let inventory = solstone_core_system::work_inventory::read(&context.journal_path);
     let (summary, complete) = match inventory {
         Ok(Some(report)) => {
@@ -57,41 +55,108 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
                     + band.owner_requests
                     > 0
             });
-            let bands = report.bands.iter().enumerate().map(|(i, band)| format!(
-                "band {}: {} recordings ready / {} left, {} daily outputs ready / {} left, {} activities left, {} owner requests, {} waiting for permission, {} waiting for prerequisites",
-                i + 1, band.segments_complete, band.segments_owed, band.daily_units_complete,
-                band.daily_units_owed, band.activities_owed, band.owner_requests, band.permission_held, band.prerequisite_held,
-            )).collect::<Vec<_>>().join("; ");
+            let bands = report
+                .bands
+                .iter()
+                .enumerate()
+                .map(|(i, band)| {
+                    context.report_form.counted(
+                        "journal.cli.doctor.backlog.band",
+                        &[
+                            ("recording_count", band.segments_complete),
+                            ("output_count", band.daily_units_complete),
+                            ("activity_count", band.activities_owed),
+                            ("request_count", band.owner_requests),
+                        ],
+                        &[
+                            ("band", &(i + 1)),
+                            ("recordings", &band.segments_complete),
+                            ("recordings_left", &band.segments_owed),
+                            ("outputs", &band.daily_units_complete),
+                            ("outputs_left", &band.daily_units_owed),
+                            ("activities", &band.activities_owed),
+                            ("requests", &band.owner_requests),
+                            ("permission", &band.permission_held),
+                            ("prerequisites", &band.prerequisite_held),
+                        ],
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("; ");
+            let holds = report
+                .holds
+                .iter()
+                .map(|hold| match &hold.retry_unit {
+                    Some(unit) => copy::display(
+                        "journal.cli.doctor.backlog.hold.retry",
+                        [
+                            ("day", &hold.day),
+                            ("reason", &hold.reason),
+                            ("unit", &unit),
+                        ],
+                    ),
+                    None => format!("{}: {}", hold.day, hold.reason),
+                })
+                .collect::<Vec<_>>()
+                .join("; ");
+            let missing_date = copy::text("journal.cli.doctor.backlog.empty.date");
+            let oldest = report.oldest_day.as_deref().unwrap_or(&missing_date);
+            let newest = report.newest_day.as_deref().unwrap_or(&missing_date);
             (
-                format!(
-                    "inspected {} of {} days, {} through {}, as of {}; {}; {}{}; set aside: {}",
-                    report.days_inspected,
-                    report.days_total,
-                    report.oldest_day.as_deref().unwrap_or("none"),
-                    report.newest_day.as_deref().unwrap_or("none"),
-                    report.as_of_ms,
-                    bands,
-                    if report.complete {
-                        "whole-journal inspection"
-                    } else {
-                        "incomplete inspection"
-                    },
-                    if fresh { "" } else { "; last known progress" },
-                    report
-                        .holds
-                        .iter()
-                        .map(|hold| format!(
-                            "{}: {}{}",
-                            hold.day,
-                            hold.reason,
-                            hold.retry_unit
-                                .as_ref()
-                                .map(|id| format!(" (retry {id})"))
-                                .unwrap_or_default()
-                        ))
-                        .collect::<Vec<_>>()
-                        .join("; "),
-                ),
+                match (report.complete, fresh) {
+                    (true, true) => context.report_form.counted(
+                        "journal.cli.doctor.backlog.inventory.whole.current",
+                        &[("quantity", report.days_total as u64)],
+                        &[
+                            ("inspected", &report.days_inspected),
+                            ("total", &report.days_total),
+                            ("oldest", &oldest),
+                            ("newest", &newest),
+                            ("as_of", &report.as_of_ms),
+                            ("bands", &bands),
+                            ("holds", &holds),
+                        ],
+                    ),
+                    (true, false) => context.report_form.counted(
+                        "journal.cli.doctor.backlog.inventory.whole.last",
+                        &[("quantity", report.days_total as u64)],
+                        &[
+                            ("inspected", &report.days_inspected),
+                            ("total", &report.days_total),
+                            ("oldest", &oldest),
+                            ("newest", &newest),
+                            ("as_of", &report.as_of_ms),
+                            ("bands", &bands),
+                            ("holds", &holds),
+                        ],
+                    ),
+                    (false, true) => context.report_form.counted(
+                        "journal.cli.doctor.backlog.inventory.partial.current",
+                        &[("quantity", report.days_total as u64)],
+                        &[
+                            ("inspected", &report.days_inspected),
+                            ("total", &report.days_total),
+                            ("oldest", &oldest),
+                            ("newest", &newest),
+                            ("as_of", &report.as_of_ms),
+                            ("bands", &bands),
+                            ("holds", &holds),
+                        ],
+                    ),
+                    (false, false) => context.report_form.counted(
+                        "journal.cli.doctor.backlog.inventory.partial.last",
+                        &[("quantity", report.days_total as u64)],
+                        &[
+                            ("inspected", &report.days_inspected),
+                            ("total", &report.days_total),
+                            ("oldest", &oldest),
+                            ("newest", &newest),
+                            ("as_of", &report.as_of_ms),
+                            ("bands", &bands),
+                            ("holds", &holds),
+                        ],
+                    ),
+                },
                 fresh
                     && report.complete
                     && report.unreadable.is_empty()
@@ -100,28 +165,32 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             )
         }
         Ok(None) => (
-            "whole-journal inspection has not reported yet".into(),
+            copy::text("journal.cli.doctor.journal.caught.up.inventory.waiting"),
             false,
         ),
         Err(error) => (
-            format!("whole-journal inspection unavailable: {error}"),
+            copy::display(
+                "journal.cli.doctor.journal.caught.up.inventory.unavailable",
+                [("error", &error)],
+            ),
             false,
         ),
     };
+    let mut days = None;
+    let mut result = evaluate(context, check, &mut days, complete)?;
+    result.backlog_days = days;
     if !complete {
         if result.status == Status::Ok {
             result.status = Status::Warn;
         }
-        if result.detail.starts_with("caught up") {
-            result.detail = result
-                .detail
-                .replacen("caught up", "recent work checked", 1);
-        }
         if result.fix.is_none() {
-            result.fix = Some("open health to see waiting work and its next step".into());
+            result.fix = Some(copy::text(
+                "journal.cli.doctor.journal.caught.up.inventory.fix",
+            ));
         }
     }
-    result.detail.push_str(&format!("; {summary}"));
+    result.detail.push_str("; ");
+    result.detail.push_str(&summary);
     Ok(result)
 }
 
@@ -142,7 +211,12 @@ fn backlog_days(view: &solstone_core_system_health::BacklogView) -> BacklogDays 
     days
 }
 
-fn evaluate(context: &CheckContext, check: Check, days: &mut Option<BacklogDays>) -> RunnerResult {
+fn evaluate(
+    context: &CheckContext,
+    check: Check,
+    days: &mut Option<BacklogDays>,
+    complete: bool,
+) -> RunnerResult {
     let source = solstone_core_system_health::FilesystemHealthLogSource::new(&context.journal_path);
     let segments = solstone_core_system_health::FilesystemSegmentSource;
     let view = match solstone_core_system_health::read_backlog_view(
@@ -156,8 +230,11 @@ fn evaluate(context: &CheckContext, check: Check, days: &mut Option<BacklogDays>
             return Ok(make_result(
                 check,
                 Status::Warn,
-                format!("couldn't fully determine; backlog read failed: {error}"),
-                Some(CANT_TELL),
+                copy::display(
+                    "journal.cli.doctor.journal.caught.up.backlog.unavailable",
+                    [("error", &error)],
+                ),
+                Some(copy::text(CANT_TELL)),
             ));
         }
         Ok(view) => view,
@@ -175,12 +252,17 @@ fn evaluate(context: &CheckContext, check: Check, days: &mut Option<BacklogDays>
             .iter()
             .filter(|day| day.state == solstone_core_system_health::BACKLOG_STATE_UNKNOWN)
             .count();
-        let suffix = unfinished_suffix(&view.days);
+        let mut detail = context.report_form.counted(
+            "journal.cli.doctor.backlog.unknown.count",
+            &[("quantity", unknown as u64)],
+            &[("days", &unknown)],
+        );
+        append_unfinished(&mut detail, &view.days);
         return Ok(make_result(
             check,
             Status::Warn,
-            format!("couldn't fully determine; {unknown} day(s) unknown{suffix}"),
-            Some(CANT_TELL),
+            detail,
+            Some(copy::text(CANT_TELL)),
         ));
     }
 
@@ -190,16 +272,19 @@ fn evaluate(context: &CheckContext, check: Check, days: &mut Option<BacklogDays>
             payload.join("solstone/talent"),
             payload.join("solstone/apps"),
         ),
-        None => match solstone_core_system::daily_coverage::package_roots() {
+        None => match solstone_core_system::daily_coverage::package_roots_in(
+            context.report_form.locale(),
+        ) {
             Ok(roots) => roots,
             Err(err) => {
                 return Ok(make_result(
                     check,
                     Status::Warn,
-                    format!(
-                        "couldn't fully determine; couldn't locate the daily processing definitions: {err}"
+                    copy::display(
+                        "journal.cli.doctor.journal.caught.up.definitions.unavailable",
+                        [("error", &err)],
                     ),
-                    Some(CANT_TELL),
+                    Some(copy::text(CANT_TELL)),
                 ));
             }
         },
@@ -214,8 +299,11 @@ fn evaluate(context: &CheckContext, check: Check, days: &mut Option<BacklogDays>
             return Ok(make_result(
                 check,
                 Status::Warn,
-                format!("couldn't fully determine; failed to read daily configs: {err}"),
-                Some(CANT_TELL),
+                copy::display(
+                    "journal.cli.doctor.journal.caught.up.configs.unavailable",
+                    [("error", &err)],
+                ),
+                Some(copy::text(CANT_TELL)),
             ));
         }
     };
@@ -228,8 +316,11 @@ fn evaluate(context: &CheckContext, check: Check, days: &mut Option<BacklogDays>
                 return Ok(make_result(
                     check,
                     Status::Warn,
-                    format!("couldn't fully determine; failed to read facets: {error}"),
-                    Some(CANT_TELL),
+                    copy::display(
+                        "journal.cli.doctor.journal.caught.up.facets.unavailable",
+                        [("error", &error)],
+                    ),
+                    Some(copy::text(CANT_TELL)),
                 ));
             }
         };
@@ -308,9 +399,13 @@ fn evaluate(context: &CheckContext, check: Check, days: &mut Option<BacklogDays>
                             .file_name()
                             .map(|f| f.to_string_lossy().into_owned())
                             .unwrap_or_else(|| "unknown".to_owned());
-                        read_errors.push(format!(
-                            "couldn't fully determine; unreadable daily unit file {file_name} on day {}: {source}",
-                            day.day
+                        read_errors.push(copy::display(
+                            "journal.cli.doctor.journal.caught.up.unit.unreadable",
+                            [
+                                ("file_name", &file_name),
+                                ("day", &day.day),
+                                ("source", &source),
+                            ],
                         ));
                         (false, false, false)
                     }
@@ -322,9 +417,13 @@ fn evaluate(context: &CheckContext, check: Check, days: &mut Option<BacklogDays>
                             .file_name()
                             .map(|f| f.to_string_lossy().into_owned())
                             .unwrap_or_else(|| "unknown".to_owned());
-                        read_errors.push(format!(
-                            "couldn't fully determine; malformed daily unit file {file_name} on day {}: {source}",
-                            day.day
+                        read_errors.push(copy::display(
+                            "journal.cli.doctor.journal.caught.up.unit.invalid",
+                            [
+                                ("file_name", &file_name),
+                                ("day", &day.day),
+                                ("source", &source),
+                            ],
                         ));
                         (false, false, false)
                     }
@@ -355,8 +454,11 @@ fn evaluate(context: &CheckContext, check: Check, days: &mut Option<BacklogDays>
             return Ok(make_result(
                 check,
                 Status::Warn,
-                format!("couldn't fully determine; failed to read chronicle: {error}"),
-                Some(CANT_TELL),
+                copy::display(
+                    "journal.cli.doctor.journal.caught.up.chronicle.unavailable",
+                    [("error", &error)],
+                ),
+                Some(copy::text(CANT_TELL)),
             ));
         }
     };
@@ -368,8 +470,11 @@ fn evaluate(context: &CheckContext, check: Check, days: &mut Option<BacklogDays>
                     return Ok(make_result(
                         check,
                         Status::Warn,
-                        format!("couldn't fully determine; failed to read chronicle entry: {err}"),
-                        Some(CANT_TELL),
+                        copy::display(
+                            "journal.cli.doctor.journal.caught.up.chronicle.entry.unavailable",
+                            [("error", &err)],
+                        ),
+                        Some(copy::text(CANT_TELL)),
                     ));
                 }
             };
@@ -385,10 +490,11 @@ fn evaluate(context: &CheckContext, check: Check, days: &mut Option<BacklogDays>
                     return Ok(make_result(
                         check,
                         Status::Warn,
-                        format!(
-                            "couldn't fully determine; failed to read daily-units directory for {day}: {err}"
+                        copy::display(
+                            "journal.cli.doctor.journal.caught.up.units.unavailable",
+                            [("day", &day), ("error", &err)],
                         ),
-                        Some(CANT_TELL),
+                        Some(copy::text(CANT_TELL)),
                     ));
                 }
             };
@@ -399,10 +505,11 @@ fn evaluate(context: &CheckContext, check: Check, days: &mut Option<BacklogDays>
                         return Ok(make_result(
                             check,
                             Status::Warn,
-                            format!(
-                                "couldn't fully determine; failed to read daily-unit entry for {day}: {err}"
+                            copy::display(
+                                "journal.cli.doctor.journal.caught.up.units.entry.unavailable",
+                                [("day", &day), ("error", &err)],
                             ),
-                            Some(CANT_TELL),
+                            Some(copy::text(CANT_TELL)),
                         ));
                     }
                 };
@@ -428,8 +535,13 @@ fn evaluate(context: &CheckContext, check: Check, days: &mut Option<BacklogDays>
                             .file_name()
                             .map(|f| f.to_string_lossy().into_owned())
                             .unwrap_or_else(|| "unknown".to_owned());
-                        read_errors.push(format!(
-                            "couldn't fully determine; unreadable daily unit file {file_name} on day {day}: {source}"
+                        read_errors.push(copy::display(
+                            "journal.cli.doctor.journal.caught.up.unit.unreadable",
+                            [
+                                ("file_name", &file_name),
+                                ("day", &day),
+                                ("source", &source),
+                            ],
                         ));
                         continue;
                     }
@@ -441,8 +553,13 @@ fn evaluate(context: &CheckContext, check: Check, days: &mut Option<BacklogDays>
                             .file_name()
                             .map(|f| f.to_string_lossy().into_owned())
                             .unwrap_or_else(|| "unknown".to_owned());
-                        read_errors.push(format!(
-                            "couldn't fully determine; malformed daily unit file {file_name} on day {day}: {source}"
+                        read_errors.push(copy::display(
+                            "journal.cli.doctor.journal.caught.up.unit.invalid",
+                            [
+                                ("file_name", &file_name),
+                                ("day", &day),
+                                ("source", &source),
+                            ],
                         ));
                         continue;
                     }
@@ -450,9 +567,13 @@ fn evaluate(context: &CheckContext, check: Check, days: &mut Option<BacklogDays>
                 };
 
                 if record.version != solstone_core_journal_io::DAILY_UNIT_RECORD_VERSION {
-                    read_errors.push(format!(
-                        "couldn't read daily unit file {file_name} on day {day}: unsupported record version {}",
-                        record.version
+                    read_errors.push(copy::display(
+                        "journal.cli.doctor.journal.caught.up.unit.version",
+                        [
+                            ("file_name", &file_name),
+                            ("day", &day),
+                            ("version", &record.version),
+                        ],
                     ));
                     continue;
                 }
@@ -464,8 +585,9 @@ fn evaluate(context: &CheckContext, check: Check, days: &mut Option<BacklogDays>
                         &record.identity,
                     ) != unit_entry.path()
                 {
-                    read_errors.push(format!(
-                        "couldn't read daily unit file {file_name} on day {day}: record identity does not match its path"
+                    read_errors.push(copy::display(
+                        "journal.cli.doctor.journal.caught.up.unit.identity",
+                        [("file_name", &file_name), ("day", &day)],
                     ));
                     continue;
                 }
@@ -511,10 +633,11 @@ fn evaluate(context: &CheckContext, check: Check, days: &mut Option<BacklogDays>
                                         return Ok(make_result(
                                             check,
                                             Status::Warn,
-                                            format!(
-                                                "couldn't fully determine; failed to check active facets for {day}: {err}"
+                                            copy::display(
+                                                "journal.cli.doctor.journal.caught.up.facets.day.unavailable",
+                                                [("day", &day), ("error", &err)],
                                             ),
-                                            Some(CANT_TELL),
+                                            Some(copy::text(CANT_TELL)),
                                         ));
                                     }
                                 }
@@ -537,8 +660,9 @@ fn evaluate(context: &CheckContext, check: Check, days: &mut Option<BacklogDays>
                     Ok(unit) if unit.state.is_owed() => unit,
                     Ok(_) => continue,
                     Err(error) => {
-                        read_errors.push(format!(
-                            "couldn't determine daily unit coverage on {day}: {error}"
+                        read_errors.push(copy::display(
+                            "journal.cli.doctor.journal.caught.up.coverage.unavailable",
+                            [("day", &day), ("error", &error)],
                         ));
                         continue;
                     }
@@ -620,29 +744,40 @@ fn evaluate(context: &CheckContext, check: Check, days: &mut Option<BacklogDays>
             .iter()
             .filter(|day| day.capped_daily.is_some())
             .count();
-        let suffix = unfinished_suffix(&view.days);
-
-        if capped == 0 {
-            return Ok(make_result(
-                check,
-                Status::Ok,
-                format!("caught up{suffix}"),
-                None::<String>,
-            ));
+        let units = view
+            .days
+            .iter()
+            .filter_map(|day| day.capped_daily.as_ref())
+            .fold(0usize, |count, day| count.saturating_add(day.count));
+        let mut detail = match (complete, capped == 0) {
+            (true, true) => copy::text("journal.cli.doctor.backlog.caught"),
+            (true, false) => context.report_form.counted(
+                "journal.cli.doctor.backlog.caught.capped",
+                &[("day_count", capped as u64), ("unit_count", units as u64)],
+                &[("days", &capped)],
+            ),
+            (false, true) => copy::text("journal.cli.doctor.backlog.checked"),
+            (false, false) => context.report_form.counted(
+                "journal.cli.doctor.backlog.checked.capped",
+                &[("day_count", capped as u64), ("unit_count", units as u64)],
+                &[("days", &capped)],
+            ),
+        };
+        append_unfinished(&mut detail, &view.days);
+        let status = if capped == 0 {
+            Status::Ok
         } else {
-            return Ok(make_result(
-                check,
-                Status::Warn,
-                format!("caught up; {capped} day(s) completed with capped daily unit(s){suffix}"),
-                None::<String>,
-            ));
-        }
+            Status::Warn
+        };
+        return Ok(make_result(check, status, detail, None::<String>));
     }
 
-    let suffix = unfinished_suffix(&view.days);
     let mut detail = if view.pending_days == 0 && view.stuck_days == 0 {
         if let Some(candidate) = winning_candidate {
-            let mut d = format!("daily unit outside the recent backlog on {}", candidate.day);
+            let mut d = copy::display(
+                "journal.cli.doctor.journal.caught.up.outside.backlog",
+                [("day", &candidate.day)],
+            );
             if !read_errors.is_empty() {
                 d.push_str(&format!("; {}", read_errors.join("; ")));
             }
@@ -650,16 +785,38 @@ fn evaluate(context: &CheckContext, check: Check, days: &mut Option<BacklogDays>
         } else if !read_errors.is_empty() {
             read_errors.join("; ")
         } else {
-            "0 day(s) pending, 0 day(s) stuck".to_owned()
+            context.report_form.counted(
+                "journal.cli.doctor.backlog.pending.counts",
+                &[
+                    ("pending_count", view.pending_days as u64),
+                    ("stuck_count", view.stuck_days as u64),
+                ],
+                &[("pending", &view.pending_days), ("stuck", &view.stuck_days)],
+            )
         }
     } else {
-        let mut d = format!(
-            "{} day(s) pending, {} day(s) stuck",
-            view.pending_days, view.stuck_days
-        );
-        if let Some(day) = view.oldest_pending_day {
-            d.push_str(&format!("; oldest outstanding {day}"));
-        }
+        let mut d = match &view.oldest_pending_day {
+            Some(day) => context.report_form.counted(
+                "journal.cli.doctor.backlog.pending.oldest",
+                &[
+                    ("pending_count", view.pending_days as u64),
+                    ("stuck_count", view.stuck_days as u64),
+                ],
+                &[
+                    ("pending", &view.pending_days),
+                    ("stuck", &view.stuck_days),
+                    ("day", &day),
+                ],
+            ),
+            None => context.report_form.counted(
+                "journal.cli.doctor.backlog.pending.counts",
+                &[
+                    ("pending_count", view.pending_days as u64),
+                    ("stuck_count", view.stuck_days as u64),
+                ],
+                &[("pending", &view.pending_days), ("stuck", &view.stuck_days)],
+            ),
+        };
         if !read_errors.is_empty() {
             d.push_str(&format!("; {}", read_errors.join("; ")));
         }
@@ -669,7 +826,7 @@ fn evaluate(context: &CheckContext, check: Check, days: &mut Option<BacklogDays>
         || view.stuck_days != 0
         || (winning_candidate.is_none() && !read_errors.is_empty())
     {
-        detail.push_str(&suffix);
+        append_unfinished(&mut detail, &view.days);
     }
 
     let location = |day: &str, facet: Option<&str>| match facet
@@ -679,7 +836,6 @@ fn evaluate(context: &CheckContext, check: Check, days: &mut Option<BacklogDays>
         Some(facet) => format!("{day}/{facet}"),
         None => day.to_owned(),
     };
-    let reason = |kind: Option<&str>| kind.map_or(String::new(), |k| format!(" with reason {k}"));
     let unit_retry = |candidate: &CandidateUnit| {
         let opt_facet = match candidate.facet.as_deref().filter(|facet| !facet.is_empty()) {
             Some(facet) => format!(" --facet {}", shell_argument(facet)),
@@ -698,15 +854,17 @@ fn evaluate(context: &CheckContext, check: Check, days: &mut Option<BacklogDays>
                 || candidate.has_started_owner_action =>
         {
             let loc = location(&candidate.day, candidate.facet.as_deref());
-            let change = if candidate.name == "entities:entities_review" {
-                "an entity review change"
+            if candidate.name == "entities:entities_review" {
+                copy::display(
+                    "journal.cli.doctor.backlog.review.started",
+                    [("name", &candidate.name), ("location", &loc)],
+                )
             } else {
-                "a change"
-            };
-            format!(
-                "{} may have started {change} but did not confirm completion on {loc}; resolve the in-progress change before reprocessing",
-                candidate.name
-            )
+                copy::display(
+                    "journal.cli.doctor.backlog.change.started",
+                    [("name", &candidate.name), ("location", &loc)],
+                )
+            }
         }
         Some(candidate)
             if candidate.has_committed_owner_action
@@ -714,58 +872,118 @@ fn evaluate(context: &CheckContext, check: Check, days: &mut Option<BacklogDays>
                 && candidate.day.as_str() < today.as_str() =>
         {
             let loc = location(&candidate.day, candidate.facet.as_deref());
-            format!(
-                "{} stopped on {loc}{}; run {}",
-                candidate.name,
-                reason(candidate.owner_conflict_kind.as_deref()),
-                unit_retry(candidate)
-            )
+            match candidate.owner_conflict_kind.as_deref() {
+                Some(reason) => copy::display(
+                    "journal.cli.doctor.backlog.retry.reason",
+                    [
+                        ("name", &candidate.name),
+                        ("location", &loc),
+                        ("command", &(unit_retry(candidate))),
+                        ("reason", &reason),
+                    ],
+                ),
+                None => copy::display(
+                    "journal.cli.doctor.backlog.retry",
+                    [
+                        ("name", &candidate.name),
+                        ("location", &loc),
+                        ("command", &(unit_retry(candidate))),
+                    ],
+                ),
+            }
         }
         Some(candidate) if candidate.has_committed_owner_action => {
             let loc = location(&candidate.day, candidate.facet.as_deref());
-            format!(
-                "{} recorded a change on {loc}; resolve the recorded change before that day is redone",
-                candidate.name
+            copy::display(
+                "journal.cli.doctor.backlog.change.recorded",
+                [("name", &candidate.name), ("location", &loc)],
             )
         }
         Some(candidate) if candidate.lifecycle_state == "exhausted" => {
             let loc = location(&candidate.day, candidate.facet.as_deref());
             if candidate.day.as_str() >= today.as_str() {
-                format!("{} stopped on {loc}{}; resolve the conflict before reprocessing a past day",
-                    candidate.name, reason(candidate.owner_conflict_kind.as_deref()))
+                match candidate.owner_conflict_kind.as_deref() {
+                    Some(reason) => copy::display(
+                        "journal.cli.doctor.backlog.resolve.reason",
+                        [
+                            ("name", &candidate.name),
+                            ("location", &loc),
+                            ("reason", &reason),
+                        ],
+                    ),
+                    None => copy::display(
+                        "journal.cli.doctor.backlog.resolve",
+                        [("name", &candidate.name), ("location", &loc)],
+                    ),
+                }
             } else {
                 // A unit retry takes only the conflicts a fresh preparation can
                 // clear; any other stopped unit is redone with its whole day.
                 let command = if candidate.unit_retry_reprepares {
                     unit_retry(candidate)
                 } else {
-                    format!("solstone journal reprocess {} --from-scratch", candidate.day)
+                    format!(
+                        "solstone journal reprocess {} --from-scratch",
+                        candidate.day
+                    )
                 };
-                format!(
-                    "{} stopped on {loc}{} after its automatic retry; run {command}",
-                    candidate.name,
-                    reason(candidate.owner_conflict_kind.as_deref()),
-                )
+                match candidate.owner_conflict_kind.as_deref() {
+                    Some(reason) => copy::display(
+                        "journal.cli.doctor.backlog.exhausted.reason",
+                        [
+                            ("name", &candidate.name),
+                            ("location", &loc),
+                            ("command", &command),
+                            ("reason", &reason),
+                        ],
+                    ),
+                    None => copy::display(
+                        "journal.cli.doctor.backlog.exhausted",
+                        [
+                            ("name", &candidate.name),
+                            ("location", &loc),
+                            ("command", &command),
+                        ],
+                    ),
+                }
             }
         }
         Some(candidate) if candidate.lifecycle_state == "stale_deferred" => {
             let loc = location(&candidate.day, candidate.facet.as_deref());
-            format!(
-                "{} stopped on {loc}{}; it can retry on a later run after the local day changes",
-                candidate.name,
-                reason(candidate.owner_conflict_kind.as_deref())
-            )
+            match candidate.owner_conflict_kind.as_deref() {
+                Some(reason) => copy::display(
+                    "journal.cli.doctor.backlog.deferred.reason",
+                    [
+                        ("name", &candidate.name),
+                        ("location", &loc),
+                        ("reason", &reason),
+                    ],
+                ),
+                None => copy::display(
+                    "journal.cli.doctor.backlog.deferred",
+                    [("name", &candidate.name), ("location", &loc)],
+                ),
+            }
         }
         Some(candidate) if candidate.lifecycle_state == "retrying" => {
             let loc = location(&candidate.day, candidate.facet.as_deref());
-            format!(
-                "{} stopped on {loc}{}; it can retry on the next eligible run",
-                candidate.name,
-                reason(candidate.owner_conflict_kind.as_deref())
-            )
+            match candidate.owner_conflict_kind.as_deref() {
+                Some(reason) => copy::display(
+                    "journal.cli.doctor.backlog.eligible.reason",
+                    [
+                        ("name", &candidate.name),
+                        ("location", &loc),
+                        ("reason", &reason),
+                    ],
+                ),
+                None => copy::display(
+                    "journal.cli.doctor.backlog.eligible",
+                    [("name", &candidate.name), ("location", &loc)],
+                ),
+            }
         }
-        _ if !read_errors.is_empty() => CANT_TELL.to_owned(),
-        _ => "open health to see waiting work and any spending confirmation; reprocess a past day to give it priority after today".to_owned(),
+        _ if !read_errors.is_empty() => copy::text(CANT_TELL),
+        _ => copy::text("journal.cli.doctor.journal.caught.up.inspect"),
     };
     Ok(make_result(check, Status::Warn, detail, Some(fix)))
 }

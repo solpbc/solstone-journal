@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for package unavailable.",
+  "context": "Journal command-line text for package unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "directory",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b34eb4eb701a057a7cf6d970182d1442cce362df5bbd5ef7b3233d4bd820c786",
+  "max_length": 111,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for journal sources readable repair the file named above then run solstone journal reprocess day for.",
+  "context": "Journal command-line text for journal sources readable repair the file named above then run solstone journal reprocess day for.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "235fc04892c91987f01f66804bb8b244e9f6278fa3e72b81e9bd1d14a6e01372",
+  "max_length": 135,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "reprocess_command",
+      "kind": "command",
+      "value": "solstone journal reprocess <day>"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for backlog checked.",
+  "context": "Journal command-line text for backlog checked.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1ec25ac9b430fd4bdc4d45c9c43cb299ad04627bf687c67572bfc3552c36b557",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

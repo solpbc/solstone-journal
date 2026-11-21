@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for disk space resolved installation root is not a layout install tree.",
+  "context": "Journal command-line text for disk space resolved installation root is not a layout install tree.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ab5221692aa57a7aa763feaf70dc79db07fb377d1392c0e8bc066595c9f9e012",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

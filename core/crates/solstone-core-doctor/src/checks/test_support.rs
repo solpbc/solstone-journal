@@ -47,6 +47,7 @@ pub(crate) fn context_with_prefix(prefix: &str) -> StagedContext {
     let root = dir.path();
     StagedContext {
         context: CheckContext {
+            report_form: crate::vocabulary::ReportForm::Structured,
             home_dir: root.join("home"),
             install_bin_dir: root.join("install/bin"),
             journal_path: root.join("journal"),

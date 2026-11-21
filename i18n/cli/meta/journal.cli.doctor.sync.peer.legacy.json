@@ -1,0 +1,36 @@
+{
+  "description": "Journal command-line text for sync peer legacy.",
+  "context": "Journal command-line text for sync peer legacy.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "host",
+      "type": "string"
+    },
+    {
+      "name": "writer",
+      "type": "string"
+    },
+    {
+      "name": "prefix",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "324a0d8c2b7362d586aab57a6cbe889b1b84c6f123f0894f8f9bdeeb7dc6d2c8",
+  "max_length": 138,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "newline",
+      "kind": "accepted-input",
+      "value": "\n"
+    }
+  ]
+}

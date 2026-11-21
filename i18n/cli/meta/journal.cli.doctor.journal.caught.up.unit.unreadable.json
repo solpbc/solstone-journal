@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for journal caught up couldn t fully determine unreadable daily unit file on day.",
+  "context": "Journal command-line text for journal caught up couldn t fully determine unreadable daily unit file on day.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "file_name",
+      "type": "string"
+    },
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bb74222720a2f16ce3458f406de8ddeb66179729430af2c097de802e2e735c82",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

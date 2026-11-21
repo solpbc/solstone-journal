@@ -1,0 +1,38 @@
+{
+  "description": "Journal command-line text for local bin solstone reachable local bin solstone symlinks to path solstone at.",
+  "context": "Journal command-line text for local bin solstone reachable local bin solstone symlinks to path solstone at.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "503c0f7c4f2863d8842ce608552ba236a3e430908f05f357f63875d499aed606",
+  "max_length": 104,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "wrapper_path",
+      "kind": "accepted-input",
+      "value": "~/.local/bin/solstone"
+    },
+    {
+      "name": "brand",
+      "kind": "mark-word",
+      "value": "solstone"
+    },
+    {
+      "name": "path_variable",
+      "kind": "accepted-input",
+      "value": "PATH"
+    }
+  ]
+}

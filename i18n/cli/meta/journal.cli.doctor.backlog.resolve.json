@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for backlog resolve.",
+  "context": "Journal command-line text for backlog resolve.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "location",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "86d1b5d5bec49b6feda362e283b133045f6cc73410215fc176a789b228234111",
+  "max_length": 119,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

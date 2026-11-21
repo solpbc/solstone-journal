@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for vad probe log.",
+  "context": "Journal command-line text for vad probe log.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "83c2aef548f819a87ce1ffacd4ac1a28cef0bebcbf030ceb20218e54aece79f9",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "vad",
+      "kind": "accepted-input",
+      "value": "VAD"
+    }
+  ]
+}

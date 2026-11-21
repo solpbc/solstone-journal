@@ -1,0 +1,39 @@
+{
+  "description": "Journal command-line text for backlog unfinished.",
+  "context": "Journal command-line text for backlog unfinished.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "activity_count",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "day_count",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "activities",
+      "type": "string"
+    },
+    {
+      "name": "days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "cc2b81256c7b97c1f2cb8c5ec5bde1a5afb3354af34df030cf9485cc1bf63ebc",
+  "max_length": 350,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "activity_count",
+    "type": "cardinal"
+  }
+}

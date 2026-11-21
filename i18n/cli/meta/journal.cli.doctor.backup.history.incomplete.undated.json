@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for backup history incomplete undated.",
+  "context": "Journal command-line text for backup history incomplete undated.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "snapshot",
+      "type": "string"
+    },
+    {
+      "name": "date",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cbb48b21c35428a46698ff2c0d38987cddf0dce4c442e40db3a45386c49d95da",
+  "max_length": 203,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

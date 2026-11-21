@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for capture rollup.",
+  "context": "Journal command-line text for capture rollup.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "devices",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "73edecb57c8a32d25385501cabd441eb215c2d19636370447fb219494fef37a0",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "rollup",
+      "kind": "accepted-input",
+      "value": "rollup=attention"
+    }
+  ]
+}

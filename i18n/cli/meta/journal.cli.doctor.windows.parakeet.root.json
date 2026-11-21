@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for windows parakeet root.",
+  "context": "Journal command-line text for windows parakeet root.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ec8d04426cde1da702381dcba67f448f3efaade38a26ab10a52b88bfae735334",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

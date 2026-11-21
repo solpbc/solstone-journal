@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for sense dispatch no sense dispatch errors since the last successful handler sync.",
+  "context": "Journal command-line text for sense dispatch no sense dispatch errors since the last successful handler sync.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "58dca300c7b8fb05f72b9b023d7752b859f07ff9c360bc07ed1f783bf9e73507",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

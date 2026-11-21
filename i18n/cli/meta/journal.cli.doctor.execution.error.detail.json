@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for execution error detail.",
+  "context": "Journal command-line text for execution error detail.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "kind",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "264234f873d1b3eba1ff374d9fc8f603772f57aa6abfc59e56ce1ecde93fadf9",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

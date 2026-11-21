@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for backup association.",
+  "context": "Journal command-line text for backup association.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "association",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "264e374b1da4275c714003e840e19ec1679134489c7b30e9c0251b20d1cc75e3",
+  "max_length": 299,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "association",
+    "type": "string",
+    "enum_values": [
+      "unbound",
+      "unknown",
+      "superseded",
+      "current",
+      "invalid"
+    ],
+    "enum_default": "invalid"
+  }
+}

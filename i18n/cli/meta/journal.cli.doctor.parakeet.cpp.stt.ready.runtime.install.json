@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for parakeet cpp stt ready install the system openmp runtime that provides libgomp so 1 then rerun.",
+  "context": "Journal command-line text for parakeet cpp stt ready install the system openmp runtime that provides libgomp so 1 then rerun.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b788c4ce0b4b886af80a4f34cb84c5e8c2697ae60d3c27e8c635d9db501cdfbf",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "doctor_command",
+      "kind": "command",
+      "value": "solstone journal doctor"
+    },
+    {
+      "name": "runtime_file",
+      "kind": "accepted-input",
+      "value": "libgomp.so.1"
+    },
+    {
+      "name": "openmp",
+      "kind": "accepted-input",
+      "value": "OpenMP"
+    }
+  ]
+}

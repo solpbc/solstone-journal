@@ -1,0 +1,77 @@
+{
+  "description": "Journal command-line text for backlog band.",
+  "context": "Journal command-line text for backlog band.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "recording_count",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "output_count",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "activity_count",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "request_count",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "band",
+      "type": "string"
+    },
+    {
+      "name": "recordings",
+      "type": "string"
+    },
+    {
+      "name": "recordings_left",
+      "type": "string"
+    },
+    {
+      "name": "outputs",
+      "type": "string"
+    },
+    {
+      "name": "outputs_left",
+      "type": "string"
+    },
+    {
+      "name": "activities",
+      "type": "string"
+    },
+    {
+      "name": "requests",
+      "type": "string"
+    },
+    {
+      "name": "permission",
+      "type": "string"
+    },
+    {
+      "name": "prerequisites",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "1c264ef64d988ef0cd437a0e339d2ad23b2b958d90266fb16bf66a7022d534ec",
+  "max_length": 1030,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "recording_count",
+    "type": "cardinal"
+  }
+}

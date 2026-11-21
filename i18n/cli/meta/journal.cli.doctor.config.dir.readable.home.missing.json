@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for config dir readable home directory does not exist.",
+  "context": "Journal command-line text for config dir readable home directory does not exist.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d8f1cb8d813f14f70eaebfd13d3fbcb91fea8be3f62c0b5127d52bdfc6a43744",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

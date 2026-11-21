@@ -1,0 +1,30 @@
+{
+  "description": "Journal command-line text for backlog unknown count.",
+  "context": "Journal command-line text for backlog unknown count.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "7e65c83e36647ed990cd3dee5c61a08def2dcf49c18e9b94c94305f92988865d",
+  "max_length": 169,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

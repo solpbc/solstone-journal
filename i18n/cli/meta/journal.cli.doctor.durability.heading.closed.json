@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for durability heading closed.",
+  "context": "Journal command-line text for durability heading closed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "76198c09c22c1da1f2b9c934875a131c29baf9b9318c69bcd5351794ac5c2209",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

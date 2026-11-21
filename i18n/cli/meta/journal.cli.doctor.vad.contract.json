@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for vad contract.",
+  "context": "Journal command-line text for vad contract.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "exit_code",
+      "type": "string"
+    },
+    {
+      "name": "stderr",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "712d660d4b98a46430bd05e62a7da3eddb55e84561f29124dbb2f22e8e351e71",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "vad",
+      "kind": "accepted-input",
+      "value": "VAD"
+    }
+  ]
+}

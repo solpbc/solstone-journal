@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use solstone_core_cli_copy as copy;
+
 use solstone_core_journal::{
     LAYOUT_BUNDLE_ANCHOR, LAYOUT_LAYOUT_ANCHOR, LAYOUT_TEMPLATE_ANCHOR,
     resolve_installation_root_from_executable_dir,
@@ -16,10 +18,8 @@ use crate::{
 // Covers filesystem allocation and transient installation bookkeeping beyond
 // the measured replacement tree.
 const INSTALL_TREE_HEADROOM_BYTES: u64 = 1024 * 1024 * 1024;
-const NOT_LAYOUT_INSTALL_TREE_DETAIL: &str =
-    "resolved installation root is not a layout install tree";
-const PACKAGE_INSTALL_DETAIL: &str =
-    "a package install is replaced in place when it updates, so no second copy is needed";
+const NOT_LAYOUT_INSTALL_TREE_DETAIL: &str = "journal.cli.doctor.disk.space.layout.unsupported";
+const PACKAGE_INSTALL_DETAIL: &str = "journal.cli.doctor.disk.space.package.install";
 /// Where a distribution package (apt, dnf or zypper, from the repository or a
 /// standalone file) puts `solstone`. Its prefix is the system's `/usr`, not a
 /// tree this install owns, so there is no install of ours to measure there.
@@ -32,7 +32,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         return Ok(make_result(
             check,
             Status::Skip,
-            PACKAGE_INSTALL_DETAIL,
+            copy::text(PACKAGE_INSTALL_DETAIL),
             None::<String>,
         ));
     }
@@ -42,9 +42,9 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         return Ok(make_result(
             check,
             Status::Skip,
-            format!(
-                "could not resolve installation root from install bin directory: {}",
-                context.install_bin_dir.display()
+            copy::display(
+                "journal.cli.doctor.disk.space.root.unresolved",
+                [("path", &context.install_bin_dir.display())],
             ),
             None::<String>,
         ));
@@ -65,7 +65,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         return Ok(make_result(
             check,
             Status::Skip,
-            NOT_LAYOUT_INSTALL_TREE_DETAIL,
+            copy::text(NOT_LAYOUT_INSTALL_TREE_DETAIL),
             None::<String>,
         ));
     }
@@ -81,9 +81,13 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         return Ok(make_result(
             check,
             Status::Warn,
-            format!(
-                "only {free_gib:.1} GiB free on the filesystem holding {}; {required_gib:.1} GiB is a second copy of this install plus headroom",
-                prefix.display()
+            copy::display(
+                "journal.cli.doctor.disk.space.space.low",
+                [
+                    ("free_gib", &format!("{:.1}", free_gib)),
+                    ("path", &prefix.display()),
+                    ("required_gib", &format!("{:.1}", required_gib)),
+                ],
             ),
             None::<String>,
         ));
@@ -91,9 +95,13 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     Ok(make_result(
         check,
         Status::Ok,
-        format!(
-            "{free_gib:.1} GiB free on the filesystem holding {} ({required_gib:.1} GiB is a second copy of this install plus headroom)",
-            prefix.display()
+        copy::display(
+            "journal.cli.doctor.disk.space.space.available",
+            [
+                ("free_gib", &format!("{:.1}", free_gib)),
+                ("path", &prefix.display()),
+                ("required_gib", &format!("{:.1}", required_gib)),
+            ],
         ),
         None::<String>,
     ))
@@ -102,12 +110,14 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
 /// Bytes this account may still write on the filesystem holding `prefix`.
 #[cfg(unix)]
 fn available_bytes(prefix: &Path) -> Result<u64, ExecutionError> {
-    let stats = nix::sys::statvfs::statvfs(prefix).map_err(|error| ExecutionError {
-        kind: "StatvfsError".into(),
-        message: format!(
-            "could not inspect free space at {}: {error}",
-            prefix.display()
-        ),
+    let stats = nix::sys::statvfs::statvfs(prefix).map_err(|error| {
+        ExecutionError::localized(
+            "StatvfsError",
+            copy::Diagnostic::new(
+                "journal.cli.doctor.disk.space.space.inspect",
+                [("path", &prefix.display()), ("error", &error)],
+            ),
+        )
     })?;
     Ok(stats.blocks_available() as u64 * stats.fragment_size() as u64)
 }
@@ -116,21 +126,26 @@ fn available_bytes(prefix: &Path) -> Result<u64, ExecutionError> {
 /// caller's quota-aware figure, the same one the journal's own writers check.
 #[cfg(windows)]
 fn available_bytes(prefix: &Path) -> Result<u64, ExecutionError> {
-    solstone_core_journal_io::windows_available_disk_bytes(prefix).map_err(|error| ExecutionError {
-        kind: "DiskFreeSpaceError".into(),
-        message: format!(
-            "could not inspect free space at {}: {error}",
-            prefix.display()
-        ),
+    solstone_core_journal_io::windows_available_disk_bytes(prefix).map_err(|error| {
+        ExecutionError::localized(
+            "DiskFreeSpaceError",
+            copy::Diagnostic::new(
+                "journal.cli.doctor.disk.space.space.inspect",
+                [("path", &prefix.display()), ("error", &error)],
+            ),
+        )
     })
 }
 
 #[cfg(not(any(unix, windows)))]
 fn available_bytes(prefix: &Path) -> Result<u64, ExecutionError> {
-    Err(ExecutionError {
-        kind: "UnsupportedPlatform".into(),
-        message: format!("free space is not readable at {}", prefix.display()),
-    })
+    Err(ExecutionError::localized(
+        "UnsupportedPlatform",
+        copy::Diagnostic::new(
+            "journal.cli.doctor.disk.space.space.unreadable",
+            [("path", &prefix.display())],
+        ),
+    ))
 }
 
 pub(crate) fn required_free_space_bytes(prefix: &Path) -> Result<(u64, u64), ExecutionError> {
@@ -138,21 +153,28 @@ pub(crate) fn required_free_space_bytes(prefix: &Path) -> Result<(u64, u64), Exe
         .into_iter()
         .try_fold(0_u64, |total, name| {
             let bytes = tree_bytes(&prefix.join(name))?;
-            total.checked_add(bytes).ok_or_else(|| ExecutionError {
-                kind: "InstallTreeWalkError".into(),
-                message: format!("installation tree size overflow at {}", prefix.display()),
+            total.checked_add(bytes).ok_or_else(|| {
+                ExecutionError::localized(
+                    "InstallTreeWalkError",
+                    copy::Diagnostic::new(
+                        "journal.cli.doctor.disk.space.size.overflow",
+                        [("path", &prefix.display())],
+                    ),
+                )
             })
         })?;
     Ok((tree_bytes, INSTALL_TREE_HEADROOM_BYTES))
 }
 
 fn tree_bytes(path: &Path) -> Result<u64, ExecutionError> {
-    let metadata = fs::symlink_metadata(path).map_err(|error| ExecutionError {
-        kind: "InstallTreeWalkError".into(),
-        message: format!(
-            "could not measure installation tree at {}: {error}",
-            path.display()
-        ),
+    let metadata = fs::symlink_metadata(path).map_err(|error| {
+        ExecutionError::localized(
+            "InstallTreeWalkError",
+            copy::Diagnostic::new(
+                "journal.cli.doctor.disk.space.size.unreadable",
+                [("path", &path.display()), ("error", &error)],
+            ),
+        )
     })?;
     if metadata.file_type().is_symlink() {
         return Ok(0);
@@ -164,25 +186,34 @@ fn tree_bytes(path: &Path) -> Result<u64, ExecutionError> {
         return Ok(0);
     }
     fs::read_dir(path)
-        .map_err(|error| ExecutionError {
-            kind: "InstallTreeWalkError".into(),
-            message: format!(
-                "could not measure installation tree at {}: {error}",
-                path.display()
-            ),
+        .map_err(|error| {
+            ExecutionError::localized(
+                "InstallTreeWalkError",
+                copy::Diagnostic::new(
+                    "journal.cli.doctor.disk.space.size.unreadable",
+                    [("path", &path.display()), ("error", &error)],
+                ),
+            )
         })?
         .try_fold(0_u64, |total, entry| {
-            let entry = entry.map_err(|error| ExecutionError {
-                kind: "InstallTreeWalkError".into(),
-                message: format!(
-                    "could not measure installation tree at {}: {error}",
-                    path.display()
-                ),
+            let entry = entry.map_err(|error| {
+                ExecutionError::localized(
+                    "InstallTreeWalkError",
+                    copy::Diagnostic::new(
+                        "journal.cli.doctor.disk.space.size.unreadable",
+                        [("path", &path.display()), ("error", &error)],
+                    ),
+                )
             })?;
             let bytes = tree_bytes(&entry.path())?;
-            total.checked_add(bytes).ok_or_else(|| ExecutionError {
-                kind: "InstallTreeWalkError".into(),
-                message: format!("installation tree size overflow at {}", path.display()),
+            total.checked_add(bytes).ok_or_else(|| {
+                ExecutionError::localized(
+                    "InstallTreeWalkError",
+                    copy::Diagnostic::new(
+                        "journal.cli.doctor.disk.space.size.overflow",
+                        [("path", &path.display())],
+                    ),
+                )
             })
         })
 }
@@ -225,7 +256,10 @@ mod tests {
         let check = check("disk_space", Severity::Advisory);
         let result = run(&staged, check).unwrap();
         assert_eq!(result.status, Status::Skip);
-        assert_eq!(result.detail, PACKAGE_INSTALL_DETAIL);
+        assert_eq!(
+            result.detail,
+            "a package install is replaced in place when it updates, so no second copy is needed"
+        );
         assert!(result.execution_error.is_none());
     }
 
@@ -255,6 +289,9 @@ mod tests {
         let check = check("disk_space", Severity::Advisory);
         let result = run(&staged, check).unwrap();
         assert_eq!(result.status, Status::Skip);
-        assert_eq!(result.detail, NOT_LAYOUT_INSTALL_TREE_DETAIL);
+        assert_eq!(
+            result.detail,
+            "resolved installation root is not a layout install tree"
+        );
     }
 }

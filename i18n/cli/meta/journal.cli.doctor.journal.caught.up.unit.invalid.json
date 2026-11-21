@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for journal caught up couldn t fully determine malformed daily unit file on day.",
+  "context": "Journal command-line text for journal caught up couldn t fully determine malformed daily unit file on day.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "file_name",
+      "type": "string"
+    },
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5e174c25066a107e5d10f8a29e4694e90a4d89ace134c06c47d38eedbe082ca1",
+  "max_length": 127,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

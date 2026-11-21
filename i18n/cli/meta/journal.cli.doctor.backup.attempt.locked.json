@@ -1,0 +1,43 @@
+{
+  "description": "Journal command-line text for backup attempt locked.",
+  "context": "Journal command-line text for backup attempt locked.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "outcome",
+      "type": "string"
+    },
+    {
+      "name": "date",
+      "type": "string"
+    },
+    {
+      "name": "history",
+      "type": "string"
+    },
+    {
+      "name": "association",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "b8bce2f1d4b71f89b78ccbd6ea518641b9e44de726c00083f80d2b35c69e3212",
+  "max_length": 442,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "outcome",
+    "type": "string",
+    "enum_values": [
+      "success",
+      "incomplete",
+      "failed"
+    ],
+    "enum_default": "failed"
+  }
+}

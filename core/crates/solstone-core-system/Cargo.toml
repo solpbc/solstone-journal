@@ -21,6 +21,7 @@ full-tests = ["solstone-core-distribution/test-fixture-pin", "solstone-core-loca
 test-hooks = ["solstone-core-journal-io/test-hooks", "solstone-core-installation-identity/test-hooks"]
 
 [dependencies]
+solstone-core-cli-copy.workspace = true
 solstone-core-window-catalog.workspace = true
 solstone-core-distribution = { workspace = true }
 solstone-core-installed-payload.workspace = true

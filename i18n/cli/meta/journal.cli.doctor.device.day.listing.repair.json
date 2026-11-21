@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for device day listing a device syncing that day is told the journal cannot read it.",
+  "context": "Journal command-line text for device day listing a device syncing that day is told the journal cannot read it.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "04b9515203996bb90e4ee55dc8a1ae2b537f9e4e7c00f910d57948c65041a858",
+  "max_length": 233,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "events_file",
+      "kind": "accepted-input",
+      "value": "events.jsonl"
+    },
+    {
+      "name": "brand",
+      "kind": "mark-word",
+      "value": "solstone"
+    }
+  ]
+}

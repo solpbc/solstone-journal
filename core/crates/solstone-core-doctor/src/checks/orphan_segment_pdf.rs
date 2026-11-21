@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
+
 use crate::{
     context::CheckContext,
     vocabulary::{Check, RunnerResult, Status, make_result, truncate},
 };
+use solstone_core_cli_copy as copy;
 use std::path::{Path, PathBuf};
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     let chronicle = context.journal_path.join("chronicle");
@@ -11,7 +13,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         return Ok(make_result(
             check,
             Status::Skip,
-            "chronicle directory unavailable",
+            copy::text("journal.cli.doctor.orphan.segment.pdf.chronicle.unavailable"),
             None::<String>,
         ));
     }
@@ -36,21 +38,22 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         Ok(make_result(
             check,
             Status::Ok,
-            "all raw PDF originals have readable document transcripts",
+            copy::text("journal.cli.doctor.orphan.segment.pdf.clear"),
             None::<String>,
         ))
     } else {
         Ok(make_result(
             check,
             Status::Warn,
-            format!(
-                "{} raw PDF original(s) without a readable document transcript: {}",
-                orphans.len(),
-                truncate(&orphans.join(", "), 360)
+            context.report_form.counted(
+                "journal.cli.doctor.orphan.pdf.found",
+                &[("quantity", orphans.len() as u64)],
+                &[
+                    ("count", &orphans.len()),
+                    ("paths", &(truncate(&orphans.join(", "), 360))),
+                ],
             ),
-            Some(
-                "add a readable *_transcript.md beside the PDF original, then re-run solstone journal doctor",
-            ),
+            Some(copy::text("journal.cli.doctor.orphan.segment.pdf.repair")),
         ))
     }
 }

@@ -1,0 +1,39 @@
+{
+  "description": "Journal command-line text for backlog pending counts.",
+  "context": "Journal command-line text for backlog pending counts.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "pending_count",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "stuck_count",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "pending",
+      "type": "string"
+    },
+    {
+      "name": "stuck",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "3f19d94495020ee601c334d3fe35aa0c01dce94b37e2fc0796616540f8c985f8",
+  "max_length": 294,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "pending_count",
+    "type": "cardinal"
+  }
+}

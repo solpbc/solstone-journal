@@ -1,15 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
+
 use crate::{
     context::CheckContext,
     vocabulary::{Check, RunnerResult, Status, make_result},
 };
+use solstone_core_cli_copy as copy;
 use solstone_core_system::lifecycle::{
     SyncCheckResult, SyncPeerIdentity, SyncRescan, recorded_live_resident, rescan_sync_read_only,
     sync_peer_diagnostic,
 };
 use solstone_core_system::process::SystemProcessInstanceSource;
-use solstone_core_system_health::{SyncRescanDiagnosis, describe_sync_rescan};
+use solstone_core_system_health::{SyncRescanDiagnosis, describe_sync_rescan_in};
 
 use super::service_status;
 
@@ -18,14 +20,19 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         return Ok(make_result(
             check,
             Status::Skip,
-            "no local journal",
+            copy::text("journal.cli.doctor.journal.absent"),
             None::<String>,
         ));
     }
     let process_source = SystemProcessInstanceSource;
     let now = context.now.as_second() as f64;
-    let diagnosis =
-        describe_sync_rescan(&context.journal_path, "doctor.check", now, &process_source);
+    let diagnosis = describe_sync_rescan_in(
+        &context.journal_path,
+        "doctor.check",
+        now,
+        &process_source,
+        context.report_form.locale(),
+    );
     // `doctor` never writes its own heartbeat, so the exclusion filter inside
     // `describe_sync_rescan` (keyed on a caller's own heartbeat filename) can
     // never suppress the journal's own supervisor. That means a healthy,
@@ -71,9 +78,14 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
 /// verifiably alive now and exactly one heartbeat carries that process's host,
 /// pid and lifetime; anything less leaves every heartbeat in view.
 fn clean_detail(context: &CheckContext, result: Option<&SyncCheckResult>) -> String {
-    let clean = format!("this computer only ({})", context.hostname);
+    let clean = || {
+        copy::display(
+            "journal.cli.doctor.sync.local",
+            [("host", &context.hostname)],
+        )
+    };
     let Some(result) = result else {
-        return clean;
+        return clean();
     };
     let own = recorded_live_resident(&context.journal_path)
         .and_then(|resident| resident.own_heartbeat(&result.peer_observations));
@@ -83,16 +95,37 @@ fn clean_detail(context: &CheckContext, result: Option<&SyncCheckResult>) -> Str
         .rfind(|peer| Some(peer.source_filename.as_os_str()) != own)
         .map(sync_peer_diagnostic)
         .filter(|writer| !writer.identity.is_unidentified())
-        .map_or_else(
-            || clean.clone(),
-            |writer| {
-                format!(
-                    "{clean}\n  last other writer: {} ({})",
-                    writer.hostname,
-                    doctor_identity_label(&writer.identity)
-                )
-            },
-        )
+        .map_or_else(clean, |writer| match &writer.identity {
+            SyncPeerIdentity::LegacyV1 {
+                legacy_machine_id_prefix,
+            }
+            | SyncPeerIdentity::UnknownFuture {
+                legacy_machine_id_prefix,
+            } => copy::display(
+                "journal.cli.doctor.sync.peer.legacy",
+                [
+                    ("host", &context.hostname),
+                    ("writer", &writer.hostname),
+                    ("prefix", &legacy_machine_id_prefix),
+                ],
+            ),
+            SyncPeerIdentity::V2 {
+                writer_id_prefix,
+                run_id,
+            } => copy::display(
+                "journal.cli.doctor.sync.peer.writer",
+                [
+                    ("host", &context.hostname),
+                    ("writer", &writer.hostname),
+                    ("prefix", &writer_id_prefix),
+                    ("run", &run_id),
+                ],
+            ),
+            SyncPeerIdentity::Unidentified => copy::display(
+                "journal.cli.doctor.sync.peer.unknown",
+                [("host", &context.hostname), ("writer", &writer.hostname)],
+            ),
+        })
 }
 
 fn render_sync_rescan(
@@ -120,22 +153,6 @@ fn render_sync_rescan(
     }
 }
 
-fn doctor_identity_label(identity: &SyncPeerIdentity) -> String {
-    match identity {
-        SyncPeerIdentity::LegacyV1 {
-            legacy_machine_id_prefix,
-        }
-        | SyncPeerIdentity::UnknownFuture {
-            legacy_machine_id_prefix,
-        } => format!("legacy machine {legacy_machine_id_prefix}..."),
-        SyncPeerIdentity::V2 {
-            writer_id_prefix,
-            run_id,
-        } => format!("writer {writer_id_prefix}... run {run_id}"),
-        SyncPeerIdentity::Unidentified => "unidentified heartbeat".to_owned(),
-    }
-}
-
 #[cfg(all(test, unix))]
 mod tests {
     use std::ffi::OsString;
@@ -151,6 +168,7 @@ mod tests {
 
     fn context() -> CheckContext {
         CheckContext {
+            report_form: crate::vocabulary::ReportForm::Structured,
             home_dir: PathBuf::new(),
             install_bin_dir: PathBuf::new(),
             journal_path: PathBuf::new(),

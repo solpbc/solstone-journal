@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for service running run solstone journal service restart if it persists run solstone journal service.",
+  "context": "Journal command-line text for service running run solstone journal service restart if it persists run solstone journal service.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8b6ac18e135a3b7c51d89ef02bd627863892776b864ae0bfb843756572c7ef23",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "restart_command",
+      "kind": "command",
+      "value": "solstone journal service restart"
+    },
+    {
+      "name": "logs_command",
+      "kind": "command",
+      "value": "solstone journal service logs"
+    }
+  ]
+}

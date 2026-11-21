@@ -7,11 +7,13 @@
 //! `health/parent-loss.wedged-*` trees an operator or an older heal left.
 //! Nothing here is a fault to fix; it is the visible half of a heal.
 
+use solstone_core_cli_copy as copy;
+
 use std::fs;
 use std::path::Path;
 
 use crate::context::CheckContext;
-use crate::vocabulary::{Check, RunnerResult, Status, make_result, truncate};
+use crate::vocabulary::{Check, ReportForm, RunnerResult, Status, make_result, truncate};
 
 use solstone_core_journal_io::durability::SET_ASIDE_MARKER;
 
@@ -26,6 +28,9 @@ pub(crate) struct DurabilityReport {
     pub closed_generations: Vec<String>,
     /// Generations sealed `unresolved` by their own coordinator.
     pub unresolved_generations: Vec<String>,
+    /// Legacy English entries returned in the structured heals array.
+    canonical_heals: Vec<String>,
+    canonical_unresolved: Vec<String>,
     /// What could not be inspected.
     pub unreadable: Vec<String>,
     /// Generations a start refuses on: a retirement's descendant record lost.
@@ -104,7 +109,7 @@ fn scan_directory_recursive(journal: &Path, directory: &Path, report: &mut Durab
 }
 
 #[cfg(unix)]
-fn scan_generations(journal: &Path, report: &mut DurabilityReport) {
+fn scan_generations(journal: &Path, report: &mut DurabilityReport, form: ReportForm) {
     use solstone_core_system::lifecycle::{
         AdmissionFinding, ParentLossGenerationRecord, ParentLossTerminalDisposition,
         parent_loss_census_is_lost,
@@ -177,15 +182,18 @@ fn scan_generations(journal: &Path, report: &mut DurabilityReport) {
                 .ok()
                 .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
                 .is_some_and(|boot| boot.get("boot_time").is_some_and(|time| time.is_u64()));
-            let clears = if cfg!(target_os = "macos") && !boot_time_recorded {
-                "it will not clear on its own and needs help from support"
+            let detail = if cfg!(target_os = "macos") && !boot_time_recorded {
+                copy::display(
+                    "journal.cli.doctor.durability.refusal.support",
+                    [("generation", &generation)],
+                )
             } else {
-                "it clears after the computer restarts"
+                copy::display(
+                    "journal.cli.doctor.durability.refusal.restart",
+                    [("generation", &generation)],
+                )
             };
-            report.refusals.push(format!(
-                "generation {generation}: the record of processes a retirement started is lost, \
-                 so the journal will not start; {clears}"
-            ));
+            report.refusals.push(detail);
         }
         let Some(record) = record else {
             continue;
@@ -214,62 +222,109 @@ fn scan_generations(journal: &Path, report: &mut DurabilityReport) {
                 ),
             };
             let never_admitted = total.saturating_sub(exited).saturating_sub(retired);
-            report.closed_generations.push(format!(
-                "generation {generation} was closed by the start that became generation {} \
-                 (unix {}): {total} admissions, {exited} already exited, {retired} stopped by the journal, \
-                 {never_admitted} never admitted{}",
-                closure.successor_generation,
-                closure.closed_at,
-                if closure.summary.as_ref().is_some_and(|summary| summary.boot_changed) {
-                    "; the computer had restarted since"
+            let closed = |language: ReportForm| {
+                if closure
+                    .summary
+                    .as_ref()
+                    .is_some_and(|summary| summary.boot_changed)
+                {
+                    language.counted(
+                        "journal.cli.doctor.durability.closed.restarted",
+                        &[("quantity", total as u64)],
+                        &[
+                            ("generation", &generation),
+                            ("successor", &closure.successor_generation),
+                            ("time", &closure.closed_at),
+                            ("total", &total),
+                            ("exited", &exited),
+                            ("retired", &retired),
+                            ("never", &never_admitted),
+                        ],
+                    )
                 } else {
-                    ""
-                },
-            ));
+                    language.counted(
+                        "journal.cli.doctor.durability.closed",
+                        &[("quantity", total as u64)],
+                        &[
+                            ("generation", &generation),
+                            ("successor", &closure.successor_generation),
+                            ("time", &closure.closed_at),
+                            ("total", &total),
+                            ("exited", &exited),
+                            ("retired", &retired),
+                            ("never", &never_admitted),
+                        ],
+                    )
+                }
+            };
+            report.closed_generations.push(closed(form));
+            report
+                .canonical_heals
+                .push(closed(ReportForm::CanonicalEnglish));
             for admission in &closure.admissions {
-                let finding_desc = match admission.finding {
-                    AdmissionFinding::Exited => "exited".to_owned(),
-                    AdmissionFinding::Retired { escalated: true } => {
-                        "retired (escalated: true)".to_owned()
-                    }
-                    AdmissionFinding::Retired { escalated: false } => "retired".to_owned(),
-                    AdmissionFinding::NeverAcknowledged => "never-acknowledged".to_owned(),
-                    AdmissionFinding::SpawnFailed => "spawn-failed".to_owned(),
-                    AdmissionFinding::Unidentified => "unidentified".to_owned(),
-                    AdmissionFinding::RejectedAndReaped => "rejected-and-reaped".to_owned(),
-                    AdmissionFinding::PidReusedByAnotherUser => {
-                        "pid-reused-by-another-user".to_owned()
-                    }
+                let finding = match admission.finding {
+                    AdmissionFinding::Exited => "exited",
+                    AdmissionFinding::Retired { escalated: true } => "escalated",
+                    AdmissionFinding::Retired { escalated: false } => "retired",
+                    AdmissionFinding::NeverAcknowledged => "unacknowledged",
+                    AdmissionFinding::SpawnFailed => "spawn",
+                    AdmissionFinding::Unidentified => "unidentified",
+                    AdmissionFinding::RejectedAndReaped => "rejected",
+                    AdmissionFinding::PidReusedByAnotherUser => "reused",
                 };
-                let service_or_prefix = match admission.service {
+                let row = |language: ReportForm| match admission.service {
                     Some(service) => {
-                        format!(
-                            "service {}",
-                            solstone_core_system::lifecycle::service_name(service)
+                        let identity = solstone_core_system::lifecycle::service_name(service);
+                        copy::display_for(
+                            language.locale(),
+                            "journal.cli.doctor.durability.admission.service",
+                            [
+                                ("finding", &finding),
+                                ("generation", &generation),
+                                ("admission", &admission.launch_id),
+                                ("identity", &identity),
+                            ],
                         )
                     }
                     None => {
-                        let prefix = admission.launch_id.split('-').next().unwrap_or("helper");
-                        format!("helper {prefix}")
+                        let identity = admission.launch_id.split('-').next().unwrap_or("helper");
+                        copy::display_for(
+                            language.locale(),
+                            "journal.cli.doctor.durability.admission.helper",
+                            [
+                                ("finding", &finding),
+                                ("generation", &generation),
+                                ("admission", &admission.launch_id),
+                                ("identity", &identity),
+                            ],
+                        )
                     }
                 };
-                report.closed_generations.push(format!(
-                    "generation {generation} admission {}: {service_or_prefix}, {finding_desc}",
-                    admission.launch_id,
-                ));
+                report.closed_generations.push(row(form));
+                report
+                    .canonical_heals
+                    .push(row(ReportForm::CanonicalEnglish));
             }
         } else if let Some(ParentLossTerminalDisposition::Unresolved { reason }) =
             record.terminal.as_ref()
         {
+            let row = |language: ReportForm| {
+                copy::display_for(
+                    language.locale(),
+                    "journal.cli.doctor.durability.unresolved",
+                    [("generation", &generation), ("reason", &reason)],
+                )
+            };
+            report.unresolved_generations.push(row(form));
             report
-                .unresolved_generations
-                .push(format!("generation {generation}: {reason}"));
+                .canonical_unresolved
+                .push(row(ReportForm::CanonicalEnglish));
         }
     }
 }
 
 #[cfg(not(unix))]
-fn scan_generations(_journal: &Path, _report: &mut DurabilityReport) {}
+fn scan_generations(_journal: &Path, _report: &mut DurabilityReport, _form: ReportForm) {}
 
 /// Entry directories in one `admissions/` listing.
 #[cfg(unix)]
@@ -284,13 +339,7 @@ fn count_entries(admissions: &Path) -> usize {
         .unwrap_or(0)
 }
 
-fn outstanding_line(report: &DurabilityReport) -> Option<String> {
-    report.outstanding.map(|(generation, count)| {
-        format!("the newest run (generation {generation}) still owes {count} launches")
-    })
-}
-
-pub(crate) fn scan(journal: &Path) -> DurabilityReport {
+pub(crate) fn scan(journal: &Path, form: ReportForm) -> DurabilityReport {
     let mut report = DurabilityReport::default();
     let mut root_prefixes = std::collections::BTreeSet::new();
     for entry in solstone_core_journal_io::durability::artifacts() {
@@ -307,19 +356,25 @@ pub(crate) fn scan(journal: &Path) -> DurabilityReport {
         let dir = journal.join(prefix);
         scan_directory_recursive(journal, &dir, &mut report);
     }
-    scan_generations(journal, &mut report);
+    scan_generations(journal, &mut report, form);
     report.set_aside.sort();
     report.set_aside.dedup();
     report
 }
 
-fn named(kind: &str, items: &[String]) -> String {
-    let mut lines = vec![format!("{kind} ({}):", items.len())];
+fn named(id: &str, items: &[String]) -> String {
+    let mut lines = vec![copy::display(id, [("count", &items.len())])];
     for item in items.iter().take(NAMED_LIMIT) {
         lines.push(format!("  {item}"));
     }
     if items.len() > NAMED_LIMIT {
-        lines.push(format!("  ... and {} more", items.len() - NAMED_LIMIT));
+        lines.push(format!(
+            "  {}",
+            copy::display(
+                "journal.cli.doctor.durability.more",
+                [("count", &(items.len() - NAMED_LIMIT))]
+            )
+        ));
     }
     lines.join("\n")
 }
@@ -329,46 +384,63 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         return Ok(make_result(
             check,
             Status::Skip,
-            "no local journal",
+            copy::text("journal.cli.doctor.journal.absent"),
             None::<String>,
         ));
     }
-    let report = scan(&context.journal_path);
+    let report = scan(&context.journal_path, context.report_form);
     if report.is_clean() {
-        let detail = match outstanding_line(&report) {
-            Some(line) => format!("no recorded recovery to report; {line}"),
-            None => "no recorded recovery to report".to_owned(),
+        let detail = match report.outstanding {
+            Some((generation, count)) => context.report_form.counted(
+                "journal.cli.doctor.durability.clean.outstanding",
+                &[("quantity", count as u64)],
+                &[("generation", &generation), ("launches", &count)],
+            ),
+            None => copy::text("journal.cli.doctor.durability.clean"),
         };
         return Ok(make_result(check, Status::Ok, detail, None::<String>));
     }
     let mut sections = Vec::new();
     if !report.refusals.is_empty() {
-        sections.push(named("starts refused", &report.refusals));
+        sections.push(named(
+            "journal.cli.doctor.durability.heading.refused",
+            &report.refusals,
+        ));
     }
     let mut heals = Vec::new();
     if !report.closed_generations.is_empty() {
         sections.push(named(
-            "runs closed by a later start",
+            "journal.cli.doctor.durability.heading.closed",
             &report.closed_generations,
         ));
-        heals.extend(report.closed_generations.clone());
+        heals.extend(report.canonical_heals);
     }
     if !report.unresolved_generations.is_empty() {
         sections.push(named(
-            "runs that did not stop cleanly",
+            "journal.cli.doctor.durability.heading.unresolved",
             &report.unresolved_generations,
         ));
-        heals.extend(report.unresolved_generations.clone());
+        heals.extend(report.canonical_unresolved);
     }
     if !report.set_aside.is_empty() {
-        sections.push(named("bookkeeping set aside", &report.set_aside));
+        sections.push(named(
+            "journal.cli.doctor.durability.heading.aside",
+            &report.set_aside,
+        ));
         heals.extend(report.set_aside.clone());
     }
     if !report.unreadable.is_empty() {
-        sections.push(named("could not inspect", &report.unreadable));
+        sections.push(named(
+            "journal.cli.doctor.durability.heading.unreadable",
+            &report.unreadable,
+        ));
     }
-    if let Some(line) = outstanding_line(&report) {
-        sections.push(line);
+    if let Some((generation, count)) = report.outstanding {
+        sections.push(context.report_form.counted(
+            "journal.cli.doctor.durability.outstanding",
+            &[("quantity", count as u64)],
+            &[("generation", &generation), ("launches", &count)],
+        ));
     }
     let detail = sections.join("\n");
     let status = if report.unreadable.is_empty() && report.refusals.is_empty() {
@@ -377,13 +449,11 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         Status::Fail
     };
     let action = if !report.refusals.is_empty() {
-        "the journal will not start until this clears; each line above says whether it clears \
-         after the computer restarts or needs help"
+        copy::text("journal.cli.doctor.durability.action.refused")
     } else if report.unreadable.is_empty() {
-        "no action is needed: recovered records stay beside the originals and are listed here"
+        copy::text("journal.cli.doctor.durability.action.recovered")
     } else {
-        "check the paths under 'could not inspect'; any recovered records stay beside the \
-         originals and are listed here"
+        copy::text("journal.cli.doctor.durability.action.unreadable")
     };
     let mut result = make_result(check, status, truncate(&detail, 4096), Some(action));
     if !heals.is_empty() {
@@ -418,7 +488,7 @@ mod tests {
     fn a_journal_without_heals_is_clean() {
         let journal = TempDir::new().expect("journal");
         fs::create_dir_all(journal.path().join("health/parent-loss/generations/1")).unwrap();
-        assert!(scan(journal.path()).is_clean());
+        assert!(scan(journal.path(), ReportForm::Structured).is_clean());
     }
 
     #[test]
@@ -438,7 +508,7 @@ mod tests {
         )
         .unwrap();
         fs::create_dir_all(health.join("parent-loss.wedged-20260915-115634")).unwrap();
-        let report = scan(journal.path());
+        let report = scan(journal.path(), ReportForm::Structured);
         assert_eq!(
             report.set_aside,
             vec![
@@ -453,6 +523,7 @@ mod tests {
 
     fn test_context(journal_path: std::path::PathBuf) -> CheckContext {
         CheckContext {
+            report_form: crate::vocabulary::ReportForm::Structured,
             home_dir: std::path::PathBuf::new(),
             install_bin_dir: std::path::PathBuf::new(),
             journal_path,
@@ -639,7 +710,7 @@ mod tests {
         )
         .unwrap();
 
-        let report = scan(journal.path());
+        let report = scan(journal.path(), ReportForm::Structured);
         assert_eq!(report.closed_generations.len(), 4);
         assert!(report.closed_generations[0].contains("93"));
         assert!(
@@ -671,7 +742,7 @@ mod tests {
         let generation = journal.path().join("health/parent-loss/generations/2");
         fs::create_dir_all(&generation).unwrap();
         fs::write(generation.join("record.json"), b"{ not json").unwrap();
-        let report = scan(journal.path());
+        let report = scan(journal.path(), ReportForm::Structured);
         #[cfg(unix)]
         assert_eq!(report.unreadable.len(), 1);
         #[cfg(not(unix))]
@@ -740,7 +811,7 @@ mod tests {
             serde_json::to_vec(&record).unwrap(),
         )
         .unwrap();
-        let report = scan(journal.path());
+        let report = scan(journal.path(), ReportForm::Structured);
         assert!(
             report.closed_generations[0]
                 .contains("107068 admissions, 107066 already exited, 1 stopped"),
@@ -768,7 +839,7 @@ mod tests {
         let generation = journal.path().join("health/parent-loss/generations/4");
         fs::create_dir_all(&generation).unwrap();
         fs::write(generation.join("census-started.json"), b"{\"schema\":1}").unwrap();
-        let report = scan(journal.path());
+        let report = scan(journal.path(), ReportForm::Structured);
         assert_eq!(report.refusals.len(), 1);
         assert!(report.refusals[0].contains("generation 4"));
         #[cfg(not(target_os = "macos"))]

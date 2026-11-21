@@ -1,0 +1,42 @@
+{
+  "description": "Journal command-line text for device refusal count.",
+  "context": "Journal command-line text for device refusal count.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "device",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    },
+    {
+      "name": "attempts",
+      "type": "string"
+    },
+    {
+      "name": "last_seen",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "131bbddf86438e08cc922b4555f12a014cc72e783975204ebcbba5125d12c3ee",
+  "max_length": 263,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

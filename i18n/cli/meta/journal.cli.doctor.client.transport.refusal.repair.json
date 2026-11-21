@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for client transport refusal this is a busy connection not a lost one report it if.",
+  "context": "Journal command-line text for client transport refusal this is a busy connection not a lost one report it if.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d84f4bdb03476ca7ef87d3140ff1ba7cb31253ce40850b7523ce8faa59f7b9a4",
+  "max_length": 106,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

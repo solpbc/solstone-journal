@@ -38,15 +38,35 @@ pub fn parakeet_cpp_artifacts(
     os_name: &str,
     arch: &str,
 ) -> Result<ParakeetCppArtifacts, String> {
-    let artifact_key =
-        pins::parakeet_artifact_key(os_name, arch).map_err(|error| error.to_string())?;
+    parakeet_cpp_artifacts_in(journal_path, os_name, arch, solstone_core_cli_copy::ENGLISH)
+}
+
+pub fn parakeet_cpp_artifacts_in(
+    journal_path: &Path,
+    os_name: &str,
+    arch: &str,
+    locale: &str,
+) -> Result<ParakeetCppArtifacts, String> {
+    let artifact_key = pins::parakeet_artifact_key(os_name, arch).map_err(|error| {
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.doctor.parakeet.cpp.platform",
+            [("os", &error.os_name), ("arch", &error.arch)],
+        )
+    })?;
     let paths = pins::parakeet_paths(journal_path, &artifact_key);
     let path = |key: &str| {
         paths
             .get(key)
             .and_then(Value::as_str)
             .map(PathBuf::from)
-            .ok_or_else(|| format!("parakeet-cpp pin lacks {key}"))
+            .ok_or_else(|| {
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.doctor.parakeet.cpp.pin",
+                    [("key", &key)],
+                )
+            })
     };
     Ok(ParakeetCppArtifacts {
         cache_root: pins::parakeet_cache_root(journal_path),
@@ -59,31 +79,41 @@ pub fn parakeet_cpp_artifacts(
 
 /// Inspect the pinned Parakeet files without installing or changing them.
 pub fn check_parakeet_cpp_files(artifacts: &ParakeetCppArtifacts) -> Result<(), String> {
+    check_parakeet_cpp_files_in(artifacts, solstone_core_cli_copy::ENGLISH)
+}
+
+pub fn check_parakeet_cpp_files_in(
+    artifacts: &ParakeetCppArtifacts,
+    locale: &str,
+) -> Result<(), String> {
     for (name, path) in [
         ("binary_cpu", &artifacts.binary_cpu),
         ("binary_vulkan", &artifacts.binary_vulkan),
     ] {
         if !path.is_file() {
-            return Err(format!(
-                "parakeet-cpp check failed: {name} missing at {}",
-                path.display()
+            return Err(solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.doctor.parakeet.cpp.missing",
+                [("name", &name), ("path", &path.display())],
             ));
         }
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             if fs::metadata(path).is_ok_and(|metadata| metadata.permissions().mode() & 0o111 == 0) {
-                return Err(format!(
-                    "parakeet-cpp check failed: {name} not executable at {}",
-                    path.display()
+                return Err(solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.doctor.parakeet.cpp.executable",
+                    [("name", &name), ("path", &path.display())],
                 ));
             }
         }
     }
     if !artifacts.model.is_file() {
-        return Err(format!(
-            "parakeet-cpp check failed: model missing at {}",
-            artifacts.model.display()
+        return Err(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.doctor.parakeet.cpp.model",
+            [("path", &artifacts.model.display())],
         ));
     }
     Ok(())
@@ -167,8 +197,24 @@ pub fn check_parakeet_coreml_cache(
     os_name: &str,
     arch: &str,
 ) -> Result<PathBuf, String> {
-    solstone_core_local::install::coreml_install::check_parakeet_coreml_cache_doctor(
-        home_dir, config, os_name, arch,
+    check_parakeet_coreml_cache_in(
+        home_dir,
+        config,
+        os_name,
+        arch,
+        solstone_core_cli_copy::ENGLISH,
+    )
+}
+
+pub fn check_parakeet_coreml_cache_in(
+    home_dir: &Path,
+    config: &solstone_core_journal_config::JournalConfigRead,
+    os_name: &str,
+    arch: &str,
+    locale: &str,
+) -> Result<PathBuf, String> {
+    solstone_core_local::install::coreml_install::check_parakeet_coreml_cache_doctor_in(
+        home_dir, config, os_name, arch, locale,
     )
 }
 

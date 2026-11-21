@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for parakeet cpp stt ready parakeet cpp artifacts are not installed fetch them with solstone journal install.",
+  "context": "Journal command-line text for parakeet cpp stt ready parakeet cpp artifacts are not installed fetch them with solstone journal install.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "887273c02c14006d6f45e2bc0661443350499f10ba6f032e8f4cc1ab83c47d0f",
+  "max_length": 118,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "provider_command",
+      "kind": "command",
+      "value": "solstone journal install-provider parakeet"
+    },
+    {
+      "name": "backend_name",
+      "kind": "accepted-input",
+      "value": "parakeet-cpp"
+    }
+  ]
+}

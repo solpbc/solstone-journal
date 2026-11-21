@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for backlog pending.",
+  "context": "Journal command-line text for backlog pending.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9fe17ce66b9fc878c0e24406a1ef9bafde4161297e2da8b889e6a4c26da50265",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

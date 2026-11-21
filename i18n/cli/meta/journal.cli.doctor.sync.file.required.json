@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for sync file required.",
+  "context": "Journal command-line text for sync file required.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e8318a160ea956c95c4e378d9218d3f5bde277a88d285f2531c87e3483fa512b",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

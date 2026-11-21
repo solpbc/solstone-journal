@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for speakers installation journal.",
+  "context": "Journal command-line text for speakers installation journal.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5eb7030b0a66a5e2a279c0d366bcff05351a1f1aecd51b7fa72b27b7d78d22d1",
+  "max_length": 121,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "speakers_name",
+      "kind": "accepted-input",
+      "value": "Speakers-analyze"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for launchd stale plist plist is missing programarguments 0.",
+  "context": "Journal command-line text for launchd stale plist plist is missing programarguments 0.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7ce3a58b360e5dd58bc13c558753b9ee6a20bfaa5705d748c8f0e59bed669f71",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "plist_argument",
+      "kind": "accepted-input",
+      "value": "ProgramArguments[0]"
+    }
+  ]
+}

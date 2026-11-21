@@ -1,0 +1,40 @@
+{
+  "description": "Journal command-line text for parakeet unreachable.",
+  "context": "Journal command-line text for parakeet unreachable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "cause",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "e2a61dc54b13cc84da9c363ec363e1ce967d86750dca3ab2cf0e9778b805b67a",
+  "max_length": 377,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "server",
+      "kind": "command",
+      "value": "parakeet-server"
+    }
+  ],
+  "selector": {
+    "name": "cause",
+    "type": "string",
+    "enum_values": [
+      "absent",
+      "unknown",
+      "runtime",
+      "timeout",
+      "transport"
+    ],
+    "enum_default": "transport"
+  }
+}

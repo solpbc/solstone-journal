@@ -26,6 +26,7 @@ path = "tests/transcription_transports.rs"
 required-features = ["test-hooks"]
 
 [dependencies]
+solstone-core-cli-copy.workspace = true
 solstone-core-vad-analyze = { path = "../solstone-core-vad-analyze", optional = true }
 solstone-core-speakers-analyze = { path = "../solstone-core-speakers-analyze", optional = true }
 solstone-core-ced-analyze = { path = "../solstone-core-ced-analyze", optional = true }

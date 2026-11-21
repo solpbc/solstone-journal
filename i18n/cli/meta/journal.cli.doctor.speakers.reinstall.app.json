@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for speakers reinstall app.",
+  "context": "Journal command-line text for speakers reinstall app.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6a34856e6c6cfb09eda3110d3410088fb397a5745f380e5ff380462a84d794e9",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

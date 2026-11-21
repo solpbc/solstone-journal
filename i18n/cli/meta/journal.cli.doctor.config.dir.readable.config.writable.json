@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for config dir readable home and service config dir are writable.",
+  "context": "Journal command-line text for config dir readable home and service config dir are writable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1d486d1b9651363373139f429fb49da5f0191731e64c7dbbd3923633c62bafbc",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

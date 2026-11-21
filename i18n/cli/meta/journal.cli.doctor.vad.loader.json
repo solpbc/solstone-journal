@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for vad loader.",
+  "context": "Journal command-line text for vad loader.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "library",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "91145ea13394cb671cb5e29bf0ad8edcca4324bff69c0c0a9c6bae5c4dfb95a6",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "vad",
+      "kind": "accepted-input",
+      "value": "VAD"
+    }
+  ]
+}

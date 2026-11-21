@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for durability unresolved.",
+  "context": "Journal command-line text for durability unresolved.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "generation",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0b91a10c1c040a49aeb7e568dbba7207ed6326057b650f022caef3c16fc9014c",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

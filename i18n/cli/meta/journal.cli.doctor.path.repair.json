@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for path repair.",
+  "context": "Journal command-line text for path repair.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6cf3d893c30c73963ab94141e3be28916cdf44ddd85177a346a13dd3c7e24d9b",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

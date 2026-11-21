@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for disk space could not resolve installation root from install bin directory.",
+  "context": "Journal command-line text for disk space could not resolve installation root from install bin directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7bbd7fa784e4f258f4cf256ff029c01fe708d79ac5804b8a9885caa9b683a75e",
+  "max_length": 105,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

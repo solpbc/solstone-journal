@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for sync waiting.",
+  "context": "Journal command-line text for sync waiting.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a0731b155c70fc8d67e2036a559386e0e5c9f0860f9aa4b8510658816b11c2c7",
+  "max_length": 230,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "newline",
+      "kind": "accepted-input",
+      "value": "\n"
+    },
+    {
+      "name": "brand",
+      "kind": "mark-word",
+      "value": "solstone"
+    }
+  ]
+}

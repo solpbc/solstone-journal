@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for parakeet coreml failed.",
+  "context": "Journal command-line text for parakeet coreml failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "34b26850953452c4fcfa1bce11fadb4600bb59c739456c5bdfc4262076763851",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

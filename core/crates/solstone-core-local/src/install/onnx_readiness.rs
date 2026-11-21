@@ -35,62 +35,96 @@ pub struct WindowsOnnxPackage {
     pub firered_vad_model: PathBuf,
 }
 
+pub fn verified_windows_onnx_package() -> Result<WindowsOnnxPackage, String> {
+    verified_windows_onnx_package_in(solstone_core_cli_copy::ENGLISH)
+}
+
 /// Resolve ONNX helper inputs only from the complete, signed package
 /// containing the running journal executable.
 #[cfg(windows)]
-pub fn verified_windows_onnx_package() -> Result<WindowsOnnxPackage, String> {
-    let executable = std::env::current_exe()
-        .map_err(|error| format!("could not determine the running journal executable: {error}"))?;
-    verified_windows_onnx_package_at(&executable)
+pub fn verified_windows_onnx_package_in(locale: &str) -> Result<WindowsOnnxPackage, String> {
+    let executable = std::env::current_exe().map_err(|error| {
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.doctor.windows.parakeet.executable",
+            [("error", &error)],
+        )
+    })?;
+    verified_windows_onnx_package_at(&executable, locale)
 }
 
 #[cfg(any(windows, test))]
-fn verified_windows_onnx_package_at(executable: &Path) -> Result<WindowsOnnxPackage, String> {
-    let (root, payload) = verified_windows_helper_payload_at(executable)?;
-    declared_onnx_members(root, &payload)
+fn verified_windows_onnx_package_at(
+    executable: &Path,
+    locale: &str,
+) -> Result<WindowsOnnxPackage, String> {
+    let (root, payload) = verified_windows_helper_payload_at(executable, locale)?;
+    declared_onnx_members(root, &payload, locale)
 }
 
 /// Signed speaker command selection for model-free discovery clustering.
 #[cfg(windows)]
 pub fn verified_windows_speakers_helper() -> Result<(PathBuf, PathBuf), String> {
-    let executable = std::env::current_exe()
-        .map_err(|error| format!("could not determine the running journal executable: {error}"))?;
+    let executable = std::env::current_exe().map_err(|error| {
+        solstone_core_cli_copy::display_for(
+            solstone_core_cli_copy::ENGLISH,
+            "journal.cli.doctor.windows.parakeet.executable",
+            [("error", &error)],
+        )
+    })?;
     verified_windows_speakers_helper_at(&executable)
 }
 
 #[cfg(any(windows, all(test, feature = "test-fixture-pin")))]
 fn verified_windows_speakers_helper_at(executable: &Path) -> Result<(PathBuf, PathBuf), String> {
-    let (root, payload) = verified_windows_helper_payload_at(executable)?;
+    let (root, payload) =
+        verified_windows_helper_payload_at(executable, solstone_core_cli_copy::ENGLISH)?;
     let worker = payload.speakers_analyze_worker_path().map_err(|error| {
-        format!("signed ONNX app payload refuses {WINDOWS_SPEAKERS_ANALYZE_WORKER}: {error}")
+        solstone_core_cli_copy::display_for(
+            solstone_core_cli_copy::ENGLISH,
+            "journal.cli.doctor.windows.onnx.member",
+            [
+                ("member", &(WINDOWS_SPEAKERS_ANALYZE_WORKER)),
+                ("error", &(error)),
+            ],
+        )
     })?;
     Ok((root.to_path_buf(), worker))
 }
 
 #[cfg(any(windows, test))]
-fn verified_windows_helper_payload_at(
-    executable: &Path,
-) -> Result<(&Path, VerifiedWindowsPayload), String> {
+fn verified_windows_helper_payload_at<'a>(
+    executable: &'a Path,
+    locale: &str,
+) -> Result<(&'a Path, VerifiedWindowsPayload), String> {
     let bin = executable.parent().ok_or_else(|| {
-        format!(
-            "running journal executable has no containing directory: {}",
-            executable.display()
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.doctor.windows.parakeet.parent",
+            [("path", &executable.display())],
         )
     })?;
     if bin.file_name() != Some(OsStr::new("bin")) {
-        return Err(format!(
-            "running journal executable is not in the package bin directory: {}",
-            executable.display()
+        return Err(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.doctor.windows.parakeet.layout",
+            [("path", &executable.display())],
         ));
     }
     let package_root = bin.parent().ok_or_else(|| {
-        format!(
-            "package bin directory has no package root: {}",
-            bin.display()
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.doctor.windows.parakeet.root",
+            [("path", &bin.display())],
         )
     })?;
-    let payload = verify_windows_payload(package_root)
-        .map_err(|error| format!("could not verify the signed ONNX app payload: {error}"))?;
+    let payload = verify_windows_payload(package_root).map_err(|error| {
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.doctor.windows.onnx.verification",
+            [("error", &(error))],
+        )
+    })?;
     Ok((package_root, payload))
 }
 
@@ -98,34 +132,75 @@ fn verified_windows_helper_payload_at(
 fn declared_onnx_members(
     package_root: &std::path::Path,
     payload: &VerifiedWindowsPayload,
+    locale: &str,
 ) -> Result<WindowsOnnxPackage, String> {
     Ok(WindowsOnnxPackage {
         package_root: package_root.to_path_buf(),
         speakers_worker: payload.speakers_analyze_worker_path().map_err(|error| {
-            format!("signed ONNX app payload refuses {WINDOWS_SPEAKERS_ANALYZE_WORKER}: {error}")
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.doctor.windows.onnx.member",
+                [
+                    ("member", &(WINDOWS_SPEAKERS_ANALYZE_WORKER)),
+                    ("error", &(error)),
+                ],
+            )
         })?,
         vad_worker: payload.vad_analyze_worker_path().map_err(|error| {
-            format!("signed ONNX app payload refuses {WINDOWS_VAD_ANALYZE_WORKER}: {error}")
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.doctor.windows.onnx.member",
+                [
+                    ("member", &(WINDOWS_VAD_ANALYZE_WORKER)),
+                    ("error", &(error)),
+                ],
+            )
         })?,
         onnxruntime_library: payload.onnxruntime_library_path().map_err(|error| {
-            format!("signed ONNX app payload refuses {WINDOWS_ONNXRUNTIME_LIBRARY}: {error}")
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.doctor.windows.onnx.member",
+                [
+                    ("member", &(WINDOWS_ONNXRUNTIME_LIBRARY)),
+                    ("error", &(error)),
+                ],
+            )
         })?,
         wespeaker_model: payload.wespeaker_model_path().map_err(|error| {
-            format!("signed ONNX app payload refuses {WINDOWS_WESPEAKER_MODEL}: {error}")
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.doctor.windows.onnx.member",
+                [("member", &(WINDOWS_WESPEAKER_MODEL)), ("error", &(error))],
+            )
         })?,
         pyannote_model: payload.pyannote_model_path().map_err(|error| {
-            format!("signed ONNX app payload refuses {WINDOWS_PYANNOTE_MODEL}: {error}")
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.doctor.windows.onnx.member",
+                [("member", &(WINDOWS_PYANNOTE_MODEL)), ("error", &(error))],
+            )
         })?,
         firered_vad_model: payload.firered_vad_model_path().map_err(|error| {
-            format!("signed ONNX app payload refuses {WINDOWS_FIRERED_VAD_MODEL}: {error}")
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.doctor.windows.onnx.member",
+                [
+                    ("member", &(WINDOWS_FIRERED_VAD_MODEL)),
+                    ("error", &(error)),
+                ],
+            )
         })?,
     })
 }
 
 /// Non-Windows callers cannot establish the installed Windows package scope.
 #[cfg(not(windows))]
-pub fn verified_windows_onnx_package() -> Result<WindowsOnnxPackage, String> {
-    Err("Windows ONNX package verification requires a Windows runtime".to_owned())
+pub fn verified_windows_onnx_package_in(locale: &str) -> Result<WindowsOnnxPackage, String> {
+    Err(solstone_core_cli_copy::render_for(
+        locale,
+        "journal.cli.doctor.windows.onnx.platform",
+        &[],
+    ))
 }
 
 #[cfg(test)]
@@ -135,8 +210,20 @@ mod tests {
     #[test]
     fn package_refuses_wrong_layout_and_missing_manifest() {
         let root = tempfile::tempdir().unwrap();
-        assert!(verified_windows_onnx_package_at(&root.path().join("journal.exe")).is_err());
-        assert!(verified_windows_onnx_package_at(&root.path().join("bin/journal.exe")).is_err());
+        assert!(
+            verified_windows_onnx_package_at(
+                &root.path().join("journal.exe"),
+                solstone_core_cli_copy::ENGLISH
+            )
+            .is_err()
+        );
+        assert!(
+            verified_windows_onnx_package_at(
+                &root.path().join("bin/journal.exe"),
+                solstone_core_cli_copy::ENGLISH
+            )
+            .is_err()
+        );
     }
 
     #[cfg(feature = "test-fixture-pin")]
@@ -180,7 +267,8 @@ mod tests {
         )
         .unwrap();
         let executable = root.path().join("bin/journal.exe");
-        let package = verified_windows_onnx_package_at(&executable).unwrap();
+        let package =
+            verified_windows_onnx_package_at(&executable, solstone_core_cli_copy::ENGLISH).unwrap();
         assert_eq!(
             package.vad_worker,
             root.path().join(WINDOWS_VAD_ANALYZE_WORKER)
@@ -193,17 +281,20 @@ mod tests {
             let path = root.path().join(member);
             std::fs::write(&path, b"poisoned").unwrap();
             assert!(
-                verified_windows_onnx_package_at(&executable).is_err(),
+                verified_windows_onnx_package_at(&executable, solstone_core_cli_copy::ENGLISH)
+                    .is_err(),
                 "tampered {member}"
             );
             std::fs::write(&path, member.as_bytes()).unwrap();
             assert!(
-                verified_windows_onnx_package_at(&executable).is_ok(),
+                verified_windows_onnx_package_at(&executable, solstone_core_cli_copy::ENGLISH)
+                    .is_ok(),
                 "restored {member}"
             );
             std::fs::remove_file(&path).unwrap();
             assert!(
-                verified_windows_onnx_package_at(&executable).is_err(),
+                verified_windows_onnx_package_at(&executable, solstone_core_cli_copy::ENGLISH)
+                    .is_err(),
                 "missing {member}"
             );
             std::fs::write(&path, member.as_bytes()).unwrap();
@@ -244,7 +335,9 @@ mod tests {
             verified_windows_speakers_helper_at(&executable).unwrap(),
             (root.path().to_path_buf(), worker.clone())
         );
-        assert!(verified_windows_onnx_package_at(&executable).is_err());
+        assert!(
+            verified_windows_onnx_package_at(&executable, solstone_core_cli_copy::ENGLISH).is_err()
+        );
         std::fs::write(worker, b"tampered").unwrap();
         assert!(verified_windows_speakers_helper_at(&executable).is_err());
     }

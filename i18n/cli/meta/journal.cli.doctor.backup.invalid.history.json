@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for backup invalid history.",
+  "context": "Journal command-line text for backup invalid history.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "history",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7653c953def9c7f9287e42aef7f739f93680e32bb69643d609b726b3cd7d004a",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

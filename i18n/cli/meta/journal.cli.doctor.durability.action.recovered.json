@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for durability action recovered.",
+  "context": "Journal command-line text for durability action recovered.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0d71158187f6ebe4fcf7aad10c664e95a86f609ef0d64bc2abd540e68f74e5a1",
+  "max_length": 116,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

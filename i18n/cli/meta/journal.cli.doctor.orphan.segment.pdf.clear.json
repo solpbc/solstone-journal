@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for orphan segment pdf all raw pdf originals have readable document transcripts.",
+  "context": "Journal command-line text for orphan segment pdf all raw pdf originals have readable document transcripts.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "64e967aa7e3eb2b26dbb1f1d3e7ae0427348e5726688e97f2a581e4e9fa74f82",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

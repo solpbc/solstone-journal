@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for sync symlink.",
+  "context": "Journal command-line text for sync symlink.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e83fe43eb9b2492ee8a97b2f8a217c643780056460d9c29180510307a213d4a6",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for parakeet cpp stt ready parakeet server is not reachable start the journal service solstone journal up.",
+  "context": "Journal command-line text for parakeet cpp stt ready parakeet server is not reachable start the journal service solstone journal up.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c1e25c64edc88558d002a6217f4f6261fd601320985bb73f51ac029fe14b848d",
+  "max_length": 108,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "start_command",
+      "kind": "command",
+      "value": "solstone journal up"
+    },
+    {
+      "name": "server",
+      "kind": "accepted-input",
+      "value": "parakeet-server"
+    }
+  ]
+}

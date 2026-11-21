@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for parakeet cpp stt ready parakeet cpp binary cannot start.",
+  "context": "Journal command-line text for parakeet cpp stt ready parakeet cpp binary cannot start.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "beaaedaa9f9d5f704a70f70d631174562b78b3f3eba19805188ccc352f392fc7",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "backend_name",
+      "kind": "accepted-input",
+      "value": "parakeet-cpp"
+    }
+  ]
+}

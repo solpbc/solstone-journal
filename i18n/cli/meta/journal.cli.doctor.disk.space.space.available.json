@@ -1,0 +1,36 @@
+{
+  "description": "Journal command-line text for disk space gib free on the filesystem holding gib is a second copy of.",
+  "context": "Journal command-line text for disk space gib free on the filesystem holding gib is a second copy of.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "free_gib",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "required_gib",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "42d462999c4562c31fc5772831f5b5a3340ce90e4b51e0260b436a21079a0d27",
+  "max_length": 161,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "gib",
+      "kind": "accepted-input",
+      "value": "GiB"
+    }
+  ]
+}

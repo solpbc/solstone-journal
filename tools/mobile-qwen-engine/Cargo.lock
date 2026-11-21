@@ -1161,6 +1161,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-cli-copy"
+version = "2.0.86"
+dependencies = [
+ "fluent-bundle",
+ "solstone-core-window-catalog",
+]
+
+[[package]]
 name = "solstone-core-distribution"
 version = "2.0.86"
 dependencies = [
@@ -1217,6 +1225,7 @@ dependencies = [
 name = "solstone-core-journal"
 version = "2.0.86"
 dependencies = [
+ "solstone-core-cli-copy",
  "toml_edit",
 ]
 
@@ -1277,6 +1286,7 @@ dependencies = [
  "solstone-core-artifact-download",
  "solstone-core-assets",
  "solstone-core-brain",
+ "solstone-core-cli-copy",
  "solstone-core-distribution",
  "solstone-core-installed-payload",
  "solstone-core-journal-config",

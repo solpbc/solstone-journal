@@ -1,32 +1,35 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
+
 use crate::{
     checks::{common, service_status},
     context::CheckContext,
     vocabulary::{Check, CheckResult, RunnerResult, Status, make_result},
 };
-const INSTALL: &str = "parakeet-cpp artifacts are not installed — fetch them with: solstone journal install-provider parakeet";
+use solstone_core_cli_copy as copy;
+const INSTALL: &str = "journal.cli.doctor.parakeet.cpp.stt.ready.install";
 // ⛔ This named the service and then gave the FOREGROUND command, in one
 // sentence. `journal up` is the documented alias for `journal service start`.
-const START: &str =
-    "parakeet-server is not reachable — start the journal service: solstone journal up";
+const START: &str = "journal.cli.doctor.parakeet.cpp.stt.ready.start";
 // ⛔ A Windows install carries no per-journal parakeet cache to fetch into:
 // the server and model are members of the signed package, so a failed
 // verification means the package itself changed.
-const WINDOWS_REINSTALL: &str = "reinstall the journal";
+const WINDOWS_REINSTALL: &str = "journal.cli.doctor.parakeet.reinstall";
 
 /// Windows answers the same question from the signed package: the server and
 /// model the resident launches are declared members of the verified payload,
 /// and the server is the same authenticated one the resident runs.
 fn windows_ready(context: &CheckContext, check: Check) -> RunnerResult {
     if let Err(error) =
-        solstone_core_local::install::parakeet_readiness::verified_windows_parakeet_package()
+        solstone_core_local::install::parakeet_readiness::verified_windows_parakeet_package_in(
+            context.report_form.locale(),
+        )
     {
         return Ok(make_result(
             check,
             Status::Warn,
             error,
-            Some(WINDOWS_REINSTALL),
+            Some(copy::text(WINDOWS_REINSTALL)),
         ));
     }
     resident_server_ready(context, check)
@@ -49,15 +52,18 @@ fn resident_server_ready(context: &CheckContext, check: Check) -> RunnerResult {
             return Ok(make_result(
                 check,
                 Status::Warn,
-                "parakeet-server not reachable: your journal isn't running",
-                Some(START),
+                copy::text("journal.cli.doctor.parakeet.cpp.stt.ready.offline"),
+                Some(copy::text(START)),
             ));
         }
         Err(cause) => {
             return Ok(make_result(
                 check,
                 Status::Warn,
-                format!("parakeet-server not reachable: {}", cause.as_str()),
+                copy::display(
+                    "journal.cli.doctor.parakeet.unreachable",
+                    [("cause", &cause.key())],
+                ),
                 None::<String>,
             ));
         }
@@ -80,7 +86,7 @@ pub(crate) fn parakeet_phase_result(check: Check, status: &serde_json::Value) ->
         Some("ready") => make_result(
             check,
             Status::Ok,
-            "parakeet-cpp ready (server + model match the signed package, server reachable)",
+            copy::text("journal.cli.doctor.parakeet.cpp.stt.ready.online"),
             None::<String>,
         ),
         // The state is shown as a labelled code, not read into a sentence;
@@ -88,21 +94,18 @@ pub(crate) fn parakeet_phase_result(check: Check, status: &serde_json::Value) ->
         Some(phase) => make_result(
             check,
             Status::Warn,
-            format!(
-                "parakeet-server not reachable: your journal reports its state as {}",
-                if phase == "observing" {
-                    "checking"
-                } else {
-                    phase
-                }
-            ),
+            if phase == "observing" {
+                copy::text("journal.cli.doctor.parakeet.phase.checking")
+            } else {
+                copy::display("journal.cli.doctor.parakeet.phase", [("phase", &phase)])
+            },
             None::<String>,
         ),
         None => make_result(
             check,
             Status::Warn,
-            "parakeet-server not reachable: your journal is running, but not parakeet-server",
-            Some(START),
+            copy::text("journal.cli.doctor.parakeet.cpp.stt.ready.server.missing"),
+            Some(copy::text(START)),
         ),
     }
 }
@@ -118,8 +121,11 @@ fn server_ready(context: &CheckContext, check: Check, ready: &str) -> RunnerResu
         return Ok(make_result(
             check,
             Status::Warn,
-            format!("parakeet-server not reachable: {error}"),
-            Some(START),
+            copy::display(
+                "journal.cli.doctor.parakeet.cpp.stt.ready.unreachable",
+                [("error", &error)],
+            ),
+            Some(copy::text(START)),
         ));
     }
     Ok(make_result(check, Status::Ok, ready, None::<String>))
@@ -133,21 +139,36 @@ pub fn ready(context: &CheckContext, check: Check) -> RunnerResult {
         return Ok(make_result(
             check,
             Status::Skip,
-            "parakeet-cpp is only supported on linux and windows",
+            copy::text("journal.cli.doctor.parakeet.cpp.stt.ready.unsupported"),
             None::<String>,
         ));
     }
-    let artifacts = match solstone_core_system::provider_runtime::parakeet_cpp_artifacts(
+    let artifacts = match solstone_core_system::provider_runtime::parakeet_cpp_artifacts_in(
         &context.journal_path,
         "linux",
         &context.host_arch,
+        context.report_form.locale(),
     ) {
         Ok(value) => value,
-        Err(error) => return Ok(make_result(check, Status::Warn, error, Some(INSTALL))),
+        Err(error) => {
+            return Ok(make_result(
+                check,
+                Status::Warn,
+                error,
+                Some(copy::text(INSTALL)),
+            ));
+        }
     };
-    if let Err(error) = solstone_core_system::provider_runtime::check_parakeet_cpp_files(&artifacts)
-    {
-        return Ok(make_result(check, Status::Warn, error, Some(INSTALL)));
+    if let Err(error) = solstone_core_system::provider_runtime::check_parakeet_cpp_files_in(
+        &artifacts,
+        context.report_form.locale(),
+    ) {
+        return Ok(make_result(
+            check,
+            Status::Warn,
+            error,
+            Some(copy::text(INSTALL)),
+        ));
     }
     match solstone_core_system::provider_runtime::probe_parakeet_cpp_binary(
         &artifacts.binary_cpu,
@@ -160,9 +181,9 @@ pub fn ready(context: &CheckContext, check: Check) -> RunnerResult {
             return Ok(make_result(
                 check,
                 Status::Warn,
-                "parakeet-cpp cannot start: OpenMP runtime unavailable (libgomp.so.1)",
+                copy::text("journal.cli.doctor.parakeet.cpp.stt.ready.runtime.unavailable"),
                 Some(
-                    "install the system OpenMP runtime that provides libgomp.so.1, then rerun solstone journal doctor",
+                    copy::text("journal.cli.doctor.parakeet.cpp.stt.ready.runtime.install"),
                 ),
             ));
         }
@@ -170,15 +191,15 @@ pub fn ready(context: &CheckContext, check: Check) -> RunnerResult {
             return Ok(make_result(
                 check,
                 Status::Warn,
-                "parakeet-cpp binary cannot start",
-                Some(INSTALL),
+                copy::text("journal.cli.doctor.parakeet.cpp.stt.ready.binary.unavailable"),
+                Some(copy::text(INSTALL)),
             ));
         }
     };
     server_ready(
         context,
         check,
-        "parakeet-cpp ready (binaries + model installed, server reachable)",
+        &copy::text("journal.cli.doctor.parakeet.cpp.stt.ready.ready"),
     )
 }
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
@@ -187,13 +208,13 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             check,
             Status::Fail,
             error,
-            Some("repair or restore config/journal.json from a backup"),
+            Some(copy::text("journal.cli.doctor.config.restore")),
         )),
         Ok(Some(backend)) if backend == "parakeet-cpp" => ready(context, check),
         Ok(_) => Ok(make_result(
             check,
             Status::Skip,
-            "configured backend is not parakeet-cpp; check not applicable",
+            copy::text("journal.cli.doctor.parakeet.cpp.stt.ready.backend.not.selected"),
             None::<String>,
         )),
     }

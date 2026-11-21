@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for holds record invalid.",
+  "context": "Journal command-line text for holds record invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "08d58631f8e6df9c11a49561d79d72c41270f8b22d058d199828dbe73543a22c",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

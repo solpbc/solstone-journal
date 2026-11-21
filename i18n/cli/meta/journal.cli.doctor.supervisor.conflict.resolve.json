@@ -1,0 +1,42 @@
+{
+  "description": "Journal command-line text for supervisor conflict resolve.",
+  "context": "Journal command-line text for supervisor conflict resolve.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "commands",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "a6b4e540894301157e42686c8170fb21760ab6933c3e453b04dd6ffcfb788177",
+  "max_length": 355,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  },
+  "protected_slots": [
+    {
+      "name": "app_path",
+      "kind": "accepted-input",
+      "value": "/Applications/solstone.app"
+    },
+    {
+      "name": "doctor_command",
+      "kind": "command",
+      "value": "solstone journal doctor"
+    }
+  ]
+}

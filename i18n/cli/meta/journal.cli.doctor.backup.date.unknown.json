@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for backup date unknown.",
+  "context": "Journal command-line text for backup date unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "09e0e1d0766022b7ce2547e6f7c6975227fff10e5fdb952f4d6d6de3548d6907",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

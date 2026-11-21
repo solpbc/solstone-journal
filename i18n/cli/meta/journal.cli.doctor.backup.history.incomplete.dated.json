@@ -1,0 +1,38 @@
+{
+  "description": "Journal command-line text for backup history incomplete dated.",
+  "context": "Journal command-line text for backup history incomplete dated.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "snapshot",
+      "type": "string"
+    },
+    {
+      "name": "date",
+      "type": "string"
+    },
+    {
+      "name": "seconds",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "51953b230ffec1ee3b509e039550ccb4864876bbbfa90bbda1ab183fe0644a64",
+  "max_length": 439,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

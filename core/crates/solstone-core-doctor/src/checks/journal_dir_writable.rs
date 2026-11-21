@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
+
 use crate::{
     checks::directory_access::writable,
     context::CheckContext,
     vocabulary::{Check, RunnerResult, Status, make_result},
 };
+use solstone_core_cli_copy as copy;
 fn ancestor(path: &std::path::Path) -> &std::path::Path {
     let mut current = path;
     while !current.exists() {
@@ -22,15 +24,24 @@ pub fn shared(context: &CheckContext, check: Check) -> RunnerResult {
             make_result(
                 check,
                 Status::Ok,
-                format!("journal dir writable: {}", path.display()),
+                copy::display(
+                    "journal.cli.doctor.journal.dir.writable.writable",
+                    [("path", &path.display())],
+                ),
                 None::<String>,
             )
         } else {
             make_result(
                 check,
                 Status::Fail,
-                format!("journal dir not writable: {}", path.display()),
-                Some(format!("fix ownership/permissions of {}", path.display())),
+                copy::display(
+                    "journal.cli.doctor.journal.dir.writable.unwritable",
+                    [("path", &path.display())],
+                ),
+                Some(copy::display(
+                    "journal.cli.doctor.path.repair",
+                    [("path", &path.display())],
+                )),
             )
         });
     }
@@ -38,11 +49,14 @@ pub fn shared(context: &CheckContext, check: Check) -> RunnerResult {
         return Ok(make_result(
             check,
             Status::Fail,
-            format!(
-                "journal path exists but is not a directory: {}",
-                path.display()
+            copy::display(
+                "journal.cli.doctor.journal.dir.writable.not.directory",
+                [("path", &path.display())],
             ),
-            Some(format!("move or remove {}, then re-run", path.display())),
+            Some(copy::display(
+                "journal.cli.doctor.journal.dir.writable.move",
+                [("path", &path.display())],
+            )),
         ));
     }
     let parent = ancestor(path);
@@ -50,9 +64,9 @@ pub fn shared(context: &CheckContext, check: Check) -> RunnerResult {
         make_result(
             check,
             Status::Ok,
-            format!(
-                "journal dir absent; parent {} is writable",
-                parent.display()
+            copy::display(
+                "journal.cli.doctor.journal.dir.writable.parent.writable",
+                [("path", &parent.display())],
             ),
             None::<String>,
         )
@@ -60,11 +74,14 @@ pub fn shared(context: &CheckContext, check: Check) -> RunnerResult {
         make_result(
             check,
             Status::Fail,
-            format!(
-                "journal dir absent; nearest existing ancestor is not writable: {}",
-                parent.display()
+            copy::display(
+                "journal.cli.doctor.journal.dir.writable.parent.unwritable",
+                [("path", &parent.display())],
             ),
-            Some(format!("fix ownership/permissions of {}", parent.display())),
+            Some(copy::display(
+                "journal.cli.doctor.path.repair",
+                [("path", &parent.display())],
+            )),
         )
     })
 }
@@ -73,7 +90,7 @@ pub fn journal(context: &CheckContext, check: Check) -> RunnerResult {
         Ok(make_result(
             check,
             Status::Skip,
-            "no local journal",
+            copy::text("journal.cli.doctor.journal.absent"),
             None::<String>,
         ))
     } else {

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for brain unknown.",
+  "context": "Journal command-line text for brain unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e1375e47c5007ad4bdff87598a72e1c70967c3d1abb1d84ba25f30bcfad214af",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for facet no active.",
+  "context": "Journal command-line text for facet no active.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4259c875bd89b36882ea8c7bfb2d566ab0397cce8ad387e4e5087085c2e6c33e",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

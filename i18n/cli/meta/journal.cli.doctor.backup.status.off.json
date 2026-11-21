@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for backup status backup off.",
+  "context": "Journal command-line text for backup status backup off.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b4a492ad7e6b294d26a19c05056f1d2da589257bed354ba7256db8cba7b36e34",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

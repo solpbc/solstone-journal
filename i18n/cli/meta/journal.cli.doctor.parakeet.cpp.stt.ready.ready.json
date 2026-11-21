@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for parakeet cpp stt ready parakeet cpp ready binaries model installed server reachable.",
+  "context": "Journal command-line text for parakeet cpp stt ready parakeet cpp ready binaries model installed server reachable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3b69e9675eeba91e95e58e6422171ca55e320e52431fd7f77e6bb66c9293fa2f",
+  "max_length": 102,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "backend_name",
+      "kind": "accepted-input",
+      "value": "parakeet-cpp"
+    }
+  ]
+}

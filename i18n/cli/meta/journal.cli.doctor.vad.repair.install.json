@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for vad repair install.",
+  "context": "Journal command-line text for vad repair install.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "891162bc2113b884c775d2a2940a0faba6907a3d09a359c3bb6f6c551ba96d33",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "doctor_command",
+      "kind": "command",
+      "value": "solstone journal doctor"
+    }
+  ]
+}

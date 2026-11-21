@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for sync kind blockdevice.",
+  "context": "Journal command-line text for sync kind blockdevice.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ce7d587a9d20aba9911a9bd1e572a1135a814e48deb14226ec8bcde7e2988773",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

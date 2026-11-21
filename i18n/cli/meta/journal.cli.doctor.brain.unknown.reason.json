@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for brain unknown reason.",
+  "context": "Journal command-line text for brain unknown reason.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "aca5ae7fb6fb887465d58c90a8f947595e9a273466c4dadae7d41592b01fcbdc",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for device day listing day stream device.",
+  "context": "Journal command-line text for device day listing day stream device.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "stream",
+      "type": "string"
+    },
+    {
+      "name": "device",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f43b58bc545b00b32ae4171a22fd5738dda50de34ab83571b9813c16a486e1d1",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

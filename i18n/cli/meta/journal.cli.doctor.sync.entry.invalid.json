@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for sync entry invalid.",
+  "context": "Journal command-line text for sync entry invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "entry",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4edc2a4e73d83bade3bf0b342970fe35a67b3225e926a8b7ac06e17632e5bad3",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

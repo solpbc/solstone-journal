@@ -3,6 +3,8 @@
 
 //! Recorded backup facts only. No repository, tool, scheduler or operation probe.
 
+use solstone_core_cli_copy as copy;
+
 use jiff::Timestamp;
 use serde_json::{Map, Value};
 use solstone_core_backup::{backup_setup_fingerprint, load_hosted_binding, merge_backup_config};
@@ -11,19 +13,22 @@ use solstone_core_journal_config::read_journal_config;
 use crate::context::CheckContext;
 use crate::vocabulary::{Check, CheckResult, RunnerResult, Status, make_result};
 
-const ROUTE: &str = "open backup or health in your journal for details";
+use crate::vocabulary::ReportForm;
 
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
-    let row = |status, detail: &str| result(check, status, detail.to_owned());
+    let row = |status, detail| result(check, status, detail);
     match std::fs::metadata(&context.journal_path) {
         Ok(metadata) if metadata.is_dir() => {}
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(row(Status::Skip, "no local journal"));
+            return Ok(row(
+                Status::Skip,
+                copy::text("journal.cli.doctor.journal.absent"),
+            ));
         }
         _ => {
             return Ok(row(
                 Status::Warn,
-                "backup status unavailable: journal unreadable",
+                copy::text("journal.cli.doctor.backup.status.unavailable.journal"),
             ));
         }
     }
@@ -34,28 +39,38 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         Err(_) => {
             return Ok(row(
                 Status::Warn,
-                "backup status unavailable: settings unreadable",
+                copy::text("journal.cli.doctor.backup.status.unavailable.settings"),
             ));
         }
     };
     let config = read.config.unwrap_or_default();
     let backup = match config.get("backup") {
-        None => return Ok(row(Status::Skip, "backup not configured")),
+        None => {
+            return Ok(row(
+                Status::Skip,
+                copy::text("journal.cli.doctor.backup.status.unconfigured"),
+            ));
+        }
         Some(Value::Object(backup)) => backup,
         _ => {
             return Ok(row(
                 Status::Warn,
-                "backup status unavailable: invalid backup settings",
+                copy::text("journal.cli.doctor.backup.status.invalid.settings"),
             ));
         }
     };
     match backup.get("enabled") {
-        None | Some(Value::Bool(false)) => return Ok(row(Status::Skip, "backup off")),
+        None | Some(Value::Bool(false)) => {
+            return Ok(row(
+                Status::Skip,
+                copy::text("journal.cli.doctor.backup.status.off"),
+            ));
+        }
         Some(Value::Bool(true)) => {}
         _ => {
             return Ok(row(
                 Status::Warn,
-                "backup status unavailable: invalid on/off setting",
+                copy::text("journal.cli.doctor.backup.status.invalid.switch"),
             ));
         }
     }
@@ -65,28 +80,33 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         None | Some(Value::Null) => {}
         Some(paused) if paused.is_i64() => {
             let history = backup.get("last_backup").map_or_else(
-                || "last successful copy unknown".to_owned(),
-                |latest| success_history(latest, context.now),
+                || copy::text("journal.cli.doctor.backup.history.unknown"),
+                |latest| success_history(latest, context.now, context.report_form),
             );
             return Ok(row(
                 Status::Skip,
-                &format!(
-                    "backup paused by you since {}; {history}",
-                    date(Some(paused))
+                copy::display(
+                    "journal.cli.doctor.backup.paused.history",
+                    [("date", &(date(Some(paused)))), ("history", &history)],
                 ),
             ));
         }
         Some(_) => {
             return Ok(row(
                 Status::Warn,
-                "backup status unavailable: invalid pause setting",
+                copy::text("journal.cli.doctor.backup.status.invalid.pause"),
             ));
         }
     }
     // Off deliberately avoids all unused history and identity inputs. Identity
     // is needed only for a record that actually carries a valid fingerprint.
     let latest = match backup.get("last_backup") {
-        None => return Ok(row(Status::Skip, "backup on; no recorded attempt")),
+        None => {
+            return Ok(row(
+                Status::Skip,
+                copy::text("journal.cli.doctor.backup.status.no.attempt"),
+            ));
+        }
         Some(value) => value,
     };
     let current_identity = || {
@@ -96,7 +116,13 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             .flatten();
         backup_setup_fingerprint(&merged, binding.as_ref())
     };
-    Ok(assess(check, latest, context.now, current_identity))
+    Ok(assess(
+        check,
+        latest,
+        context.now,
+        context.report_form,
+        current_identity,
+    ))
 }
 
 fn result(check: Check, status: Status, detail: String) -> CheckResult {
@@ -104,7 +130,7 @@ fn result(check: Check, status: Status, detail: String) -> CheckResult {
         check,
         status,
         detail,
-        (status == Status::Warn).then_some(ROUTE),
+        (status == Status::Warn).then(|| copy::text("journal.cli.doctor.backup.details")),
     )
 }
 
@@ -151,69 +177,124 @@ fn assess(
     check: Check,
     latest: &Value,
     now: Timestamp,
+    form: ReportForm,
     current_identity: impl FnOnce() -> Option<String>,
 ) -> CheckResult {
-    let history = success_history(latest, now);
+    let history = success_history(latest, now, form);
     let latest = match attempt(latest) {
         Ok(Some(latest)) => latest,
-        Ok(None) => return result(check, Status::Skip, "backup on; no recorded attempt".into()),
+        Ok(None) => {
+            return result(
+                check,
+                Status::Skip,
+                copy::text("journal.cli.doctor.backup.status.no.attempt"),
+            );
+        }
         Err(()) => {
             return result(
                 check,
                 Status::Warn,
-                format!("backup on; recorded status unavailable; {history}"),
+                copy::display(
+                    "journal.cli.doctor.backup.invalid.history",
+                    [("history", &history)],
+                ),
             );
         }
     };
     let outcome = if latest.incomplete {
-        "incomplete copy"
+        "incomplete"
     } else if latest.success {
-        "successful copy"
+        "success"
     } else {
         "failed"
     };
-    let reason = match latest.raw.get("error_reason").and_then(Value::as_str) {
-        None => "",
-        Some("incomplete") => "; some files were not copied",
-        Some("auth_failed") => "; backup key refused",
-        Some("timeout") => "; timed out",
-        Some("locked") => "; repository was locked",
-        Some(_) => "; cause unknown",
-    };
-    let detail = format!(
-        "backup on; latest recorded attempt: {outcome} at {}{reason}; {history}",
-        date(latest.raw.get("time"))
-    );
+    let reason = latest.raw.get("error_reason").and_then(Value::as_str);
     let (status, applicability) = match latest.raw.get("setup_fingerprint") {
-        None => (Status::Skip, "setup association unknown; history only"),
+        None => (Status::Skip, "unbound"),
         Some(Value::String(old))
             if old.len() == 64 && old.bytes().all(|b| b.is_ascii_hexdigit()) =>
         {
             match current_identity() {
-                None => (Status::Warn, "current setup association unavailable"),
-                Some(current) if current != *old => {
-                    (Status::Skip, "superseded setup; history only")
-                }
-                Some(_) if !latest.success || latest.incomplete => {
-                    (Status::Warn, "matches the selected setup")
-                }
-                Some(_) => (Status::Ok, "matches the selected setup"),
+                None => (Status::Warn, "unknown"),
+                Some(current) if current != *old => (Status::Skip, "superseded"),
+                Some(_) if !latest.success || latest.incomplete => (Status::Warn, "current"),
+                Some(_) => (Status::Ok, "current"),
             }
         }
-        Some(_) => (Status::Warn, "recorded setup association unavailable"),
+        Some(_) => (Status::Warn, "invalid"),
     };
-    result(check, status, format!("{detail}; {applicability}"))
+    let association = copy::display(
+        "journal.cli.doctor.backup.association",
+        [("association", &applicability)],
+    );
+    let detail = match reason {
+        None => copy::display(
+            "journal.cli.doctor.backup.attempt.ordinary",
+            [
+                ("outcome", &outcome),
+                ("date", &(date(latest.raw.get("time")))),
+                ("history", &history),
+                ("association", &association),
+            ],
+        ),
+        Some("incomplete") => copy::display(
+            "journal.cli.doctor.backup.attempt.incomplete",
+            [
+                ("outcome", &outcome),
+                ("date", &(date(latest.raw.get("time")))),
+                ("history", &history),
+                ("association", &association),
+            ],
+        ),
+        Some("auth_failed") => copy::display(
+            "journal.cli.doctor.backup.attempt.refused",
+            [
+                ("outcome", &outcome),
+                ("date", &(date(latest.raw.get("time")))),
+                ("history", &history),
+                ("association", &association),
+            ],
+        ),
+        Some("timeout") => copy::display(
+            "journal.cli.doctor.backup.attempt.timeout",
+            [
+                ("outcome", &outcome),
+                ("date", &(date(latest.raw.get("time")))),
+                ("history", &history),
+                ("association", &association),
+            ],
+        ),
+        Some("locked") => copy::display(
+            "journal.cli.doctor.backup.attempt.locked",
+            [
+                ("outcome", &outcome),
+                ("date", &(date(latest.raw.get("time")))),
+                ("history", &history),
+                ("association", &association),
+            ],
+        ),
+        Some(_) => copy::display(
+            "journal.cli.doctor.backup.attempt.unknown",
+            [
+                ("outcome", &outcome),
+                ("date", &(date(latest.raw.get("time")))),
+                ("history", &history),
+                ("association", &association),
+            ],
+        ),
+    };
+    result(check, status, detail)
 }
 
-fn success_history(latest: &Value, now: Timestamp) -> String {
+fn success_history(latest: &Value, now: Timestamp, form: ReportForm) -> String {
     // Presence matters: an explicit unknown must never fall back to the latest
     // successful attempt. An absent member retains the domain's legacy history.
     let saved = latest.get("last_success").unwrap_or(latest);
     let Ok(Some(saved)) = attempt(saved) else {
-        return "last successful copy unknown".into();
+        return copy::text("journal.cli.doctor.backup.history.unknown");
     };
     if !saved.success {
-        return "last successful copy unknown".into();
+        return copy::text("journal.cli.doctor.backup.history.unknown");
     }
     let snapshot = saved
         .raw
@@ -221,21 +302,40 @@ fn success_history(latest: &Value, now: Timestamp) -> String {
         .and_then(Value::as_str)
         .map(identifier)
         .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "unknown".into());
+        .unwrap_or_else(|| copy::text("journal.cli.doctor.backup.snapshot.unknown"));
     let time = saved.raw.get("time");
     let age = timestamp(time)
         .filter(|time| *time <= now)
-        .map(|time| format!("{} seconds", now.duration_since(time).as_secs()))
-        .unwrap_or_else(|| "unknown".into());
-    let caveat = if saved.incomplete {
-        "; incomplete copy, some files were not copied"
-    } else {
-        ""
-    };
-    format!(
-        "last successful copy (historical): snapshot {snapshot} at {}, age {age}{caveat}; present coverage and verification unknown",
-        date(time)
-    )
+        .map(|time| now.duration_since(time).as_secs());
+    let date = date(time);
+    match (age, saved.incomplete) {
+        (Some(seconds), true) => form.counted(
+            "journal.cli.doctor.backup.history.incomplete.dated",
+            &[("quantity", seconds as u64)],
+            &[
+                ("snapshot", &snapshot),
+                ("date", &date),
+                ("seconds", &seconds),
+            ],
+        ),
+        (None, true) => copy::display(
+            "journal.cli.doctor.backup.history.incomplete.undated",
+            [("snapshot", &snapshot), ("date", &date)],
+        ),
+        (Some(seconds), false) => form.counted(
+            "journal.cli.doctor.backup.history.success.dated",
+            &[("quantity", seconds as u64)],
+            &[
+                ("snapshot", &snapshot),
+                ("date", &date),
+                ("seconds", &seconds),
+            ],
+        ),
+        (None, false) => copy::display(
+            "journal.cli.doctor.backup.history.success.undated",
+            [("snapshot", &snapshot), ("date", &date)],
+        ),
+    }
 }
 
 fn timestamp(value: Option<&Value>) -> Option<Timestamp> {
@@ -245,7 +345,7 @@ fn timestamp(value: Option<&Value>) -> Option<Timestamp> {
 fn date(value: Option<&Value>) -> String {
     timestamp(value)
         .map(solstone_core_time::utc_rfc3339)
-        .unwrap_or_else(|| "unknown date".into())
+        .unwrap_or_else(|| copy::text("journal.cli.doctor.backup.date.unknown"))
 }
 
 fn identifier(value: &str) -> String {
@@ -297,24 +397,36 @@ mod tests {
             ("error", json!("auth_failed"), Status::Warn),
         ] {
             let mut raw = json!({"status":status,"error_reason":reason,"time":100});
-            let unbound = assess(check(), &raw, now, || {
+            let unbound = assess(check(), &raw, now, ReportForm::Structured, || {
                 panic!("unbound history needs no identity")
             });
             assert_eq!(unbound.status, Status::Skip);
             raw["setup_fingerprint"] = json!("a".repeat(64));
             assert_eq!(
-                assess(check(), &raw, now, || Some("a".repeat(64))).status,
+                assess(check(), &raw, now, ReportForm::Structured, || Some(
+                    "a".repeat(64)
+                ))
+                .status,
                 matched
             );
             assert_eq!(
-                assess(check(), &raw, now, || Some("b".repeat(64))).status,
+                assess(check(), &raw, now, ReportForm::Structured, || Some(
+                    "b".repeat(64)
+                ))
+                .status,
                 Status::Skip
             );
-            assert_eq!(assess(check(), &raw, now, || None).status, Status::Warn);
+            assert_eq!(
+                assess(check(), &raw, now, ReportForm::Structured, || None).status,
+                Status::Warn
+            );
             for bad in [Value::Null, json!(12), json!("wrong")] {
                 raw["setup_fingerprint"] = bad;
                 assert_eq!(
-                    assess(check(), &raw, now, || panic!("invalid fingerprint")).status,
+                    assess(check(), &raw, now, ReportForm::Structured, || panic!(
+                        "invalid fingerprint"
+                    ))
+                    .status,
                     Status::Warn
                 );
             }
@@ -326,15 +438,15 @@ mod tests {
         let now = Timestamp::new(200, 0).unwrap();
         let mut raw =
             json!({"status":"ok","time":100,"snapshot_id":"legacy","error_reason":"incomplete"});
-        assert!(success_history(&raw, now).contains("snapshot legacy"));
+        assert!(success_history(&raw, now, ReportForm::Structured).contains("snapshot legacy"));
         raw["last_success"] = Value::Null;
-        assert!(!success_history(&raw, now).contains("snapshot legacy"));
+        assert!(!success_history(&raw, now, ReportForm::Structured).contains("snapshot legacy"));
         for time in [Value::Null, json!("bad"), json!(201), json!(i64::MAX)] {
             raw["last_success"] = json!({"status":"ok","time":time});
-            assert!(success_history(&raw, now).contains("age unknown"));
+            assert!(success_history(&raw, now, ReportForm::Structured).contains("age unknown"));
         }
         raw["last_success"] = json!({"status":"ok","time":100});
-        assert!(success_history(&raw, now).contains("age 100 seconds"));
+        assert!(success_history(&raw, now, ReportForm::Structured).contains("age 100 seconds"));
     }
 
     #[test]
@@ -342,9 +454,13 @@ mod tests {
         let raw = json!({"status":"error", "time":100, "setup_fingerprint":"a".repeat(64),
             "error_reason":"secret-repository-url\u{1b}[31m", "detail":"broker-token-secret",
             "last_success":{"status":"ok","time":50,"snapshot_id":"snap\n\u{1b}[31m\u{202e}".repeat(100)}});
-        let row = assess(check(), &raw, Timestamp::new(200, 0).unwrap(), || {
-            Some("a".repeat(64))
-        });
+        let row = assess(
+            check(),
+            &raw,
+            Timestamp::new(200, 0).unwrap(),
+            ReportForm::Structured,
+            || Some("a".repeat(64)),
+        );
         assert!(!row.detail.chars().any(char::is_control));
         assert!(!row.detail.contains('\u{202e}'));
         assert!(row.detail.len() < 700);

@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for parakeet coreml missing error.",
+  "context": "Journal command-line text for parakeet coreml missing error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "file",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bbe0beec2f3d40b330d45430b6905443cab446adbd8c687c566d957a3d582791",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for parakeet cpp stt ready parakeet cpp is only supported on linux and windows.",
+  "context": "Journal command-line text for parakeet cpp stt ready parakeet cpp is only supported on linux and windows.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3b87eb0d01403cc94658d9f077d486ca713b20580751b7c765a9e63e804b5432",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "backend_name",
+      "kind": "accepted-input",
+      "value": "parakeet-cpp"
+    }
+  ]
+}

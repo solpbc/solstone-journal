@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for skill state points elsewhere at.",
+  "context": "Journal command-line text for skill state points elsewhere at.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "skill",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "dcfadb83621fec9c1f0c30010d5c710f805fe97264590ac60a140b03eac58f07",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

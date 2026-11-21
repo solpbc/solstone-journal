@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
+
 use crate::{
     context::CheckContext,
     vocabulary::{Check, RunnerResult, Status, make_result},
 };
+use solstone_core_cli_copy as copy;
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     // The router-skill sources are payload, so they are found under the payload
     // root rather than the repository root.
@@ -11,7 +13,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         return Ok(make_result(
             check,
             Status::Skip,
-            "router skill state is only available from a source checkout",
+            copy::text("journal.cli.doctor.skill.state.checkout.required"),
             None::<String>,
         ));
     };
@@ -23,7 +25,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         return Ok(make_result(
             check,
             Status::Skip,
-            "router skill directories are unavailable",
+            copy::text("journal.cli.doctor.skill.state.directories.missing"),
             None::<String>,
         ));
     }
@@ -35,17 +37,15 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
                     match link.state {
                         solstone_core_skill_state::RouterSkillLinkState::Installed => {}
                         solstone_core_skill_state::RouterSkillLinkState::Missing => {
-                            problems.push(format!(
-                                "{} missing at {}",
-                                link.name,
-                                link.link.display()
+                            problems.push(copy::display(
+                                "journal.cli.doctor.skill.state.link.missing",
+                                [("skill", &link.name), ("path", &link.link.display())],
                             ));
                         }
                         solstone_core_skill_state::RouterSkillLinkState::Foreign => {
-                            problems.push(format!(
-                                "{} points elsewhere at {}",
-                                link.name,
-                                link.link.display()
+                            problems.push(copy::display(
+                                "journal.cli.doctor.skill.state.link.foreign",
+                                [("skill", &link.name), ("path", &link.link.display())],
                             ));
                         }
                     }
@@ -53,9 +53,9 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
                 match solstone_core_skill_state::stale_router_skill_links(parent) {
                     Ok(stale_links) => {
                         for stale in stale_links {
-                            problems.push(format!(
-                                "stale router skill link at {}",
-                                stale.link.display()
+                            problems.push(copy::display(
+                                "journal.cli.doctor.skill.state.link.stale",
+                                [("path", &stale.link.display())],
                             ));
                         }
                     }
@@ -71,7 +71,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         Ok(make_result(
             check,
             Status::Ok,
-            "router skills solstone, journal are installed and current",
+            copy::text("journal.cli.doctor.skill.state.links.ready"),
             None::<String>,
         ))
     } else {
@@ -79,7 +79,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             check,
             Status::Warn,
             problems.join("; "),
-            Some("run solstone skills install --project ."),
+            Some(copy::text("journal.cli.doctor.skill.state.install")),
         ))
     }
 }

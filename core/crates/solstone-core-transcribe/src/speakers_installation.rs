@@ -476,8 +476,16 @@ fn validate_windows_borrow(
 
 #[cfg(windows)]
 pub(crate) fn validate_speakers_analyze_runtime() -> Result<ValidatedInstallation, CliError> {
-    let package = solstone_core_local::install::onnx_readiness::verified_windows_onnx_package()
-        .map_err(installation_error)?;
+    validate_speakers_analyze_runtime_in(solstone_core_cli_copy::ENGLISH)
+}
+
+#[cfg(windows)]
+pub(crate) fn validate_speakers_analyze_runtime_in(
+    locale: &str,
+) -> Result<ValidatedInstallation, CliError> {
+    let package =
+        solstone_core_local::install::onnx_readiness::verified_windows_onnx_package_in(locale)
+            .map_err(installation_error)?;
     Ok(ValidatedInstallation {
         helper: package.speakers_worker,
         wespeaker_model: package.wespeaker_model,

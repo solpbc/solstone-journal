@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for supervisor conflict no macos supervisor conflict native check foreign launcher scan only no competing.",
+  "context": "Journal command-line text for supervisor conflict no macos supervisor conflict native check foreign launcher scan only no competing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6eb0724e10541da2cb92a12c8cf16034560279081c171ddb1bc828ea537f453f",
+  "max_length": 142,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

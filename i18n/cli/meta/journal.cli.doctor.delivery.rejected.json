@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for delivery rejected.",
+  "context": "Journal command-line text for delivery rejected.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "client",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f6a4bc1911adc6939b61812a52af193159b62763f9536f8bf25817b315957b01",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

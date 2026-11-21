@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for journal dir writable move or remove then re run.",
+  "context": "Journal command-line text for journal dir writable move or remove then re run.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6e3aeb19cc209a7788438d3559c4c58d3bbf7425819da2deb6fb1a7e83cd09fb",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

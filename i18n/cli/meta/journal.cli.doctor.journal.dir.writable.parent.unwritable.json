@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for journal dir writable journal dir absent nearest existing ancestor is not writable.",
+  "context": "Journal command-line text for journal dir writable journal dir absent nearest existing ancestor is not writable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c26383ecd3e275ff12d6ca67f3224f8e3c3f0e76f01d3455d67df8d213c1512d",
+  "max_length": 104,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

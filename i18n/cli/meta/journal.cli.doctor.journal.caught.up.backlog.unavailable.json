@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for journal caught up couldn t fully determine backlog read failed.",
+  "context": "Journal command-line text for journal caught up couldn t fully determine backlog read failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "13993e7172610cd2db9818e9f9afa913ade75c822fed2b7db881ea36ce64f25d",
+  "max_length": 89,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "description": "Journal command-line text for sync peer writer.",
+  "context": "Journal command-line text for sync peer writer.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "host",
+      "type": "string"
+    },
+    {
+      "name": "writer",
+      "type": "string"
+    },
+    {
+      "name": "prefix",
+      "type": "string"
+    },
+    {
+      "name": "run",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5cc337ba52c2cda7ac7a0fd82a747a3e0083a51563b296a88235b9e77cfbf6b0",
+  "max_length": 143,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "newline",
+      "kind": "accepted-input",
+      "value": "\n"
+    }
+  ]
+}

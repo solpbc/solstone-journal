@@ -1,0 +1,38 @@
+{
+  "description": "Journal command-line text for facet routed.",
+  "context": "Journal command-line text for facet routed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "active_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "routed",
+      "type": "string"
+    },
+    {
+      "name": "active",
+      "type": "string"
+    },
+    {
+      "name": "since",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "d9bdfcf029c8dc2f609521c8fea7ba43f4877a5e5e379b28af673cc61c29dc05",
+  "max_length": 236,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "active_quantity",
+    "type": "cardinal"
+  }
+}

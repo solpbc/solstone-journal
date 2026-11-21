@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for usage argument.",
+  "context": "Journal command-line text for usage argument.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ad071e36c31c1e81897d40fd99ad7b8f0e96672763082076b2cdfd1cf6aa11b0",
+  "max_length": 105,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal doctor [-h] [--verbose] [--json] [--jsonl] [--port PORT]\n                      [--readiness]"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    },
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal doctor"
+    }
+  ]
+}

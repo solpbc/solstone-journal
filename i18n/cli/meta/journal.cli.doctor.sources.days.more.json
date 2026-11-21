@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for sources days more.",
+  "context": "Journal command-line text for sources days more.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "days",
+      "type": "string"
+    },
+    {
+      "name": "more",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2f6b2a1c240ac9d788c535a26cffa8e9bc328e6ec9336c9d76fb8a205af5bf15",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

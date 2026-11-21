@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for holds remove.",
+  "context": "Journal command-line text for holds remove.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fa627c56dff0104719207b032db67fa9c21cfc520378277f83127e9dca0d7af1",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for parakeet coreml size.",
+  "context": "Journal command-line text for parakeet coreml size.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "file",
+      "type": "string"
+    },
+    {
+      "name": "expected",
+      "type": "string"
+    },
+    {
+      "name": "found",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "47b96eb301a08f6bd3f76cdc2c43c4de058978bdf236fcfb1d34a7dd6d6c5b52",
+  "max_length": 130,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

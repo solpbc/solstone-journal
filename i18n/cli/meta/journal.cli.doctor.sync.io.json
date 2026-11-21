@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for sync io.",
+  "context": "Journal command-line text for sync io.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "operation",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f08e523405f739beb8e3b615f55f7a69f712850241fabd4520910bacec8c3090",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for config restore.",
+  "context": "Journal command-line text for config restore.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fa9d8f99295d35f0f92a07ca8f8cf41285808f5af9bb28ab893d6c2a467cb942",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "config_file",
+      "kind": "accepted-input",
+      "value": "config/journal.json"
+    }
+  ]
+}

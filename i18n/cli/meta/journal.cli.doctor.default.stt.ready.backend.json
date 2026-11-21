@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for default stt ready configured backend is parakeet readiness not applicable.",
+  "context": "Journal command-line text for default stt ready configured backend is parakeet readiness not applicable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "backend",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5b908beb6f5d2c667ebb30686f52d671d999ac28235afa404a885d17d746541a",
+  "max_length": 101,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

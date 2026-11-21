@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for default stt ready coreml parakeet model is not downloaded fetch it with solstone journal install.",
+  "context": "Journal command-line text for default stt ready coreml parakeet model is not downloaded fetch it with solstone journal install.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4ea3eddb29b9485cdcc84d98f9412ce430de1c6395c5a4b981a2237bee470d17",
+  "max_length": 108,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "models_command",
+      "kind": "command",
+      "value": "solstone journal install-models"
+    },
+    {
+      "name": "coreml",
+      "kind": "accepted-input",
+      "value": "CoreML"
+    }
+  ]
+}

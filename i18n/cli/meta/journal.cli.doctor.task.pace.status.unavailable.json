@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for task pace supervisor status unavailable.",
+  "context": "Journal command-line text for task pace supervisor status unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1e4a0aa566b0b095260674fb2d17e4ceb86515765cca3889959a4fca3b3075b8",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

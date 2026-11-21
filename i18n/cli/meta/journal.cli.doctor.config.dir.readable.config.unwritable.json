@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for config dir readable service config directory is not writable.",
+  "context": "Journal command-line text for config dir readable service config directory is not writable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ea3501ac7f7138436fe84fc47e94add2cac2e50ebb415e59dda2dfeacaed46b4",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

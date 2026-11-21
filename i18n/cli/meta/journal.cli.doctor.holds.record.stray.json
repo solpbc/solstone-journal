@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for holds record stray.",
+  "context": "Journal command-line text for holds record stray.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a2f10e07c5b9b6dbfc647e446989cd07379eb5893bc1c79558a7abdfe6362993",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

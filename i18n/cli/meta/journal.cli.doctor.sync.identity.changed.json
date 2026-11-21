@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for sync identity changed.",
+  "context": "Journal command-line text for sync identity changed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "67e7bec2bad7dd7e4b98c18855584e5c9837b1367c8397873000a16628d6faf3",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

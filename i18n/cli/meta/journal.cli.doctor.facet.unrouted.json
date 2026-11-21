@@ -1,0 +1,43 @@
+{
+  "description": "Journal command-line text for facet unrouted.",
+  "context": "Journal command-line text for facet unrouted.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "active_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "unrouted_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "active",
+      "type": "string"
+    },
+    {
+      "name": "unrouted",
+      "type": "string"
+    },
+    {
+      "name": "since",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "228868d6c07949a8db6a25f9e2246c7c2fc447b8d5207f342f13aefa802e0fca",
+  "max_length": 380,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "active_quantity",
+    "type": "cardinal"
+  }
+}

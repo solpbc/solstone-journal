@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for sense dispatch capped unknown.",
+  "context": "Journal command-line text for sense dispatch capped unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "26a9038a6b8e174da41fd56027719751f0c35e65d58daa3741701c6a32e0dffe",
+  "max_length": 131,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

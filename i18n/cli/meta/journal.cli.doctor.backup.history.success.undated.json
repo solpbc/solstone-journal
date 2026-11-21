@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for backup history success undated.",
+  "context": "Journal command-line text for backup history success undated.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "snapshot",
+      "type": "string"
+    },
+    {
+      "name": "date",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "45877d06a91eaf4ca4c734574b2bfac8a49a08b425dc2802781db8132741b9ec",
+  "max_length": 158,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

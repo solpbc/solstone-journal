@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for local bin solstone reachable is missing.",
+  "context": "Journal command-line text for local bin solstone reachable is missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c7a9cd7bf367165c1894d3e80133a0ed9fbda43e89548b9dc5b318b550b10d74",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

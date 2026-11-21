@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for package target.",
+  "context": "Journal command-line text for package target.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "target",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3a64cea7999f6a3328a5fc32bd991728b205dca34fe1e2111087a7cc680dc94d",
+  "max_length": 193,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "target_env",
+      "kind": "accepted-input",
+      "value": "CARGO_TARGET_DIR"
+    },
+    {
+      "name": "newline",
+      "kind": "accepted-input",
+      "value": "\n"
+    }
+  ]
+}

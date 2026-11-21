@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for sync entry vanished.",
+  "context": "Journal command-line text for sync entry vanished.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6a1cb04682c4e905789b6da3efc79a7d625442c9c4aa8c1f7c5a52dd8dcf97dc",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

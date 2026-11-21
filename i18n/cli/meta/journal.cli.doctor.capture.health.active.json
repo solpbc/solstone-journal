@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for capture health rollup active the solstone app on every device that has added to.",
+  "context": "Journal command-line text for capture health rollup active the solstone app on every device that has added to.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ad0a2eb0b24d5cad2c29b9230cfc5c0a5917a4047f364506fcc75a6a8bd23e39",
+  "max_length": 121,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "brand",
+      "kind": "mark-word",
+      "value": "solstone"
+    },
+    {
+      "name": "rollup",
+      "kind": "accepted-input",
+      "value": "rollup=active"
+    }
+  ]
+}

@@ -369,6 +369,10 @@ fn versioned_prefix_via_resolved_version_dir(version_dir: &Path) -> Option<PathB
 /// checkout / layout markers that were required, and a Cargo target directory
 /// the executable sits in when no checkout is above it.
 pub fn describe_installation_root_miss(executable_dir: &Path) -> String {
+    describe_installation_root_miss_in(executable_dir, solstone_core_cli_copy::ENGLISH)
+}
+
+pub fn describe_installation_root_miss_in(executable_dir: &Path, locale: &str) -> String {
     let embedded = embedded_apple_payload(executable_dir);
     let site_packages = installed_site_packages_from_executable_dir(executable_dir);
     let checkout = executable_dir.ancestors().find_map(|candidate| {
@@ -390,40 +394,74 @@ pub fn describe_installation_root_miss(executable_dir: &Path) -> String {
                 .find(|candidate| candidate.join(".rustc_info.json").is_file())
         })
         .flatten();
-    let mut description = format!(
-        "could not locate packaged talent roots from executable directory {}\n\
-         walked ancestor {}\n\
-         site-packages candidate: {}\n\
-         checkout candidate (pyproject.toml + .git): {}\n\
-         layout share anchors {}, {}, {}: {}\n\
-         Apple bundle JournalPayload candidate: {}",
-        executable_dir.display(),
-        ancestor.display(),
-        site_packages
-            .as_ref()
-            .map(|path| path.display().to_string())
-            .unwrap_or_else(|| "none".to_owned()),
-        checkout
-            .as_ref()
-            .map(|(root, _)| root.display().to_string())
-            .unwrap_or_else(|| "none".to_owned()),
-        LAYOUT_BUNDLE_ANCHOR,
-        LAYOUT_LAYOUT_ANCHOR,
-        LAYOUT_TEMPLATE_ANCHOR,
-        layout
-            .as_ref()
-            .map(|path| path.display().to_string())
-            .unwrap_or_else(|| "none".to_owned()),
-        embedded
-            .as_ref()
-            .map(|path| path.display().to_string())
-            .unwrap_or_else(|| "none".to_owned()),
+    let mut description = solstone_core_cli_copy::display_for(
+        locale,
+        "journal.cli.doctor.package.layout",
+        [
+            ("directory", &executable_dir.display()),
+            ("ancestor", &ancestor.display()),
+            (
+                "site",
+                &(site_packages
+                    .as_ref()
+                    .map(|path| path.display().to_string())
+                    .unwrap_or_else(|| {
+                        solstone_core_cli_copy::render_for(
+                            locale,
+                            "journal.cli.doctor.package.none",
+                            &[],
+                        )
+                    })),
+            ),
+            (
+                "checkout",
+                &(checkout
+                    .as_ref()
+                    .map(|(root, _)| root.display().to_string())
+                    .unwrap_or_else(|| {
+                        solstone_core_cli_copy::render_for(
+                            locale,
+                            "journal.cli.doctor.package.none",
+                            &[],
+                        )
+                    })),
+            ),
+            ("bundle", &LAYOUT_BUNDLE_ANCHOR),
+            ("layout", &LAYOUT_LAYOUT_ANCHOR),
+            ("template", &LAYOUT_TEMPLATE_ANCHOR),
+            (
+                "install",
+                &(layout
+                    .as_ref()
+                    .map(|path| path.display().to_string())
+                    .unwrap_or_else(|| {
+                        solstone_core_cli_copy::render_for(
+                            locale,
+                            "journal.cli.doctor.package.none",
+                            &[],
+                        )
+                    })),
+            ),
+            (
+                "embedded",
+                &(embedded
+                    .as_ref()
+                    .map(|path| path.display().to_string())
+                    .unwrap_or_else(|| {
+                        solstone_core_cli_copy::render_for(
+                            locale,
+                            "journal.cli.doctor.package.none",
+                            &[],
+                        )
+                    })),
+            ),
+        ],
     );
     if let Some(target) = cargo_target {
-        description.push_str(&format!(
-            "\nCargo target directory {} is outside any checkout: a binary built there cannot \
-             find the payload, so keep CARGO_TARGET_DIR inside the checkout",
-            target.display()
+        description.push_str(&solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.doctor.package.target",
+            [("target", &target.display())],
         ));
     }
     description
@@ -431,27 +469,32 @@ pub fn describe_installation_root_miss(executable_dir: &Path) -> String {
 
 /// Why packaged `solstone/talent` + `solstone/apps` roots could not be formed.
 pub fn describe_package_roots_miss(executable_dir: &Path) -> String {
+    describe_package_roots_miss_in(executable_dir, solstone_core_cli_copy::ENGLISH)
+}
+
+pub fn describe_package_roots_miss_in(executable_dir: &Path, locale: &str) -> String {
     match resolve_installation_root_from_executable_dir(executable_dir) {
-        None => describe_installation_root_miss(executable_dir),
+        None => describe_installation_root_miss_in(executable_dir, locale),
         Some(root) => {
             let talent = root.join("solstone/talent");
             let apps = root.join("solstone/apps");
             if !talent.is_dir() {
-                format!(
-                    "installation root {} is missing directory {}",
-                    root.display(),
-                    talent.display()
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.doctor.package.missing",
+                    [("root", &root.display()), ("path", &talent.display())],
                 )
             } else if !apps.is_dir() {
-                format!(
-                    "installation root {} is missing directory {}",
-                    root.display(),
-                    apps.display()
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.doctor.package.missing",
+                    [("root", &root.display()), ("path", &apps.display())],
                 )
             } else {
-                format!(
-                    "could not locate packaged talent roots from executable directory {}",
-                    executable_dir.display()
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.doctor.package.unavailable",
+                    [("directory", &executable_dir.display())],
                 )
             }
         }

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for package executable parent.",
+  "context": "Journal command-line text for package executable parent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5bd1ab7ca765b213bb4f8c7041a2af08637ae0a35f1dfdb5e162b9cf49c52684",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

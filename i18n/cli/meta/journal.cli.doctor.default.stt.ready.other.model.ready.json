@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for default stt ready parakeet model ready at.",
+  "context": "Journal command-line text for default stt ready parakeet model ready at.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "71e9a81c77d5b704b3474ee676ed3232840319b9164831e3ab70e3e095377a25",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

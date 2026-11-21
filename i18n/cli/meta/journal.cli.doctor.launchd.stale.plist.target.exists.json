@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for launchd stale plist launchd plist target exists.",
+  "context": "Journal command-line text for launchd stale plist launchd plist target exists.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "477fc51cdd2ccd59aa0af89a1b3303f133ba88165ec2cbf8ba2c76081698f029",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for unretryable transcribe input cannot open.",
+  "context": "Journal command-line text for unretryable transcribe input cannot open.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1adecc29055173644b87ae0cf43e652019a26ab91c0fb032d6cdd768f9d821d3",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
+
 use super::service_status;
 use crate::{
     context::{CheckContext, WindowsServiceRegistration},
     vocabulary::{Check, RunnerResult, Status, make_result},
 };
+use solstone_core_cli_copy as copy;
 #[cfg(unix)]
 use solstone_core_system::process::{Disposition, LaunchAuthority, LaunchError, launch};
 #[cfg(unix)]
@@ -67,7 +69,7 @@ impl ProcessGroupChild {
         else {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "probe child PID does not fit a process-group ID",
+                copy::text("journal.cli.doctor.service.running.pid.invalid"),
             ));
         };
         Ok(Self { authority, group })
@@ -127,9 +129,9 @@ fn installed(context: &CheckContext) -> Installed {
 pub(crate) fn windows_registration(context: &CheckContext) -> WindowsServiceRegistration {
     match context.windows_service_probe {
         Some(probe) => probe(context),
-        None => WindowsServiceRegistration::Unreadable(
-            "no reader for the service registration".to_owned(),
-        ),
+        None => WindowsServiceRegistration::Unreadable(copy::text(
+            "journal.cli.doctor.service.running.registration.no.reader",
+        )),
     }
 }
 
@@ -140,7 +142,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             return Ok(make_result(
                 check,
                 Status::Skip,
-                "no local journal service",
+                copy::text("journal.cli.doctor.service.absent"),
                 None::<String>,
             ));
         }
@@ -148,7 +150,10 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             return Ok(make_result(
                 check,
                 Status::Skip,
-                format!("couldn't read the journal's service registration — {reason}"),
+                copy::display(
+                    "journal.cli.doctor.service.registration.unreadable",
+                    [("reason", &reason)],
+                ),
                 None::<String>,
             ));
         }
@@ -162,11 +167,10 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
                 return Ok(make_result(
                     check,
                     Status::Fail,
-                    "journal service unit is failed",
-                    Some(
-                        "run solstone journal service restart; if it persists, run solstone journal service logs",
-                    ),
-                ));
+                    copy::text("journal.cli.doctor.service.running.unit.failed"),
+                    Some(copy::text("journal.cli.doctor.service.running.restart")),
+                )
+                .changing_service());
             }
             // ⛔ Only an absent socket establishes that nothing is running.
             // The other causes mean the probe could not tell, and saying "not
@@ -175,16 +179,20 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
                 return Ok(make_result(
                     check,
                     Status::Warn,
-                    "service installed but not running",
-                    Some("run solstone journal service start"),
-                ));
+                    copy::text("journal.cli.doctor.service.running.stopped"),
+                    Some(copy::text("journal.cli.doctor.service.running.start")),
+                )
+                .changing_service());
             }
             return Ok(make_result(
                 check,
                 Status::Skip,
                 // ⛔ "supervisor" is a backstage process name; the owner-facing
                 // surfaces call this the system manager.
-                format!("couldn't get a status — {}", cause.as_str()),
+                copy::display(
+                    "journal.cli.doctor.service.running.unreachable",
+                    [("cause", &cause.key())],
+                ),
                 None::<String>,
             ));
         }
@@ -206,21 +214,28 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
                     .get("restart_attempts")
                     .and_then(serde_json::Value::as_i64)
                     .unwrap_or(0);
-                format!("{name} ({attempts} restart attempts)")
+                context.report_form.counted(
+                    "journal.cli.doctor.service.restart.attempts",
+                    &[("quantity", attempts.max(0) as u64)],
+                    &[("name", &name), ("attempts", &attempts)],
+                )
             })
             .collect::<Vec<_>>()
             .join(", ");
         return Ok(make_result(
             check,
             Status::Fail,
-            format!("crash-loop: {items}"),
-            Some("run solstone journal service logs"),
+            copy::strings(
+                "journal.cli.doctor.service.crash.list",
+                [("services", &items)],
+            ),
+            Some(copy::text("journal.cli.doctor.service.running.logs")),
         ));
     }
     Ok(make_result(
         check,
         Status::Ok,
-        "journal service is running",
+        copy::text("journal.cli.doctor.service.running.running"),
         None::<String>,
     ))
 }

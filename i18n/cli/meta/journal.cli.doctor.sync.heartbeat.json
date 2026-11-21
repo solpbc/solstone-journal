@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for sync heartbeat.",
+  "context": "Journal command-line text for sync heartbeat.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d3b5a3349cccc6dc41df360b17e5f991135c4e1df634c7211cd079a9814f550b",
+  "max_length": 162,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "newline",
+      "kind": "accepted-input",
+      "value": "\n"
+    }
+  ]
+}

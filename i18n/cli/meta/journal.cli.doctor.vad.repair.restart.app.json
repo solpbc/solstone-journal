@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for vad repair restart app.",
+  "context": "Journal command-line text for vad repair restart app.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "84a2b56aa0d35a06533eb788a62ace8a3a907473e93fa0586428f0eccbcddfe0",
+  "max_length": 137,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "doctor_command",
+      "kind": "command",
+      "value": "solstone journal doctor"
+    }
+  ]
+}

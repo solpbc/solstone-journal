@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for vad timeout.",
+  "context": "Journal command-line text for vad timeout.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "timeout",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6a464037393fa8ceb5877294aa50edd011071178c561c7ec174366d212abdf73",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "vad",
+      "kind": "accepted-input",
+      "value": "VAD"
+    }
+  ]
+}

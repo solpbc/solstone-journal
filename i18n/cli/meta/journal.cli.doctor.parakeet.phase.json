@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for parakeet phase.",
+  "context": "Journal command-line text for parakeet phase.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "phase",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "50261a9c30da03ccff82aae61a2b92aff031149043da958ab7352c89320122ed",
+  "max_length": 103,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "server",
+      "kind": "command",
+      "value": "parakeet-server"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for supervisor conflict not supported on windows.",
+  "context": "Journal command-line text for supervisor conflict not supported on windows.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9cc42cf2c18aa38cbff6aefab65c02fd304aaf5191b97c20652c09c935d50dbc",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

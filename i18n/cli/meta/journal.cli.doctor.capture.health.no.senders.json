@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for capture health rollup no senders the solstone app hasn t added anything to your.",
+  "context": "Journal command-line text for capture health rollup no senders the solstone app hasn t added anything to your.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "346503479d0eb35aa0ef217cef7b369c3e39ea5bd41b319f197b1bcb4688d4e9",
+  "max_length": 105,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "brand",
+      "kind": "mark-word",
+      "value": "solstone"
+    },
+    {
+      "name": "rollup",
+      "kind": "accepted-input",
+      "value": "rollup=no_senders"
+    }
+  ]
+}

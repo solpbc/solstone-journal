@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for tasks long.",
+  "context": "Journal command-line text for tasks long.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "tasks",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cc77bba0132a973315c3c4f446859fda3c06be11812974bc16f81d4104200032",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

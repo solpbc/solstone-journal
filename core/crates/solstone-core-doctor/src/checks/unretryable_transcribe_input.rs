@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use solstone_core_cli_copy as copy;
+
 use std::collections::BTreeSet;
 use std::fs::File;
 use std::io::Read;
@@ -35,9 +37,9 @@ fn read_audio_sidecar_first_row(path: &Path) -> SidecarReadOutcome {
     let mut file = match File::open(path) {
         Ok(f) => f,
         Err(e) => {
-            return SidecarReadOutcome::CannotDetermine(format!(
-                "cannot open {}: {e}",
-                path.display()
+            return SidecarReadOutcome::CannotDetermine(copy::display(
+                "journal.cli.doctor.unretryable.transcribe.input.open",
+                [("path", &path.display()), ("error", &e)],
             ));
         }
     };
@@ -47,35 +49,38 @@ fn read_audio_sidecar_first_row(path: &Path) -> SidecarReadOutcome {
         .take((vocab::MAX_FIRST_ROW_BYTES + 1) as u64)
         .read_to_end(&mut window)
     {
-        return SidecarReadOutcome::CannotDetermine(format!("cannot read {}: {e}", path.display()));
+        return SidecarReadOutcome::CannotDetermine(copy::display(
+            "journal.cli.doctor.unretryable.transcribe.input.read",
+            [("path", &path.display()), ("error", &e)],
+        ));
     }
     let Some(newline) = window.iter().position(|byte| *byte == b'\n') else {
-        return SidecarReadOutcome::CannotDetermine(format!(
-            "first row in {} cannot be established or exceeds byte limit",
-            path.display()
+        return SidecarReadOutcome::CannotDetermine(copy::display(
+            "journal.cli.doctor.unretryable.transcribe.input.row.unavailable",
+            [("path", &path.display())],
         ));
     };
     if newline > vocab::MAX_FIRST_ROW_BYTES {
-        return SidecarReadOutcome::CannotDetermine(format!(
-            "first row in {} exceeds byte limit",
-            path.display()
+        return SidecarReadOutcome::CannotDetermine(copy::display(
+            "journal.cli.doctor.unretryable.transcribe.input.row.large",
+            [("path", &path.display())],
         ));
     }
     let header_str = match std::str::from_utf8(&window[..newline]) {
         Ok(s) => s,
         Err(e) => {
-            return SidecarReadOutcome::CannotDetermine(format!(
-                "first row in {} is not valid utf-8: {e}",
-                path.display()
+            return SidecarReadOutcome::CannotDetermine(copy::display(
+                "journal.cli.doctor.unretryable.transcribe.input.row.encoding",
+                [("path", &path.display()), ("error", &e)],
             ));
         }
     };
     let json_val: Value = match serde_json::from_str(header_str) {
         Ok(v) => v,
         Err(e) => {
-            return SidecarReadOutcome::CannotDetermine(format!(
-                "first row in {} is not valid json: {e}",
-                path.display()
+            return SidecarReadOutcome::CannotDetermine(copy::display(
+                "journal.cli.doctor.unretryable.transcribe.input.row.json",
+                [("path", &path.display()), ("error", &e)],
             ));
         }
     };
@@ -89,9 +94,9 @@ fn read_audio_sidecar_first_row(path: &Path) -> SidecarReadOutcome {
         return SidecarReadOutcome::Skip;
     };
     let Some(handler) = record_obj.get("handler").and_then(Value::as_str) else {
-        return SidecarReadOutcome::CannotDetermine(format!(
-            "processing record in {} missing handler field",
-            path.display()
+        return SidecarReadOutcome::CannotDetermine(copy::display(
+            "journal.cli.doctor.unretryable.transcribe.input.handler.missing",
+            [("path", &path.display())],
         ));
     };
     if handler != vocab::HANDLER_TRANSCRIBE {
@@ -113,7 +118,10 @@ pub(crate) fn scan(journal: &Path) -> UnretryableScan {
     let days_map = match day_dirs(journal) {
         Ok(d) => d,
         Err(e) => {
-            return UnretryableScan::CannotDetermine(format!("failed to read chronicle days: {e}"));
+            return UnretryableScan::CannotDetermine(copy::display(
+                "journal.cli.doctor.unretryable.transcribe.input.days.unreadable",
+                [("error", &e)],
+            ));
         }
     };
     let segment_source = FilesystemSegmentSource;
@@ -125,8 +133,9 @@ pub(crate) fn scan(journal: &Path) -> UnretryableScan {
         let segments = match segment_source.segments(journal, &day) {
             Ok(s) => s,
             Err(e) => {
-                return UnretryableScan::CannotDetermine(format!(
-                    "failed to list segments for day {day}: {e}"
+                return UnretryableScan::CannotDetermine(copy::display(
+                    "journal.cli.doctor.unretryable.transcribe.input.segments.unreadable",
+                    [("day", &day), ("error", &e)],
                 ));
             }
         };
@@ -134,9 +143,9 @@ pub(crate) fn scan(journal: &Path) -> UnretryableScan {
             let record_id = match segment.record_identity() {
                 Ok(id) => id,
                 Err(e) => {
-                    return UnretryableScan::CannotDetermine(format!(
-                        "invalid segment identity in {}: {e}",
-                        segment.path().display()
+                    return UnretryableScan::CannotDetermine(copy::display(
+                        "journal.cli.doctor.unretryable.transcribe.input.identity.invalid",
+                        [("path", &(segment.path().display())), ("error", &e)],
                     ));
                 }
             };
@@ -145,9 +154,9 @@ pub(crate) fn scan(journal: &Path) -> UnretryableScan {
             let entries = match std::fs::read_dir(segment.path()) {
                 Ok(e) => e,
                 Err(e) => {
-                    return UnretryableScan::CannotDetermine(format!(
-                        "cannot read segment dir {}: {e}",
-                        segment.path().display()
+                    return UnretryableScan::CannotDetermine(copy::display(
+                        "journal.cli.doctor.unretryable.transcribe.input.directory.unreadable",
+                        [("path", &(segment.path().display())), ("error", &e)],
                     ));
                 }
             };
@@ -155,9 +164,9 @@ pub(crate) fn scan(journal: &Path) -> UnretryableScan {
                 let entry = match entry {
                     Ok(e) => e,
                     Err(e) => {
-                        return UnretryableScan::CannotDetermine(format!(
-                            "cannot read segment entry in {}: {e}",
-                            segment.path().display()
+                        return UnretryableScan::CannotDetermine(copy::display(
+                            "journal.cli.doctor.unretryable.transcribe.input.entry.unreadable",
+                            [("path", &(segment.path().display())), ("error", &e)],
                         ));
                     }
                 };
@@ -189,10 +198,12 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         UnretryableScan::Counted(identities) if identities.is_empty() => Ok(make_result(
             check,
             Status::Ok,
-            format!(
-                "0 recordings the journal will not retry on its own (handler: {}, reason_code: {})",
-                vocab::HANDLER_TRANSCRIBE,
-                vocab::REASON_CORRUPT_INPUT
+            copy::display(
+                "journal.cli.doctor.unretryable.transcribe.input.clear",
+                [
+                    ("handler", &(vocab::HANDLER_TRANSCRIBE)),
+                    ("reason_code", &(vocab::REASON_CORRUPT_INPUT)),
+                ],
             ),
             None::<String>,
         )),
@@ -209,12 +220,15 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
                 })
                 .collect::<Vec<_>>()
                 .join(", ");
-            let detail_raw = format!(
-                "{} recordings the journal will not retry on its own (handler: {}, reason_code: {}): {}",
-                identities.len(),
-                vocab::HANDLER_TRANSCRIBE,
-                vocab::REASON_CORRUPT_INPUT,
-                formatted_ids
+            let detail_raw = context.report_form.counted(
+                "journal.cli.doctor.transcription.unretryable",
+                &[("quantity", identities.len() as u64)],
+                &[
+                    ("count", &identities.len()),
+                    ("handler", &(vocab::HANDLER_TRANSCRIBE)),
+                    ("reason_code", &(vocab::REASON_CORRUPT_INPUT)),
+                    ("identities", &formatted_ids),
+                ],
             );
             let detail = truncate(&detail_raw, 400);
             Ok(make_result(check, Status::Warn, detail, None::<String>))
@@ -222,8 +236,9 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         UnretryableScan::CannotDetermine(reason) => Ok(make_result(
             check,
             Status::Warn,
-            format!(
-                "could not determine how many recordings the journal will not retry on its own ({reason})"
+            copy::display(
+                "journal.cli.doctor.unretryable.transcribe.input.scan.failed",
+                [("reason", &reason)],
             ),
             None::<String>,
         )),

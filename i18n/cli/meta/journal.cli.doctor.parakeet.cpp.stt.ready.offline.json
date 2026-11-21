@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for parakeet cpp stt ready parakeet server not reachable your journal isn t running.",
+  "context": "Journal command-line text for parakeet cpp stt ready parakeet server not reachable your journal isn t running.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0af85e0f8efef57eed48aaf8f36085fd7adc0707927ba90a390f4e03e4e208c0",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "server",
+      "kind": "accepted-input",
+      "value": "parakeet-server"
+    }
+  ]
+}

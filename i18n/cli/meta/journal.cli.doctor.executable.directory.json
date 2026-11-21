@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for executable directory.",
+  "context": "Journal command-line text for executable directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "02d62c181fe6b6cc3149a801778584e83ea25ac0b9c57d092cec0713a40ae6ec",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

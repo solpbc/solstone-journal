@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for parakeet coreml configured.",
+  "context": "Journal command-line text for parakeet coreml configured.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "installed",
+      "type": "string"
+    },
+    {
+      "name": "configured",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1ab31350a5dd7b0cc854650437072add0a0e780fdbe8d4dd4d3f29ff5894691f",
+  "max_length": 127,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

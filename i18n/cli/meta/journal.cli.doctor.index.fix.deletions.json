@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for index fix deletions.",
+  "context": "Journal command-line text for index fix deletions.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "386b97a966ad079f35b256990d4384543edac2a9bde64328326022d81b709830",
+  "max_length": 98,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal indexer status"
+    }
+  ]
+}

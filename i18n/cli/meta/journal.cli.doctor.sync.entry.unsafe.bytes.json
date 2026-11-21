@@ -1,0 +1,45 @@
+{
+  "description": "Journal command-line text for sync entry unsafe bytes.",
+  "context": "Journal command-line text for sync entry unsafe bytes.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "entry_type",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    },
+    {
+      "name": "bytes",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7456c091f8d53e876575eaa896ba09fb7fff6bac45ed11bc305f3ff8b0ecd34e",
+  "max_length": 399,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "newline",
+      "kind": "accepted-input",
+      "value": "\n"
+    },
+    {
+      "name": "sync_folder",
+      "kind": "accepted-input",
+      "value": "health/sync"
+    }
+  ]
+}

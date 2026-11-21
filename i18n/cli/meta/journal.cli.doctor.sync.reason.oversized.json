@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for sync reason oversized.",
+  "context": "Journal command-line text for sync reason oversized.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "size",
+      "type": "string"
+    },
+    {
+      "name": "limit",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "22a2dcfb17793c344eb908cc3d2928780aec752636dace8dc3cff6e0ca8d3102",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

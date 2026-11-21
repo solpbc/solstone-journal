@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for backup details.",
+  "context": "Journal command-line text for backup details.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f68458ea9ceabd68bafac212b050df171440465381cb497582dca0a17ebd7400",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

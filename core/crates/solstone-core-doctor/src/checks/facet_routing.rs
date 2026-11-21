@@ -42,7 +42,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         return Ok(make_result(
             check,
             Status::Skip,
-            "no active segments in the newest days",
+            solstone_core_cli_copy::text("journal.cli.doctor.facet.no.active"),
             None::<String>,
         ));
     }
@@ -51,20 +51,36 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         Ok(make_result(
             check,
             Status::Warn,
-            format!(
-                "{unrouted} of {active} active segments since {since} were filed under no facet"
+            context.report_form.counted(
+                "journal.cli.doctor.facet.unrouted",
+                &[
+                    ("active_quantity", active as u64),
+                    ("unrouted_quantity", unrouted as u64),
+                ],
+                &[
+                    ("active", &active),
+                    ("unrouted", &unrouted),
+                    ("since", &since),
+                ],
             ),
-            Some(
-                "those segments are missing from the activity lists; check the facet declarations with `solstone journal facet doctor` and recent sense runs with `solstone journal talent logs`",
-            ),
+            Some(context.report_form.counted(
+                "journal.cli.doctor.facet.fix",
+                &[("unrouted_quantity", unrouted as u64)],
+                &[],
+            )),
         ))
     } else {
         Ok(make_result(
             check,
             Status::Ok,
-            format!(
-                "{} of {active} active segments since {since} filed under a facet",
-                active - unrouted
+            context.report_form.counted(
+                "journal.cli.doctor.facet.routed",
+                &[("active_quantity", active as u64)],
+                &[
+                    ("routed", &(active - unrouted)),
+                    ("active", &active),
+                    ("since", &since),
+                ],
             ),
             None::<String>,
         ))

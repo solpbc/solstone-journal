@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for parakeet cpp missing.",
+  "context": "Journal command-line text for parakeet cpp missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4a5dc9fecbefcf572957f01d32caff508bc97f376731e2877b7fc040b280d394",
+  "max_length": 89,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "parakeet_cpp",
+      "kind": "accepted-input",
+      "value": "parakeet-cpp"
+    }
+  ]
+}

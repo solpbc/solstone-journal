@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for clients ledger unavailable.",
+  "context": "Journal command-line text for clients ledger unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "78499ec00bb68665cabea98da78970951cd863c9a9e76b9eda4e53f00f984763",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

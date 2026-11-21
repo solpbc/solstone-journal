@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for service running journal service is running.",
+  "context": "Journal command-line text for service running journal service is running.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bdc556601759f069f9d0109504c10856475c6ca8201b2f5f4442d44413811fc6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

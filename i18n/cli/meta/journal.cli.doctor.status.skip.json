@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for status skip.",
+  "context": "Journal command-line text for status skip.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "434c4de08fe3f1169fe84fb88633e94b84abbcb046fe5195df2bd0e53e7a57bb",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

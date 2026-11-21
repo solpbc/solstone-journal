@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for journal dir writable journal dir writable.",
+  "context": "Journal command-line text for journal dir writable journal dir writable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1072e8be305cc6edc32a792ccb732a064eafa5d541dd287301402c2c1168c975",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

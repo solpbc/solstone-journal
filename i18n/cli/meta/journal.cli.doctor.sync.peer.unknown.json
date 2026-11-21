@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for sync peer unknown.",
+  "context": "Journal command-line text for sync peer unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "host",
+      "type": "string"
+    },
+    {
+      "name": "writer",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e954e7160d646554f04d0d9438109bb375ba39407876236078a5927dd2231631",
+  "max_length": 131,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "newline",
+      "kind": "accepted-input",
+      "value": "\n"
+    }
+  ]
+}

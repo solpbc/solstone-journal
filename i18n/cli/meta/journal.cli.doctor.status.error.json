@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for status error.",
+  "context": "Journal command-line text for status error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b503d38d167fbe792d09b5eed3b924676d79a13ef35b5e984c4da6d58e2f7a61",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

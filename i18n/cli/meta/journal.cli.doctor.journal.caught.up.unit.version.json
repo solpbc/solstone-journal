@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for journal caught up couldn t read daily unit file on day unsupported record version.",
+  "context": "Journal command-line text for journal caught up couldn t read daily unit file on day unsupported record version.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "file_name",
+      "type": "string"
+    },
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "version",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "501b6efffcd27ead8198f6c5535cb68920c1ba635d97d57f7f9fa49ee1c6ef35",
+  "max_length": 133,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

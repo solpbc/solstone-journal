@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for backup status backup status unavailable invalid backup settings.",
+  "context": "Journal command-line text for backup status backup status unavailable invalid backup settings.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a318ccdb19996f44cf0157ac1e68442aa1f68d5cc58d3227841bb92ddab3eb21",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

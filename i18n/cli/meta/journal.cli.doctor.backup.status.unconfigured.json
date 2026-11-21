@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for backup status backup not configured.",
+  "context": "Journal command-line text for backup status backup not configured.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0e3119f2278c8bbed554ef071b81558e878cadd037444b1775fb5107b0e5f006",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

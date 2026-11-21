@@ -77,8 +77,9 @@ mod transcript;
 
 pub use args::{
     CliError, ParsedArgs, check_speakers_analyze_installation,
-    check_speakers_analyze_installation_with, check_vad_runtime_with, parse_arguments,
-    require_solstone, speakers_analyze_repair_text, vad_runtime_repair_for,
+    check_speakers_analyze_installation_in, check_speakers_analyze_installation_with,
+    check_vad_runtime_with, parse_arguments, require_solstone, speakers_analyze_repair_text,
+    speakers_installation_detail_in, speakers_repair_in, vad_runtime_repair_for,
 };
 pub use model_assets::{
     FIRERED_VAD_SHA256, ModelAssetError, PYANNOTE_SEGMENTATION_SHA256, SFACE_SHA256,
@@ -92,7 +93,8 @@ pub use speakers_installation::{
     enter_speakers_analyze_generation, read_speakers_analyze_owner,
 };
 pub use vad_runtime::{
-    VAD_RUNTIME_PROBE_TIMEOUT, VadRuntimeStatus, probe_from_executable, status_detail,
+    VAD_RUNTIME_PROBE_TIMEOUT, VadRuntimeStatus, probe_from_executable, probe_from_executable_in,
+    probe_vad_runtime_in, repair_in, status_detail, status_detail_in,
 };
 
 use std::path::{Path, PathBuf};

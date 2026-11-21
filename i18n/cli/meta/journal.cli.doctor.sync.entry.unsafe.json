@@ -1,0 +1,41 @@
+{
+  "description": "Journal command-line text for sync entry unsafe.",
+  "context": "Journal command-line text for sync entry unsafe.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "entry_type",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1206f60c7852fb6c495416b57b1c3d4cc21821a2bd6a376feb00f8da4d27bb5d",
+  "max_length": 365,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "sync_folder",
+      "kind": "accepted-input",
+      "value": "health/sync"
+    },
+    {
+      "name": "newline",
+      "kind": "accepted-input",
+      "value": "\n"
+    }
+  ]
+}

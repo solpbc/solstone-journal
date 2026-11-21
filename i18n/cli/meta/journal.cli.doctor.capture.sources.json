@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for capture sources.",
+  "context": "Journal command-line text for capture sources.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "client",
+      "type": "string"
+    },
+    {
+      "name": "sources",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7ac78ce35e145393e373059e274df46d1cbf0ab3a88f600df052324f4cd79a9c",
+  "max_length": 103,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "brand",
+      "kind": "mark-word",
+      "value": "solstone"
+    }
+  ]
+}

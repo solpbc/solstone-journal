@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for client delivery stall no rejected uploads recorded see devices for last delivery times.",
+  "context": "Journal command-line text for client delivery stall no rejected uploads recorded see devices for last delivery times.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "29223a959077ea58538a560a766fdc10b39ca57978020e2f1a0c3c9daffa9adb",
+  "max_length": 97,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

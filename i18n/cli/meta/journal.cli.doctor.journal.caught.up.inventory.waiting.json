@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for journal caught up whole journal inspection has not reported yet.",
+  "context": "Journal command-line text for journal caught up whole journal inspection has not reported yet.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2cdfe0012bed74c42c6ce8be584d6394e96f8610e1975acebd665551e850c20b",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for holds partition.",
+  "context": "Journal command-line text for holds partition.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "partition",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "755ae6dbf0621b2d8ebdf7035af75c91f6506f2ce98a39d0802b4d6ef26893b7",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

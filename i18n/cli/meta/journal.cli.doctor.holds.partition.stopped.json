@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for holds partition stopped.",
+  "context": "Journal command-line text for holds partition stopped.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "partition",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "544174278283b5ec5c23e470fc6219bc8c4dcfd64cef53b0ecc23a545b046dee",
+  "max_length": 162,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

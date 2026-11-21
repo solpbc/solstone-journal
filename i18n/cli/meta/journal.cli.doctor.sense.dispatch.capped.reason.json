@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for sense dispatch capped reason.",
+  "context": "Journal command-line text for sense dispatch capped reason.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2e6f9b7da50f0e0f3063c7dd5a439151a514d6295ed07b1d1a224f5ff5ca471d",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

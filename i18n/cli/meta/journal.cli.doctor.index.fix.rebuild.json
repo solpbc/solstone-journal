@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for index fix rebuild.",
+  "context": "Journal command-line text for index fix rebuild.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4e5a203c5ce35c935dd4d97d8457263a627d9943abee5c185c4cc80a8277e98e",
+  "max_length": 138,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal indexer --reset --rescan-full"
+    }
+  ]
+}

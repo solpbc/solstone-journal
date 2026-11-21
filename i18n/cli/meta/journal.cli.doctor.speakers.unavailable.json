@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for speakers unavailable.",
+  "context": "Journal command-line text for speakers unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ecbd71c4a2ef28a9e71dee95ef85c1ac468fcbb210d7fce4561fcbf93945f0ee",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "speakers-analyze"
+    }
+  ]
+}

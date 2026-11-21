@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
+
 use crate::{
     checks::common,
     context::CheckContext,
     vocabulary::{Check, RunnerResult, Status, make_result, truncate},
 };
+use solstone_core_cli_copy as copy;
 
 use solstone_core_sol_link::ledger::TransportRefusal;
 
@@ -45,7 +47,10 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             return Ok(make_result(
                 check,
                 Status::Skip,
-                format!("device records unavailable: {error}"),
+                copy::display(
+                    "journal.cli.doctor.devices.unavailable",
+                    [("error", &error)],
+                ),
                 None::<String>,
             ));
         }
@@ -54,7 +59,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         return Ok(make_result(
             check,
             Status::Skip,
-            "no registered devices",
+            copy::text("journal.cli.doctor.devices.absent"),
             None::<String>,
         ));
     }
@@ -66,12 +71,15 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
                 .as_ref()
                 .filter(|refusal| is_recent(refusal, context.now))
                 .map(|refusal| {
-                    format!(
-                        "device {} had requests turned away: {}, {}x through {}",
-                        record.cid,
-                        refusal.reason_code,
-                        refusal.active_count,
-                        refusal_date(refusal)
+                    context.report_form.counted(
+                        "journal.cli.doctor.device.refusal.count",
+                        &[("quantity", refusal.active_count)],
+                        &[
+                            ("device", &record.cid),
+                            ("reason", &refusal.reason_code),
+                            ("attempts", &refusal.active_count),
+                            ("last_seen", &(refusal_date(refusal))),
+                        ],
                     )
                 })
         })
@@ -80,7 +88,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         Ok(make_result(
             check,
             Status::Ok,
-            "no devices had requests turned away in the last 7 days",
+            copy::text("journal.cli.doctor.client.transport.refusal.healthy"),
             None::<String>,
         ))
     } else {
@@ -92,7 +100,9 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             // device asked for more at once than one connection carries, and
             // the actionable half is knowing it was this rather than the
             // network. A device that keeps provoking it is a defect to report.
-            Some("this is a busy connection, not a lost one; report it if it keeps happening"),
+            Some(copy::text(
+                "journal.cli.doctor.client.transport.refusal.repair",
+            )),
         ))
     }
 }

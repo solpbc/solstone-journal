@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for unretryable transcribe input invalid segment identity in.",
+  "context": "Journal command-line text for unretryable transcribe input invalid segment identity in.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7cd7c53d7b15c0591f60dbc241a37532ea01607840977d87e4853800ffa63ce0",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

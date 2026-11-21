@@ -1,0 +1,43 @@
+{
+  "description": "Journal command-line text for backup attempt incomplete.",
+  "context": "Journal command-line text for backup attempt incomplete.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "outcome",
+      "type": "string"
+    },
+    {
+      "name": "date",
+      "type": "string"
+    },
+    {
+      "name": "history",
+      "type": "string"
+    },
+    {
+      "name": "association",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "ec4d2f427ffb83f0521bfddae6eac28fbe94289510aa4c5b245184a2019a388b",
+  "max_length": 457,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "outcome",
+    "type": "string",
+    "enum_values": [
+      "success",
+      "incomplete",
+      "failed"
+    ],
+    "enum_default": "failed"
+  }
+}

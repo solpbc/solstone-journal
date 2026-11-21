@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for sync folder full.",
+  "context": "Journal command-line text for sync folder full.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "folder",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a3e620af8f6ccc9dbab187e23f70e00a9c5327cd1fe29fee3e70955b08f283bc",
+  "max_length": 415,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "sync_folder",
+      "kind": "accepted-input",
+      "value": "health/sync"
+    },
+    {
+      "name": "newline",
+      "kind": "accepted-input",
+      "value": "\n"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for journal sources readable the last scan found no unreadable days.",
+  "context": "Journal command-line text for journal sources readable the last scan found no unreadable days.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2a2d48f7de1ed7822caaead099741f4bba2a0fd3a5e263fcb284163a368cd9b1",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

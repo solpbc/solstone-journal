@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for holds record unreadable.",
+  "context": "Journal command-line text for holds record unreadable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "361370a2a34eac24676bdf418b281bc9beabeec0473ea3219108478bc3bf88d5",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

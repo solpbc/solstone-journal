@@ -1,0 +1,48 @@
+{
+  "description": "Journal command-line text for durability admission service.",
+  "context": "Journal command-line text for durability admission service.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "finding",
+      "type": "string"
+    },
+    {
+      "name": "generation",
+      "type": "string"
+    },
+    {
+      "name": "admission",
+      "type": "string"
+    },
+    {
+      "name": "identity",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "8625b1fba6d256b5772a0392fa3ffe89b160bb2be7174905934c9b63d3249702",
+  "max_length": 911,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "finding",
+    "type": "string",
+    "enum_values": [
+      "exited",
+      "escalated",
+      "retired",
+      "unacknowledged",
+      "spawn",
+      "unidentified",
+      "rejected",
+      "reused"
+    ],
+    "enum_default": "reused"
+  }
+}

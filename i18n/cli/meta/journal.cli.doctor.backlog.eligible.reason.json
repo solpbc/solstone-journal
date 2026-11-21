@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for backlog eligible reason.",
+  "context": "Journal command-line text for backlog eligible reason.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "location",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fb1db89e59aa02d393427cfdc1f0de6257693ccb30c0ead9a770079a802cdd7d",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

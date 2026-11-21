@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for backlog deferred.",
+  "context": "Journal command-line text for backlog deferred.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "location",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "748a7cfb9ca377758e6d412e3eda42b655b5ea07b65f65de268cce736d21d01b",
+  "max_length": 123,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

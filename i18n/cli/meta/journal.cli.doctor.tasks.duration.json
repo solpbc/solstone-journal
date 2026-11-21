@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for tasks duration.",
+  "context": "Journal command-line text for tasks duration.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "task",
+      "type": "string"
+    },
+    {
+      "name": "seconds",
+      "type": "string"
+    },
+    {
+      "name": "limit",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3d3f112036af55ccf84bb4a0cdd93f552112de5b090cea57e434971a2870a7ad",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

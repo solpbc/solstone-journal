@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for search log unavailable.",
+  "context": "Journal command-line text for search log unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "94e16e97a95d5fd41740903b180e390caa345aee5ae80770fc62303c743d8ab7",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

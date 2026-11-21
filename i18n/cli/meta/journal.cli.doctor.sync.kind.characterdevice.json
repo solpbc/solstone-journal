@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for sync kind characterdevice.",
+  "context": "Journal command-line text for sync kind characterdevice.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4a8ff72875adfacc6b10a805e55e43bffc94de754a44a0207ad9f1a3eb0874fe",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

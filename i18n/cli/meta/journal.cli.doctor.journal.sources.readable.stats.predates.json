@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for journal sources readable couldn t check the statistics predate this version.",
+  "context": "Journal command-line text for journal sources readable couldn t check the statistics predate this version.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d471cbf9a744e7ff5a12a4d775ca43ff37f1d69e10fb617d3b314307c3a33c2e",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

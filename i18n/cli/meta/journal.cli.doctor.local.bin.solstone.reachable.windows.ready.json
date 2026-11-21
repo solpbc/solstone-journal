@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for local bin solstone reachable solstone is on path at.",
+  "context": "Journal command-line text for local bin solstone reachable solstone is on path at.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "269112436234a86f8aff3c94d4c9e6ff1cea7eb28128a15f4c2e8241a3037a9d",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "brand",
+      "kind": "mark-word",
+      "value": "solstone"
+    },
+    {
+      "name": "path_variable",
+      "kind": "accepted-input",
+      "value": "PATH"
+    }
+  ]
+}

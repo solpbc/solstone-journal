@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for parakeet coreml sentinel.",
+  "context": "Journal command-line text for parakeet coreml sentinel.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bf3d9cc816af0824060afe23bf802c9003355b16cdbf31c09f2f4fa7f363da6b",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

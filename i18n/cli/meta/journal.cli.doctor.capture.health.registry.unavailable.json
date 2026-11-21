@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for capture health rollup unknown device list unavailable.",
+  "context": "Journal command-line text for capture health rollup unknown device list unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4b9ab1f2c07c6b9c209ec04b41a6258964096ad094119167a1e0f9b1d8ad933e",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "rollup",
+      "kind": "accepted-input",
+      "value": "rollup=unknown"
+    }
+  ]
+}

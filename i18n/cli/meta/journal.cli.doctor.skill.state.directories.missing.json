@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for skill state router skill directories are unavailable.",
+  "context": "Journal command-line text for skill state router skill directories are unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e6807e95ebfa4bd3c119a3354ef1d89c938e5bd27ed31a9e1386a4f998c79f26",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

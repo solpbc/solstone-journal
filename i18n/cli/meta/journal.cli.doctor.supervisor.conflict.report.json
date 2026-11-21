@@ -1,0 +1,42 @@
+{
+  "description": "Journal command-line text for supervisor conflict report.",
+  "context": "Journal command-line text for supervisor conflict report.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "135c473c0b16bb57ca70852eb66d103ea73682bc019d4fb2c2242737e4fa9850",
+  "max_length": 256,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  },
+  "protected_slots": [
+    {
+      "name": "keep_alive",
+      "kind": "accepted-input",
+      "value": "KeepAlive"
+    },
+    {
+      "name": "app_path",
+      "kind": "accepted-input",
+      "value": "/Applications/solstone.app"
+    }
+  ]
+}

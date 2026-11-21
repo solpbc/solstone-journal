@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for task pace a job is running long it will be stopped automatically if it.",
+  "context": "Journal command-line text for task pace a job is running long it will be stopped automatically if it.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d16a07ca752198e4863ce1bd6e08c145193e3b3487d1e4daf5bbd658a9eb0616",
+  "max_length": 146,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

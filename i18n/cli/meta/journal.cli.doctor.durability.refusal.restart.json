@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for durability refusal restart.",
+  "context": "Journal command-line text for durability refusal restart.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "generation",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e260eab36b67a36933e28d8a7d096935615d35c6d31e7d6e6debcac40ba81da3",
+  "max_length": 182,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

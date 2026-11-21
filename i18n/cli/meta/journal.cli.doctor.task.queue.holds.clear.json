@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for task queue holds all task partition records are clean.",
+  "context": "Journal command-line text for task queue holds all task partition records are clean.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6a5e46a40cbc28fd13afd2173db1358872532614c6d091635750377a22d320d8",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

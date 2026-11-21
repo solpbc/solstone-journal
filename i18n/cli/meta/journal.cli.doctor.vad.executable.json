@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for vad executable.",
+  "context": "Journal command-line text for vad executable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6579fe553a6099d7b855141f8cdc4a5024954beb66f8555e2f8f714101514344",
+  "max_length": 102,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "vad",
+      "kind": "accepted-input",
+      "value": "VAD"
+    }
+  ]
+}

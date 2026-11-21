@@ -85,7 +85,7 @@ pub use grep_compile::{GrepCompileError, GrepPattern, compile_grep_pattern, deci
 pub use index_health::{
     IndexFailure, IndexHealth, IndexHealthState, behind_text, evaluate_index_health,
     evaluate_index_health_of, evaluate_index_health_recent, evaluate_index_health_recent_in,
-    evaluate_index_health_with, retained_text,
+    evaluate_index_health_with, evaluate_index_health_with_in, retained_text,
 };
 pub use indexing_observation::{
     IndexingAttemptObservation, IndexingDiagnostics, IndexingObservations,
@@ -118,7 +118,8 @@ pub use source::{
 };
 pub use sync_copy::{
     ADMISSION_WAIT_UNVERIFIABLE_COPY, HEARTBEAT_WITHOUT_WAIT_MARKER_COPY, SyncRescanDiagnosis,
-    describe_sync_rescan, format_admission_waiting_copy, format_sync_scan_failure_copy,
+    describe_sync_rescan, describe_sync_rescan_in, format_admission_waiting_copy,
+    format_sync_scan_failure_copy,
 };
 pub use terminal::{
     LONGEST_REST_MS, RepeatedFailure, SegmentTalentFailures, is_floor_talent_capped,

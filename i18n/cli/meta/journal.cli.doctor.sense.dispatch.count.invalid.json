@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for sense dispatch sense status is incomplete no valid nonnegative dispatch error count.",
+  "context": "Journal command-line text for sense dispatch sense status is incomplete no valid nonnegative dispatch error count.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4844f6d0fb4c974f476c3c91b89bdc9630692518aacaa6fa16ecbc6856b8bf46",
+  "max_length": 101,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

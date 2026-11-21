@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for durability clean.",
+  "context": "Journal command-line text for durability clean.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "139b627729a27dda621481f10c5f18e4ef92d4841e32fce9fa64fb3fdb02c9e8",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for sources statistics refresh.",
+  "context": "Journal command-line text for sources statistics refresh.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9dc4e82f6fd2312f2ee6a153fdd5dcaef67b4dd2939021b885cc897db906f04d",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal journal-stats"
+    }
+  ]
+}

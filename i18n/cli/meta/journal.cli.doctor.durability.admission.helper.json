@@ -1,0 +1,48 @@
+{
+  "description": "Journal command-line text for durability admission helper.",
+  "context": "Journal command-line text for durability admission helper.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "finding",
+      "type": "string"
+    },
+    {
+      "name": "generation",
+      "type": "string"
+    },
+    {
+      "name": "admission",
+      "type": "string"
+    },
+    {
+      "name": "identity",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "e38a3398e67a700e960d962ff1f9bb783a7a17b6875fe752f31a2ba1d96dc9fe",
+  "max_length": 903,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "finding",
+    "type": "string",
+    "enum_values": [
+      "exited",
+      "escalated",
+      "retired",
+      "unacknowledged",
+      "spawn",
+      "unidentified",
+      "rejected",
+      "reused"
+    ],
+    "enum_default": "reused"
+  }
+}

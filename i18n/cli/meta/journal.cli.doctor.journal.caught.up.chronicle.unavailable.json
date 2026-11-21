@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for journal caught up couldn t fully determine failed to read chronicle.",
+  "context": "Journal command-line text for journal caught up couldn t fully determine failed to read chronicle.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7bbcb7cde8ac956c33701198243dd8336f69f2b73c4b8d1387f61dccd108e3a4",
+  "max_length": 94,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

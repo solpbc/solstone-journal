@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for backlog review started.",
+  "context": "Journal command-line text for backlog review started.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "location",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4a45678556da6fe13981c917df9fe59b6cf4d83326c55472cab25bab348c5a20",
+  "max_length": 182,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

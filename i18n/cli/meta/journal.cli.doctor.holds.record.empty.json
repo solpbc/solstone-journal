@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for holds record empty.",
+  "context": "Journal command-line text for holds record empty.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e5c16db55cb088501be99c418997e1fa47d7b57e8a18437247fa5541d1c4b7fd",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

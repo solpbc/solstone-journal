@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for sync reason nonregular.",
+  "context": "Journal command-line text for sync reason nonregular.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "kind",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c2475d3f68a1ff560f1c9cae072d7056cc17f9dc16f8a1c8941ccd84a80e2324",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

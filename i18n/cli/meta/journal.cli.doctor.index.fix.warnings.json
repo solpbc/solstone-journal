@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for index fix warnings.",
+  "context": "Journal command-line text for index fix warnings.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7fff791633cf98d1cc8e0e2744c50d279f6fa7b30055547b0cc70eccd2da62b1",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal indexer --rescan"
+    }
+  ]
+}

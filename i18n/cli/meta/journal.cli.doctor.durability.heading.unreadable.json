@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for durability heading unreadable.",
+  "context": "Journal command-line text for durability heading unreadable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "130079a7d473737c84aee05a67396744540fdc3d56c2e1b92e4435f9b885effb",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

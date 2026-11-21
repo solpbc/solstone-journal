@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for service absent.",
+  "context": "Journal command-line text for service absent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cbc3d5cfef9a26a39c3303e1e3c33278e5616cd797e62ae66c95fc25d52b2dde",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

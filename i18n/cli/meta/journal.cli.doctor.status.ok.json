@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for status ok.",
+  "context": "Journal command-line text for status ok.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9d21adda4a7392a978aa0a91812d715cf959bb3bcf0bb44d3e45d2b04b983589",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

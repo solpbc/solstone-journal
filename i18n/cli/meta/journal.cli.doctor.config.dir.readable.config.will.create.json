@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for config dir readable home is writable install will create.",
+  "context": "Journal command-line text for config dir readable home is writable install will create.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4dc6c80cf26f975b0ee1476dc84b50d5a3da590558612822d3445f1d1df22f54",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Doctor privacy warning and the instruction to choose whether to keep using this drive.",
+  "context": "Doctor privacy warning and the instruction to choose whether to keep using this drive.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3619acc4a78c93f6ed8ccb54ccf6ef5189f7f0bcab1899abc6e7c8276e3e2604",
+  "max_length": 298,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

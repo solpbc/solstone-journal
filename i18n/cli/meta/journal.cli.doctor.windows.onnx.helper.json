@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for windows onnx helper.",
+  "context": "Journal command-line text for windows onnx helper.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a78e9b34ced1a159ae46b7e4ca1af2471046ccbd504aa9205b585267aa2b54e0",
+  "max_length": 101,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "onnx",
+      "kind": "accepted-input",
+      "value": "ONNX"
+    }
+  ]
+}

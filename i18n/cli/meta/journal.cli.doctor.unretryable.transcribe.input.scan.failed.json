@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for unretryable transcribe input could not determine how many recordings the journal will not retry on.",
+  "context": "Journal command-line text for unretryable transcribe input could not determine how many recordings the journal will not retry on.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1b84e3c78746014237d4d7a1399877d644c056a08fa177146fd79ccc0451573d",
+  "max_length": 123,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for search log work.",
+  "context": "Journal command-line text for search log work.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a556fc952d50425f7c6cc799baab4b1b301c6f02993fadb355593b04039d6685",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

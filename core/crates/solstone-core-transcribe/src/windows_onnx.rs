@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::Path;
 
-use solstone_core_local::install::onnx_readiness::verified_windows_onnx_package;
+use solstone_core_local::install::onnx_readiness::verified_windows_onnx_package_in;
 use solstone_core_system::process::{
     BoundedHelperBudget, BoundedHelperError, BoundedHelperFailure, BoundedHelperOutput,
     BoundedHelperRequest, BoundedHelperResourceLimits, BoundedHelperResources, run_bounded_helper,
@@ -39,6 +39,24 @@ pub(crate) fn run_onnx_helper(
     budget: BoundedHelperBudget,
     resources: BoundedHelperResources,
 ) -> Result<BoundedHelperOutput, OnnxHelperError> {
+    run_onnx_helper_in(
+        helper,
+        expected_binary,
+        stdin,
+        budget,
+        resources,
+        solstone_core_cli_copy::ENGLISH,
+    )
+}
+
+pub(crate) fn run_onnx_helper_in(
+    helper: OnnxHelper,
+    expected_binary: &Path,
+    stdin: &[u8],
+    budget: BoundedHelperBudget,
+    resources: BoundedHelperResources,
+    locale: &str,
+) -> Result<BoundedHelperOutput, OnnxHelperError> {
     if stdin.len() > budget.stdin_limit_bytes {
         return Err(BoundedHelperError::InputLimitExceeded.into());
     }
@@ -59,7 +77,7 @@ pub(crate) fn run_onnx_helper(
         }
         pin
     };
-    let package = verified_windows_onnx_package().map_err(OnnxHelperError::Admission)?;
+    let package = verified_windows_onnx_package_in(locale).map_err(OnnxHelperError::Admission)?;
     let executable = match helper {
         OnnxHelper::Speakers => package.speakers_worker,
         OnnxHelper::Vad => package.vad_worker,
@@ -69,7 +87,11 @@ pub(crate) fn run_onnx_helper(
         &executable,
     ) {
         return Err(OnnxHelperError::Admission(
-            "ONNX helper is not the declared member of the signed app payload".to_owned(),
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.doctor.windows.onnx.helper",
+                &[],
+            ),
         ));
     }
     let system_root =

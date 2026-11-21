@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for sources statistics stale.",
+  "context": "Journal command-line text for sources statistics stale.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "hours",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "436e6608d0e628e6a4354d81d5e671d6525db7cfc0db098e2f0c6ca16f06f649",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

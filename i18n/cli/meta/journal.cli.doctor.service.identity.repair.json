@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for service identity run solstone journal setup to reinstall the service.",
+  "context": "Journal command-line text for service identity run solstone journal setup to reinstall the service.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "175d9586653ade031d40b295f802042f4551bb827a463e8ef6ada4876649d1d4",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "setup_command",
+      "kind": "command",
+      "value": "solstone journal setup"
+    }
+  ]
+}

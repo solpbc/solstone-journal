@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for context failed.",
+  "context": "Journal command-line text for context failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e21f537d11b0a45cba512e83b2e068924e53bf6b0bcfd1b8e37f80bc043c3453",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

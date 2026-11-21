@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for backlog exhausted reason.",
+  "context": "Journal command-line text for backlog exhausted reason.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "location",
+      "type": "string"
+    },
+    {
+      "name": "command",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "24d5462eb2d7f8998277d69f73a5d1026e1adeddc14453eac8ca0f355ecf61d1",
+  "max_length": 134,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

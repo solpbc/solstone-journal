@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for parakeet cpp stt ready configured backend is not parakeet cpp check not applicable.",
+  "context": "Journal command-line text for parakeet cpp stt ready configured backend is not parakeet cpp check not applicable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "63493b53f3cabc08dfa87cdf504f6f79a03f55a9887846df4d49ffa278bcb590",
+  "max_length": 97,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "backend_name",
+      "kind": "accepted-input",
+      "value": "parakeet-cpp"
+    }
+  ]
+}

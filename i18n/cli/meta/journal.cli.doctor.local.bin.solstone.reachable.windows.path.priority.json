@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for local bin solstone reachable put ahead of on your path.",
+  "context": "Journal command-line text for local bin solstone reachable put ahead of on your path.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "install_dir",
+      "type": "string"
+    },
+    {
+      "name": "other_dir",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8b1d6731c4a68b6a41b4ff25165eb93269f321c03765a1bb60305ab05dba2cbb",
+  "max_length": 103,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "path_variable",
+      "kind": "accepted-input",
+      "value": "PATH"
+    }
+  ]
+}

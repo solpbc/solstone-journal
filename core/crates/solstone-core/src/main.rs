@@ -620,12 +620,11 @@ fn main() -> ExitCode {
         }
         Ok(Command::Doctor(args)) => run_doctor(args),
         Ok(Command::DoctorHelp) => {
-            print!("{}", solstone_core_doctor::args::HELP);
+            println!("{}", solstone_core_doctor::args::help());
             ExitCode::SUCCESS
         }
         Ok(Command::DoctorUsage(error)) => {
-            eprint!("{}", solstone_core_doctor::args::USAGE);
-            eprintln!("solstone journal doctor: error: {}", error.0);
+            eprintln!("{}", error.message());
             ExitCode::from(2)
         }
         Ok(Command::Setup(args)) => run_setup(args),
@@ -3605,7 +3604,7 @@ fn run_doctor(args: solstone_core_doctor::args::DoctorArgs) -> ExitCode {
     let mut context = match solstone_core_doctor::context::CheckContext::production(args.port) {
         Ok(context) => context,
         Err(error) => {
-            eprintln!("doctor failed to resolve context: {error}");
+            eprintln!("{}", solstone_core_doctor::context_error(&error));
             return ExitCode::from(1);
         }
     };

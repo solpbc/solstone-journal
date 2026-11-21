@@ -1,0 +1,34 @@
+{
+  "description": "Journal command-line text for durability outstanding.",
+  "context": "Journal command-line text for durability outstanding.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "generation",
+      "type": "string"
+    },
+    {
+      "name": "launches",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "e24a33ba3f91ffe2c5435260576dc0794f8482ed7d78fda0db3ba8b50ea52a02",
+  "max_length": 224,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

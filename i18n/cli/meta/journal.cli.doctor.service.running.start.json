@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for service running run solstone journal service start.",
+  "context": "Journal command-line text for service running run solstone journal service start.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "67802223855b811aa899373abd43cdbfab2e9801926e1332eedd06d08fdfac46",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "start_command",
+      "kind": "command",
+      "value": "solstone journal service start"
+    }
+  ]
+}

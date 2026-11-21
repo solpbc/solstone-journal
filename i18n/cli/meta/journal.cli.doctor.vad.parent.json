@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for vad parent.",
+  "context": "Journal command-line text for vad parent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9a50d0d961b467b51cf636eb6e1ee4266069803104363f96c109ff50ceff87c7",
+  "max_length": 101,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "vad",
+      "kind": "accepted-input",
+      "value": "VAD"
+    }
+  ]
+}

@@ -36,12 +36,16 @@ pub fn emit_text_to(
         }
         if verbose && let Some(days) = &result.backlog_days {
             for (label, list) in [
-                ("pending", &days.pending),
-                ("stuck", &days.stuck),
-                ("unknown", &days.unknown),
+                ("journal.cli.doctor.backlog.pending", &days.pending),
+                ("journal.cli.doctor.backlog.stuck", &days.stuck),
+                ("journal.cli.doctor.backlog.unknown", &days.unknown),
             ] {
                 if !list.is_empty() {
-                    writeln!(writer, "    {label}: {}", list.join(", "))?;
+                    writeln!(
+                        writer,
+                        "    {}",
+                        solstone_core_cli_copy::strings(label, [("days", &list.join(", "))])
+                    )?;
                 }
             }
         }
@@ -49,8 +53,22 @@ pub fn emit_text_to(
     let s = summary_counts(results);
     writeln!(
         writer,
-        "doctor: {} checks, {} failed, {} warnings, {} skipped, {} errors",
-        s["total"], s["failed"], s["warnings"], s["skipped"], s["errors"]
+        "{}",
+        ReportForm::Human.counted(
+            "journal.cli.doctor.summary",
+            &[
+                ("total_quantity", s["total"] as u64),
+                ("warning_quantity", s["warnings"] as u64),
+                ("error_quantity", s["errors"] as u64)
+            ],
+            &[
+                ("total", &(s["total"])),
+                ("failed", &(s["failed"])),
+                ("warnings", &(s["warnings"])),
+                ("skipped", &(s["skipped"])),
+                ("errors", &(s["errors"]))
+            ]
+        )
     )?;
     Ok(())
 }
@@ -129,7 +147,7 @@ mod tests {
         let mut buf = Vec::new();
         emit_text_to(&mut buf, &[warn.clone(), skip], false).unwrap();
         let expected = format!(
-            "  {} {} — {}\n    → {}\ndoctor: {} checks, {} failed, {} warnings, {} skipped, {} errors\n",
+            "  {} {} — {}\n    → {}\ndoctor: {} checks, {} failed, {} warning, {} skipped, {} errors\n",
             status_label(&warn),
             warn.name,
             warn.detail,

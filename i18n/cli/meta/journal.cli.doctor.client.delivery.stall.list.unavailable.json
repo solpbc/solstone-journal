@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for client delivery stall device list unavailable.",
+  "context": "Journal command-line text for client delivery stall device list unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "63437647843756194d07d92d76b28ee230a674a158f0f6809e988cc65685ec66",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}
