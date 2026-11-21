@@ -1502,10 +1502,11 @@ pub(crate) fn sources_of(
                 Ok(page) => {
                     segment_untimed = page.untimed;
                     segment_version = Some(page.version.fingerprint());
-                    for entry in page.entries {
+                    for (entry, content_kind) in page.entries_with_content_kind() {
                         segment_lines.push(SourcedLine {
                             channel: entry.channel,
-                            text: entry.text,
+                            content_kind,
+                            text: entry.text.clone(),
                         });
                     }
                     if page.next.is_some() {
@@ -1539,11 +1540,11 @@ pub(crate) fn sources_of(
             continue;
         }
 
-        let heading = if segment_untimed {
+        let timestamp = if segment_untimed {
             None
         } else {
-            match format_segment_heading(&place.day, seg_key) {
-                Some(heading) => Some(heading),
+            match format_segment_timestamp(&place.day, seg_key) {
+                Some(timestamp) => Some(timestamp),
                 None => {
                     any_unreadable = true;
                     continue;
@@ -1555,7 +1556,7 @@ pub(crate) fn sources_of(
             continue;
         };
 
-        let formatted = compose_segment_source(heading.as_deref(), &segment_lines);
+        let channels = group_segment_channels(&segment_lines);
         let mut dummy_record = record.clone();
         dummy_record.insert("segments".to_string(), json!([seg_key]));
         // This candidate's identity, so a streamless record's other matches
@@ -1590,7 +1591,8 @@ pub(crate) fn sources_of(
         }
         admitted_transcripts.push(AdmittedTranscript {
             version,
-            formatted,
+            timestamp,
+            channels,
             untimed: segment_untimed,
         });
     }
@@ -1619,15 +1621,29 @@ pub(crate) fn sources_of(
 
     let mut all_units = Vec::new();
     for (index, admitted) in admitted_transcripts.iter().enumerate() {
-        for mut unit in solstone_core_talent_runtime::source_passages::source_units(
-            &admitted.formatted,
-            activity_kind,
-        ) {
+        let channels = admitted
+            .channels
+            .iter()
+            .map(
+                |channel| solstone_core_talent_runtime::source_passages::SourceChannel {
+                    channel: channel.channel,
+                    text: &channel.text,
+                },
+            )
+            .collect::<Vec<_>>();
+        for (channel_index, mut unit) in
+            solstone_core_talent_runtime::source_passages::source_units_from_channels(
+                activity_kind,
+                admitted.timestamp.as_deref(),
+                &channels,
+            )
+        {
             // The rendered text keeps the native projection, including a
             // synthetic [00:00:00] on an untimed chat line. The page flag is
             // the qualifier that clock is not a captured time.
             unit.untimed = admitted.untimed;
-            all_units.push((index, unit));
+            let content_kind = admitted.channels[channel_index].content_kind;
+            all_units.push((index, content_kind, unit));
         }
     }
     let source_binding = admitted_source_binding(&admitted_transcripts);
@@ -1667,7 +1683,8 @@ pub(crate) fn sources_of(
     let mut page_bytes = 0usize;
     let mut next_unit_index = None;
 
-    for (idx, (segment_index, unit)) in all_units.iter().enumerate().skip(start_unit) {
+    for (idx, (segment_index, content_kind, unit)) in all_units.iter().enumerate().skip(start_unit)
+    {
         let unit_bytes = unit.text.len();
         if !page_units.is_empty()
             && (page_units.len() >= MAX_TRANSCRIPT_PAGE_ITEMS
@@ -1678,15 +1695,12 @@ pub(crate) fn sources_of(
         }
 
         let source_link = segment_link_map.get(segment_index).cloned();
-        let content_kind = unit_channel_name(&unit.text).and_then(channel_content_kind);
 
         let mut unit_json = json!({
             "text": unit.text,
             "kind": unit.kind.as_str(),
+            "content_kind": content_kind,
         });
-        if let Some(kind) = content_kind {
-            unit_json["content_kind"] = json!(kind);
-        }
         if let Some(ref ts) = unit.timestamp {
             unit_json["timestamp"] = json!(ts);
         }
@@ -1741,83 +1755,79 @@ pub(crate) fn sources_of(
 
 struct SourcedLine {
     channel: &'static str,
+    content_kind: &'static str,
+    text: String,
+}
+
+struct AdmittedChannel {
+    channel: &'static str,
+    content_kind: &'static str,
     text: String,
 }
 
 struct AdmittedTranscript {
     version: u64,
-    formatted: String,
+    timestamp: Option<String>,
+    channels: Vec<AdmittedChannel>,
     untimed: bool,
-}
-
-fn unit_channel_name(text: &str) -> Option<&str> {
-    text.lines()
-        .find_map(|line| line.strip_prefix("Source channel: "))
-}
-
-fn channel_content_kind(channel: &str) -> Option<&'static str> {
-    match channel {
-        "Transcript"
-        | "Imported Transcript"
-        | "ChatGPT Conversation"
-        | "Claude Conversation"
-        | "Gemini Conversation"
-        | "Imported Text" => Some("transcripts"),
-        "Note" | "Highlights" => Some("notes"),
-        "Document" => Some("documents"),
-        "Screenshot" | "Screen Activity" | "Browser Content" => Some("screen_text"),
-        "Photo" => Some("photos"),
-        "Calendar Event" => Some("calendar"),
-        "Body Records" => Some("body"),
-        _ => None,
-    }
 }
 
 fn admitted_source_binding(admitted: &[AdmittedTranscript]) -> String {
     let mut hasher = Sha256::new();
     for source in admitted {
         hasher.update(source.version.to_le_bytes());
-        hasher.update(source.formatted.as_bytes());
+        hasher.update([u8::from(source.untimed)]);
+        if let Some(ref timestamp) = source.timestamp {
+            hasher.update((timestamp.len() as u64).to_le_bytes());
+            hasher.update(timestamp.as_bytes());
+        } else {
+            hasher.update(u64::MAX.to_le_bytes());
+        }
+        hasher.update((source.channels.len() as u64).to_le_bytes());
+        for channel in &source.channels {
+            hasher.update((channel.channel.len() as u64).to_le_bytes());
+            hasher.update(channel.channel.as_bytes());
+            hasher.update((channel.content_kind.len() as u64).to_le_bytes());
+            hasher.update(channel.content_kind.as_bytes());
+            hasher.update((channel.text.len() as u64).to_le_bytes());
+            hasher.update(channel.text.as_bytes());
+        }
     }
     crate::activity_admit::hex_encode(&hasher.finalize())
 }
 
-/// One segment's admitted lines, grouped by the channel the reader already
-/// assigned. An untimed segment omits the clock heading, so its units carry no
-/// timestamp, and each of those units says `untimed`. Each segment is composed
-/// alone: an untimed segment must not sit inside a timed segment's clock heading.
-fn compose_segment_source(heading: Option<&str>, lines: &[SourcedLine]) -> String {
-    let mut out = String::new();
-    if let Some(heading) = heading {
-        out.push_str(heading);
-        out.push_str("\n\n");
-    }
+/// One segment's admitted lines, grouped by the channel and registry content
+/// kind the page reader assigned to each file. Carrying these boundaries
+/// directly keeps lines of journal text from being re-parsed as channel or
+/// segment headings.
+fn group_segment_channels(lines: &[SourcedLine]) -> Vec<AdmittedChannel> {
+    let mut channels = Vec::new();
     let mut index = 0;
     while index < lines.len() {
         let channel = lines[index].channel;
-        if !out.is_empty() && !out.ends_with("\n\n") {
-            if !out.ends_with('\n') {
-                out.push('\n');
-            }
-            out.push('\n');
-        }
-        out.push_str("### ");
-        out.push_str(channel);
-        out.push_str("\n\n");
+        let content_kind = lines[index].content_kind;
+        let mut text = String::new();
         let start = index;
-        while index < lines.len() && lines[index].channel == channel {
+        while index < lines.len()
+            && lines[index].channel == channel
+            && lines[index].content_kind == content_kind
+        {
             if index > start {
-                out.push('\n');
+                text.push('\n');
             }
-            out.push_str(&lines[index].text);
+            text.push_str(&lines[index].text);
             index += 1;
         }
-        out.push('\n');
+        channels.push(AdmittedChannel {
+            channel,
+            content_kind,
+            text,
+        });
     }
-    out
+    channels
 }
 
-fn format_segment_heading(day: &str, seg_key: &str) -> Option<String> {
+fn format_segment_timestamp(day: &str, seg_key: &str) -> Option<String> {
     let times = solstone_core_format::segment::segment_parse(seg_key)?;
     let length = seg_key.split_once('_')?.1.parse::<i64>().ok()?;
     let date = solstone_core_time::parse_day(day)
@@ -1836,7 +1846,7 @@ fn format_segment_heading(day: &str, seg_key: &str) -> Option<String> {
         .time()
         .wrapping_add(jiff::SignedDuration::from_secs(length));
     Some(format!(
-        "## {} - {}",
+        "{} - {}",
         start.strftime("%Y-%m-%d %H:%M:%S"),
         end.strftime("%H:%M:%S")
     ))

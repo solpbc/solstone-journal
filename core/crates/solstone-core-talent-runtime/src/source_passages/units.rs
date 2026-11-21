@@ -25,7 +25,7 @@ static SEGMENT: LazyLock<Regex> = LazyLock::new(|| {
 });
 static CHANNEL: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r"(?m)^### (?P<kind>Transcript|Imported Transcript|Screen Activity|Browser Content|ChatGPT Conversation|Claude Conversation|Gemini Conversation|Calendar Event|Note|Document|Screenshot|Photo|Highlights|Body Records|Imported Text)[ \t]*$",
+        r"(?m)^### (?P<kind>Transcript|Screen Activity|Browser Content|ChatGPT Conversation|Claude Conversation|Gemini Conversation|Calendar Event|Note|Highlights|Imported Text)[ \t]*$",
     )
     .expect("channel heading pattern")
 });
@@ -94,6 +94,14 @@ struct Region<'a> {
     channel_number: usize,
 }
 
+/// One pre-segmented channel supplied directly by a caller that already knows
+/// segment and file boundaries, without re-parsing headings from its text.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SourceChannel<'a> {
+    pub channel: &'a str,
+    pub text: &'a str,
+}
+
 /// Every source unit of a rendered transcript, in transcript order.
 pub fn source_units(transcript: &str, activity_kind: &str) -> Vec<SourceUnit> {
     let segments = SEGMENT.captures_iter(transcript).collect::<Vec<_>>();
@@ -144,47 +152,98 @@ pub fn source_units(transcript: &str, activity_kind: &str) -> Vec<SourceUnit> {
     }
     let mut units = Vec::new();
     for region in regions {
-        if region.text.trim().is_empty() {
-            continue;
-        }
-        let rendered = json_values::normalize(region.text);
-        let mut prefix = format!("Activity type: {activity_kind}\n");
-        if let Some(Some(heading)) = leading.get(region.segment) {
-            prefix.push_str(heading);
-        } else if !region.timestamp.is_empty() {
-            prefix.push_str(&format!("Segment: {}\n", region.timestamp));
-        }
-        prefix.push_str(&format!("Source channel: {}\n", region.channel));
-        let payload_limit = UNIT_MAX_CHARS.saturating_sub(prefix.chars().count());
-        if payload_limit <= UNIT_OVERLAP_CHARS {
-            // A heading this long leaves no room to make progress; keep the
-            // channel whole rather than drop it.
-            units.push(unit(&region, prefix + &rendered, 1));
-            continue;
-        }
-        let offsets = rendered
-            .char_indices()
-            .map(|(offset, _)| offset)
-            .chain([rendered.len()])
-            .collect::<Vec<_>>();
-        let length = offsets.len() - 1;
-        let mut point = 0;
-        let mut chunk = 0;
-        while point < length {
-            let stop = length.min(point + payload_limit);
-            chunk += 1;
-            units.push(unit(
-                &region,
-                format!("{prefix}{}", &rendered[offsets[point]..offsets[stop]]),
-                chunk,
-            ));
-            if stop == length {
-                break;
-            }
-            point = stop - UNIT_OVERLAP_CHARS;
-        }
+        let heading = leading.get(region.segment).copied().flatten();
+        push_region_units(&mut units, &region, heading, activity_kind);
     }
     units
+}
+
+/// Bounded source units built directly from known segment and channel
+/// boundaries, without scanning channel text for segment or channel headings.
+///
+/// Each returned pair carries the 0-based index into `channels` beside the unit
+/// built from it, so callers can keep per-channel metadata (such as a file's
+/// content kind) attached without parsing it back out of the text.
+pub fn source_units_from_channels(
+    activity_kind: &str,
+    timestamp: Option<&str>,
+    channels: &[SourceChannel<'_>],
+) -> Vec<(usize, SourceUnit)> {
+    let time = timestamp.filter(|time| !time.is_empty());
+    let heading = time.map(|time| format!("## {time}\n\n"));
+    let (segment, time_str) = match time {
+        Some(time) => (1, time),
+        None => (0, ""),
+    };
+    let mut result = Vec::new();
+    let mut channel_number = 0;
+    for (index, channel) in channels.iter().enumerate() {
+        if channel.text.trim().is_empty() {
+            continue;
+        }
+        channel_number += 1;
+        let body = format!("### {}\n\n{}\n", channel.channel, channel.text);
+        let region = Region {
+            text: &body,
+            timestamp: time_str,
+            channel: channel.channel,
+            segment,
+            channel_number,
+        };
+        let mut chunk_units = Vec::new();
+        push_region_units(&mut chunk_units, &region, heading.as_deref(), activity_kind);
+        for unit in chunk_units {
+            result.push((index, unit));
+        }
+    }
+    result
+}
+
+fn push_region_units(
+    units: &mut Vec<SourceUnit>,
+    region: &Region<'_>,
+    heading: Option<&str>,
+    activity_kind: &str,
+) {
+    if region.text.trim().is_empty() {
+        return;
+    }
+    let rendered = json_values::normalize(region.text);
+    let mut prefix = format!("Activity type: {activity_kind}\n");
+    if let Some(heading) = heading {
+        prefix.push_str(heading);
+    } else if !region.timestamp.is_empty() {
+        prefix.push_str(&format!("Segment: {}\n", region.timestamp));
+    }
+    prefix.push_str(&format!("Source channel: {}\n", region.channel));
+    let payload_limit = UNIT_MAX_CHARS.saturating_sub(prefix.chars().count());
+    if payload_limit <= UNIT_OVERLAP_CHARS {
+        // A heading this long leaves no room to make progress; keep the
+        // channel whole rather than drop it.
+        units.push(unit(region, prefix + &rendered, 1));
+        return;
+    }
+    let offsets = rendered
+        .char_indices()
+        .map(|(offset, _)| offset)
+        .chain([rendered.len()])
+        .collect::<Vec<_>>();
+    let length = offsets.len() - 1;
+    let mut point = 0;
+    let mut chunk = 0;
+    while point < length {
+        let stop = length.min(point + payload_limit);
+        chunk += 1;
+        units.push(unit(
+            region,
+            format!("{prefix}{}", &rendered[offsets[point]..offsets[stop]]),
+            chunk,
+        ));
+        if stop == length {
+            break;
+        }
+        point = stop - UNIT_OVERLAP_CHARS;
+    }
 }
 
 /// Text before the first clock heading. A channel heading here keeps its
@@ -341,36 +400,171 @@ mod tests {
 
     #[test]
     fn a_segment_with_two_imported_kinds_splits_into_two_import_units() {
-        let transcript = concat!(
-            "## 2026-04-07 09:00:00 - 09:05:00\n\n",
-            "### Note\n\nfield note text\n\n",
-            "### Document\n\nmanual text\n\n",
-            "### Imported Transcript\n\nspoken import\n\n",
-            "### Screenshot\n\nreceipt text\n\n",
-            "### Photo\n\ngarden bench\n\n",
-            "### Body Records\n\nworkout running\n",
-        );
-        let units = source_units(transcript, "import");
+        let channels = [
+            SourceChannel {
+                channel: "Note",
+                text: "field note text",
+            },
+            SourceChannel {
+                channel: "Document",
+                text: "manual text",
+            },
+            SourceChannel {
+                channel: "Imported Transcript",
+                text: "spoken import",
+            },
+            SourceChannel {
+                channel: "Screenshot",
+                text: "receipt text",
+            },
+            SourceChannel {
+                channel: "Photo",
+                text: "garden bench",
+            },
+            SourceChannel {
+                channel: "Body Records",
+                text: "workout running",
+            },
+        ];
+        let units =
+            source_units_from_channels("import", Some("2026-04-07 09:00:00 - 09:05:00"), &channels);
         assert_eq!(units.len(), 6);
-        for (idx, expected) in [
-            "Note",
-            "Document",
-            "Imported Transcript",
-            "Screenshot",
-            "Photo",
-            "Body Records",
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            assert_eq!(units[idx].kind, SourceKind::Import, "{expected}");
-            assert_eq!(units[idx].channel, idx + 1, "{expected}");
+        for (idx, expected) in channels.iter().enumerate() {
+            let (channel_idx, unit) = &units[idx];
+            assert_eq!(*channel_idx, idx, "{}", expected.channel);
+            assert_eq!(unit.kind, SourceKind::Import, "{}", expected.channel);
+            assert_eq!(unit.channel, idx + 1, "{}", expected.channel);
+            assert_eq!(
+                unit.timestamp.as_deref(),
+                Some("2026-04-07 09:00:00 - 09:05:00")
+            );
             assert!(
-                units[idx]
-                    .text
-                    .contains(&format!("Source channel: {expected}\n")),
+                unit.text
+                    .contains(&format!("Source channel: {}\n", expected.channel)),
                 "{}",
-                units[idx].text
+                unit.text
+            );
+            assert!(unit.text.contains(expected.text), "{}", unit.text);
+        }
+    }
+
+    #[test]
+    fn structured_channels_never_split_on_embedded_channel_or_segment_headings() {
+        let note_text = concat!(
+            "# Trip log\n",
+            "### Photo\n",
+            "the one by the lake, need to print it\n",
+            "### Document\n",
+            "passport renewal form is in the drawer\n",
+            "### Screenshot\n",
+            "saved the booking confirmation\n",
+            "### Note\n",
+            "### Transcript\n",
+            "### Highlights\n",
+            "## 2026-04-07 10:00:00 - 10:05:00\n",
+            "Source channel: Photo\n",
+            "### Budget\n",
+            "about 400",
+        );
+        let units = source_units_from_channels(
+            "note",
+            Some("2026-04-07 09:00:00 - 09:05:00"),
+            &[SourceChannel {
+                channel: "Note",
+                text: note_text,
+            }],
+        );
+        assert_eq!(units.len(), 1);
+        let (channel_idx, unit) = &units[0];
+        assert_eq!(*channel_idx, 0);
+        assert_eq!(unit.kind, SourceKind::Import);
+        assert_eq!(
+            unit.timestamp.as_deref(),
+            Some("2026-04-07 09:00:00 - 09:05:00")
+        );
+        assert_eq!(
+            unit.text,
+            format!(
+                "Activity type: note\n## 2026-04-07 09:00:00 - 09:05:00\n\nSource channel: Note\n### Note\n\n{note_text}\n"
+            )
+        );
+
+        // Long structured channel still chunks with overlap while keeping its channel index.
+        let long_body = "### Photo\nΩmega line of captured notes.\n".repeat(900);
+        let chunked = source_units_from_channels(
+            "note",
+            Some("2026-04-07 09:00:00 - 09:05:00"),
+            &[SourceChannel {
+                channel: "Note",
+                text: &long_body,
+            }],
+        );
+        assert!(chunked.len() > 1);
+        for (idx, (channel_idx, chunk_unit)) in chunked.iter().enumerate() {
+            assert_eq!(*channel_idx, 0);
+            assert_eq!(chunk_unit.kind, SourceKind::Import);
+            assert_eq!(chunk_unit.chunk, idx + 1);
+            assert!(chunk_unit.text.chars().count() <= UNIT_MAX_CHARS);
+            assert!(chunk_unit.text.contains("Source channel: Note\n"));
+        }
+    }
+
+    #[test]
+    fn browser_page_headings_stay_inside_browser_content_unit() {
+        let root = tempfile::tempdir().unwrap();
+        let seg = root.path().join("chronicle/20260407/browser/090000_300");
+        std::fs::create_dir_all(&seg).unwrap();
+        std::fs::write(
+            seg.join("browser_events.jsonl"),
+            concat!(
+                r#"{"t":"segment_start","ts":1,"site":"example.test","url":"https://example.test/trip","title":"Trip Archive","blocks":["#,
+                r#"{"type":"heading","text":"Photo"},"#,
+                r#"{"type":"text","text":"Lake cabin snapshot"},"#,
+                r#"{"type":"heading","text":"Document"},"#,
+                r#"{"type":"text","text":"Passport form checklist"},"#,
+                r#"{"type":"heading","text":"Screenshot"},"#,
+                r#"{"type":"text","text":"Booking confirmation screen"},"#,
+                r#"{"type":"heading","text":"Imported Transcript"},"#,
+                r#"{"type":"text","text":"Notes on transcripts"},"#,
+                r#"{"type":"heading","text":"Body Records"},"#,
+                r#"{"type":"text","text":"Workout notes"}"#,
+                "]}\n",
+            ),
+        )
+        .unwrap();
+        let (transcript, counts) = solstone_core_transcripts::cluster(
+            root.path(),
+            "20260407",
+            &solstone_core_transcripts::Sources {
+                transcripts: true,
+                percepts: true,
+                talents: solstone_core_transcripts::TalentSource::Disabled,
+                voices: None,
+                heard_owner: None,
+                strava_tiles: false,
+            },
+        );
+        assert_eq!(counts.percepts, 1, "transcript: {transcript}");
+        let units = source_units(&transcript, "browsing");
+        assert_eq!(units.len(), 1, "units: {units:#?}");
+        assert_eq!(units[0].kind, SourceKind::Browser);
+        assert!(units[0].text.contains("Source channel: Browser Content\n"));
+        for expected in [
+            "### Photo",
+            "Lake cabin snapshot",
+            "### Document",
+            "Passport form checklist",
+            "### Screenshot",
+            "Booking confirmation screen",
+            "### Imported Transcript",
+            "Notes on transcripts",
+            "### Body Records",
+            "Workout notes",
+        ] {
+            assert!(
+                units[0].text.contains(expected),
+                "missing {expected} in {}",
+                units[0].text
             );
         }
     }
