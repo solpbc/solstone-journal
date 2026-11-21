@@ -179,6 +179,22 @@ fn sunday_of(date: Date) -> Date {
     date - Span::new().days(date.weekday().to_sunday_zero_offset())
 }
 
+fn agent_day_state<'a>(stored: &'a str, memory_key: Option<&str>, left_out: &LeftOut) -> &'a str {
+    match left_out {
+        LeftOut::Keys(keys) => resolve_day_cell_state(stored, memory_key, keys),
+        LeftOut::Unreadable if stored == "memory" => "not_on_page",
+        _ => stored,
+    }
+}
+
+fn week_entry_visible(key: &str, left_out: &LeftOut) -> bool {
+    match left_out {
+        LeftOut::None => true,
+        LeftOut::Keys(keys) => !keys.contains(key),
+        LeftOut::Unreadable => false,
+    }
+}
+
 pub(crate) fn read_week(
     journal: &Path,
     request: &ValidatedGetWeek,
@@ -655,11 +671,6 @@ fn project_sunday(
     // states, because on a page `nothing_shared` means the day held nothing.
     if let WeekJudgment::Page(trusted) = judge(journal, stem) {
         let left_out = read_left_out(journal);
-        let left_out_unreadable = matches!(left_out, LeftOut::Unreadable);
-        let left_out_keys = match left_out {
-            LeftOut::Keys(keys) => keys,
-            _ => BTreeSet::new(),
-        };
 
         let navigation = checked_neighbors(journal, stem);
         if !navigation.failed {
@@ -679,7 +690,7 @@ fn project_sunday(
                 .as_deref()
                 .and_then(|id| memory_by_id.get(id).copied());
             let memory_key = memory.map(|m| m.key.as_str());
-            let state = resolve_day_cell_state(day.state.as_str(), memory_key, &left_out_keys);
+            let state = agent_day_state(day.state.as_str(), memory_key, &left_out);
             let mut cell = json!({"day": day.day, "state": state});
             // A calendar cell is already admitted. Mint from its day alone:
             // testing source existence here would reveal withheld body days.
@@ -693,10 +704,10 @@ fn project_sunday(
             days.push(cell);
         }
 
-        if !left_out_unreadable && let Said::Entries(said_entries) = &trusted.said {
+        if let Said::Entries(said_entries) = &trusted.said {
             let mut speech = None;
             for entry in said_entries {
-                if left_out_keys.contains(&entry.key)
+                if !week_entry_visible(&entry.key, &left_out)
                     || !speech
                         .get_or_insert_with(|| WeekSpeech::new(journal, snapshot))
                         .shows(entry)
@@ -1289,11 +1300,6 @@ fn project_range_with_limits(
 
     // Read weekly reflection pages once per Sunday touched by this page.
     let left_out = read_left_out(journal);
-    let left_out_unreadable = matches!(left_out, LeftOut::Unreadable);
-    let left_out_keys = match left_out {
-        LeftOut::Keys(keys) => keys,
-        _ => BTreeSet::new(),
-    };
     let mut day_states: BTreeMap<String, String> = BTreeMap::new();
     let candidate_day_keys: Vec<String> = candidate_dates
         .iter()
@@ -1318,13 +1324,13 @@ fn project_range_with_limits(
                     .as_deref()
                     .and_then(|id| memory_by_id.get(id).copied());
                 let memory_key = memory.map(|m| m.key.as_str());
-                let state = resolve_day_cell_state(day.state.as_str(), memory_key, &left_out_keys);
+                let state = agent_day_state(day.state.as_str(), memory_key, &left_out);
                 day_states.insert(day.day.clone(), state.to_owned());
             }
-            if !left_out_unreadable && let Said::Entries(said_entries) = trusted.said {
+            if let Said::Entries(said_entries) = trusted.said {
                 for entry in said_entries {
                     if candidate_day_keys.binary_search(&entry.day).is_err()
-                        || left_out_keys.contains(&entry.key)
+                        || !week_entry_visible(&entry.key, &left_out)
                         || !speech
                             .get_or_insert_with(|| WeekSpeech::new(journal, snapshot))
                             .shows(&entry)
@@ -3040,6 +3046,28 @@ mod tests {
         activity("import.claude", false);
         write_quote(None, 0);
         check(None);
+    }
+
+    #[test]
+    fn both_week_reads_respect_memory_omissions_when_the_file_is_unreadable() {
+        let root = journal("solstone-week-omission-state-");
+        whole(root.path());
+        let sunday = "20260308";
+        write_raw(
+            root.path(),
+            "reflections/weekly/20260308.json",
+            &document(sunday, &[one_memory("stored memory", "sol://memory")], "[]"),
+        );
+        let states = || {
+            [
+                json!({"week":sunday}),
+                json!({"day_from":sunday,"day_to":sunday}),
+            ]
+            .map(|args| probe(root.path(), args).unwrap()["days"][0]["state"].clone())
+        };
+        assert_eq!(states(), [json!("memory"), json!("memory")]);
+        write_raw(root.path(), "health/week-left-out.json", "{");
+        assert_eq!(states(), [json!("not_on_page"), json!("not_on_page")]);
     }
 
     #[test]
