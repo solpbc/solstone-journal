@@ -1,0 +1,28 @@
+{
+  "description": "A Body calendar date with data from Strava.",
+  "context": "Journal window. A Body calendar date with data from Strava.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "date",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1a3a063a35b856ff69feafad35cc6e5814db3dbd475e314f839342156c653ae2",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "mark-word",
+      "value": "Strava"
+    }
+  ]
+}

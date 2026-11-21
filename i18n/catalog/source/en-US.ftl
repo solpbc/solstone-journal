@@ -672,17 +672,118 @@ journal.window.backup.verification.parts.checked = { $parts_quantity ->
 
 journal.window.backup.verification.parts.checked.all = checked all of your backup this week.
 
+journal.window.body.count.day = { $quantity ->
+    [one] { $count } day
+   *[other] { $count } days
+}
+
+journal.window.body.count.entry = { $quantity ->
+    [one] { $count } entry
+   *[other] { $count } entries
+}
+
+journal.window.body.count.interval = { $quantity ->
+    [one] { $count } interval
+   *[other] { $count } intervals
+}
+
+journal.window.body.count.reading = { $quantity ->
+    [one] { $count } reading
+   *[other] { $count } readings
+}
+
+journal.window.body.date.clock.afternoon = { $hour }:{ $minute } PM
+
+journal.window.body.date.clock.morning = { $hour }:{ $minute } AM
+
+journal.window.body.date.clock.range = { $first_clock }–{ $last_clock }
+
 journal.window.body.day.nearby.with.data = nearby days with data: { $nearby_days }
 
 journal.window.body.empty.workouts.import = nothing here yet. bring in your workouts from a Strava download on the { $import_link_start }import page{ $import_link_end }.
 
 journal.window.body.empty.workouts.import.resources = if your journal runs on a computer, you can also bring in an Apple Health export on the import page or Oura data from that computer's command line. { $docs_link_start }read about body imports{ $docs_link_end }.
 
+journal.window.body.error.window.span = { $quantity ->
+    [one] Window span must be { $maximum_days } days or less.
+   *[other] Window span must be { $maximum_days } days or less.
+}
+
+journal.window.body.experience.continuing.generic = experience continuing
+
+journal.window.body.experience.continuing.named = { $experience_kind } continuing
+
+journal.window.body.grid.source.all = { $date } · { $slot1 } and { $slot2 } and { $slot3 }
+
+journal.window.body.grid.source.apple = { $date } · { $slot1 }
+
+journal.window.body.grid.source.apple.oura = { $date } · { $slot1 } and { $slot2 }
+
+journal.window.body.grid.source.apple.strava = { $date } · { $slot1 } and { $slot2 }
+
+journal.window.body.grid.source.oura = { $date } · { $slot1 }
+
+journal.window.body.grid.source.oura.strava = { $date } · { $slot1 } and { $slot2 }
+
+journal.window.body.grid.source.strava = { $date } · { $slot1 }
+
 journal.window.body.hide.data.from.day = hide body data from { $day }
 
 journal.window.body.hide.data.receipt = body data from { $day } is hidden.
 
 journal.window.body.hide.previous.day.carryover = the rest of a night or workout from { $hidden_day_link }, a day you hid, is hidden here too.
+
+journal.window.body.import.progress.running.days = { $total_quantity ->
+    [one] { $done_quantity ->
+        [one] still running: { $done_days } of { $total_days } days done.
+       *[other] still running: { $done_days } of { $total_days } days done.
+    }
+   *[other] { $done_quantity ->
+        [one] still running: { $done_days } of { $total_days } days done.
+       *[other] still running: { $done_days } of { $total_days } days done.
+    }
+}
+
+journal.window.body.import.progress.running.empty = still running, with nothing saved yet.
+
+journal.window.body.import.progress.running.entries = { $quantity ->
+    [one] still running: { $entry_count } entry read so far.
+   *[other] still running: { $entry_count } entries read so far.
+}
+
+journal.window.body.import.progress.stopped.days = { $total_quantity ->
+    [one] { $done_quantity ->
+        [one] stopped partway: { $done_days } of { $total_days } days done.
+       *[other] stopped partway: { $done_days } of { $total_days } days done.
+    }
+   *[other] { $done_quantity ->
+        [one] stopped partway: { $done_days } of { $total_days } days done.
+       *[other] stopped partway: { $done_days } of { $total_days } days done.
+    }
+}
+
+journal.window.body.import.progress.stopped.empty = stopped partway, with nothing saved yet.
+
+journal.window.body.import.progress.stopped.entries = { $quantity ->
+    [one] stopped partway: { $entry_count } entry read so far.
+   *[other] stopped partway: { $entry_count } entries read so far.
+}
+
+journal.window.body.import.span.counted.days = { $quantity ->
+    [one] { $first } to { $last }, { $count } days
+   *[other] { $first } to { $last }, { $count } days
+}
+
+journal.window.body.import.span.counted.months = { $quantity ->
+    [one] { $first } to { $last } ({ $count } months)
+   *[other] { $first } to { $last } ({ $count } months)
+}
+
+journal.window.body.strava.moving.hours = moving { $hours } h
+
+journal.window.body.strava.moving.minutes = moving { $minutes } min
+
+journal.window.body.strava.moving.time = moving { $hours } h { $minutes } min
 
 journal.window.body.workout.delete.name = delete { $workout_name }
 
@@ -7746,31 +7847,9 @@ journal.window.body.accessible.name.empty.day = empty day
 
 journal.window.body.button.label.delete = delete
 
-journal.window.body.count.day.one = day
-
-journal.window.body.count.day.other = days
-
-journal.window.body.count.entry.one = entry
-
-journal.window.body.count.entry.other = entries
-
-journal.window.body.count.interval.one = interval
-
-journal.window.body.count.interval.other = intervals
-
-journal.window.body.count.label = {$count}{ $slot1 }{$noun}
-
-journal.window.body.count.reading.one = reading
-
-journal.window.body.count.reading.other = readings
-
-journal.window.body.date.am = AM
-
 journal.window.body.date.full = {$month}{ $slot1 }{$day},{ $slot2 }{$year}
 
 journal.window.body.date.month.year = {$month}{ $slot1 }{$year}
-
-journal.window.body.date.pm = PM
 
 journal.window.body.date.short = {$month}{ $slot1 }{$day}
 
@@ -7812,8 +7891,6 @@ journal.window.body.error.unreadable = the body app couldn't read your journal.
 
 journal.window.body.error.window.bounds = Window requires valid from and to ISO timestamps.
 
-journal.window.body.error.window.length = Window span must be{ $slot1 }{$days}{ $slot2 }days or less.
-
 journal.window.body.error.window.order = Window end must be after window start.
 
 journal.window.body.experience.fallback = experience
@@ -7825,10 +7902,6 @@ journal.window.body.grid.held = {$date}{ $slot1 }· held in an earlier import
 journal.window.body.grid.held.month = {$date}{ $slot1 }· in a month an earlier import holds
 
 journal.window.body.grid.hidden = {$date}{ $slot1 }· you hid this day
-
-journal.window.body.grid.source.join = { $slot1 }and{ $slot2 }
-
-journal.window.body.grid.sources = {$date}{ $slot1 }·{ $slot2 }{$sources}
 
 journal.window.body.hide.copy.grid.foot.striped.days.are.ones.you.hid = striped days are ones you hid.
 
@@ -7874,21 +7947,7 @@ journal.window.body.import.old.listing = {$source}{ $slot1 }from{ $slot2 }{$span
 
 journal.window.body.import.old.month = an earlier{ $slot1 }{$source}{ $slot2 }import holds body data for{ $slot3 }{$month}, kept but not read here, so it doesn't show on this page.{ $slot4 }{$action}
 
-journal.window.body.import.progress.days = {$lead}:{ $slot1 }{$done}{ $slot2 }of{ $slot3 }{$total}{ $slot4 }days done.
-
-journal.window.body.import.progress.empty = {$lead}, with nothing saved yet.
-
-journal.window.body.import.progress.entries = {$lead}:{ $slot1 }{$entries}{ $slot2 }read so far.
-
-journal.window.body.import.progress.running = still running
-
-journal.window.body.import.progress.stopped = stopped partway
-
-journal.window.body.import.span.days = {$first}{ $slot1 }to{ $slot2 }{$last},{ $slot3 }{$count}{ $slot4 }days
-
 journal.window.body.import.span.month = {$month}{ $slot1 }(by month)
-
-journal.window.body.import.span.months = {$first}{ $slot1 }to{ $slot2 }{$last}{ $slot3 }({$count}{ $slot4 }months)
 
 journal.window.body.import.span.unknown = an unknown span
 
@@ -7961,8 +8020,6 @@ journal.window.body.strava.heart.average = heart rate avg{ $slot1 }{$value}{ $sl
 journal.window.body.strava.heart.maximum = heart rate max{ $slot1 }{$value}{ $slot2 }bpm
 
 journal.window.body.strava.manual = entered by hand
-
-journal.window.body.strava.moving = moving{ $slot1 }{$duration}
 
 journal.window.body.strava.power = power avg{ $slot1 }{$average}{ $slot2 }W, weighted{ $slot3 }{$weighted}{ $slot4 }W
 

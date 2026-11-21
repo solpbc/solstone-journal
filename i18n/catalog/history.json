@@ -17951,12 +17951,44 @@
       "selector": null
     },
     {
+      "id": "journal.window.body.count.day",
+      "resource": "m6a6f75726e616c2e77696e646f772e626f64792e636f756e742e646179",
+      "namespace": "journal.window.body.count",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
       "id": "journal.window.body.count.day.one",
       "resource": "m6a6f75726e616c2e77696e646f772e626f64792e636f756e742e6461792e6f6e65",
       "namespace": "journal.window.body.count.day",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.body.count.day",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -17967,20 +17999,52 @@
       "resource": "m6a6f75726e616c2e77696e646f772e626f64792e636f756e742e6461792e6f74686572",
       "namespace": "journal.window.body.count.day",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.body.count.day",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
       "selector": null
     },
     {
+      "id": "journal.window.body.count.entry",
+      "resource": "m6a6f75726e616c2e77696e646f772e626f64792e636f756e742e656e747279",
+      "namespace": "journal.window.body.count",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
       "id": "journal.window.body.count.entry.one",
       "resource": "m6a6f75726e616c2e77696e646f772e626f64792e636f756e742e656e7472792e6f6e65",
       "namespace": "journal.window.body.count.entry",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.body.count.entry",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -17991,20 +18055,52 @@
       "resource": "m6a6f75726e616c2e77696e646f772e626f64792e636f756e742e656e7472792e6f74686572",
       "namespace": "journal.window.body.count.entry",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.body.count.entry",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
       "selector": null
     },
     {
+      "id": "journal.window.body.count.interval",
+      "resource": "m6a6f75726e616c2e77696e646f772e626f64792e636f756e742e696e74657276616c",
+      "namespace": "journal.window.body.count",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
       "id": "journal.window.body.count.interval.one",
       "resource": "m6a6f75726e616c2e77696e646f772e626f64792e636f756e742e696e74657276616c2e6f6e65",
       "namespace": "journal.window.body.count.interval",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.body.count.interval",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -18015,8 +18111,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e626f64792e636f756e742e696e74657276616c2e6f74686572",
       "namespace": "journal.window.body.count.interval",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.body.count.interval",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -18027,8 +18123,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e626f64792e636f756e742e6c6162656c",
       "namespace": "journal.window.body.count",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.body.count.entry",
       "format_intent": "text",
       "arguments": [
         {
@@ -18056,12 +18152,44 @@
       "selector": null
     },
     {
+      "id": "journal.window.body.count.reading",
+      "resource": "m6a6f75726e616c2e77696e646f772e626f64792e636f756e742e72656164696e67",
+      "namespace": "journal.window.body.count",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
       "id": "journal.window.body.count.reading.one",
       "resource": "m6a6f75726e616c2e77696e646f772e626f64792e636f756e742e72656164696e672e6f6e65",
       "namespace": "journal.window.body.count.reading",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.body.count.reading",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -18072,8 +18200,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e626f64792e636f756e742e72656164696e672e6f74686572",
       "namespace": "journal.window.body.count.reading",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.body.count.reading",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -18084,10 +18212,91 @@
       "resource": "m6a6f75726e616c2e77696e646f772e626f64792e646174652e616d",
       "namespace": "journal.window.body.date",
       "owner": "journal",
+      "tombstone": true,
+      "replacement": "journal.window.body.date.clock.morning",
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.body.date.clock.afternoon",
+      "resource": "m6a6f75726e616c2e77696e646f772e626f64792e646174652e636c6f636b2e61667465726e6f6f6e",
+      "namespace": "journal.window.body.date.clock",
+      "owner": "journal",
       "tombstone": false,
       "replacement": null,
       "format_intent": "text",
-      "arguments": [],
+      "arguments": [
+        {
+          "name": "hour",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "minute",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.body.date.clock.morning",
+      "resource": "m6a6f75726e616c2e77696e646f772e626f64792e646174652e636c6f636b2e6d6f726e696e67",
+      "namespace": "journal.window.body.date.clock",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "hour",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "minute",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.body.date.clock.range",
+      "resource": "m6a6f75726e616c2e77696e646f772e626f64792e646174652e636c6f636b2e72616e6765",
+      "namespace": "journal.window.body.date.clock",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "first_clock",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "last_clock",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
       "protected_slots": [],
       "selector": null
     },
@@ -18174,8 +18383,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e626f64792e646174652e706d",
       "namespace": "journal.window.body.date",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.body.date.clock.afternoon",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -18611,8 +18820,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e626f64792e6572726f722e77696e646f772e6c656e677468",
       "namespace": "journal.window.body.error.window",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.body.error.window.span",
       "format_intent": "text",
       "arguments": [
         {
@@ -18646,6 +18855,70 @@
       "replacement": null,
       "format_intent": "text",
       "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.body.error.window.span",
+      "resource": "m6a6f75726e616c2e77696e646f772e626f64792e6572726f722e77696e646f772e7370616e",
+      "namespace": "journal.window.body.error.window",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "maximum_days",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.body.experience.continuing.generic",
+      "resource": "m6a6f75726e616c2e77696e646f772e626f64792e657870657269656e63652e636f6e74696e75696e672e67656e65726963",
+      "namespace": "journal.window.body.experience.continuing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.body.experience.continuing.named",
+      "resource": "m6a6f75726e616c2e77696e646f772e626f64792e657870657269656e63652e636f6e74696e75696e672e6e616d6564",
+      "namespace": "journal.window.body.experience.continuing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "experience_kind",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
       "protected_slots": [],
       "selector": null
     },
@@ -18766,12 +19039,136 @@
       "selector": null
     },
     {
-      "id": "journal.window.body.grid.source.join",
-      "resource": "m6a6f75726e616c2e77696e646f772e626f64792e677269642e736f757263652e6a6f696e",
+      "id": "journal.window.body.grid.source.all",
+      "resource": "m6a6f75726e616c2e77696e646f772e626f64792e677269642e736f757263652e616c6c",
       "namespace": "journal.window.body.grid.source",
       "owner": "journal",
       "tombstone": false,
       "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "date",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "slot1",
+          "kind": "mark-word",
+          "value": "Apple Health"
+        },
+        {
+          "name": "slot2",
+          "kind": "mark-word",
+          "value": "Oura"
+        },
+        {
+          "name": "slot3",
+          "kind": "mark-word",
+          "value": "Strava"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.body.grid.source.apple",
+      "resource": "m6a6f75726e616c2e77696e646f772e626f64792e677269642e736f757263652e6170706c65",
+      "namespace": "journal.window.body.grid.source",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "date",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "slot1",
+          "kind": "mark-word",
+          "value": "Apple Health"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.body.grid.source.apple.oura",
+      "resource": "m6a6f75726e616c2e77696e646f772e626f64792e677269642e736f757263652e6170706c652e6f757261",
+      "namespace": "journal.window.body.grid.source.apple",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "date",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "slot1",
+          "kind": "mark-word",
+          "value": "Apple Health"
+        },
+        {
+          "name": "slot2",
+          "kind": "mark-word",
+          "value": "Oura"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.body.grid.source.apple.strava",
+      "resource": "m6a6f75726e616c2e77696e646f772e626f64792e677269642e736f757263652e6170706c652e737472617661",
+      "namespace": "journal.window.body.grid.source.apple",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "date",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "slot1",
+          "kind": "mark-word",
+          "value": "Apple Health"
+        },
+        {
+          "name": "slot2",
+          "kind": "mark-word",
+          "value": "Strava"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.body.grid.source.join",
+      "resource": "m6a6f75726e616c2e77696e646f772e626f64792e677269642e736f757263652e6a6f696e",
+      "namespace": "journal.window.body.grid.source",
+      "owner": "journal",
+      "tombstone": true,
+      "replacement": "journal.window.body.grid.source.all",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -18789,12 +19186,95 @@
       "selector": null
     },
     {
+      "id": "journal.window.body.grid.source.oura",
+      "resource": "m6a6f75726e616c2e77696e646f772e626f64792e677269642e736f757263652e6f757261",
+      "namespace": "journal.window.body.grid.source",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "date",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "slot1",
+          "kind": "mark-word",
+          "value": "Oura"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.body.grid.source.oura.strava",
+      "resource": "m6a6f75726e616c2e77696e646f772e626f64792e677269642e736f757263652e6f7572612e737472617661",
+      "namespace": "journal.window.body.grid.source.oura",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "date",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "slot1",
+          "kind": "mark-word",
+          "value": "Oura"
+        },
+        {
+          "name": "slot2",
+          "kind": "mark-word",
+          "value": "Strava"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.body.grid.source.strava",
+      "resource": "m6a6f75726e616c2e77696e646f772e626f64792e677269642e736f757263652e737472617661",
+      "namespace": "journal.window.body.grid.source",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "date",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "slot1",
+          "kind": "mark-word",
+          "value": "Strava"
+        }
+      ],
+      "selector": null
+    },
+    {
       "id": "journal.window.body.grid.sources",
       "resource": "m6a6f75726e616c2e77696e646f772e626f64792e677269642e736f7572636573",
       "namespace": "journal.window.body.grid",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.body.grid.source.all",
       "format_intent": "text",
       "arguments": [
         {
@@ -19321,8 +19801,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e626f64792e696d706f72742e70726f67726573732e64617973",
       "namespace": "journal.window.body.import.progress",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.body.import.progress.running.days",
       "format_intent": "text",
       "arguments": [
         {
@@ -19376,8 +19856,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e626f64792e696d706f72742e70726f67726573732e656d707479",
       "namespace": "journal.window.body.import.progress",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.body.import.progress.running.empty",
       "format_intent": "text",
       "arguments": [
         {
@@ -19396,8 +19876,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e626f64792e696d706f72742e70726f67726573732e656e7472696573",
       "namespace": "journal.window.body.import.progress",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.body.import.progress.running.entries",
       "format_intent": "text",
       "arguments": [
         {
@@ -19434,18 +19914,166 @@
       "resource": "m6a6f75726e616c2e77696e646f772e626f64792e696d706f72742e70726f67726573732e72756e6e696e67",
       "namespace": "journal.window.body.import.progress",
       "owner": "journal",
+      "tombstone": true,
+      "replacement": "journal.window.body.import.progress.running.empty",
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.body.import.progress.running.days",
+      "resource": "m6a6f75726e616c2e77696e646f772e626f64792e696d706f72742e70726f67726573732e72756e6e696e672e64617973",
+      "namespace": "journal.window.body.import.progress.running",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "total_quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "done_quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "done_days",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total_days",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "total_quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.body.import.progress.running.empty",
+      "resource": "m6a6f75726e616c2e77696e646f772e626f64792e696d706f72742e70726f67726573732e72756e6e696e672e656d707479",
+      "namespace": "journal.window.body.import.progress.running",
+      "owner": "journal",
       "tombstone": false,
       "replacement": null,
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
       "selector": null
+    },
+    {
+      "id": "journal.window.body.import.progress.running.entries",
+      "resource": "m6a6f75726e616c2e77696e646f772e626f64792e696d706f72742e70726f67726573732e72756e6e696e672e656e7472696573",
+      "namespace": "journal.window.body.import.progress.running",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "entry_count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
     },
     {
       "id": "journal.window.body.import.progress.stopped",
       "resource": "m6a6f75726e616c2e77696e646f772e626f64792e696d706f72742e70726f67726573732e73746f70706564",
       "namespace": "journal.window.body.import.progress",
       "owner": "journal",
+      "tombstone": true,
+      "replacement": "journal.window.body.import.progress.stopped.empty",
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.body.import.progress.stopped.days",
+      "resource": "m6a6f75726e616c2e77696e646f772e626f64792e696d706f72742e70726f67726573732e73746f707065642e64617973",
+      "namespace": "journal.window.body.import.progress.stopped",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "total_quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "done_quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "done_days",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total_days",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "total_quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.body.import.progress.stopped.empty",
+      "resource": "m6a6f75726e616c2e77696e646f772e626f64792e696d706f72742e70726f67726573732e73746f707065642e656d707479",
+      "namespace": "journal.window.body.import.progress.stopped",
+      "owner": "journal",
       "tombstone": false,
       "replacement": null,
       "format_intent": "text",
@@ -19454,12 +20082,136 @@
       "selector": null
     },
     {
+      "id": "journal.window.body.import.progress.stopped.entries",
+      "resource": "m6a6f75726e616c2e77696e646f772e626f64792e696d706f72742e70726f67726573732e73746f707065642e656e7472696573",
+      "namespace": "journal.window.body.import.progress.stopped",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "entry_count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.body.import.span.counted.days",
+      "resource": "m6a6f75726e616c2e77696e646f772e626f64792e696d706f72742e7370616e2e636f756e7465642e64617973",
+      "namespace": "journal.window.body.import.span.counted",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "first",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "last",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.body.import.span.counted.months",
+      "resource": "m6a6f75726e616c2e77696e646f772e626f64792e696d706f72742e7370616e2e636f756e7465642e6d6f6e746873",
+      "namespace": "journal.window.body.import.span.counted",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "first",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "last",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
       "id": "journal.window.body.import.span.days",
       "resource": "m6a6f75726e616c2e77696e646f772e626f64792e696d706f72742e7370616e2e64617973",
       "namespace": "journal.window.body.import.span",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.body.import.span.counted.days",
       "format_intent": "text",
       "arguments": [
         {
@@ -19539,8 +20291,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e626f64792e696d706f72742e7370616e2e6d6f6e746873",
       "namespace": "journal.window.body.import.span",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.body.import.span.counted.months",
       "format_intent": "text",
       "arguments": [
         {
@@ -20271,8 +21023,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e626f64792e7374726176612e6d6f76696e67",
       "namespace": "journal.window.body.strava",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.body.strava.moving.time",
       "format_intent": "text",
       "arguments": [
         {
@@ -20290,6 +21042,73 @@
           "value": " "
         }
       ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.body.strava.moving.hours",
+      "resource": "m6a6f75726e616c2e77696e646f772e626f64792e7374726176612e6d6f76696e672e686f757273",
+      "namespace": "journal.window.body.strava.moving",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "hours",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.body.strava.moving.minutes",
+      "resource": "m6a6f75726e616c2e77696e646f772e626f64792e7374726176612e6d6f76696e672e6d696e75746573",
+      "namespace": "journal.window.body.strava.moving",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "minutes",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.body.strava.moving.time",
+      "resource": "m6a6f75726e616c2e77696e646f772e626f64792e7374726176612e6d6f76696e672e74696d65",
+      "namespace": "journal.window.body.strava.moving",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "hours",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "minutes",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
       "selector": null
     },
     {

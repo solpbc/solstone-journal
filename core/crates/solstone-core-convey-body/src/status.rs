@@ -21,7 +21,7 @@ use solstone_core_convey_http::coalesce::ResponseLocale;
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_format::content::body_hidden_days::{HiddenDays, read_hidden_days};
 
-use crate::fmt::{count_noun, days_through, month_abbr, parse_day, short_day, short_day_year};
+use crate::fmt::{count_label, days_through, month_abbr, parse_day, short_day, short_day_year};
 use crate::listing::{BodyDays, DaySources, body_days, body_streams, window_count};
 use crate::query::decoded_query_params;
 use crate::router::unreadable_response;
@@ -44,7 +44,7 @@ fn source_item(source: &str, days: &[&String], locale: &str) -> Value {
         "last_day": last,
         "last_label": last.and_then(|day| short_day_year(day, locale)),
         "days": days.len(),
-        "days_label": count_noun(days.len() as u64, "journal.window.body.count.day.one", "journal.window.body.count.day.other", locale),
+        "days_label": count_label(days.len() as u64, "journal.window.body.count.day", locale),
     })
 }
 
@@ -91,16 +91,21 @@ fn grid_cell(
     let count = sources.map_or(0, BTreeSet::len);
     let title = match sources {
         Some(sources) => {
-            let names = sources
-                .iter()
-                .map(|source| source_words(source))
-                .collect::<Vec<_>>()
-                .join(&text(locale, "journal.window.body.grid.source.join"));
-            strings(
-                locale,
-                "journal.window.body.grid.sources",
-                [("date", &date), ("sources", &names)],
-            )
+            let id = match (
+                sources.contains("apple_health"),
+                sources.contains("oura"),
+                sources.contains("strava"),
+            ) {
+                (true, false, false) => "journal.window.body.grid.source.apple",
+                (false, true, false) => "journal.window.body.grid.source.oura",
+                (false, false, true) => "journal.window.body.grid.source.strava",
+                (true, true, false) => "journal.window.body.grid.source.apple.oura",
+                (true, false, true) => "journal.window.body.grid.source.apple.strava",
+                (false, true, true) => "journal.window.body.grid.source.oura.strava",
+                (true, true, true) => "journal.window.body.grid.source.all",
+                (false, false, false) => "journal.window.body.grid.empty",
+            };
+            strings(locale, id, [("date", &date)])
         }
         None if earlier == Some(true) => {
             strings(locale, "journal.window.body.grid.held", [("date", &date)])

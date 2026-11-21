@@ -4,7 +4,7 @@
 //! What the Body app says about old imports: the lines on a day page and the
 //! overview's listing of old bundles.
 
-use solstone_core_convey_http::window_catalog::{strings, text};
+use solstone_core_convey_http::window_catalog::{Value as CatalogValue, render, strings, text};
 use std::path::Path;
 
 use serde_json::{Value, json};
@@ -12,7 +12,7 @@ use solstone_core_location::old_imports::{
     CoverScope, OldBundle, OldCover, OldSource, OldSpan, covers_on_day,
 };
 
-use crate::fmt::{month_full_name, short_day_year};
+use crate::fmt::{cardinal_quantity, month_full_name, short_day_year};
 
 fn import_again(source: OldSource, locale: &str) -> String {
     match source {
@@ -87,13 +87,14 @@ fn span_label(span: &OldSpan, locale: &str) -> String {
                 first_label
             } else {
                 let last_label = short_day_year(&last, locale).unwrap_or(last);
-                strings(
+                render(
                     locale,
-                    "journal.window.body.import.span.days",
-                    [
-                        ("first", &first_label),
-                        ("last", &last_label),
-                        ("count", &days.len().to_string()),
+                    "journal.window.body.import.span.counted.days",
+                    &[
+                        ("first", CatalogValue::String(&first_label)),
+                        ("last", CatalogValue::String(&last_label)),
+                        ("count", CatalogValue::String(&days.len().to_string())),
+                        ("quantity", cardinal_quantity(days.len() as u64)),
                     ],
                 )
             }
@@ -106,13 +107,14 @@ fn span_label(span: &OldSpan, locale: &str) -> String {
                     "journal.window.body.import.span.month",
                     [("month", &words(only))],
                 ),
-                (Some(first), Some(last)) => strings(
+                (Some(first), Some(last)) => render(
                     locale,
-                    "journal.window.body.import.span.months",
-                    [
-                        ("first", &words(first)),
-                        ("last", &words(last)),
-                        ("count", &months.len().to_string()),
+                    "journal.window.body.import.span.counted.months",
+                    &[
+                        ("first", CatalogValue::String(&words(first))),
+                        ("last", CatalogValue::String(&words(last))),
+                        ("count", CatalogValue::String(&months.len().to_string())),
+                        ("quantity", cardinal_quantity(months.len() as u64)),
                     ],
                 ),
                 _ => text(locale, "journal.window.body.import.span.unknown"),

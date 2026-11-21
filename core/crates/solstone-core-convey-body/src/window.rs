@@ -9,7 +9,9 @@
 //! answer says when the span lies on a hidden day, so a reader can tell hidden
 //! from empty.
 
-use solstone_core_convey_http::window_catalog::{response_locale, strings, text};
+use solstone_core_convey_http::window_catalog::{
+    Value as CatalogValue, render, response_locale, strings, text,
+};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -33,7 +35,7 @@ use solstone_core_format::content::body_records::{
 use solstone_core_format::content::strava_body::{STRAVA_STREAM, STRAVA_TILE_FILE, strava_rows};
 use solstone_core_time::{Precision, at_offset, from_local, zoned_rfc3339};
 
-use crate::fmt::{clock, count_noun, days_through, grouped};
+use crate::fmt::{cardinal_quantity, clock, count_label, days_through, grouped};
 use crate::hidden::drop_hidden_rows;
 use crate::listing::{body_streams, is_deleted, window_names};
 use crate::query::decoded_query_params;
@@ -73,10 +75,16 @@ pub(crate) async fn window_route(
     {
         return invalid_window_response(
             locale,
-            strings(
+            render(
                 locale,
-                "journal.window.body.error.window.length",
-                [("days", &MAX_WINDOW_DAYS.to_string())],
+                "journal.window.body.error.window.span",
+                &[
+                    ("quantity", cardinal_quantity(MAX_WINDOW_DAYS as u64)),
+                    (
+                        "maximum_days",
+                        CatalogValue::String(&MAX_WINDOW_DAYS.to_string()),
+                    ),
+                ],
             ),
         );
     }
@@ -349,36 +357,17 @@ fn iso(time: &ZonedDateTime) -> String {
 
 /// Counts of what the span holds, kind by kind: the only thing the panel states.
 fn signals(rows: &[Found], locale: &str) -> Vec<Value> {
-    let mut counts = BTreeMap::<(String, &'static str, &'static str), u64>::new();
+    let mut counts = BTreeMap::<(String, &'static str), u64>::new();
     for item in rows {
-        let (one, many) = match item.row.kind {
-            RowKind::Reading => (
-                "journal.window.body.count.reading.one",
-                "journal.window.body.count.reading.other",
-            ),
-            RowKind::Count => (
-                "journal.window.body.count.entry.one",
-                "journal.window.body.count.entry.other",
-            ),
-            RowKind::Logged => (
-                "journal.window.body.count.entry.one",
-                "journal.window.body.count.entry.other",
-            ),
-            RowKind::Stage => (
-                "journal.window.body.count.interval.one",
-                "journal.window.body.count.interval.other",
-            ),
-            RowKind::Dated => (
-                "journal.window.body.count.entry.one",
-                "journal.window.body.count.entry.other",
-            ),
+        let id = match item.row.kind {
+            RowKind::Reading => "journal.window.body.count.reading",
+            RowKind::Count | RowKind::Logged | RowKind::Dated => "journal.window.body.count.entry",
+            RowKind::Stage => "journal.window.body.count.interval",
             RowKind::Experience | RowKind::ExperienceTile | RowKind::Event | RowKind::Moved => {
                 continue;
             }
         };
-        *counts
-            .entry((item.row.label.clone(), one, many))
-            .or_default() += 1;
+        *counts.entry((item.row.label.clone(), id)).or_default() += 1;
     }
     let mut items = counts.into_iter().collect::<Vec<_>>();
     items.sort_by(|((left, ..), a), ((right, ..), b)| {
@@ -387,8 +376,8 @@ fn signals(rows: &[Found], locale: &str) -> Vec<Value> {
     });
     items
         .into_iter()
-        .map(|((label, one, many), count)| {
-            json!({"label": label, "count": count, "count_label": count_noun(count, one, many, locale)})
+        .map(|((label, id), count)| {
+            json!({"label": label, "count": count, "count_label": count_label(count, id, locale)})
         })
         .collect()
 }
@@ -432,7 +421,7 @@ fn sources(rows: &[Found], locale: &str) -> Value {
     let chips = counts
         .iter()
         .map(|(name, count)| {
-            json!({"name": name, "count": count, "count_label": count_noun(*count, "journal.window.body.count.entry.one", "journal.window.body.count.entry.other", locale)})
+            json!({"name": name, "count": count, "count_label": count_label(*count, "journal.window.body.count.entry", locale)})
         })
         .collect::<Vec<_>>();
     json!({"names": counts.keys().collect::<Vec<_>>(), "chips": chips})
@@ -488,7 +477,10 @@ fn hourly(rows: &[Found], from: &ZonedDateTime, to: &ZonedDateTime, locale: &str
             "start": iso(&start),
             "end": iso(&end),
             "label": clock(bucket_start, locale),
-            "range_label": format!("{}–{}", clock(bucket_start, locale), clock(bucket_end, locale)),
+            "range_label": strings(locale, "journal.window.body.date.clock.range", [
+                ("first_clock", &clock(bucket_start, locale)),
+                ("last_clock", &clock(bucket_end, locale)),
+            ]),
             "has_data": count > 0,
             "entry_total": count,
             "entry_total_label": grouped(count),

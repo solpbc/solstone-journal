@@ -1,0 +1,33 @@
+{
+  "description": "A Body calendar date with data from Apple Health and Strava.",
+  "context": "Journal window. A Body calendar date with data from Apple Health and Strava.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "date",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c2e24b4a2f3a5d78a4f7c4d67f509c007ad90f2044a30524d7a48eed6670d397",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "mark-word",
+      "value": "Apple Health"
+    },
+    {
+      "name": "slot2",
+      "kind": "mark-word",
+      "value": "Strava"
+    }
+  ]
+}
