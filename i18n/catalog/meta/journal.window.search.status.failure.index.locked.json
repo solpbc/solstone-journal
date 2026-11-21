@@ -1,0 +1,16 @@
+{
+  "description": "Search refusal when the index is locked.",
+  "context": "Journal window. Search refusal when the index is locked.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "733bf1a774d7edb7eb85c48d3de6530199da635aa84c103f9392449699374888",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

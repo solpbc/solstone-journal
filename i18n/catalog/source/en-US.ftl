@@ -4231,6 +4231,44 @@ journal.window.not.found.heading = Not Found
 
 journal.window.not.found.title = 404 Not Found
 
+journal.window.search.count.results.across.days = { $match_quantity ->
+    [one] { $day_quantity ->
+        [one] { $match_count } match across { $day_count } day.
+       *[other] { $match_count } match across { $day_count } days.
+    }
+   *[other] { $day_quantity ->
+        [one] { $match_count } matches across { $day_count } day.
+       *[other] { $match_count } matches across { $day_count } days.
+    }
+}
+
+journal.window.search.count.results.shown.for.day = { $match_quantity ->
+    [one] { $shown_quantity ->
+        [one] showing the top { $shown_count } of { $match_count } matches for this day.
+       *[other] showing the top { $shown_count } of { $match_count } matches for this day.
+    }
+   *[other] { $shown_quantity ->
+        [one] showing the top { $shown_count } of { $match_count } matches for this day.
+       *[other] showing the top { $shown_count } of { $match_count } matches for this day.
+    }
+}
+
+journal.window.search.status.entry.failure.details = couldn't open this entry. { $detail } { $diagnostic }
+
+journal.window.search.status.entry.failure.retry = couldn't open this entry. try again.
+
+journal.window.search.status.entry.failure.retry.diagnostic = couldn't open this entry. try again. { $diagnostic }
+
+journal.window.search.status.failure.index.absent = couldn't search your journal: your journal doesn't have a search index yet.
+
+journal.window.search.status.failure.index.empty = couldn't search your journal: there's nothing indexed yet.
+
+journal.window.search.status.failure.index.locked = couldn't search your journal: the search index is busy right now.
+
+journal.window.search.status.failure.index.unreadable = couldn't search your journal: the search index couldn't be read.
+
+journal.window.search.status.failure.retry = couldn't search your journal. try again.
+
 journal.window.settings.credentials.environment.unconfigured = { $environment_variable }{ $slot1 }not configured.
 
 journal.window.settings.facet.receipt.erase.date = erases { $erase_day } unless you recover it.
@@ -11784,18 +11822,6 @@ journal.window.network.window.state.text.setting.up.your.private.network = setti
 
 journal.window.network.window.state.text.this.device = this device
 
-journal.window.search.count.day.one = { $count }{ $slot1 }day
-
-journal.window.search.count.day.other = { $count }{ $slot1 }days
-
-journal.window.search.count.day.showing = showing the top{ $slot1 }{ $showing }{ $slot2 }of{ $slot3 }{ $total }{ $slot4 }matches for this day.
-
-journal.window.search.count.match.one = { $count }{ $slot1 }match
-
-journal.window.search.count.match.other = { $count }{ $slot1 }matches
-
-journal.window.search.count.summary = { $matches }{ $slot1 }across{ $slot2 }{ $days }.
-
 journal.window.search.date.from = from
 
 journal.window.search.date.invalid = choose an end date on or after the start date.
@@ -11910,15 +11936,7 @@ journal.window.search.status.details = details
 
 journal.window.search.status.entry.failed = couldn't open this entry.{ $slot1 }{ $detail }
 
-journal.window.search.status.index.absent = your journal doesn't have a search index yet.
-
-journal.window.search.status.index.empty = there's nothing indexed yet.
-
-journal.window.search.status.index.locked = the search index is busy right now.
-
 journal.window.search.status.index.rebuilding = search is rebuilding, so older days may be missing for now.
-
-journal.window.search.status.index.unreadable = the search index couldn't be read.
 
 journal.window.search.status.initial = search your whole journal. quote an "exact phrase", or narrow to a day range above for faster results.
 
@@ -11935,10 +11953,6 @@ journal.window.search.status.progress.all.days = still searching…{ $slot1 }{ $
 journal.window.search.status.relaxed = nothing matched your exact search, so these are broader matches.
 
 journal.window.search.status.retry = try again
-
-journal.window.search.status.retry.sentence = try again.
-
-journal.window.search.status.search.failed.known = couldn't search your journal:{ $slot1 }{ $detail }
 
 journal.window.search.status.search.failed.other = couldn't search your journal.{ $slot1 }{ $detail }
 

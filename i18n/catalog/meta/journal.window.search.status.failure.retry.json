@@ -1,0 +1,16 @@
+{
+  "description": "Generic search error without a diagnostic.",
+  "context": "Journal window. Generic search error without a diagnostic.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c982f091a31ae2a3cf507ae063df86f2d7a43ecdafc9d4c21e78f862f9914e25",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -80,12 +80,20 @@
  // `ts`. The one exception is a row that matches only on a field the readable
  // sentences never carry: there the excerpt *is* the record, and the server
  // then sends no `record` so this card never prints it twice (FE3 #3).
- // The count line's words, one and many, so one match reads as one.
- function counted(n,noun){
-  const number=n===1?'one':'other';
-  return window.JournalI18n.render(`journal.window.search.count.${noun}.${number}`,[['count', n.toLocaleString(window.JournalI18n.formatLocale)]]);
+ function matchesStatus(total,days){
+  const i18n=window.JournalI18n;
+  return i18n.render('journal.window.search.count.results.across.days', [
+   ['match_quantity', i18n.cardinalQuantity(total)], ['day_quantity', i18n.cardinalQuantity(days)],
+   ['match_count', total.toLocaleString(i18n.formatLocale)], ['day_count', days.toLocaleString(i18n.formatLocale)],
+  ]);
  }
- function matchesStatus(total,days){return window.JournalI18n.render('journal.window.search.count.summary', [['matches', String(counted(total,'match'))], ['days', String(counted(days,'day'))]]);}
+ function shownResults(shown,total){
+  const i18n=window.JournalI18n;
+  return i18n.render('journal.window.search.count.results.shown.for.day', [
+   ['match_quantity', i18n.cardinalQuantity(total)], ['shown_quantity', i18n.cardinalQuantity(shown)],
+   ['shown_count', String(shown)], ['match_count', String(total)],
+  ]);
+ }
  function renderHit(hit,dayHref){
   const card=node('article','search-result');const meta=node('div','search-meta');
   const itemLabel=hit.item?window.JournalFormat.importItem(hit.item):'';
@@ -143,10 +151,10 @@
   return card;
  }
  const SEARCH_FAILURE_REASONS={
-  index_locked:'journal.window.search.status.index.locked',
-  index_absent:'journal.window.search.status.index.absent',
-  index_unreadable:'journal.window.search.status.index.unreadable',
-  empty_index:'journal.window.search.status.index.empty'
+  index_locked:'journal.window.search.status.failure.index.locked',
+  index_absent:'journal.window.search.status.failure.index.absent',
+  index_unreadable:'journal.window.search.status.failure.index.unreadable',
+  empty_index:'journal.window.search.status.failure.index.empty'
  };
  // The answers this page drew for its last few history entries, so going
  // back or forward to a search shows it at once and its scroll can come back.
@@ -228,7 +236,7 @@
    if(data.relaxed&&data.total)status.append(node('p','',window.JournalI18n.render('journal.window.search.status.relaxed')));
    for(const day of orderedDays(data.days)){
     const section=node('section','search-day');const heading=node('h2');heading.append(dayLink(day.day));section.append(heading);
-    if(day.total>day.showing)section.append(node('p','search-meta',window.JournalI18n.render('journal.window.search.count.day.showing', [['showing', String(day.showing)], ['total', String(day.total)]])));
+    if(day.total>day.showing)section.append(node('p','search-meta',shownResults(day.showing,day.total)));
     const dayHref='/app/transcripts/'+encodeURIComponent(day.day);
     for(const hit of day.results)section.append(renderHit(hit,dayHref));
     if(day.total>day.showing&&!state.exactDay){const a=node('a','search-link',window.JournalI18n.render('journal.window.search.paging.day'));const date=day.day.replace(/(\d{4})(\d{2})(\d{2})/,'$1-$2-$3');a.href=pageUrl(state,{from:date,to:date});section.append(a);}
@@ -275,9 +283,12 @@
    }catch(error){
     if(!live(mine)||(error&&error.name==='AbortError'))return;
     status.classList.add('search-error');
-    const reasonId=error&&error.reasonCode&&SEARCH_FAILURE_REASONS[error.reasonCode];
-    const reason=reasonId?window.JournalI18n.render(reasonId):'';
-    status.textContent=reason?window.JournalI18n.render('journal.window.search.status.search.failed.known', [['detail', String(reason)]]):window.JournalI18n.render('journal.window.search.status.search.failed.other', [['detail', String(error.serverMessage||error.message||window.JournalI18n.render('journal.window.search.status.retry.sentence'))]]);
+    const i18n=window.JournalI18n;
+    const reasonId=Object.hasOwn(SEARCH_FAILURE_REASONS,error?.reasonCode)?SEARCH_FAILURE_REASONS[error.reasonCode]:null;
+    const detail=error?.serverMessage||error?.message;
+    status.textContent=reasonId?i18n.render(reasonId)
+      :detail?i18n.render('journal.window.search.status.search.failed.other', [['detail', String(detail)]])
+      :i18n.render('journal.window.search.status.failure.retry');
     if(error&&error.rawDetail){const disclosure=node('details');disclosure.append(node('summary','',window.JournalI18n.render('journal.window.search.status.details')),node('pre','search-source',String(error.rawDetail)));status.append(disclosure);}
     const button=node('button','',window.JournalI18n.render('journal.window.search.status.retry'));button.type='button';button.addEventListener('click',()=>own(shown,'fresh'));status.append(node('br'),button);
     settle();report('error');
@@ -352,7 +363,23 @@
    const mine=epoch;
    ctx.read('/app/search/api/entry?'+new URLSearchParams({path:entry.path,idx:entry.idx,entry_id:entry.entry_id})).then(
     (data)=>{if(!live(mine)||!content.isConnected)return;content.replaceChildren(node('span','search-meta',data.reindexed_since_search?window.JournalI18n.render('journal.window.search.entry.reindexed'):window.JournalI18n.render('journal.window.search.entry.as.indexed')),document.createTextNode(data.content));content.dataset.loaded='true';},
-    (error)=>{if(!live(mine)||!content.isConnected)return;content.textContent=window.JournalI18n.render('journal.window.search.status.entry.failed', [['detail', String(error.serverMessage||error.message||window.JournalI18n.render('journal.window.search.status.retry.sentence'))]]);if(error.rawDetail)content.textContent+=' '+String(error.rawDetail);}
+    (error)=>{
+     if(!live(mine)||!content.isConnected)return;
+     const i18n=window.JournalI18n;
+     const detail=error?.serverMessage||error?.message;
+     const diagnostic=error?.rawDetail;
+     if(detail&&diagnostic){
+      content.textContent=i18n.render('journal.window.search.status.entry.failure.details', [
+       ['detail', String(detail)], ['diagnostic', String(diagnostic)],
+      ]);
+     }else if(detail){
+      content.textContent=i18n.render('journal.window.search.status.entry.failed', [['detail', String(detail)]]);
+     }else if(diagnostic){
+      content.textContent=i18n.render('journal.window.search.status.entry.failure.retry.diagnostic', [['diagnostic', String(diagnostic)]]);
+     }else{
+      content.textContent=i18n.render('journal.window.search.status.entry.failure.retry');
+     }
+    }
    );
   });
   query.addEventListener('input',abortRunning);from.addEventListener('input',abortRunning);to.addEventListener('input',abortRunning);

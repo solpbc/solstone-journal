@@ -100375,8 +100375,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e7365617263682e636f756e742e6461792e6f6e65",
       "namespace": "journal.window.search.count.day",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.search.count.results.across.days",
       "format_intent": "text",
       "arguments": [
         {
@@ -100401,8 +100401,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e7365617263682e636f756e742e6461792e6f74686572",
       "namespace": "journal.window.search.count.day",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.search.count.results.across.days",
       "format_intent": "text",
       "arguments": [
         {
@@ -100427,8 +100427,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e7365617263682e636f756e742e6461792e73686f77696e67",
       "namespace": "journal.window.search.count.day",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.search.count.results.shown.for.day",
       "format_intent": "text",
       "arguments": [
         {
@@ -100475,8 +100475,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e7365617263682e636f756e742e6d617463682e6f6e65",
       "namespace": "journal.window.search.count.match",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.search.count.results.across.days",
       "format_intent": "text",
       "arguments": [
         {
@@ -100501,8 +100501,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e7365617263682e636f756e742e6d617463682e6f74686572",
       "namespace": "journal.window.search.count.match",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.search.count.results.across.days",
       "format_intent": "text",
       "arguments": [
         {
@@ -100523,12 +100523,104 @@
       "selector": null
     },
     {
+      "id": "journal.window.search.count.results.across.days",
+      "resource": "m6a6f75726e616c2e77696e646f772e7365617263682e636f756e742e726573756c74732e6163726f73732e64617973",
+      "namespace": "journal.window.search.count.results.across",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "match_quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "day_quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "match_count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "day_count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "match_quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.search.count.results.shown.for.day",
+      "resource": "m6a6f75726e616c2e77696e646f772e7365617263682e636f756e742e726573756c74732e73686f776e2e666f722e646179",
+      "namespace": "journal.window.search.count.results.shown.for",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "match_quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "shown_quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "shown_count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "match_count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "match_quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
       "id": "journal.window.search.count.summary",
       "resource": "m6a6f75726e616c2e77696e646f772e7365617263682e636f756e742e73756d6d617279",
       "namespace": "journal.window.search.count",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.search.count.results.across.days",
       "format_intent": "text",
       "arguments": [
         {
@@ -101452,12 +101544,131 @@
       "selector": null
     },
     {
+      "id": "journal.window.search.status.entry.failure.details",
+      "resource": "m6a6f75726e616c2e77696e646f772e7365617263682e7374617475732e656e7472792e6661696c7572652e64657461696c73",
+      "namespace": "journal.window.search.status.entry.failure",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "detail",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "diagnostic",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.search.status.entry.failure.retry",
+      "resource": "m6a6f75726e616c2e77696e646f772e7365617263682e7374617475732e656e7472792e6661696c7572652e7265747279",
+      "namespace": "journal.window.search.status.entry.failure",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.search.status.entry.failure.retry.diagnostic",
+      "resource": "m6a6f75726e616c2e77696e646f772e7365617263682e7374617475732e656e7472792e6661696c7572652e72657472792e646961676e6f73746963",
+      "namespace": "journal.window.search.status.entry.failure.retry",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "diagnostic",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.search.status.failure.index.absent",
+      "resource": "m6a6f75726e616c2e77696e646f772e7365617263682e7374617475732e6661696c7572652e696e6465782e616273656e74",
+      "namespace": "journal.window.search.status.failure.index",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.search.status.failure.index.empty",
+      "resource": "m6a6f75726e616c2e77696e646f772e7365617263682e7374617475732e6661696c7572652e696e6465782e656d707479",
+      "namespace": "journal.window.search.status.failure.index",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.search.status.failure.index.locked",
+      "resource": "m6a6f75726e616c2e77696e646f772e7365617263682e7374617475732e6661696c7572652e696e6465782e6c6f636b6564",
+      "namespace": "journal.window.search.status.failure.index",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.search.status.failure.index.unreadable",
+      "resource": "m6a6f75726e616c2e77696e646f772e7365617263682e7374617475732e6661696c7572652e696e6465782e756e7265616461626c65",
+      "namespace": "journal.window.search.status.failure.index",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.search.status.failure.retry",
+      "resource": "m6a6f75726e616c2e77696e646f772e7365617263682e7374617475732e6661696c7572652e7265747279",
+      "namespace": "journal.window.search.status.failure",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.search.status.index.absent",
       "resource": "m6a6f75726e616c2e77696e646f772e7365617263682e7374617475732e696e6465782e616273656e74",
       "namespace": "journal.window.search.status.index",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.search.status.failure.index.absent",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -101468,8 +101679,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e7365617263682e7374617475732e696e6465782e656d707479",
       "namespace": "journal.window.search.status.index",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.search.status.failure.index.empty",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -101480,8 +101691,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e7365617263682e7374617475732e696e6465782e6c6f636b6564",
       "namespace": "journal.window.search.status.index",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.search.status.failure.index.locked",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -101504,8 +101715,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e7365617263682e7374617475732e696e6465782e756e7265616461626c65",
       "namespace": "journal.window.search.status.index",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.search.status.failure.index.unreadable",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -101650,8 +101861,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e7365617263682e7374617475732e72657472792e73656e74656e6365",
       "namespace": "journal.window.search.status.retry",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.search.status.failure.retry",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -101662,8 +101873,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e7365617263682e7374617475732e7365617263682e6661696c65642e6b6e6f776e",
       "namespace": "journal.window.search.status.search.failed",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.search.status.failure.index.unreadable",
       "format_intent": "text",
       "arguments": [
         {

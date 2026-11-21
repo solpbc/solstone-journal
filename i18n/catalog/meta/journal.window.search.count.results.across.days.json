@@ -1,0 +1,39 @@
+{
+  "description": "The number of search matches across the total number of matching days. The two quantities select independently.",
+  "context": "Journal window. The number of search matches across the total number of matching days. The two quantities select independently.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "match_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "day_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "match_count",
+      "type": "string"
+    },
+    {
+      "name": "day_count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "5adf8384c754de88756ba2877eb8ef085a3bff74ef2537f0ca5d8912d3162be4",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "match_quantity",
+    "type": "cardinal"
+  }
+}

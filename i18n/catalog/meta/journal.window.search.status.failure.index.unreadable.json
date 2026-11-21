@@ -1,0 +1,16 @@
+{
+  "description": "Search refusal when the index is unreadable.",
+  "context": "Journal window. Search refusal when the index is unreadable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "974ffdd867136c18bd95963293a6bb4e485926b05523c07205bbbbc1cec3b517",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
