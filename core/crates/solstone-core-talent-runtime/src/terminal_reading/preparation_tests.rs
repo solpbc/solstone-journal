@@ -339,3 +339,55 @@ fn a_line_shown_in_the_segment_before_that_comes_back_is_not_read_as_new() {
     assert!(text.contains("new text\n```\nbuilding\n"), "{text}");
     assert!(text.contains("new text\n```\nbuild finished\n"), "{text}");
 }
+
+#[test]
+fn a_session_taken_in_on_output_alone_is_read_as_nobody_at_its_keyboard() {
+    // Output alone leaves the cursor out and keeps the pane mode; a capture
+    // from before the cursor fields has neither, and says nothing about who.
+    let capture = |cursor: bool, mode: bool| -> String {
+        [(0.0, "⏺ Running the replays\n"), (5.0, "⏺ Running the replays\n⏺ Ran five replays\n")]
+            .iter()
+            .map(|(time, content)| {
+                let mut pane = json!({"id":"%0","active":true,"content":content});
+                if cursor {
+                    pane["cursor_x"] = json!(0);
+                    pane["cursor_y"] = json!(0);
+                    pane["cursor_visible"] = json!(true);
+                }
+                if mode {
+                    pane["alternate_on"] = json!(true);
+                    pane["pane_in_mode"] = json!(false);
+                }
+                let raw = json!({"timestamp":time,"analysis":{"primary":"tmux"},"content":{"tmux":{"session":"qa","window":{"id":"@0","name":"work"},"panes":[pane]}}});
+                format!("{raw}\n")
+            })
+            .collect()
+    };
+    for (cursor, mode, labelled) in [
+        (false, true, true),
+        (true, true, false),
+        (false, false, false),
+    ] {
+        let (_root, paths, context, request) = setup("");
+        fs::write(
+            context
+                .journal
+                .join("chronicle/20261021/device/100000_300/tmux_main_screen.jsonl"),
+            capture(cursor, mode),
+        )
+        .unwrap();
+        let prepared = crate::prepare::prepare(
+            request.clone(),
+            &paths,
+            &context,
+            crate::prepare::PrepareMode::Preview,
+        )
+        .unwrap();
+        let text = source_text(&prepared);
+        assert_eq!(
+            text.contains(&super::sample::output_only_line("qa")),
+            labelled,
+            "cursor {cursor}, mode {mode}: {text}"
+        );
+    }
+}

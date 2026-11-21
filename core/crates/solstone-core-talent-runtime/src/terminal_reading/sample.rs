@@ -28,6 +28,16 @@ work, from before what this segment shows. Each line appears once, at its first 
 place shows its latest version. Long entries show their start and end with the number of lines left out, and \
 entries left out are named with their time span.\n";
 
+/// Under the header of a session nobody was at: the owner has it taken in on
+/// its output alone, for an agent or a program working on its own there.
+pub(super) fn output_only_line(session: &str) -> String {
+    format!(
+        "Nobody was at the keyboard of session \"{session}\": it was taken in on its output alone, which the \
+owner turns on for a session where an AI agent or a program works on its own. What appears here is that \
+agent's or program's work, not the owner's.\n"
+    )
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub(super) struct Fit {
     /// The rendered text for each session, in order.
@@ -103,6 +113,9 @@ fn render(sessions: &[Session], base_ms: i64, choice: &Choice) -> (Vec<String>, 
             session.captures,
             session.windows.join(", ")
         ));
+        if session.output_only {
+            text.push_str(&output_only_line(&session.name));
+        }
         let typed: Vec<&Item> = session
             .items
             .iter()
@@ -333,6 +346,7 @@ mod tests {
                 .collect(),
             captures: 60,
             typed_left_out: 0,
+            output_only: false,
         }
     }
     fn words(text: &str) -> u32 {

@@ -22,6 +22,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- work an agent does on its own in a tmux session you've listed in `output_sessions` is now usually described as the agent's, such as "the agent in qa ran the tests", so your journal is less likely to credit it to you. thanks @dvanduzer for the report (#424).
 - imported conversations that opened to an empty pane now show their text in transcripts.
 - on windows, setting up a journal could occasionally fail with an access-denied error while saving installation details.
 - on linux, `solstone journal setup` could stop at its first step after you installed solstone with apt, dnf or zypper, with a `disk_space` error in `solstone journal doctor`. that check makes sure there is room to download the next version beside the current one, which a package install doesn't need, because an update replaces it in place. it now skips package installs.

@@ -69,6 +69,8 @@ pub(super) struct Session {
     pub captures: usize,
     /// Typed inputs left out because all typed input exceeded its budget.
     pub typed_left_out: usize,
+    /// Every capture was taken in on output alone, with nobody at the keyboard.
+    pub output_only: bool,
 }
 
 struct PaneState {
@@ -282,6 +284,18 @@ fn pane_lines(pane: &Value) -> Vec<String> {
         .collect()
 }
 
+/// A capture taken in on output alone: the producer leaves out the cursor and
+/// keeps the pane mode. Captures from before the cursor fields carry neither.
+fn output_only(frame: &Value) -> bool {
+    let panes = frame["content"]["tmux"]["panes"].as_array();
+    panes.is_some_and(|panes| {
+        !panes.is_empty()
+            && panes.iter().all(|pane| {
+                pane.get("cursor_visible").is_none() && pane.get("pane_in_mode").is_some()
+            })
+    })
+}
+
 /// Read one session's frames, in time order, into entries. `before` holds what
 /// each of its panes showed in the stream's segment before.
 pub(super) fn read(
@@ -293,6 +307,7 @@ pub(super) fn read(
     let mut session = Session {
         name: name.to_owned(),
         captures: frames.len(),
+        output_only: !frames.is_empty() && frames.iter().all(output_only),
         ..Default::default()
     };
     let mut states: HashMap<(String, String), PaneState> = HashMap::new();
