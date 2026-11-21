@@ -225,6 +225,11 @@ function testNotificationBoundaries() {
 // The pane reads the rejection the home route sends: `first`/`latest` are
 // ISO strings, not the `first_ts`/`latest_ts` numbers of an older shape.
 function testDegradedDeviceDetail() {
+  const first = '2026-09-06T10:00:00Z';
+  const latest = '2026-09-07T10:00:00Z';
+  class FixedDate extends Date {
+    static now() { return Date.parse(latest) + 5 * 60 * 1000; }
+  }
   const element = () => ({ style: {}, textContent: '', children: [], appendChild(child) { this.children.push(child); return child; } });
   const section = element();
   const text = element();
@@ -233,20 +238,19 @@ function testDegradedDeviceDetail() {
     createElement: () => element(),
   };
   const window = { JournalFormat: { sinceDay: (ms) => `day:${ms}` } };
-  const context = journalContext({ window, document, Date, console });
+  const context = journalContext({ window, document, Date: FixedDate, console });
+  vm.runInContext(staticSource('relative-time.js'), context, { filename: 'relative-time.js' });
   vm.runInContext([
     'const sinceDay = ms => window.JournalFormat.sinceDay(ms);',
-    "const relativeTime = () => '5 minutes';",
     functionSource(staticSource('status_pane.js'), 'uploadsTurnedAway'),
     functionSource(staticSource('status_pane.js'), 'renderCaptureSection'),
   ].join('\n'), context);
-  const first = '2026-09-06T10:00:00Z';
   context.renderCaptureSection({
     status: 'degraded',
     clients: [{
       name: 'laptop',
       status: 'degraded',
-      ingest_rejection: { reason_code: 'bad_segment', first, latest: '2026-09-07T10:00:00Z', active_count: 3 },
+      ingest_rejection: { reason_code: 'bad_segment', first, latest, active_count: 3 },
     }],
   });
   const lines = text.children.map((child) => child.textContent).join('\n');
