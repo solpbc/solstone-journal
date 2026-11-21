@@ -3,24 +3,26 @@
 
 #[cfg(unix)]
 use solstone_core_journal::{LAYOUT_BUNDLE_ANCHOR, LAYOUT_LAYOUT_ANCHOR, LAYOUT_TEMPLATE_ANCHOR};
+#[cfg(unix)]
+use std::fs;
+#[cfg(unix)]
+use std::path::PathBuf;
 use std::{
-    fs,
-    ops::Deref,
-    path::PathBuf,
-    sync::atomic::{AtomicUsize, Ordering},
+    ops::{Deref, DerefMut},
+    sync::Arc,
     time::Duration,
 };
+use tempfile::TempDir;
 
 use crate::{
     context::CheckContext,
     vocabulary::{Check, Platform, Severity},
 };
 
-static NEXT_CONTEXT: AtomicUsize = AtomicUsize::new(0);
-
+#[derive(Clone)]
 pub(crate) struct StagedContext {
     pub context: CheckContext,
-    _root: TempRoot,
+    _root: Arc<TempDir>,
 }
 
 impl Deref for StagedContext {
@@ -31,21 +33,18 @@ impl Deref for StagedContext {
     }
 }
 
-struct TempRoot(PathBuf);
-
-impl Drop for TempRoot {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
+impl DerefMut for StagedContext {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.context
     }
 }
 
-pub(crate) fn context() -> StagedContext {
-    let root = std::env::temp_dir().join(format!(
-        "solstone-doctor-check-test-{}-{}",
-        std::process::id(),
-        NEXT_CONTEXT.fetch_add(1, Ordering::Relaxed)
-    ));
-    fs::create_dir_all(&root).expect("create staged test root");
+pub(crate) fn context_with_prefix(prefix: &str) -> StagedContext {
+    let dir = tempfile::Builder::new()
+        .prefix(prefix)
+        .tempdir()
+        .expect("create staged test root");
+    let root = dir.path();
     StagedContext {
         context: CheckContext {
             home_dir: root.join("home"),
@@ -67,8 +66,12 @@ pub(crate) fn context() -> StagedContext {
             free_space_bytes_override: None,
             windows_service_probe: None,
         },
-        _root: TempRoot(root),
+        _root: Arc::new(dir),
     }
+}
+
+pub(crate) fn context() -> StagedContext {
+    context_with_prefix("solstone-doctor-check-test-")
 }
 
 pub(crate) fn check(name: &'static str, severity: Severity) -> Check {
@@ -97,4 +100,30 @@ pub(crate) fn layout_install_root(context: &CheckContext) -> PathBuf {
         fs::write(path, "").expect("write staged layout anchor");
     }
     prefix.to_path_buf()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::context_with_prefix;
+
+    #[test]
+    fn staged_context_uses_unique_roots_and_cleans_up_after_last_clone_drops() {
+        let first = context_with_prefix("check-");
+        let second = context_with_prefix("check-");
+        let first_root = first.journal_path.parent().unwrap().to_path_buf();
+        let second_root = second.journal_path.parent().unwrap().to_path_buf();
+
+        assert_ne!(first_root, second_root);
+        assert!(first_root.is_dir());
+        assert!(second_root.is_dir());
+
+        let cloned = first.clone();
+        drop(first);
+        assert!(first_root.is_dir(), "cloned handle keeps temp root alive");
+
+        drop(cloned);
+        drop(second);
+        assert!(!first_root.exists(), "temp root removed on final drop");
+        assert!(!second_root.exists(), "temp root removed on drop");
+    }
 }

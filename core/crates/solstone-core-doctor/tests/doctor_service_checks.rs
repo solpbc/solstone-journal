@@ -26,15 +26,10 @@ use std::{
     },
     path::{Path, PathBuf},
     process::{Child, Command, ExitStatus, Stdio},
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        mpsc,
-    },
+    sync::mpsc,
     thread,
     time::{Duration, Instant},
 };
-
-static NEXT_CONTEXT: AtomicUsize = AtomicUsize::new(0);
 
 const ACCEPT_BOUND: Duration = Duration::from_millis(250);
 // Keep the harness scheduling envelope separate from the production timeout
@@ -48,21 +43,12 @@ const HEALTHY_TASK_PACE_FRAME: &[u8] =
     br#"{"event":"status","tasks":[{"name":"index","slow":false}],"tract":"supervisor"}
 "#;
 
-struct TestRoot(PathBuf);
-
-impl Drop for TestRoot {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
-
-fn context() -> (CheckContext, TestRoot) {
-    let root = PathBuf::from("/tmp").join(format!(
-        "sol-doctor-{}-{}",
-        std::process::id(),
-        NEXT_CONTEXT.fetch_add(1, Ordering::Relaxed)
-    ));
-    fs::create_dir(&root).expect("create staged test root exclusively");
+fn context() -> (CheckContext, tempfile::TempDir) {
+    let dir = tempfile::Builder::new()
+        .prefix("sol-doctor-")
+        .tempdir_in("/tmp")
+        .expect("create staged test root exclusively");
+    let root = dir.path();
     (
         CheckContext {
             home_dir: root.join("home"),
@@ -84,7 +70,7 @@ fn context() -> (CheckContext, TestRoot) {
             free_space_bytes_override: None,
             windows_service_probe: None,
         },
-        TestRoot(root),
+        dir,
     )
 }
 

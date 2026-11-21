@@ -5013,6 +5013,7 @@ dependencies = [
  "solstone-core-system-health",
  "solstone-core-time",
  "solstone-core-transcribe",
+ "tempfile",
  "tokio",
  "windows-sys 0.61.2",
 ]

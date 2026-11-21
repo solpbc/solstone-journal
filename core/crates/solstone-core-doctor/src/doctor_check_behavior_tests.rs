@@ -17,7 +17,6 @@ use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicUsize, Ordering},
     time::{Duration, SystemTime},
 };
 
@@ -57,8 +56,6 @@ fn snapshot(root: &Path) -> BTreeMap<PathBuf, SnapshotEntry> {
     }
     out
 }
-
-static NEXT: AtomicUsize = AtomicUsize::new(0);
 
 // W3C names are standards-body vocabulary, not project-phase identifiers.
 #[cfg(all(test, feature = "full-tests"))]
@@ -111,33 +108,13 @@ const EARLIER_CHECK_NAMES: &[&str] = &[
     "local_bin_solstone_reachable",
 ];
 
-fn fixture() -> CheckContext {
-    let root = std::env::temp_dir().join(format!(
-        "check-{}-{}",
-        std::process::id(),
-        NEXT.fetch_add(1, Ordering::Relaxed)
-    ));
-    fs::create_dir_all(root.join("journal")).unwrap();
-    CheckContext {
-        home_dir: root.join("home"),
-        install_bin_dir: root.join("install/bin"),
-        journal_path: root.join("journal"),
-        callosum_socket_path: root.join("journal/health/callosum.sock"),
-        platform: Platform::Linux,
-        now: "2026-01-01T00:00:00Z".parse::<jiff::Timestamp>().unwrap(),
-        host_arch: "x86_64".into(),
-        hostname: "fixture-host".into(),
-        checkout_root: None,
-        payload_root: None,
-        port: 5015,
-        service_status_timeout: Duration::from_millis(1),
-        service_status_command_override: None,
-        parakeet_server_probe_override: Some(|_, _| Err("fixture unreachable".into())),
-        speakers_analyze_resolvers: None,
-        vad_runtime_probe: None,
-        free_space_bytes_override: None,
-        windows_service_probe: None,
-    }
+fn fixture() -> crate::checks::test_support::StagedContext {
+    let mut staged = crate::checks::test_support::context_with_prefix("check-");
+    fs::create_dir_all(&staged.journal_path).unwrap();
+    staged.hostname = "fixture-host".into();
+    staged.service_status_timeout = Duration::from_millis(1);
+    staged.parakeet_server_probe_override = Some(|_, _| Err("fixture unreachable".into()));
+    staged
 }
 fn status(name: &str, context: &CheckContext) -> Status {
     result(name, context).status
@@ -2108,11 +2085,9 @@ fn default_stt_fixture_matrix_delegates_and_checks_coreml() {
     config_backend(&linux, "parakeet");
     stage_parakeet_ready(&mut linux, "parakeet");
     let delegated = result("default_stt_ready", &linux);
-    let direct = result("parakeet_cpp_stt_ready", &{
-        let direct = linux.clone();
-        config_backend(&direct, "parakeet-cpp");
-        direct
-    });
+    let direct_context = linux.clone();
+    config_backend(&direct_context, "parakeet-cpp");
+    let direct = result("parakeet_cpp_stt_ready", &direct_context);
     assert_eq!(delegated.status, direct.status);
     assert_eq!(delegated.detail, direct.detail);
 

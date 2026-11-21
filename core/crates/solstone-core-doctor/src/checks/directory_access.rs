@@ -88,11 +88,13 @@ mod tests {
 
     #[test]
     fn an_owned_directory_is_usable_and_a_file_or_missing_path_is_not() {
-        let directory =
-            std::env::temp_dir().join(format!("solstone-doctor-access-{}", std::process::id()));
-        std::fs::create_dir_all(&directory).expect("temporary directory");
-        assert!(writable(&directory));
-        assert!(usable(&directory));
+        let dir = tempfile::Builder::new()
+            .prefix("solstone-doctor-access-")
+            .tempdir()
+            .expect("temporary directory");
+        let directory = dir.path();
+        assert!(writable(directory));
+        assert!(usable(directory));
         let file = directory.join("file");
         std::fs::write(&file, b"x").expect("file");
         assert!(!writable(&file));
@@ -100,6 +102,5 @@ mod tests {
         let missing = directory.join("missing");
         assert!(!writable(&missing));
         assert!(!usable(&missing));
-        std::fs::remove_dir_all(&directory).expect("cleanup");
     }
 }

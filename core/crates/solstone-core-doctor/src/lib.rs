@@ -97,41 +97,10 @@ fn apply_conflict_policy(results: &mut [CheckResult]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{
-        fs,
-        sync::atomic::{AtomicUsize, Ordering},
-        time::Duration,
-    };
+    use std::fs;
 
-    static NEXT_CONTEXT: AtomicUsize = AtomicUsize::new(0);
-
-    fn context() -> CheckContext {
-        let root = std::env::temp_dir().join(format!(
-            "solstone-doctor-test-{}-{}",
-            std::process::id(),
-            NEXT_CONTEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        let _ = fs::create_dir_all(&root);
-        CheckContext {
-            home_dir: root.join("home"),
-            install_bin_dir: root.join("install/bin"),
-            journal_path: root.join("journal"),
-            callosum_socket_path: root.join("journal/health/callosum.sock"),
-            platform: Platform::Linux,
-            now: "2026-01-01T00:00:00Z".parse::<jiff::Timestamp>().unwrap(),
-            host_arch: "x86_64".into(),
-            hostname: "test-host".into(),
-            checkout_root: None,
-            payload_root: None,
-            port: 5015,
-            service_status_timeout: Duration::from_millis(10),
-            service_status_command_override: None,
-            parakeet_server_probe_override: None,
-            speakers_analyze_resolvers: None,
-            vad_runtime_probe: None,
-            free_space_bytes_override: None,
-            windows_service_probe: None,
-        }
+    fn context() -> checks::test_support::StagedContext {
+        checks::test_support::context_with_prefix("solstone-doctor-test-")
     }
     #[test]
     fn registry_ground_truth() {

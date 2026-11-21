@@ -396,34 +396,21 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
 mod tests {
     #[cfg(unix)]
     use std::path::PathBuf;
-    use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::*;
 
-    static NEXT_JOURNAL: AtomicUsize = AtomicUsize::new(0);
-
-    /// The doctor crate carries no temp-dir dependency; mirror `lib.rs`.
-    struct TempDir(std::path::PathBuf);
+    struct TempDir(tempfile::TempDir);
 
     impl TempDir {
         fn new() -> std::io::Result<Self> {
-            let root = std::env::temp_dir().join(format!(
-                "solstone-doctor-durability-{}-{}",
-                std::process::id(),
-                NEXT_JOURNAL.fetch_add(1, Ordering::Relaxed)
-            ));
-            fs::create_dir_all(&root)?;
-            Ok(Self(root))
+            tempfile::Builder::new()
+                .prefix("solstone-doctor-durability-")
+                .tempdir()
+                .map(Self)
         }
 
         fn path(&self) -> &Path {
-            &self.0
-        }
-    }
-
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
+            self.0.path()
         }
     }
 
