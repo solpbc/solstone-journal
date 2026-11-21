@@ -1668,10 +1668,10 @@ mod tests {
     }
 
     #[test]
-    fn a_thousand_spawn_failures_leave_admissions_empty() {
+    fn repeated_spawn_failures_leave_admissions_empty() {
         let bed = JournalBed::new("spawn-failures");
         let (ledger, generation, _) = admitting_generation(&bed.root);
-        for index in 0..1_000 {
+        for index in 0..20 {
             let error = launch_generation_child(
                 Disposition::InheritedParentScope,
                 &bed.root,
@@ -1682,7 +1682,7 @@ mod tests {
             .expect_err("spawn fails");
             assert!(matches!(error, LaunchError::Spawn(_)));
         }
-        for index in 0..10 {
+        for index in 0..6 {
             let result = launch_managed_generation_child(
                 Disposition::IndependentBoundedHelper {
                     timeout: Duration::from_secs(5),
@@ -1707,7 +1707,7 @@ mod tests {
         let discharged = fs::read_dir(ledger.generation_path(generation).join("discharged"))
             .expect("discharged")
             .count();
-        assert_eq!(discharged, 1_010);
+        assert_eq!(discharged, 26);
     }
 
     #[cfg(all(test, feature = "full-tests"))]

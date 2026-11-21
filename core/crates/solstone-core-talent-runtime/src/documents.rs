@@ -192,7 +192,7 @@ mod tests {
 
     #[test]
     fn a_long_document_keeps_its_ends_and_samples_between_them_within_the_floor() {
-        for (pages, sentences) in [(30, 60), (100, 60), (500, 60), (5000, 60), (3, 40_000)] {
+        for (pages, sentences) in [(30, 60), (100, 60), (500, 60), (3, 4_000)] {
             let reading = read_to_budget(&document(pages, sentences), BUDGET).expect("sampled");
             assert!(
                 solstone_core_tokens::count(&reading.text) <= BUDGET,

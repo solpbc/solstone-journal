@@ -1902,6 +1902,8 @@ mod tests {
         fs::remove_dir_all(&root).unwrap();
     }
 
+    // Waits on the wall clock, so it runs in the full gate, not the routine one.
+    #[cfg(feature = "full-tests")]
     #[cfg(unix)]
     #[test]
     fn reset_leaves_other_errors_alone() {

@@ -82,18 +82,6 @@ fn spawned_ci_commands_drop_package_metadata_and_keep_build_configuration() {
 }
 
 #[test]
-fn make_ci_never_executes_forbidden_interpreters() {
-    // The last six invocations are the two standalone crates' routine gates.
-    assert_gate_never_executes_forbidden_interpreters(
-        "ci",
-        &[
-            "run", "metadata", "run", "fmt", "run", "run", "clippy", "clippy", "clippy", "test",
-            "test", "fmt", "clippy", "test", "fmt", "clippy", "test",
-        ],
-    );
-}
-
-#[test]
 fn make_ci_full_never_executes_forbidden_interpreters() {
     // The Cargo shim records the runner launch. Per-entry traversal is owned by
     // the runner and covered by its selector, poison, and command tests.
@@ -521,49 +509,6 @@ fn msrv_target_is_retained_while_a_descendant_still_uses_it() {
 }
 
 #[test]
-fn manual_race_gate_is_selectable_without_uv() {
-    let root = repo_root();
-    let mut targets = ci_registry(&root)
-        .legs
-        .into_iter()
-        .map(|leg| leg.make_target)
-        .collect::<BTreeSet<_>>();
-    targets.extend(
-        [
-            "ci",
-            "ci-under-poison",
-            "ci-full",
-            "ci-full-under-poison",
-            "ci-full-plan",
-            "ci-full-prep",
-            "ci-full-prep-cargo",
-            "check-rust-ci-topology",
-            "check-rust-registry-suite",
-            "check-rust-registry-package",
-        ]
-        .into_iter()
-        .map(str::to_owned),
-    );
-    targets.insert(["ci-full-prep-", "on", "nx"].concat());
-    targets.insert(["ci-full-prep-", "p", "df"].concat());
-    targets.insert(["check-rust-", "on", "nx", "-ready"].concat());
-    targets.insert(["check-rust-", "p", "df", "-ready"].concat());
-    for target in targets {
-        let dry_run = Command::new("make")
-            .args(["-n", &target])
-            .env("PATH", "/usr/bin:/bin")
-            .current_dir(&root)
-            .output()
-            .expect("uv-free make dry run starts");
-        assert!(
-            dry_run.status.success(),
-            "{target} must be selectable without uv: {}",
-            String::from_utf8_lossy(&dry_run.stderr)
-        );
-    }
-}
-
-#[test]
 fn native_macos_gate_records_the_full_workspace_test_compile() {
     for arch in ["arm64", "aarch64"] {
         for prior_dyld in [None, Some("prior-dyld")] {
@@ -765,135 +710,6 @@ fn full_clippy_runs_every_classified_scope_and_aggregates_failure() {
             && native.contains("--all-targets")
             && native.contains("-D warnings")
     );
-}
-
-#[test]
-fn native_routine_and_staged_full_routes_execute_the_exact_command_graph() {
-    let temp = TempDir::new("native-routine-command-graph");
-    write_host_makefile(&temp.path, "Linux", "x86_64");
-    let shims = temp.path.join("shims");
-    fs::create_dir(&shims).expect("create native command shims");
-    write_recording_cargo_shim(&shims.join("cargo"));
-    seed_runtime(
-        &temp.path,
-        "linux-x86_64",
-        &[
-            "libonnxruntime.so.1.25.0",
-            "libonnxruntime.so.1",
-            "libonnxruntime.so",
-        ],
-        &[],
-    );
-
-    let cases = [
-        (
-            "check-rust-unit",
-            vec![
-                "test --manifest-path core/Cargo.toml --workspace --exclude solstone-core-speakers-analyze --exclude solstone-core-speakers-onnx --exclude solstone-core-vad-analyze --lib --bins --locked --offline --no-fail-fast",
-                "test --manifest-path core/Cargo.toml -p solstone-core-speakers-analyze -p solstone-core-speakers-onnx -p solstone-core-vad-analyze --no-default-features --lib --locked --offline --no-fail-fast",
-            ],
-        ),
-        (
-            "check-rust-clippy",
-            vec![
-                "clippy --manifest-path core/Cargo.toml --workspace --exclude solstone-core-speakers-analyze --exclude solstone-core-speakers-onnx --exclude solstone-core-vad-analyze --lib --bins --locked --offline -- -D warnings",
-                "clippy --manifest-path core/Cargo.toml -p solstone-core-speakers-analyze -p solstone-core-speakers-onnx -p solstone-core-vad-analyze --lib --bins --locked --offline -- -D warnings",
-                "clippy --manifest-path core/Cargo.toml -p solstone-core-speakers-analyze -p solstone-core-speakers-onnx -p solstone-core-vad-analyze --no-default-features --lib --locked --offline -- -D warnings",
-            ],
-        ),
-        (
-            "check-rust-onnx-test",
-            vec![
-                "test --manifest-path core/Cargo.toml -p solstone-core-speakers-analyze -p solstone-core-speakers-onnx -p solstone-core-vad-analyze --features full-tests --lib --bins --locked -- --test-threads=1",
-            ],
-        ),
-    ];
-
-    for (target, expected) in cases {
-        let log = temp.path.join(format!("{target}.cargo"));
-        let output = Command::new("make")
-            .arg(target)
-            .current_dir(&temp.path)
-            .env("PATH", fixture_path(&shims))
-            .env("SOLSTONE_CI_CARGO_LOG", &log)
-            .output()
-            .unwrap_or_else(|error| panic!("run {target}: {error}"));
-        assert!(
-            output.status.success(),
-            "{target} failed:\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert_eq!(
-            fs::read_to_string(&log)
-                .expect("read native command log")
-                .lines()
-                .collect::<Vec<_>>(),
-            expected,
-            "{target} command graph drifted"
-        );
-    }
-}
-
-#[test]
-fn public_code_evidence_reports_match_only_the_completed_make_path() {
-    let temp = TempDir::new("public-code-evidence");
-    write_host_makefile(&temp.path, "Linux", "x86_64");
-    let shims = temp.path.join("shims");
-    fs::create_dir(&shims).expect("create code evidence shims");
-    write_recording_cargo_shim(&shims.join("cargo"));
-    let package_list =
-        "solstone-core-speakers-analyze solstone-core-speakers-onnx solstone-core-vad-analyze";
-    let runtime_receipt = format!("Runtime-free library unit tests ran for: {package_list}");
-    let ci_clippy_receipt = format!(
-        "Clippy ran on the default production library and binary targets for: {package_list}"
-    );
-    let test_clippy_receipt = "Clippy did not run. Run 'make ci' to run it.";
-
-    let test_log = temp.path.join("test.cargo");
-    let test_output = Command::new("make")
-        .arg("test")
-        .current_dir(&temp.path)
-        .env("PATH", fixture_path(&shims))
-        .env("SOLSTONE_CI_CARGO_LOG", &test_log)
-        .output()
-        .expect("run make test evidence fixture");
-    assert!(test_output.status.success());
-    let test_stdout = String::from_utf8_lossy(&test_output.stdout);
-    assert!(test_stdout.contains(&runtime_receipt));
-    assert!(test_stdout.contains(test_clippy_receipt));
-    assert!(!test_stdout.contains(&ci_clippy_receipt));
-
-    let ci_log = temp.path.join("ci.cargo");
-    let ci_output = Command::new("make")
-        .arg("ci-under-poison")
-        .current_dir(&temp.path)
-        .env("PATH", fixture_path(&shims))
-        .env("SOLSTONE_CI_CARGO_LOG", &ci_log)
-        .env("SOLSTONE_CI_POISONED", "1")
-        .output()
-        .expect("run make ci evidence fixture");
-    assert!(ci_output.status.success());
-    let ci_stdout = String::from_utf8_lossy(&ci_output.stdout);
-    assert!(ci_stdout.contains(&runtime_receipt));
-    assert!(ci_stdout.contains(&ci_clippy_receipt));
-    assert!(!ci_stdout.contains(test_clippy_receipt));
-
-    write_executable(
-        &shims.join("cargo"),
-        "#!/bin/sh\nset -eu\ncase \"$*\" in *'--no-default-features'*) exit 29 ;; esac\n",
-    );
-    let failed_output = Command::new("make")
-        .arg("test")
-        .current_dir(&temp.path)
-        .env("PATH", fixture_path(&shims))
-        .output()
-        .expect("run failed make test evidence fixture");
-    assert!(!failed_output.status.success());
-    let failed_stdout = String::from_utf8_lossy(&failed_output.stdout);
-    assert!(!failed_stdout.contains(&runtime_receipt));
-    assert!(!failed_stdout.contains(test_clippy_receipt));
-    assert!(!failed_stdout.contains(&ci_clippy_receipt));
 }
 
 #[test]

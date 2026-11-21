@@ -89,7 +89,8 @@ mod installation_binding_admission_surface;
 #[cfg(all(test, feature = "full-tests"))]
 #[path = "contracts/journal_artifact_durability.rs"]
 mod journal_artifact_durability;
-#[cfg(test)]
+// Walks and parses every production source, so it runs in the full gate.
+#[cfg(all(test, feature = "full-tests"))]
 #[path = "contracts/journal_trash_hidden.rs"]
 mod journal_trash_hidden;
 #[cfg(test)]

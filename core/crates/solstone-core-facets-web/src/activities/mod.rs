@@ -3400,6 +3400,8 @@ mod tests {
         assert!(rows.iter().all(|row| row["hidden"] == false), "{rows:?}");
     }
 
+    // Waits out the journal lock's ten seconds, so it runs in the full gate.
+    #[cfg(feature = "full-tests")]
     #[tokio::test]
     async fn an_unhide_whose_other_member_cant_be_written_says_so_and_a_retry_finishes() {
         let root = body_journal();

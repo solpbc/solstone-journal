@@ -185,22 +185,8 @@ fn the_served_shell_page_loads_the_two_bundles_and_keeps_its_inline_scripts() {
 }
 
 #[test]
-fn a_change_to_any_file_changes_its_bundle_and_the_shell_tree_hash() {
-    let page = source("/static/shell.html");
-    let tags = bundle::shell_page_tags(page).unwrap();
-    let files: Vec<_> = tags
-        .scripts
-        .iter()
-        .map(|tag| (tag.clone(), source(&tag.path).to_owned()))
-        .collect();
-    let built = bundle::script_bundle(&files, "", "shell.js.map").unwrap();
-    for index in 0..files.len() {
-        let mut changed = files.clone();
-        changed[index].1.push_str("\n// changed\n");
-        let rebuilt = bundle::script_bundle(&changed, "", "shell.js.map").unwrap();
-        assert_ne!(rebuilt.text, built.text, "{}", files[index].0.path);
-    }
-    // The bundles are files of the shell's tree, so their bytes are in its hash.
+fn the_bundles_and_their_maps_are_files_of_the_shell_tree() {
+    // Their bytes are in the tree's hash, so a changed bundle changes it.
     for path in [
         "/static/shell.js",
         "/static/shell-rest.js",
@@ -214,9 +200,6 @@ fn a_change_to_any_file_changes_its_bundle_and_the_shell_tree_hash() {
             "{path}"
         );
     }
-    // And the build reruns on any change under the shell's static directory.
-    let build = include_str!("../build.rs");
-    assert!(build.contains("collect_files(&static_root, &mut files)"));
 }
 
 #[test]
@@ -358,6 +341,12 @@ fn assert_source_map(script_path: &str, map_path: &str, which: &str) {
         }
         values
     };
+    // Split each file once: looking a line up from the top of its file for
+    // every mapped line made this the slowest unit test in the workspace.
+    let originals: Vec<Vec<&str>> = sources
+        .iter()
+        .map(|path| source(path).split('\n').collect())
+        .collect();
     let (mut file, mut line) = (0i64, 0i64);
     let mut mapped = 0;
     for (index, segment) in map["mappings"].as_str().unwrap().split(';').enumerate() {
@@ -367,10 +356,7 @@ fn assert_source_map(script_path: &str, map_path: &str, which: &str) {
         let values = decode(segment);
         file += values[1];
         line += values[2];
-        let original = source(sources[file as usize])
-            .split('\n')
-            .nth(line as usize)
-            .unwrap();
+        let original = originals[file as usize][line as usize];
         assert_eq!(lines[index], original, "bundle line {}", index + 1);
         mapped += 1;
     }

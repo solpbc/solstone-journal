@@ -11,6 +11,10 @@ links = "solstone_convey_assets_facets_web"
 [lints]
 workspace = true
 
+[features]
+# Tests that wait on the wall clock; the package suite in core/ci/suites.toml enables it.
+full-tests = []
+
 [dependencies]
 axum = { workspace = true, features = ["tokio"] }
 jiff.workspace = true

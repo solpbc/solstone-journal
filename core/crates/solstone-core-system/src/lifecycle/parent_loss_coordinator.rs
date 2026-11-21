@@ -1666,6 +1666,8 @@ mod tests {
         ));
     }
 
+    // Waits on the wall clock, so it runs in the full gate, not the routine one.
+    #[cfg(feature = "full-tests")]
     #[test]
     fn a_seal_that_cannot_take_the_admission_lock_still_publishes_a_terminal() {
         let (_journal, mut coordinator, _, _) = bootstrap([]);

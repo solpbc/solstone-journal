@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::BTreeSet;
 use std::env;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -9,7 +8,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use solstone_core_repository_contracts::ci::{Registry, load_registry};
 
 const EMPTY_SHA256: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
@@ -247,7 +245,10 @@ fn write_host_makefile(root: &Path, system: &str, arch: &str) {
     fs::create_dir_all(root.join("core")).expect("create fixture core directory");
     fs::write(root.join("core/Cargo.toml"), "[workspace]\nmembers = []\n")
         .expect("write fixture Cargo manifest");
-    fs::create_dir_all(root.join("i18n/generated/window")).expect("create window catalog fixture");
+    for catalog in ["window", "cli", "windows-app"] {
+        fs::create_dir_all(root.join("i18n/generated").join(catalog))
+            .expect("create generated catalog fixture");
+    }
     // The format check walks crate directories; give it one so the traversal
     // reaches Cargo instead of matching nothing.
     let fixture_crate = root.join("core/crates/fixture");
@@ -337,9 +338,6 @@ fn makefile_text(root: &Path) -> String {
     fs::read_to_string(root.join("Makefile")).expect("read Makefile")
 }
 
-fn ci_registry(root: &Path) -> Registry {
-    load_registry(&root.join("core/ci/suites.toml")).expect("load CI suite registry")
-}
 fn assert_gate_never_executes_forbidden_interpreters(gate: &str, expected: &[&str]) {
     if env::var_os("SOLSTONE_CI_PURITY_REENTRY").is_some() {
         return;

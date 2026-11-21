@@ -150,6 +150,9 @@ fn a_note_lands_once_and_a_later_export_of_a_deleted_note_returns() {
     let transcript = fs::read_dir(root.path().join("chronicle/20200101/import.evernote"))
         .unwrap()
         .flatten()
+        // Only a segment directory holds a transcript. Opening whichever
+        // entry came first failed once, under load, on one that was a file.
+        .filter(|entry| entry.path().is_dir())
         .map(|entry| fs::read_to_string(entry.path().join("note_transcript.md")).unwrap())
         .next()
         .unwrap();

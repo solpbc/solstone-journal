@@ -4124,6 +4124,8 @@ mod tests {
         }
     }
 
+    // Waits on the wall clock, so it runs in the full gate, not the routine one.
+    #[cfg(feature = "full-tests")]
     #[test]
     fn the_descendant_census_is_durable_before_the_first_signal() {
         descendants_persisted_before_signal_survive_a_closer_crash().unwrap();
