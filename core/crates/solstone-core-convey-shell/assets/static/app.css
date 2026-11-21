@@ -406,7 +406,7 @@ body.has-managed-dialog .workspace {
 
 .diagnostic-console-entry-time {
   color: var(--ink-faint);
-  font-size: 11px;
+  font-size: var(--text-min);
 }
 
 .diagnostic-console-entry-icon {
@@ -438,7 +438,7 @@ body.has-managed-dialog .workspace {
 .diagnostic-console-entry-source {
   color: var(--ink-soft);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 11px;
+  font-size: var(--text-min);
 }
 
 .diagnostic-console-entry-summary {
@@ -449,7 +449,7 @@ body.has-managed-dialog .workspace {
 
 .diagnostic-console-entry-toggle {
   color: var(--ink-soft);
-  font-size: 11px;
+  font-size: var(--text-min);
 }
 
 .diagnostic-console-entry[open] .diagnostic-console-entry-toggle {
@@ -479,7 +479,7 @@ body.has-managed-dialog .workspace {
   border-radius: 4px;
   background: var(--surface-dark);
   color: var(--ink-on-dark);
-  font-size: 11px;
+  font-size: var(--text-min);
   white-space: pre-wrap;
 }
 
@@ -748,7 +748,7 @@ body.has-managed-dialog .workspace {
 
   #app-rail .app-chrome-label {
     max-width: 100%;
-    font-size: 11px;
+    font-size: var(--text-min);
     text-align: center;
   }
 
@@ -809,9 +809,11 @@ body.has-managed-dialog .workspace {
     width: auto;
     height: auto;
     margin: 0;
-    overflow: visible;
+    overflow: hidden;
     clip: auto;
-    font-size: 10px;
+    max-width: 100%;
+    text-overflow: ellipsis;
+    font-size: var(--text-min);
     line-height: 1.2;
   }
 
@@ -932,7 +934,7 @@ a.notification-card:active {
 }
 
 .notification-app-name {
-  font-size: 11px;
+  font-size: var(--text-min);
   color: var(--ink-faint);
   letter-spacing: 0.03em;
   flex: 1;
@@ -995,7 +997,7 @@ a.notification-card:active {
   right: 0;
   background: var(--danger);
   color: var(--ink-on-danger);
-  font-size: 11px;
+  font-size: var(--text-min);
   font-weight: 600;
   padding: 2px 6px;
   border-radius: 10px;
@@ -1015,7 +1017,7 @@ a.notification-card:active {
 }
 
 .notification-time {
-  font-size: 11px;
+  font-size: var(--text-min);
   color: var(--ink-faint);
 }
 
@@ -1193,10 +1195,17 @@ a.notification-card:active {
   text-decoration: none;
 }
 
+/* The hit area is at least 24px square around the glyph; the glyph keeps its
+   own size. Phones raise it to the touch floor below. */
 .close {
   position: absolute;
   top: 10px;
   right: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  min-height: 24px;
   cursor: pointer;
   font-size: 24px;
   transition: color 0.15s ease;
@@ -1649,7 +1658,7 @@ body.presentation-mode::after {
   right: 12px;
   z-index: 9998;
   padding: 6px 12px;
-  font-size: 11px;
+  font-size: var(--text-min);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1705,11 +1714,28 @@ body.presentation-mode .surface-state-desc {
 
 /* ==========================================================================
    Phone touch floor — the shell's own controls (X-24)
-   The system-messages drawer and the skip link are shell chrome, so no app
-   can raise them to the 44px floor its own controls already meet. Padding
-   and box size only; type sizes stay where they are.
+   The system-messages drawer, the skip link, a notification's dismiss and
+   the shared dialog close are shell chrome, so no app can raise them to the
+   44px floor its own controls already meet. Padding and box size only; type
+   sizes stay where they are.
    ========================================================================== */
 @media (max-width: 768px) {
+  /* The larger negative margin keeps the glyph where it sat and the
+     header's height close to what it was. */
+  .notification-close {
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+    margin: -12px -12px -12px 0;
+  }
+
+  /* Closer to the corner, so the glyph stays near where it sat. */
+  .close {
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+    top: 4px;
+    right: 4px;
+  }
+
   .diagnostic-console-actions button,
   .diagnostic-console-entry button,
   .diagnostic-console-tabs button {
