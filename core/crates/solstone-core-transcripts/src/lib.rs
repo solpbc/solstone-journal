@@ -1708,10 +1708,51 @@ pub struct OwnerVoiceSentence {
     pub text: String,
 }
 
+/// Find a quoted passage when exactly one full-word occurrence survives.
+pub fn unique_owner_span<'a>(
+    passage: &str,
+    owner_lines: impl Iterator<Item = &'a str>,
+) -> Option<(usize, &'a str)> {
+    if passage.is_empty() {
+        return None;
+    }
+    let mut found = None;
+    for (index, line) in owner_lines.enumerate() {
+        for (start, _) in line.char_indices() {
+            if !line[start..].starts_with(passage) {
+                continue;
+            }
+            let end = start + passage.len();
+            let cuts_first_word = passage.chars().next().is_some_and(char::is_alphanumeric)
+                && line[..start]
+                    .chars()
+                    .next_back()
+                    .is_some_and(char::is_alphanumeric);
+            let cuts_last_word = passage
+                .chars()
+                .next_back()
+                .is_some_and(char::is_alphanumeric)
+                && line[end..]
+                    .chars()
+                    .next()
+                    .is_some_and(char::is_alphanumeric);
+            if cuts_first_word || cuts_last_word {
+                continue;
+            }
+            if found.is_some() {
+                return None;
+            }
+            found = Some((index, &line[start..end]));
+        }
+    }
+    found
+}
+
 pub fn owner_voice_sentences(dir: &Path, voices: &VoiceNames) -> Vec<OwnerVoiceSentence> {
-    let Some((source, names)) = segment_voices(dir, voices) else {
+    let Some(source) = labelled_audio_source(dir) else {
         return Vec::new();
     };
+    let labels = load_who_spoke(dir, Some(&source), None);
     let name = format!("{source}.jsonl");
     let path = dir.join(&name);
     if !path.symlink_metadata().is_ok_and(|m| m.is_file()) {
@@ -1720,6 +1761,40 @@ pub fn owner_voice_sentences(dir: &Path, voices: &VoiceNames) -> Vec<OwnerVoiceS
     let Ok(text) = fs::read_to_string(&path) else {
         return Vec::new();
     };
+    identified_owner_sentences(dir, &name, &text, &labels.rows, voices)
+}
+
+/// Check agent-visible evidence only in regular files under the journal root.
+pub fn bounded_owner_voice_sentences(
+    journal: &Path,
+    dir: &Path,
+    voices: &VoiceNames,
+    max_bytes: usize,
+) -> Option<Vec<OwnerVoiceSentence>> {
+    let source = labelled_audio_source(dir)?;
+    let name = format!("{source}.jsonl");
+    let (text, rows) = who_spoke::load_who_spoke_snapshot(journal, dir, &source, max_bytes)?;
+    Some(identified_owner_sentences(dir, &name, &text, &rows, voices))
+}
+
+fn identified_owner_sentences(
+    dir: &Path,
+    name: &str,
+    text: &str,
+    rows: &[Map<String, Value>],
+    voices: &VoiceNames,
+) -> Vec<OwnerVoiceSentence> {
+    // Compare the principal id, since two people may have the same display name.
+    let owners: BTreeMap<_, _> = rows
+        .iter()
+        .filter_map(|row| {
+            let id = row.get("sentence_id")?.as_i64()?;
+            Some((
+                id,
+                row.get("speaker")?.as_str()? == voices.principal && voices.name_for(row).is_some(),
+            ))
+        })
+        .collect();
     let file = format!(
         "{}/{name}",
         solstone_core_journal_io::paths::segment_origin(dir)
@@ -1729,10 +1804,7 @@ pub fn owner_voice_sentences(dir: &Path, voices: &VoiceNames) -> Vec<OwnerVoiceS
         .filter_map(|line| {
             let record: Map<String, Value> = serde_json::from_str(line.trim()).ok()?;
             let sentence_id = next_line_coordinate(&record, &mut ordinal)?;
-            if !names
-                .get(&sentence_id)
-                .is_some_and(|name| name == voices.owner_label())
-            {
+            if owners.get(&sentence_id) != Some(&true) {
                 return None;
             }
             let text = ["corrected", "text"]

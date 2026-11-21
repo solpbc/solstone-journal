@@ -911,9 +911,10 @@ fn said_on_day(
                 if passage.split_whitespace().count() < 3 {
                     continue;
                 }
-                if let Some((index, span)) =
-                    unique_owner_span(passage, owner_lines.iter().map(|line| line.text.as_str()))
-                {
+                if let Some((index, span)) = solstone_core_transcripts::unique_owner_span(
+                    passage,
+                    owner_lines.iter().map(|line| line.text.as_str()),
+                ) {
                     let words = span
                         .to_lowercase()
                         .split(|c: char| !c.is_alphanumeric())
@@ -941,46 +942,8 @@ fn said_on_day(
 /// Keep a passage only when it identifies one complete-word source span.
 #[cfg(test)]
 fn matched_owner_span<'a>(passage: &str, owner_lines: &'a [String]) -> Option<&'a str> {
-    unique_owner_span(passage, owner_lines.iter().map(String::as_str)).map(|(_, span)| span)
-}
-
-fn unique_owner_span<'a>(
-    passage: &str,
-    owner_lines: impl Iterator<Item = &'a str>,
-) -> Option<(usize, &'a str)> {
-    if passage.is_empty() {
-        return None;
-    }
-    let mut found = None;
-    for (index, line) in owner_lines.enumerate() {
-        for (start, _) in line.char_indices() {
-            if !line[start..].starts_with(passage) {
-                continue;
-            }
-            let end = start + passage.len();
-            let cuts_first_word = passage.chars().next().is_some_and(char::is_alphanumeric)
-                && line[..start]
-                    .chars()
-                    .next_back()
-                    .is_some_and(char::is_alphanumeric);
-            let cuts_last_word = passage
-                .chars()
-                .next_back()
-                .is_some_and(char::is_alphanumeric)
-                && line[end..]
-                    .chars()
-                    .next()
-                    .is_some_and(char::is_alphanumeric);
-            if cuts_first_word || cuts_last_word {
-                continue;
-            }
-            if found.is_some() {
-                return None;
-            }
-            found = Some((index, &line[start..end]));
-        }
-    }
-    found
+    solstone_core_transcripts::unique_owner_span(passage, owner_lines.iter().map(String::as_str))
+        .map(|(_, span)| span)
 }
 
 fn extract_passages(body: &str) -> Vec<&str> {

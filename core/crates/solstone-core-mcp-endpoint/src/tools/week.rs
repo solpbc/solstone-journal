@@ -11,7 +11,7 @@ use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_format::content::week_left_out::{LeftOut, read_left_out};
 use solstone_core_home::weekly::{
-    Said, TrustedSaid, WeekJudgment, checked_neighbors, format_week_intro, judge,
+    Said, SaidEvidence, TrustedSaid, WeekJudgment, checked_neighbors, format_week_intro, judge,
     resolve_day_cell_state, week_day,
 };
 use solstone_core_indexer_query::AdmittedCategory;
@@ -687,8 +687,13 @@ fn project_sunday(
         }
 
         if !left_out_unreadable && let Said::Entries(said_entries) = &trusted.said {
+            let mut speech = None;
             for entry in said_entries {
-                if left_out_keys.contains(&entry.key) {
+                if left_out_keys.contains(&entry.key)
+                    || !speech
+                        .get_or_insert_with(|| WeekSpeech::new(journal, snapshot))
+                        .shows(entry)
+                {
                     continue;
                 }
                 let mut quote = json!({
@@ -831,6 +836,127 @@ fn project_sunday(
             .chain(windows)
             .collect(),
     })
+}
+
+/// Recheck a weekly quote against the admitted activity and its live speech.
+/// Stored coordinates only narrow the comparison and are never opened as paths.
+struct WeekSpeech<'a> {
+    journal: &'a Path,
+    snapshot: &'a ConnectionReadSnapshot,
+    voices: Option<solstone_core_transcripts::VoiceNames>,
+    hides: crate::body_source::BodyHides,
+}
+
+impl<'a> WeekSpeech<'a> {
+    fn new(journal: &'a Path, snapshot: &'a ConnectionReadSnapshot) -> Self {
+        Self {
+            journal,
+            snapshot,
+            voices: solstone_core_talent_runtime::voice_names(journal),
+            hides: crate::body_source::BodyHides::read(journal),
+        }
+    }
+
+    fn shows(&self, entry: &TrustedSaid) -> bool {
+        let Some(voices) = self.voices.as_ref() else {
+            return false;
+        };
+        if !self
+            .snapshot
+            .categories
+            .contains(&AdmittedCategory::Transcripts)
+            || entry.evidence == SaidEvidence::Unreadable
+        {
+            return false;
+        }
+        let Some((facet, day, id)) = parse_said_uri(&entry.uri) else {
+            return false;
+        };
+        let lines = self.activity_speech(facet, day, id, voices);
+        let candidates = lines.iter().filter(|line| match &entry.evidence {
+            SaidEvidence::Legacy => true,
+            SaidEvidence::Sentence { file, sentence_id } => {
+                line.file == *file && line.sentence_id == *sentence_id
+            }
+            SaidEvidence::Unreadable => false,
+        });
+        if matches!(entry.evidence, SaidEvidence::Sentence { .. })
+            && candidates.clone().take(2).count() != 1
+        {
+            return false;
+        }
+        solstone_core_transcripts::unique_owner_span(
+            &entry.quote,
+            candidates.map(|l| l.text.as_str()),
+        )
+        .is_some()
+    }
+    fn activity_speech(
+        &self,
+        facet: &str,
+        day: &str,
+        id: &str,
+        voices: &solstone_core_transcripts::VoiceNames,
+    ) -> Vec<solstone_core_transcripts::OwnerVoiceSentence> {
+        let Some(activity) =
+            crate::may_see::activity_at(self.journal, self.snapshot, facet, day, id, None)
+        else {
+            return vec![];
+        };
+        let crate::may_see::SeenRecord::Activity(record) = activity.record else {
+            return vec![];
+        };
+        let mut lines = Vec::new();
+        for seg in crate::segment_links::activity_segment_candidates(
+            self.journal,
+            &activity.place.rel_path,
+            &record,
+        ) {
+            let Ok(identity) = seg.record_identity() else {
+                continue;
+            };
+            let released = || {
+                crate::source_release::check_segment_transcript_release(
+                    self.journal,
+                    day,
+                    identity.stream,
+                    identity.name,
+                )
+            };
+            if !released()
+                || crate::may_see::segment_shown(
+                    self.journal,
+                    self.snapshot,
+                    &self.hides,
+                    None,
+                    day,
+                    identity.stream,
+                    identity.name,
+                    &seg,
+                )
+                .is_none()
+            {
+                continue;
+            }
+            if let Some(sentences) = solstone_core_transcripts::bounded_owner_voice_sentences(
+                self.journal,
+                seg.path(),
+                voices,
+                crate::activity_admit::ACTIVITY_SOURCE_BUDGET as usize,
+            ) && released()
+            {
+                lines.extend(sentences);
+            }
+        }
+        if crate::source_release::check_indexed_source_release(
+            self.journal,
+            &activity.place.rel_path,
+        ) {
+            lines
+        } else {
+            Vec::new()
+        }
+    }
 }
 
 fn format_memory_text(title: &str, start: Option<&str>, end: Option<&str>) -> String {
@@ -1162,11 +1288,16 @@ fn project_range_with_limits(
         _ => BTreeSet::new(),
     };
     let mut day_states: BTreeMap<String, String> = BTreeMap::new();
+    let candidate_day_keys: Vec<String> = candidate_dates
+        .iter()
+        .map(|date| solstone_core_time::day_key(*date))
+        .collect();
     let mut said_by_day: BTreeMap<String, Vec<TrustedSaid>> = BTreeMap::new();
     let mut sundays = BTreeSet::new();
     for &date in &candidate_dates {
         sundays.insert(solstone_core_time::day_key(sunday_of(date)));
     }
+    let mut speech = None;
     for stem in sundays {
         if let WeekJudgment::Page(trusted) = judge(journal, &stem) {
             let memory_by_id = trusted
@@ -1185,7 +1316,12 @@ fn project_range_with_limits(
             }
             if !left_out_unreadable && let Said::Entries(said_entries) = trusted.said {
                 for entry in said_entries {
-                    if left_out_keys.contains(&entry.key) {
+                    if candidate_day_keys.binary_search(&entry.day).is_err()
+                        || left_out_keys.contains(&entry.key)
+                        || !speech
+                            .get_or_insert_with(|| WeekSpeech::new(journal, snapshot))
+                            .shows(&entry)
+                    {
                         continue;
                     }
                     said_by_day
@@ -1205,10 +1341,6 @@ fn project_range_with_limits(
     let collect_entities = include.contains(&AdmittedCategory::Entities)
         && snapshot.categories.contains(&AdmittedCategory::Entities);
 
-    let candidate_day_keys: Vec<String> = candidate_dates
-        .iter()
-        .map(|date| solstone_core_time::day_key(*date))
-        .collect();
     let mut body_days = BTreeMap::new();
     let mut body_targets = Vec::new();
     let mut body_summary_note = None;
@@ -1505,6 +1637,26 @@ mod tests {
                 },
             )
             .unwrap();
+    }
+
+    fn owner_speech(root: &Path, day: &str, segment: &str, text: &str) {
+        write_raw(
+            root,
+            "entities/owner/entity.json",
+            &json!({"id":"owner","type":"Person","name":"Ari","is_principal":true}).to_string(),
+        );
+        let dir = format!("chronicle/{day}/mic/{segment}");
+        write_raw(
+            root,
+            &format!("{dir}/audio.jsonl"),
+            &json!({"sentence_id":1,"start":"00:00:01","speaker":1,"text":text}).to_string(),
+        );
+        write_raw(
+            root,
+            &format!("{dir}/talents/speaker_labels.json"),
+            &json!({"labels":[{"sentence_id":1,"speaker":"owner","method":"user_confirmed"}]})
+                .to_string(),
+        );
     }
 
     fn whole(root: &Path) {
@@ -1864,6 +2016,7 @@ mod tests {
                     "created_at": 100, "segments": ["090000_300"]})
             ),
         );
+        owner_speech(root.path(), "20260309", "090000_300", "the owner's words");
         let states = [
             r#"{"day":"20260308","state":"memory","memory_id":"m0"}"#,
             r#"{"day":"20260309","state":"not_ready"}"#,
@@ -2509,9 +2662,9 @@ mod tests {
         );
         let value = probe(quote_only.path(), json!({"week": sunday})).unwrap();
         assert_closed(&value);
-        assert!(value["intro"].is_null());
+        assert_eq!(value["intro"], "nothing from this week is on this page.");
         assert!(value["memories"].as_array().unwrap().is_empty());
-        assert_eq!(value["said"][0]["quote"], "the owner's words");
+        assert!(value["said"].as_array().unwrap().is_empty());
         assert_matches_page(quote_only.path(), sunday, &value);
         assert_eq!(
             page(quote_only.path()).entries[0].outcome,
@@ -2561,9 +2714,9 @@ mod tests {
         );
         write_left_out(kept_quote.path(), &["memory-key"]);
         let value = probe(kept_quote.path(), json!({"week": sunday})).unwrap();
-        assert!(value["intro"].is_null());
+        assert_eq!(value["intro"], "nothing from this week is on this page.");
         assert!(value["memories"].as_array().unwrap().is_empty());
-        assert_eq!(value["said"].as_array().unwrap().len(), 1);
+        assert!(value["said"].as_array().unwrap().is_empty());
         assert!(!value.to_string().contains("HIDDEN_MEMORY"));
         assert_matches_page(kept_quote.path(), sunday, &value);
         assert_eq!(
@@ -2607,9 +2760,11 @@ mod tests {
         .unwrap();
         fs::write(
             facet_dir.join("activities/20260308.jsonl"),
-            json!({"id": "meeting_1", "title": title, "created_at": 100}).to_string() + "\n",
+            json!({"id": "meeting_1", "title": title, "created_at": 100, "segments":["090000_300"]})
+                .to_string() + "\n",
         )
         .unwrap();
+        owner_speech(root.path(), sunday, "090000_300", quote);
         let memory = Memory {
             id: "m0",
             key: "memory-key",
@@ -2687,7 +2842,7 @@ mod tests {
         fs::create_dir_all(&act_dir).unwrap();
         fs::write(
             act_dir.join("20260308.jsonl"),
-            json!({"id": "meeting_1", "title": "KEPT_MEMORY", "created_at": 100}).to_string()
+            json!({"id": "meeting_1", "title": "KEPT_MEMORY", "created_at": 100, "segments":["090000_300"]}).to_string()
                 + "\n",
         )
         .unwrap();
@@ -2700,6 +2855,12 @@ mod tests {
             uri,
             refs: &[],
         };
+        owner_speech(
+            root.path(),
+            sunday,
+            "090000_300",
+            &format!("{omitted}. {restored}."),
+        );
         let write_quote = |id: &str, key: &str, quote: &str| {
             let said = said_item(id, key, sunday, quote, uri);
             write_raw(
@@ -2714,7 +2875,10 @@ mod tests {
         assert_closed(&hidden);
         assert!(hidden["said"].as_array().unwrap().is_empty());
         assert!(!hidden.to_string().contains(omitted));
-        assert_eq!(hidden["memories"][0]["text"], "KEPT_MEMORY");
+        assert_eq!(
+            hidden["memories"][0]["text"],
+            "KEPT_MEMORY (09:00:00 - 09:05:00)"
+        );
         assert!(hidden["memories"][0]["source"].is_string());
         assert_eq!(hidden["days"][0]["state"], "memory");
 
@@ -2746,6 +2910,129 @@ mod tests {
         assert_eq!(back["memories"][0]["refs"], hidden["memories"][0]["refs"]);
         assert!(back["memories"][0]["source"].is_string());
         assert_matches_page(root.path(), sunday, &back);
+    }
+
+    #[test]
+    fn a_week_and_a_range_require_the_same_live_spoken_sentence() {
+        let root = journal("week-live-speech-");
+        let root = root.path();
+        whole(root);
+        let day = "20260308";
+        let segment = "090000_300";
+        let words = "These are the exact spoken words.";
+        let uri = "sol://facets/work/activities/20260308#meeting";
+        write_raw(
+            root,
+            "facets/work/facet.json",
+            &json!({"id": "123e4567-e89b-42d3-a456-426614174000", "title": "Work"}).to_string(),
+        );
+        let activity = |stream, hidden| {
+            write_raw(root, "facets/work/activities/20260308.jsonl", &json!({"id":"meeting","title":"Morning meeting","stream":stream,"hidden":hidden,"segments":[segment]}).to_string())
+        };
+        let speech_file = format!("{day}/mic/{segment}/audio.jsonl");
+        let write_quote = |file: Option<&str>, id: i64| {
+            let mut item: Value =
+                serde_json::from_str(&said_item("s0", "quote-key", day, words, uri)).unwrap();
+            if let Some(file) = file {
+                item["source"]["speech_file"] = json!(file);
+                item["source"]["sentence_id"] = json!(id);
+            }
+            write_raw(
+                root,
+                "reflections/weekly/20260308.json",
+                &document(day, &[], &json!([item]).to_string()),
+            );
+        };
+        let check = |expected| {
+            let week = probe(root, json!({"week":day})).unwrap();
+            let range = probe(root, json!({"day_from":day,"day_to":day})).unwrap();
+            assert_eq!(week["said"][0]["quote"].as_str(), expected);
+            assert_eq!(range["days"][0]["said"][0]["quote"].as_str(), expected);
+            if expected.is_none() {
+                assert!(week["said"].as_array().unwrap().is_empty());
+                assert!(range["days"][0].get("said").is_none());
+            }
+        };
+        activity("mic", false);
+        owner_speech(root, day, segment, words);
+        write_quote(None, 0);
+        check(Some(words));
+        write_quote(Some(&speech_file), 1);
+        check(Some(words));
+        write_quote(Some(&speech_file), 2);
+        check(None);
+        write_quote(Some("../imports/unrelated.jsonl"), 1);
+        check(None);
+        write_quote(Some(&speech_file), 1);
+        // A different person with the owner's display name did not say it as the owner.
+        write_raw(
+            root,
+            "entities/guest/entity.json",
+            &json!({"id":"guest","type":"Person","name":"Ari"}).to_string(),
+        );
+        let labels = format!("chronicle/{day}/mic/{segment}/talents/speaker_labels.json");
+        write_raw(
+            root,
+            &labels,
+            &json!({"labels":[{"sentence_id":1,"speaker":"guest","method":"user_confirmed"}]})
+                .to_string(),
+        );
+        check(None);
+        owner_speech(root, day, segment, words);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::symlink;
+            let outside = tempfile::tempdir().unwrap();
+            let linked = root.join(&labels);
+            let target = outside.path().join("labels.json");
+            fs::rename(&linked, &target).unwrap();
+            symlink(&target, &linked).unwrap();
+            check(None);
+            fs::remove_file(&linked).unwrap();
+            fs::rename(target, linked).unwrap();
+            check(Some(words));
+        }
+        use solstone_core_speaker_resolve::owner_line_labels::{
+            LineSpeaker, OwnerLine, set_owner_line_labels,
+        };
+        let line = OwnerLine {
+            segment_dir: root.join("chronicle").join(day).join("mic").join(segment),
+            source: "audio".into(),
+            sentence_id: 1,
+        };
+        for (answer, expected) in [
+            (LineSpeaker::Unknown, None),
+            (LineSpeaker::Owner, Some(words)),
+        ] {
+            set_owner_line_labels(root, std::slice::from_ref(&line), &answer).unwrap();
+            check(expected);
+        }
+        let tombstone = format!("chronicle/{day}/mic/{segment}/tombstone.json");
+        write_raw(root, &tombstone, "{}");
+        check(None);
+        fs::remove_file(root.join(tombstone)).unwrap();
+        check(Some(words));
+        activity("mic", true);
+        check(None);
+        activity("mic", false);
+        fs::remove_file(root.join("chronicle").join(&speech_file)).unwrap();
+        check(None);
+        // An older AI export can carry the same words, basename and a stale label.
+        let chat = format!("chronicle/{day}/import.claude/{segment}");
+        write_raw(
+            root,
+            &format!("{chat}/imported_audio.jsonl"),
+            &json!({"start":"00:00:01","speaker":"You","text":words}).to_string(),
+        );
+        write_raw(
+            root,
+            &format!("{chat}/talents/speaker_labels.json"),
+            &json!({"labels":[{"sentence_id":1,"speaker":"owner","method":"user_confirmed"}]})
+                .to_string(),
+        );
+        activity("import.claude", false);
+        write_quote(None, 0);
+        check(None);
     }
 
     #[test]
@@ -3001,6 +3288,14 @@ mod tests {
                 + "\n"),
         );
 
+        owner_speech(root.path(), "20251022", "162000_360", "Not for my hand.");
+        owner_speech(
+            root.path(),
+            "20251022",
+            "214000_120",
+            "Leave him his death.",
+        );
+        owner_speech(root.path(), "20251022", "170000_120", "Quiet aside.");
         let q1_key = said_key("20251022", "company", "earl", "Not for my hand.");
         let q2_key = said_key("20251022", "household", "tower", "Leave him his death.");
         let q3_key = said_key("20251022", "company", "secret_act", "Quiet aside.");
@@ -3099,7 +3394,7 @@ mod tests {
         );
         assert_eq!(oct22["activities_total"], 3);
         let quotes = oct22["said"].as_array().unwrap();
-        assert_eq!(quotes.len(), 3);
+        assert_eq!(quotes.len(), 2);
         assert_eq!(quotes[0]["quote"], "Not for my hand.");
         assert_eq!(quotes[0]["activity"], "Heard that the Earl had died");
         assert!(
@@ -3110,11 +3405,7 @@ mod tests {
         );
         assert_eq!(quotes[1]["quote"], "Leave him his death.");
         assert_eq!(quotes[1]["activity"], "Spoke of an earl dead in the Tower");
-        assert_eq!(quotes[2]["quote"], "Quiet aside.");
-        assert!(
-            quotes[2].get("activity").is_none(),
-            "hidden activity title must not leak onto a quote"
-        );
+        assert!(!oct22.to_string().contains("Quiet aside."));
 
         // Oct 23 (in stored week, no activities): has state and link, no memory or said.
         assert_eq!(days[1]["day"], "20251023");
@@ -3469,7 +3760,15 @@ mod tests {
         write_raw(
             root.path(),
             "facets/work/activities/20250309.jsonl",
-            &(json!({"id": "a1", "title": title, "created_at": 100}).to_string() + "\n"),
+            &(json!({"id": "a1", "title": title, "created_at": 100,"segments":["090000_300"]})
+                .to_string()
+                + "\n"),
+        );
+        owner_speech(
+            root.path(),
+            "20250309",
+            "090000_300",
+            "hello [x](https://example.test)",
         );
         let q = said_item(
             "s1",
