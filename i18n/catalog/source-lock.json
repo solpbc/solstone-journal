@@ -24712,10 +24712,10 @@
       "locales": []
     },
     {
-      "id": "journal.window.import.content.month.heading",
-      "source": "1b3ca100ed5876ac864297a4668711ee6454f32c0dd00487905f97dcb9bbf788",
-      "contract": "dbefdf185f7dc4bea19b1db748082eefeffdcca314bc6bd060de77adda2df0f5",
-      "protected": "e6cd09712159a5e024abf0d14d9434920ac2696ac6b48af516f18f4c80a23c43",
+      "id": "journal.window.import.content.month.heading.count",
+      "source": "b3b2a6dcfd19bb4a6d49d9173ddb69bcaf0509de4e87c69dfb1e3a837d764d1f",
+      "contract": "e4fb71d3c550b47231818b11a41c653f10721b3921dd9fe77c8940fd0d87d38c",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
       "locales": []
     },
     {

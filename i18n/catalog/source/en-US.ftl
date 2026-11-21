@@ -18966,7 +18966,10 @@ journal.window.import.consent.import.removal.tooknothing.everything.it.brought.i
 
 journal.window.import.consent.import.removal.tooknothing.everything.it.brought.in.stays.because = everything it brought in stays, because an earlier import in your journal brought it in first. it goes with that import.
 
-journal.window.import.content.month.heading = { $month }{ $slot1 }{ $year },{ $slot2 }{ $count }{ $slot3 }items
+journal.window.import.content.month.heading.count = { $quantity ->
+    [one] { $month } { $year }, { $count } item
+   *[other] { $month } { $year }, { $count } items
+}
 
 journal.window.import.content.type.audio = audio
 

@@ -123046,19 +123046,24 @@
             "name": "count",
             "type": "string",
             "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
           }
         ],
         "bundle": "journal-window",
         "entry": "render(locale, dotted_id, named_args)",
         "enum_argument": null,
         "format_passes": 1,
-        "gettext_lookup_key": "journal.window.import.content.month.heading\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e6d6f6e74682e68656164696e67",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e6d6f6e74682e68656164696e67_plural",
-        "gettext_unsigned_quantity": null,
+        "gettext_lookup_key": "journal.window.import.content.month.heading.count\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e6d6f6e74682e68656164696e672e636f756e74",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e6d6f6e74682e68656164696e672e636f756e74_plural",
+        "gettext_unsigned_quantity": 0,
         "locale": "en-US",
-        "message_id": "journal.window.import.content.month.heading",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e6d6f6e74682e68656164696e67",
-        "signed_quantity": null
+        "message_id": "journal.window.import.content.month.heading.count",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e6d6f6e74682e68656164696e672e636f756e74",
+        "signed_quantity": 0
       },
       "cardinal": "en",
       "expectation_kind": "native-reader-required",
@@ -123067,15 +123072,16 @@
       "inputs": {
         "count": "sample",
         "month": "sample",
+        "quantity": 0,
         "year": "sample"
       },
       "locale": "en-US",
       "logical_expected": "⁨sample⁩ ⁨sample⁩, ⁨sample⁩ items",
-      "message_id": "journal.window.import.content.month.heading",
+      "message_id": "journal.window.import.content.month.heading.count",
       "own_reader": "fluent-js",
-      "own_reader_call": "render(\"en-US\", \"journal.window.import.content.month.heading\", [[\"count\", \"sample\"], [\"month\", \"sample\"], [\"year\", \"sample\"]])",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.content.month.heading.count\", [[\"count\", \"sample\"], [\"month\", \"sample\"], [\"quantity\", 0], [\"year\", \"sample\"]])",
       "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e6d6f6e74682e68656164696e67",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e6d6f6e74682e68656164696e672e636f756e74",
       "target": "classic"
     },
     {
@@ -404170,19 +404176,24 @@
             "name": "count",
             "type": "string",
             "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
           }
         ],
         "bundle": "journal-window",
         "entry": "render(locale, MessageId, named_args)",
         "enum_argument": null,
         "format_passes": 1,
-        "gettext_lookup_key": "journal.window.import.content.month.heading\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e6d6f6e74682e68656164696e67",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e6d6f6e74682e68656164696e67_plural",
-        "gettext_unsigned_quantity": null,
+        "gettext_lookup_key": "journal.window.import.content.month.heading.count\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e6d6f6e74682e68656164696e672e636f756e74",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e6d6f6e74682e68656164696e672e636f756e74_plural",
+        "gettext_unsigned_quantity": 0,
         "locale": "en-US",
-        "message_id": "journal.window.import.content.month.heading",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e6d6f6e74682e68656164696e67",
-        "signed_quantity": null
+        "message_id": "journal.window.import.content.month.heading.count",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e6d6f6e74682e68656164696e672e636f756e74",
+        "signed_quantity": 0
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
@@ -404191,15 +404202,16 @@
       "inputs": {
         "count": "sample",
         "month": "sample",
+        "quantity": 0,
         "year": "sample"
       },
       "locale": "en-US",
       "logical_expected": "⁨sample⁩ ⁨sample⁩, ⁨sample⁩ items",
-      "message_id": "journal.window.import.content.month.heading",
+      "message_id": "journal.window.import.content.month.heading.count",
       "own_reader": "rust-api",
-      "own_reader_call": "render(\"en-US\", \"journal.window.import.content.month.heading\", &[(\"count\", Value::String(\"sample\")), (\"month\", Value::String(\"sample\")), (\"year\", Value::String(\"sample\"))])",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.content.month.heading.count\", &[(\"count\", Value::String(\"sample\")), (\"month\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0)), (\"year\", Value::String(\"sample\"))])",
       "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e6d6f6e74682e68656164696e67",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e6d6f6e74682e68656164696e672e636f756e74",
       "target": "rust"
     },
     {

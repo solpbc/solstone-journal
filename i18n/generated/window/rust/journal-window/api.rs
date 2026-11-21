@@ -3558,7 +3558,7 @@ pub enum MessageId {
     m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e73656e742e72656d6f76616c2e6d756c7469706c652e6572617365,
     m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e73656e742e72656d6f76616c2e6d756c7469706c652e6d6f7665,
     m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e73656e742e72656d6f76616c2e73746f726167652e746f74616c,
-    m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e6d6f6e74682e68656164696e67,
+    m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e6d6f6e74682e68656164696e672e636f756e74,
     m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e747970652e617564696f,
     m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e747970652e636f6e766572736174696f6e,
     m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e747970652e6576656e74,
@@ -11814,7 +11814,7 @@ pub fn render_dotted_with_options(locale: &str, dotted_id: &str, args: &[(&str, 
         ("journal.window.import.consent.removal.multiple.erase", MessageId::m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e73656e742e72656d6f76616c2e6d756c7469706c652e6572617365),
         ("journal.window.import.consent.removal.multiple.move", MessageId::m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e73656e742e72656d6f76616c2e6d756c7469706c652e6d6f7665),
         ("journal.window.import.consent.removal.storage.total", MessageId::m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e73656e742e72656d6f76616c2e73746f726167652e746f74616c),
-        ("journal.window.import.content.month.heading", MessageId::m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e6d6f6e74682e68656164696e67),
+        ("journal.window.import.content.month.heading.count", MessageId::m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e6d6f6e74682e68656164696e672e636f756e74),
         ("journal.window.import.content.type.audio", MessageId::m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e747970652e617564696f),
         ("journal.window.import.content.type.conversation", MessageId::m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e747970652e636f6e766572736174696f6e),
         ("journal.window.import.content.type.event", MessageId::m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e747970652e6576656e74),
@@ -20098,7 +20098,7 @@ static MESSAGES: &[(&str, Prepare)] = &[
     ("m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e73656e742e72656d6f76616c2e6d756c7469706c652e6572617365", prepare_m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e73656e742e72656d6f76616c2e6d756c7469706c652e6572617365),
     ("m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e73656e742e72656d6f76616c2e6d756c7469706c652e6d6f7665", prepare_m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e73656e742e72656d6f76616c2e6d756c7469706c652e6d6f7665),
     ("m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e73656e742e72656d6f76616c2e73746f726167652e746f74616c", prepare_m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e73656e742e72656d6f76616c2e73746f726167652e746f74616c),
-    ("m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e6d6f6e74682e68656164696e67", prepare_m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e6d6f6e74682e68656164696e67),
+    ("m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e6d6f6e74682e68656164696e672e636f756e74", prepare_m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e6d6f6e74682e68656164696e672e636f756e74),
     ("m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e747970652e617564696f", no_arguments),
     ("m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e747970652e636f6e766572736174696f6e", no_arguments),
     ("m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e747970652e6576656e74", no_arguments),
@@ -44582,8 +44582,8 @@ fn prepare_m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e73656e742e72656d6f
     Ok((_resource_key, f_args))
 }
 
-fn prepare_m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e6d6f6e74682e68656164696e67(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
-    const DECLARED: &[&str] = &["month", "year", "count"];
+fn prepare_m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e6d6f6e74682e68656164696e672e636f756e74(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["month", "year", "count", "quantity"];
     for (name, _) in args {
         if !DECLARED.contains(name) {
             return Err(RenderError::UnknownArgument((*name).to_string()));
@@ -44609,6 +44609,14 @@ fn prepare_m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e6d6f6e74
         _ => return Err(RenderError::InvalidArgumentType("count".to_string())),
     };
     f_args.set("count", FluentValue::from(v2.clone()));
+    let val_v3 = args.iter().find(|(n, _)| *n == "quantity").ok_or_else(|| RenderError::MissingArgument("quantity".to_string()))?.1.clone();
+    let v3 = match val_v3 {
+        Value::Cardinal(c) => c,
+        _ => return Err(RenderError::InvalidArgumentType("quantity".to_string())),
+    };
+    if v3 < -2147483648_i64 || v3 > 2147483647_i64 { return Err(RenderError::OutOfRange("quantity".to_string())); }
+    f_args.set("quantity", FluentValue::from(v3));
+    f_args.set("i18nCategory", plural_category(_cardinal_rule, v3));
     Ok((_resource_key, f_args))
 }
 

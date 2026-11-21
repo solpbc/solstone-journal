@@ -5151,7 +5151,10 @@ function renderContentItems(items) {
       const monthIdx = parseInt(itemMonth.slice(4, 6), 10) - 1;
       const monthLabel = months[monthIdx] ? window.JournalI18n.render('journal.window.shared.date.nav.months.label.' + months[monthIdx]) : '';
       const monthCount = items.filter(i => (i.date || '').startsWith(itemMonth)).length;
-      html += `<div class="import-content-month-header">${window.JournalI18n.renderHtml('journal.window.import.content.month.heading', [['month', String(monthLabel)], ['year', String(year)], ['count', String(monthCount)]])}</div>`;
+      html += `<div class="import-content-month-header">${window.JournalI18n.renderHtml('journal.window.import.content.month.heading.count', [
+        ['month', monthLabel], ['year', year], ['count', String(monthCount)],
+        ['quantity', window.JournalI18n.cardinalQuantity(monthCount)],
+      ])}</div>`;
     }
     const typeLabel = {
       conversation: window.JournalI18n.render('journal.window.import.content.type.conversation'),
