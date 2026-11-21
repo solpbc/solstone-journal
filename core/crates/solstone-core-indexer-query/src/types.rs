@@ -126,8 +126,13 @@ impl ConnectionBoundary {
             return false;
         };
         let path = &classification.path;
-        let category =
-            solstone_core_format::content::kinds::indexed_permission(Some(journal), path, stored);
+        let Some(category) = solstone_core_format::content::kinds::agent_indexed_permission(
+            Some(journal),
+            path,
+            stored,
+        ) else {
+            return false;
+        };
         if (self.kind_filter.is_some()
             && solstone_core_format::content::conversation::unresolved_markdown(path))
             || !self.categories.contains(&category)

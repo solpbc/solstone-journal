@@ -390,6 +390,110 @@ fn a_named_missing_kind_has_a_closed_permission_refusal() {
 }
 
 #[test]
+fn import_summary_search_and_saved_reference_follow_the_current_source() {
+    let journal = fixture();
+    let root = journal.path();
+    let dir = root.join("imports/20261120_090000");
+    fs::create_dir_all(&dir).unwrap();
+    let manifest = dir.join("manifest.json");
+    let summary = dir.join("summary.md");
+    fs::write(&summary, "summarystamp telescope").unwrap();
+    let file = "chronicle/20261120/import.text/090000_300/document_transcript.md";
+    let tile = root.join(file).parent().unwrap().to_owned();
+    fs::create_dir_all(&tile).unwrap();
+    fs::write(root.join(file), "source document").unwrap();
+    fs::write(
+        tile.join("import_kind.json"),
+        r#"{"kind":"documents","import_id":"20261120_090000"}"#,
+    )
+    .unwrap();
+    fs::write(
+        &manifest,
+        json!({"import_id":"20261120_090000","source_type":"text","files_created":[file]})
+            .to_string(),
+    )
+    .unwrap();
+    solstone_core_indexer_store::scan::scan_journal(root, true).unwrap();
+    let search = || {
+        probe(&journal, "search", json!({"query":"summarystamp"})).unwrap()["results"]
+            .as_array()
+            .unwrap()
+            .clone()
+    };
+    let grant = |word: &str| {
+        PermissionStore::open(root)
+            .set_permission(
+                CONNECTION,
+                ReadPermission {
+                    categories: [word.to_owned()].into_iter().collect(),
+                    scope: ReadScope::WholeJournal,
+                },
+            )
+            .unwrap()
+    };
+    for word in ["notes", "transcripts", "messages"] {
+        grant(word);
+        assert!(search().is_empty(), "{word}");
+    }
+    grant("documents");
+    let hits = search();
+    assert_eq!(hits.len(), 1);
+    let reference = &hits[0]["reference"];
+    assert!(
+        probe(&journal, "fetch", json!({"reference":reference})).unwrap()["text"]
+            .as_str()
+            .unwrap()
+            .contains("summarystamp")
+    );
+    fs::remove_file(root.join(file)).unwrap();
+    assert!(search().is_empty());
+    assert!(probe(&journal, "fetch", json!({"reference":reference})).is_err());
+    fs::write(root.join(file), "source document").unwrap();
+    for (other, kind) in [
+        (
+            "chronicle/20261120/import.strava/090000_300/document_transcript.md",
+            "documents",
+        ),
+        (
+            "chronicle/20261120/import.text/100000_300/note_transcript.md",
+            "notes",
+        ),
+    ] {
+        let path = root.join(other);
+        let dir = path.parent().unwrap();
+        fs::create_dir_all(dir).unwrap();
+        fs::write(&path, "separate source").unwrap();
+        fs::write(
+            dir.join("import_kind.json"),
+            json!({"kind":kind,"import_id":"20261120_090000"}).to_string(),
+        )
+        .unwrap();
+        fs::write(
+            &manifest,
+            json!({"source_type":"text","files_created":[file,other]}).to_string(),
+        )
+        .unwrap();
+        assert!(search().is_empty(), "{other}");
+        assert!(probe(&journal, "fetch", json!({"reference":reference})).is_err());
+    }
+    for source in ["chatgpt", "granola", "unregistered"] {
+        fs::write(&manifest, json!({"source_type":source}).to_string()).unwrap();
+        grant("transcripts");
+        assert!(search().is_empty(), "{source}");
+        grant("messages");
+        assert!(search().is_empty(), "{source}");
+    }
+    grant("documents");
+    fs::remove_file(&manifest).unwrap();
+    assert!(search().is_empty());
+    assert!(probe(&journal, "fetch", json!({"reference":reference})).is_err());
+    fs::write(&manifest, r#"{"source_type":"document"}"#).unwrap();
+    fs::write(&summary, "replacement text").unwrap();
+    assert!(search().is_empty());
+    assert!(probe(&journal, "fetch", json!({"reference":reference})).is_err());
+}
+
+#[test]
 fn summaries_only_cannot_search_weekly_passages_and_the_summaries_filter_keeps_both_grants() {
     let journal = fixture();
     let root = journal.path();

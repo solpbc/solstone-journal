@@ -532,9 +532,9 @@ fn fetch_target_missing_kind(
                 return None;
             };
             use solstone_core_format::content::kinds::{
-                additional_indexed_permission, indexed_permission,
+                additional_indexed_permission, agent_indexed_permission,
             };
-            let category = indexed_permission(Some(journal_root), path, category);
+            let category = agent_indexed_permission(Some(journal_root), path, category)?;
             [Some(category), additional_indexed_permission(path)]
                 .into_iter()
                 .flatten()

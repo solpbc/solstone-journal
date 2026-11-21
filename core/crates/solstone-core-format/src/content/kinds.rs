@@ -398,19 +398,57 @@ pub fn indexed_permission(
         KindAssignment::Settled(kind) | KindAssignment::Legacy(kind) => {
             kind.permission().unwrap_or(stored)
         }
-        KindAssignment::ImportSummary => journal
-            .and_then(|journal| body_material::import_summary_source(journal, path))
-            .map(|source| match source.as_str() {
-                "apple_health" | "oura" | "strava" => AdmittedCategory::Body,
-                "obsidian" | "evernote" | "kindle" | "text" => AdmittedCategory::Notes,
-                "document" => AdmittedCategory::Documents,
-                "ics" => AdmittedCategory::Calendar,
-                "image" => AdmittedCategory::Photos,
-                _ => stored,
-            })
-            .unwrap_or(stored),
+        KindAssignment::ImportSummary => import_summary_permission(journal, path).unwrap_or(stored),
         KindAssignment::NotContent => stored,
     }
+}
+
+/// A historical index may store every import summary under Transcripts.
+/// Agent queries need the import's actual kind before admitting even a count.
+/// AI and generic dialogue have direct readers only: their summaries may
+/// include excerpts and do not add a separate keyword-search route.
+pub fn agent_indexed_permission(
+    journal: Option<&Path>,
+    path: &str,
+    stored: AdmittedCategory,
+) -> Option<AdmittedCategory> {
+    if !(path.starts_with("imports/") && path.ends_with("/summary.md")) {
+        return Some(indexed_permission(journal, path, stored));
+    }
+    import_summary_permission(journal, path)
+}
+
+fn import_summary_permission(journal: Option<&Path>, path: &str) -> Option<AdmittedCategory> {
+    let journal = journal?;
+    let manifest = body_material::import_summary_manifest(journal, path)?;
+    use AdmittedCategory as C;
+    Some(match manifest["source_type"].as_str()? {
+        "apple_health" | "oura" | "strava" => C::Body,
+        "obsidian" | "evernote" | "kindle" => C::Notes,
+        "document" => C::Documents,
+        "ics" => C::Calendar,
+        "image" => C::Photos,
+        "text" => body_material::text_summary_permission(journal, path, &manifest)?,
+        _ => return None,
+    })
+}
+
+/// Match an indexed passage to the current summary before applying the
+/// current import's grant to it. The index may still contain an earlier job.
+pub fn current_import_summary_chunks(
+    journal: &Path,
+    path: &str,
+) -> Option<Vec<crate::chunker::MarkdownChunk>> {
+    body_material::summary_import_id(path)?;
+    let root = solstone_core_journal_io::JournalRoot::open(journal).ok()?;
+    // Use the same 4 MiB bound as live activity prose reads.
+    let source = solstone_core_journal_io::read_relative_file_bounded(
+        &root,
+        Path::new(path),
+        4 * 1024 * 1024,
+    )
+    .ok()??;
+    Some(crate::chunker::format_markdown(std::str::from_utf8(&source.bytes).ok()?).chunks)
 }
 
 /// Extra access needed in addition to the primary indexed kind.

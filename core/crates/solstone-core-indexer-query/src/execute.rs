@@ -576,6 +576,7 @@ fn append_connection_prefilter(plan: &mut SqlPlan, boundary: &ConnectionBoundary
     }
     clause.push(')');
     push_keyed(plan, &format!(" AND {clause}"), &params);
+    plan.where_clause.push_str(" AND (chunks.path NOT GLOB 'imports/*/summary.md' OR solstone_current_summary_chunk(chunks.path,chunks.idx,chunks.content))");
     if !boundary
         .categories()
         .contains(&AdmittedCategory::Transcripts)
@@ -632,9 +633,45 @@ fn register_indexed_permissions(
     connection: &Connection,
     journal: Option<PathBuf>,
 ) -> rusqlite::Result<()> {
-    use solstone_core_format::content::kinds::{additional_indexed_permission, indexed_permission};
+    use solstone_core_format::content::kinds::{
+        additional_indexed_permission, agent_indexed_permission,
+    };
     // The same path may back many indexed chunks. Cache only within this
     // reader, as with body import manifests before the other kinds were added.
+    let summary_root = journal.clone();
+    // Chunks for the same file can satisfy several terms. Retain only the
+    // last file in this connection, independently of how many imports exist.
+    let last_summary = std::cell::RefCell::new(
+        None::<(
+            String,
+            Option<Vec<solstone_core_format::chunker::MarkdownChunk>>,
+        )>,
+    );
+    connection.create_scalar_function(
+        "solstone_current_summary_chunk",
+        3,
+        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DIRECTONLY,
+        move |ctx| {
+            let path = ctx.get_raw(0).as_str()?;
+            let index = usize::try_from(ctx.get_raw(1).as_i64()?).ok();
+            let text = ctx.get_raw(2).as_str()?;
+            let mut last = last_summary.borrow_mut();
+            if !last.as_ref().is_some_and(|(old, _)| old == path) {
+                *last = Some((
+                    path.to_owned(),
+                    summary_root.as_deref().and_then(|root| {
+                        solstone_core_format::content::kinds::current_import_summary_chunks(
+                            root, path,
+                        )
+                    }),
+                ));
+            }
+            Ok(last
+                .as_ref()
+                .and_then(|(_, chunks)| chunks.as_ref()?.get(index?))
+                .is_some_and(|chunk| chunk.markdown.trim() == text))
+        },
+    )?;
     let paths = Mutex::new(BTreeMap::new());
     connection.create_scalar_function(
         "solstone_indexed_permission",
@@ -655,8 +692,8 @@ fn register_indexed_permissions(
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             let category = paths
                 .entry((path.to_owned(), stored))
-                .or_insert_with(|| indexed_permission(journal.as_deref(), path, stored));
-            Ok(Some(category.as_str()))
+                .or_insert_with(|| agent_indexed_permission(journal.as_deref(), path, stored));
+            Ok(category.map(AdmittedCategory::as_str))
         },
     )?;
     connection.create_scalar_function(
