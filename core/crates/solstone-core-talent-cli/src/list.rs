@@ -33,7 +33,14 @@ pub(crate) fn render(
         "  {:<name_width$}  {:<28}  {:<18}  TAGS\n\n",
         "NAME", "TITLE", "LAST RUN"
     );
-    for group in ["segment", "daily", "weekly", "activity", "unscheduled"] {
+    for group in [
+        "segment",
+        "daily",
+        "weekly",
+        "activity",
+        "cadence",
+        "unscheduled",
+    ] {
         let items = filtered
             .iter()
             .copied()
@@ -115,6 +122,7 @@ fn group_for(config: &TalentConfig) -> &str {
         Some("daily") => "daily",
         Some("weekly") => "weekly",
         Some("activity") => "activity",
+        Some("cadence") => "cadence",
         _ => "unscheduled",
     }
 }
