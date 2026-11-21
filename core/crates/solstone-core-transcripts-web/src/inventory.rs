@@ -1080,7 +1080,7 @@ fn compute_day_count(
         .into_iter()
         .map(crate::day::from_native)
         .collect::<Vec<_>>();
-    crate::attach::normalize_markdown_only_segments(journal, day, &mut segments);
+    crate::attach::normalize_markdown_only_segments(journal, day, &mut segments, false);
     let count = audio.len() as u64
         + screen.len() as u64
         + segments

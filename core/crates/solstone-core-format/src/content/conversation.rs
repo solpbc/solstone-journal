@@ -51,6 +51,190 @@ impl ConversationMedium {
     }
 }
 
+/// A segment can contain a saved chat, meeting captions and unrelated files.
+#[derive(Clone, serde::Serialize)]
+pub struct ConversationItem {
+    pub file: String,
+    pub day: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub untimed: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub first_sent_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_sent_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shared_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_kind: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conversation_state: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason_code: Option<&'static str>,
+}
+
+pub fn conversation_item(root: &Path, relative: &str, name: &str) -> Option<ConversationItem> {
+    use super::{Family, FileFacts, FileFormat, SegmentReader, segment_file_offers};
+    let rel = format!("{relative}/{name}");
+    let stream = relative.split('/').nth(1)?;
+    // An import can keep unrelated Markdown beside its dialogue. Only the
+    // generic text importer's historical Markdown has that file identity.
+    let native_chat = matches!(stream, "import.chatgpt" | "import.claude" | "import.gemini");
+    let registered = match name {
+        "imported_audio.jsonl" => native_chat,
+        "conversation_transcript.jsonl" => {
+            segment_file_offers(&rel, SegmentReader::Dashboard, FileFacts::default())
+                .iter()
+                .any(|offer| offer.format == FileFormat::Content(Family::AiChat))
+        }
+        _ => stream == "import.text" && unresolved_markdown(&rel),
+    };
+    if !registered {
+        return None;
+    }
+    let path =
+        solstone_core_journal_io::paths::contained_path(root, &format!("chronicle/{rel}")).ok()?;
+    let file = root.join("chronicle").join(&rel);
+    if !std::fs::symlink_metadata(&file).is_ok_and(|meta| meta.is_file()) {
+        return None;
+    }
+    let medium = file_medium(&path, &rel)?;
+    let content_kind = match medium {
+        ConversationMedium::Spoken => Some("transcripts"),
+        ConversationMedium::Written => Some("messages"),
+        ConversationMedium::Unresolved => None,
+    };
+    let header = name
+        .ends_with(".jsonl")
+        .then(|| solstone_core_processing_record::read_jsonl_header(&path))
+        .flatten();
+    let untimed = header.as_ref().and_then(|h| h["untimed"].as_bool());
+    let instant = |key: &str| {
+        if untimed == Some(true) || !native_chat {
+            return None;
+        }
+        header.as_ref()?[key]
+            .as_str()?
+            .parse::<jiff::Timestamp>()
+            .ok()
+            .map(|t| t.to_string())
+    };
+    Some(ConversationItem {
+        file: name.to_owned(),
+        day: relative.split('/').next()?.to_owned(),
+        first_sent_at: instant("first_sent_at"),
+        last_sent_at: instant("last_sent_at"),
+        shared_at: instant("shared_at"),
+        untimed,
+        source: match relative.split('/').nth(1) {
+            Some("import.chatgpt") => Some("ChatGPT"),
+            Some("import.claude") => Some("Claude"),
+            Some("import.gemini") => Some("Gemini"),
+            Some("import.text") => Some("imported"),
+            _ => None,
+        },
+        content_kind,
+        conversation_state: content_kind.is_none().then_some("unresolved"),
+        reason_code: content_kind
+            .is_none()
+            .then(|| unresolved_reason(root, &path)),
+    })
+}
+
+/// A turn is identified within its item. Editing or replacing the stored text
+/// cannot redirect a saved passage to different words at the old position.
+pub fn turn_id(file: &str, index: usize, text: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let digest = format!("{:x}", Sha256::digest(text.as_bytes()));
+    format!("{file}#{index}-{}", &digest[..24])
+}
+
+/// Fields describing a particular saved message, shared by the detail and search readers.
+pub fn message_fields(
+    stream: &str,
+    file: &str,
+    index: usize,
+    row: &super::JsonObject,
+    untimed: bool,
+) -> Option<Value> {
+    let text = row.get("text")?.as_str().filter(|text| !text.is_empty())?;
+    let mut fields = serde_json::json!({"file":file, "turn_id":turn_id(file,index,text)});
+    if let Some(author) = row
+        .get("speaker")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+    {
+        fields["author"] = Value::from(author);
+    }
+    let sent = match turn_time(Some(stream), row) {
+        TurnTime::Sent(time) => Some(time),
+        TurnTime::Recorded if stream == "import.chatgpt" => row
+            .get("source_ms")
+            .and_then(Value::as_i64)
+            .and_then(|ms| jiff::Timestamp::from_millisecond(ms).ok()),
+        _ => None,
+    };
+    if !untimed && let Some(sent) = sent {
+        fields["sent_at"] = Value::from(sent.to_string());
+    }
+    for key in ["is_owner", "truncated"] {
+        if let Some(value) = row.get(key).and_then(Value::as_bool) {
+            fields[key] = Value::from(value);
+        }
+    }
+    if matches!(stream, "import.claude" | "import.gemini" | "import.chatgpt")
+        && let Some(owner) = row.get("is_owner").and_then(Value::as_bool)
+    {
+        fields["role"] = Value::from(if owner { "user" } else { "assistant" });
+    }
+    if let Some(to) = row.get("to").and_then(Value::as_array).filter(|names| {
+        !names.is_empty()
+            && names
+                .iter()
+                .all(|n| n.as_str().is_some_and(|s| !s.is_empty()))
+    }) {
+        fields["to"] = Value::from(to.clone());
+    }
+    Some(fields)
+}
+
+/// Reconstruct the exact string saved by the chat indexer before binding a hit to a live row.
+pub fn indexed_message(row: &super::JsonObject) -> Option<String> {
+    Some(super::with_partial_input_notice(
+        super::ai_chat::indexed_turn_text(row)?,
+        row,
+    ))
+}
+
+/// Byte ranges in the original UTF-8 text, including Markdown delimiters.
+/// The reader renders the text literally, using only these block kinds.
+pub fn message_blocks(text: &str) -> Vec<serde_json::Value> {
+    use pulldown_cmark::{Event, Parser, Tag};
+    let mut blocks = Vec::new();
+    let mut covered = 0;
+    for (event, range) in Parser::new(text).into_offset_iter() {
+        if range.start < covered || range.is_empty() {
+            continue;
+        }
+        let kind = match event {
+            Event::Start(Tag::BlockQuote(_)) => "quote",
+            Event::Start(Tag::CodeBlock(_)) => "code",
+            Event::Start(_) | Event::Html(_) | Event::Rule | Event::Text(_) => "paragraph",
+            _ => continue,
+        };
+        if !text[covered..range.start].trim().is_empty() {
+            blocks.push(serde_json::json!({"kind":"paragraph","start":covered,"end":range.start}));
+        }
+        covered = range.end;
+        blocks.push(serde_json::json!({"kind":kind,"start":range.start,"end":range.end}));
+    }
+    if !text[covered..].trim().is_empty() {
+        blocks.push(serde_json::json!({"kind":"paragraph","start":covered,"end":text.len()}));
+    }
+    blocks
+}
+
 /// Markdown written before the importer recorded a conversation's format.
 pub fn unresolved_markdown(relative: &str) -> bool {
     let Some((parent, name)) = relative.rsplit_once('/') else {
@@ -164,6 +348,40 @@ pub fn file_medium(path: &Path, relative: &str) -> Option<ConversationMedium> {
     }
 }
 
+fn original_locator(header: &Value) -> Option<(&str, &str)> {
+    let id = header["imported"]["id"].as_str()?;
+    let raw = header["raw"].as_str()?.strip_prefix("../../../imports/")?;
+    let (directory, name) = raw.split_once('/')?;
+    // Do not reinterpret a separator or a platform-specific path in an archive.
+    let component =
+        |s: &str| !s.is_empty() && s != "." && s != ".." && !s.contains(['/', '\\', ':']);
+    if directory != id || !component(id) || !component(name) {
+        return None;
+    }
+    Some((id, name))
+}
+
+fn unresolved_reason(root: &Path, path: &Path) -> &'static str {
+    use solstone_core_journal_io::{JournalRoot, read_relative_file_bounded};
+    let missing_original = || {
+        let header = solstone_core_processing_record::read_jsonl_header(path)?;
+        let (id, name) = original_locator(&header)?;
+        let original = Path::new("imports").join(id).join(name);
+        // A zero-byte budget can establish absence without reading the original.
+        let journal = JournalRoot::open(root).ok()?;
+        Some(
+            read_relative_file_bounded(&journal, &original, 0)
+                .ok()?
+                .is_none(),
+        )
+    };
+    if missing_original() == Some(true) {
+        "original_missing"
+    } else {
+        "insufficient_evidence"
+    }
+}
+
 // Before triage the header carried an import id and raw locator. Treat the
 // locator only as an identity check; all reads are bound under the journal.
 fn retained_original_medium(path: &Path, header: &Value) -> Option<ConversationMedium> {
@@ -175,15 +393,7 @@ fn retained_original_medium(path: &Path, header: &Value) -> Option<ConversationM
         .find(|dir| dir.file_name().is_some_and(|n| n == "chronicle"))?;
     let journal = chronicle.parent()?;
     let root = JournalRoot::open(journal).ok()?;
-    let id = header["imported"]["id"].as_str()?;
-    let raw = header["raw"].as_str()?.strip_prefix("../../../imports/")?;
-    let (directory, name) = raw.split_once('/')?;
-    // Do not reinterpret a separator or a platform-specific path in an archive.
-    let component =
-        |s: &str| !s.is_empty() && s != "." && s != ".." && !s.contains(['/', '\\', ':']);
-    if directory != id || !component(id) || !component(name) {
-        return None;
-    }
+    let (id, name) = original_locator(header)?;
     let base = Path::new("imports").join(id);
     let manifest =
         read_relative_file_bounded(&root, &base.join("manifest.json"), 1024 * 1024).ok()??;
@@ -295,7 +505,7 @@ fn verdict_medium(verdict: &Value) -> ConversationMedium {
 }
 
 /// The saved-chat row header, also used by text import triage.
-pub const ZOOM_CHAT_LINE: &str = r"^[0-9]{2}:[0-9]{2}:[0-9]{2}[ \t]+From (?P<speaker>[^:]{1,100}?)(?:\s+to\s+[^:]{1,100}?)?\s*[:：](?:\s|$)";
+pub const ZOOM_CHAT_LINE: &str = r"^[0-9]{2}:[0-9]{2}:[0-9]{2}[ \t\x{a0}\x{202f}]+From[ \t\x{a0}\x{202f}]+(?P<speaker>[^:：]{1,100}?)(?:\s+to\s+(?P<recipient>[^:：]{1,100}?))?\s*[:：](?:\s|$)";
 
 /// Recognize caption timing and payload blocks from a complete source.
 pub fn subtitle(lines: &[&str], vtt: bool) -> bool {
@@ -360,6 +570,58 @@ mod tests {
     use super::ConversationMedium::{Spoken, Unresolved, Written};
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn message_block_ranges_preserve_utf8_and_markdown_verbatim() {
+        let text = "café\n\n> a quote\n\n```rs\nlet n = 3;\n```";
+        let blocks = message_blocks(text);
+        let pieces = blocks
+            .iter()
+            .map(|block| {
+                let range = block["start"].as_u64().unwrap() as usize
+                    ..block["end"].as_u64().unwrap() as usize;
+                (block["kind"].as_str().unwrap(), text[range].trim_end())
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            pieces,
+            [
+                ("paragraph", "café"),
+                ("quote", "> a quote"),
+                ("code", "```rs\nlet n = 3;\n```")
+            ]
+        );
+        let literal = "[home]: https://example.org";
+        assert_eq!(
+            message_blocks(literal),
+            [json!({"kind":"paragraph","start":0,"end":literal.len()})]
+        );
+        assert_ne!(turn_id("a", 0, text), turn_id("a", 0, "edited"));
+    }
+
+    #[test]
+    fn missing_original_reason_requires_a_bound_locator_and_confirmed_absence() {
+        let root = tempfile::tempdir().unwrap();
+        let rel = "20261118/import.text/101300_300";
+        let name = "conversation_transcript.jsonl";
+        let dir = root.path().join("chronicle").join(rel);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(name);
+        let raw = root.path().join("imports/old/sample.txt");
+        std::fs::create_dir_all(raw.parent().unwrap()).unwrap();
+        let header = json!({"imported":{"id":"old"},"raw":"../../../imports/old/sample.txt"});
+        std::fs::write(&path, format!("{header}\n")).unwrap();
+        let reason = || {
+            conversation_item(root.path(), rel, name)
+                .unwrap()
+                .reason_code
+        };
+        assert_eq!(reason(), Some("original_missing"));
+        std::fs::write(raw, "ambiguous text").unwrap();
+        assert_eq!(reason(), Some("insufficient_evidence"));
+        std::fs::write(path, "{}\n").unwrap();
+        assert_eq!(reason(), Some("insufficient_evidence"));
+    }
 
     #[test]
     fn residual_markdown_respects_specific_kind_assignments() {

@@ -108,7 +108,7 @@ pub use safe_text::{
 pub use scan::{
     DaySegment, LocationSegmentRow, ScanResult, TimeRange, UnclaimedImageState,
     holds_location_file, is_audio_jsonl, is_location_only, list_location_only_segments,
-    newest_segment_input_ms, scan_day, unclaimed_image_state,
+    newest_segment_input_ms, ranges_for_segment_keys, scan_day, unclaimed_image_state,
 };
 pub use segment_state::{find_segment_dir, read_segment_data_state};
 pub use solstone_core_processing_record::jsonl_has_row_with_key;

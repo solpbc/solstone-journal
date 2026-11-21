@@ -796,7 +796,17 @@ impl OwnerIndex {
         days: &[String],
         per_day_limit: usize,
     ) -> Result<Vec<(String, Vec<SearchHit>)>, IndexAccessError> {
-        self.connection.fetch_day_hits(&plan.0, days, per_day_limit)
+        self.connection
+            .fetch_day_hits(&plan.0, days, per_day_limit, false)
+    }
+
+    pub fn fetch_day_hits_with_passages(
+        &mut self,
+        plan: &SearchPlan,
+        days: &[String],
+        limit: usize,
+    ) -> Result<Vec<(String, Vec<SearchHit>)>, IndexAccessError> {
+        self.connection.fetch_day_hits(&plan.0, days, limit, true)
     }
 
     #[cfg(any(test, feature = "test-hooks"))]
@@ -2219,6 +2229,7 @@ impl QueryConnection {
                 let calendar = CalendarHit::from_columns(row.get(11)?, row.get(12)?, row.get(13)?);
                 let agent = agent.unwrap_or_default();
                 Ok(SearchHit {
+                    match_spans: Vec::new(),
                     row_id,
                     id: format!("{path}:{idx}"),
                     text: content,
@@ -2247,6 +2258,7 @@ impl QueryConnection {
         plan: &SqlPlan,
         days: &[String],
         per_day_limit: usize,
+        passages: bool,
     ) -> Result<Vec<(String, Vec<SearchHit>)>, IndexAccessError> {
         if days.is_empty() {
             return Ok(Vec::new());
@@ -2278,8 +2290,13 @@ impl QueryConnection {
             ("0.0", "ORDER BY day DESC, rowid DESC")
         };
         let (extra_columns, joins) = self.hit_projection()?;
+        let marked = if passages && plan.has_live_match_expression {
+            "CASE WHEN path GLOB '*/conversation_transcript.jsonl' OR path GLOB '*/imported_audio.jsonl' THEN highlight(chunks,0,char(1),char(1)) END"
+        } else {
+            "NULL"
+        };
         let sql = format!(
-            "SELECT content, path, day, facet, agent, stream, idx, {score_expr}, chunks.rowid, {extra_columns} FROM chunks{joins} WHERE {} AND day IN ({placeholders}) {order_clause}",
+            "SELECT content, path, day, facet, agent, stream, idx, {score_expr}, chunks.rowid, {extra_columns}, {marked} FROM chunks{joins} WHERE {} AND day IN ({placeholders}) {order_clause}",
             plan.where_clause
         );
         let mut values = plan.params.clone();
@@ -2310,7 +2327,25 @@ impl QueryConnection {
                 let source_digest: Option<String> = row.get(10)?;
                 let calendar = CalendarHit::from_columns(row.get(11)?, row.get(12)?, row.get(13)?);
                 let agent = agent.unwrap_or_default();
+                let marked: Option<String> = row.get(14)?;
+                let mut match_spans = Vec::new();
+                if let Some(marked) = marked
+                    && !content.contains('\u{1}')
+                {
+                    let mut offset = 0;
+                    for (i, part) in marked.split('\u{1}').enumerate() {
+                        let end = offset + part.len();
+                        if i % 2 == 1 {
+                            match_spans.push(offset..end);
+                            if match_spans.len() == 128 {
+                                break;
+                            }
+                        }
+                        offset = end;
+                    }
+                }
                 Ok(SearchHit {
+                    match_spans,
                     row_id,
                     id: format!("{path}:{idx}"),
                     text: content,

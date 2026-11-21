@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use serde::Serialize;
+use solstone_core_format::content::conversation::{ConversationItem, conversation_item};
 use solstone_core_format::content::kinds::DashboardImportItem;
 use solstone_core_system_health::{
     DataStateMap, FilesystemHealthLogSource, SegmentInput, ThoughtVerdict, TimeRange,
@@ -26,6 +27,8 @@ pub(crate) struct TranscriptSegment {
     pub(crate) think: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) item: Option<DashboardImportItem>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) conversation_items: Vec<ConversationItem>,
 }
 
 #[derive(Serialize)]
@@ -41,6 +44,7 @@ pub(crate) fn normalize_markdown_only_segments(
     journal_root: &Path,
     day: &str,
     segments: &mut [TranscriptSegment],
+    include_conversations: bool,
 ) {
     for segment in segments {
         let holds_notes = segment.stream.starts_with("import.")
@@ -54,7 +58,7 @@ pub(crate) fn normalize_markdown_only_segments(
             &segment.stream,
             &segment.key,
         );
-        let Ok(entries) = std::fs::read_dir(directory) else {
+        let Ok(entries) = std::fs::read_dir(&directory) else {
             continue;
         };
         let names = entries
@@ -62,6 +66,58 @@ pub(crate) fn normalize_markdown_only_segments(
             .filter_map(|entry| entry.file_name().into_string().ok())
             .collect::<Vec<_>>();
         let relative = crate::segment_media::segment_rel(day, &segment.stream, &segment.key);
+        if include_conversations {
+            segment.conversation_items = names
+                .iter()
+                .filter_map(|name| conversation_item(journal_root, &relative, name))
+                .collect();
+            segment
+                .conversation_items
+                .sort_by(|left, right| left.file.cmp(&right.file));
+            let mut has_conversation = false;
+            for item in &segment.conversation_items {
+                if let Some(kind @ ("messages" | "conversation")) = item
+                    .content_kind
+                    .or(item.conversation_state.map(|_| "conversation"))
+                {
+                    has_conversation = true;
+                    if !segment.data_state.contains_key(kind) {
+                        segment.types.push(kind.to_owned());
+                        segment
+                            .data_state
+                            .insert(kind.to_owned(), "analyzed".into());
+                    }
+                }
+            }
+            // The earlier scanner groups saved dialogue and Markdown with speech.
+            // Preserve a genuine recording when it shares this segment with a chat.
+            if has_conversation
+                && !names.iter().any(|name| {
+                    let path = directory.join(name);
+                    if segment
+                        .conversation_items
+                        .iter()
+                        .any(|item| item.file == *name && item.content_kind != Some("transcripts"))
+                    {
+                        return false;
+                    }
+                    name == solstone_core_format::audio_archive::AUDIO_ARCHIVE_PLACEMENT_FILENAME
+                        || path
+                            .extension()
+                            .and_then(|ext| ext.to_str())
+                            .and_then(|ext| {
+                                solstone_core_processing_record::media_kind(
+                                    &ext.to_ascii_lowercase(),
+                                )
+                            })
+                            == Some(solstone_core_processing_record::MediaKind::Audio)
+                        || solstone_core_system_health::is_audio_jsonl(&path)
+                })
+            {
+                segment.types.retain(|kind| kind != "audio");
+                segment.data_state.remove("audio");
+            }
+        }
         segment.item =
             DashboardImportItem::from_segment_files(&relative, names.iter().map(String::as_str));
         let markdown = names
@@ -79,7 +135,7 @@ pub(crate) fn normalize_markdown_only_segments(
         if has_imported_image && !jsonl {
             segment.types = vec!["image".to_owned()];
             segment.data_state = BTreeMap::from([("image".to_owned(), "analyzed".to_owned())]);
-        } else if markdown && !jsonl {
+        } else if markdown && !jsonl && segment.conversation_items.is_empty() {
             segment.types = vec!["markdown".to_owned()];
             segment.data_state = BTreeMap::from([("markdown".to_owned(), "analyzed".to_owned())]);
         }
