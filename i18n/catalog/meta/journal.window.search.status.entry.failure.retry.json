@@ -1,0 +1,16 @@
+{
+  "description": "Entry read failure without a diagnostic.",
+  "context": "Journal window. Entry read failure without a diagnostic.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c3e10e7bf75964348544804f8ae8b3ff4334e40dfddc0ff781679ac281d13f81",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -672,17 +672,118 @@ journal.window.backup.verification.parts.checked = { $parts_quantity ->
 
 journal.window.backup.verification.parts.checked.all = checked all of your backup this week.
 
+journal.window.body.count.day = { $quantity ->
+    [one] { $count } day
+   *[other] { $count } days
+}
+
+journal.window.body.count.entry = { $quantity ->
+    [one] { $count } entry
+   *[other] { $count } entries
+}
+
+journal.window.body.count.interval = { $quantity ->
+    [one] { $count } interval
+   *[other] { $count } intervals
+}
+
+journal.window.body.count.reading = { $quantity ->
+    [one] { $count } reading
+   *[other] { $count } readings
+}
+
+journal.window.body.date.clock.afternoon = { $hour }:{ $minute } PM
+
+journal.window.body.date.clock.morning = { $hour }:{ $minute } AM
+
+journal.window.body.date.clock.range = { $first_clock }–{ $last_clock }
+
 journal.window.body.day.nearby.with.data = nearby days with data: { $nearby_days }
 
 journal.window.body.empty.workouts.import = nothing here yet. bring in your workouts from a Strava download on the { $import_link_start }import page{ $import_link_end }.
 
 journal.window.body.empty.workouts.import.resources = if your journal runs on a computer, you can also bring in an Apple Health export on the import page or Oura data from that computer's command line. { $docs_link_start }read about body imports{ $docs_link_end }.
 
+journal.window.body.error.window.span = { $quantity ->
+    [one] Window span must be { $maximum_days } days or less.
+   *[other] Window span must be { $maximum_days } days or less.
+}
+
+journal.window.body.experience.continuing.generic = experience continuing
+
+journal.window.body.experience.continuing.named = { $experience_kind } continuing
+
+journal.window.body.grid.source.all = { $date } · { $slot1 } and { $slot2 } and { $slot3 }
+
+journal.window.body.grid.source.apple = { $date } · { $slot1 }
+
+journal.window.body.grid.source.apple.oura = { $date } · { $slot1 } and { $slot2 }
+
+journal.window.body.grid.source.apple.strava = { $date } · { $slot1 } and { $slot2 }
+
+journal.window.body.grid.source.oura = { $date } · { $slot1 }
+
+journal.window.body.grid.source.oura.strava = { $date } · { $slot1 } and { $slot2 }
+
+journal.window.body.grid.source.strava = { $date } · { $slot1 }
+
 journal.window.body.hide.data.from.day = hide body data from { $day }
 
 journal.window.body.hide.data.receipt = body data from { $day } is hidden.
 
 journal.window.body.hide.previous.day.carryover = the rest of a night or workout from { $hidden_day_link }, a day you hid, is hidden here too.
+
+journal.window.body.import.progress.running.days = { $total_quantity ->
+    [one] { $done_quantity ->
+        [one] still running: { $done_days } of { $total_days } days done.
+       *[other] still running: { $done_days } of { $total_days } days done.
+    }
+   *[other] { $done_quantity ->
+        [one] still running: { $done_days } of { $total_days } days done.
+       *[other] still running: { $done_days } of { $total_days } days done.
+    }
+}
+
+journal.window.body.import.progress.running.empty = still running, with nothing saved yet.
+
+journal.window.body.import.progress.running.entries = { $quantity ->
+    [one] still running: { $entry_count } entry read so far.
+   *[other] still running: { $entry_count } entries read so far.
+}
+
+journal.window.body.import.progress.stopped.days = { $total_quantity ->
+    [one] { $done_quantity ->
+        [one] stopped partway: { $done_days } of { $total_days } days done.
+       *[other] stopped partway: { $done_days } of { $total_days } days done.
+    }
+   *[other] { $done_quantity ->
+        [one] stopped partway: { $done_days } of { $total_days } days done.
+       *[other] stopped partway: { $done_days } of { $total_days } days done.
+    }
+}
+
+journal.window.body.import.progress.stopped.empty = stopped partway, with nothing saved yet.
+
+journal.window.body.import.progress.stopped.entries = { $quantity ->
+    [one] stopped partway: { $entry_count } entry read so far.
+   *[other] stopped partway: { $entry_count } entries read so far.
+}
+
+journal.window.body.import.span.counted.days = { $quantity ->
+    [one] { $first } to { $last }, { $count } days
+   *[other] { $first } to { $last }, { $count } days
+}
+
+journal.window.body.import.span.counted.months = { $quantity ->
+    [one] { $first } to { $last } ({ $count } months)
+   *[other] { $first } to { $last } ({ $count } months)
+}
+
+journal.window.body.strava.moving.hours = moving { $hours } h
+
+journal.window.body.strava.moving.minutes = moving { $minutes } min
+
+journal.window.body.strava.moving.time = moving { $hours } h { $minutes } min
 
 journal.window.body.workout.delete.name = delete { $workout_name }
 
@@ -3009,6 +3110,595 @@ journal.window.home.week.navigation.next = { $week } →
 
 journal.window.home.week.navigation.previous = ← { $week }
 
+journal.window.import.body.facet.apple.ask.named = file your workouts, sleep and other body data under the facet you named { $facet_name }?
+
+journal.window.import.body.facet.apple.files.named = this files everything in this export under { $facet_name }, including what's already listed on the activities page. the preview says how many of those could move, at most.
+
+journal.window.import.body.facet.shared.ask.named = file your workouts under the facet you named { $facet_name }?
+
+journal.window.import.body.facet.shared.files.named = this files every workout in this download under { $facet_name }, including any already listed on the activities page. the preview says how many of those would move.
+
+journal.window.import.consent.removal.again.apple.health.erase = each Apple Health export holds your whole history, so importing one again brings back what this erases.
+
+journal.window.import.consent.removal.again.apple.health.move = each Apple Health export holds your whole history, so importing one again brings back what this deletes.
+
+journal.window.import.consent.removal.again.oura.erase = an Oura sync leaves out what this erases. one you ask for the days it covered brings it back.
+
+journal.window.import.consent.removal.again.oura.move = an Oura sync leaves out what this deletes. one you ask for the days it covered brings it back.
+
+journal.window.import.consent.removal.again.strava.erase = importing a Strava download again brings back the workouts this erases.
+
+journal.window.import.consent.removal.again.strava.move = importing a Strava download again brings back the workouts this deletes.
+
+journal.window.import.consent.removal.multiple.erase = { $quantity ->
+    [one] erase { $import_count } imports now?
+   *[other] erase { $import_count } imports now?
+}
+
+journal.window.import.consent.removal.multiple.move = { $quantity ->
+    [one] delete { $import_count } imports?
+   *[other] delete { $import_count } imports?
+}
+
+journal.window.import.consent.removal.storage.total = total size: { $storage }
+
+journal.window.import.detail.content.attendees = { $quantity ->
+    [one] { $count } attendees
+   *[other] { $count } attendees
+}
+
+journal.window.import.detail.content.duration.minutes = { $minutes } min
+
+journal.window.import.detail.content.highlights = { $quantity ->
+    [one] { $count } highlights
+   *[other] { $count } highlights
+}
+
+journal.window.import.detail.content.messages = { $quantity ->
+    [one] { $count } messages
+   *[other] { $count } messages
+}
+
+journal.window.import.detail.count.entities = { $quantity ->
+    [one] { $count } entity
+   *[other] { $count } entities
+}
+
+journal.window.import.detail.count.entries = { $quantity ->
+    [one] { $count } entry
+   *[other] { $count } entries
+}
+
+journal.window.import.detail.count.files = { $quantity ->
+    [one] { $count } file
+   *[other] { $count } files
+}
+
+journal.window.import.detail.duration.completed.day = { $quantity ->
+    [one] completed in { $count } day
+   *[other] completed in { $count } days
+}
+
+journal.window.import.detail.duration.completed.hour = { $quantity ->
+    [one] completed in { $count } hour
+   *[other] completed in { $count } hours
+}
+
+journal.window.import.detail.duration.completed.minute = { $quantity ->
+    [one] completed in { $count } minute
+   *[other] completed in { $count } minutes
+}
+
+journal.window.import.detail.duration.completed.short = completed in under a minute
+
+journal.window.import.detail.duration.elapsed.day = { $quantity ->
+    [one] { $count } day
+   *[other] { $count } days
+}
+
+journal.window.import.detail.duration.elapsed.hour = { $quantity ->
+    [one] { $count } hour
+   *[other] { $count } hours
+}
+
+journal.window.import.detail.duration.elapsed.minute = { $quantity ->
+    [one] { $count } minute
+   *[other] { $count } minutes
+}
+
+journal.window.import.detail.duration.elapsed.short = under a minute
+
+journal.window.import.detail.heading.timestamp = import: { $date } · { $clock_time }
+
+journal.window.import.detail.merge.body.days.hidden = { $quantity ->
+    [one] 1 day of body data was hidden in the archive, so it's hidden in this journal too.
+   *[other] { $count } days of body data were hidden in the archive, so they're hidden in this journal too.
+}
+
+journal.window.import.detail.merge.clock.hours = { $quantity ->
+    [one] 1 hour of { $source } may show at the wrong time: it was saved in a different time zone from the one this journal holds for { $source }.
+   *[other] { $count } hours of { $source } may show at the wrong time: they were saved in a different time zone from the one this journal holds for { $source }.
+}
+
+journal.window.import.detail.merge.clock.under.hour = less than an hour of { $source } may show at the wrong time: it was saved in a different time zone from the one this journal holds for { $source }.
+
+journal.window.import.detail.merge.copied = { $quantity ->
+    [one] { $count } copied
+   *[other] { $count } copied
+}
+
+journal.window.import.detail.merge.created = { $quantity ->
+    [one] { $count } created
+   *[other] { $count } created
+}
+
+journal.window.import.detail.merge.errored = { $quantity ->
+    [one] { $count } errored
+   *[other] { $count } errored
+}
+
+journal.window.import.detail.merge.links.left.out = { $quantity ->
+    [one] { $count } entity links left out
+   *[other] { $count } entity links left out
+}
+
+journal.window.import.detail.merge.merged = { $quantity ->
+    [one] { $count } merged
+   *[other] { $count } merged
+}
+
+journal.window.import.detail.merge.owner.collision = this journal belongs to { $journal_owner }, and the imported journal marks { $archive_owner } as its owner. this journal's owner is unchanged; the other person came in as a regular entity.
+
+journal.window.import.detail.merge.owner.collision.staged = this journal belongs to { $journal_owner }, and the imported journal marks { $archive_owner } as its owner. this journal's owner is unchanged; the other person was staged and wasn't added.
+
+journal.window.import.detail.merge.skipped = { $quantity ->
+    [one] { $count } skipped
+   *[other] { $count } skipped
+}
+
+journal.window.import.detail.merge.staged = { $quantity ->
+    [one] { $count } staged
+   *[other] { $count } staged
+}
+
+journal.window.import.detail.merge.staged.omitted = { $quantity ->
+    [one] { $count } more staged
+   *[other] { $count } more staged
+}
+
+journal.window.import.detail.preview.other.units = { $count } { $unit }
+
+journal.window.import.detail.preview.pages.unavailable = { $quantity ->
+    [one] 1 page could not be extracted
+   *[other] { $count } pages could not be extracted
+}
+
+journal.window.import.detail.preview.recordings = { $recording_quantity ->
+    [one] { $day_quantity ->
+        [one] { $recordings } recording across { $days } day
+       *[other] { $recordings } recording across { $days } days
+    }
+   *[other] { $day_quantity ->
+        [one] { $recordings } recordings across { $days } day
+       *[other] { $recordings } recordings across { $days } days
+    }
+}
+
+journal.window.import.detail.provenance.importer = { $source_type } importer
+
+journal.window.import.detail.provenance.processed = processed { $finished_at }
+
+journal.window.import.folder.access.remembered = { $folder }: read access remembered for future syncs.
+
+journal.window.import.folder.access.repeat = { $folder }: choose the folder again to restore read access.
+
+journal.window.import.folder.schedule.active = automatic sync is on: { $cadences }.
+
+journal.window.import.folder.schedule.conflicts = custom schedules stay unchanged: { $schedule_names }.
+
+journal.window.import.history.archive.left.out = { $quantity ->
+    [one] { $count } members left out
+   *[other] { $count } members left out
+}
+
+journal.window.import.history.archive.processing = { $quantity ->
+    [one] { $count } waiting to process
+   *[other] { $count } waiting to process
+}
+
+journal.window.import.history.archive.rejected = { $quantity ->
+    [one] { $count } parts rejected
+   *[other] { $count } parts rejected
+}
+
+journal.window.import.history.archive.remaining = { $quantity ->
+    [one] { $count } left to save
+   *[other] { $count } left to save
+}
+
+journal.window.import.history.archive.saved = { $quantity ->
+    [one] { $count } parts saved
+   *[other] { $count } parts saved
+}
+
+journal.window.import.history.archive.unavailable = { $quantity ->
+    [one] { $count } unavailable
+   *[other] { $count } unavailable
+}
+
+journal.window.import.history.count.entries.unknown = { $import_quantity ->
+    [one] { $imports } import, —.
+   *[other] { $imports } imports, —.
+}
+
+journal.window.import.history.count.summary = { $import_quantity ->
+    [one] { $entry_quantity ->
+        [one] { $imports } import, { $entries } entry.
+       *[other] { $imports } import, { $entries } entries.
+    }
+   *[other] { $entry_quantity ->
+        [one] { $imports } imports, { $entries } entry.
+       *[other] { $imports } imports, { $entries } entries.
+    }
+}
+
+journal.window.import.preview.apple.daily.totals = { $quantity ->
+    [one] { $count } daily total
+   *[other] { $count } daily totals
+}
+
+journal.window.import.preview.apple.left.out = { $quantity ->
+    [one] { $count } other kind left out, named in the summary
+   *[other] { $count } other kinds left out, named in the summary
+}
+
+journal.window.import.preview.apple.logged = { $quantity ->
+    [one] { $count } logged entry
+   *[other] { $count } logged entries
+}
+
+journal.window.import.preview.apple.mindful = { $quantity ->
+    [one] { $count } mindful session
+   *[other] { $count } mindful sessions
+}
+
+journal.window.import.preview.apple.move.listed = { $quantity ->
+    [one] saying yes can move up to { $count } record already listed on the activities page to this import's facet
+   *[other] saying yes can move up to { $count } records already listed on the activities page to this import's facet
+}
+
+journal.window.import.preview.apple.nights = { $quantity ->
+    [one] { $count } night put together from sleep stages
+   *[other] { $count } nights put together from sleep stages
+}
+
+journal.window.import.preview.apple.readings = { $quantity ->
+    [one] { $count } reading
+   *[other] { $count } readings
+}
+
+journal.window.import.preview.apple.workouts = { $quantity ->
+    [one] { $count } workout
+   *[other] { $count } workouts
+}
+
+journal.window.import.preview.archive.days = { $quantity ->
+    [one] { $count } day
+   *[other] { $count } days
+}
+
+journal.window.import.preview.archive.left.out = { $quantity ->
+    [one] { $count } left out
+   *[other] { $count } left out
+}
+
+journal.window.import.preview.archive.recording.bytes = { $quantity ->
+    [one] { $count } recording bytes
+   *[other] { $count } recording bytes
+}
+
+journal.window.import.preview.archive.saved = { $quantity ->
+    [one] { $count } audio part already saved
+   *[other] { $count } audio parts already saved
+}
+
+journal.window.import.preview.archive.source.files = { $quantity ->
+    [one] { $count } source file
+   *[other] { $count } source files
+}
+
+journal.window.import.preview.date.range = { $first_date } to { $last_date }
+
+journal.window.import.preview.skipped = { $quantity ->
+    [one] { $count } skipped
+   *[other] { $count } skipped
+}
+
+journal.window.import.preview.storage.available = needs about { $needed } free, and { $free } is free
+
+journal.window.import.preview.workouts.move.listed = { $quantity ->
+    [one] { $count } workout already listed on the activities page would move to this import's facet from { $sources }
+   *[other] { $count } workouts already listed on the activities page would move to this import's facet from { $sources }
+}
+
+journal.window.import.progress.archive.left.out = { $quantity ->
+    [one] { $count } left out
+   *[other] { $count } left out
+}
+
+journal.window.import.progress.archive.processed = { $quantity ->
+    [one] { $count } processed
+   *[other] { $count } processed
+}
+
+journal.window.import.progress.archive.processing = { $quantity ->
+    [one] { $count } waiting for processing
+   *[other] { $count } waiting for processing
+}
+
+journal.window.import.progress.archive.remaining = { $quantity ->
+    [one] { $count } still to save
+   *[other] { $count } still to save
+}
+
+journal.window.import.progress.archive.saved = { $quantity ->
+    [one] { $count } audio part saved
+   *[other] { $count } audio parts saved
+}
+
+journal.window.import.progress.body.days = day { $days_done } of { $days_total }
+
+journal.window.import.progress.completed.pages = { $quantity ->
+    [one] partially extracted (1 page unavailable)
+   *[other] partially extracted ({ $count } pages unavailable)
+}
+
+journal.window.import.progress.completed.time = took { $elapsed_time }
+
+journal.window.import.progress.count.entities = { $quantity ->
+    [one] { $count } entities
+   *[other] { $count } entities
+}
+
+journal.window.import.progress.count.entities.found = { $quantity ->
+    [one] { $count } entities found
+   *[other] { $count } entities found
+}
+
+journal.window.import.progress.count.entries = { $quantity ->
+    [one] { $count } entry
+   *[other] { $count } entries
+}
+
+journal.window.import.progress.date.end = to { $last_date }
+
+journal.window.import.progress.date.start = from { $first_date }
+
+journal.window.import.progress.items.ratio = { $total_quantity ->
+    [one] { $processed }/{ $total } items
+   *[other] { $processed }/{ $total } items
+}
+
+journal.window.import.progress.reading.source = reading { $source }…
+
+journal.window.import.progress.repeat.document = import another document
+
+journal.window.import.progress.repeat.image = import another image
+
+journal.window.import.progress.stage.saving = Saving…
+
+journal.window.import.progress.thinking.held = { $quantity ->
+    [one] { $count } held — { $health_link_start }review on Health{ $health_link_end }
+   *[other] { $count } held — { $health_link_start }review on Health{ $health_link_end }
+}
+
+journal.window.import.progress.thinking.ready = { $total_quantity ->
+    [one] { $ready } of { $total } recording ready to find
+   *[other] { $ready } of { $total } recordings ready to find
+}
+
+journal.window.import.progress.thinking.unreadable = { $quantity ->
+    [one] { $count } could not be checked
+   *[other] { $count } could not be checked
+}
+
+journal.window.import.progress.thinking.waiting = { $quantity ->
+    [one] { $count } waiting
+   *[other] { $count } waiting
+}
+
+journal.window.import.progress.time.elapsed = { $elapsed_time } elapsed
+
+journal.window.import.progress.time.hours.minutes = { $hours }h { $minutes }m
+
+journal.window.import.progress.time.minutes.seconds = { $minutes }m { $seconds }s
+
+journal.window.import.progress.time.seconds = { $seconds }s
+
+journal.window.import.progress.time.stage.total = { $stage_time } ({ $total_time } total)
+
+journal.window.import.removal.date.imported = imported { $day }
+
+journal.window.import.removal.items.body.day = body data from { $day }
+
+journal.window.import.removal.items.body.span = body data from { $first_day } to { $last_day }
+
+journal.window.import.removal.items.originals = { $quantity ->
+    [one] the original file it kept
+   *[other] the { $original_count } original files it kept
+}
+
+journal.window.import.removal.items.segment.day = { $quantity ->
+    [one] { $segment_count } segment from { $day }
+   *[other] { $segment_count } segments from { $day }
+}
+
+journal.window.import.removal.items.segment.span = { $quantity ->
+    [one] { $segment_count } segment from { $first_day } to { $last_day }
+   *[other] { $segment_count } segments from { $first_day } to { $last_day }
+}
+
+journal.window.import.removal.items.workout.day = { $quantity ->
+    [one] { $workout_count } workout from { $day }
+   *[other] { $workout_count } workouts from { $day }
+}
+
+journal.window.import.removal.items.workout.span = { $quantity ->
+    [one] { $workout_count } workout from { $first_day } to { $last_day }
+   *[other] { $workout_count } workouts from { $first_day } to { $last_day }
+}
+
+journal.window.import.removal.receipt.erase.date.many = they erase { $scheduled_erase_day } unless you recover them.
+
+journal.window.import.removal.receipt.erase.date.one = erases { $scheduled_erase_day } unless you recover it.
+
+journal.window.import.removal.receipt.erased.import = import erased from your journal
+
+journal.window.import.removal.receipt.erased.imports = { $quantity ->
+    [one] erased { $import_count } imports from your journal
+   *[other] erased { $import_count } imports from your journal
+}
+
+journal.window.import.removal.receipt.gone.more = { $quantity ->
+    [one] { $no_longer_listed } more is no longer listed.
+   *[other] { $no_longer_listed } more are no longer listed.
+}
+
+journal.window.import.removal.receipt.import.erase.failed = couldn't erase that import
+
+journal.window.import.removal.receipt.import.recover.failed = couldn't recover that import
+
+journal.window.import.removal.receipt.marked = { $quantity ->
+    [one] { $marked_count } couldn't be moved and is marked below.
+   *[other] { $marked_count } couldn't be moved and are marked below.
+}
+
+journal.window.import.removal.receipt.moved.imports = { $quantity ->
+    [one] moved { $import_count } imports to the trash
+   *[other] moved { $import_count } imports to the trash
+}
+
+journal.window.import.removal.receipt.none.erased.note = { $quantity ->
+    [one] look for it below or in the trash.
+   *[other] look for them below or in the trash.
+}
+
+journal.window.import.removal.receipt.none.gone = { $quantity ->
+    [one] it's no longer listed here.
+   *[other] they're no longer listed here.
+}
+
+journal.window.import.removal.receipt.none.still = { $quantity ->
+    [one] { $still_listed } is still in your journal, marked below.
+   *[other] { $still_listed } are still in your journal, marked below.
+}
+
+journal.window.import.removal.receipt.others.gone = { $quantity ->
+    [one] the other is no longer listed here.
+   *[other] the others are no longer listed here.
+}
+
+journal.window.import.removal.receipt.part.erased.note = { $quantity ->
+    [one] the other wasn't erased. look for it below or in the trash.
+   *[other] the others weren't erased. look for them below or in the trash.
+}
+
+journal.window.import.removal.receipt.part.recovered.note = { $quantity ->
+    [one] the other is still in the trash. you can try again from there.
+   *[other] the others are still in the trash. you can try again from there.
+}
+
+journal.window.import.removal.receipt.partial.erase = { $quantity ->
+    [one] { $completed_quantity ->
+        [one] erased { $completed_count } of { $import_count }
+       *[other] erased { $completed_count } of { $import_count }
+    }
+   *[other] { $completed_quantity ->
+        [one] erased { $completed_count } of { $import_count }
+       *[other] erased { $completed_count } of { $import_count }
+    }
+}
+
+journal.window.import.removal.receipt.partial.move = { $quantity ->
+    [one] { $completed_quantity ->
+        [one] moved { $completed_count } of { $import_count } to the trash
+       *[other] moved { $completed_count } of { $import_count } to the trash
+    }
+   *[other] { $completed_quantity ->
+        [one] moved { $completed_count } of { $import_count } to the trash
+       *[other] moved { $completed_count } of { $import_count } to the trash
+    }
+}
+
+journal.window.import.removal.receipt.partial.recover = { $quantity ->
+    [one] { $completed_quantity ->
+        [one] recovered { $completed_count } of { $import_count }
+       *[other] recovered { $completed_count } of { $import_count }
+    }
+   *[other] { $completed_quantity ->
+        [one] recovered { $completed_count } of { $import_count }
+       *[other] recovered { $completed_count } of { $import_count }
+    }
+}
+
+journal.window.import.removal.receipt.recovered.import = import recovered
+
+journal.window.import.removal.receipt.recovered.imports = { $quantity ->
+    [one] { $import_count } imports recovered
+   *[other] { $import_count } imports recovered
+}
+
+journal.window.import.removal.receipt.still = { $quantity ->
+    [one] { $still_listed } couldn't be moved and is still in your journal, marked below.
+   *[other] { $still_listed } couldn't be moved and are still in your journal, marked below.
+}
+
+journal.window.import.removal.shared.erase = { $quantity ->
+    [one] on 1 day, some of what it brought in stays and isn't erased, because an earlier import in your journal brought it in first. it goes with that import.
+   *[other] on { $shared_days } days, some of what it brought in stays and isn't erased, because an earlier import in your journal brought it in first. it goes with that import.
+}
+
+journal.window.import.removal.shared.move = { $quantity ->
+    [one] on 1 day, some of what it brought in stays, because an earlier import in your journal brought it in first. it goes with that import.
+   *[other] on { $shared_days } days, some of what it brought in stays, because an earlier import in your journal brought it in first. it goes with that import.
+}
+
+journal.window.import.removal.waiting.many.imports = { $quantity ->
+    [one] the segment from them that waits in the trash on its own is erased with them.
+   *[other] the { $waiting_segments } segments from them that wait in the trash on their own are erased with them.
+}
+
+journal.window.import.removal.waiting.one.import = { $quantity ->
+    [one] the segment from it that waits in the trash on its own is erased with it.
+   *[other] the { $waiting_segments } segments from it that wait in the trash on their own are erased with it.
+}
+
+journal.window.import.selection.additional = { $quantity ->
+    [one] and { $additional_count } more
+   *[other] and { $additional_count } more
+}
+
+journal.window.import.selection.count = { $quantity ->
+    [one] { $selected_count } selected
+   *[other] { $selected_count } selected
+}
+
+journal.window.import.selection.file.name = select { $file_name }
+
+journal.window.import.upload.accepted.formats = accepts { $formats }
+
+journal.window.import.upload.duplicate.running = this import is already in progress.
+
+journal.window.import.upload.duplicate.running.named = this import is already in progress as { $import_id }.
+
+journal.window.import.upload.duplicate.saved = this file was already staged.
+
+journal.window.import.upload.duplicate.saved.named = this file was already staged as { $import_id }.
+
+journal.window.import.upload.saved.named = { $name }: saved
+
+journal.window.import.upload.saved.setup.unconfirmed = { $name }: saved, but import setup could not be confirmed. check your imports before choosing it again.
+
 journal.window.local.access.instruction.other = open your journal from the journal app on a mac, or run { $open_command } in a terminal.
 
 journal.window.local.access.instruction.windows = if this journal is yours, open it from the journal app, or run { $open_command } in a terminal.
@@ -3641,6 +4331,44 @@ journal.window.not.found.detail = The requested URL was not found on the server.
 journal.window.not.found.heading = Not Found
 
 journal.window.not.found.title = 404 Not Found
+
+journal.window.search.count.results.across.days = { $match_quantity ->
+    [one] { $day_quantity ->
+        [one] { $match_count } match across { $day_count } day.
+       *[other] { $match_count } match across { $day_count } days.
+    }
+   *[other] { $day_quantity ->
+        [one] { $match_count } matches across { $day_count } day.
+       *[other] { $match_count } matches across { $day_count } days.
+    }
+}
+
+journal.window.search.count.results.shown.for.day = { $match_quantity ->
+    [one] { $shown_quantity ->
+        [one] showing the top { $shown_count } of { $match_count } matches for this day.
+       *[other] showing the top { $shown_count } of { $match_count } matches for this day.
+    }
+   *[other] { $shown_quantity ->
+        [one] showing the top { $shown_count } of { $match_count } matches for this day.
+       *[other] showing the top { $shown_count } of { $match_count } matches for this day.
+    }
+}
+
+journal.window.search.status.entry.failure.details = couldn't open this entry. { $detail } { $diagnostic }
+
+journal.window.search.status.entry.failure.retry = couldn't open this entry. try again.
+
+journal.window.search.status.entry.failure.retry.diagnostic = couldn't open this entry. try again. { $diagnostic }
+
+journal.window.search.status.failure.index.absent = couldn't search your journal: your journal doesn't have a search index yet.
+
+journal.window.search.status.failure.index.empty = couldn't search your journal: there's nothing indexed yet.
+
+journal.window.search.status.failure.index.locked = couldn't search your journal: the search index is busy right now.
+
+journal.window.search.status.failure.index.unreadable = couldn't search your journal: the search index couldn't be read.
+
+journal.window.search.status.failure.retry = couldn't search your journal. try again.
 
 journal.window.settings.credentials.environment.unconfigured = { $environment_variable }{ $slot1 }not configured.
 
@@ -7123,31 +7851,9 @@ journal.window.body.accessible.name.empty.day = empty day
 
 journal.window.body.button.label.delete = delete
 
-journal.window.body.count.day.one = day
-
-journal.window.body.count.day.other = days
-
-journal.window.body.count.entry.one = entry
-
-journal.window.body.count.entry.other = entries
-
-journal.window.body.count.interval.one = interval
-
-journal.window.body.count.interval.other = intervals
-
-journal.window.body.count.label = {$count}{ $slot1 }{$noun}
-
-journal.window.body.count.reading.one = reading
-
-journal.window.body.count.reading.other = readings
-
-journal.window.body.date.am = AM
-
 journal.window.body.date.full = {$month}{ $slot1 }{$day},{ $slot2 }{$year}
 
 journal.window.body.date.month.year = {$month}{ $slot1 }{$year}
-
-journal.window.body.date.pm = PM
 
 journal.window.body.date.short = {$month}{ $slot1 }{$day}
 
@@ -7189,8 +7895,6 @@ journal.window.body.error.unreadable = the body app couldn't read your journal.
 
 journal.window.body.error.window.bounds = Window requires valid from and to ISO timestamps.
 
-journal.window.body.error.window.length = Window span must be{ $slot1 }{$days}{ $slot2 }days or less.
-
 journal.window.body.error.window.order = Window end must be after window start.
 
 journal.window.body.experience.fallback = experience
@@ -7202,10 +7906,6 @@ journal.window.body.grid.held = {$date}{ $slot1 }· held in an earlier import
 journal.window.body.grid.held.month = {$date}{ $slot1 }· in a month an earlier import holds
 
 journal.window.body.grid.hidden = {$date}{ $slot1 }· you hid this day
-
-journal.window.body.grid.source.join = { $slot1 }and{ $slot2 }
-
-journal.window.body.grid.sources = {$date}{ $slot1 }·{ $slot2 }{$sources}
 
 journal.window.body.hide.copy.grid.foot.striped.days.are.ones.you.hid = striped days are ones you hid.
 
@@ -7251,21 +7951,7 @@ journal.window.body.import.old.listing = {$source}{ $slot1 }from{ $slot2 }{$span
 
 journal.window.body.import.old.month = an earlier{ $slot1 }{$source}{ $slot2 }import holds body data for{ $slot3 }{$month}, kept but not read here, so it doesn't show on this page.{ $slot4 }{$action}
 
-journal.window.body.import.progress.days = {$lead}:{ $slot1 }{$done}{ $slot2 }of{ $slot3 }{$total}{ $slot4 }days done.
-
-journal.window.body.import.progress.empty = {$lead}, with nothing saved yet.
-
-journal.window.body.import.progress.entries = {$lead}:{ $slot1 }{$entries}{ $slot2 }read so far.
-
-journal.window.body.import.progress.running = still running
-
-journal.window.body.import.progress.stopped = stopped partway
-
-journal.window.body.import.span.days = {$first}{ $slot1 }to{ $slot2 }{$last},{ $slot3 }{$count}{ $slot4 }days
-
 journal.window.body.import.span.month = {$month}{ $slot1 }(by month)
-
-journal.window.body.import.span.months = {$first}{ $slot1 }to{ $slot2 }{$last}{ $slot3 }({$count}{ $slot4 }months)
 
 journal.window.body.import.span.unknown = an unknown span
 
@@ -7338,8 +8024,6 @@ journal.window.body.strava.heart.average = heart rate avg{ $slot1 }{$value}{ $sl
 journal.window.body.strava.heart.maximum = heart rate max{ $slot1 }{$value}{ $slot2 }bpm
 
 journal.window.body.strava.manual = entered by hand
-
-journal.window.body.strava.moving = moving{ $slot1 }{$duration}
 
 journal.window.body.strava.power = power avg{ $slot1 }{$average}{ $slot2 }W, weighted{ $slot3 }{$weighted}{ $slot4 }W
 
@@ -11199,18 +11883,6 @@ journal.window.network.window.state.text.setting.up.your.private.network = setti
 
 journal.window.network.window.state.text.this.device = this device
 
-journal.window.search.count.day.one = { $count }{ $slot1 }day
-
-journal.window.search.count.day.other = { $count }{ $slot1 }days
-
-journal.window.search.count.day.showing = showing the top{ $slot1 }{ $showing }{ $slot2 }of{ $slot3 }{ $total }{ $slot4 }matches for this day.
-
-journal.window.search.count.match.one = { $count }{ $slot1 }match
-
-journal.window.search.count.match.other = { $count }{ $slot1 }matches
-
-journal.window.search.count.summary = { $matches }{ $slot1 }across{ $slot2 }{ $days }.
-
 journal.window.search.date.from = from
 
 journal.window.search.date.invalid = choose an end date on or after the start date.
@@ -11325,15 +11997,7 @@ journal.window.search.status.details = details
 
 journal.window.search.status.entry.failed = couldn't open this entry.{ $slot1 }{ $detail }
 
-journal.window.search.status.index.absent = your journal doesn't have a search index yet.
-
-journal.window.search.status.index.empty = there's nothing indexed yet.
-
-journal.window.search.status.index.locked = the search index is busy right now.
-
 journal.window.search.status.index.rebuilding = search is rebuilding, so older days may be missing for now.
-
-journal.window.search.status.index.unreadable = the search index couldn't be read.
 
 journal.window.search.status.initial = search your whole journal. quote an "exact phrase", or narrow to a day range above for faster results.
 
@@ -11350,10 +12014,6 @@ journal.window.search.status.progress.all.days = still searching…{ $slot1 }{ $
 journal.window.search.status.relaxed = nothing matched your exact search, so these are broader matches.
 
 journal.window.search.status.retry = try again
-
-journal.window.search.status.retry.sentence = try again.
-
-journal.window.search.status.search.failed.known = couldn't search your journal:{ $slot1 }{ $detail }
 
 journal.window.search.status.search.failed.other = couldn't search your journal.{ $slot1 }{ $detail }
 
@@ -18048,13 +18708,9 @@ journal.window.import.apple.words.keeps.running.this.keeps.running.if.you.close 
 
 journal.window.import.apple.words.reading.reading.your.export = reading your export…
 
-journal.window.import.body.facet.apple.ask.existing = file your workouts, sleep and other body data under the facet you named { $slot1 }?
-
 journal.window.import.body.facet.apple.ask.make.body = make a body facet for your workouts, sleep and other body data?
 
 journal.window.import.body.facet.apple.ask.unmute = your body facet is muted. turn it back on for your workouts, sleep and other body data?
-
-journal.window.import.body.facet.apple.files.earlier = this files everything in this export under { $slot1 }, including what's already listed on the activities page. the preview says how many of those could move, at most.
 
 journal.window.import.body.facet.apple.no.means = if you say no, new workouts and sleep aren't listed on the activities page, and agents limited to some facets won't see them. search and the body app still show them.
 
@@ -18062,13 +18718,9 @@ journal.window.import.body.facet.apple.none.hint = new workouts and sleep in thi
 
 journal.window.import.body.facet.shared.answer.failed = your answer couldn't be saved. try again.
 
-journal.window.import.body.facet.shared.ask.existing = file your workouts under the facet you named { $slot1 }?
-
 journal.window.import.body.facet.shared.ask.make.body = make a body facet for your workouts?
 
 journal.window.import.body.facet.shared.ask.unmute = your body facet is muted. turn it back on for your workouts?
-
-journal.window.import.body.facet.shared.files.earlier = this files every workout in this download under { $slot1 }, including any already listed on the activities page. the preview says how many of those would move.
 
 journal.window.import.body.facet.shared.heading = facet
 
@@ -18238,14 +18890,6 @@ journal.window.import.consent.import.removal.reachmany.they.leave.your.journal.n
 
 journal.window.import.consent.import.removal.reachmany.they.leave.your.journal.now.and.variant2 = they leave your journal now and wait in the trash, then they're erased. you can recover each one until then.
 
-journal.window.import.consent.import.removal.sharedmany.on.n.days.some.of.what = on { $slot1 } days, some of what it brought in stays, because an earlier import in your journal brought it in first. it goes with that import.
-
-journal.window.import.consent.import.removal.sharedmany.on.n.days.some.of.what.variant2 = on { $slot1 } days, some of what it brought in stays and isn't erased, because an earlier import in your journal brought it in first. it goes with that import.
-
-journal.window.import.consent.import.removal.sharedone.on.day.some.of.what.it = on 1 day, some of what it brought in stays, because an earlier import in your journal brought it in first. it goes with that import.
-
-journal.window.import.consent.import.removal.sharedone.on.day.some.of.what.it.variant2 = on 1 day, some of what it brought in stays and isn't erased, because an earlier import in your journal brought it in first. it goes with that import.
-
 journal.window.import.consent.import.removal.sharedset.some.of.what.they.brought.in = some of what they brought in may stay, because an earlier import in your journal brought it in first. it goes with that import.
 
 journal.window.import.consent.import.removal.sharedset.some.of.what.they.brought.in.variant2 = some of what they brought in may stay and not be erased, because an earlier import in your journal brought it in first. it goes with that import.
@@ -18253,8 +18897,6 @@ journal.window.import.consent.import.removal.sharedset.some.of.what.they.brought
 journal.window.import.consent.import.removal.sharedunknown.some.of.what.it.brought.in = some of what it brought in may stay, because an earlier import in your journal brought it in first. it goes with that import.
 
 journal.window.import.consent.import.removal.sharedunknown.some.of.what.it.brought.in.variant2 = some of what it brought in may stay and not be erased, because an earlier import in your journal brought it in first. it goes with that import.
-
-journal.window.import.consent.import.removal.size.total.size.size = total size: { $slot1 }
 
 journal.window.import.consent.import.removal.stays.activities.made.from.it.drop.it = activities made from it drop it now, and the write-ups of its days and weeks leave search. your journal then writes those again from what's left, with the thinking you chose.
 
@@ -18272,17 +18914,9 @@ journal.window.import.consent.import.removal.title.delete.this.import = delete t
 
 journal.window.import.consent.import.removal.title.erase.this.import.now = erase this import now?
 
-journal.window.import.consent.import.removal.titlemany.delete.n.imports = delete { $slot1 } imports?
-
-journal.window.import.consent.import.removal.titlemany.erase.n.imports.now = erase { $slot1 } imports now?
-
 journal.window.import.consent.import.removal.tooknothing.everything.it.brought.in.stays.and = everything it brought in stays and isn't erased, because an earlier import in your journal brought it in first. it goes with that import.
 
 journal.window.import.consent.import.removal.tooknothing.everything.it.brought.in.stays.because = everything it brought in stays, because an earlier import in your journal brought it in first. it goes with that import.
-
-journal.window.import.consent.import.removal.verb.deletes = deletes
-
-journal.window.import.consent.import.removal.verb.erases = erases
 
 journal.window.import.content.month.heading = { $month }{ $slot1 }{ $year },{ $slot2 }{ $count }{ $slot3 }items
 
@@ -18299,8 +18933,6 @@ journal.window.import.content.type.image = image
 journal.window.import.content.type.note = note
 
 journal.window.import.content.type.pdf = pdf
-
-journal.window.import.detail.collision.journal = journal's
 
 journal.window.import.disclosure.label.automatic.sync = automatic sync
 
@@ -18472,23 +19104,13 @@ journal.window.import.guide.strava.line7 = { $slot1 } emails you a link. this ca
 
 journal.window.import.guide.strava.line8 = upload it here
 
-journal.window.import.import.delete.copy.apple.health.each.apple.health.export.holds.your = each { $slot1 } export holds your whole history, so importing one again brings back what this { $slot2 }.
-
 journal.window.import.import.delete.copy.back.back = back
-
-journal.window.import.import.delete.copy.bodyday.body.data.from.day = body data from { $slot1 }
-
-journal.window.import.import.delete.copy.bodyspan.body.data.from.first.to.last = body data from { $slot1 } to { $slot2 }
 
 journal.window.import.import.delete.copy.bodyunknown.the.body.data.it.brought.in = the body data it brought in
 
 journal.window.import.import.delete.copy.busy.this.is.already.being.moved.or = this is already being moved or erased. reload in a minute to check.
 
 journal.window.import.import.delete.copy.cancel.cancel = cancel
-
-journal.window.import.import.delete.copy.daymany.n.segments.from.day = { $slot1 } segments from { $slot2 }
-
-journal.window.import.import.delete.copy.dayone.n.segment.from.day = { $slot1 } segment from { $slot2 }
 
 journal.window.import.import.delete.copy.delete.delete = delete
 
@@ -18498,23 +19120,9 @@ journal.window.import.import.delete.copy.eraseimporting.this.wasn.t.erased.becau
 
 journal.window.import.import.delete.copy.eraseother.this.wasn.t.erased.try.again = this wasn't erased. try again.
 
-journal.window.import.import.delete.copy.gonemoremany.g.more.are.no.longer.listed = { $slot1 } more are no longer listed.
-
-journal.window.import.import.delete.copy.gonemoreone.g.more.is.no.longer.listed = { $slot1 } more is no longer listed.
-
 journal.window.import.import.delete.copy.hideday.a.day.you.hide.on.the = a day you hide on the body page stays hidden when you import or sync it again.
 
 journal.window.import.import.delete.copy.importing.this.wasn.t.moved.because.it = this wasn't moved because it's still importing. try again once it's done.
-
-journal.window.import.import.delete.copy.manymany.the.w.segments.from.them.that = the { $slot1 } segments from them that wait in the trash on their own are erased with them.
-
-journal.window.import.import.delete.copy.manyone.the.segment.from.them.that.waits = the segment from them that waits in the trash on its own is erased with them.
-
-journal.window.import.import.delete.copy.markedmany.k.couldn.t.be.moved.and = { $slot1 } couldn't be moved and are marked below.
-
-journal.window.import.import.delete.copy.markedone.k.couldn.t.be.moved.and = { $slot1 } couldn't be moved and is marked below.
-
-journal.window.import.import.delete.copy.message.erases.date.unless.you.recover.it = erases { $slot1 } unless you recover it.
 
 journal.window.import.import.delete.copy.message.it.may.already.be.back.in = it may already be back in your journal. reload to check.
 
@@ -18530,8 +19138,6 @@ journal.window.import.import.delete.copy.message.it.s.still.in.the.trash = it's 
 
 journal.window.import.import.delete.copy.message.it.s.still.in.your.journal = it's still in your journal.
 
-journal.window.import.import.delete.copy.message.they.erase.date.unless.you.recover = they erase { $slot1 } unless you recover them.
-
 journal.window.import.import.delete.copy.message.they.may.already.be.back.in = they may already be back in your journal. reload to check.
 
 journal.window.import.import.delete.copy.message.they.may.already.be.erased.reload = they may already be erased. reload to check.
@@ -18542,55 +19148,13 @@ journal.window.import.import.delete.copy.message.they.re.back.in.your.journal = 
 
 journal.window.import.import.delete.copy.message.they.re.still.in.the.trash = they're still in the trash. you can try again from there.
 
-journal.window.import.import.delete.copy.meta.imported.day = imported { $slot1 }
-
-journal.window.import.import.delete.copy.more.and.n.more = and { $slot1 } more
-
-journal.window.import.import.delete.copy.noneerasedmany.look.for.them.below.or.in = look for them below or in the trash.
-
-journal.window.import.import.delete.copy.noneerasedone.look.for.it.below.or.in = look for it below or in the trash.
-
-journal.window.import.import.delete.copy.nonegonemany.they.re.no.longer.listed.here = they're no longer listed here.
-
-journal.window.import.import.delete.copy.nonegoneone.it.s.no.longer.listed.here = it's no longer listed here.
-
-journal.window.import.import.delete.copy.nonestillmany.k.are.still.in.your.journal = { $slot1 } are still in your journal, marked below.
-
-journal.window.import.import.delete.copy.nonestillone.k.is.still.in.your.journal = { $slot1 } is still in your journal, marked below.
-
-journal.window.import.import.delete.copy.noun.import = import
-
-journal.window.import.import.delete.copy.onemany.the.w.segments.from.it.that = the { $slot1 } segments from it that wait in the trash on their own are erased with it.
-
-journal.window.import.import.delete.copy.oneone.the.segment.from.it.that.waits = the segment from it that waits in the trash on its own is erased with it.
-
 journal.window.import.import.delete.copy.oneunknown.any.of.its.segments.waiting.in = any of its segments waiting in the trash on their own are erased with it.
 
 journal.window.import.import.delete.copy.opentrash.open.trash = open trash
 
-journal.window.import.import.delete.copy.originalmany.the.n.original.files.it.kept = the { $slot1 } original files it kept
-
-journal.window.import.import.delete.copy.originalone.the.original.file.it.kept = the original file it kept
-
 journal.window.import.import.delete.copy.originalunknown.any.original.file.it.kept = any original file it kept
 
 journal.window.import.import.delete.copy.other.this.wasn.t.moved.try.again = this wasn't moved. try again.
-
-journal.window.import.import.delete.copy.othersgonemany.the.others.are.no.longer.listed = the others are no longer listed here.
-
-journal.window.import.import.delete.copy.othersgoneone.the.other.is.no.longer.listed = the other is no longer listed here.
-
-journal.window.import.import.delete.copy.oura.an.oura.sync.leaves.out.what = an { $slot1 } sync leaves out what this { $slot2 }. one you ask for the days it covered brings it back.
-
-journal.window.import.import.delete.copy.parterasedmany.the.others.weren.t.erased.look = the others weren't erased. look for them below or in the trash.
-
-journal.window.import.import.delete.copy.parterasedone.the.other.wasn.t.erased.look = the other wasn't erased. look for it below or in the trash.
-
-journal.window.import.import.delete.copy.partrecoveredmany.the.others.are.still.in.the = the others are still in the trash. you can try again from there.
-
-journal.window.import.import.delete.copy.partrecoveredone.the.other.is.still.in.the = the other is still in the trash. you can try again from there.
-
-journal.window.import.import.delete.copy.picklabel.select.name = select { $slot1 }
 
 journal.window.import.import.delete.copy.recover.recover = recover
 
@@ -18602,59 +19166,17 @@ journal.window.import.import.delete.copy.select.select = select
 
 journal.window.import.import.delete.copy.selectall.select.all = select all
 
-journal.window.import.import.delete.copy.selected.n.selected = { $slot1 } selected
-
-journal.window.import.import.delete.copy.spanmany.n.segments.from.first.to.last = { $slot1 } segments from { $slot2 } to { $slot3 }
-
-journal.window.import.import.delete.copy.spanone.n.segment.from.first.to.last = { $slot1 } segment from { $slot2 } to { $slot3 }
-
-journal.window.import.import.delete.copy.stillmany.k.couldn.t.be.moved.and = { $slot1 } couldn't be moved and are still in your journal, marked below.
-
-journal.window.import.import.delete.copy.stillone.k.couldn.t.be.moved.and = { $slot1 } couldn't be moved and is still in your journal, marked below.
-
-journal.window.import.import.delete.copy.strava.importing.a.strava.download.again.brings = importing a { $slot1 } download again brings back the workouts this { $slot2 }.
-
-journal.window.import.import.delete.copy.things.imports = imports
-
-journal.window.import.import.delete.copy.title.couldn.t.erase.that.noun = couldn't erase that { $slot1 }
-
 journal.window.import.import.delete.copy.title.couldn.t.erase.those = couldn't erase those
 
 journal.window.import.import.delete.copy.title.couldn.t.move.that.to.the = couldn't move that to the trash
 
 journal.window.import.import.delete.copy.title.couldn.t.move.those.to.the = couldn't move those to the trash
 
-journal.window.import.import.delete.copy.title.couldn.t.recover.that.noun = couldn't recover that { $slot1 }
-
 journal.window.import.import.delete.copy.title.couldn.t.recover.those = couldn't recover those
-
-journal.window.import.import.delete.copy.title.erased.done.of.n = erased { $slot1 } of { $slot2 }
-
-journal.window.import.import.delete.copy.title.erased.n.things.from.your.journal = erased { $slot1 } { $slot2 } from your journal
-
-journal.window.import.import.delete.copy.title.moved.done.of.n.to.the = moved { $slot1 } of { $slot2 } to the trash
-
-journal.window.import.import.delete.copy.title.moved.n.things.to.the.trash = moved { $slot1 } { $slot2 } to the trash
 
 journal.window.import.import.delete.copy.title.moved.to.the.trash = moved to the trash
 
-journal.window.import.import.delete.copy.title.n.things.recovered = { $slot1 } { $slot2 } recovered
-
-journal.window.import.import.delete.copy.title.noun.erased.from.your.journal = { $slot1 } erased from your journal
-
-journal.window.import.import.delete.copy.title.noun.recovered = { $slot1 } recovered
-
-journal.window.import.import.delete.copy.title.recovered.done.of.n = recovered { $slot1 } of { $slot2 }
-
 journal.window.import.import.delete.copy.title.your.journal.didn.t.answer = your journal didn't answer
-
-journal.window.import.import.delete.copy.workoutdaymany.n.workouts.from.day = { $slot1 } workouts from { $slot2 }
-
-journal.window.import.import.delete.copy.workoutdayone.n.workout.from.day = { $slot1 } workout from { $slot2 }
-
-journal.window.import.import.delete.copy.workoutspanmany.n.workouts.from.first.to.last = { $slot1 } workouts from { $slot2 } to { $slot3 }
-
-journal.window.import.import.delete.copy.workoutspanone.n.workout.from.first.to.last = { $slot1 } workout from { $slot2 } to { $slot3 }
 
 journal.window.import.import.delete.copy.workoutsunknown.the.workouts.it.brought.in = the workouts it brought in
 
@@ -18702,12 +19224,6 @@ journal.window.import.import.status.or.action.folder.access.forgotten.earlier.im
 
 journal.window.import.import.status.or.action.folder.connection.updated = folder connection updated.
 
-journal.window.import.import.status.or.action.importpickalllabel = importPickAllLabel
-
-journal.window.import.import.status.or.action.importpickcount = importPickCount
-
-journal.window.import.import.status.or.action.importpickdelete = importPickDelete
-
 journal.window.import.import.status.or.action.schedule.updated = schedule updated.
 
 journal.window.import.import.status.or.action.sending.sync.request = sending sync request…
@@ -18724,31 +19240,11 @@ journal.window.import.import.status.or.action.updating.folder.access = updating 
 
 journal.window.import.import.status.or.action.waiting.to.sync = waiting to sync.
 
-journal.window.import.import.view.as.value1 = { $slot1 }as{ $slot2 }{ $value1 }
-
 journal.window.import.import.view.choose.the.time.zone.in.the = choose the time zone in the recording filenames, or enter the manifest filename.
 
 journal.window.import.import.view.could.not.read.the.archive.size = could not read the archive size
 
 journal.window.import.import.view.could.not.read.the.import.size = could not read the import size
-
-journal.window.import.import.view.daily.total = daily total
-
-journal.window.import.import.view.daily.totals = daily totals
-
-journal.window.import.import.view.day = day
-
-journal.window.import.import.view.day.value1.of.value2 = day{ $slot1 }{ $value1 }{ $slot2 }of{ $slot3 }{ $value2 }
-
-journal.window.import.import.view.days = days
-
-journal.window.import.import.view.entries = entries
-
-journal.window.import.import.view.entry = entry
-
-journal.window.import.import.view.from.value1 = from{ $slot1 }{ $value1 }
-
-journal.window.import.import.view.import = import
 
 journal.window.import.import.view.import.failed = import failed
 
@@ -18756,31 +19252,7 @@ journal.window.import.import.view.import.status.unavailable = import status unav
 
 journal.window.import.import.view.import.unconfirmed = import unconfirmed
 
-journal.window.import.import.view.imports = imports
-
-journal.window.import.import.view.logged.entries = logged entries
-
-journal.window.import.import.view.logged.entry = logged entry
-
-journal.window.import.import.view.mindful.session = mindful session
-
-journal.window.import.import.view.mindful.sessions = mindful sessions
-
-journal.window.import.import.view.needs.about.value1.free.and.value2 = { $slot1 }· needs about{ $slot2 }{ $value1 }{ $slot3 }free, and{ $slot4 }{ $value2 }{ $slot5 }is free
-
 journal.window.import.import.view.nothing.new = nothing new
-
-journal.window.import.import.view.nothing.to.import = { $slot1 }· nothing to import
-
-journal.window.import.import.view.other.kind = other kind
-
-journal.window.import.import.view.other.kinds = other kinds
-
-journal.window.import.import.view.page.unavailable = 1 page unavailable
-
-journal.window.import.import.view.part = part
-
-journal.window.import.import.view.parts = parts
 
 journal.window.import.import.view.path.not.found = Path not found
 
@@ -18788,81 +19260,11 @@ journal.window.import.import.view.please.enter.the.path.to.your = Please enter t
 
 journal.window.import.import.view.please.select.a.file.to.import = Please select a file to import.
 
-journal.window.import.import.view.reading.value1 = reading{ $slot1 }{ $value1 }…
-
-journal.window.import.import.view.recording = recording
-
-journal.window.import.import.view.recordings = recordings
-
 journal.window.import.import.view.recordings.saved = recordings saved
 
 journal.window.import.import.view.recordings.saved.processing.continues = recordings saved; processing continues
 
-journal.window.import.import.view.to.value1 = to{ $slot1 }{ $value1 }
-
-journal.window.import.import.view.took.value1 = took{ $slot1 }{ $value1 }
-
 journal.window.import.import.view.validation.failed = Validation failed
-
-journal.window.import.import.view.value1.attendees = { $slot1 }·{ $slot2 }{ $value1 }{ $slot3 }attendees
-
-journal.window.import.import.view.value1.audio.value2.saved = { $value1 }{ $slot1 }audio{ $slot2 }{ $value2 }{ $slot3 }saved
-
-journal.window.import.import.view.value1.could.not.be.checked = { $slot1 }·{ $slot2 }{ $value1 }{ $slot3 }could not be checked
-
-journal.window.import.import.view.value1.elapsed = { $value1 }{ $slot1 }elapsed
-
-journal.window.import.import.view.value1.entities = { $value1 }{ $slot1 }entities
-
-journal.window.import.import.view.value1.entities.found = { $value1 }{ $slot1 }entities found
-
-journal.window.import.import.view.value1.h.value2.m = { $value1 }h{ $slot1 }{ $value2 }m
-
-journal.window.import.import.view.value1.highlights = { $value1 }{ $slot1 }highlights
-
-journal.window.import.import.view.value1.left.out = { $value1 }{ $slot1 }left out
-
-journal.window.import.import.view.value1.m.value2.s = { $value1 }m{ $slot1 }{ $value2 }s
-
-journal.window.import.import.view.value1.messages = { $value1 }{ $slot1 }messages
-
-journal.window.import.import.view.value1.min = { $value1 }{ $slot1 }min
-
-journal.window.import.import.view.value1.pages.unavailable = { $value1 }{ $slot1 }pages unavailable
-
-journal.window.import.import.view.value1.parts.rejected = { $slot1 }·{ $slot2 }{ $value1 }{ $slot3 }parts rejected
-
-journal.window.import.import.view.value1.parts.saved.value2.left.to = { $value1 }{ $slot1 }parts saved ·{ $slot2 }{ $value2 }{ $slot3 }left to save ·{ $slot4 }{ $value3 }{ $slot5 }waiting to process ·{ $slot6 }{ $value4 }{ $slot7 }processed ·{ $slot8 }{ $value5 }{ $slot9 }members left out
-
-journal.window.import.import.view.value1.processed = { $value1 }{ $slot1 }processed
-
-journal.window.import.import.view.value1.s = { $value1 }s
-
-journal.window.import.import.view.value1.still.to.save = { $value1 }{ $slot1 }still to save
-
-journal.window.import.import.view.value1.to.value2 = { $value1 }{ $slot1 }to{ $slot2 }{ $value2 }
-
-journal.window.import.import.view.value1.unavailable = { $slot1 }·{ $slot2 }{ $value1 }{ $slot3 }unavailable
-
-journal.window.import.import.view.value1.value2 = { $value1 }{ $slot1 }{ $value2 }
-
-journal.window.import.import.view.value1.value2.across.value3.value4 = { $value1 }{ $slot1 }{ $value2 }{ $slot2 }across{ $slot3 }{ $value3 }{ $slot4 }{ $value4 }
-
-journal.window.import.import.view.value1.value2.items = { $value1 }/{ $value2 }{ $slot1 }items
-
-journal.window.import.import.view.value1.value2.total = { $value1 }{ $slot1 }({ $value2 }{ $slot2 }total)
-
-journal.window.import.import.view.value1.value2.value3 = { $value1 }{ $slot1 }{ $value2 },{ $slot2 }{ $value3 }.
-
-journal.window.import.import.view.value1.value2.variant2 = { $slot1 }·{ $slot2 }{ $value1 }{ $slot3 }{ $value2 }
-
-journal.window.import.import.view.value1.waiting = { $slot1 }·{ $slot2 }{ $value1 }{ $slot3 }waiting
-
-journal.window.import.import.view.value1.waiting.for.processing = { $value1 }{ $slot1 }waiting for processing
-
-journal.window.import.import.view.workout = workout
-
-journal.window.import.import.view.workouts = workouts
 
 journal.window.import.label.source.obsidian = { $slot1 }
 
@@ -18883,8 +19285,6 @@ journal.window.import.link.label.download.this.journal = download this journal
 journal.window.import.link.label.import.another.source = import another source
 
 journal.window.import.link.label.plaud.connection.settings = { $slot1 } connection settings
-
-journal.window.import.link.label.review.on.health = review on Health
 
 journal.window.import.link.label.see.it.in.the.body.app = see it in the body app →
 
@@ -19146,15 +19546,9 @@ journal.window.import.status.status.unavailable = status unavailable
 
 journal.window.import.status.stopped = stopped
 
-journal.window.import.status.text.accepts.value1 = accepts{ $slot1 }{ $value1 }
-
 journal.window.import.status.text.any.supported.file = any supported file
 
 journal.window.import.status.text.failed = failed
-
-journal.window.import.status.text.import.another = import another{ $slot1 }
-
-journal.window.import.status.text.import.another.source = import another source
 
 journal.window.import.status.text.paste.the.full.path.to.your = paste the full path to your folder
 
@@ -19174,10 +19568,6 @@ journal.window.import.strings.activities.activities = activities
 
 journal.window.import.strings.artifact.paths.artifact.paths = artifact paths
 
-journal.window.import.strings.body.days.hidden.many.n.days.of.body.data.were = { $slot1 } days of body data were hidden in the archive, so they're hidden in this journal too.
-
-journal.window.import.strings.body.days.hidden.one.day.of.body.data.was.hidden = 1 day of body data was hidden in the archive, so it's hidden in this journal too.
-
 journal.window.import.strings.body.didnt.start.didn.t.start = didn't start
 
 journal.window.import.strings.body.failed.not.brought.in = not brought in
@@ -19190,27 +19580,11 @@ journal.window.import.strings.check.status.check.status = check status
 
 journal.window.import.strings.checking.status.checking.status = checking status…
 
-journal.window.import.strings.collision.body.after.entity.owner.is.unchanged.the.other.person = { $slot1 }owner is unchanged; the other person came in as a regular entity.
-
-journal.window.import.strings.collision.body.after.entity.staged.owner.is.unchanged.the.other.person = { $slot1 }owner is unchanged; the other person was staged and wasn't added.
-
-journal.window.import.strings.collision.body.after.source.as.its.owner.this = { $slot1 }as its owner. this{ $slot2 }
-
-journal.window.import.strings.collision.body.before.target.this.journal.belongs.to = this journal belongs to{ $slot1 }
-
-journal.window.import.strings.collision.body.between.names.and.the.imported.journal.marks = , and the imported journal marks{ $slot1 }
-
 journal.window.import.strings.collision.title.owner.identity.differs.between.journals = owner identity differs between journals
 
 journal.window.import.strings.completed.at.completed.at = completed at
 
 journal.window.import.strings.completed.completed = completed
-
-journal.window.import.strings.completed.in.completed.in = completed in
-
-journal.window.import.strings.copied.copied = copied
-
-journal.window.import.strings.created.created = created
 
 journal.window.import.strings.created.files.created.files = created files
 
@@ -19224,10 +19598,6 @@ journal.window.import.strings.date.source.owner.chosen.by.you = chosen by you
 
 journal.window.import.strings.date.source.photo.from.photo = from photo
 
-journal.window.import.strings.day.day = day
-
-journal.window.import.strings.days.days = days
-
 journal.window.import.strings.decisions.decisions = decisions
 
 journal.window.import.strings.delete.import.delete.this.import = delete this import
@@ -19240,15 +19610,9 @@ journal.window.import.strings.drawer.unavailable.drawer.renderer.unavailable = d
 
 journal.window.import.strings.entities.entities = entities
 
-journal.window.import.strings.entity.entity = entity
-
 journal.window.import.strings.entries.entries = entries
 
-journal.window.import.strings.entry.entry = entry
-
 journal.window.import.strings.error.error = error
-
-journal.window.import.strings.errored.errored = errored
 
 journal.window.import.strings.facets.facets = facets
 
@@ -19270,37 +19634,21 @@ journal.window.import.strings.files.files = files
 
 journal.window.import.strings.has.gaps.contains.gaps = contains gaps
 
-journal.window.import.strings.hour.hour = hour
-
-journal.window.import.strings.hours.hours = hours
-
 journal.window.import.strings.identity.differs.identity.differs = identity differs
 
 journal.window.import.strings.image.description.gap.detail.image.saved.without.visual.description = image saved without visual description
 
 journal.window.import.strings.import.time.import.time = import time
 
-journal.window.import.strings.importer.importer = importer
-
 journal.window.import.strings.imports.imports = imports
 
 journal.window.import.strings.leads.title.where.this.landed = where this landed
-
-journal.window.import.strings.links.left.out.entity.links.left.out = entity links left out
 
 journal.window.import.strings.merge.highlights.merge.highlights = merge highlights
 
 journal.window.import.strings.merge.summary.merge.summary = merge summary
 
-journal.window.import.strings.merged.merged = merged
-
 journal.window.import.strings.mime.type.mime.type = mime type
-
-journal.window.import.strings.minute.minute = minute
-
-journal.window.import.strings.minutes.minutes = minutes
-
-journal.window.import.strings.more.staged.more.staged = more staged
 
 journal.window.import.strings.not.started.not.started = not started
 
@@ -19320,8 +19668,6 @@ journal.window.import.strings.preview.failed.couldn.t.prepare.a.preview.try = co
 
 journal.window.import.strings.preview.import.preview.import = preview import
 
-journal.window.import.strings.processed.processed = processed
-
 journal.window.import.strings.processing.facts.processing.facts = processing facts
 
 journal.window.import.strings.processing.processing = processing…
@@ -19338,13 +19684,9 @@ journal.window.import.strings.segments.segments = segments
 
 journal.window.import.strings.setting.setting = setting
 
-journal.window.import.strings.skipped.skipped = skipped
-
 journal.window.import.strings.source.source = source
 
 journal.window.import.strings.staged.entities.staged.entities = staged entities
-
-journal.window.import.strings.staged.staged = staged
 
 journal.window.import.strings.staging.staging = staging
 
@@ -19376,8 +19718,6 @@ journal.window.import.strings.unconfirmed.explanation.this.import.couldn.t.be.co
 
 journal.window.import.strings.unconfirmed.import.unconfirmed = import unconfirmed
 
-journal.window.import.strings.under.a.minute.under.a.minute = under a minute
-
 journal.window.import.strings.untimed.ask.ask.us.to.add.it = ask us to add it
 
 journal.window.import.strings.untimed.notice.no.turn.times.found.in.this = no turn times found in this file, so it landed as one segment at the import's start time, each line as written. if your transcripts mark times in a way the journal doesn't read yet,
@@ -19388,16 +19728,6 @@ journal.window.import.strings.uploaded.at.uploaded.at = uploaded at
 
 journal.window.import.strings.view.day.view.that.day = view that day
 
-journal.window.import.strings.zone.differs.many.hours.hours.of.source.may.show = { $slot1 } hours of { $slot2 } may show at the wrong time: they were saved in a different time zone from the one this journal holds for { $slot3 }.
-
-journal.window.import.strings.zone.differs.one.hour.of.source.may.show.at = 1 hour of { $slot1 } may show at the wrong time: it was saved in a different time zone from the one this journal holds for { $slot2 }.
-
-journal.window.import.strings.zone.differs.under.less.than.an.hour.of.source = less than an hour of { $slot1 } may show at the wrong time: it was saved in a different time zone from the one this journal holds for { $slot2 }.
-
-journal.window.import.unit.night = night
-
-journal.window.import.unit.nights = nights
-
 journal.window.import.unit.record = record
 
 journal.window.import.unit.records = records
@@ -19407,8 +19737,6 @@ journal.window.import.visible.text.a.short.note.about.what.this = a short note a
 journal.window.import.visible.text.add.your.plaud.token.in.settings = add your { $slot1 } token in settings to sync recordings into your journal.
 
 journal.window.import.visible.text.automatic.sync.is.off = automatic sync is off.
-
-journal.window.import.visible.text.automatic.sync.is.on.value1 = automatic sync is on:{ $slot1 }{ $value1 }.
 
 journal.window.import.visible.text.checking.import = checking import…
 
@@ -19442,8 +19770,6 @@ journal.window.import.visible.text.couldn.t.load.this.choice.reopen = couldn't l
 
 journal.window.import.visible.text.couldn.t.save.this.choice.try = couldn't save this choice. try again.
 
-journal.window.import.visible.text.custom.schedules.stay.unchanged.value1 = custom schedules stay unchanged:{ $slot1 }{ $value1 }.
-
 journal.window.import.visible.text.date.range = date range:
 
 journal.window.import.visible.text.drop.a.file.here.or.choose = drop a file here or choose one
@@ -19464,11 +19790,7 @@ journal.window.import.visible.text.error.loading.content.variant2 = Error loadin
 
 journal.window.import.visible.text.folder.saved.but.import.setup.could = folder saved, but import setup could not be confirmed. check your imports before choosing it again.
 
-journal.window.import.visible.text.held = held —
-
 journal.window.import.visible.text.import.id = import id:
-
-journal.window.import.visible.text.import.value1.value2 = import:{ $slot1 }{ $value1 }{ $slot2 }·{ $slot3 }{ $value2 }
 
 journal.window.import.visible.text.items = items
 
@@ -19488,8 +19810,6 @@ journal.window.import.visible.text.no.folder.connected = no folder connected.
 
 journal.window.import.visible.text.no.items.found = no items found
 
-journal.window.import.visible.text.nothing.to.import = { $slot1 }· nothing to import
-
 journal.window.import.visible.text.optional = (optional)
 
 journal.window.import.visible.text.original.saved.description.unavailable = original saved (description unavailable)
@@ -19497,8 +19817,6 @@ journal.window.import.visible.text.original.saved.description.unavailable = orig
 journal.window.import.visible.text.overview = overview
 
 journal.window.import.visible.text.overview.unavailable = overview unavailable
-
-journal.window.import.visible.text.partially.extracted = partially extracted (
 
 journal.window.import.visible.text.paste.text.or.drop.a.file = paste text or drop a file. you'll confirm the date before it goes in.
 
@@ -19560,26 +19878,6 @@ journal.window.import.visible.text.validate = validate
 
 journal.window.import.visible.text.validating = validating
 
-journal.window.import.visible.text.value1.audio.value2.already.saved = { $slot1 }·{ $slot2 }{ $value1 }{ $slot3 }audio{ $slot4 }{ $value2 }{ $slot5 }already saved
-
-journal.window.import.visible.text.value1.choose.the.folder.again.to = { $value1 }: choose the folder again to restore read access.
-
-journal.window.import.visible.text.value1.left.out = { $slot1 }·{ $slot2 }{ $value1 }{ $slot3 }left out
-
-journal.window.import.visible.text.value1.read.access.remembered.for.future = { $value1 }: read access remembered for future syncs.
-
-journal.window.import.visible.text.value1.saved = { $value1 }: saved
-
-journal.window.import.visible.text.value1.saved.but.import.setup.could = { $value1 }: saved, but import setup could not be confirmed. check your imports before choosing it again.
-
-journal.window.import.visible.text.value1.skipped = { $slot1 }·{ $slot2 }{ $value1 }{ $slot3 }skipped
-
-journal.window.import.visible.text.value1.source.value2.value3.recording.bytes = { $value1 }{ $slot1 }source{ $slot2 }{ $value2 }{ $slot3 }·{ $slot4 }{ $value3 }{ $slot5 }recording bytes ·{ $slot6 }{ $value4 }{ $slot7 }{ $value5 }
-
-journal.window.import.visible.text.value1.value2.across.value3.value4 = { $value1 }{ $slot1 }{ $value2 }{ $slot2 }across{ $slot3 }{ $value3 }{ $slot4 }{ $value4 }
-
-journal.window.import.visible.text.value1.value2.already.listed.on.the = { $slot1 }·{ $slot2 }{ $value1 }{ $slot3 }{ $value2 }{ $slot4 }already listed on the activities page would move to this import's facet from{ $slot5 }{ $value3 }
-
 journal.window.import.window.explanation.a.button.input.select.textarea = a, button, input, select, textarea
 
 journal.window.import.window.explanation.a.button.select.textarea = a, button, select, textarea
@@ -19594,25 +19892,9 @@ journal.window.import.window.explanation.failed.to.start.import = Failed to star
 
 journal.window.import.window.explanation.malformed.import.history.response = Malformed import history response
 
-journal.window.import.window.explanation.page.could.not.be.extracted = 1 page could not be extracted
-
-journal.window.import.window.explanation.saying.yes.can.move.up.to = saying yes can move up to{ $slot1 }{ $value1 }{ $slot2 }already listed on the activities page to this import's facet
-
 journal.window.import.window.explanation.stalled.no.updates.in.minutes = stalled: no updates in 10 minutes
 
 journal.window.import.window.explanation.thinking.progress.is.unavailable = thinking progress is unavailable
-
-journal.window.import.window.explanation.this.file.was.already.staged.value1 = this file was already staged{ $value1 }.
-
-journal.window.import.window.explanation.this.import.is.already.in.progress = this import is already in progress{ $value1 }.
-
-journal.window.import.window.explanation.value1.left.out.named.in.the = { $value1 }{ $slot1 }left out, named in the summary
-
-journal.window.import.window.explanation.value1.of.value2.value3.ready.to = { $value1 }{ $slot1 }of{ $slot2 }{ $value2 }{ $slot3 }{ $value3 }{ $slot4 }ready to find
-
-journal.window.import.window.explanation.value1.pages.could.not.be.extracted = { $value1 }{ $slot1 }pages could not be extracted
-
-journal.window.import.window.explanation.value1.put.together.from.sleep.stages = { $value1 }{ $slot1 }put together from sleep stages
 
 journal.window.describe.notification.blocked.chatgpt.not.eligible = this ChatGPT account can't be used for thinking. pick another provider on the thinking page
 

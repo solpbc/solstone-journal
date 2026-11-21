@@ -6,7 +6,7 @@
 //! This reads an import's summary and how far it got, and a bundle's manifest:
 //! never a window.
 
-use solstone_core_convey_http::window_catalog::{strings, text};
+use solstone_core_convey_http::window_catalog::{Value as CatalogValue, render, strings, text};
 use std::fs;
 use std::path::Path;
 
@@ -18,7 +18,7 @@ use solstone_core_location::old_imports::{
     NewImport, PROGRESS_FILE, read_new_imports, read_old_bundles,
 };
 
-use crate::fmt::{clock, count_noun, month_abbr};
+use crate::fmt::{cardinal_quantity, clock, grouped, month_abbr};
 use crate::old_lines::listing_item;
 
 /// How a new-path import reads now.
@@ -55,44 +55,43 @@ fn import_state(root: &Path, import: &NewImport) -> &'static str {
 /// How far a running or stopped import got, from `body-progress.json`, in the
 /// owner's words. Never names a stage or a window.
 pub(crate) fn progress_line(progress: &Value, running: bool, locale: &str) -> String {
-    let lead = if running {
-        text(locale, "journal.window.body.import.progress.running")
-    } else {
-        text(locale, "journal.window.body.import.progress.stopped")
-    };
     let days_done = progress.get("days_done").and_then(Value::as_u64);
     let days_total = progress.get("days_total").and_then(Value::as_u64);
     let rows_scanned = progress.get("rows_scanned").and_then(Value::as_u64);
     match (days_done, days_total, rows_scanned) {
-        (Some(done), Some(total), _) if total > 0 => strings(
+        (Some(done), Some(total), _) if total > 0 => render(
             locale,
-            "journal.window.body.import.progress.days",
-            [
-                ("lead", &lead),
-                ("done", &done.to_string()),
-                ("total", &total.to_string()),
+            if running {
+                "journal.window.body.import.progress.running.days"
+            } else {
+                "journal.window.body.import.progress.stopped.days"
+            },
+            &[
+                ("done_quantity", cardinal_quantity(done)),
+                ("total_quantity", cardinal_quantity(total)),
+                ("done_days", CatalogValue::String(&done.to_string())),
+                ("total_days", CatalogValue::String(&total.to_string())),
             ],
         ),
-        (_, _, Some(rows)) if rows > 0 => strings(
+        (_, _, Some(rows)) if rows > 0 => render(
             locale,
-            "journal.window.body.import.progress.entries",
-            [
-                ("lead", &lead),
-                (
-                    "entries",
-                    &count_noun(
-                        rows,
-                        "journal.window.body.count.entry.one",
-                        "journal.window.body.count.entry.other",
-                        locale,
-                    ),
-                ),
+            if running {
+                "journal.window.body.import.progress.running.entries"
+            } else {
+                "journal.window.body.import.progress.stopped.entries"
+            },
+            &[
+                ("quantity", cardinal_quantity(rows)),
+                ("entry_count", CatalogValue::String(&grouped(rows))),
             ],
         ),
-        _ => strings(
+        _ => text(
             locale,
-            "journal.window.body.import.progress.empty",
-            [("lead", &lead)],
+            if running {
+                "journal.window.body.import.progress.running.empty"
+            } else {
+                "journal.window.body.import.progress.stopped.empty"
+            },
         ),
     }
 }

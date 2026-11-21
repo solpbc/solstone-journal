@@ -1,0 +1,30 @@
+{
+  "description": "Import elapsed duration measured in days.",
+  "context": "Journal window. Import elapsed duration measured in days.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "54d3b62722e079ec5dab0c416b0cdb92d686436a0c7b12eba46d95c57c9f8069",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

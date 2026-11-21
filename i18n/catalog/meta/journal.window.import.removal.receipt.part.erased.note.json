@@ -1,0 +1,26 @@
+{
+  "description": "Items remaining after a partial permanent erase.",
+  "context": "Journal window. Items remaining after a partial permanent erase.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "8f9635e25c9511fd90c4d0636fdc74261bf534281ba45798c7ca3003f9ffd43e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

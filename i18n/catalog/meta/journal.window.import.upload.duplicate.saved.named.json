@@ -1,0 +1,21 @@
+{
+  "description": "Notice identifying the import already in progress or saved.",
+  "context": "Journal window. Notice identifying the import already in progress or saved.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "import_id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2256726247cbf1235e18a17c647615c099a5f6f9f95f743e74a3555ea0510bdc",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

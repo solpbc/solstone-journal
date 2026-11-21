@@ -1,0 +1,30 @@
+{
+  "description": "Source-English Apple Health preview disclosure about moving records already listed.",
+  "context": "Journal window. Source-English Apple Health preview disclosure about moving records already listed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "977593362a62634faa0161dd36677e03d21403ed9fcc62d52549df5ca987ba52",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

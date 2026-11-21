@@ -1,0 +1,30 @@
+{
+  "description": "Number of PDF pages that could not be extracted.",
+  "context": "Journal window. Number of PDF pages that could not be extracted.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "17f981aefffb1c9e6147afee98f788933658e4d96cfd0ad14535417c7c78e5e7",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Source-English disclosure about getting this source’s removed material back.",
+  "context": "Journal window. Source-English disclosure about getting this source’s removed material back.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8239e9c8145cda51bed97cf18dfa0ef95a9d83a74f5930b1174265999ab0b91a",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

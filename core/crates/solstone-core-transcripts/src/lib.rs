@@ -46,7 +46,7 @@ pub use segment_page::{
     AgentSpeakers, MAX_TRANSCRIPT_PAGE_BYTES, MAX_TRANSCRIPT_PAGE_ITEMS, MessageBounds,
     POSSIBLE_SPEAKER_CHANGE_WITHIN_SENTENCE, SegmentClock, SegmentTranscriptCursor,
     SegmentTranscriptEntry, SegmentTranscriptPage, SegmentTranscriptReadError,
-    SegmentTranscriptVersion, read_segment_transcript_page,
+    SegmentTranscriptVersion, TurnPart, read_segment_transcript_page,
     read_segment_transcript_page_leaving_out, read_segment_transcript_page_with_permissions,
     read_spoken_conversation, segment_clock, segment_has_permitted_files,
 };

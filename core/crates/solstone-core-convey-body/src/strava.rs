@@ -10,7 +10,7 @@
 //! workout goes with the day it started: when the owner hid that day, the
 //! days after it leave it out too.
 
-use solstone_core_convey_http::window_catalog::{strings, text};
+use solstone_core_convey_http::window_catalog::{ENGLISH, strings, text};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
@@ -105,35 +105,39 @@ fn item(activity_id: u64, workout: &Value, day: &str, locale: &str) -> Value {
         .get("start")
         .and_then(Value::as_str)
         .and_then(|start| solstone_core_time::parse_rfc3339(start).ok());
-    let start_label = start.as_ref().map(|start| {
-        let local = start.datetime();
-        let label = clock(local, locale);
-        if solstone_core_time::day_key(local.date()) == day {
-            label
-        } else {
-            strings(
-                locale,
-                "journal.window.body.date.time.before",
-                [
-                    (
-                        "date",
-                        &short_day(&solstone_core_time::day_key(local.date()), locale)
-                            .unwrap_or_default()
-                            .to_lowercase(),
-                    ),
-                    ("time", &label),
-                ],
-            )
-        }
-    });
-    let duration = field("elapsed_seconds").map(|seconds| duration_label(seconds, locale));
+    let format_start = |locale| {
+        start.as_ref().map(|start| {
+            let local = start.datetime();
+            let label = clock(local, locale);
+            if solstone_core_time::day_key(local.date()) == day {
+                label
+            } else {
+                strings(
+                    locale,
+                    "journal.window.body.date.time.before",
+                    [
+                        (
+                            "date",
+                            &short_day(&solstone_core_time::day_key(local.date()), locale)
+                                .unwrap_or_default()
+                                .to_lowercase(),
+                        ),
+                        ("time", &label),
+                    ],
+                )
+            }
+        })
+    };
+    let start_label = format_start(locale);
+    let start_english = if locale == ENGLISH {
+        start_label.clone()
+    } else {
+        format_start(ENGLISH)
+    };
+    let duration = field("elapsed_seconds").map(|seconds| duration_label(seconds, false, locale));
     let mut details = Vec::new();
     if let Some(moving) = field("moving_seconds") {
-        details.push(strings(
-            locale,
-            "journal.window.body.strava.moving",
-            [("duration", &duration_label(moving, locale))],
-        ));
+        details.push(duration_label(moving, true, locale));
     }
     if let Some(metres) = field("distance_m") {
         details.push(strings(
@@ -224,6 +228,7 @@ fn item(activity_id: u64, workout: &Value, day: &str, locale: &str) -> Value {
         "name": name,
         "source": "Strava",
         "start": start_label,
+        "start_english": start_english,
         "duration": duration,
         "metrics_label": distance_label.unwrap_or_default(),
         "details": details,
@@ -235,24 +240,36 @@ fn item(activity_id: u64, workout: &Value, day: &str, locale: &str) -> Value {
     })
 }
 
-fn duration_label(seconds: f64, locale: &str) -> String {
+fn duration_label(seconds: f64, moving: bool, locale: &str) -> String {
     let minutes = (seconds / 60.0).round() as i64;
     if minutes < 60 {
         strings(
             locale,
-            "journal.window.body.strava.duration.minutes",
+            if moving {
+                "journal.window.body.strava.moving.minutes"
+            } else {
+                "journal.window.body.strava.duration.minutes"
+            },
             [("minutes", &minutes.to_string())],
         )
     } else if minutes % 60 == 0 {
         strings(
             locale,
-            "journal.window.body.strava.duration.hours",
+            if moving {
+                "journal.window.body.strava.moving.hours"
+            } else {
+                "journal.window.body.strava.duration.hours"
+            },
             [("hours", &(minutes / 60).to_string())],
         )
     } else {
         strings(
             locale,
-            "journal.window.body.strava.duration.time",
+            if moving {
+                "journal.window.body.strava.moving.time"
+            } else {
+                "journal.window.body.strava.duration.time"
+            },
             [
                 ("hours", &(minutes / 60).to_string()),
                 ("minutes", &(minutes % 60).to_string()),

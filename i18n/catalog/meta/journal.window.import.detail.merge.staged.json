@@ -1,0 +1,30 @@
+{
+  "description": "Independent count in an archive merge summary.",
+  "context": "Journal window. Independent count in an archive merge summary.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "8d430f96fd270bee3127a41b09dfc57a18558f60c4a9ca2f2931329f575b1a02",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

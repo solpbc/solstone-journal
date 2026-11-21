@@ -4,7 +4,7 @@
 //! How the Body app says dates and numbers.
 
 use jiff::civil::{Date, DateTime};
-use solstone_core_convey_http::window_catalog::{strings, text};
+use solstone_core_convey_http::window_catalog::{Value as CatalogValue, render, strings, text};
 
 use crate::presentation::display_number;
 
@@ -14,15 +14,17 @@ pub(crate) fn number(value: f64) -> String {
 
 pub(crate) fn clock(time: DateTime, locale: &str) -> String {
     let hour = time.hour() % 12;
-    format!(
-        "{}:{:02} {}",
-        if hour == 0 { 12 } else { hour },
-        time.minute(),
+    strings(
+        locale,
         if time.hour() < 12 {
-            text(locale, "journal.window.body.date.am")
+            "journal.window.body.date.clock.morning"
         } else {
-            text(locale, "journal.window.body.date.pm")
-        }
+            "journal.window.body.date.clock.afternoon"
+        },
+        [
+            ("hour", &if hour == 0 { 12 } else { hour }.to_string()),
+            ("minute", &format!("{:02}", time.minute())),
+        ],
     )
 }
 
@@ -141,17 +143,20 @@ pub(crate) fn grouped(value: u64) -> String {
         .to_owned()
 }
 
-/// "1 reading", "3 readings".
-pub(crate) fn count_noun(count: u64, one_id: &str, many_id: &str, locale: &str) -> String {
-    strings(
+pub(crate) fn cardinal_quantity(count: u64) -> CatalogValue<'static> {
+    let value = i32::try_from(count)
+        .map(i64::from)
+        .unwrap_or_else(|_| 1_000_000 + (count % 1_000_000) as i64);
+    CatalogValue::Cardinal(value)
+}
+
+pub(crate) fn count_label(count: u64, id: &str, locale: &str) -> String {
+    render(
         locale,
-        "journal.window.body.count.label",
-        [
-            ("count", &grouped(count)),
-            (
-                "noun",
-                &text(locale, if count == 1 { one_id } else { many_id }),
-            ),
+        id,
+        &[
+            ("count", CatalogValue::String(&grouped(count))),
+            ("quantity", cardinal_quantity(count)),
         ],
     )
 }

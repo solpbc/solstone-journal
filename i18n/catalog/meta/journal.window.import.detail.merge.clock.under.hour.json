@@ -1,0 +1,21 @@
+{
+  "description": "Time-zone mismatch for less than an hour of imported data.",
+  "context": "Journal window. Time-zone mismatch for less than an hour of imported data.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "dc130f95ae7d30cf9194e01b6e63d55137a226c71f4e70c2767f601a0b6c639b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

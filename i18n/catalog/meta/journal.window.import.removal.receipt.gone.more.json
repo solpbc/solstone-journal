@@ -1,0 +1,30 @@
+{
+  "description": "Items no longer listed after the operation.",
+  "context": "Journal window. Items no longer listed after the operation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "no_longer_listed",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "078a6b4c647000ab90eea6d3b1f3be8a458a58745522e0f975ba499bd7eeef03",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

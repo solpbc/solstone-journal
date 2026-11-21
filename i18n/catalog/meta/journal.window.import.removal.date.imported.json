@@ -1,0 +1,21 @@
+{
+  "description": "Displayed date, storage or status on the import removal confirmation or receipt.",
+  "context": "Journal window. Displayed date, storage or status on the import removal confirmation or receipt.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2855c509e61721d961712cec9c4243764c59651c48dad0218d16cd359c4c476b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

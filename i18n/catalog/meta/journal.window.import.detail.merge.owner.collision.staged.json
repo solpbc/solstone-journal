@@ -1,0 +1,25 @@
+{
+  "description": "Explains a conflicting owner in the imported archive and its resulting treatment.",
+  "context": "Journal window. Explains a conflicting owner in the imported archive and its resulting treatment.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "journal_owner",
+      "type": "string"
+    },
+    {
+      "name": "archive_owner",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "279b582e4297748a60538682157fafefcf91e115f26b00adf5ef068eec44c226",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

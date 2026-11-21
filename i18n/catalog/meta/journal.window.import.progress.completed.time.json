@@ -1,0 +1,21 @@
+{
+  "description": "Elapsed time for a completed import.",
+  "context": "Journal window. Elapsed time for a completed import.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "elapsed_time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "da9777807bfc6e1b7ef80f629e6a6ff5722f80369de2b2eb14b500d0e63d0c51",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

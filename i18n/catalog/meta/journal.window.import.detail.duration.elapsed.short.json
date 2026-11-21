@@ -1,0 +1,16 @@
+{
+  "description": "Duration shorter than one minute.",
+  "context": "Journal window. Duration shorter than one minute.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c9c874f6e3954ab816ce953603fe464453434b037906e91d20db3961edd376a9",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

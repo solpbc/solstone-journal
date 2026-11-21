@@ -1,0 +1,21 @@
+{
+  "description": "Saved file or folder whose import setup could not be confirmed.",
+  "context": "Journal window. Saved file or folder whose import setup could not be confirmed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b3e04abcfb04d9fa607412af828fa80ba18827bc9983cd16b2f49ff40e2ff170",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

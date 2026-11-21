@@ -1,0 +1,25 @@
+{
+  "description": "Day position and total for a Body import.",
+  "context": "Journal window. Day position and total for a Body import.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "days_done",
+      "type": "string"
+    },
+    {
+      "name": "days_total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "30af0d8f85e63fd5f985aa0349166386a9415aa98c1adec05e7963ddd81e961d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

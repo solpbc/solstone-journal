@@ -1,0 +1,39 @@
+{
+  "description": "Summary of imports and entries in the history with independent cardinal counts.",
+  "context": "Journal window. Summary of imports and entries in the history with independent cardinal counts.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "import_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "entry_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "imports",
+      "type": "string"
+    },
+    {
+      "name": "entries",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "292b19c357c51a6176b4e7da77c502a5cf35e94ddb4b851491b44aa737830377",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "import_quantity",
+    "type": "cardinal"
+  }
+}

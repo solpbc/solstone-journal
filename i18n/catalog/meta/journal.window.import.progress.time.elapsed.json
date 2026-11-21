@@ -1,0 +1,21 @@
+{
+  "description": "Elapsed time when there is no distinct stage time.",
+  "context": "Journal window. Elapsed time when there is no distinct stage time.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "elapsed_time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d700fdca589e8dd6da8c464d0e3ba68ce8eb589bfa481c62ea2c389d6db77386",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

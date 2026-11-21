@@ -1,0 +1,30 @@
+{
+  "description": "Separate count for one stage of the audio archive import.",
+  "context": "Journal window. Separate count for one stage of the audio archive import.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "2c95ce598c0b3c358b9e85380a6dcf9616ef842b8fbb99492e6c5ab8407ecf77",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

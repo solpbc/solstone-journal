@@ -1,0 +1,34 @@
+{
+  "description": "Segment count for a recorded day.",
+  "context": "Journal window. Segment count for a recorded day.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "segment_count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "940f05dd5d4eca213b790830708c440e76f1efafe43bdc47b7900f3c84b3a739",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

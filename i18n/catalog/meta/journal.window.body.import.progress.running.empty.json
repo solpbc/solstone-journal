@@ -1,0 +1,16 @@
+{
+  "description": "Body import without saved data while running.",
+  "context": "Journal window. Body import without saved data while running.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f61910f2df7323e54ede7d8e1fa1e9a86c29f10ab4654bdd8d665e744b42d4dd",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Segments waiting in Trash for one import.",
+  "context": "Journal window. Segments waiting in Trash for one import.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "waiting_segments",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "93aa1a5f70294161da885b21e2ff3804e5768c9ebb923d7eb22bde1a96c3d633",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

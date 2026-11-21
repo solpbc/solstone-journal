@@ -1,0 +1,21 @@
+{
+  "description": "When the import finished processing.",
+  "context": "Journal window. When the import finished processing.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "finished_at",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2bd5c98ecd4c544923d12d753ff4396c890c752119d254279cd0c55f6d16ac1c",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

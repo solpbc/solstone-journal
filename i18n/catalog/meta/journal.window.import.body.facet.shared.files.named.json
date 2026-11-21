@@ -1,0 +1,21 @@
+{
+  "description": "Source-English Body import disclosure naming the facet the owner selected.",
+  "context": "Journal window. Source-English Body import disclosure naming the facet the owner selected.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "facet_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2cd6d714c62fc2299cf4fff47d99a276f0d4acaf1c083e7ad4908a716087cd77",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

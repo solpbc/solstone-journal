@@ -1414,7 +1414,7 @@ a.body-day-cell:focus-visible {
     const id = escapeHtml(workout.strava_activity_id);
     const details = asArray(workout.details);
     const more = asArray(workout.more_from_strava);
-    return `<li class="body-workout-strava" data-strava-row="${id}"><span class="body-workout-name">${escapeHtml(workout.name)}</span><span class="body-num">${workout.start ? escapeHtml(workout.start) : ""}${workout.duration ? ` &middot; ${escapeHtml(workout.duration)}` : ""}${workout.metrics_label ? ` &middot; ${escapeHtml(workout.metrics_label)}` : ""} ${window.JournalI18n.renderHtml('journal.window.body.visible.text.strava')}</span><button type="button" class="body-workout-delete" data-strava-delete="${id}" data-strava-start="${workout.start ? escapeHtml(workout.start) : ""}" aria-label="${window.JournalI18n.renderHtml('journal.window.body.workout.delete.name', [['workout_name', String(workout.name ?? '')]])}">${window.JournalI18n.renderHtml('journal.window.body.button.label.delete')}</button>${details.length ? `<span class="body-workout-details">${window.JournalI18n.renderHtml('journal.window.body.workout.strava.figures', [['figures', details.map(value => String(value ?? '')).join(' · ')]])}</span>` : ""}${more.length ? `<details class="body-workout-more"><summary>${additionalStravaRecords(more.length)}</summary><dl>${more.map((field) => `<dt>${escapeHtml(String(field.label ?? "").toLowerCase())}</dt><dd>${escapeHtml(field.value)}</dd>`).join("")}</dl></details>` : ""}</li>`;
+    return `<li class="body-workout-strava" data-strava-row="${id}"><span class="body-workout-name">${escapeHtml(workout.name)}</span><span class="body-num">${workout.start ? escapeHtml(workout.start) : ""}${workout.duration ? ` &middot; ${escapeHtml(workout.duration)}` : ""}${workout.metrics_label ? ` &middot; ${escapeHtml(workout.metrics_label)}` : ""} ${window.JournalI18n.renderHtml('journal.window.body.visible.text.strava')}</span><button type="button" class="body-workout-delete" data-strava-delete="${id}" data-strava-start="${escapeHtml(workout.start_english ?? workout.start ?? "")}" aria-label="${window.JournalI18n.renderHtml('journal.window.body.workout.delete.name', [['workout_name', String(workout.name ?? '')]])}">${window.JournalI18n.renderHtml('journal.window.body.button.label.delete')}</button>${details.length ? `<span class="body-workout-details">${window.JournalI18n.renderHtml('journal.window.body.workout.strava.figures', [['figures', details.map(value => String(value ?? '')).join(' · ')]])}</span>` : ""}${more.length ? `<details class="body-workout-more"><summary>${additionalStravaRecords(more.length)}</summary><dl>${more.map((field) => `<dt>${escapeHtml(String(field.label ?? "").toLowerCase())}</dt><dd>${escapeHtml(field.value)}</dd>`).join("")}</dl></details>` : ""}</li>`;
   }
 
   // Deleting a Strava workout moves every piece of it, on every day it covers, to
@@ -1452,8 +1452,10 @@ a.body-day-cell:focus-visible {
     const notifications = window.AppServices && window.AppServices.notifications;
     return notifications ? notifications.show({ app: "body", ...options }) : null;
   }
-  function workoutDayLabel(day) {
-    return day && window.JournalFormat && window.JournalFormat.day ? window.JournalFormat.day(day).toLowerCase() : String(day || "");
+  function workoutDayLabel(day, sourceEnglish = false) {
+    return day && window.JournalFormat && window.JournalFormat.day
+      ? window.JournalFormat.day(day, undefined, { sourceEnglish }).toLowerCase()
+      : String(day || "");
   }
   function trashEraseDate(eraseAt) {
     const instant = new Date(eraseAt);
@@ -1720,7 +1722,7 @@ a.body-day-cell:focus-visible {
       closeDialog();
       const id = button.getAttribute("data-strava-delete");
       const start = button.getAttribute("data-strava-start") || "";
-      const meta = [workoutDayLabel(day), start, "Strava"].filter(Boolean).join(" · ");
+      const meta = [workoutDayLabel(day, true), start, "Strava"].filter(Boolean).join(" · ");
       let trigger = button;
       button = null;
       let dialog = document.createElement("dialog");
@@ -1853,7 +1855,7 @@ a.body-day-cell:focus-visible {
   function renderExperience(item) {
     const times = [item.start, item.end].filter(Boolean).map(escapeHtml).join(" &ndash; ");
     const bits = [times, item.distance ? escapeHtml(item.distance) : "", item.by ? escapeHtml(item.by) : ""].filter(Boolean);
-    const kind = item.continuing ? `${escapeHtml(item.kind)} continuing` : escapeHtml(item.kind);
+    const kind = escapeHtml(item.continuing_label ?? item.kind);
     return `<li><span class="body-workout-name">${escapeHtml(item.name)}</span><span class="body-num">${kind}${bits.length ? ` &middot; ${bits.join(" &middot; ")}` : ""}</span></li>`;
   }
 

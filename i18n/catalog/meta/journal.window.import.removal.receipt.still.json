@@ -1,0 +1,30 @@
+{
+  "description": "Refused moves whose items are still listed.",
+  "context": "Journal window. Refused moves whose items are still listed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "still_listed",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "c574b3bf56bd8986d8986249b54050c4b84437d8a955f067637328970282dc79",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

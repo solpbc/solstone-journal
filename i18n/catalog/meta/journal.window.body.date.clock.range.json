@@ -1,0 +1,25 @@
+{
+  "description": "Start and end of a Body timeline bucket.",
+  "context": "Journal window. Start and end of a Body timeline bucket.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "first_clock",
+      "type": "string"
+    },
+    {
+      "name": "last_clock",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "43656964e7a9fa04bc9eb4fab6acdf527fcea33b6d9083d12816b02a8ad7193c",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

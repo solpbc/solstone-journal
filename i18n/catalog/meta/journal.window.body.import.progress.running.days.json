@@ -1,0 +1,39 @@
+{
+  "description": "Completed and known total days for the running Body import.",
+  "context": "Journal window. Completed and known total days for the running Body import.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "done_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "done_days",
+      "type": "string"
+    },
+    {
+      "name": "total_days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "c29508ed708bacce3e4ed755fb4e24efb55db2ffb20311943e7a75ce1752eaa2",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "total_quantity",
+    "type": "cardinal"
+  }
+}

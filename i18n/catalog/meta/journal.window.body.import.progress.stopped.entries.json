@@ -1,0 +1,30 @@
+{
+  "description": "How many rows the stopped Body import has read.",
+  "context": "Journal window. How many rows the stopped Body import has read.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "entry_count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "420bcbf1113198dfb937c4d3e194f6cf74628cb0fc9403d6cc86ed945a11eced",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

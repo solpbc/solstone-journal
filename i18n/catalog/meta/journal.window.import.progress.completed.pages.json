@@ -1,0 +1,30 @@
+{
+  "description": "Whole notice showing the number of PDF pages unavailable after partial extraction.",
+  "context": "Journal window. Whole notice showing the number of PDF pages unavailable after partial extraction.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "99c2652e178d7d8f45a3fbb9c9c051e5278ecbfcf57e491b852304f1c260534b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

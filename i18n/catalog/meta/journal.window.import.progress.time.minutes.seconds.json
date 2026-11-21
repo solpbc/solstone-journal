@@ -1,0 +1,25 @@
+{
+  "description": "Compact elapsed minutes and seconds.",
+  "context": "Journal window. Compact elapsed minutes and seconds.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "minutes",
+      "type": "string"
+    },
+    {
+      "name": "seconds",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "63d9c8cec83c73b2bcbd9c30b2ba6ef79555730eee45c6b87e035a21404591e9",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

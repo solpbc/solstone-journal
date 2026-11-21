@@ -1,0 +1,25 @@
+{
+  "description": "Entry read failure with the error message and the raw diagnostic.",
+  "context": "Journal window. Entry read failure with the error message and the raw diagnostic.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    },
+    {
+      "name": "diagnostic",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "88c192137e75282dc7f239d638fc4b75c40bc7fa9f2ec71d68fcfe7151d9f774",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

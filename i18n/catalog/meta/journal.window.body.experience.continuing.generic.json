@@ -1,0 +1,16 @@
+{
+  "description": "A carried-over Body experience whose source did not provide a kind.",
+  "context": "Journal window. A carried-over Body experience whose source did not provide a kind.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2bc39599c92b5f6dbd0f044b168130133842ff9ce08b61196fdcc7e0be90454a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

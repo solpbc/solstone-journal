@@ -1,0 +1,30 @@
+{
+  "description": "Further staged entities beyond the items shown.",
+  "context": "Journal window. Further staged entities beyond the items shown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "a5a833137c78fa04e6f3fceceeab3bd8b602bdc785a123d10c7acb4bf1a1179d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}
