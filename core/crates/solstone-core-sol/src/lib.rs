@@ -53,7 +53,10 @@ fn resolve_convey_port(env: &BTreeMap<String, String>) -> Result<i64, CommandOut
         Some(value) => match value.parse::<i64>() {
             Ok(port) if (1..=65535).contains(&port) => Ok(port),
             _ => Err(CommandOutput::failure(
-                "SOLSTONE_CONVEY_PORT must be an integer from 1 to 65535.\n",
+                format!(
+                    "{}\n",
+                    solstone_core_cli_copy::text("journal.cli.client.port.invalid")
+                ),
                 i32::from(EXIT_CONFIG),
             )),
         },
@@ -136,14 +139,19 @@ fn run_with_stdin_provider(
 }
 
 fn run_about(args: &[OsString]) -> ExitCode {
-    let usage = "usage: solstone about [-h | --help]\n";
+    let usage = || {
+        format!(
+            "{}\n",
+            solstone_core_cli_copy::text("journal.cli.about.usage.remote")
+        )
+    };
     if let [flag] = args
         && (flag == OsStr::new("-h") || flag == OsStr::new("--help"))
     {
-        return render_output(CommandOutput::success(usage));
+        return render_output(CommandOutput::success(usage()));
     }
     if !args.is_empty() {
-        return render_output(CommandOutput::failure(usage, i32::from(EXIT_USAGE)));
+        return render_output(CommandOutput::failure(usage(), i32::from(EXIT_USAGE)));
     }
     let env = env::vars().collect::<BTreeMap<_, _>>();
     let port = match resolve_convey_port(&env) {
@@ -158,12 +166,18 @@ fn run_about(args: &[OsString]) -> ExitCode {
 
 fn about_request(path: &str) -> solstone_core_sol_client::transport::ApiRequest {
     use solstone_core_sol_client::transport::{ApiRequest, HttpMethod, TimeoutPolicy};
+    let locale = solstone_core_cli_copy::cli_locale();
+    let headers = if locale == solstone_core_cli_copy::ENGLISH {
+        Vec::new()
+    } else {
+        vec![("X-Solstone-Locale".to_owned(), locale.to_owned())]
+    };
     ApiRequest {
         method: HttpMethod::Get,
         path: path.into(),
         params: Vec::new(),
         json: None,
-        headers: Vec::new(),
+        headers,
         policy: TimeoutPolicy::Api,
     }
 }
@@ -172,7 +186,10 @@ fn about_output(transport: &dyn HttpTransport) -> CommandOutput {
     let response = transport.request(about_request("/api/system/about"));
     let failure = || {
         CommandOutput::failure(
-            "the journal's about information couldn't be read. check that your journal is running, then try again.\n",
+            format!(
+                "{}\n",
+                solstone_core_cli_copy::text("journal.cli.about.resource.unavailable")
+            ),
             i32::from(EXIT_TEMPFAIL),
         )
     };
@@ -210,8 +227,8 @@ fn about_output(transport: &dyn HttpTransport) -> CommandOutput {
                         .filter(|version| !version.is_empty())
                     {
                         Some(version) => CommandOutput::success(format!(
-                            "journal {}\n",
-                            version.trim_start_matches('v')
+                            "{}\n",
+                            solstone_core_about::render_line("journal", version, None, "", "", "")
                         )),
                         None => failure(),
                     }
@@ -220,14 +237,22 @@ fn about_output(transport: &dyn HttpTransport) -> CommandOutput {
             }
         }
         Ok(response) => match solstone_core_sol_client::decode::decode_response(&response) {
-            Err(error) => {
-                CommandOutput::failure(format!("{}\n", error.message()), i32::from(EXIT_TEMPFAIL))
-            }
+            Err(error) => CommandOutput::failure(
+                format!(
+                    "{}\n",
+                    solstone_core_sol_client_cli::display_client_error(&error)
+                ),
+                i32::from(EXIT_TEMPFAIL),
+            ),
             Ok(_) => failure(),
         },
-        Err(error) => {
-            CommandOutput::failure(format!("{}\n", error.message()), i32::from(EXIT_TEMPFAIL))
-        }
+        Err(error) => CommandOutput::failure(
+            format!(
+                "{}\n",
+                solstone_core_sol_client_cli::display_client_error(&error)
+            ),
+            i32::from(EXIT_TEMPFAIL),
+        ),
     }
 }
 

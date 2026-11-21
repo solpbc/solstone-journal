@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error timeout.",
+  "context": "Journal command-line text for error timeout.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "15b077218bf42b0c510c6851b359e5b7eec94ca144d16b672c1b66cdfe043130",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

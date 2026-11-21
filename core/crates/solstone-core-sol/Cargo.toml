@@ -16,6 +16,7 @@ path = "src/bin/solstone-resident-fixture.rs"
 test = false
 
 [dependencies]
+solstone-core-cli-copy.workspace = true
 solstone-core-about.workspace = true
 serde_json = { workspace = true }
 sha2 = { workspace = true }

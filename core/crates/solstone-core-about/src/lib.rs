@@ -108,6 +108,13 @@ impl About {
 /// Read only public facts about this installed runtime and its native machine.
 #[must_use]
 pub fn host_about(version: &str) -> About {
+    host_about_in(version, None)
+}
+
+#[must_use]
+pub fn host_about_in(version: &str, locale: Option<&str>) -> About {
+    #[cfg(not(target_os = "linux"))]
+    let _ = locale;
     #[cfg(target_os = "linux")]
     {
         let platform = std::fs::read_to_string("/etc/os-release")
@@ -116,7 +123,14 @@ pub fn host_about(version: &str) -> About {
         let (os, os_version) = match platform {
             Ok(text) => parse_os_release(&text),
             Err(error) => {
-                log::warn!("about: os-release unavailable: {error}");
+                log::warn!(
+                    "{}",
+                    solstone_core_cli_copy::display_for(
+                        locale.unwrap_or(solstone_core_cli_copy::ENGLISH),
+                        "journal.cli.about.os.release.unavailable",
+                        [("error", &error)]
+                    )
+                );
                 (
                     "linux".into(),
                     uname

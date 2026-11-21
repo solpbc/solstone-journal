@@ -28,6 +28,15 @@ pub enum RenderError {
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum MessageId {
+    m6a6f75726e616c2e636c692e61626f75742e6f732e72656c656173652e756e617661696c61626c65,
+    m6a6f75726e616c2e636c692e61626f75742e7265736f757263652e756e617661696c61626c65,
+    m6a6f75726e616c2e636c692e61626f75742e75736167652e6a6f75726e616c,
+    m6a6f75726e616c2e636c692e61626f75742e75736167652e72656d6f7465,
+    m6a6f75726e616c2e636c692e636c69656e742e6572726f722e6d616c666f726d6564,
+    m6a6f75726e616c2e636c692e636c69656e742e6572726f722e74696d656f7574,
+    m6a6f75726e616c2e636c692e636c69656e742e6572726f722e756e726561636861626c65,
+    m6a6f75726e616c2e636c692e636c69656e742e6572726f722e756e7265616461626c65,
+    m6a6f75726e616c2e636c692e636c69656e742e706f72742e696e76616c6964,
     m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e62616e64,
     m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e636175676874,
     m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e6361756768742e636170706564,
@@ -481,6 +490,15 @@ pub fn render_dotted(locale: &str, dotted_id: &str, args: &[(&str, Value)]) -> R
 
 pub fn render_dotted_with_options(locale: &str, dotted_id: &str, args: &[(&str, Value)], use_isolating: bool) -> Result<String, RenderError> {
     static IDS: &[(&str, MessageId)] = &[
+        ("journal.cli.about.os.release.unavailable", MessageId::m6a6f75726e616c2e636c692e61626f75742e6f732e72656c656173652e756e617661696c61626c65),
+        ("journal.cli.about.resource.unavailable", MessageId::m6a6f75726e616c2e636c692e61626f75742e7265736f757263652e756e617661696c61626c65),
+        ("journal.cli.about.usage.journal", MessageId::m6a6f75726e616c2e636c692e61626f75742e75736167652e6a6f75726e616c),
+        ("journal.cli.about.usage.remote", MessageId::m6a6f75726e616c2e636c692e61626f75742e75736167652e72656d6f7465),
+        ("journal.cli.client.error.malformed", MessageId::m6a6f75726e616c2e636c692e636c69656e742e6572726f722e6d616c666f726d6564),
+        ("journal.cli.client.error.timeout", MessageId::m6a6f75726e616c2e636c692e636c69656e742e6572726f722e74696d656f7574),
+        ("journal.cli.client.error.unreachable", MessageId::m6a6f75726e616c2e636c692e636c69656e742e6572726f722e756e726561636861626c65),
+        ("journal.cli.client.error.unreadable", MessageId::m6a6f75726e616c2e636c692e636c69656e742e6572726f722e756e7265616461626c65),
+        ("journal.cli.client.port.invalid", MessageId::m6a6f75726e616c2e636c692e636c69656e742e706f72742e696e76616c6964),
         ("journal.cli.doctor.backlog.band", MessageId::m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e62616e64),
         ("journal.cli.doctor.backlog.caught", MessageId::m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e636175676874),
         ("journal.cli.doctor.backlog.caught.capped", MessageId::m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e6361756768742e636170706564),
@@ -962,6 +980,15 @@ pub fn render_with_options(locale: &str, id: MessageId, args: &[(&str, Value)], 
 type Prepared = Result<(&'static str, FluentArgs<'static>), RenderError>;
 type Prepare = fn(&'static str, &[(&str, Value)], Option<&str>) -> Prepared;
 static MESSAGES: &[(&str, Prepare)] = &[
+    ("m6a6f75726e616c2e636c692e61626f75742e6f732e72656c656173652e756e617661696c61626c65", prepare_m6a6f75726e616c2e636c692e61626f75742e6f732e72656c656173652e756e617661696c61626c65),
+    ("m6a6f75726e616c2e636c692e61626f75742e7265736f757263652e756e617661696c61626c65", no_arguments),
+    ("m6a6f75726e616c2e636c692e61626f75742e75736167652e6a6f75726e616c", no_arguments),
+    ("m6a6f75726e616c2e636c692e61626f75742e75736167652e72656d6f7465", no_arguments),
+    ("m6a6f75726e616c2e636c692e636c69656e742e6572726f722e6d616c666f726d6564", no_arguments),
+    ("m6a6f75726e616c2e636c692e636c69656e742e6572726f722e74696d656f7574", no_arguments),
+    ("m6a6f75726e616c2e636c692e636c69656e742e6572726f722e756e726561636861626c65", no_arguments),
+    ("m6a6f75726e616c2e636c692e636c69656e742e6572726f722e756e7265616461626c65", no_arguments),
+    ("m6a6f75726e616c2e636c692e636c69656e742e706f72742e696e76616c6964", no_arguments),
     ("m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e62616e64", prepare_m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e62616e64),
     ("m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e636175676874", no_arguments),
     ("m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e6361756768742e636170706564", prepare_m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e6361756768742e636170706564),
@@ -1404,6 +1431,24 @@ static MESSAGES: &[(&str, Prepare)] = &[
 fn no_arguments(key: &'static str, args: &[(&str, Value)], _: Option<&str>) -> Prepared {
     if let Some((name, _)) = args.first() { return Err(RenderError::UnknownArgument((*name).to_owned())); }
     Ok((key, FluentArgs::new()))
+}
+
+fn prepare_m6a6f75726e616c2e636c692e61626f75742e6f732e72656c656173652e756e617661696c61626c65(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["error"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "error").ok_or_else(|| RenderError::MissingArgument("error".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("error".to_string())),
+    };
+    f_args.set("error", FluentValue::from(v0.clone()));
+    Ok((_resource_key, f_args))
 }
 
 fn prepare_m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e62616e64(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {

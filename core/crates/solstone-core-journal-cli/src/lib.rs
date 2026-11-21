@@ -398,24 +398,33 @@ pub fn dispatch(command: JournalCommand, spawner: &dyn ProcessSpawner) -> Outcom
             Some(manifest::Primitive::Notify) => notify::notify(&rest),
             Some(manifest::Primitive::Indexer) => local_ops::dispatch("indexer", &rest),
             Some(manifest::Primitive::About) => {
-                let usage = "usage: solstone journal about [-h | --help]\n";
+                let usage = || {
+                    format!(
+                        "{}\n",
+                        solstone_core_cli_copy::text("journal.cli.about.usage.journal")
+                    )
+                };
                 if host::is_help_only(&rest) {
                     Outcome::LocalSuccess {
-                        stdout: usage.into(),
+                        stdout: usage(),
                         stderr: String::new(),
                     }
                 } else if rest.is_empty() {
                     Outcome::LocalSuccess {
                         stdout: format!(
                             "{}\n",
-                            solstone_core_about::host_about(env!("CARGO_PKG_VERSION")).about
+                            solstone_core_about::host_about_in(
+                                env!("CARGO_PKG_VERSION"),
+                                Some(solstone_core_cli_copy::cli_locale())
+                            )
+                            .about
                         ),
                         stderr: String::new(),
                     }
                 } else {
                     Outcome::LocalFailure {
                         stdout: String::new(),
-                        stderr: usage.into(),
+                        stderr: usage(),
                         exit: 64,
                     }
                 }

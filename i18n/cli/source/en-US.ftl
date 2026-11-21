@@ -1128,3 +1128,21 @@ journal.cli.doctor.search.log.finished = last finished search check could not be
 journal.cli.doctor.search.log.unavailable = search index status unavailable: { $error }
 
 journal.cli.doctor.search.log.work = search work list could not be read: { $error }
+
+journal.cli.about.os.release.unavailable = about: { $release_file } unavailable: { $error }
+
+journal.cli.about.resource.unavailable = the journal's about information couldn't be read. check that your journal is running, then try again.
+
+journal.cli.about.usage.journal = usage: { $syntax }
+
+journal.cli.about.usage.remote = usage: { $syntax }
+
+journal.cli.client.error.malformed = the journal response couldn't be read.
+
+journal.cli.client.error.timeout = The journal didn't answer in time.
+
+journal.cli.client.error.unreachable = your journal couldn't be reached over { $http }.
+
+journal.cli.client.error.unreadable = The journal returned an unreadable error.
+
+journal.cli.client.port.invalid = { $variable } must be an integer from 1 to 65535.

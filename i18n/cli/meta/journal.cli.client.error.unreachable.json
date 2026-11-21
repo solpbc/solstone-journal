@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for error unreachable.",
+  "context": "Journal command-line text for error unreachable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e87e0475f374d40b0ef51ed3d0e983a0b15aeb2f84235ad7b6bdad765f0fe64a",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "http",
+      "kind": "accepted-input",
+      "value": "HTTP"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for resource unavailable.",
+  "context": "Journal command-line text for resource unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "eb9fe7b01d03c095b16c858baf5d57a607ea7be2c05dca3a33cdc59f338011e9",
+  "max_length": 133,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

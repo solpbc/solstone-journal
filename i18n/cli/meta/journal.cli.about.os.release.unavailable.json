@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for os release unavailable.",
+  "context": "Journal command-line text for os release unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cf64b52240be1fc7d6059257d9d2ff56da252bdcff1af120ba58b06afdf5216b",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "release_file",
+      "kind": "accepted-input",
+      "value": "os-release"
+    }
+  ]
+}

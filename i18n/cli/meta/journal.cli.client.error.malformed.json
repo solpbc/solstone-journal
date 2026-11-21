@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for error malformed.",
+  "context": "Journal command-line text for error malformed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "da63e7b6faa7cc9d472f136c0369b8f9084e8dcc8a360c83a1115644c26fa6e4",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

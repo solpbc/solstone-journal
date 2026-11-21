@@ -4393,6 +4393,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "solstone-core-cli-copy",
  "windows-sys 0.61.2",
 ]
 
@@ -5748,6 +5749,7 @@ dependencies = [
  "solstone-core-about",
  "solstone-core-callosum",
  "solstone-core-cli-boundary",
+ "solstone-core-cli-copy",
  "solstone-core-facets",
  "solstone-core-import-sources",
  "solstone-core-indexer-query",
@@ -6561,6 +6563,7 @@ dependencies = [
  "sha2 0.10.9",
  "solstone-core-about",
  "solstone-core-cli-boundary",
+ "solstone-core-cli-copy",
  "solstone-core-installation-identity",
  "solstone-core-journal",
  "solstone-core-journal-cli",
@@ -6608,6 +6611,7 @@ name = "solstone-core-sol-client-cli"
 version = "2.0.86"
 dependencies = [
  "serde_json",
+ "solstone-core-cli-copy",
  "solstone-core-sol-client",
 ]
 

@@ -2,6 +2,69 @@
   "lock_version": 1,
   "messages": [
     {
+      "id": "journal.cli.about.os.release.unavailable",
+      "source": "cf64b52240be1fc7d6059257d9d2ff56da252bdcff1af120ba58b06afdf5216b",
+      "contract": "cd8338c1064eb3d9bfc46b2711e69439e425fd8648ee88e9b2df7001e57ee8db",
+      "protected": "dd487105422ae64f20503ad5670b7f1ac7dce4944d46945463297c4b212604b9",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.about.resource.unavailable",
+      "source": "eb9fe7b01d03c095b16c858baf5d57a607ea7be2c05dca3a33cdc59f338011e9",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.about.usage.journal",
+      "source": "6ded81f9571f0cedd45f361f8e3355b68941d9484132c7499112f9e3254b2bb8",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "0ea333c124dc1d418c647609927cdb9c675c5721443fe40bf17ccdfc2238b072",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.about.usage.remote",
+      "source": "6ded81f9571f0cedd45f361f8e3355b68941d9484132c7499112f9e3254b2bb8",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "926081f61f133a12bfa0620c0e12fe0d8da60b58bed90807cadc13e6cced62f0",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.client.error.malformed",
+      "source": "da63e7b6faa7cc9d472f136c0369b8f9084e8dcc8a360c83a1115644c26fa6e4",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.client.error.timeout",
+      "source": "15b077218bf42b0c510c6851b359e5b7eec94ca144d16b672c1b66cdfe043130",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.client.error.unreachable",
+      "source": "e87e0475f374d40b0ef51ed3d0e983a0b15aeb2f84235ad7b6bdad765f0fe64a",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "2d435a7874bf6bf0690be9e22368f0dcfcdd07601d18ac3e8167aa2f855d3af6",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.client.error.unreadable",
+      "source": "71b654a1be8b8f2e4bd9a6459f0db2e96b823ff03e1346b272adccca8b4c0926",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.client.port.invalid",
+      "source": "821713df75094c1ea39b591d54b70b156f6bb9d9e8b2b772192f085351be03eb",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "0463e7c2b8c9ca62b7415306fbe7930a6f21b8270186c6465c0a78998b306fff",
+      "locales": []
+    },
+    {
       "id": "journal.cli.doctor.backlog.band",
       "source": "1c264ef64d988ef0cd437a0e339d2ad23b2b958d90266fb16bf66a7022d534ec",
       "contract": "a9dcaceaddfe7bf5c5b12326425f9781236561dd18c828361f4a09dec75e3239",

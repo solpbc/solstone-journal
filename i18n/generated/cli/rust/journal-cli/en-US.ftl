@@ -1,3 +1,21 @@
+m6a6f75726e616c2e636c692e61626f75742e6f732e72656c656173652e756e617661696c61626c65 = about: { "os-release" } unavailable: { $error }
+
+m6a6f75726e616c2e636c692e61626f75742e7265736f757263652e756e617661696c61626c65 = the journal's about information couldn't be read. check that your journal is running, then try again.
+
+m6a6f75726e616c2e636c692e61626f75742e75736167652e6a6f75726e616c = usage: { "solstone journal about [-h | --help]" }
+
+m6a6f75726e616c2e636c692e61626f75742e75736167652e72656d6f7465 = usage: { "solstone about [-h | --help]" }
+
+m6a6f75726e616c2e636c692e636c69656e742e6572726f722e6d616c666f726d6564 = the journal response couldn't be read.
+
+m6a6f75726e616c2e636c692e636c69656e742e6572726f722e74696d656f7574 = The journal didn't answer in time.
+
+m6a6f75726e616c2e636c692e636c69656e742e6572726f722e756e726561636861626c65 = your journal couldn't be reached over { "HTTP" }.
+
+m6a6f75726e616c2e636c692e636c69656e742e6572726f722e756e7265616461626c65 = The journal returned an unreadable error.
+
+m6a6f75726e616c2e636c692e636c69656e742e706f72742e696e76616c6964 = { "SOLSTONE_CONVEY_PORT" } must be an integer from 1 to 65535.
+
 m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e62616e64 = { $i18nCategory ->
     [one] band { $band }: { $recordings } recording ready / { $recordings_left } left, { $outputs } daily { $i18nCategory-output_count ->
         [one] output

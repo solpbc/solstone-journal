@@ -20,6 +20,9 @@ serde_json.workspace = true
 log.workspace = true
 sha2.workspace = true
 
+[target.'cfg(target_os = "linux")'.dependencies]
+solstone-core-cli-copy.workspace = true
+
 [target.'cfg(unix)'.dependencies]
 nix = { workspace = true, features = ["hostname"] }
 

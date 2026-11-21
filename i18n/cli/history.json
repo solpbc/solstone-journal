@@ -2,6 +2,152 @@
   "history_version": 1,
   "records": [
     {
+      "id": "journal.cli.about.os.release.unavailable",
+      "resource": "m6a6f75726e616c2e636c692e61626f75742e6f732e72656c656173652e756e617661696c61626c65",
+      "namespace": "journal.cli.about.os.release",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "release_file",
+          "kind": "accepted-input",
+          "value": "os-release"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.about.resource.unavailable",
+      "resource": "m6a6f75726e616c2e636c692e61626f75742e7265736f757263652e756e617661696c61626c65",
+      "namespace": "journal.cli.about.resource",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.about.usage.journal",
+      "resource": "m6a6f75726e616c2e636c692e61626f75742e75736167652e6a6f75726e616c",
+      "namespace": "journal.cli.about.usage",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "syntax",
+          "kind": "command",
+          "value": "solstone journal about [-h | --help]"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.about.usage.remote",
+      "resource": "m6a6f75726e616c2e636c692e61626f75742e75736167652e72656d6f7465",
+      "namespace": "journal.cli.about.usage",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "syntax",
+          "kind": "command",
+          "value": "solstone about [-h | --help]"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.client.error.malformed",
+      "resource": "m6a6f75726e616c2e636c692e636c69656e742e6572726f722e6d616c666f726d6564",
+      "namespace": "journal.cli.client.error",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.client.error.timeout",
+      "resource": "m6a6f75726e616c2e636c692e636c69656e742e6572726f722e74696d656f7574",
+      "namespace": "journal.cli.client.error",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.client.error.unreachable",
+      "resource": "m6a6f75726e616c2e636c692e636c69656e742e6572726f722e756e726561636861626c65",
+      "namespace": "journal.cli.client.error",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "http",
+          "kind": "accepted-input",
+          "value": "HTTP"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.client.error.unreadable",
+      "resource": "m6a6f75726e616c2e636c692e636c69656e742e6572726f722e756e7265616461626c65",
+      "namespace": "journal.cli.client.error",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.client.port.invalid",
+      "resource": "m6a6f75726e616c2e636c692e636c69656e742e706f72742e696e76616c6964",
+      "namespace": "journal.cli.client.port",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "variable",
+          "kind": "accepted-input",
+          "value": "SOLSTONE_CONVEY_PORT"
+        }
+      ],
+      "selector": null
+    },
+    {
       "id": "journal.cli.doctor.backlog.band",
       "resource": "m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e62616e64",
       "namespace": "journal.cli.doctor.backlog",

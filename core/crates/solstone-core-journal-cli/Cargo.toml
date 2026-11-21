@@ -7,6 +7,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+solstone-core-cli-copy.workspace = true
 solstone-core-window-catalog.workspace = true
 solstone-core-removals.workspace = true
 solstone-core-about.workspace = true

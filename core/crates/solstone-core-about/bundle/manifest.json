@@ -4,10 +4,10 @@
   "schema_dialect": "https://json-schema.org/draft/2020-12/schema",
   "regenerate": "cargo run --locked --manifest-path core/Cargo.toml -p solstone-core-about --example about-contract",
   "inputs": {
-    "src/lib.rs": "bd2c86ddf625a71f9e5a83fb910cbb55ea9192d201a10e76a960267585a9ae6d",
+    "src/lib.rs": "19bf45b92387b51a41109ff5879a1554bebc0f95c5fb22ccc929542c43eec058",
     "src/macos.rs": "9b998260dd1f4bb29ebe97878703fca3898c473603882fd7948d4dd1f5313fb4",
     "src/windows.rs": "e67a465c7fa45d95e61884ea12c8d3fc88ab4e6a114084327158c9592266c203",
-    "Cargo.toml": "809bdc6e6b7d80c99706ffecffc720395213e72b02e4440f9e6b7f06e5dd90c7",
+    "Cargo.toml": "33a68ff011a7a35f0d06cf44263d4ecf10fd5059ca1a0c673b849d1fdd18682b",
     "examples/contract.rs": "3cefe932ef24bedf057bd652ccc2bb4b2aaea480616f57ebbbef33ee66017a65"
   },
   "artifacts": {
