@@ -20319,3 +20319,17 @@ journal.setup.identity.state.state.json.instance.id.is.missing = invalid local l
 journal.setup.identity.state.state.json.locked.at.is.missing = invalid local link state: { $state_file } { $locked_key } is missing
 
 journal.setup.identity.state.state.json.must.be.an.object = invalid local link state: { $state_file } must be an object
+
+journal.window.network.pairing.refusal.same.machine.loopback = same-machine pairing requires a hardened loopback request
+
+journal.window.network.pairing.refusal.address.unavailable = no usable local address is available for pairing
+
+journal.window.network.pairing.refusal.relay.off.machine = relay pairing requires an off-machine request
+
+journal.window.network.pairing.refusal.role.invalid = role is invalid
+
+journal.window.network.pairing.refusal.same.machine.boolean = { $field_name } must be a boolean
+
+journal.window.network.pairing.refusal.randomness.unavailable = system randomness unavailable
+
+journal.window.network.pairing.refusal.nonce.encoding = nonce encoding is invalid

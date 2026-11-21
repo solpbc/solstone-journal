@@ -1,0 +1,16 @@
+{
+  "description": "Public pairing refusal shown by the network window and native journal apps.",
+  "context": "Device pairing request validation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bfbcf86dae9766d5314e309c73e0f2d3016e5e194e3d7c5cc5e978457ef7f4b2",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

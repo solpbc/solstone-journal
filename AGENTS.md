@@ -462,7 +462,7 @@ This includes Entities window responses from `solstone-core-entities` and
 Home and Map display copy from `solstone-core-location`. The same catalog
 supplies the Describe category names shown in Settings and the live notices
 from `solstone-core-describe`. It also supplies Thinking capability copy and
-Home speech repair guidance from `solstone-core-sol-link`. Setup uses the same
+Home speech repair guidance and pairing refusals from `solstone-core-sol-link`. Setup uses the same
 catalog for its native screen copy, events and HTTP responses. Read
 `SOLSTONE_LOCALE` in the CLI process and use the request locale in HTTP
 handlers. Keep protocol fields stable and render display fields for the caller.

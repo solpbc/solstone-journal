@@ -218,11 +218,43 @@ impl Drop for RelayPairingDraft {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum PairingRequestRefusal {
+    SameMachineLoopback,
+    NoLocalAddress,
+    RelayOffMachine,
+    InvalidRole,
+    SameMachineBoolean,
+    RandomnessUnavailable,
+    InvalidNonceEncoding,
+}
+
+impl PairingRequestRefusal {
+    fn render(self, locale: &str) -> String {
+        let id = match self {
+            Self::SameMachineLoopback => {
+                "journal.window.network.pairing.refusal.same.machine.loopback"
+            }
+            Self::NoLocalAddress => "journal.window.network.pairing.refusal.address.unavailable",
+            Self::RelayOffMachine => "journal.window.network.pairing.refusal.relay.off.machine",
+            Self::InvalidRole => "journal.window.network.pairing.refusal.role.invalid",
+            Self::SameMachineBoolean => {
+                "journal.window.network.pairing.refusal.same.machine.boolean"
+            }
+            Self::RandomnessUnavailable => {
+                "journal.window.network.pairing.refusal.randomness.unavailable"
+            }
+            Self::InvalidNonceEncoding => "journal.window.network.pairing.refusal.nonce.encoding",
+        };
+        solstone_core_convey_http::window_catalog::text(locale, id)
+    }
+}
+
 /// Pairing-domain failures retain wire-facing reason and status for the route
 /// adapter without coupling this domain to HTTP.
 #[derive(Debug)]
 pub enum PairingError {
-    PairingRequestInvalid(&'static str),
+    PairingRequestInvalid(PairingRequestRefusal),
     InvalidOperationForState(&'static str),
     OperationNoLongerAvailable,
     CommittedIdentityUnavailable(CommittedIdentityError),
@@ -290,11 +322,14 @@ impl PairingError {
         }
     }
 
-    pub fn detail(&self) -> Option<&str> {
+    pub fn detail(&self) -> Option<String> {
+        self.detail_for(solstone_core_convey_http::window_catalog::ENGLISH)
+    }
+
+    pub fn detail_for(&self, locale: &str) -> Option<String> {
         match self {
-            Self::PairingRequestInvalid(detail) | Self::InvalidOperationForState(detail) => {
-                Some(detail)
-            }
+            Self::PairingRequestInvalid(refusal) => Some(refusal.render(locale)),
+            Self::InvalidOperationForState(detail) => Some((*detail).to_owned()),
             Self::OperationNoLongerAvailable
             | Self::CommittedIdentityUnavailable(_)
             | Self::NonceStore(_)
@@ -319,9 +354,9 @@ impl PairingError {
 impl fmt::Display for PairingError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::PairingRequestInvalid(detail) | Self::InvalidOperationForState(detail) => {
-                formatter.write_str(detail)
-            }
+            Self::PairingRequestInvalid(refusal) => formatter
+                .write_str(&refusal.render(solstone_core_convey_http::window_catalog::ENGLISH)),
+            Self::InvalidOperationForState(detail) => formatter.write_str(detail),
             Self::OperationNoLongerAvailable => {
                 formatter.write_str("pairing operation is no longer available")
             }
@@ -482,7 +517,7 @@ fn mint_pairing_from_snapshot_with_context(
     if same_machine && !request.hardened_loopback {
         return (
             Err(PairingError::PairingRequestInvalid(
-                "same-machine pairing requires a hardened loopback request",
+                PairingRequestRefusal::SameMachineLoopback,
             )),
             None,
         );
@@ -555,7 +590,7 @@ fn mint_pairing_from_snapshot_with_context(
                         }
                         return (
                             Err(PairingError::PairingRequestInvalid(
-                                "no usable local address is available for pairing",
+                                PairingRequestRefusal::NoLocalAddress,
                             )),
                             diagnostic,
                         );
@@ -563,7 +598,7 @@ fn mint_pairing_from_snapshot_with_context(
                     Err(PairLinkEncodeError::CandidateCount(_)) => {
                         return (
                             Err(PairingError::PairingRequestInvalid(
-                                "no usable local address is available for pairing",
+                                PairingRequestRefusal::NoLocalAddress,
                             )),
                             None,
                         );
@@ -585,7 +620,7 @@ fn mint_pairing_from_snapshot_with_context(
                         }
                         return (
                             Err(PairingError::PairingRequestInvalid(
-                                "no usable local address is available for pairing",
+                                PairingRequestRefusal::NoLocalAddress,
                             )),
                             diagnostic,
                         );
@@ -632,7 +667,7 @@ pub fn mint_relay_pairing_draft(
     validate_mint_request(request)?;
     if request.same_machine != Some(false) {
         return Err(PairingError::PairingRequestInvalid(
-            "relay pairing requires an off-machine request",
+            PairingRequestRefusal::RelayOffMachine,
         ));
     }
 
@@ -724,7 +759,9 @@ pub fn complete_pairing(
     // A nonce minted by an earlier build can carry a role this build no longer
     // pairs. The nonce is spent; no certificate or ledger entry is issued.
     if !is_pairing_role(&entry.role) {
-        return Err(PairingError::PairingRequestInvalid("role is invalid"));
+        return Err(PairingError::PairingRequestInvalid(
+            PairingRequestRefusal::InvalidRole,
+        ));
     }
     let issued = sign_csr(
         identity.ca(),
@@ -805,11 +842,13 @@ pub fn pair_response_json(
 
 fn validate_mint_request(request: &MintRequest) -> Result<(), PairingError> {
     if !is_pairing_role(&request.role) {
-        return Err(PairingError::PairingRequestInvalid("role is invalid"));
+        return Err(PairingError::PairingRequestInvalid(
+            PairingRequestRefusal::InvalidRole,
+        ));
     }
     if request.same_machine.is_none() {
         return Err(PairingError::PairingRequestInvalid(
-            "same_machine must be a boolean",
+            PairingRequestRefusal::SameMachineBoolean,
         ));
     }
     Ok(())
@@ -821,17 +860,17 @@ fn is_pairing_role(role: &str) -> bool {
 
 fn random_nonce() -> Result<String, PairingError> {
     let mut bytes = [0_u8; 16];
-    SystemRandom::new()
-        .fill(&mut bytes)
-        .map_err(|_| PairingError::PairingRequestInvalid("system randomness unavailable"))?;
+    SystemRandom::new().fill(&mut bytes).map_err(|_| {
+        PairingError::PairingRequestInvalid(PairingRequestRefusal::RandomnessUnavailable)
+    })?;
     Ok(hex_lower(&bytes))
 }
 
 fn random_relay_secret() -> Result<[u8; 8], PairingError> {
     let mut secret = [0_u8; 8];
-    SystemRandom::new()
-        .fill(&mut secret)
-        .map_err(|_| PairingError::PairingRequestInvalid("system randomness unavailable"))?;
+    SystemRandom::new().fill(&mut secret).map_err(|_| {
+        PairingError::PairingRequestInvalid(PairingRequestRefusal::RandomnessUnavailable)
+    })?;
     Ok(secret)
 }
 
@@ -850,12 +889,13 @@ fn nonce_bytes(nonce: &str) -> Result<[u8; 16], PairingError> {
     let mut bytes = [0_u8; 16];
     if nonce.len() != 32 {
         return Err(PairingError::PairingRequestInvalid(
-            "nonce encoding is invalid",
+            PairingRequestRefusal::InvalidNonceEncoding,
         ));
     }
     for (index, byte) in bytes.iter_mut().enumerate() {
-        *byte = u8::from_str_radix(&nonce[index * 2..index * 2 + 2], 16)
-            .map_err(|_| PairingError::PairingRequestInvalid("nonce encoding is invalid"))?;
+        *byte = u8::from_str_radix(&nonce[index * 2..index * 2 + 2], 16).map_err(|_| {
+            PairingError::PairingRequestInvalid(PairingRequestRefusal::InvalidNonceEncoding)
+        })?;
     }
     Ok(bytes)
 }
@@ -1004,7 +1044,7 @@ mod tests {
         for (error, status, reason) in cases {
             assert_eq!(error.status(), status);
             assert_eq!(error.reason(), reason);
-            assert_eq!(error.detail(), None);
+            assert_eq!(error.detail().as_deref(), None);
             assert!(!format!("{error}").contains(placeholder_secret));
             assert!(!format!("{error:?}").contains(placeholder_secret));
         }
@@ -1704,7 +1744,11 @@ mod tests {
             )
             .expect_err("retired role refuses");
             assert_eq!(error.status(), 400, "{nonce}");
-            assert_eq!(error.detail(), Some("role is invalid"), "{nonce}");
+            assert_eq!(
+                error.detail().as_deref(),
+                Some("role is invalid"),
+                "{nonce}"
+            );
             assert!(store.peek(nonce).expect("nonce").used, "{nonce}");
             assert_eq!(
                 AuthorizationLedger::new(temporary.path()).snapshot().len(),
@@ -2143,7 +2187,7 @@ mod tests {
         assert_eq!(err_a.status(), 400);
         assert_eq!(err_a.reason(), "pairing_request_invalid");
         assert_eq!(
-            err_a.detail(),
+            err_a.detail().as_deref(),
             Some("no usable local address is available for pairing")
         );
         let diag_a = outcome_a
@@ -2174,7 +2218,7 @@ mod tests {
         assert_eq!(err_b.status(), 400);
         assert_eq!(err_b.reason(), "pairing_request_invalid");
         assert_eq!(
-            err_b.detail(),
+            err_b.detail().as_deref(),
             Some("no usable local address is available for pairing")
         );
         let diag_b = outcome_b
@@ -2208,7 +2252,7 @@ mod tests {
         let err_c = outcome_c.result.unwrap_err();
         assert_eq!(err_c.status(), 500);
         assert_eq!(err_c.reason(), "internal_error");
-        assert_eq!(err_c.detail(), None);
+        assert_eq!(err_c.detail().as_deref(), None);
         let diag_c = outcome_c
             .diagnostic
             .expect("diagnostic emitted for case (c)");
@@ -2237,7 +2281,7 @@ mod tests {
         let err_neg = outcome_neg.result.unwrap_err();
         assert_eq!(err_neg.status(), 400);
         assert_eq!(err_neg.reason(), "pairing_request_invalid");
-        assert_eq!(err_neg.detail(), Some("role is invalid"));
+        assert_eq!(err_neg.detail().as_deref(), Some("role is invalid"));
 
         // Negative twin 2: successful mint produces no diagnostic.
         let (raw_ok, _) = Raw::success(vec![]);

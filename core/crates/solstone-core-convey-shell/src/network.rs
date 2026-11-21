@@ -979,17 +979,13 @@ fn pairing_refusal(error: PairingError, locale: &str) -> Response {
             StatusCode::from_u16(error.status()).expect("pairing status is valid"),
         ),
     };
-    let fallback;
-    let detail = if let Some(detail) = error.detail() {
-        detail
-    } else {
-        fallback = crate::window_catalog::text(
+    let detail = error.detail_for(locale).unwrap_or_else(|| {
+        crate::window_catalog::text(
             locale,
             "journal.window.network.error.pairing.request.invalid.pairing.request.could.not.be",
-        );
-        &fallback
-    };
-    refusal(reason, detail, status)
+        )
+    });
+    refusal(reason, &detail, status)
 }
 
 pub(crate) fn refusal(reason_code: &str, detail: &str, status: StatusCode) -> Response {
@@ -1263,7 +1259,9 @@ mod tests {
     #[tokio::test]
     async fn no_usable_pairing_address_uses_the_declared_wire_reason_code() {
         let response = pairing_refusal(
-            PairingError::PairingRequestInvalid("no usable local address is available for pairing"),
+            PairingError::PairingRequestInvalid(
+                solstone_core_sol_link::pairing::PairingRequestRefusal::NoLocalAddress,
+            ),
             crate::window_catalog::ENGLISH,
         );
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
@@ -1272,6 +1270,25 @@ mod tests {
             .expect("refusal body");
         let value: Value = serde_json::from_slice(&body).expect("refusal JSON");
         assert_eq!(value["reason_code"], "pairing_request_invalid");
+    }
+
+    #[tokio::test]
+    async fn pairing_certificate_refusal_keeps_private_diagnostics_out_of_both_display_fields() {
+        let error = PairingError::Certificate(solstone_core_sol_link::ca::CaError::InvalidCa(
+            "synthetic internal diagnostic",
+        ));
+        let response = pairing_refusal(error, crate::window_catalog::ENGLISH);
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(
+            serde_json::from_slice::<Value>(&body).unwrap(),
+            json!({
+                "reason_code": "pairing_key_invalid",
+                "reason": "pairing_key_invalid",
+                "error": "pairing request could not be completed",
+                "detail": "pairing request could not be completed",
+            })
+        );
     }
 
     #[cfg(all(test, feature = "full-tests"))]

@@ -33378,6 +33378,55 @@
       "locales": []
     },
     {
+      "id": "journal.window.network.pairing.refusal.address.unavailable",
+      "source": "f510b21702425f74e3ba1d2a997f166f0cb85f9aa50158b692d5c26c64a7201d",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.network.pairing.refusal.nonce.encoding",
+      "source": "89cd3067425800c6800fbac9c07153b0df2edc1b24011b39bd041de33be7e168",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.network.pairing.refusal.randomness.unavailable",
+      "source": "f3037d3728458b9e9cea37c365697f7bf2cc1ec62b5bc492db9b4e7600eba8c8",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.network.pairing.refusal.relay.off.machine",
+      "source": "ef077598ee8dab09d458fa714b6c5b42b580f0b4b923f8892292b031d4986f1c",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.network.pairing.refusal.role.invalid",
+      "source": "bfbcf86dae9766d5314e309c73e0f2d3016e5e194e3d7c5cc5e978457ef7f4b2",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.network.pairing.refusal.same.machine.boolean",
+      "source": "3e45aa8e9c9d8a41abdb822f83cd3bbd5a4a96d6cc75cd32c6d0baaf784b8db7",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "49a2b32e535fb9794aeef9922977b7e2bc75aeaa8c73c458337facb44611a274",
+      "locales": []
+    },
+    {
+      "id": "journal.window.network.pairing.refusal.same.machine.loopback",
+      "source": "acf9f7a9750b2fcc2397196f6b538d19163480582181c0ae711cb9bfa268d7b7",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.network.phone.step.one",
       "source": "580e8dd311ff7dcac92c2e1781f31f3821b993fcc980cd1e048adab92b23ea58",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
