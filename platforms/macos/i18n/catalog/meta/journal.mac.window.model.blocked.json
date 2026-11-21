@@ -1,0 +1,16 @@
+{
+  "description": "window model: blocked",
+  "context": "window model: blocked",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "d97c90d79aa7cd63af048f73b1d81634d842537aa5bb9758fffae310f1bcdc1b",
+  "risk": "routine",
+  "auto_merge": true
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal for Mac: updates ready to install.",
+  "context": "Journal for Mac: updates ready to install.",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [
+    {
+      "name": "version",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "c6ad73bdc3439aae2de99bda9a53465c9a5d6a11687b0eb42339ac5b036f4eef",
+  "risk": "routine",
+  "auto_merge": true
+}

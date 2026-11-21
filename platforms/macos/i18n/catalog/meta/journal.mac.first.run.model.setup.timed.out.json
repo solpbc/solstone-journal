@@ -1,0 +1,16 @@
+{
+  "description": "first run model: setup timed out",
+  "context": "first run model: setup timed out",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "73574733931a6836725c8971ff1c7a63b01a3d50e82be7b7f4771972848d210c",
+  "risk": "routine",
+  "auto_merge": true
+}

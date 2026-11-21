@@ -1,0 +1,16 @@
+{
+  "description": "first run model: setup did not finish",
+  "context": "first run model: setup did not finish",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "21f3c9a798a56fc6b59b5413f99f83014d8965daefcc92b383e4d6cc9bf349ab",
+  "risk": "routine",
+  "auto_merge": true
+}

@@ -164,7 +164,7 @@ public struct JournalRestartRunner: @unchecked Sendable {
             )
             let failure = JournalRestartFailure(
                 step: .resolveJournal,
-                ownerMessage: "restart failed: journal path could not be read",
+                ownerMessage: JournalCopy.restartJournalPathUnreadable(),
                 diagnostic: diagnostic
             )
             emit(step: .resolveJournal, outcome: "error", detail: "no-journal-path")
@@ -198,7 +198,7 @@ public struct JournalRestartRunner: @unchecked Sendable {
         } catch {
             let failure = JournalRestartFailure(
                 step: .serviceRestart,
-                ownerMessage: "restart failed: journal did not restart",
+                ownerMessage: JournalCopy.restartRestartFailedJournalDidNotRestart(),
                 diagnostic: JournalDiagnostic(
                     commandLabel: "solstone journal service restart",
                     outputExcerpt: sanitizeJournalDiagnosticOutput(error.localizedDescription)
@@ -210,7 +210,7 @@ public struct JournalRestartRunner: @unchecked Sendable {
         guard restartResult.exitCode == 0 else {
             let failure = JournalRestartFailure(
                 step: .serviceRestart,
-                ownerMessage: "restart failed: journal did not restart",
+                ownerMessage: JournalCopy.restartRestartFailedJournalDidNotRestart(),
                 diagnostic: JournalDiagnostic(
                     commandLabel: "solstone journal service restart",
                     exitCode: restartResult.exitCode,
@@ -231,7 +231,7 @@ public struct JournalRestartRunner: @unchecked Sendable {
                 let diagnostic = Self.postRestartDiagnostic(outcome: outcome)
                 let failure = JournalRestartFailure(
                     step: .reProbe,
-                    ownerMessage: "restart failed: journal did not come back",
+                    ownerMessage: JournalCopy.restartRestartFailedJournalDidNotComeBack(),
                     diagnostic: diagnostic
                 )
                 emit(step: .reProbe, outcome: "error", detail: probeOutcomeKind(outcome))
@@ -242,7 +242,7 @@ public struct JournalRestartRunner: @unchecked Sendable {
         } catch {
             let failure = JournalRestartFailure(
                 step: .reProbe,
-                ownerMessage: "restart failed: journal did not come back",
+                ownerMessage: JournalCopy.restartRestartFailedJournalDidNotComeBack(),
                 diagnostic: JournalDiagnostic(
                     commandLabel: "solstone journal health",
                     timedOut: error is TimeoutError,

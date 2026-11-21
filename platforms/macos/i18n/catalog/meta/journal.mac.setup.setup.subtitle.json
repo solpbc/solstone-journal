@@ -1,0 +1,16 @@
+{
+  "description": "setup: setupSubtitle",
+  "context": "setup: setupSubtitle",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "6723ed0eb5e8f03fa5b2d7cc73494e0e9bc9aec2be97b19f07ba55bdce5407e1",
+  "risk": "routine",
+  "auto_merge": true
+}

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+import JournalRuntime
 import AppKit
 import Foundation
 import JournalMarkKit
@@ -143,15 +144,15 @@ final class JournalDevicesModel {
     }
 
     func detailLine(for row: DeviceRow, now: Date) -> String {
-        var parts: [String] = []
-        if let network = firstNonEmpty(row.network) {
-            parts.append(network)
+        let activity = livenessDetail(for: row, now: now)
+        let network = firstNonEmpty(row.network)
+        let date = DeviceTimestampParser.parseDeviceTimestamp(row.pairedAt).map(DeviceTimestampParser.pairedDateString)
+        switch (network, date) {
+        case let (network?, date?): return JournalCopy.devicesDetailNetworkPaired(network, activity, date)
+        case let (network?, nil): return JournalCopy.devicesDetailNetwork(network, activity)
+        case let (nil, date?): return JournalCopy.devicesDetailPaired(activity, date)
+        case (nil, nil): return activity
         }
-        parts.append(livenessDetail(for: row, now: now))
-        if let pairedAt = DeviceTimestampParser.parseDeviceTimestamp(row.pairedAt) {
-            parts.append("paired \(DeviceTimestampParser.pairedDateString(from: pairedAt))")
-        }
-        return parts.joined(separator: " · ")
     }
 
     func neverConnected(_ row: DeviceRow) -> Bool {
@@ -372,18 +373,19 @@ final class JournalDevicesModel {
 
     private func livenessDetail(for row: DeviceRow, now: Date) -> String {
         guard row.lastSeenAt != nil else {
-            return "never connected"
+            return JournalCopy.devicesModelNeverConnected()
         }
         guard let lastSeenAt = DeviceTimestampParser.parseDeviceTimestamp(row.lastSeenAt) else {
-            return "last seen unknown"
+            return JournalCopy.devicesModelLastSeenUnknown()
         }
         if now.timeIntervalSince(lastSeenAt) < 60 {
-            return "last seen just now"
+            return JournalCopy.devicesModelLastSeenJustNow()
         }
         let formatter = RelativeDateTimeFormatter()
+        if let language = JournalCopy.requestedLanguage { formatter.locale = Locale(identifier: language) }
         formatter.dateTimeStyle = .named
         formatter.unitsStyle = .full
-        return "last seen \(formatter.localizedString(for: lastSeenAt, relativeTo: now))"
+        return JournalCopy.devicesModelLastSeen(formatter.localizedString(for: lastSeenAt, relativeTo: now))
     }
 
     private func firstNonEmpty(_ values: String?...) -> String? {
@@ -400,7 +402,7 @@ final class JournalDevicesModel {
         case .server(let envelope):
             return firstNonEmpty(envelope.detail, envelope.error)
         case .serverStatus(let status):
-            return "status \(status)"
+            return JournalCopy.devicesModelStatus(String(status))
         case .notReady, .decoding, .invalidURL, .transport:
             return nil
         }
@@ -449,7 +451,12 @@ private enum DeviceTimestampParser {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = .current
-        formatter.dateFormat = "MMM d, yyyy"
+        if let language = JournalCopy.requestedLanguage {
+            formatter.locale = Locale(identifier: language)
+            formatter.setLocalizedDateFormatFromTemplate("yMMMd")
+        } else {
+            formatter.dateFormat = "MMM d, yyyy"
+        }
         return formatter
     }()
 

@@ -1,0 +1,21 @@
+{
+  "description": "events: setup ok ms",
+  "context": "events: setup ok ms",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [
+    {
+      "name": "duration_ms",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "6f8ccaed4883e10af3a3429b2ed5f9a689c8fc34ffcc2765b69fedc59bbc5dfd",
+  "risk": "routine",
+  "auto_merge": true
+}

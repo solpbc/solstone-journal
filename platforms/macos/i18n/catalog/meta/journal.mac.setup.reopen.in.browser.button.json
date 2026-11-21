@@ -1,0 +1,16 @@
+{
+  "description": "setup: reopenInBrowserButton",
+  "context": "setup: reopenInBrowserButton",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "b85e80a5177781eb75da7670d7138fba87cadf51dd2b4b74621bbb76219f5e81",
+  "risk": "routine",
+  "auto_merge": true
+}

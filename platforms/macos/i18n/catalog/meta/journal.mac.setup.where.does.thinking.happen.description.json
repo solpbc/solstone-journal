@@ -1,0 +1,16 @@
+{
+  "description": "setup: whereDoesThinkingHappenDescription",
+  "context": "setup: whereDoesThinkingHappenDescription",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "5e7e26368d6447070cd19c0795e51b6ff8b64ba6a03c929470700db2d1b75b28",
+  "risk": "consent",
+  "auto_merge": false
+}

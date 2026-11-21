@@ -1,0 +1,16 @@
+{
+  "description": "devices: pairedDone",
+  "context": "devices: pairedDone",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "d73e995d8e06641547f0fc9d9da8046932e0d18d65854c93bcd7370fed8f7485",
+  "risk": "routine",
+  "auto_merge": true
+}

@@ -1,0 +1,16 @@
+{
+  "description": "window model: stopped",
+  "context": "window model: stopped",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "1c1cc4feaf896a2ffc78fa3585c4b3ab59157702f265adf605758c776ba3b376",
+  "risk": "routine",
+  "auto_merge": true
+}

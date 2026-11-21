@@ -1,0 +1,16 @@
+{
+  "description": "health check: denied",
+  "context": "health check: denied",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "ad1ca6a817dda204ba2361be29081acbb993c1b9187e02b51a789dcb2be7303c",
+  "risk": "routine",
+  "auto_merge": true
+}

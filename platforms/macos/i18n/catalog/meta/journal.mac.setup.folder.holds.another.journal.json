@@ -1,0 +1,16 @@
+{
+  "description": "setup: folderHoldsAnotherJournal",
+  "context": "setup: folderHoldsAnotherJournal",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "4816b68a4f0dc34bdccb771ca058e6d7103a40f42cb062bc8f8c585667cde9f7",
+  "risk": "routine",
+  "auto_merge": true
+}

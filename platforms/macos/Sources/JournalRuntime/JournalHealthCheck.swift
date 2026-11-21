@@ -286,16 +286,16 @@ public func appProbeChecks(
 ) -> [DoctorCheck] {
     [
         permissionProbeCheck(
-            name: "screen recording",
+            name: JournalCopy.healthCheckScreenRecording(),
             granted: screenRecordingGranted,
             permissionCheckComplete: permissionCheckComplete,
-            fix: "open System Settings › Privacy & Security and allow Screen & System Audio Recording for solstone"
+            fix: JournalCopy.healthScreenPermissionHelp()
         ),
         permissionProbeCheck(
-            name: "microphone",
+            name: JournalCopy.healthCheckMicrophone(),
             granted: microphoneGranted,
             permissionCheckComplete: permissionCheckComplete,
-            fix: "open System Settings › Privacy & Security and allow Microphone for solstone"
+            fix: JournalCopy.healthMicrophonePermissionHelp()
         ),
     ]
 }
@@ -327,7 +327,7 @@ private func permissionProbeCheck(
             name: name,
             status: .warn,
             severity: nil,
-            detail: "unknown, checking permissions",
+            detail: JournalCopy.healthCheckUnknownCheckingPermissions(),
             fix: nil
         )
     }
@@ -337,7 +337,7 @@ private func permissionProbeCheck(
             name: name,
             status: .ok,
             severity: nil,
-            detail: "granted",
+            detail: JournalCopy.healthCheckGranted(),
             fix: nil
         )
     }
@@ -346,7 +346,7 @@ private func permissionProbeCheck(
         name: name,
         status: .fail,
         severity: nil,
-        detail: "denied",
+        detail: JournalCopy.healthCheckDenied(),
         fix: fix
     )
 }

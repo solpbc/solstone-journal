@@ -1,0 +1,16 @@
+{
+  "description": "setup: thinking",
+  "context": "setup: thinking",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "77bd5ed23464ba452f6aa283d6282f488aba9c73c469753fe111f4b7b38ec4d8",
+  "risk": "routine",
+  "auto_merge": true
+}

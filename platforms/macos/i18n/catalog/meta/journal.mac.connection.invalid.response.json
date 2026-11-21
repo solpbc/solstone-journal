@@ -1,0 +1,16 @@
+{
+  "description": "local httpclient: the journal app couldn t read what came back from your journal",
+  "context": "local httpclient: the journal app couldn t read what came back from your journal",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "0a1e405d4c636083f4c15c067d1b3552462ba48559a0cb7e2d029747f4900bf5",
+  "risk": "routine",
+  "auto_merge": true
+}

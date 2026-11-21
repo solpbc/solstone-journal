@@ -1,0 +1,16 @@
+{
+  "description": "devices: peerJournalsHeader",
+  "context": "devices: peerJournalsHeader",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "a7694ae27623e736d3efa5df24445e1c86a439aaaff5d4780f522ef81da345aa",
+  "risk": "routine",
+  "auto_merge": true
+}

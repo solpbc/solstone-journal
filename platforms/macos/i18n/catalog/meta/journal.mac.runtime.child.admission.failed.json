@@ -1,0 +1,16 @@
+{
+  "description": "Journal for Mac: runtime child admission failed.",
+  "context": "Journal for Mac: runtime child admission failed.",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "583277154d4a37e180d5c05aa01656278b7d440190373ce9b4d590320d8a86f9",
+  "risk": "routine",
+  "auto_merge": true
+}

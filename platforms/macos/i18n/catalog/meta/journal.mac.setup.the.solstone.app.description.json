@@ -1,0 +1,16 @@
+{
+  "description": "setup: theSolstoneAppDescription",
+  "context": "setup: theSolstoneAppDescription",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "755d152824089a92ac94cc6a412ec3dbfcb81886b44e493f73d46ec71ba8f4cd",
+  "risk": "consent",
+  "auto_merge": false
+}

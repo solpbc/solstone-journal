@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+import JournalRuntime
 import AppKit
 import Foundation
 import os
@@ -15,8 +16,8 @@ import os
 /// startup files still run, and the bundled directory goes on PATH only after the last
 /// of them. As the shell starts, it deletes the directory.
 enum JournalAdminTerminal {
-    static let menuItemTitle = "open admin terminal"
-    static let failureTitle = "couldn't open the admin terminal"
+    static let menuItemTitle = JournalCopy.adminTerminalMenuItemTitle()
+    static let failureTitle = JournalCopy.adminTerminalFailureTitle()
     static let terminalBundleIdentifier = "com.apple.Terminal"
 
     /// The menu command: opens the terminal, or says why it could not.

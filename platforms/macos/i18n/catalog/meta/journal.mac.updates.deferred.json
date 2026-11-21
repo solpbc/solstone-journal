@@ -1,0 +1,16 @@
+{
+  "description": "Journal for Mac: updates deferred.",
+  "context": "Journal for Mac: updates deferred.",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "eb8169286f328593fc1674ebdcf6f401fb7778e15632e3dda8537ba0566bedd5",
+  "risk": "routine",
+  "auto_merge": true
+}

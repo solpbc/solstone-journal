@@ -1,0 +1,16 @@
+{
+  "description": "health check: granted",
+  "context": "health check: granted",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "1866fbd11403d3ae94a350d197cf9efb4a4bcb712819b43d7ead7bb1aeafc782",
+  "risk": "routine",
+  "auto_merge": true
+}

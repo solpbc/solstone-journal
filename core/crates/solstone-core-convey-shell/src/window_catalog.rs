@@ -11,7 +11,7 @@ pub(crate) use solstone_core_convey_http::window_catalog::{
     text,
 };
 
-const LOCALE_HEADER: &str = "x-solstone-locale";
+pub(crate) const LOCALE_HEADER: &str = "x-solstone-locale";
 
 /// Operations outlive their initiating request. Keep the reference in the
 /// registry and fill the response for the client reading the operation.

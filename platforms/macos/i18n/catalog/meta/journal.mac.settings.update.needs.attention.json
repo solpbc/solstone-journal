@@ -1,0 +1,16 @@
+{
+  "description": "settings: update needs attention",
+  "context": "settings: update needs attention",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "a28e9bb015a4696ea182f7de541a6d5ecf69f7d15352c5b4c80b43272fbf1516",
+  "risk": "routine",
+  "auto_merge": true
+}

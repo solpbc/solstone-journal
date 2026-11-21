@@ -1,0 +1,16 @@
+{
+  "description": "devices: linkExpiredBody",
+  "context": "devices: linkExpiredBody",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "35062f7d4c60db1d1405f3bd27a5d34d782abebd1c2f5817cab8fbbfb4d3dc4a",
+  "risk": "routine",
+  "auto_merge": true
+}

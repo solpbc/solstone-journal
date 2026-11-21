@@ -1,0 +1,16 @@
+{
+  "description": "setup: loginItemUnavailable",
+  "context": "setup: loginItemUnavailable",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "18398ed2e1f8dd28da34a27fc6c78602e4383c0eb89a3b60458837ffe616331c",
+  "risk": "routine",
+  "auto_merge": true
+}

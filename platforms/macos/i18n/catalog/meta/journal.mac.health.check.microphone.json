@@ -1,0 +1,16 @@
+{
+  "description": "health check: microphone",
+  "context": "health check: microphone",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "76b7cbfbff10c1c6babbf77e285d245d8ff706e905fefe3edf62039fc29b896b",
+  "risk": "routine",
+  "auto_merge": true
+}

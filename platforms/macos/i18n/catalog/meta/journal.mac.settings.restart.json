@@ -1,0 +1,16 @@
+{
+  "description": "settings: restart",
+  "context": "settings: restart",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "2a78c8984c102e6da80bc7aae1c495d66021664066a9dd115856ca86de729d18",
+  "risk": "routine",
+  "auto_merge": true
+}

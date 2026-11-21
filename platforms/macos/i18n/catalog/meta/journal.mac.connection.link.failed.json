@@ -1,0 +1,16 @@
+{
+  "description": "local httpclient: the journal app couldn t open your journal in your browser try again",
+  "context": "local httpclient: the journal app couldn t open your journal in your browser try again",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "582a1e9393027f22abdeb1b5242087d9d07483ce703c1c2f238b2a50fa89d89f",
+  "risk": "routine",
+  "auto_merge": true
+}

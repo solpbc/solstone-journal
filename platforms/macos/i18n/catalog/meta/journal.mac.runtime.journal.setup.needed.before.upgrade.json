@@ -1,0 +1,16 @@
+{
+  "description": "runtime: JOURNAL_SETUP_NEEDED_BEFORE_UPGRADE",
+  "context": "runtime: JOURNAL_SETUP_NEEDED_BEFORE_UPGRADE",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "055fa81d6418f42528b77912494c58008a4b0658b8aa18c7d40adb10cfbd2874",
+  "risk": "routine",
+  "auto_merge": true
+}

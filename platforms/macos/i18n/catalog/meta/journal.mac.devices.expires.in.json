@@ -1,0 +1,25 @@
+{
+  "description": "devices: expires in",
+  "context": "devices: expires in",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [
+    {
+      "name": "minutes",
+      "type": "string"
+    },
+    {
+      "name": "seconds",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "84c7c0b9ad7888adb0da990bf898ceb13f5f2deba336f56697e02158771952ff",
+  "risk": "routine",
+  "auto_merge": true
+}

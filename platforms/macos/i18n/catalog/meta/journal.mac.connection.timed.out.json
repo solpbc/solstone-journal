@@ -1,0 +1,16 @@
+{
+  "description": "local httpclient: the journal app waited too long for your journal try again",
+  "context": "local httpclient: the journal app waited too long for your journal try again",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "a0165ce418c3510bf8a0c5c36669fda298fe7535babe4336e303840daaef2c90",
+  "risk": "routine",
+  "auto_merge": true
+}

@@ -1,0 +1,21 @@
+{
+  "description": "devices: can now reach your journal",
+  "context": "devices: can now reach your journal",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [
+    {
+      "name": "label",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "8743c314b7cac7ecabd5cf54cc888d3b8209bcbcc95d9ac2f36cb48f66cbb439",
+  "risk": "routine",
+  "auto_merge": true
+}

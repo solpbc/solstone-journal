@@ -1,0 +1,25 @@
+{
+  "description": "events: setup started version",
+  "context": "events: setup started version",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [
+    {
+      "name": "version",
+      "type": "string"
+    },
+    {
+      "name": "mode",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "0631164917fb18dab06757021011200f3c62edbaee3c8fdf35ae0619db8576df",
+  "risk": "routine",
+  "auto_merge": true
+}

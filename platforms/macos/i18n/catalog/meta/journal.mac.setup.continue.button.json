@@ -1,0 +1,16 @@
+{
+  "description": "setup: continueButton",
+  "context": "setup: continueButton",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "cacd477d0f0714ce579bdb1040df9a4afc7d8a6776827adef662c920b61a4b6f",
+  "risk": "routine",
+  "auto_merge": true
+}

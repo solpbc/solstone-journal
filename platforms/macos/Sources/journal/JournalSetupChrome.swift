@@ -145,7 +145,7 @@ enum JournalSetupChrome {
             let done = formatter.string(fromByteCount: Int64(clamping: job.bytesDone))
             if let total = job.bytesTotal, total > 0 {
                 let totalText = formatter.string(fromByteCount: Int64(clamping: total))
-                return (failure ?? "\(done) of \(totalText)", min(1.0, Double(job.bytesDone) / Double(total)), false)
+                return (failure ?? JournalCopy.setupChromeOf(done, totalText), min(1.0, Double(job.bytesDone) / Double(total)), false)
             }
             return (failure ?? done, nil, true)
         }

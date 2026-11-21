@@ -120,11 +120,21 @@ test:
 # Python suite, under the host-wide CI lock and an ephemeral test keychain. The
 # lock and keychain sequence are the support checkout's run-ci.sh, shared with
 # the capture app because both mutate the same per-user keychain slot.
-ci: resolve support-check
+ci: resolve support-check check-catalog
 	@$(SUPPORT_SCRIPTS)/run-ci.sh --package-root "$(CURDIR)"
 
 ci-release: resolve support-check
 	@$(SUPPORT_SCRIPTS)/run-ci.sh --package-root "$(CURDIR)" -c release -Xswiftc -DSOLSTONE_TEST_SUPPORT
+
+.PHONY: catalog check-catalog
+catalog:
+	cargo build --locked --manifest-path ../../tools/i18n/Cargo.toml --target-dir .build/i18n
+	python3 scripts/catalog.py --compiler .build/i18n/debug/i18n-catalog
+
+check-catalog:
+	python3 scripts/catalog.py --check
+
+JOURNAL_RESOURCE_BUNDLES = solstone_SolstoneCore.bundle solstone_JournalMarkKit.bundle solstone_SetupChrome.bundle solstone_UpdateKit.bundle SolstoneJournalMac_JournalRuntime.bundle SolstoneJournalMac_journal.bundle
 
 # Regenerate journal-ax-contract.json from the Swift source of truth.
 ax-contract: resolve support-check
@@ -234,13 +244,7 @@ journal-app-dev: journal-native-runtime
 		cp Sources/journal/Resources/AppIcon.icns journal.app/Contents/Resources/; \
 		cp -R "$(JOURNAL_NATIVE_RUNTIME_DIR)" journal.app/Contents/Resources/solstone-runtime; \
 		cp Sources/journal/app.solstone.journal.watchdog.plist journal.app/Contents/Library/LaunchAgents/; \
-		test -d "$$BUILD_DIR/solstone_JournalMarkKit.bundle" || { echo "error: solstone_JournalMarkKit.bundle missing from $$BUILD_DIR"; exit 1; }; \
-		cp -R "$$BUILD_DIR/solstone_JournalMarkKit.bundle" journal.app/Contents/Resources/; \
-		test -d "$$BUILD_DIR/solstone_SetupChrome.bundle" || { echo "error: solstone_SetupChrome.bundle missing from $$BUILD_DIR"; exit 1; }; \
-		cp -R "$$BUILD_DIR/solstone_SetupChrome.bundle" journal.app/Contents/Resources/; \
-		if [ -d "$$BUILD_DIR/SolstoneJournalMac_journal.bundle" ]; then \
-			cp -R "$$BUILD_DIR/SolstoneJournalMac_journal.bundle" journal.app/Contents/Resources/; \
-		fi; \
+		$(MAKE) copy-journal-resources SWIFT_PRODUCTS_DIR="$$BUILD_DIR" || exit 1; \
 		if [ -d "$(SPARKLE_FRAMEWORK)" ]; then \
 			cp -R "$(SPARKLE_FRAMEWORK)" journal.app/Contents/Frameworks/; \
 		elif [ -d "$$BUILD_DIR/Sparkle.framework" ]; then \
@@ -276,12 +280,8 @@ assemble-journal-products:
 	@cp Sources/journal/Info.plist journal.app/Contents/
 	@cp Sources/journal/Resources/AppIcon.icns journal.app/Contents/Resources/
 	@cp Sources/journal/app.solstone.journal.watchdog.plist journal.app/Contents/Library/LaunchAgents/
-	@test -d "$(SWIFT_PRODUCTS_DIR)/solstone_JournalMarkKit.bundle" || { echo "error: solstone_JournalMarkKit.bundle missing from $(SWIFT_PRODUCTS_DIR)"; exit 1; }
-	@test -d "$(SWIFT_PRODUCTS_DIR)/solstone_SetupChrome.bundle" || { echo "error: solstone_SetupChrome.bundle missing from $(SWIFT_PRODUCTS_DIR)"; exit 1; }
-	@test -d "$(SWIFT_PRODUCTS_DIR)/SolstoneJournalMac_journal.bundle" || { echo "error: SolstoneJournalMac_journal.bundle missing from $(SWIFT_PRODUCTS_DIR)"; exit 1; }
-	@cp -r "$(SWIFT_PRODUCTS_DIR)/solstone_JournalMarkKit.bundle" journal.app/Contents/Resources/
-	@cp -r "$(SWIFT_PRODUCTS_DIR)/solstone_SetupChrome.bundle" journal.app/Contents/Resources/
-	@cp -r "$(SWIFT_PRODUCTS_DIR)/SolstoneJournalMac_journal.bundle" journal.app/Contents/Resources/
+	@$(MAKE) copy-journal-resources
+
 
 journal-app-unsigned: assemble-journal-app
 
@@ -328,15 +328,10 @@ bundle-dist-journal: unlock-signing signing-check journal-native-runtime-accepte
 	@codesign --force --options runtime --timestamp \
 		--sign "$(DEVELOPER_ID_APP)" --keychain "$(SIGNING_KEYCHAIN)" \
 		journal.app/Contents/Frameworks/Sparkle.framework
-	@codesign --force --options runtime --timestamp \
-		--sign "$(DEVELOPER_ID_APP)" --keychain "$(SIGNING_KEYCHAIN)" \
-		journal.app/Contents/Resources/solstone_JournalMarkKit.bundle
-	@codesign --force --options runtime --timestamp \
-		--sign "$(DEVELOPER_ID_APP)" --keychain "$(SIGNING_KEYCHAIN)" \
-		journal.app/Contents/Resources/solstone_SetupChrome.bundle
-	@codesign --force --options runtime --timestamp \
-		--sign "$(DEVELOPER_ID_APP)" --keychain "$(SIGNING_KEYCHAIN)" \
-		journal.app/Contents/Resources/SolstoneJournalMac_journal.bundle
+	@for bundle in $(JOURNAL_RESOURCE_BUNDLES); do \
+		codesign --force --options runtime --timestamp --sign "$(DEVELOPER_ID_APP)" --keychain "$(SIGNING_KEYCHAIN)" \
+			"journal.app/Contents/Resources/$$bundle" || exit 1; \
+	done
 	@codesign --force --options runtime --timestamp \
 		--identifier app.solstone.journal.watchdog \
 		--sign "$(DEVELOPER_ID_APP)" --keychain "$(SIGNING_KEYCHAIN)" \
@@ -693,3 +688,10 @@ github-release-journal:
 clean:
 	swift package clean
 	rm -rf .build journal.app
+
+.PHONY: copy-journal-resources
+copy-journal-resources:
+	@for bundle in $(JOURNAL_RESOURCE_BUNDLES); do \
+		cp -R "$(SWIFT_PRODUCTS_DIR)/$$bundle" journal.app/Contents/Resources/ || exit 1; \
+	done
+	@cp -R i18n/generated/AppResources/. journal.app/Contents/Resources/

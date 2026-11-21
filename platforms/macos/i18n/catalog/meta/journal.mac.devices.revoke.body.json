@@ -1,0 +1,32 @@
+{
+  "description": "Remove-device confirmation with device name and detail on the following line.",
+  "context": "devices: loses access to your journal you can pair it again later",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "0b56a438e9173d3279559dd473790b7aa587545140e9975a8ee00f0046f7c525",
+  "risk": "consent",
+  "auto_merge": false,
+  "protected_slots": [
+    {
+      "name": "space1",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "runtime: JOURNAL_CHILD_BREAKER_TRIPPED",
+  "context": "runtime: JOURNAL_CHILD_BREAKER_TRIPPED",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "4e6e7a6a422b7a94eead8825c7378c19198c26a18e0a7bf8a9d8d9a74bd84aa2",
+  "risk": "routine",
+  "auto_merge": true
+}

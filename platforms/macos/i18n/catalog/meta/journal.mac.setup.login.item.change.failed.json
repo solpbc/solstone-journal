@@ -1,0 +1,16 @@
+{
+  "description": "setup: loginItemChangeFailed",
+  "context": "setup: loginItemChangeFailed",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "daa5b2ea0c56a172445953a95c22012688b2392783fd6b4596c790acd320c987",
+  "risk": "routine",
+  "auto_merge": true
+}

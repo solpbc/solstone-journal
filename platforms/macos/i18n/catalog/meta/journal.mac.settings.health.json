@@ -1,0 +1,16 @@
+{
+  "description": "settings: health",
+  "context": "settings: health",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "f6af85f654b5d71c2d7b51b2ff48cd56c6cbc0ef59e28e23f801172d2d4ce49d",
+  "risk": "routine",
+  "auto_merge": true
+}

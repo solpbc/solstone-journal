@@ -1,0 +1,21 @@
+{
+  "description": "settings: the journal app is available",
+  "context": "settings: the journal app is available",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [
+    {
+      "name": "version",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "da6ac6f97d3b6ba0ad6d799db39bc75cbc3ed13c2b40228995b7073909ccbe4d",
+  "risk": "routine",
+  "auto_merge": true
+}

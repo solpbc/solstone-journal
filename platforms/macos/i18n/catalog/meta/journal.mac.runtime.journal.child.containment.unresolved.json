@@ -1,0 +1,16 @@
+{
+  "description": "runtime: JOURNAL_CHILD_CONTAINMENT_UNRESOLVED",
+  "context": "runtime: JOURNAL_CHILD_CONTAINMENT_UNRESOLVED",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "f7f937641a4c97594ab6193d150049fe0ec291b00e4c32a88503abad8c8a1943",
+  "risk": "routine",
+  "auto_merge": true
+}

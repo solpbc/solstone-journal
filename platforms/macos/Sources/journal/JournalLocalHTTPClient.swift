@@ -70,7 +70,7 @@ struct JournalLocalHTTPClient: Sendable {
 
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {
         let endpoint = try await verifiedEndpoint()
-        return try await send(request, endpoint: endpoint)
+        return try await send(request, endpoint: endpoint, language: JournalCopy.requestedLanguage)
     }
 
     /// Checks that the journal answering is this account's. It never makes a link, so it is safe to
@@ -98,7 +98,7 @@ struct JournalLocalHTTPClient: Sendable {
         let bytes: Data
         let status: Int
         do {
-            let (data, response) = try await send(request, endpoint: endpoint)
+            let (data, response) = try await send(request, endpoint: endpoint, language: JournalCopy.requestedLanguage)
             bytes = data
             status = (response as? HTTPURLResponse)?.statusCode ?? 0
         } catch is CancellationError {
@@ -237,9 +237,11 @@ struct JournalLocalHTTPClient: Sendable {
             URL(fileURLWithPath: right).resolvingSymlinksInPath().standardizedFileURL
     }
 
-    private func send(_ request: URLRequest, endpoint: Endpoint) async throws -> (Data, URLResponse) {
+    private func send(_ request: URLRequest, endpoint: Endpoint, language: String? = nil) async throws -> (Data, URLResponse) {
         guard let originalURL = request.url, originalURL.scheme == "http",
               ["localhost", "127.0.0.1"].contains(originalURL.host) else { throw LocalHTTPError.unavailable }
+        var request = request
+        request.setValue(language, forHTTPHeaderField: "X-Solstone-Locale")
         if let socket = endpoint.socket {
             guard try Self.socketExists(socket) else { throw LocalHTTPError.refused }
             return try await UnixHTTPExchange(socket: socket, request: request).run()
@@ -268,12 +270,12 @@ enum LocalHTTPError: LocalizedError {
     case refused, wrongJournal, unavailable, invalidResponse, timedOut, linkFailed
     var errorDescription: String? {
         switch self {
-        case .refused: "the journal app couldn't connect to your journal on this mac."
+        case .refused: JournalCopy.connectionRefused()
         case .wrongJournal: JournalLocalHTTPClient.portInUse
-        case .unavailable: "your journal isn't ready for the journal app yet. try again shortly."
-        case .invalidResponse: "the journal app couldn't read what came back from your journal."
-        case .timedOut: "the journal app waited too long for your journal. try again."
-        case .linkFailed: "the journal app couldn't open your journal in your browser. try again."
+        case .unavailable: JournalCopy.connectionUnavailable()
+        case .invalidResponse: JournalCopy.connectionInvalidResponse()
+        case .timedOut: JournalCopy.connectionTimedOut()
+        case .linkFailed: JournalCopy.connectionLinkFailed()
         }
     }
 }

@@ -1,0 +1,16 @@
+{
+  "description": "settings: your journal mark not read yet",
+  "context": "settings: your journal mark not read yet",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "b92956c7f1831676c51ad52ae3cef3641e43b468ab047a2bbd9372ad5cbce3c4",
+  "risk": "routine",
+  "auto_merge": true
+}

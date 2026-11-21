@@ -1,0 +1,16 @@
+{
+  "description": "Journal for Mac: home browser explanation.",
+  "context": "Journal for Mac: home browser explanation.",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "09876c8e13c1ea6d7f4355df7437e1eed8e6356b29336fb7e53d432b3aad2113",
+  "risk": "routine",
+  "auto_merge": true
+}

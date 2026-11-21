@@ -1,0 +1,21 @@
+{
+  "description": "settings: the update check failed the journal app was found earlier",
+  "context": "settings: the update check failed the journal app was found earlier",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [
+    {
+      "name": "version",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "9239809db5a869c3f4087155d748337eb2e17b2b74a29922b3d0a7f7a04a6c0f",
+  "risk": "routine",
+  "auto_merge": true
+}

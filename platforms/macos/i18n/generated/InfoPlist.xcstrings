@@ -1,0 +1,36 @@
+{
+  "sourceLanguage": "en-US",
+  "strings": {
+    "CFBundleDisplayName": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "journal"
+          }
+        }
+      }
+    },
+    "CFBundleName": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "journal"
+          }
+        }
+      }
+    },
+    "NSHumanReadableCopyright": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "© 2026 sol pbc. all rights reserved."
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

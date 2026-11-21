@@ -1,0 +1,16 @@
+{
+  "description": "setup: adoptTitle",
+  "context": "setup: adoptTitle",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "2f7099f21f491e54f3c901cfb5e44011244a8dfc71f4b9f853a08dd4ef872dc0",
+  "risk": "routine",
+  "auto_merge": true
+}

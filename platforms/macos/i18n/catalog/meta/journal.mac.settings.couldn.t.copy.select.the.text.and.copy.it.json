@@ -1,0 +1,16 @@
+{
+  "description": "settings: couldn t copy select the text and copy it",
+  "context": "settings: couldn t copy select the text and copy it",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "98e024791b2e15644f81ca3862fc412aafdaba561887b76289994d96c8781699",
+  "risk": "routine",
+  "auto_merge": true
+}

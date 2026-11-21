@@ -1,0 +1,16 @@
+{
+  "description": "Journal for Mac: home unconfigured.",
+  "context": "Journal for Mac: home unconfigured.",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "cfad66ba385d1a24b235665345aae17ff0fc228dc84b4312f805bdee8fc27c22",
+  "risk": "routine",
+  "auto_merge": true
+}

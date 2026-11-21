@@ -1,0 +1,16 @@
+{
+  "description": "window model: journal",
+  "context": "window model: journal",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "a2066fbd38242d700ca044704ab3b2162561180f1e524d0b34c07041ce88978f",
+  "risk": "routine",
+  "auto_merge": true
+}

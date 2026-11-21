@@ -1,0 +1,25 @@
+{
+  "description": "Device detail row in the list of linked devices.",
+  "context": "The network name is data. Activity is the complete localized last-seen status. The date is already formatted for this language.",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [
+    {
+      "name": "network",
+      "type": "string"
+    },
+    {
+      "name": "activity",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "896bb1869184cccdc4274e7703e1fc029ebbfa719b40598f342e60120abe8c68",
+  "risk": "routine",
+  "auto_merge": true
+}

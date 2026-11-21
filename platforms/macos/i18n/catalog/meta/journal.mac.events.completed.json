@@ -1,0 +1,16 @@
+{
+  "description": "events: setup ok",
+  "context": "events: setup ok",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "56c29e2a58f7b30a79534603d4ef193eff0642a2a57932b7677f448c3ae740b3",
+  "risk": "routine",
+  "auto_merge": true
+}

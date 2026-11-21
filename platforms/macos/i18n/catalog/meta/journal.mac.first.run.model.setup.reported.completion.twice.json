@@ -1,0 +1,16 @@
+{
+  "description": "first run model: setup reported completion twice",
+  "context": "first run model: setup reported completion twice",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "c9c71729c47a077f7a6fbf7dad2cd16c9d4289d7385579cd24cf362afee43f0a",
+  "risk": "routine",
+  "auto_merge": true
+}

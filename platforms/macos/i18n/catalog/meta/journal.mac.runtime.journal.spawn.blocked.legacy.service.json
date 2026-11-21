@@ -1,0 +1,16 @@
+{
+  "description": "runtime: JOURNAL_SPAWN_BLOCKED_LEGACY_SERVICE",
+  "context": "runtime: JOURNAL_SPAWN_BLOCKED_LEGACY_SERVICE",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "441aa876d200234baca41f05e60d98f2f8f72bafb19873986788b43f70d8e57c",
+  "risk": "routine",
+  "auto_merge": true
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal for Mac: restart journal path unreadable.",
+  "context": "Journal for Mac: restart journal path unreadable.",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "bbdd0a3c476cde3c92c00658d242abdaf0530adc333d6942ba03a4b6f4c8dab9",
+  "risk": "routine",
+  "auto_merge": true
+}

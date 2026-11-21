@@ -1,0 +1,16 @@
+{
+  "description": "health check: screen recording",
+  "context": "health check: screen recording",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "1150ef5b3df1867a1da0f5820b65d53d54371f08690a15e8469a19ac13fb10a7",
+  "risk": "routine",
+  "auto_merge": true
+}

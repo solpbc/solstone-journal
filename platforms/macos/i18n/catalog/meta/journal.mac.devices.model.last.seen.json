@@ -1,0 +1,21 @@
+{
+  "description": "devices model: last seen",
+  "context": "devices model: last seen",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [
+    {
+      "name": "time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "5237a428011ce65a90c54c07680e92d1d89e790946d291cbb2deaff3c6798f02",
+  "risk": "routine",
+  "auto_merge": true
+}

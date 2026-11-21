@@ -1,0 +1,23 @@
+{
+  "description": "setup: theSolstoneApp",
+  "context": "setup: theSolstoneApp",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "67d510be628227a2a7a8360dc555a6e8862f64c5577c49ecb5d553231f1a7874",
+  "risk": "routine",
+  "auto_merge": true,
+  "protected_slots": [
+    {
+      "name": "product",
+      "kind": "mark-word",
+      "value": "solstone"
+    }
+  ]
+}

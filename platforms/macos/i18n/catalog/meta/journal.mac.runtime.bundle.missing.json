@@ -1,0 +1,21 @@
+{
+  "description": "Journal for Mac: runtime bundle missing.",
+  "context": "Journal for Mac: runtime bundle missing.",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "af50c42f9942b6f61de5a2dbe23fa13a401e44e33efba534ca4cf4869179ff99",
+  "risk": "routine",
+  "auto_merge": true
+}

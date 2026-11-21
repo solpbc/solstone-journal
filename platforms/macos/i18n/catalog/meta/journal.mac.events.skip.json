@@ -1,0 +1,16 @@
+{
+  "description": "events: skip",
+  "context": "events: skip",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "cebe963301724cab4c21ff3099215e8a4b494081271f4d6c68ee7dbc6e4a86b9",
+  "risk": "routine",
+  "auto_merge": true
+}

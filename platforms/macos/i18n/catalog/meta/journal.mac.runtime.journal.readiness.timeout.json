@@ -1,0 +1,16 @@
+{
+  "description": "runtime: JOURNAL_READINESS_TIMEOUT",
+  "context": "runtime: JOURNAL_READINESS_TIMEOUT",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "131b90a5235e2a5719e1fb728ae73f5a9d3f86f8149db8bc5e85ac1dfa0fc67d",
+  "risk": "routine",
+  "auto_merge": true
+}

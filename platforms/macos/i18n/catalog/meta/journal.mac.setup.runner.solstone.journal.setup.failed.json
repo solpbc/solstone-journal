@@ -1,0 +1,23 @@
+{
+  "description": "setup runner: solstone journal setup failed",
+  "context": "setup runner: solstone journal setup failed",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "acb5c3efcc88ab846f166e499a27c411096aefd4493c0b8d551aeeb4b63cb04b",
+  "risk": "routine",
+  "auto_merge": true,
+  "protected_slots": [
+    {
+      "name": "setup_command",
+      "kind": "command",
+      "value": "solstone journal setup"
+    }
+  ]
+}

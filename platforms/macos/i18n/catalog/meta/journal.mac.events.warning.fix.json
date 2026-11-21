@@ -1,0 +1,32 @@
+{
+  "description": "events: warn fix",
+  "context": "events: warn fix",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [
+    {
+      "name": "text",
+      "type": "string"
+    },
+    {
+      "name": "fix_hint",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "5083e4a95c642991459a90d7cbccf6e78247952121141efa35f699a9146d836e",
+  "risk": "routine",
+  "auto_merge": true,
+  "protected_slots": [
+    {
+      "name": "space0",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ]
+}

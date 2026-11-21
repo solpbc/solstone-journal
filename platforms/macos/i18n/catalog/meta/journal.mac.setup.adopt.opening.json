@@ -1,0 +1,16 @@
+{
+  "description": "setup: adoptOpening",
+  "context": "setup: adoptOpening",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "e7bd4531661c1a8bb811d00a1ac27ba68eaca492a974b9e9e113de6c3e93e902",
+  "risk": "routine",
+  "auto_merge": true
+}

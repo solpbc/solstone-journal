@@ -1,0 +1,16 @@
+{
+  "description": "runtime: JOURNAL_SPAWN_PORT_CHECK_FAILED",
+  "context": "runtime: JOURNAL_SPAWN_PORT_CHECK_FAILED",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "a75257fbeb4928a09312e560dd6980c1a7fe93058f2c9911bd0d5a13304f23dd",
+  "risk": "routine",
+  "auto_merge": true
+}

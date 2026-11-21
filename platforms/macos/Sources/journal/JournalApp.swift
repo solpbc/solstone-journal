@@ -186,7 +186,7 @@ final class JournalAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     static func isJournalWindow(_ window: NSWindow) -> Bool {
-        window.identifier?.rawValue.contains("journal") == true || window.title == "journal"
+        window.identifier?.rawValue.contains("journal") == true || window.title == JournalCopy.appJournal()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -234,7 +234,7 @@ struct JournalApp: App {
     }
 
     var body: some Scene {
-        Window("journal", id: "journal") {
+        Window(Text(JournalCopy.appJournal()), id: "journal") {
             JournalWindowSceneRoot(
                 model: model.windowModel,
                 firstRunModel: model.firstRunModel,

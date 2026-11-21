@@ -1,0 +1,25 @@
+{
+  "description": "setup chrome: of",
+  "context": "setup chrome: of",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [
+    {
+      "name": "done",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "d67645f6768c373104f5126e88d71e20bae2126d34ff7d6c15d3c24dd45548d2",
+  "risk": "routine",
+  "auto_merge": true
+}

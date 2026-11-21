@@ -1,0 +1,25 @@
+{
+  "description": "first run model: progress",
+  "context": "first run model: progress",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [
+    {
+      "name": "done",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "3e2f85fea3db111895c23c3c98a465bf344099d1d6c2ace53dea00afc8570c49",
+  "risk": "routine",
+  "auto_merge": true
+}

@@ -1,0 +1,16 @@
+{
+  "description": "location: otherJournals",
+  "context": "location: otherJournals",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "1d691ceaa564c0e32135e52b77228168f016128d83b1a3273d9816b8b1c6843c",
+  "risk": "routine",
+  "auto_merge": true
+}

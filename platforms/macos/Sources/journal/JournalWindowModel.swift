@@ -21,13 +21,13 @@ enum JournalPane: String, CaseIterable, Hashable, Identifiable {
 
     var title: String {
         switch self {
-        case .home: return "home"
-        case .journal: return "location"
-        case .runState: return "run state"
-        case .devices: return "devices"
-        case .backup: return "backup"
-        case .startup: return "startup"
-        case .updates: return "updates"
+        case .home: return JournalCopy.windowModelHome()
+        case .journal: return JournalCopy.windowModelLocation()
+        case .runState: return JournalCopy.windowModelRunState()
+        case .devices: return JournalCopy.windowModelDevices()
+        case .backup: return JournalCopy.windowModelBackup()
+        case .startup: return JournalCopy.windowModelStartup()
+        case .updates: return JournalCopy.windowModelUpdates()
         }
     }
 
@@ -60,11 +60,11 @@ enum JournalRunDisplay: String, CaseIterable, Sendable {
 
     var label: String {
         switch self {
-        case .starting: return "starting…"
-        case .running: return "running"
-        case .stopped: return "stopped"
-        case .blocked: return "blocked"
-        case .unknown: return "unknown"
+        case .starting: return JournalCopy.windowModelStarting()
+        case .running: return JournalCopy.windowModelRunning()
+        case .stopped: return JournalCopy.windowModelStopped()
+        case .blocked: return JournalCopy.windowModelBlocked()
+        case .unknown: return JournalCopy.windowModelUnknown()
         }
     }
 
@@ -124,9 +124,9 @@ enum JournalHealthDisplay: String, CaseIterable, Sendable {
 
     var label: String {
         switch self {
-        case .healthy: return "healthy"
-        case .stopped: return "stopped"
-        case .unknown: return "unknown"
+        case .healthy: return JournalCopy.windowModelHealthy()
+        case .stopped: return JournalCopy.windowModelStopped()
+        case .unknown: return JournalCopy.windowModelUnknown()
         }
     }
 }
@@ -232,8 +232,8 @@ final class JournalWindowModel {
     }
 
     var aboutBlock: String {
-        SolstoneCoreAbout.renderLine(
-            name: "journal",
+        SolstoneCoreAbout.displayLine(
+            name: JournalCopy.windowModelJournal(),
             version: journalVersion == "unknown" ? nil : journalVersion,
             build: appBuild,
             os: "macos",
@@ -251,7 +251,7 @@ final class JournalWindowModel {
     }
 
     var journalRootPath: String {
-        config.journalRoot?.path ?? "not set"
+        config.journalRoot?.path ?? JournalCopy.windowModelNotSet()
     }
 
     var launchAtLoginEnabled: Bool {
@@ -280,7 +280,7 @@ final class JournalWindowModel {
     }
 
     var unconfiguredMessage: String? {
-        isConfigured ? nil : "nothing here yet. creating your journal comes next."
+        isConfigured ? nil : JournalCopy.homeUnconfigured()
     }
 
     /// The runner's own reason for a stop it chose, shown above start. Other stop diagnostics carry
@@ -348,7 +348,7 @@ final class JournalWindowModel {
     }
 
     var diskUsageValue: String {
-        guard let diskUsageBytes else { return "unknown" }
+        guard let diskUsageBytes else { return JournalCopy.windowModelUnknown() }
         return ByteCountFormatter.string(fromByteCount: diskUsageBytes, countStyle: .file)
     }
 

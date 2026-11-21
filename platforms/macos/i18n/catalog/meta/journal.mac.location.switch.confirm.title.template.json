@@ -1,0 +1,21 @@
+{
+  "description": "location: switchConfirmTitleTemplate",
+  "context": "location: switchConfirmTitleTemplate",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "2fea8719e97099ce995519a4e7fdc7048d3ae6b95291ee81ae2430668b30d84e",
+  "risk": "routine",
+  "auto_merge": true
+}

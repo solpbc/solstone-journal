@@ -1,0 +1,16 @@
+{
+  "description": "runtime: JOURNAL_MATERIALIZE_FAILED",
+  "context": "runtime: JOURNAL_MATERIALIZE_FAILED",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "258195c30bc281986efce3d133d99a1c627c25426caf967a22991353e1814fd2",
+  "risk": "routine",
+  "auto_merge": true
+}

@@ -1,0 +1,16 @@
+{
+  "description": "setup: startAutomaticallyHelp",
+  "context": "setup: startAutomaticallyHelp",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "8b2b397f3fc5d5d9150029ced08b5f9eb96eca2ff7b2302aa623b67f7613e15b",
+  "risk": "routine",
+  "auto_merge": true
+}

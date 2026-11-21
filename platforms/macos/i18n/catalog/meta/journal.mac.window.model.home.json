@@ -1,0 +1,16 @@
+{
+  "description": "window model: home",
+  "context": "window model: home",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "682640950b9214f1f3bffe5f94b9d89e3b5effafbf3e9c21647605df43b5e7d2",
+  "risk": "routine",
+  "auto_merge": true
+}

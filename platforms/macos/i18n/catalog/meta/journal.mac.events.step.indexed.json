@@ -1,0 +1,29 @@
+{
+  "description": "events: step",
+  "context": "events: step",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [
+    {
+      "name": "index",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "step",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "9c343bac8bac039070b84b16dcb1c3e01559fd172c7688c90c548d1c90d84242",
+  "risk": "routine",
+  "auto_merge": true
+}

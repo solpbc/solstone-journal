@@ -6,7 +6,7 @@ import Foundation
 
 public enum JournalLocalEndpointError: LocalizedError {
     case unavailable
-    public var errorDescription: String? { "your journal isn't ready for the journal app yet. try again shortly." }
+    public var errorDescription: String? { JournalCopy.localEndpointUnavailable() }
 }
 
 public enum JournalDriveCheck {

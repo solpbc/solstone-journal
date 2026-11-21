@@ -1,64 +1,65 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+import JournalRuntime
 import Foundation
 
 enum JournalFirstRunCopy {
-    static let nameLocationTitle = "let's create your journal on this mac"
-    static let adoptLandingLine = "nothing moved. your journal was always here. you know it by its mark."
+    static let nameLocationTitle = JournalCopy.setupNameLocationTitle()
+    static let adoptLandingLine = JournalCopy.setupAdoptLandingLine()
 
-    static let locationField = "location"
-    static let chooseLocation = "choose"
-    static let continueButton = "continue"
-    static let restoreFromBackup = "restore from a backup"
-    static let setupTitle = "setting up your journal"
-    static let setupSubtitle = "this can take a minute."
-    static let finishInBrowserTitle = "finish setting up in your browser"
-    static let finishInBrowserLine = "this window moves on when you finish."
-    static let reopenInBrowserButton = "open the setup page"
-    static let adoptTitle = "journal found"
-    static let adoptOpening = "opening this journal"
-    static let adoptFailed = "couldn't open this journal"
-    static let tryAgain = "try again"
-    static let setupProgressNotSaved = "setup progress couldn't be saved."
-    static let loginItemChangeFailed = "start at login couldn't be changed."
-    static let loginItemUnavailable = "start at login isn't available from this app location."
-    static let handoffHeldPairing = "the solstone app is already connected to a journal. open the solstone app to change that connection, or open this journal here."
-    static let handoffCompetingSetup = "the solstone app is already finishing another setup. finish it there, or open this journal here."
-    static let handoffPending = "setup hasn't continued in the solstone app. open it to continue, or try again here."
-    static let openYourJournal = "open your journal"
-    static let handoffNotDelivered = "couldn't continue setup in the solstone app."
-    static let thinkingFailed = "couldn't finish this step. try again."
+    static let locationField = JournalCopy.setupLocationField()
+    static let chooseLocation = JournalCopy.setupChooseLocation()
+    static let continueButton = JournalCopy.setupContinueButton()
+    static let restoreFromBackup = JournalCopy.setupRestoreFromBackup()
+    static let setupTitle = JournalCopy.setupSetupTitle()
+    static let setupSubtitle = JournalCopy.setupSetupSubtitle()
+    static let finishInBrowserTitle = JournalCopy.setupFinishInBrowserTitle()
+    static let finishInBrowserLine = JournalCopy.setupFinishInBrowserLine()
+    static let reopenInBrowserButton = JournalCopy.setupReopenInBrowserButton()
+    static let adoptTitle = JournalCopy.setupAdoptTitle()
+    static let adoptOpening = JournalCopy.setupAdoptOpening()
+    static let adoptFailed = JournalCopy.setupAdoptFailed()
+    static let tryAgain = JournalCopy.setupTryAgain()
+    static let setupProgressNotSaved = JournalCopy.setupSetupProgressNotSaved()
+    static let loginItemChangeFailed = JournalCopy.setupLoginItemChangeFailed()
+    static let loginItemUnavailable = JournalCopy.setupLoginItemUnavailable()
+    static let handoffHeldPairing = JournalCopy.setupHandoffHeldPairing()
+    static let handoffCompetingSetup = JournalCopy.setupHandoffCompetingSetup()
+    static let handoffPending = JournalCopy.setupHandoffPending()
+    static let openYourJournal = JournalCopy.setupOpenYourJournal()
+    static let handoffNotDelivered = JournalCopy.setupHandoffNotDelivered()
+    static let thinkingFailed = JournalCopy.setupThinkingFailed()
 
-    static let setUpSolstone = "set up solstone"
-    static let yourJournal = "your journal"
-    static let whatThisSetsUp = "what this sets up"
-    static let whatThisSetsUpJournal = "lives on this mac and keeps everything that goes into it."
-    static let theSolstoneApp = "the solstone app"
-    static let theSolstoneAppDescription = "runs on this mac. your microphone, screen and computer sound each stay off until you turn them on."
-    static let thinking = "thinking"
-    static let thinkingDescription = "helps your journal make sense of what it keeps. you choose where during setup, or later."
-    static let startAutomaticallyHelp = "start automatically after you sign in to this mac."
-    static let startSetup = "start setup"
-    static let whereYourJournalLives = "where your journal lives"
-    static let whereYourJournalLivesDescription = "everything your journal keeps stays in this folder, on this mac."
-    static let journalFolder = "journal folder"
-    static let whereDoesThinkingHappen = "where does the thinking happen?"
-    static let whereDoesThinkingHappenDescription = "your journal stays on this mac whatever you choose. this only decides where thinking happens."
-    static let onThisMac = "on this mac"
-    static let onThisMacDescription = "model requests stay on this mac. continue starts the download."
-    static let continueInTheSolstoneApp = "continue in the solstone app"
-    static let back = "back"
-    static let stepProgressTemplate = "step {n} of 7"
-    static let folderHoldsAnotherJournal = "this folder overlaps another journal on this mac. choose a different folder."
-    static let goBackTemplate = "go back to the journal in {path}"
+    static let setUpSolstone = JournalCopy.setupSetUpSolstone()
+    static let yourJournal = JournalCopy.setupYourJournal()
+    static let whatThisSetsUp = JournalCopy.setupWhatThisSetsUp()
+    static let whatThisSetsUpJournal = JournalCopy.setupWhatThisSetsUpJournal()
+    static let theSolstoneApp = JournalCopy.setupTheSolstoneApp()
+    static let theSolstoneAppDescription = JournalCopy.setupTheSolstoneAppDescription()
+    static let thinking = JournalCopy.setupThinking()
+    static let thinkingDescription = JournalCopy.setupThinkingDescription()
+    static let startAutomaticallyHelp = JournalCopy.setupStartAutomaticallyHelp()
+    static let startSetup = JournalCopy.setupStartSetup()
+    static let whereYourJournalLives = JournalCopy.setupWhereYourJournalLives()
+    static let whereYourJournalLivesDescription = JournalCopy.setupWhereYourJournalLivesDescription()
+    static let journalFolder = JournalCopy.setupJournalFolder()
+    static let whereDoesThinkingHappen = JournalCopy.setupWhereDoesThinkingHappen()
+    static let whereDoesThinkingHappenDescription = JournalCopy.setupWhereDoesThinkingHappenDescription()
+    static let onThisMac = JournalCopy.setupOnThisMac()
+    static let onThisMacDescription = JournalCopy.setupOnThisMacDescription()
+    static let continueInTheSolstoneApp = JournalCopy.setupContinueInTheSolstoneApp()
+    static let back = JournalCopy.setupBack()
+    static let stepProgressTemplate = JournalCopy.setupStepProgress("{n}")
+    static let folderHoldsAnotherJournal = JournalCopy.setupFolderHoldsAnotherJournal()
+    static let goBackTemplate = JournalCopy.setupGoBackToTheJournalIn("{path}")
 
     static func goBack(to root: URL) -> String {
-        "go back to the journal in \(JournalLocationCopy.displayPath(root))"
+        JournalCopy.setupGoBackToTheJournalIn(JournalLocationCopy.displayPath(root))
     }
 
     static func stepProgress(_ n: Int) -> String {
-        "step \(n) of 7"
+        JournalCopy.setupStepProgress(String(n))
     }
 
     static let all = [

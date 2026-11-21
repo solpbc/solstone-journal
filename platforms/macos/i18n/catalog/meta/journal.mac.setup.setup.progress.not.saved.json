@@ -1,0 +1,16 @@
+{
+  "description": "setup: setupProgressNotSaved",
+  "context": "setup: setupProgressNotSaved",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "4559cdc1e506bae049971978196490312d1b0121aa0a2041b6a8795d7254ccfd",
+  "risk": "routine",
+  "auto_merge": true
+}

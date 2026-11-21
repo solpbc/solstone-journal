@@ -1,0 +1,16 @@
+{
+  "description": "settings: run state",
+  "context": "settings: run state",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "7706d24aeb94db078a290ab9d4be2f0b52d321d610f057148798ace670e7abe7",
+  "risk": "routine",
+  "auto_merge": true
+}

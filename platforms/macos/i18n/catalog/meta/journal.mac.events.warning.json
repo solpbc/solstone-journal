@@ -1,0 +1,28 @@
+{
+  "description": "events: warn",
+  "context": "events: warn",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [
+    {
+      "name": "text",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "a8977a127c65f54447033a1f27547b50156f4b7117bc5675ed7dcbd0c8091039",
+  "risk": "routine",
+  "auto_merge": true,
+  "protected_slots": [
+    {
+      "name": "space0",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ]
+}

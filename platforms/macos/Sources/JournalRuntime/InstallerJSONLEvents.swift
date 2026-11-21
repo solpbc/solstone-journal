@@ -237,12 +237,12 @@ internal struct EventRenderer: Sendable {
         case .event(let event):
             append(event)
         case .malformed(let raw):
-            appendLine("[malformed event] \(sanitize(raw))")
+            appendLine(JournalCopy.eventsMalformed(sanitize(raw)))
         case .unrecognized(let raw):
-            appendLine("[unrecognized event] \(sanitize(raw))")
+            appendLine(JournalCopy.eventsUnrecognized(sanitize(raw)))
         case .unparseableLine(let raw):
             if !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                appendLine("[unparseable line] \(sanitize(raw))")
+                appendLine(JournalCopy.eventsUnparseable(sanitize(raw)))
             }
         }
     }
@@ -255,53 +255,53 @@ internal struct EventRenderer: Sendable {
         switch event {
         case .setupStarted(let version, let mode):
             if let version, let mode {
-                return "setup started (version \(sanitize(version)), \(sanitize(mode)))"
+                return JournalCopy.eventsStartedVersion(sanitize(version), sanitize(mode))
             }
-            return "setup started"
+            return JournalCopy.eventsStarted()
         case .setupCompleted(let status, let durationMS, let failedStep):
             if status == "ok" {
                 if let durationMS {
-                    return "setup ok (\(durationMS)ms)"
+                    return JournalCopy.eventsCompletedDuration(String(durationMS))
                 }
-                return "setup ok"
+                return JournalCopy.eventsCompleted()
             }
             if let failedStep {
-                return "setup failed at \(sanitize(failedStep))"
+                return JournalCopy.eventsFailedStep(sanitize(failedStep))
             }
-            return "setup failed"
+            return JournalCopy.eventsFailed()
         case .stepStarted(let step, let index, let total):
             if let index, let total {
-                return "step \(index)/\(total): \(sanitize(step))"
+                return JournalCopy.eventsStepIndexed(String(index), String(total), sanitize(step))
             }
-            return "step: \(sanitize(step))"
+            return JournalCopy.eventsStep(sanitize(step))
         case .stepCompleted(let step, let outcome, let reason, let durationMS):
             if outcome == "skipped" {
                 if let reason {
-                    return "step \(sanitize(step)) skipped (\(sanitize(reason)))"
+                    return JournalCopy.eventsSkippedReason(sanitize(step), sanitize(reason))
                 }
-                return "step \(sanitize(step)) skipped"
+                return JournalCopy.eventsSkipped(sanitize(step))
             }
             if let durationMS {
-                return "step \(sanitize(step)) done (\(sanitize(outcome)), \(durationMS)ms)"
+                return JournalCopy.eventsDoneDuration(sanitize(step), sanitize(outcome), String(durationMS))
             }
-            return "step \(sanitize(step)) done (\(sanitize(outcome)))"
+            return JournalCopy.eventsDone(sanitize(step), sanitize(outcome))
         case .stepFailed(let step, _, let message, _, _):
-            return "step \(sanitize(step ?? "unknown")) failed: \(sanitize(message))"
+            return JournalCopy.eventsStepFailed(sanitize(step ?? JournalCopy.eventsUnknown()), sanitize(message))
         case .stepWarning(_, let text, let fixHint):
             if let fixHint, !fixHint.isEmpty {
-                return "  warn: \(sanitize(text)) (fix: \(sanitize(fixHint)))"
+                return JournalCopy.eventsWarningFix(sanitize(text), sanitize(fixHint))
             }
-            return "  warn: \(sanitize(text))"
+            return JournalCopy.eventsWarning(sanitize(text))
         case .doctorStarted:
-            return "doctor started"
+            return JournalCopy.eventsDoctorStarted()
         case .checkCompleted(let name, _, let status, let detail, _):
             let label = renderStatus(status)
-            return "  [\(label)] \(sanitize(name)) - \(sanitize(detail ?? ""))"
+            return JournalCopy.eventsDoctorCheck(label, sanitize(name), sanitize(detail ?? ""))
         case .doctorCompleted(let status, _, let summary):
             if let summary {
-                return "doctor: \(summary.total) checks (\(summary.failed) failed, \(summary.warnings) warnings, \(summary.skipped) skipped)"
+                return JournalCopy.eventsDoctorSummary(summary.total, String(summary.failed), String(summary.warnings), String(summary.skipped))
             }
-            return "doctor: \(sanitize(status))"
+            return JournalCopy.eventsDoctorStatus(sanitize(status))
         }
     }
 
@@ -313,13 +313,13 @@ internal struct EventRenderer: Sendable {
     private func renderStatus(_ status: String) -> String {
         switch status {
         case "ok":
-            return "ok"
+            return JournalCopy.eventsOk()
         case "warning", "warn":
-            return "warn"
+            return JournalCopy.eventsWarn()
         case "failed", "fail":
-            return "fail"
+            return JournalCopy.eventsFail()
         case "skipped", "skip":
-            return "skip"
+            return JournalCopy.eventsSkip()
         default:
             return sanitize(status)
         }

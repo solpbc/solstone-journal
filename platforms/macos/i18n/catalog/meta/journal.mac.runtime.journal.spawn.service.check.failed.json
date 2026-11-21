@@ -1,0 +1,16 @@
+{
+  "description": "runtime: JOURNAL_SPAWN_SERVICE_CHECK_FAILED",
+  "context": "runtime: JOURNAL_SPAWN_SERVICE_CHECK_FAILED",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "301c79535a8f639f4ac896bfea993acc5a32a907b5fffec0b762c82fed041144",
+  "risk": "routine",
+  "auto_merge": true
+}

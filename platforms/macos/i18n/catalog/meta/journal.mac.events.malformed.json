@@ -1,0 +1,21 @@
+{
+  "description": "events: malformed event",
+  "context": "events: malformed event",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [
+    {
+      "name": "raw",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "759e20da909315a4674c2592787ba428d7bdabc83fa6cf4791c1df046a9d8623",
+  "risk": "routine",
+  "auto_merge": true
+}

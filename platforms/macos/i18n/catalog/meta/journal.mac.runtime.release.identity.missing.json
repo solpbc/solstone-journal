@@ -1,0 +1,16 @@
+{
+  "description": "Journal for Mac: runtime release identity missing.",
+  "context": "Journal for Mac: runtime release identity missing.",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "8bc08b5cfbb1a84d2bc22aefeda26f1fc515b76cdf346c2919e509bd7d68052a",
+  "risk": "routine",
+  "auto_merge": true
+}

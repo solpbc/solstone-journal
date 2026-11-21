@@ -1,0 +1,38 @@
+{
+  "description": "events: doctor checks failed warnings skipped",
+  "context": "Doctor summary shown in setup. Keep the original English at every count. Other languages can select a whole message by the total number of checks.",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [
+    {
+      "name": "total",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "failed",
+      "type": "string"
+    },
+    {
+      "name": "warnings",
+      "type": "string"
+    },
+    {
+      "name": "skipped",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "max_length": 2048,
+  "source_revision": "1c6b63ed8bccd84dfb18f476c7bd050976e7159c9733aa64b2998deb773c0eb0",
+  "risk": "routine",
+  "auto_merge": true,
+  "selector": {
+    "name": "total",
+    "type": "cardinal"
+  }
+}

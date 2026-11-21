@@ -1,0 +1,16 @@
+{
+  "description": "devices: pairingLinkLabel",
+  "context": "devices: pairingLinkLabel",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "b42839d232a0383ca48bc748ea3db184d478bb0a06065b89c592cf94ecb25a21",
+  "risk": "routine",
+  "auto_merge": true
+}

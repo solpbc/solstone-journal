@@ -1,0 +1,16 @@
+{
+  "description": "devices: notRunningBody",
+  "context": "devices: notRunningBody",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "ab341a2eab3f51e44e37120c0de93b4dea3042417edc3acba88ede990fb342b6",
+  "risk": "routine",
+  "auto_merge": true
+}

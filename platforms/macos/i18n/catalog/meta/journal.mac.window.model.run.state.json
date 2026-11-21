@@ -1,0 +1,16 @@
+{
+  "description": "window model: run state",
+  "context": "window model: run state",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "290401bcdb2f6044a9924317896bdf924f524209d097967e915378dd24482b3f",
+  "risk": "routine",
+  "auto_merge": true
+}

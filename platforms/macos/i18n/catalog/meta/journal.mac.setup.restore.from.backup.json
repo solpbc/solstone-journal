@@ -1,0 +1,16 @@
+{
+  "description": "setup: restoreFromBackup",
+  "context": "setup: restoreFromBackup",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "cb3c3c32b56fc9ba3f7d17b8ec09c720f25a0b0fec61d692f9c28a80143d5d0f",
+  "risk": "routine",
+  "auto_merge": true
+}

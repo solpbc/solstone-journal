@@ -1,0 +1,21 @@
+{
+  "description": "setup: go back to the journal in",
+  "context": "setup: go back to the journal in",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "a8da2e92d9e0d69e7468054974c15ce7554350584d78652187cf49a9a00d3c7c",
+  "risk": "routine",
+  "auto_merge": true
+}

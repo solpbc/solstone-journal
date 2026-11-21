@@ -1,0 +1,21 @@
+{
+  "description": "events: unparseable line",
+  "context": "events: unparseable line",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [
+    {
+      "name": "raw",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "a34e2f9018ee7177aa7095cea288d169583ceff0b276372fcfb29dec6825b6e3",
+  "risk": "routine",
+  "auto_merge": true
+}

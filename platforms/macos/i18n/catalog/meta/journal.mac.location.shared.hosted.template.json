@@ -1,0 +1,28 @@
+{
+  "description": "location: sharedHostedTemplate",
+  "context": "location: sharedHostedTemplate",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "2c87bb46925d5dde2d3edf1eb5c25d04110e3c3337bc5e37c687b36736753396",
+  "risk": "routine",
+  "auto_merge": true,
+  "protected_slots": [
+    {
+      "name": "company",
+      "kind": "mark-word",
+      "value": "sol pbc"
+    }
+  ]
+}

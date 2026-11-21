@@ -1,0 +1,16 @@
+{
+  "description": "events: setup failed",
+  "context": "events: setup failed",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "835c94089fd90865b7c80181c9f4f0eb987199bda38923fe37872c09f6f40755",
+  "risk": "routine",
+  "auto_merge": true
+}

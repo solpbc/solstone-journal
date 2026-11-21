@@ -1,0 +1,16 @@
+{
+  "description": "settings: your journal at a glance",
+  "context": "settings: your journal at a glance",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "f203c02c2f84b8c5c7c4f8b9560493108b6c4777b3ab3c5ce781dab9acbdf60b",
+  "risk": "routine",
+  "auto_merge": true
+}

@@ -1,0 +1,25 @@
+{
+  "description": "events: step skipped",
+  "context": "events: step skipped",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [
+    {
+      "name": "step",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "1fadf576aaa8122b047e9354be920b03b370718ec92e77dd7fa3a40103469de0",
+  "risk": "routine",
+  "auto_merge": true
+}

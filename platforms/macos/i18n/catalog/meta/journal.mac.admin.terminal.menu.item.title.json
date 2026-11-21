@@ -1,0 +1,16 @@
+{
+  "description": "admin terminal: menuItemTitle",
+  "context": "admin terminal: menuItemTitle",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "29157693f04fa81bf07c1878181de15aad33fb3895fb4b4c55feb2f5fc7a37b5",
+  "risk": "routine",
+  "auto_merge": true
+}

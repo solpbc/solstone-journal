@@ -1,0 +1,16 @@
+{
+  "description": "setup: adoptLandingLine",
+  "context": "setup: adoptLandingLine",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "08bfba05f0e4b2b637343010cf251dad6d93e70123d8fc39c4ed23a7ee56e262",
+  "risk": "routine",
+  "auto_merge": true
+}

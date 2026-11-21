@@ -1,0 +1,16 @@
+{
+  "description": "setup: adoptFailed",
+  "context": "setup: adoptFailed",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "71f9c666c06578594947b5cb6dac9941e257cfb241433f291143844a8b5651de",
+  "risk": "routine",
+  "auto_merge": true
+}

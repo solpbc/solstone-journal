@@ -1,0 +1,21 @@
+{
+  "description": "events: doctor",
+  "context": "events: doctor",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [
+    {
+      "name": "status",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "87ee58dd36cb4ade76c557a9fce5233ffe8e425931d496a342edecd9d966cf83",
+  "risk": "routine",
+  "auto_merge": true
+}

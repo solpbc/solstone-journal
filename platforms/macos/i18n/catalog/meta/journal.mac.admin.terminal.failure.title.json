@@ -1,0 +1,16 @@
+{
+  "description": "admin terminal: failureTitle",
+  "context": "admin terminal: failureTitle",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "3ab946673643b77cb1c6037cb76ad05ffeccb77b57316832be4b8d355c6e68e8",
+  "risk": "routine",
+  "auto_merge": true
+}

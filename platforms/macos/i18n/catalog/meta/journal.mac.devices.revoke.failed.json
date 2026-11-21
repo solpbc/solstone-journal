@@ -1,0 +1,16 @@
+{
+  "description": "devices: revokeFailed",
+  "context": "devices: revokeFailed",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "0590f797a33c954704df90190165566626922d8f43c94aed92238ede67eada1b",
+  "risk": "routine",
+  "auto_merge": true
+}

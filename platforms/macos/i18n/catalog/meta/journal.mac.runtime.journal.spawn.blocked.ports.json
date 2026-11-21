@@ -1,0 +1,16 @@
+{
+  "description": "runtime: JOURNAL_SPAWN_BLOCKED_PORTS",
+  "context": "runtime: JOURNAL_SPAWN_BLOCKED_PORTS",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "fd7dbf09a462fd9942e7f4fd0dc35f618b983737462aed54c06d5e1faa1f9a64",
+  "risk": "routine",
+  "auto_merge": true
+}

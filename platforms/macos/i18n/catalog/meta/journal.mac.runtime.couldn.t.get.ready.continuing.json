@@ -1,0 +1,21 @@
+{
+  "description": "runtime: couldn t get ready continuing",
+  "context": "runtime: couldn t get ready continuing",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [
+    {
+      "name": "library",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "b4e2aa2b4ff29409474548c6042e317a20311dadea91f55bff994bf2b51a06c5",
+  "risk": "routine",
+  "auto_merge": true
+}

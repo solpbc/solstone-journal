@@ -1,0 +1,16 @@
+{
+  "description": "local httpclient: the journal app couldn t connect to your journal on this mac",
+  "context": "local httpclient: the journal app couldn t connect to your journal on this mac",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "54e73ba874bbdaed02cff4f92dbb8653cfee8744e72965169c7198daf924ec45",
+  "risk": "routine",
+  "auto_merge": true
+}

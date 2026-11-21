@@ -1,0 +1,16 @@
+{
+  "description": "Journal for Mac: runtime child containment pending.",
+  "context": "Journal for Mac: runtime child containment pending.",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "7e903f5b8fd8fcedb08a8ae9611712b45deb4118f5d437e1c21ec143e5f8947a",
+  "risk": "routine",
+  "auto_merge": true
+}

@@ -1,0 +1,16 @@
+{
+  "description": "location: newJournalHostedShare",
+  "context": "location: newJournalHostedShare",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "ae210ab7ff9b22b86acf00d40f41ae884159011e55b5426674803e96fcb3cb38",
+  "risk": "routine",
+  "auto_merge": true
+}

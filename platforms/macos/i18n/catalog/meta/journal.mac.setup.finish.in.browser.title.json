@@ -1,0 +1,16 @@
+{
+  "description": "setup: finishInBrowserTitle",
+  "context": "setup: finishInBrowserTitle",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "70299b747e69eeec290d37f8318a370fedcc55b90515eb22bfd748f005049b96",
+  "risk": "routine",
+  "auto_merge": true
+}

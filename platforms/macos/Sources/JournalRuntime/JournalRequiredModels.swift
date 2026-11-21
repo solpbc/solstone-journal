@@ -91,7 +91,7 @@ public struct JournalRequiredModelsReconciler: JournalRequiredModelsReconciling 
         try Task.checkCancellation()
         guard result.terminationReason == .exit, result.exitCode == 0 else {
             throw SupervisedJournalRunnerError.launchFailed(
-                "solstone journal install-models --required-only failed (exit \(result.exitCode), termination \(result.terminationReason.rawValue))"
+                JournalCopy.runtimeRequiredModelsFailed(String(result.exitCode), String(result.terminationReason.rawValue))
             )
         }
     }

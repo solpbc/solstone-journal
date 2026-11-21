@@ -1,0 +1,23 @@
+{
+  "description": "Application metadata NSHumanReadableCopyright",
+  "context": "Application metadata NSHumanReadableCopyright",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "e5daafc94878be78a128afd5209e73d172c410c761467715f7fac41d74befce7",
+  "risk": "legal",
+  "auto_merge": false,
+  "protected_slots": [
+    {
+      "name": "company",
+      "kind": "mark-word",
+      "value": "sol pbc"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "devices model: status",
+  "context": "devices model: status",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [
+    {
+      "name": "status",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "48554c4bdc41637260e46594b8438e78fd5b4a3ed5cba26432b3b9a59c6463cb",
+  "risk": "routine",
+  "auto_merge": true
+}

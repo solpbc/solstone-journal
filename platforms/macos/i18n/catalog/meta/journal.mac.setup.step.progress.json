@@ -1,0 +1,21 @@
+{
+  "description": "setup: step of 7",
+  "context": "setup: step of 7",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [
+    {
+      "name": "step",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "52d5819409b17a47b8cda86b3d7fcbc7bc6b9dc5ad8a5d26ae3b7fa449c08908",
+  "risk": "routine",
+  "auto_merge": true
+}

@@ -1,0 +1,16 @@
+{
+  "description": "devices: pairedNote",
+  "context": "devices: pairedNote",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "e8a128f3eec24a31d0572b730cf01ed4af22c65eee50ea6bcf173ce9fc9104c0",
+  "risk": "routine",
+  "auto_merge": true
+}

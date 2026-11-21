@@ -1,0 +1,16 @@
+{
+  "description": "events: doctor started",
+  "context": "events: doctor started",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "437ff3cf88ef8267673c6fcaf1f7be17785bb66054cc7ce06ac98778cba22b73",
+  "risk": "routine",
+  "auto_merge": true
+}

@@ -1,0 +1,16 @@
+{
+  "description": "setup: journalFolder",
+  "context": "setup: journalFolder",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "de31456826203cf41a742107cc40476723e237d515375540ee29c8fa3edaf56e",
+  "risk": "routine",
+  "auto_merge": true
+}

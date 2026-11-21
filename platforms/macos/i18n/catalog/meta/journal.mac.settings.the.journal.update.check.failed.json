@@ -1,0 +1,16 @@
+{
+  "description": "settings: the journal update check failed",
+  "context": "settings: the journal update check failed",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "8823d5802b0de06c75dac8087c67c572843dbcd870f1a7f3ad0998cf038baa18",
+  "risk": "routine",
+  "auto_merge": true
+}

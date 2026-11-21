@@ -1,0 +1,16 @@
+{
+  "description": "Journal for Mac: runtime child unconfigured.",
+  "context": "Journal for Mac: runtime child unconfigured.",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "ba9114c64a2b9e6f7c95119b7bead81f46fbec0fe76a956a9183fbcb16d53fc0",
+  "risk": "routine",
+  "auto_merge": true
+}

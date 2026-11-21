@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>m6a6f75726e616c2e6d61632e6576656e74732e646f63746f722e73756d6d617279</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%1$#@quantity@</string>
+		<key>quantity</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>doctor: %5$@ checks (%2$@ failed, %3$@ warnings, %4$@ skipped)</string>
+			<key>other</key>
+			<string>doctor: %5$@ checks (%2$@ failed, %3$@ warnings, %4$@ skipped)</string>
+		</dict>
+	</dict>
+</dict>
+</plist>

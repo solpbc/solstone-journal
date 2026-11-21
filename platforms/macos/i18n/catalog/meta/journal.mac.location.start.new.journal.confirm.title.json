@@ -1,0 +1,16 @@
+{
+  "description": "location: startNewJournalConfirmTitle",
+  "context": "location: startNewJournalConfirmTitle",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "2edcb7878b08cc5f7321a889aa1c0eb0d000a89179ad7e7e6c6ec2209ed6b857",
+  "risk": "routine",
+  "auto_merge": true
+}

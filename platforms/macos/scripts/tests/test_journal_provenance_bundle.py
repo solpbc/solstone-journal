@@ -125,24 +125,16 @@ class JournalProvenanceBundleTest(unittest.TestCase):
         )
 
         blocks = parse_makefile()
-        journal_bundle_copy = (
-            '\t@cp -r "$(SWIFT_PRODUCTS_DIR)/SolstoneJournalMac_journal.bundle" '
-            "journal.app/Contents/Resources/"
-        )
-        mark_bundle_copy = (
-            '\t@cp -r "$(SWIFT_PRODUCTS_DIR)/solstone_JournalMarkKit.bundle" '
-            "journal.app/Contents/Resources/"
-        )
-        makefile_text = MAKEFILE.read_text(encoding="utf-8")
-        assembly_recipe = "\n".join(blocks["assemble-journal-products"]["recipe"])
-        distribution_recipe = "\n".join(blocks["bundle-dist-journal"]["recipe"])
-
-        self.assertEqual(makefile_text.count(journal_bundle_copy), 1)
-        self.assertEqual(makefile_text.count(mark_bundle_copy), 1)
-        self.assertIn(journal_bundle_copy, assembly_recipe)
-        self.assertIn(mark_bundle_copy, assembly_recipe)
-        self.assertNotIn(journal_bundle_copy, distribution_recipe)
-        self.assertNotIn(mark_bundle_copy, distribution_recipe)
+        resources = JOURNAL_APP / "Contents/Resources"
+        for bundle in ("SolstoneJournalMac_JournalRuntime", "solstone_SolstoneCore",
+                       "solstone_JournalMarkKit", "solstone_SetupChrome", "solstone_UpdateKit"):
+            source = products / f"{bundle}.bundle"
+            tables = [*source.rglob("*.strings"), *source.rglob("*.stringsdict")]
+            self.assertTrue(tables, bundle)
+            for table in tables:
+                assembled = resources / source.name / table.relative_to(source)
+                self.assertEqual(sha256(table), sha256(assembled))
+        self.assertTrue((resources / "en-US.lproj/InfoPlist.strings").is_file())
         self.assertEqual(blocks["journal-app-unsigned"]["recipe"], [])
         self.assertEqual(
             blocks["journal-app-unsigned"]["prereqs"].split(),

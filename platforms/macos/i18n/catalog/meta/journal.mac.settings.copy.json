@@ -1,0 +1,16 @@
+{
+  "description": "settings: copy",
+  "context": "settings: copy",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "7080b571d8e9a243e0f5ee2d250e53b9578ef07310d7a048d070b490cf45621c",
+  "risk": "routine",
+  "auto_merge": true
+}

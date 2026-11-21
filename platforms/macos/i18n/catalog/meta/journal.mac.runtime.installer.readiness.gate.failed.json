@@ -1,0 +1,16 @@
+{
+  "description": "runtime: INSTALLER_READINESS_GATE_FAILED",
+  "context": "runtime: INSTALLER_READINESS_GATE_FAILED",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "a967b6e9018f23c2367939ee2e9781db6b477951a7c59ff502d2d2cf838be85e",
+  "risk": "routine",
+  "auto_merge": true
+}

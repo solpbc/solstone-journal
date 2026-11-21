@@ -1,0 +1,16 @@
+{
+  "description": "settings: location",
+  "context": "settings: location",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "25cf10f2c3e02071b3b420b2eb1f8cdfad716c2b2ca1ec3e18d82d9124992374",
+  "risk": "routine",
+  "auto_merge": true
+}

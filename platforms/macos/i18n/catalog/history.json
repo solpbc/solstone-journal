@@ -1,0 +1,3327 @@
+{
+  "history_version": 1,
+  "records": [
+    {
+      "id": "journal.mac.admin.terminal.failure.title",
+      "resource": "m6a6f75726e616c2e6d61632e61646d696e2e7465726d696e616c2e6661696c7572652e7469746c65",
+      "namespace": "journal.mac.admin.terminal.failure",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.admin.terminal.menu.item.title",
+      "resource": "m6a6f75726e616c2e6d61632e61646d696e2e7465726d696e616c2e6d656e752e6974656d2e7469746c65",
+      "namespace": "journal.mac.admin.terminal.menu.item",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.app.journal",
+      "resource": "m6a6f75726e616c2e6d61632e6170702e6a6f75726e616c",
+      "namespace": "journal.mac.app",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.backup.setup.hint",
+      "resource": "m6a6f75726e616c2e6d61632e6261636b75702e73657475702e68696e74",
+      "namespace": "journal.mac.backup.setup",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.connection.invalid.response",
+      "resource": "m6a6f75726e616c2e6d61632e636f6e6e656374696f6e2e696e76616c69642e726573706f6e7365",
+      "namespace": "journal.mac.connection.invalid",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.connection.link.failed",
+      "resource": "m6a6f75726e616c2e6d61632e636f6e6e656374696f6e2e6c696e6b2e6661696c6564",
+      "namespace": "journal.mac.connection.link",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.connection.refused",
+      "resource": "m6a6f75726e616c2e6d61632e636f6e6e656374696f6e2e72656675736564",
+      "namespace": "journal.mac.connection",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.connection.timed.out",
+      "resource": "m6a6f75726e616c2e6d61632e636f6e6e656374696f6e2e74696d65642e6f7574",
+      "namespace": "journal.mac.connection.timed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.connection.unavailable",
+      "resource": "m6a6f75726e616c2e6d61632e636f6e6e656374696f6e2e756e617661696c61626c65",
+      "namespace": "journal.mac.connection",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.add.device",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e6164642e646576696365",
+      "namespace": "journal.mac.devices.add",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.cancel",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e63616e63656c",
+      "namespace": "journal.mac.devices",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.close",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e636c6f7365",
+      "namespace": "journal.mac.devices",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.copied",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e636f70696564",
+      "namespace": "journal.mac.devices",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.copy.link",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e636f70792e6c696e6b",
+      "namespace": "journal.mac.devices.copy",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.detail.network",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e64657461696c2e6e6574776f726b",
+      "namespace": "journal.mac.devices.detail",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "network",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "activity",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.detail.network.paired",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e64657461696c2e6e6574776f726b2e706169726564",
+      "namespace": "journal.mac.devices.detail.network",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "network",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "activity",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "date",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.detail.paired",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e64657461696c2e706169726564",
+      "namespace": "journal.mac.devices.detail",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "activity",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "date",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.empty.body",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e656d7074792e626f6479",
+      "namespace": "journal.mac.devices.empty",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.empty.title",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e656d7074792e7469746c65",
+      "namespace": "journal.mac.devices.empty",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.expires.in",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e657870697265732e696e",
+      "namespace": "journal.mac.devices.expires",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "minutes",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "seconds",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.link.expired.body",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e6c696e6b2e657870697265642e626f6479",
+      "namespace": "journal.mac.devices.link.expired",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.link.expired.title",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e6c696e6b2e657870697265642e7469746c65",
+      "namespace": "journal.mac.devices.link.expired",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.loading",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e6c6f6164696e67",
+      "namespace": "journal.mac.devices",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.model.last.seen",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e6d6f64656c2e6c6173742e7365656e",
+      "namespace": "journal.mac.devices.model.last",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "time",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.model.last.seen.just.now",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e6d6f64656c2e6c6173742e7365656e2e6a7573742e6e6f77",
+      "namespace": "journal.mac.devices.model.last.seen.just",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.model.last.seen.unknown",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e6d6f64656c2e6c6173742e7365656e2e756e6b6e6f776e",
+      "namespace": "journal.mac.devices.model.last.seen",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.model.never.connected",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e6d6f64656c2e6e657665722e636f6e6e6563746564",
+      "namespace": "journal.mac.devices.model.never",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.model.status",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e6d6f64656c2e737461747573",
+      "namespace": "journal.mac.devices.model",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "status",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.not.ready.body",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e6e6f742e72656164792e626f6479",
+      "namespace": "journal.mac.devices.not.ready",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.not.ready.title",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e6e6f742e72656164792e7469746c65",
+      "namespace": "journal.mac.devices.not.ready",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.not.running.body",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e6e6f742e72756e6e696e672e626f6479",
+      "namespace": "journal.mac.devices.not.running",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.not.running.title",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e6e6f742e72756e6e696e672e7469746c65",
+      "namespace": "journal.mac.devices.not.running",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.open.fresh.link",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e6f70656e2e66726573682e6c696e6b",
+      "namespace": "journal.mac.devices.open.fresh",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.paired.done",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e7061697265642e646f6e65",
+      "namespace": "journal.mac.devices.paired",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.paired.heading",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e7061697265642e68656164696e67",
+      "namespace": "journal.mac.devices.paired",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "label",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.paired.heading.unnamed",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e7061697265642e68656164696e672e756e6e616d6564",
+      "namespace": "journal.mac.devices.paired.heading",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.paired.note",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e7061697265642e6e6f7465",
+      "namespace": "journal.mac.devices.paired",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.paired.note.anywhere",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e7061697265642e6e6f74652e616e797768657265",
+      "namespace": "journal.mac.devices.paired.note",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.paired.remove.failed",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e7061697265642e72656d6f76652e6661696c6564",
+      "namespace": "journal.mac.devices.paired.remove",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.paired.removed",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e7061697265642e72656d6f766564",
+      "namespace": "journal.mac.devices.paired",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.paired.unpair",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e7061697265642e756e70616972",
+      "namespace": "journal.mac.devices.paired",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.pairing.code",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e70616972696e672e636f6465",
+      "namespace": "journal.mac.devices.pairing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.pairing.failed.title",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e70616972696e672e6661696c65642e7469746c65",
+      "namespace": "journal.mac.devices.pairing.failed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.pairing.instructions",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e70616972696e672e696e737472756374696f6e73",
+      "namespace": "journal.mac.devices.pairing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.pairing.link.label",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e70616972696e672e6c696e6b2e6c6162656c",
+      "namespace": "journal.mac.devices.pairing.link",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.pairing.opening",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e70616972696e672e6f70656e696e67",
+      "namespace": "journal.mac.devices.pairing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.pairing.title",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e70616972696e672e7469746c65",
+      "namespace": "journal.mac.devices.pairing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.pane.title",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e70616e652e7469746c65",
+      "namespace": "journal.mac.devices.pane",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.peer.journals.header",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e706565722e6a6f75726e616c732e686561646572",
+      "namespace": "journal.mac.devices.peer.journals",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.remove",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e72656d6f7665",
+      "namespace": "journal.mac.devices",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.revoke.body",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e7265766f6b652e626f6479",
+      "namespace": "journal.mac.devices.revoke",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "detail",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "space1",
+          "kind": "whitespace",
+          "value": "\n"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.revoke.failed",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e7265766f6b652e6661696c6564",
+      "namespace": "journal.mac.devices.revoke",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.revoke.title",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e7265766f6b652e7469746c65",
+      "namespace": "journal.mac.devices.revoke",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.try.again",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e7472792e616761696e",
+      "namespace": "journal.mac.devices.try",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.unnamed.device",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e756e6e616d65642e646576696365",
+      "namespace": "journal.mac.devices.unnamed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.unnamed.journal",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e756e6e616d65642e6a6f75726e616c",
+      "namespace": "journal.mac.devices.unnamed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.devices.your.devices.header",
+      "resource": "m6a6f75726e616c2e6d61632e646576696365732e796f75722e646576696365732e686561646572",
+      "namespace": "journal.mac.devices.your.devices",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.events.completed",
+      "resource": "m6a6f75726e616c2e6d61632e6576656e74732e636f6d706c65746564",
+      "namespace": "journal.mac.events",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.events.completed.duration",
+      "resource": "m6a6f75726e616c2e6d61632e6576656e74732e636f6d706c657465642e6475726174696f6e",
+      "namespace": "journal.mac.events.completed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "duration_ms",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.events.doctor.check",
+      "resource": "m6a6f75726e616c2e6d61632e6576656e74732e646f63746f722e636865636b",
+      "namespace": "journal.mac.events.doctor",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "label",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "detail",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "space0",
+          "kind": "whitespace",
+          "value": "  "
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.events.doctor.started",
+      "resource": "m6a6f75726e616c2e6d61632e6576656e74732e646f63746f722e73746172746564",
+      "namespace": "journal.mac.events.doctor",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.events.doctor.status",
+      "resource": "m6a6f75726e616c2e6d61632e6576656e74732e646f63746f722e737461747573",
+      "namespace": "journal.mac.events.doctor",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "status",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.events.doctor.summary",
+      "resource": "m6a6f75726e616c2e6d61632e6576656e74732e646f63746f722e73756d6d617279",
+      "namespace": "journal.mac.events.doctor",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "total",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "failed",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "warnings",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "skipped",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "total",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.mac.events.done",
+      "resource": "m6a6f75726e616c2e6d61632e6576656e74732e646f6e65",
+      "namespace": "journal.mac.events",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "step",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "outcome",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.events.done.duration",
+      "resource": "m6a6f75726e616c2e6d61632e6576656e74732e646f6e652e6475726174696f6e",
+      "namespace": "journal.mac.events.done",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "step",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "outcome",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "duration_ms",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.events.fail",
+      "resource": "m6a6f75726e616c2e6d61632e6576656e74732e6661696c",
+      "namespace": "journal.mac.events",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.events.failed",
+      "resource": "m6a6f75726e616c2e6d61632e6576656e74732e6661696c6564",
+      "namespace": "journal.mac.events",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.events.failed.step",
+      "resource": "m6a6f75726e616c2e6d61632e6576656e74732e6661696c65642e73746570",
+      "namespace": "journal.mac.events.failed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "failed_step",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.events.malformed",
+      "resource": "m6a6f75726e616c2e6d61632e6576656e74732e6d616c666f726d6564",
+      "namespace": "journal.mac.events",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "raw",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.events.ok",
+      "resource": "m6a6f75726e616c2e6d61632e6576656e74732e6f6b",
+      "namespace": "journal.mac.events",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.events.skip",
+      "resource": "m6a6f75726e616c2e6d61632e6576656e74732e736b6970",
+      "namespace": "journal.mac.events",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.events.skipped",
+      "resource": "m6a6f75726e616c2e6d61632e6576656e74732e736b6970706564",
+      "namespace": "journal.mac.events",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "step",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.events.skipped.reason",
+      "resource": "m6a6f75726e616c2e6d61632e6576656e74732e736b69707065642e726561736f6e",
+      "namespace": "journal.mac.events.skipped",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "step",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.events.started",
+      "resource": "m6a6f75726e616c2e6d61632e6576656e74732e73746172746564",
+      "namespace": "journal.mac.events",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.events.started.version",
+      "resource": "m6a6f75726e616c2e6d61632e6576656e74732e737461727465642e76657273696f6e",
+      "namespace": "journal.mac.events.started",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "version",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "mode",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.events.step",
+      "resource": "m6a6f75726e616c2e6d61632e6576656e74732e73746570",
+      "namespace": "journal.mac.events",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "step",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.events.step.failed",
+      "resource": "m6a6f75726e616c2e6d61632e6576656e74732e737465702e6661696c6564",
+      "namespace": "journal.mac.events.step",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "step",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "message",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.events.step.indexed",
+      "resource": "m6a6f75726e616c2e6d61632e6576656e74732e737465702e696e6465786564",
+      "namespace": "journal.mac.events.step",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "index",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "step",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.events.unknown",
+      "resource": "m6a6f75726e616c2e6d61632e6576656e74732e756e6b6e6f776e",
+      "namespace": "journal.mac.events",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.events.unparseable",
+      "resource": "m6a6f75726e616c2e6d61632e6576656e74732e756e706172736561626c65",
+      "namespace": "journal.mac.events",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "raw",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.events.unrecognized",
+      "resource": "m6a6f75726e616c2e6d61632e6576656e74732e756e7265636f676e697a6564",
+      "namespace": "journal.mac.events",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "raw",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.events.warn",
+      "resource": "m6a6f75726e616c2e6d61632e6576656e74732e7761726e",
+      "namespace": "journal.mac.events",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.events.warning",
+      "resource": "m6a6f75726e616c2e6d61632e6576656e74732e7761726e696e67",
+      "namespace": "journal.mac.events",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "text",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "space0",
+          "kind": "whitespace",
+          "value": "  "
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.events.warning.fix",
+      "resource": "m6a6f75726e616c2e6d61632e6576656e74732e7761726e696e672e666978",
+      "namespace": "journal.mac.events.warning",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "text",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "fix_hint",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "space0",
+          "kind": "whitespace",
+          "value": "  "
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.first.run.model.setup.did.not.finish",
+      "resource": "m6a6f75726e616c2e6d61632e66697273742e72756e2e6d6f64656c2e73657475702e6469642e6e6f742e66696e697368",
+      "namespace": "journal.mac.first.run.model.setup.did.not",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.first.run.model.setup.reported.completion.twice",
+      "resource": "m6a6f75726e616c2e6d61632e66697273742e72756e2e6d6f64656c2e73657475702e7265706f727465642e636f6d706c6574696f6e2e7477696365",
+      "namespace": "journal.mac.first.run.model.setup.reported.completion",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.first.run.model.setup.timed.out",
+      "resource": "m6a6f75726e616c2e6d61632e66697273742e72756e2e6d6f64656c2e73657475702e74696d65642e6f7574",
+      "namespace": "journal.mac.first.run.model.setup.timed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.health.check.denied",
+      "resource": "m6a6f75726e616c2e6d61632e6865616c74682e636865636b2e64656e696564",
+      "namespace": "journal.mac.health.check",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.health.check.granted",
+      "resource": "m6a6f75726e616c2e6d61632e6865616c74682e636865636b2e6772616e746564",
+      "namespace": "journal.mac.health.check",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.health.check.microphone",
+      "resource": "m6a6f75726e616c2e6d61632e6865616c74682e636865636b2e6d6963726f70686f6e65",
+      "namespace": "journal.mac.health.check",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.health.check.screen.recording",
+      "resource": "m6a6f75726e616c2e6d61632e6865616c74682e636865636b2e73637265656e2e7265636f7264696e67",
+      "namespace": "journal.mac.health.check.screen",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.health.check.unknown.checking.permissions",
+      "resource": "m6a6f75726e616c2e6d61632e6865616c74682e636865636b2e756e6b6e6f776e2e636865636b696e672e7065726d697373696f6e73",
+      "namespace": "journal.mac.health.check.unknown.checking",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.health.microphone.permission.help",
+      "resource": "m6a6f75726e616c2e6d61632e6865616c74682e6d6963726f70686f6e652e7065726d697373696f6e2e68656c70",
+      "namespace": "journal.mac.health.microphone.permission",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "product",
+          "kind": "mark-word",
+          "value": "solstone"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.health.screen.permission.help",
+      "resource": "m6a6f75726e616c2e6d61632e6865616c74682e73637265656e2e7065726d697373696f6e2e68656c70",
+      "namespace": "journal.mac.health.screen.permission",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "product",
+          "kind": "mark-word",
+          "value": "solstone"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.home.browser.explanation",
+      "resource": "m6a6f75726e616c2e6d61632e686f6d652e62726f777365722e6578706c616e6174696f6e",
+      "namespace": "journal.mac.home.browser",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.home.unconfigured",
+      "resource": "m6a6f75726e616c2e6d61632e686f6d652e756e636f6e66696775726564",
+      "namespace": "journal.mac.home",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.info.cfbundle.display.name",
+      "resource": "m6a6f75726e616c2e6d61632e696e666f2e636662756e646c652e646973706c61792e6e616d65",
+      "namespace": "journal.mac.info.cfbundle.display",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.info.cfbundle.name",
+      "resource": "m6a6f75726e616c2e6d61632e696e666f2e636662756e646c652e6e616d65",
+      "namespace": "journal.mac.info.cfbundle",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.info.nshuman.readable.copyright",
+      "resource": "m6a6f75726e616c2e6d61632e696e666f2e6e7368756d616e2e7265616461626c652e636f70797269676874",
+      "namespace": "journal.mac.info.nshuman.readable",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "company",
+          "kind": "mark-word",
+          "value": "sol pbc"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.local.endpoint.unavailable",
+      "resource": "m6a6f75726e616c2e6d61632e6c6f63616c2e656e64706f696e742e756e617661696c61626c65",
+      "namespace": "journal.mac.local.endpoint",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.location.cancel",
+      "resource": "m6a6f75726e616c2e6d61632e6c6f636174696f6e2e63616e63656c",
+      "namespace": "journal.mac.location",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.location.leave.setup.confirm",
+      "resource": "m6a6f75726e616c2e6d61632e6c6f636174696f6e2e6c656176652e73657475702e636f6e6669726d",
+      "namespace": "journal.mac.location.leave.setup",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.location.new.journal.hosted.share",
+      "resource": "m6a6f75726e616c2e6d61632e6c6f636174696f6e2e6e65772e6a6f75726e616c2e686f737465642e7368617265",
+      "namespace": "journal.mac.location.new.journal.hosted",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.location.other.journals",
+      "resource": "m6a6f75726e616c2e6d61632e6c6f636174696f6e2e6f746865722e6a6f75726e616c73",
+      "namespace": "journal.mac.location.other",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.location.same.mark.template",
+      "resource": "m6a6f75726e616c2e6d61632e6c6f636174696f6e2e73616d652e6d61726b2e74656d706c617465",
+      "namespace": "journal.mac.location.same.mark",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.location.shared.hosted.template",
+      "resource": "m6a6f75726e616c2e6d61632e6c6f636174696f6e2e7368617265642e686f737465642e74656d706c617465",
+      "namespace": "journal.mac.location.shared.hosted",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "company",
+          "kind": "mark-word",
+          "value": "sol pbc"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.location.start.new.journal",
+      "resource": "m6a6f75726e616c2e6d61632e6c6f636174696f6e2e73746172742e6e65772e6a6f75726e616c",
+      "namespace": "journal.mac.location.start.new",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.location.start.new.journal.confirm.template",
+      "resource": "m6a6f75726e616c2e6d61632e6c6f636174696f6e2e73746172742e6e65772e6a6f75726e616c2e636f6e6669726d2e74656d706c617465",
+      "namespace": "journal.mac.location.start.new.journal.confirm",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.location.start.new.journal.confirm.title",
+      "resource": "m6a6f75726e616c2e6d61632e6c6f636174696f6e2e73746172742e6e65772e6a6f75726e616c2e636f6e6669726d2e7469746c65",
+      "namespace": "journal.mac.location.start.new.journal.confirm",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.location.start.new.journal.help",
+      "resource": "m6a6f75726e616c2e6d61632e6c6f636174696f6e2e73746172742e6e65772e6a6f75726e616c2e68656c70",
+      "namespace": "journal.mac.location.start.new.journal",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.location.switch.button",
+      "resource": "m6a6f75726e616c2e6d61632e6c6f636174696f6e2e7377697463682e627574746f6e",
+      "namespace": "journal.mac.location.switch",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.location.switch.confirm.template",
+      "resource": "m6a6f75726e616c2e6d61632e6c6f636174696f6e2e7377697463682e636f6e6669726d2e74656d706c617465",
+      "namespace": "journal.mac.location.switch.confirm",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.location.switch.confirm.title.template",
+      "resource": "m6a6f75726e616c2e6d61632e6c6f636174696f6e2e7377697463682e636f6e6669726d2e7469746c652e74656d706c617465",
+      "namespace": "journal.mac.location.switch.confirm.title",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.location.switch.to.journal",
+      "resource": "m6a6f75726e616c2e6d61632e6c6f636174696f6e2e7377697463682e746f2e6a6f75726e616c",
+      "namespace": "journal.mac.location.switch.to",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.restart.journal.path.unreadable",
+      "resource": "m6a6f75726e616c2e6d61632e726573746172742e6a6f75726e616c2e706174682e756e7265616461626c65",
+      "namespace": "journal.mac.restart.journal.path",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.restart.restart.failed.journal.did.not.come.back",
+      "resource": "m6a6f75726e616c2e6d61632e726573746172742e726573746172742e6661696c65642e6a6f75726e616c2e6469642e6e6f742e636f6d652e6261636b",
+      "namespace": "journal.mac.restart.restart.failed.journal.did.not.come",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.restart.restart.failed.journal.did.not.restart",
+      "resource": "m6a6f75726e616c2e6d61632e726573746172742e726573746172742e6661696c65642e6a6f75726e616c2e6469642e6e6f742e72657374617274",
+      "namespace": "journal.mac.restart.restart.failed.journal.did.not",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.runtime.bundle.missing",
+      "resource": "m6a6f75726e616c2e6d61632e72756e74696d652e62756e646c652e6d697373696e67",
+      "namespace": "journal.mac.runtime.bundle",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.runtime.child.admission.failed",
+      "resource": "m6a6f75726e616c2e6d61632e72756e74696d652e6368696c642e61646d697373696f6e2e6661696c6564",
+      "namespace": "journal.mac.runtime.child.admission",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.runtime.child.containment.pending",
+      "resource": "m6a6f75726e616c2e6d61632e72756e74696d652e6368696c642e636f6e7461696e6d656e742e70656e64696e67",
+      "namespace": "journal.mac.runtime.child.containment",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.runtime.child.unconfigured",
+      "resource": "m6a6f75726e616c2e6d61632e72756e74696d652e6368696c642e756e636f6e66696775726564",
+      "namespace": "journal.mac.runtime.child",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.runtime.couldn.t.get.ready.continuing",
+      "resource": "m6a6f75726e616c2e6d61632e72756e74696d652e636f756c646e2e742e6765742e72656164792e636f6e74696e75696e67",
+      "namespace": "journal.mac.runtime.couldn.t.get.ready",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "library",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.runtime.executable.missing",
+      "resource": "m6a6f75726e616c2e6d61632e72756e74696d652e65786563757461626c652e6d697373696e67",
+      "namespace": "journal.mac.runtime.executable",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "product",
+          "kind": "mark-word",
+          "value": "solstone"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.runtime.installer.readiness.gate.failed",
+      "resource": "m6a6f75726e616c2e6d61632e72756e74696d652e696e7374616c6c65722e72656164696e6573732e676174652e6661696c6564",
+      "namespace": "journal.mac.runtime.installer.readiness.gate",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.runtime.journal.child.breaker.tripped",
+      "resource": "m6a6f75726e616c2e6d61632e72756e74696d652e6a6f75726e616c2e6368696c642e627265616b65722e74726970706564",
+      "namespace": "journal.mac.runtime.journal.child.breaker",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.runtime.journal.child.containment.unresolved",
+      "resource": "m6a6f75726e616c2e6d61632e72756e74696d652e6a6f75726e616c2e6368696c642e636f6e7461696e6d656e742e756e7265736f6c766564",
+      "namespace": "journal.mac.runtime.journal.child.containment",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.runtime.journal.drive.cannot.run",
+      "resource": "m6a6f75726e616c2e6d61632e72756e74696d652e6a6f75726e616c2e64726976652e63616e6e6f742e72756e",
+      "namespace": "journal.mac.runtime.journal.drive.cannot",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.runtime.journal.materialize.failed",
+      "resource": "m6a6f75726e616c2e6d61632e72756e74696d652e6a6f75726e616c2e6d6174657269616c697a652e6661696c6564",
+      "namespace": "journal.mac.runtime.journal.materialize",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.runtime.journal.readiness.timeout",
+      "resource": "m6a6f75726e616c2e6d61632e72756e74696d652e6a6f75726e616c2e72656164696e6573732e74696d656f7574",
+      "namespace": "journal.mac.runtime.journal.readiness",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.runtime.journal.setup.needed.before.upgrade",
+      "resource": "m6a6f75726e616c2e6d61632e72756e74696d652e6a6f75726e616c2e73657475702e6e65656465642e6265666f72652e75706772616465",
+      "namespace": "journal.mac.runtime.journal.setup.needed.before",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.runtime.journal.spawn.blocked.legacy.service",
+      "resource": "m6a6f75726e616c2e6d61632e72756e74696d652e6a6f75726e616c2e737061776e2e626c6f636b65642e6c65676163792e73657276696365",
+      "namespace": "journal.mac.runtime.journal.spawn.blocked.legacy",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.runtime.journal.spawn.blocked.ports",
+      "resource": "m6a6f75726e616c2e6d61632e72756e74696d652e6a6f75726e616c2e737061776e2e626c6f636b65642e706f727473",
+      "namespace": "journal.mac.runtime.journal.spawn.blocked",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.runtime.journal.spawn.port.check.failed",
+      "resource": "m6a6f75726e616c2e6d61632e72756e74696d652e6a6f75726e616c2e737061776e2e706f72742e636865636b2e6661696c6564",
+      "namespace": "journal.mac.runtime.journal.spawn.port.check",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.runtime.journal.spawn.port.held.elsewhere",
+      "resource": "m6a6f75726e616c2e6d61632e72756e74696d652e6a6f75726e616c2e737061776e2e706f72742e68656c642e656c73657768657265",
+      "namespace": "journal.mac.runtime.journal.spawn.port.held",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.runtime.journal.spawn.service.check.failed",
+      "resource": "m6a6f75726e616c2e6d61632e72756e74696d652e6a6f75726e616c2e737061776e2e736572766963652e636865636b2e6661696c6564",
+      "namespace": "journal.mac.runtime.journal.spawn.service.check",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.runtime.release.identity.missing",
+      "resource": "m6a6f75726e616c2e6d61632e72756e74696d652e72656c656173652e6964656e746974792e6d697373696e67",
+      "namespace": "journal.mac.runtime.release.identity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.runtime.required.models.failed",
+      "resource": "m6a6f75726e616c2e6d61632e72756e74696d652e72657175697265642e6d6f64656c732e6661696c6564",
+      "namespace": "journal.mac.runtime.required.models",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "exit_code",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "solstone journal install-models --required-only"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.settings.backup",
+      "resource": "m6a6f75726e616c2e6d61632e73657474696e67732e6261636b7570",
+      "namespace": "journal.mac.settings",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.settings.copied",
+      "resource": "m6a6f75726e616c2e6d61632e73657474696e67732e636f70696564",
+      "namespace": "journal.mac.settings",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.settings.copy",
+      "resource": "m6a6f75726e616c2e6d61632e73657474696e67732e636f7079",
+      "namespace": "journal.mac.settings",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.settings.couldn.t.copy.select.the.text.and.copy.it",
+      "resource": "m6a6f75726e616c2e6d61632e73657474696e67732e636f756c646e2e742e636f70792e73656c6563742e7468652e746578742e616e642e636f70792e6974",
+      "namespace": "journal.mac.settings.couldn.t.copy.select.the.text.and.copy",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.settings.disk.used",
+      "resource": "m6a6f75726e616c2e6d61632e73657474696e67732e6469736b2e75736564",
+      "namespace": "journal.mac.settings.disk",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.settings.health",
+      "resource": "m6a6f75726e616c2e6d61632e73657474696e67732e6865616c7468",
+      "namespace": "journal.mac.settings",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.settings.launch.the.journal.when.you.log.in",
+      "resource": "m6a6f75726e616c2e6d61632e73657474696e67732e6c61756e63682e7468652e6a6f75726e616c2e7768656e2e796f752e6c6f672e696e",
+      "namespace": "journal.mac.settings.launch.the.journal.when.you.log",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.settings.location",
+      "resource": "m6a6f75726e616c2e6d61632e73657474696e67732e6c6f636174696f6e",
+      "namespace": "journal.mac.settings",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.settings.open.backup",
+      "resource": "m6a6f75726e616c2e6d61632e73657474696e67732e6f70656e2e6261636b7570",
+      "namespace": "journal.mac.settings.open",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.settings.open.your.journal",
+      "resource": "m6a6f75726e616c2e6d61632e73657474696e67732e6f70656e2e796f75722e6a6f75726e616c",
+      "namespace": "journal.mac.settings.open.your",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.settings.restart",
+      "resource": "m6a6f75726e616c2e6d61632e73657474696e67732e72657374617274",
+      "namespace": "journal.mac.settings",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.settings.run.state",
+      "resource": "m6a6f75726e616c2e6d61632e73657474696e67732e72756e2e7374617465",
+      "namespace": "journal.mac.settings.run",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.settings.run.state.link",
+      "resource": "m6a6f75726e616c2e6d61632e73657474696e67732e72756e2e73746174652e6c696e6b",
+      "namespace": "journal.mac.settings.run.state",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.settings.start",
+      "resource": "m6a6f75726e616c2e6d61632e73657474696e67732e7374617274",
+      "namespace": "journal.mac.settings",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.settings.startup",
+      "resource": "m6a6f75726e616c2e6d61632e73657474696e67732e73746172747570",
+      "namespace": "journal.mac.settings",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.settings.stop",
+      "resource": "m6a6f75726e616c2e6d61632e73657474696e67732e73746f70",
+      "namespace": "journal.mac.settings",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.settings.the.journal.app.is.available",
+      "resource": "m6a6f75726e616c2e6d61632e73657474696e67732e7468652e6a6f75726e616c2e6170702e69732e617661696c61626c65",
+      "namespace": "journal.mac.settings.the.journal.app.is",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "version",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.settings.the.journal.update.check.failed",
+      "resource": "m6a6f75726e616c2e6d61632e73657474696e67732e7468652e6a6f75726e616c2e7570646174652e636865636b2e6661696c6564",
+      "namespace": "journal.mac.settings.the.journal.update.check",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.settings.update.failed.with.version",
+      "resource": "m6a6f75726e616c2e6d61632e73657474696e67732e7570646174652e6661696c65642e776974682e76657273696f6e",
+      "namespace": "journal.mac.settings.update.failed.with",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "version",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.settings.update.needs.attention",
+      "resource": "m6a6f75726e616c2e6d61632e73657474696e67732e7570646174652e6e656564732e617474656e74696f6e",
+      "namespace": "journal.mac.settings.update.needs",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.settings.view.journal.updates",
+      "resource": "m6a6f75726e616c2e6d61632e73657474696e67732e766965772e6a6f75726e616c2e75706461746573",
+      "namespace": "journal.mac.settings.view.journal",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.settings.your.journal.at.a.glance",
+      "resource": "m6a6f75726e616c2e6d61632e73657474696e67732e796f75722e6a6f75726e616c2e61742e612e676c616e6365",
+      "namespace": "journal.mac.settings.your.journal.at.a",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.settings.your.journal.mark.not.read.yet",
+      "resource": "m6a6f75726e616c2e6d61632e73657474696e67732e796f75722e6a6f75726e616c2e6d61726b2e6e6f742e726561642e796574",
+      "namespace": "journal.mac.settings.your.journal.mark.not.read",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.adopt.failed",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e61646f70742e6661696c6564",
+      "namespace": "journal.mac.setup.adopt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.adopt.landing.line",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e61646f70742e6c616e64696e672e6c696e65",
+      "namespace": "journal.mac.setup.adopt.landing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.adopt.opening",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e61646f70742e6f70656e696e67",
+      "namespace": "journal.mac.setup.adopt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.adopt.title",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e61646f70742e7469746c65",
+      "namespace": "journal.mac.setup.adopt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.back",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e6261636b",
+      "namespace": "journal.mac.setup",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.choose.location",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e63686f6f73652e6c6f636174696f6e",
+      "namespace": "journal.mac.setup.choose",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.chrome.of",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e6368726f6d652e6f66",
+      "namespace": "journal.mac.setup.chrome",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "done",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.continue.button",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e636f6e74696e75652e627574746f6e",
+      "namespace": "journal.mac.setup.continue",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.continue.in.the.solstone.app",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e636f6e74696e75652e696e2e7468652e736f6c73746f6e652e617070",
+      "namespace": "journal.mac.setup.continue.in.the.solstone",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "product",
+          "kind": "mark-word",
+          "value": "solstone"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.download.bytes",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e646f776e6c6f61642e6279746573",
+      "namespace": "journal.mac.setup.download",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "done",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.finish.in.browser.line",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e66696e6973682e696e2e62726f777365722e6c696e65",
+      "namespace": "journal.mac.setup.finish.in.browser",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.finish.in.browser.title",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e66696e6973682e696e2e62726f777365722e7469746c65",
+      "namespace": "journal.mac.setup.finish.in.browser",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.folder.holds.another.journal",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e666f6c6465722e686f6c64732e616e6f746865722e6a6f75726e616c",
+      "namespace": "journal.mac.setup.folder.holds.another",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.go.back.to.the.journal.in",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e676f2e6261636b2e746f2e7468652e6a6f75726e616c2e696e",
+      "namespace": "journal.mac.setup.go.back.to.the.journal",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.handoff.competing.setup",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e68616e646f66662e636f6d706574696e672e7365747570",
+      "namespace": "journal.mac.setup.handoff.competing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "product",
+          "kind": "mark-word",
+          "value": "solstone"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.handoff.held.pairing",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e68616e646f66662e68656c642e70616972696e67",
+      "namespace": "journal.mac.setup.handoff.held",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "product",
+          "kind": "mark-word",
+          "value": "solstone"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.handoff.not.delivered",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e68616e646f66662e6e6f742e64656c697665726564",
+      "namespace": "journal.mac.setup.handoff.not",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "product",
+          "kind": "mark-word",
+          "value": "solstone"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.handoff.pending",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e68616e646f66662e70656e64696e67",
+      "namespace": "journal.mac.setup.handoff",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "product",
+          "kind": "mark-word",
+          "value": "solstone"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.journal.folder",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e6a6f75726e616c2e666f6c646572",
+      "namespace": "journal.mac.setup.journal",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.location.field",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e6c6f636174696f6e2e6669656c64",
+      "namespace": "journal.mac.setup.location",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.login.item.change.failed",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e6c6f67696e2e6974656d2e6368616e67652e6661696c6564",
+      "namespace": "journal.mac.setup.login.item.change",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.login.item.unavailable",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e6c6f67696e2e6974656d2e756e617661696c61626c65",
+      "namespace": "journal.mac.setup.login.item",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.name.location.title",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e6e616d652e6c6f636174696f6e2e7469746c65",
+      "namespace": "journal.mac.setup.name.location",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.on.this.mac",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e6f6e2e746869732e6d6163",
+      "namespace": "journal.mac.setup.on.this",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.on.this.mac.description",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e6f6e2e746869732e6d61632e6465736372697074696f6e",
+      "namespace": "journal.mac.setup.on.this.mac",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.open.your.journal",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e6f70656e2e796f75722e6a6f75726e616c",
+      "namespace": "journal.mac.setup.open.your",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.reopen.in.browser.button",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e72656f70656e2e696e2e62726f777365722e627574746f6e",
+      "namespace": "journal.mac.setup.reopen.in.browser",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.restore.from.backup",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e726573746f72652e66726f6d2e6261636b7570",
+      "namespace": "journal.mac.setup.restore.from",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.runner.solstone.journal.setup.failed",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e72756e6e65722e736f6c73746f6e652e6a6f75726e616c2e73657475702e6661696c6564",
+      "namespace": "journal.mac.setup.runner.solstone.journal.setup",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "setup_command",
+          "kind": "command",
+          "value": "solstone journal setup"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.set.up.solstone",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e7365742e75702e736f6c73746f6e65",
+      "namespace": "journal.mac.setup.set.up",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "product",
+          "kind": "mark-word",
+          "value": "solstone"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.setup.progress.not.saved",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e73657475702e70726f67726573732e6e6f742e7361766564",
+      "namespace": "journal.mac.setup.setup.progress.not",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.setup.subtitle",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e73657475702e7375627469746c65",
+      "namespace": "journal.mac.setup.setup",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.setup.title",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e73657475702e7469746c65",
+      "namespace": "journal.mac.setup.setup",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.start.automatically.help",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e73746172742e6175746f6d61746963616c6c792e68656c70",
+      "namespace": "journal.mac.setup.start.automatically",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.start.setup",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e73746172742e7365747570",
+      "namespace": "journal.mac.setup.start",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.step.progress",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e737465702e70726f6772657373",
+      "namespace": "journal.mac.setup.step",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "step",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.the.solstone.app",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e7468652e736f6c73746f6e652e617070",
+      "namespace": "journal.mac.setup.the.solstone",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "product",
+          "kind": "mark-word",
+          "value": "solstone"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.the.solstone.app.description",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e7468652e736f6c73746f6e652e6170702e6465736372697074696f6e",
+      "namespace": "journal.mac.setup.the.solstone.app",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.thinking",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e7468696e6b696e67",
+      "namespace": "journal.mac.setup",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.thinking.description",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e7468696e6b696e672e6465736372697074696f6e",
+      "namespace": "journal.mac.setup.thinking",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.thinking.failed",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e7468696e6b696e672e6661696c6564",
+      "namespace": "journal.mac.setup.thinking",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.try.again",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e7472792e616761696e",
+      "namespace": "journal.mac.setup.try",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.what.this.sets.up",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e776861742e746869732e736574732e7570",
+      "namespace": "journal.mac.setup.what.this.sets",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.what.this.sets.up.journal",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e776861742e746869732e736574732e75702e6a6f75726e616c",
+      "namespace": "journal.mac.setup.what.this.sets.up",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.where.does.thinking.happen",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e77686572652e646f65732e7468696e6b696e672e68617070656e",
+      "namespace": "journal.mac.setup.where.does.thinking",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.where.does.thinking.happen.description",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e77686572652e646f65732e7468696e6b696e672e68617070656e2e6465736372697074696f6e",
+      "namespace": "journal.mac.setup.where.does.thinking.happen",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.where.your.journal.lives",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e77686572652e796f75722e6a6f75726e616c2e6c69766573",
+      "namespace": "journal.mac.setup.where.your.journal",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.where.your.journal.lives.description",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e77686572652e796f75722e6a6f75726e616c2e6c697665732e6465736372697074696f6e",
+      "namespace": "journal.mac.setup.where.your.journal.lives",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.setup.your.journal",
+      "resource": "m6a6f75726e616c2e6d61632e73657475702e796f75722e6a6f75726e616c",
+      "namespace": "journal.mac.setup.your",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.updates.deferred",
+      "resource": "m6a6f75726e616c2e6d61632e757064617465732e6465666572726564",
+      "namespace": "journal.mac.updates",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.updates.ready.to.install",
+      "resource": "m6a6f75726e616c2e6d61632e757064617465732e72656164792e746f2e696e7374616c6c",
+      "namespace": "journal.mac.updates.ready.to",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "version",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.window.model.backup",
+      "resource": "m6a6f75726e616c2e6d61632e77696e646f772e6d6f64656c2e6261636b7570",
+      "namespace": "journal.mac.window.model",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.window.model.blocked",
+      "resource": "m6a6f75726e616c2e6d61632e77696e646f772e6d6f64656c2e626c6f636b6564",
+      "namespace": "journal.mac.window.model",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.window.model.devices",
+      "resource": "m6a6f75726e616c2e6d61632e77696e646f772e6d6f64656c2e64657669636573",
+      "namespace": "journal.mac.window.model",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.window.model.healthy",
+      "resource": "m6a6f75726e616c2e6d61632e77696e646f772e6d6f64656c2e6865616c746879",
+      "namespace": "journal.mac.window.model",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.window.model.home",
+      "resource": "m6a6f75726e616c2e6d61632e77696e646f772e6d6f64656c2e686f6d65",
+      "namespace": "journal.mac.window.model",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.window.model.journal",
+      "resource": "m6a6f75726e616c2e6d61632e77696e646f772e6d6f64656c2e6a6f75726e616c",
+      "namespace": "journal.mac.window.model",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.window.model.location",
+      "resource": "m6a6f75726e616c2e6d61632e77696e646f772e6d6f64656c2e6c6f636174696f6e",
+      "namespace": "journal.mac.window.model",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.window.model.not.set",
+      "resource": "m6a6f75726e616c2e6d61632e77696e646f772e6d6f64656c2e6e6f742e736574",
+      "namespace": "journal.mac.window.model.not",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.window.model.run.state",
+      "resource": "m6a6f75726e616c2e6d61632e77696e646f772e6d6f64656c2e72756e2e7374617465",
+      "namespace": "journal.mac.window.model.run",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.window.model.running",
+      "resource": "m6a6f75726e616c2e6d61632e77696e646f772e6d6f64656c2e72756e6e696e67",
+      "namespace": "journal.mac.window.model",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.window.model.starting",
+      "resource": "m6a6f75726e616c2e6d61632e77696e646f772e6d6f64656c2e7374617274696e67",
+      "namespace": "journal.mac.window.model",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.window.model.startup",
+      "resource": "m6a6f75726e616c2e6d61632e77696e646f772e6d6f64656c2e73746172747570",
+      "namespace": "journal.mac.window.model",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.window.model.stopped",
+      "resource": "m6a6f75726e616c2e6d61632e77696e646f772e6d6f64656c2e73746f70706564",
+      "namespace": "journal.mac.window.model",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.window.model.unknown",
+      "resource": "m6a6f75726e616c2e6d61632e77696e646f772e6d6f64656c2e756e6b6e6f776e",
+      "namespace": "journal.mac.window.model",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.mac.window.model.updates",
+      "resource": "m6a6f75726e616c2e6d61632e77696e646f772e6d6f64656c2e75706461746573",
+      "namespace": "journal.mac.window.model",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    }
+  ]
+}

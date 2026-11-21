@@ -1,0 +1,16 @@
+{
+  "description": "setup: startSetup",
+  "context": "setup: startSetup",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "8cbf6a8ccfac5638cdb8e410a1eea78f5a91ed2deb2d21512b634ef5c18301e9",
+  "risk": "routine",
+  "auto_merge": true
+}

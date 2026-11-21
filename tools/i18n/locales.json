@@ -322,6 +322,12 @@
       ]
     },
     {
+      "id": "journal-mac",
+      "locales": [
+        "en-US"
+      ]
+    },
+    {
       "id": "journal-window",
       "locales": [
         "en-US",

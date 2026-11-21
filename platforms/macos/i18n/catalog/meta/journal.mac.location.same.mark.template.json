@@ -1,0 +1,16 @@
+{
+  "description": "location: sameMarkTemplate",
+  "context": "location: sameMarkTemplate",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "b0e54d3558057ce99b1804dcb408d6e9cd7720699dd04881059b3f4091d33965",
+  "risk": "routine",
+  "auto_merge": true
+}

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+import JournalRuntime
 import AppKit
 import JournalMarkKit
 import SolstoneCore
@@ -51,7 +52,7 @@ struct JournalSettingsWindow: View {
                             Spacer()
                             Image(systemName: "circle.fill")
                                 .font(.system(size: 6))
-                                .accessibilityLabel("update needs attention")
+                                .accessibilityLabel(JournalCopy.settingsUpdateNeedsAttention())
                         }
                     }
                         .tag(pane)
@@ -105,7 +106,7 @@ struct JournalSettingsWindow: View {
 
     private var homePane: some View {
         VStack(alignment: .leading, spacing: 20) {
-            Text("your journal, at a glance")
+            Text(JournalCopy.settingsYourJournalAtAGlance())
                 .font(.title2.weight(.semibold))
 
             // journal-mark.md section 4.3 — the org-wide "no journal identity yet"
@@ -124,7 +125,7 @@ struct JournalSettingsWindow: View {
                 GroupBox {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(message)
-                        Button("view journal updates") { model.selectedPane = .updates }
+                        Button(JournalCopy.settingsViewJournalUpdates()) { model.selectedPane = .updates }
                             .accessibilityIdentifier(AXID.Journal.Home.updates)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -139,14 +140,14 @@ struct JournalSettingsWindow: View {
                     AXStateCompanion(id: AXID.Journal.Home.unconfiguredMessageState, value: message)
                 }
             case .door, .start, .none, .runState:
-                Text("this app keeps your journal running on this mac. your journal itself opens in your browser.")
+                Text(JournalCopy.homeBrowserExplanation())
                     .foregroundStyle(.secondary)
                 switch model.homeOffer {
                 case .door:
                     Button {
                         _ = model.openJournal(using: openURL)
                     } label: {
-                        Label("open your journal", systemImage: "arrow.up.right.square")
+                        Label(JournalCopy.settingsOpenYourJournal(), systemImage: "arrow.up.right.square")
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
@@ -162,7 +163,7 @@ struct JournalSettingsWindow: View {
                     Button {
                         model.startJournal()
                     } label: {
-                        Label("start", systemImage: "play.fill")
+                        Label(JournalCopy.settingsStart(), systemImage: "play.fill")
                     }
                     .accessibilityIdentifier(AXID.Journal.Home.start)
                 case .runState:
@@ -172,7 +173,7 @@ struct JournalSettingsWindow: View {
                     Button {
                         model.selectedPane = .runState
                     } label: {
-                        Label("run state →", systemImage: "waveform.path.ecg")
+                        Label(JournalCopy.settingsRunStateLink(), systemImage: "waveform.path.ecg")
                     }
                     .accessibilityIdentifier(AXID.Journal.Home.runState)
                 case .none, .unconfigured:
@@ -184,11 +185,11 @@ struct JournalSettingsWindow: View {
 
     private var updateAttentionMessage: String? {
         switch updateController.durableUpdateStatus {
-        case .available(let version, _): "the journal app \(version) is available."
-        case .staged(let version, _): "the journal app \(version) is downloaded and ready to install."
-        case .deferred: "your journal update will continue after your journal is ready."
-        case .failedWithAvailable(let version): "the update check failed. the journal app \(version) was found earlier."
-        case .failed: "the journal update check failed."
+        case .available(let version, _): JournalCopy.settingsTheJournalAppIsAvailable(version)
+        case .staged(let version, _): JournalCopy.updatesReadyToInstall(version)
+        case .deferred: JournalCopy.updatesDeferred()
+        case .failedWithAvailable(let version): JournalCopy.settingsUpdateFailedWithVersion(version)
+        case .failed: JournalCopy.settingsTheJournalUpdateCheckFailed()
         case .idle, .upToDate: nil
         }
     }
@@ -198,10 +199,10 @@ struct JournalSettingsWindow: View {
             Text(JournalPane.journal.title)
                 .font(.title2.weight(.semibold))
 
-            infoRow("location", value: model.journalRootPath)
+            infoRow(JournalCopy.settingsLocation(), value: model.journalRootPath)
             AXStateCompanion(id: AXID.Journal.Pane.locationPathState, value: model.journalRootPath)
 
-            infoRow("disk used", value: model.diskUsageValue)
+            infoRow(JournalCopy.settingsDiskUsed(), value: model.diskUsageValue)
             AXStateCompanion(
                 id: AXID.Journal.Pane.diskUsageState,
                 value: String(model.diskUsageBytes ?? 0)
@@ -280,7 +281,7 @@ struct JournalSettingsWindow: View {
 
     private var runStatePane: some View {
         VStack(alignment: .leading, spacing: 20) {
-            Text("run state")
+            Text(JournalCopy.settingsRunState())
                 .font(.title2.weight(.semibold))
 
             VStack(alignment: .leading, spacing: 6) {
@@ -306,26 +307,26 @@ struct JournalSettingsWindow: View {
                 Button {
                     model.startJournal()
                 } label: {
-                    Label("start", systemImage: "play.fill")
+                    Label(JournalCopy.settingsStart(), systemImage: "play.fill")
                 }
                 .accessibilityIdentifier(AXID.Journal.RunState.start)
 
                 Button {
                     model.stopJournal()
                 } label: {
-                    Label("stop", systemImage: "stop.fill")
+                    Label(JournalCopy.settingsStop(), systemImage: "stop.fill")
                 }
                 .accessibilityIdentifier(AXID.Journal.RunState.stop)
 
                 Button {
                     model.restartJournal()
                 } label: {
-                    Label("restart", systemImage: "arrow.clockwise")
+                    Label(JournalCopy.settingsRestart(), systemImage: "arrow.clockwise")
                 }
                 .accessibilityIdentifier(AXID.Journal.RunState.restart)
             }
 
-            infoRow("health", value: model.healthDisplay.label)
+            infoRow(JournalCopy.settingsHealth(), value: model.healthDisplay.label)
             AXStateCompanion(id: AXID.Journal.RunState.healthState, value: model.healthDisplay.axToken)
 
             VStack(alignment: .leading, spacing: 6) {
@@ -334,13 +335,13 @@ struct JournalSettingsWindow: View {
                     .accessibilityIdentifier(AXID.Journal.RunState.aboutState)
                     .accessibilityValue(model.aboutBlock)
                 AXStateCompanion(id: AXID.Journal.RunState.aboutState, value: model.aboutBlock)
-                Button("copy") {
+                Button(JournalCopy.settingsCopy()) {
                     let snapshot = model.aboutBlock
                     aboutCopyState = clipboardWrite(snapshot) ? .copied : .failed
                 }
                 .accessibilityIdentifier(AXID.Journal.RunState.aboutCopy)
                 if let aboutCopyState {
-                    let message = aboutCopyState == .copied ? "copied" : "couldn't copy. select the text and copy it."
+                    let message = aboutCopyState == .copied ? JournalCopy.settingsCopied() : JournalCopy.settingsCouldnTCopySelectTheTextAndCopyIt()
                     Text(message)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -353,19 +354,19 @@ struct JournalSettingsWindow: View {
 
     private var backupPane: some View {
         VStack(alignment: .leading, spacing: 20) {
-            Text("backup")
+            Text(JournalCopy.settingsBackup())
                 .font(.title2.weight(.semibold))
-            Text("backup keeps your journal safe. set it up from your journal.")
+            Text(JournalCopy.backupSetupHint())
                 .foregroundStyle(.secondary)
             AXStateCompanion(
                 id: AXID.Journal.Backup.messageState,
-                value: "backup keeps your journal safe. set it up from your journal."
+                value: JournalCopy.backupSetupHint()
             )
 
             Button {
                 _ = model.openBackup(using: { openURL($0) })
             } label: {
-                Label("open backup", systemImage: "arrow.up.right.square")
+                Label(JournalCopy.settingsOpenBackup(), systemImage: "arrow.up.right.square")
             }
             .accessibilityIdentifier(AXID.Journal.Backup.openBackup)
             if let openFailure = model.openFailure {
@@ -376,10 +377,10 @@ struct JournalSettingsWindow: View {
 
     private var startupPane: some View {
         VStack(alignment: .leading, spacing: 20) {
-            Text("startup")
+            Text(JournalCopy.settingsStartup())
                 .font(.title2.weight(.semibold))
             Toggle(
-                "launch the journal when you log in",
+                JournalCopy.settingsLaunchTheJournalWhenYouLogIn(),
                 isOn: Binding(
                     get: { model.launchAtLoginEnabled },
                     set: { model.setLaunchAtLoginEnabled($0) }
@@ -428,7 +429,7 @@ struct JournalMarkPresentationView: View {
             JournalMarkView(mark: nil, isConfirmed: true)
         case .loading:
             JournalMarkView(mark: nil, isConfirmed: true)
-                .accessibilityValue("your journal, mark not read yet")
+                .accessibilityValue(JournalCopy.settingsYourJournalMarkNotReadYet())
         case .unavailable:
             JournalMarkUnavailableView()
         }

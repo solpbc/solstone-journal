@@ -1,0 +1,16 @@
+{
+  "description": "devices: copyLink",
+  "context": "devices: copyLink",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "246dd7c326bc6a55f009bbd2b0005318dad2835ad577b4594d38b73fdc20f9a9",
+  "risk": "routine",
+  "auto_merge": true
+}

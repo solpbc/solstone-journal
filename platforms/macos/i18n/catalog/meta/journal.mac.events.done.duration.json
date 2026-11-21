@@ -1,0 +1,29 @@
+{
+  "description": "events: step done ms",
+  "context": "events: step done ms",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [
+    {
+      "name": "step",
+      "type": "string"
+    },
+    {
+      "name": "outcome",
+      "type": "string"
+    },
+    {
+      "name": "duration_ms",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "82e46c8a1d803f7f88827a4796591a91431e20763b7b5bc9f4b17c8f10c77521",
+  "risk": "routine",
+  "auto_merge": true
+}

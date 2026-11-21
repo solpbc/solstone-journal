@@ -1,0 +1,16 @@
+{
+  "description": "setup: onThisMac",
+  "context": "setup: onThisMac",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "9209d235577d858de75a556547b314394aa663cbfab7614b19315f6c8c725e9f",
+  "risk": "routine",
+  "auto_merge": true
+}

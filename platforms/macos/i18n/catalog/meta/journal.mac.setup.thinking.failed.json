@@ -1,0 +1,16 @@
+{
+  "description": "setup: thinkingFailed",
+  "context": "setup: thinkingFailed",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "7557833de4f6abfe016985c8369a574e2824d07c16c42cb227e5762931c9cc28",
+  "risk": "routine",
+  "auto_merge": true
+}

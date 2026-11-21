@@ -1,0 +1,16 @@
+{
+  "description": "restart: restart failed journal did not restart",
+  "context": "restart: restart failed journal did not restart",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "c6ea51716794b8fe7cd8f60a6fa358df8185d2d579f38285473c42e4db73fad9",
+  "risk": "routine",
+  "auto_merge": true
+}

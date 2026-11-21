@@ -1,0 +1,16 @@
+{
+  "description": "health check: unknown checking permissions",
+  "context": "health check: unknown checking permissions",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "14593db3b7d1a571281c399c4f350d6eac7d4f2ff2d6bb7bcb6f81c35193616c",
+  "risk": "routine",
+  "auto_merge": true
+}

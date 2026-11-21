@@ -1,0 +1,2288 @@
+{
+  "sourceLanguage": "en-US",
+  "strings": {
+    "m6a6f75726e616c2e6d61632e61646d696e2e7465726d696e616c2e6661696c7572652e7469746c65": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "couldn't open the admin terminal"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e61646d696e2e7465726d696e616c2e6d656e752e6974656d2e7469746c65": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "open admin terminal"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6170702e6a6f75726e616c": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "journal"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6261636b75702e73657475702e68696e74": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "backup keeps your journal safe. set it up from your journal."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e636f6e6e656374696f6e2e696e76616c69642e726573706f6e7365": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "the journal app couldn't read what came back from your journal."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e636f6e6e656374696f6e2e6c696e6b2e6661696c6564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "the journal app couldn't open your journal in your browser. try again."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e636f6e6e656374696f6e2e72656675736564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "the journal app couldn't connect to your journal on this mac."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e636f6e6e656374696f6e2e74696d65642e6f7574": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "the journal app waited too long for your journal. try again."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e636f6e6e656374696f6e2e756e617661696c61626c65": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "your journal isn't ready for the journal app yet. try again shortly."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e6164642e646576696365": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "pair a device"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e63616e63656c": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cancel"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e636c6f7365": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "close"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e636f70696564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "copied ✓"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e636f70792e6c696e6b": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "copy link"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e64657461696c2e6e6574776f726b": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e64657461696c2e6e6574776f726b2e706169726564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · %2$@ · paired %3$@"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e64657461696c2e706169726564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · paired %2$@"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e656d7074792e626f6479": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "pair a device and it joins your journal."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e656d7074792e7469746c65": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "no devices yet"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e657870697265732e696e": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "expires in %1$@:%2$@"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e6c696e6b2e657870697265642e626f6479": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "open a fresh link to pair a device."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e6c696e6b2e657870697265642e7469746c65": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "link expired"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e6c6f6164696e67": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "loading devices..."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e6d6f64656c2e6c6173742e7365656e": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "last seen %1$@"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e6d6f64656c2e6c6173742e7365656e2e6a7573742e6e6f77": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "last seen just now"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e6d6f64656c2e6c6173742e7365656e2e756e6b6e6f776e": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "last seen unknown"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e6d6f64656c2e6e657665722e636f6e6e6563746564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "never connected"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e6d6f64656c2e737461747573": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "status %1$@"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e6e6f742e72656164792e626f6479": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "finish setting up your journal, then try again."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e6e6f742e72656164792e7469746c65": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "devices are not ready"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e6e6f742e72756e6e696e672e626f6479": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "start the journal, then try again."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e6e6f742e72756e6e696e672e7469746c65": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "journal is not running"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e6f70656e2e66726573682e6c696e6b": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "open a fresh link"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e7061697265642e646f6e65": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "done"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e7061697265642e68656164696e67": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\"%1$@\" can now reach your journal"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e7061697265642e68656164696e672e756e6e616d6564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "a new device can now reach your journal"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e7061697265642e6e6f7465": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "on that device, check it shows this same mark, then answer there. didn't pair it?"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e7061697265642e6e6f74652e616e797768657265": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "on that device, check it shows this same mark, then answer there. it can reach your journal from anywhere. didn't pair it?"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e7061697265642e72656d6f76652e6661696c6564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "couldn't unpair this device. try again, or remove it under devices."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e7061697265642e72656d6f766564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "unpaired. the device can't reach your journal until it's paired again."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e7061697265642e756e70616972": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "unpair this device"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e70616972696e672e636f6465": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "pairing code"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e70616972696e672e6661696c65642e7469746c65": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "couldn't open pairing"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e70616972696e672e696e737472756374696f6e73": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "scan this code or open the link on the device you want to pair."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e70616972696e672e6c696e6b2e6c6162656c": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "pairing link"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e70616972696e672e6f70656e696e67": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "opening pairing..."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e70616972696e672e7469746c65": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "pair a device"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e70616e652e7469746c65": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "devices"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e706565722e6a6f75726e616c732e686561646572": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "peer journals"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e72656d6f7665": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "remove"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e7265766f6b652e626f6479": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ loses access to your journal. you can pair it again later.\n%2$@"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e7265766f6b652e6661696c6564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "couldn't remove this device"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e7265766f6b652e7469746c65": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "remove %1$@?"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e7472792e616761696e": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "try again"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e756e6e616d65642e646576696365": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "unnamed device"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e756e6e616d65642e6a6f75726e616c": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "unnamed journal"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e646576696365732e796f75722e646576696365732e686561646572": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "your devices"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6576656e74732e636f6d706c65746564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "setup ok"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6576656e74732e636f6d706c657465642e6475726174696f6e": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "setup ok (%1$@ms)"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6576656e74732e646f63746f722e636865636b": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "  [%1$@] %2$@ - %3$@"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6576656e74732e646f63746f722e73746172746564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "doctor started"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6576656e74732e646f63746f722e737461747573": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "doctor: %1$@"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6576656e74732e646f63746f722e73756d6d617279": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%#@quantity@"
+          },
+          "substitutions": {
+            "quantity": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "doctor: %5$@ checks (%2$@ failed, %3$@ warnings, %4$@ skipped)"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "doctor: %5$@ checks (%2$@ failed, %3$@ warnings, %4$@ skipped)"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6576656e74732e646f6e65": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "step %1$@ done (%2$@)"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6576656e74732e646f6e652e6475726174696f6e": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "step %1$@ done (%2$@, %3$@ms)"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6576656e74732e6661696c": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "fail"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6576656e74732e6661696c6564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "setup failed"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6576656e74732e6661696c65642e73746570": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "setup failed at %1$@"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6576656e74732e6d616c666f726d6564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "[malformed event] %1$@"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6576656e74732e6f6b": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ok"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6576656e74732e736b6970": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "skip"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6576656e74732e736b6970706564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "step %1$@ skipped"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6576656e74732e736b69707065642e726561736f6e": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "step %1$@ skipped (%2$@)"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6576656e74732e73746172746564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "setup started"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6576656e74732e737461727465642e76657273696f6e": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "setup started (version %1$@, %2$@)"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6576656e74732e73746570": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "step: %1$@"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6576656e74732e737465702e6661696c6564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "step %1$@ failed: %2$@"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6576656e74732e737465702e696e6465786564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "step %1$@/%2$@: %3$@"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6576656e74732e756e6b6e6f776e": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "unknown"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6576656e74732e756e706172736561626c65": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "[unparseable line] %1$@"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6576656e74732e756e7265636f676e697a6564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "[unrecognized event] %1$@"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6576656e74732e7761726e": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "warn"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6576656e74732e7761726e696e67": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "  warn: %1$@"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6576656e74732e7761726e696e672e666978": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "  warn: %1$@ (fix: %2$@)"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e66697273742e72756e2e6d6f64656c2e73657475702e6469642e6e6f742e66696e697368": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "setup did not finish"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e66697273742e72756e2e6d6f64656c2e73657475702e7265706f727465642e636f6d706c6574696f6e2e7477696365": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "setup reported completion twice"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e66697273742e72756e2e6d6f64656c2e73657475702e74696d65642e6f7574": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "setup timed out"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6865616c74682e636865636b2e64656e696564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "denied"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6865616c74682e636865636b2e6772616e746564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "granted"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6865616c74682e636865636b2e6d6963726f70686f6e65": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "microphone"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6865616c74682e636865636b2e73637265656e2e7265636f7264696e67": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "screen recording"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6865616c74682e636865636b2e756e6b6e6f776e2e636865636b696e672e7065726d697373696f6e73": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "unknown, checking permissions"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6865616c74682e6d6963726f70686f6e652e7065726d697373696f6e2e68656c70": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "open System Settings › Privacy & Security and allow Microphone for solstone"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6865616c74682e73637265656e2e7065726d697373696f6e2e68656c70": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "open System Settings › Privacy & Security and allow Screen & System Audio Recording for solstone"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e686f6d652e62726f777365722e6578706c616e6174696f6e": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "this app keeps your journal running on this mac. your journal itself opens in your browser."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e686f6d652e756e636f6e66696775726564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "nothing here yet. creating your journal comes next."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e696e666f2e636662756e646c652e646973706c61792e6e616d65": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "journal"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e696e666f2e636662756e646c652e6e616d65": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "journal"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e696e666f2e6e7368756d616e2e7265616461626c652e636f70797269676874": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "© 2026 sol pbc. all rights reserved."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6c6f63616c2e656e64706f696e742e756e617661696c61626c65": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "your journal isn't ready for the journal app yet. try again shortly."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6c6f636174696f6e2e63616e63656c": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cancel"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6c6f636174696f6e2e6c656176652e73657475702e636f6e6669726d": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "setup stops."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6c6f636174696f6e2e6e65772e6a6f75726e616c2e686f737465642e7368617265": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "if you restore this journal's backup there, the new journal takes it over, and this one stops backing up until you turn it on again."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6c6f636174696f6e2e6f746865722e6a6f75726e616c73": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "other journals on this mac"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6c6f636174696f6e2e73616d652e6d61726b2e74656d706c617465": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "both have the same mark, so your devices reach whichever one is running."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6c6f636174696f6e2e7368617265642e686f737465642e74656d706c617465": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "the one in %1$@ shares this encrypted backup operated by sol pbc, and only one can use it. if this journal stops backing up, turn it on again in the backup pane."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6c6f636174696f6e2e73746172742e6e65772e6a6f75726e616c": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "start a new journal"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6c6f636174696f6e2e73746172742e6e65772e6a6f75726e616c2e636f6e6669726d2e74656d706c617465": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "your journal in %1$@ stops and stays there, unchanged. setup starts next, where you can restore from a backup."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6c6f636174696f6e2e73746172742e6e65772e6a6f75726e616c2e636f6e6669726d2e7469746c65": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "start a new journal?"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6c6f636174696f6e2e73746172742e6e65772e6a6f75726e616c2e68656c70": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "your journal stops and stays in its folder, unchanged. during setup you can restore from a backup, and you can come back to this one here."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6c6f636174696f6e2e7377697463682e627574746f6e": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "switch"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6c6f636174696f6e2e7377697463682e636f6e6669726d2e74656d706c617465": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "your journal in %1$@ stops and stays there, unchanged. you can come back to it here."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6c6f636174696f6e2e7377697463682e636f6e6669726d2e7469746c652e74656d706c617465": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "switch to the journal in %1$@?"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e6c6f636174696f6e2e7377697463682e746f2e6a6f75726e616c": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "switch to this journal"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e726573746172742e6a6f75726e616c2e706174682e756e7265616461626c65": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "restart failed: journal path could not be read"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e726573746172742e726573746172742e6661696c65642e6a6f75726e616c2e6469642e6e6f742e636f6d652e6261636b": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "restart failed: journal did not come back"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e726573746172742e726573746172742e6661696c65642e6a6f75726e616c2e6469642e6e6f742e72657374617274": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "restart failed: journal did not restart"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e72756e74696d652e62756e646c652e6d697373696e67": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "bundled native journal runtime is missing at %1$@"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e72756e74696d652e6368696c642e61646d697373696f6e2e6661696c6564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "journal child admission could not be verified"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e72756e74696d652e6368696c642e636f6e7461696e6d656e742e70656e64696e67": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "journal child containment is in progress"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e72756e74696d652e6368696c642e756e636f6e66696775726564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "journal child is not configured"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e72756e74696d652e636f756c646e2e742e6765742e72656164792e636f6e74696e75696e67": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "couldn't get %1$@ ready; continuing"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e72756e74696d652e65786563757461626c652e6d697373696e67": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "bundled native solstone executable is missing at %1$@"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e72756e74696d652e696e7374616c6c65722e72656164696e6573732e676174652e6661696c6564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "couldn't get the journal ready for this mac"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e72756e74696d652e6a6f75726e616c2e6368696c642e627265616b65722e74726970706564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "your journal stopped unexpectedly several times within a minute"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e72756e74696d652e6a6f75726e616c2e6368696c642e636f6e7461696e6d656e742e756e7265736f6c766564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "your journal stopped, and not all of its processes could be confirmed closed"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e72756e74696d652e6a6f75726e616c2e64726976652e63616e6e6f742e72756e": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "your journal can't run on this drive because the drive can't save files the way your journal needs. use a mac-formatted drive for your journal."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e72756e74696d652e6a6f75726e616c2e6d6174657269616c697a652e6661696c6564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "journal runtime couldn't be prepared"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e72756e74696d652e6a6f75726e616c2e72656164696e6573732e74696d656f7574": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "journal didn't become ready in time"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e72756e74696d652e6a6f75726e616c2e73657475702e6e65656465642e6265666f72652e75706772616465": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "journal setup needed before upgrade can continue"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e72756e74696d652e6a6f75726e616c2e737061776e2e626c6f636b65642e6c65676163792e73657276696365": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "something else is set up to run your journal"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e72756e74696d652e6a6f75726e616c2e737061776e2e626c6f636b65642e706f727473": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "journal ports are still in use"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e72756e74696d652e6a6f75726e616c2e737061776e2e706f72742e636865636b2e6661696c6564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "couldn't verify journal ports are free"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e72756e74696d652e6a6f75726e616c2e737061776e2e706f72742e68656c642e656c73657768657265": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "your journal can't start because another app is using the connection it needs on this mac. on a shared mac, this is usually another account's journal."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e72756e74696d652e6a6f75726e616c2e737061776e2e736572766963652e636865636b2e6661696c6564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "couldn't tell if something else is running your journal"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e72756e74696d652e72656c656173652e6964656e746974792e6d697373696e67": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "journal.app is missing a valid release identity"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e72756e74696d652e72657175697265642e6d6f64656c732e6661696c6564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "solstone journal install-models --required-only failed (exit %1$@, termination %2$@)"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657474696e67732e6261636b7570": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "backup"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657474696e67732e636f70696564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "copied"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657474696e67732e636f7079": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "copy"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657474696e67732e636f756c646e2e742e636f70792e73656c6563742e7468652e746578742e616e642e636f70792e6974": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "couldn't copy. select the text and copy it."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657474696e67732e6469736b2e75736564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "disk used"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657474696e67732e6865616c7468": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "health"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657474696e67732e6c61756e63682e7468652e6a6f75726e616c2e7768656e2e796f752e6c6f672e696e": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "launch the journal when you log in"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657474696e67732e6c6f636174696f6e": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "location"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657474696e67732e6f70656e2e6261636b7570": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "open backup"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657474696e67732e6f70656e2e796f75722e6a6f75726e616c": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "open your journal"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657474696e67732e72657374617274": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "restart"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657474696e67732e72756e2e7374617465": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "run state"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657474696e67732e72756e2e73746174652e6c696e6b": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "run state →"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657474696e67732e7374617274": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "start"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657474696e67732e73746172747570": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "startup"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657474696e67732e73746f70": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "stop"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657474696e67732e7468652e6a6f75726e616c2e6170702e69732e617661696c61626c65": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "the journal app %1$@ is available."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657474696e67732e7468652e6a6f75726e616c2e7570646174652e636865636b2e6661696c6564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "the journal update check failed."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657474696e67732e7570646174652e6661696c65642e776974682e76657273696f6e": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "the update check failed. the journal app %1$@ was found earlier."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657474696e67732e7570646174652e6e656564732e617474656e74696f6e": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "update needs attention"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657474696e67732e766965772e6a6f75726e616c2e75706461746573": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "view journal updates"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657474696e67732e796f75722e6a6f75726e616c2e61742e612e676c616e6365": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "your journal, at a glance"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657474696e67732e796f75722e6a6f75726e616c2e6d61726b2e6e6f742e726561642e796574": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "your journal, mark not read yet"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e61646f70742e6661696c6564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "couldn't open this journal"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e61646f70742e6c616e64696e672e6c696e65": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "nothing moved. your journal was always here. you know it by its mark."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e61646f70742e6f70656e696e67": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "opening this journal"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e61646f70742e7469746c65": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "journal found"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e6261636b": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "back"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e63686f6f73652e6c6f636174696f6e": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "choose"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e6368726f6d652e6f66": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ of %2$@"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e636f6e74696e75652e627574746f6e": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "continue"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e636f6e74696e75652e696e2e7468652e736f6c73746f6e652e617070": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "continue in the solstone app"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e646f776e6c6f61642e6279746573": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ / %2$@"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e66696e6973682e696e2e62726f777365722e6c696e65": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "this window moves on when you finish."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e66696e6973682e696e2e62726f777365722e7469746c65": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "finish setting up in your browser"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e666f6c6465722e686f6c64732e616e6f746865722e6a6f75726e616c": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "this folder overlaps another journal on this mac. choose a different folder."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e676f2e6261636b2e746f2e7468652e6a6f75726e616c2e696e": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "go back to the journal in %1$@"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e68616e646f66662e636f6d706574696e672e7365747570": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "the solstone app is already finishing another setup. finish it there, or open this journal here."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e68616e646f66662e68656c642e70616972696e67": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "the solstone app is already connected to a journal. open the solstone app to change that connection, or open this journal here."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e68616e646f66662e6e6f742e64656c697665726564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "couldn't continue setup in the solstone app."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e68616e646f66662e70656e64696e67": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "setup hasn't continued in the solstone app. open it to continue, or try again here."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e6a6f75726e616c2e666f6c646572": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "journal folder"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e6c6f636174696f6e2e6669656c64": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "location"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e6c6f67696e2e6974656d2e6368616e67652e6661696c6564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "start at login couldn't be changed."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e6c6f67696e2e6974656d2e756e617661696c61626c65": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "start at login isn't available from this app location."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e6e616d652e6c6f636174696f6e2e7469746c65": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "let's create your journal on this mac"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e6f6e2e746869732e6d6163": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "on this mac"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e6f6e2e746869732e6d61632e6465736372697074696f6e": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "model requests stay on this mac. continue starts the download."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e6f70656e2e796f75722e6a6f75726e616c": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "open your journal"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e72656f70656e2e696e2e62726f777365722e627574746f6e": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "open the setup page"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e726573746f72652e66726f6d2e6261636b7570": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "restore from a backup"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e72756e6e65722e736f6c73746f6e652e6a6f75726e616c2e73657475702e6661696c6564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "solstone journal setup failed"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e7365742e75702e736f6c73746f6e65": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "set up solstone"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e73657475702e70726f67726573732e6e6f742e7361766564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "setup progress couldn't be saved."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e73657475702e7375627469746c65": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "this can take a minute."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e73657475702e7469746c65": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "setting up your journal"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e73746172742e6175746f6d61746963616c6c792e68656c70": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "start automatically after you sign in to this mac."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e73746172742e7365747570": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "start setup"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e737465702e70726f6772657373": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "step %1$@ of 7"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e7468652e736f6c73746f6e652e617070": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "the solstone app"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e7468652e736f6c73746f6e652e6170702e6465736372697074696f6e": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "runs on this mac. your microphone, screen and computer sound each stay off until you turn them on."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e7468696e6b696e67": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "thinking"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e7468696e6b696e672e6465736372697074696f6e": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "helps your journal make sense of what it keeps. you choose where during setup, or later."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e7468696e6b696e672e6661696c6564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "couldn't finish this step. try again."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e7472792e616761696e": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "try again"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e776861742e746869732e736574732e7570": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "what this sets up"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e776861742e746869732e736574732e75702e6a6f75726e616c": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "lives on this mac and keeps everything that goes into it."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e77686572652e646f65732e7468696e6b696e672e68617070656e": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "where does the thinking happen?"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e77686572652e646f65732e7468696e6b696e672e68617070656e2e6465736372697074696f6e": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "your journal stays on this mac whatever you choose. this only decides where thinking happens."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e77686572652e796f75722e6a6f75726e616c2e6c69766573": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "where your journal lives"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e77686572652e796f75722e6a6f75726e616c2e6c697665732e6465736372697074696f6e": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "everything your journal keeps stays in this folder, on this mac."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e73657475702e796f75722e6a6f75726e616c": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "your journal"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e757064617465732e6465666572726564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "your journal update will continue after your journal is ready."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e757064617465732e72656164792e746f2e696e7374616c6c": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "the journal app %1$@ is downloaded and ready to install."
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e77696e646f772e6d6f64656c2e6261636b7570": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "backup"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e77696e646f772e6d6f64656c2e626c6f636b6564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "blocked"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e77696e646f772e6d6f64656c2e64657669636573": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "devices"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e77696e646f772e6d6f64656c2e6865616c746879": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "healthy"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e77696e646f772e6d6f64656c2e686f6d65": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "home"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e77696e646f772e6d6f64656c2e6a6f75726e616c": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "journal"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e77696e646f772e6d6f64656c2e6c6f636174696f6e": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "location"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e77696e646f772e6d6f64656c2e6e6f742e736574": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "not set"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e77696e646f772e6d6f64656c2e72756e2e7374617465": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "run state"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e77696e646f772e6d6f64656c2e72756e6e696e67": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "running"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e77696e646f772e6d6f64656c2e7374617274696e67": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "starting…"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e77696e646f772e6d6f64656c2e73746172747570": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "startup"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e77696e646f772e6d6f64656c2e73746f70706564": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "stopped"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e77696e646f772e6d6f64656c2e756e6b6e6f776e": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "unknown"
+          }
+        }
+      }
+    },
+    "m6a6f75726e616c2e6d61632e77696e646f772e6d6f64656c2e75706461746573": {
+      "localizations": {
+        "en-US": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "updates"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

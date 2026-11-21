@@ -1,0 +1,16 @@
+{
+  "description": "settings: disk used",
+  "context": "settings: disk used",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "b51761347cffbfdd9b16c1e0bc3574899ced833268e641748de91ff7100fc0b8",
+  "risk": "routine",
+  "auto_merge": true
+}

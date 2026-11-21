@@ -1,0 +1,16 @@
+{
+  "description": "events: warn",
+  "context": "events: warn",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "58cd59a8f22bedae0cd3f4b69cc215af766ad856aed3491f0450ab9a5baed769",
+  "risk": "routine",
+  "auto_merge": true
+}

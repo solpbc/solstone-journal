@@ -1,0 +1,16 @@
+{
+  "description": "settings: launch the journal when you log in",
+  "context": "settings: launch the journal when you log in",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "fc25b695f046adcc2f86c819633d3d97eec7166f98ebc17db3336c1d1ae47479",
+  "risk": "routine",
+  "auto_merge": true
+}

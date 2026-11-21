@@ -1,0 +1,25 @@
+{
+  "description": "events: step failed",
+  "context": "events: step failed",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [
+    {
+      "name": "step",
+      "type": "string"
+    },
+    {
+      "name": "message",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "0ca4e71749a0871b842d4256a38d39845470daae6912fd35613abdbefe6e2a59",
+  "risk": "routine",
+  "auto_merge": true
+}

@@ -61,7 +61,7 @@ public enum SupervisedJournalRunnerError: LocalizedError, Sendable, Equatable {
     public var errorDescription: String? {
         switch self {
         case .alreadyStopped:
-            return "journal child is not configured"
+            return JournalCopy.runtimeChildUnconfigured()
         case .gateBlocked(let blockage):
             return blockage.ownerMessage
         case .launchFailed(let message):
@@ -305,7 +305,7 @@ public actor SupervisedJournalRunner: SupervisedChildRunning {
         receiptContext: JournalRuntimeEntryReceiptContext
     ) async throws {
         guard !hasContainingGeneration else {
-            throw SupervisedJournalRunnerError.launchFailed("journal child containment is in progress")
+            throw SupervisedJournalRunnerError.launchFailed(JournalCopy.runtimeChildContainmentPending())
         }
         preparationGeneration &+= 1
         let operation = preparationGeneration
@@ -338,7 +338,7 @@ public actor SupervisedJournalRunner: SupervisedChildRunning {
             throw SupervisedJournalRunnerError.alreadyStopped
         }
         guard !hasContainingGeneration else {
-            throw SupervisedJournalRunnerError.launchFailed("journal child containment is in progress")
+            throw SupervisedJournalRunnerError.launchFailed(JournalCopy.runtimeChildContainmentPending())
         }
         preparationGeneration &+= 1
         let operation = preparationGeneration
@@ -552,7 +552,7 @@ public actor SupervisedJournalRunner: SupervisedChildRunning {
                     process = nil
                 }
                 generationRecords.removeValue(forKey: generation)
-                throw SupervisedJournalRunnerError.launchFailed("journal child admission could not be verified")
+                throw SupervisedJournalRunnerError.launchFailed(JournalCopy.runtimeChildAdmissionFailed())
             }
 
             let identity = SupervisedChildIdentity(

@@ -1,0 +1,16 @@
+{
+  "description": "location: switchToJournal",
+  "context": "location: switchToJournal",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "eb1b316efe00223d7e0466256cd729e16b21a4a3f45a79e14681e68a186f5ccd",
+  "risk": "routine",
+  "auto_merge": true
+}

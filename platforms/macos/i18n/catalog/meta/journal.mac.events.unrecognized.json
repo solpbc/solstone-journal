@@ -1,0 +1,21 @@
+{
+  "description": "events: unrecognized event",
+  "context": "events: unrecognized event",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [
+    {
+      "name": "raw",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "6b78515cc82fae8ba518de84cc819551c8c2bfd1ca355c06a5856b5192e0d92e",
+  "risk": "routine",
+  "auto_merge": true
+}

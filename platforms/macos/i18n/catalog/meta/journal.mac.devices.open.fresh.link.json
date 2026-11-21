@@ -1,0 +1,16 @@
+{
+  "description": "devices: openFreshLink",
+  "context": "devices: openFreshLink",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "31abce1af936fea3a511ec6aa68f1a5dedf3d62620abc3051c5b1f3b4d13a23c",
+  "risk": "routine",
+  "auto_merge": true
+}

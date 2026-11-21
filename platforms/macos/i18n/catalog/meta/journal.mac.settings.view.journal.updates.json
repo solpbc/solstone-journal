@@ -1,0 +1,16 @@
+{
+  "description": "settings: view journal updates",
+  "context": "settings: view journal updates",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "c674853cc94ebc3bf3a1a4e05450d003feb4579ab6bffd9a4bea3fae6f181970",
+  "risk": "routine",
+  "auto_merge": true
+}

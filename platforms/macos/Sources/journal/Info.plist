@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
-	<string>en</string>
+	<string>en-US</string>
 	<key>CFBundleDisplayName</key>
 	<string>journal</string>
 	<key>CFBundleExecutable</key>
@@ -56,6 +56,10 @@
 	<key>SolstoneSetupCapabilities</key>
 	<array>
 		<string>setup-sequence-v1</string>
+	</array>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en-US</string>
 	</array>
 </dict>
 </plist>

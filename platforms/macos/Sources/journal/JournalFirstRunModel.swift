@@ -867,11 +867,11 @@ final class JournalFirstRunModel {
                  .setupFailed(_, let message):
                 return message
             case .timedOut:
-                return "setup timed out"
+                return JournalCopy.firstRunModelSetupTimedOut()
             case .duplicateCompletion:
-                return "setup reported completion twice"
+                return JournalCopy.firstRunModelSetupReportedCompletionTwice()
             case .missingCompletion:
-                return "setup did not finish"
+                return JournalCopy.firstRunModelSetupDidNotFinish()
             }
         }
         return error.localizedDescription
@@ -1011,7 +1011,7 @@ final class JournalFirstRunModel {
         guard let total = job.bytesTotal, total > 0 else {
             return formattedByteCount(job.bytesDone)
         }
-        return "\(formattedByteCount(job.bytesDone)) / \(formattedByteCount(total))"
+        return JournalCopy.setupDownloadBytes(formattedByteCount(job.bytesDone), formattedByteCount(total))
     }
 
     func setWelcomeLaunchAtLogin(_ enabled: Bool) {

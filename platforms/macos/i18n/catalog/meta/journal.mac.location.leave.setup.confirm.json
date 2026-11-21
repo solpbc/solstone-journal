@@ -1,0 +1,16 @@
+{
+  "description": "location: leaveSetupConfirm",
+  "context": "location: leaveSetupConfirm",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "579f4be228a48c2d6a9de0b60715a3008126358ed79f35c717b16518b3b7b494",
+  "risk": "routine",
+  "auto_merge": true
+}

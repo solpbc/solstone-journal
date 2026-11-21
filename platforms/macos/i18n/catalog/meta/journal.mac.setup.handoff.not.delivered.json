@@ -1,0 +1,23 @@
+{
+  "description": "setup: handoffNotDelivered",
+  "context": "setup: handoffNotDelivered",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "c493e7c7782519e33551979bbbb8d2260b0d859a43bce2b309500b37443fc049",
+  "risk": "routine",
+  "auto_merge": true,
+  "protected_slots": [
+    {
+      "name": "product",
+      "kind": "mark-word",
+      "value": "solstone"
+    }
+  ]
+}

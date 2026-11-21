@@ -11,11 +11,11 @@ public enum NativeJournalRuntimeMaterializerError: LocalizedError, Sendable, Equ
     public var errorDescription: String? {
         switch self {
         case .missingRuntimeRoot(let path):
-            return "bundled native journal runtime is missing at \(path)"
+            return JournalCopy.runtimeBundleMissing(path)
         case .missingSolstoneExecutable(let path):
-            return "bundled native solstone executable is missing at \(path)"
+            return JournalCopy.runtimeExecutableMissing(path)
         case .invalidBundleVersion:
-            return "journal.app is missing a valid release identity"
+            return JournalCopy.runtimeReleaseIdentityMissing()
         }
     }
 }

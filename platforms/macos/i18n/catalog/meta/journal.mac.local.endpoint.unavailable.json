@@ -1,0 +1,16 @@
+{
+  "description": "Journal for Mac: local endpoint unavailable.",
+  "context": "Journal for Mac: local endpoint unavailable.",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "2bc80b2b757ed6adfb4a114bfaa32897b77ce993955660be7851782a79910445",
+  "risk": "routine",
+  "auto_merge": true
+}

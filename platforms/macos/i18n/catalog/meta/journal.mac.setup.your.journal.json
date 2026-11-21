@@ -1,0 +1,16 @@
+{
+  "description": "setup: yourJournal",
+  "context": "setup: yourJournal",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "f190cff975cfb762322a318d36eb1568178fe94bcd17fdfc8777816d4470dfbf",
+  "risk": "routine",
+  "auto_merge": true
+}

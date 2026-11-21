@@ -93,6 +93,7 @@ public struct JournalSetupRunner: Sendable {
         }
 
         var setupEnvironment = runtime.environment
+        setupEnvironment["SOLSTONE_LOCALE"] = JournalCopy.requestedLanguage
         if usesNativeRuntimeMaterializer {
             // Setup validates command resolution against this exact bundled installation.
             // An ambient CLI installation must not shadow the app's native commands.
@@ -158,7 +159,7 @@ public struct JournalSetupRunner: Sendable {
             let message = failure?.message
                 ?? lastUsefulLine(summary.stderr)
                 ?? summary.lastRenderedLine
-                ?? "solstone journal setup failed"
+                ?? JournalCopy.setupRunnerSolstoneJournalSetupFailed()
             throw JournalSetupRunnerError.setupFailed(errorCode: failure?.errorCode, message: message)
         }
 

@@ -1,0 +1,16 @@
+{
+  "description": "location: switchButton",
+  "context": "location: switchButton",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "ad94a671c70e908fbca32ad0358d111a35a9ade9987a6669a5ad1304dd133df9",
+  "risk": "routine",
+  "auto_merge": true
+}

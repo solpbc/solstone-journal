@@ -1,0 +1,16 @@
+{
+  "description": "window model: healthy",
+  "context": "window model: healthy",
+  "surfaces": [
+    "native-app"
+  ],
+  "bundles": [
+    "journal-mac"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 2048,
+  "source_revision": "7aa2db79528c9fc7819ec38f3203d96e68bdaf4fd2ea3f54688c9c54d488a247",
+  "risk": "routine",
+  "auto_merge": true
+}

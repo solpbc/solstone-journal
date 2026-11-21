@@ -24,12 +24,13 @@
 //! The gate sits on the loopback browser port alone. The owner socket, the
 //! paired-device door and the agent doors have their own admission.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use crate::window_catalog::{ENGLISH, LOCALE_HEADER, request_locale};
 use axum::body::Body;
 use axum::extract::{Request, State};
 use axum::http::header::{
@@ -80,19 +81,20 @@ pub(crate) struct BrowserAccess {
 }
 
 struct PendingLink {
+    locale: &'static str,
     path: String,
     expires: Instant,
 }
 
 #[derive(Default)]
 struct Sessions {
-    live: HashSet<String>,
+    live: HashMap<String, &'static str>,
     order: VecDeque<String>,
 }
 
 impl Sessions {
-    fn insert(&mut self, session: String) {
-        if self.live.insert(session.clone()) {
+    fn insert(&mut self, session: String, locale: &'static str) {
+        if self.live.insert(session.clone(), locale).is_none() {
             self.order.push_back(session);
         }
         while self.order.len() > MAX_SESSIONS {
@@ -134,7 +136,7 @@ impl BrowserAccess {
         format!("solstone_authz_{}", self.port)
     }
 
-    fn mint(&self, path: &str, now: Instant) -> Result<String, &'static str> {
+    fn mint(&self, path: &str, now: Instant, locale: &'static str) -> Result<String, &'static str> {
         let path = valid_path(path).ok_or("the path must start with a single /")?;
         let token = solstone_core_handoff_nonce::mint_nonce().map_err(|_| "no randomness")?;
         let mut links = self.links.lock().unwrap_or_else(|e| e.into_inner());
@@ -145,6 +147,7 @@ impl BrowserAccess {
         links.insert(
             token.clone(),
             PendingLink {
+                locale,
                 path: path.to_owned(),
                 expires: now + LINK_LIFETIME,
             },
@@ -156,13 +159,13 @@ impl BrowserAccess {
     }
 
     /// Spend a link once. A spent or expired link is gone either way.
-    fn spend(&self, token: &str, now: Instant) -> Option<String> {
+    fn spend(&self, token: &str, now: Instant) -> Option<PendingLink> {
         let link = self
             .links
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .remove(token)?;
-        (link.expires > now).then_some(link.path)
+        (link.expires > now).then_some(link)
     }
 
     /// End every browser session, e.g. one taken while the port was open.
@@ -170,19 +173,22 @@ impl BrowserAccess {
         *self.sessions.lock().unwrap_or_else(|e| e.into_inner()) = Sessions::default();
     }
 
-    fn new_session(&self) -> Option<String> {
+    fn new_session(&self, locale: &'static str) -> Option<String> {
         let session = solstone_core_handoff_nonce::mint_nonce().ok()?;
         self.sessions
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .insert(session.clone());
+            .insert(session.clone(), locale);
         Some(session)
     }
 
-    fn admitted(&self, headers: &HeaderMap) -> bool {
+    fn session_locale(&self, headers: &HeaderMap) -> Option<&'static str> {
+        if !headers.contains_key(COOKIE) {
+            return None;
+        }
         let name = self.cookie_name();
         let sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
-        cookie_values(headers, &name).any(|value| sessions.live.contains(value))
+        cookie_values(headers, &name).find_map(|value| sessions.live.get(value).copied())
     }
 
     fn set_cookie(&self, session: &str) -> HeaderValue {
@@ -334,13 +340,23 @@ pub(crate) async fn gate(
     mut request: Request,
     next: Next,
 ) -> Response {
-    let locale = crate::window_catalog::request_locale(request.headers());
+    // The default browser opens a URL and cannot attach an app header. Its
+    // one-time link binds the selected language to this browser session.
+    let session_locale = access.session_locale(request.headers());
+    if !request.headers().contains_key(LOCALE_HEADER)
+        && let Some(language) = session_locale.filter(|language| *language != ENGLISH)
+    {
+        request
+            .headers_mut()
+            .insert(LOCALE_HEADER, HeaderValue::from_static(language));
+    }
+    let locale = request_locale(request.headers());
     let connection = connection_of(&request);
     if let Some(token) = auth_token(&request).map(str::to_owned) {
-        let admitted = access.admitted(request.headers()) || owner_account(connection).await;
+        let admitted = session_locale.is_some() || owner_account(connection).await;
         return bootstrap(&access, admitted, &token, locale);
     }
-    if !access.closed() || access.admitted(request.headers()) || owner_account(connection).await {
+    if !access.closed() || session_locale.is_some() || owner_account(connection).await {
         request.extensions_mut().insert(AccessBasis::Localhost);
         return next.run(request).await;
     }
@@ -361,7 +377,7 @@ pub(crate) async fn gate(
 fn bootstrap(access: &BrowserAccess, admitted: bool, token: &str, locale: &str) -> Response {
     let spent = access.spend(token, Instant::now());
     let (path, session) = match spent {
-        Some(path) => (path, access.new_session()),
+        Some(link) => (link.path, access.new_session(link.locale)),
         None if access.closed() && !admitted => return landing(true, locale),
         // Open, or a browser that already has access (a link it queued past
         // its lifetime, or one reopened from history): a spent link goes home.
@@ -433,14 +449,14 @@ const LANDING_DETAIL: &str = "journal.window.local.access.instruction.other";
 pub(crate) fn socket_routes(access: Arc<BrowserAccess>) -> Router {
     Router::new().route(
         MINT_ROUTE,
-        post(move |body: Option<Json<Value>>| {
+        post(move |headers: HeaderMap, body: Option<Json<Value>>| {
             let access = access.clone();
             async move {
                 let path = body
                     .as_ref()
                     .and_then(|Json(body)| body.get("path")?.as_str().map(str::to_owned))
                     .unwrap_or_else(|| "/".to_owned());
-                match access.mint(&path, Instant::now()) {
+                match access.mint(&path, Instant::now(), request_locale(&headers)) {
                     Ok(url) => (
                         [(CACHE_CONTROL, "no-store")],
                         Json(json!({"url": url, "expires_in": LINK_LIFETIME.as_secs()})),
@@ -517,7 +533,7 @@ async fn change(access: Arc<BrowserAccess>, headers: &HeaderMap, body: Value) ->
         access.end_sessions();
         headers
             .contains_key("sec-fetch-site")
-            .then(|| access.new_session())
+            .then(|| access.new_session(locale))
             .flatten()
     };
     access.open.store(open, Ordering::SeqCst);
@@ -627,10 +643,75 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_link_carries_its_language_only_into_its_own_browser_session() {
+        for open in [true, false] {
+            let access = access(open, true);
+            let router = Router::new()
+                .route(
+                    "/document",
+                    get(|headers: HeaderMap| async move {
+                        headers
+                            .get(LOCALE_HEADER)
+                            .map_or("absent", |h| h.to_str().unwrap())
+                            .to_owned()
+                    }),
+                )
+                .layer(from_fn_with_state(access.clone(), gate));
+            let mut previous_cookie = String::new();
+            for (language, expected) in [("en-XA", "en-XA"), (ENGLISH, "absent")] {
+                let link = access.mint("/document", Instant::now(), language).unwrap();
+                let first = call(
+                    &router,
+                    HttpRequest::get(format!("/?auth={}", token_of(&link)))
+                        .header(COOKIE, &previous_cookie)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await;
+                assert_eq!(first.headers()[LOCATION], "/document");
+                let cookie = first.headers()[SET_COOKIE]
+                    .to_str()
+                    .unwrap()
+                    .split(';')
+                    .next()
+                    .unwrap();
+                for (explicit, expected) in [(None, expected), (Some("en-US"), "en-US")] {
+                    let mut request = HttpRequest::get("/document").header(COOKIE, cookie);
+                    if let Some(value) = explicit {
+                        request = request.header(LOCALE_HEADER, value);
+                    }
+                    let response = call(&router, request.body(Body::empty()).unwrap()).await;
+                    assert_eq!(response.status(), StatusCode::OK);
+                    assert_eq!(
+                        axum::body::to_bytes(response.into_body(), 100)
+                            .await
+                            .unwrap(),
+                        expected
+                    );
+                }
+                previous_cookie = cookie.to_owned();
+                let other = call(
+                    &router,
+                    HttpRequest::get("/document").body(Body::empty()).unwrap(),
+                )
+                .await;
+                if open {
+                    assert_eq!(
+                        axum::body::to_bytes(other.into_body(), 100).await.unwrap(),
+                        "absent"
+                    );
+                } else {
+                    assert_eq!(other.status(), StatusCode::CONFLICT);
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
     async fn a_link_is_spent_once_and_its_cookie_admits_the_browser() {
         let access = access(false, true);
         let app = app(access.clone());
-        let url = access.mint("/data", Instant::now()).unwrap();
+        let url = access.mint("/data", Instant::now(), ENGLISH).unwrap();
         assert!(url.starts_with("http://localhost:5015/?auth="));
         let first = call(
             &app,
@@ -696,7 +777,7 @@ mod tests {
     fn an_expired_link_is_refused() {
         let access = access(false, true);
         let start = Instant::now();
-        let url = access.mint("/", start).unwrap();
+        let url = access.mint("/", start, ENGLISH).unwrap();
         assert!(
             access
                 .spend(
@@ -717,10 +798,15 @@ mod tests {
             "/a\\b",
             "/a b",
         ] {
-            assert!(access.mint(bad, Instant::now()).is_err(), "{bad}");
+            assert!(access.mint(bad, Instant::now(), ENGLISH).is_err(), "{bad}");
         }
-        assert!(access.mint("/init", Instant::now()).is_ok());
-        assert!(access.mint("", Instant::now()).unwrap().contains("auth="));
+        assert!(access.mint("/init", Instant::now(), ENGLISH).is_ok());
+        assert!(
+            access
+                .mint("", Instant::now(), ENGLISH)
+                .unwrap()
+                .contains("auth=")
+        );
     }
 
     #[tokio::test]
@@ -733,15 +819,15 @@ mod tests {
     #[test]
     fn ending_sessions_refuses_an_earlier_browser() {
         let access = access(false, true);
-        let session = access.new_session().unwrap();
+        let session = access.new_session(ENGLISH).unwrap();
         let mut headers = HeaderMap::new();
         headers.insert(
             COOKIE,
             HeaderValue::from_str(&format!("solstone_authz_5015={session}")).unwrap(),
         );
-        assert!(access.admitted(&headers));
+        assert!(access.session_locale(&headers).is_some());
         access.end_sessions();
-        assert!(!access.admitted(&headers));
+        assert!(access.session_locale(&headers).is_none());
     }
 
     #[tokio::test]

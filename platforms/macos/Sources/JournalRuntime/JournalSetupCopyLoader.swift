@@ -190,6 +190,7 @@ public struct JournalSetupCopyLoader: Sendable {
         }
 
         var environment = runtime.environment
+        environment["SOLSTONE_LOCALE"] = JournalCopy.requestedLanguage
         let inherited = environment["PATH"].flatMap { $0.isEmpty ? nil : $0 }
             ?? "/usr/bin:/bin:/usr/sbin:/sbin"
         environment["PATH"] = runtime.layout.binDir.path + ":" + inherited
