@@ -318,6 +318,10 @@ pub struct ConnectionStartAfter {
 /// One FTS row, shaped like the Python journal search result.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct SearchHit {
+    /// Byte spans in the indexed content matched by SQLite, when an owner
+    /// opens a passage from a saved conversation.
+    #[serde(skip)]
+    pub match_spans: Vec<std::ops::Range<usize>>,
     #[serde(skip)]
     pub row_id: i64,
     pub id: String,

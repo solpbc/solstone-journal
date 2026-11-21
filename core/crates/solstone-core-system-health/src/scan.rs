@@ -777,6 +777,18 @@ fn read_processing_record(paths: &[PathBuf]) -> Option<Value> {
     None
 }
 
+/// Timeline audio ranges after an owner reader has identified the files in each segment.
+pub fn ranges_for_segment_keys<'a>(keys: impl Iterator<Item = &'a str>) -> Vec<TimeRange> {
+    let slots = keys
+        .filter_map(segment_start_and_end_seconds)
+        .map(|(times, end)| {
+            let (seconds, _, _) = segment_start_and_end(times, end);
+            seconds / 900 * 900
+        })
+        .collect::<BTreeSet<_>>();
+    slots_to_ranges(slots.into_iter().collect())
+}
+
 fn slots_to_ranges(slots: Vec<u64>) -> Vec<TimeRange> {
     let Some((&first, rest)) = slots.split_first() else {
         return Vec::new();

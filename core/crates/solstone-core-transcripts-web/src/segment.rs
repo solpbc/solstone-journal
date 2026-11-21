@@ -277,6 +277,8 @@ fn prepare_segment_localized(
     }
     let mut chunks = Vec::<Value>::new();
     let mut conversation_turns = Vec::new();
+    let mut conversation_items = Vec::new();
+    let relative = crate::segment_media::segment_rel(day, stream, key);
     let mut has_jsonl = BTreeMap::from([("audio".to_owned(), false), ("screen".to_owned(), false)]);
     let mut records: BTreeMap<String, Option<Value>> =
         BTreeMap::from([("audio".to_owned(), None), ("screen".to_owned(), None)]);
@@ -287,6 +289,14 @@ fn prepare_segment_localized(
         let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
             continue;
         };
+        let conversation =
+            solstone_core_format::content::conversation::conversation_item(root, &relative, name);
+        let written = conversation
+            .as_ref()
+            .is_some_and(|item| item.content_kind == Some("messages"));
+        if let Some(item) = conversation {
+            conversation_items.push(item);
+        }
         let offered = segment_file_offers(
             &format!("{day}/{stream}/{key}/{name}"),
             SegmentReader::Dashboard,
@@ -299,7 +309,7 @@ fn prepare_segment_localized(
         );
         let offered_format = offered.first().map(|offer| offer.format);
         let is_audio = offered_format == Some(FileFormat::Raw(RawPerceptFamily::Audio));
-        if is_audio {
+        if is_audio && !written {
             has_jsonl.insert("audio".into(), true);
             match read_entries(path) {
                 Ok(entries) => {
@@ -319,11 +329,11 @@ fn prepare_segment_localized(
                 }
                 Err(error) => warnings.push(warning("audio", path, error, now)),
             }
-        } else if offered_format == Some(FileFormat::Content(Family::AiChat)) {
+        } else if written || offered_format == Some(FileFormat::Content(Family::AiChat)) {
             match read_entries(path) {
-                Ok(entries) => {
-                    conversation_turns.extend(imported_conversation_turns(&context, &entries))
-                }
+                Ok(entries) => conversation_turns.extend(imported_conversation_turns(
+                    &context, name, written, &entries,
+                )),
                 Err(error) => warnings.push(warning("transcript", path, error, now)),
             }
         } else if offered_format == Some(FileFormat::Raw(RawPerceptFamily::RawScreen)) {
@@ -477,10 +487,19 @@ fn prepare_segment_localized(
         }
     }
     let imported_image_handled = imported_image_entry(&mut chunks, &mut media, &context, &files);
-    if markdown_only {
+    let legacy_markdown = conversation_items
+        .iter()
+        .filter(|item| item.file.ends_with(".md"))
+        .map(|item| dir.join(&item.file))
+        .collect::<Vec<_>>();
+    if markdown_only || !legacy_markdown.is_empty() {
         let time = wall_time(key, 0.0);
         let timestamp = day_timestamp(&zone, day, &time, 0);
-        for path in markdown_files(&dir) {
+        for path in if markdown_only {
+            markdown_files(&dir)
+        } else {
+            legacy_markdown
+        } {
             if imported_image_handled
                 && path
                     .file_name()
@@ -626,6 +645,9 @@ fn prepare_segment_localized(
         "warnings": warnings.len(),
         "warning_details": warnings,
     });
+    if !conversation_items.is_empty() {
+        payload["conversation_items"] = json!(conversation_items);
+    }
     if let Some(item) =
         solstone_core_format::content::kinds::DashboardImportItem::from_segment_files(
             &crate::segment_media::segment_rel(day, stream, key),
@@ -1050,6 +1072,8 @@ fn extract_modality_reason_codes(
 
 fn imported_conversation_turns<'a>(
     context: &'a SegmentContext<'_>,
+    file: &'a str,
+    written: bool,
     entries: &'a [Map<String, Value>],
 ) -> impl Iterator<Item = Value> + 'a {
     let turns = entries.iter().filter(|row| row.contains_key("start"));
@@ -1078,7 +1102,7 @@ fn imported_conversation_turns<'a>(
     ))
     .ok();
 
-    turns.filter_map(move |row| {
+    turns.enumerate().filter_map(move |(index, row)| {
         let text = row.get("text")?.as_str().filter(|text| !text.is_empty())?;
         let speaker = row.get("speaker").and_then(Value::as_str);
         use solstone_core_format::content::conversation::{TurnTime, turn_time};
@@ -1107,13 +1131,20 @@ fn imported_conversation_turns<'a>(
                 .strftime("%H:%M:%S")
                 .to_string()
         });
-        Some(json!({
+        let mut chunk = json!({
             "type": "transcript",
             "time": time,
             "timestamp": timestamp.map(|instant| instant.as_millisecond()),
             "speaker": speaker,
             "text": text,
-        }))
+        });
+        if written {
+            use solstone_core_format::content::conversation::{message_blocks, message_fields};
+            let mut message = message_fields(context.stream, file, index, row, untimed)?;
+            message["blocks"] = json!(message_blocks(text));
+            chunk["message"] = message;
+        }
+        Some(chunk)
     })
 }
 

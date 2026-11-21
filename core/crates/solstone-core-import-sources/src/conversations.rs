@@ -25,6 +25,19 @@ pub fn render(source: RegistrySource, plan: ImportPlan, import_id: &str) -> Rend
         if let Some(model) = &segment.model_slug {
             header.insert("model".to_owned(), Value::String(model.clone()));
         }
+        let sent_times = segment.entries.iter().filter_map(|entry| entry.sent_at);
+        if let (Some(first), Some(last)) = (sent_times.clone().min(), sent_times.max()) {
+            header.insert("first_sent_at".into(), json!(first.to_string()));
+            header.insert("last_sent_at".into(), json!(last.to_string()));
+        } else if let Some(first) = segment.entries.first()
+            && segment
+                .entries
+                .iter()
+                .all(|e| e.thread == first.thread && e.source_ms == first.source_ms)
+            && let Ok(shared) = jiff::Timestamp::from_millisecond(first.source_ms)
+        {
+            header.insert("shared_at".into(), json!(shared.to_string()));
+        }
         let mut contents = Value::Object(header).to_string();
         contents.push('\n');
         for entry in &segment.entries {

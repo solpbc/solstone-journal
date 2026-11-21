@@ -411,11 +411,28 @@ pub(crate) async fn preview_imports(
                 )
             })
             .collect();
-        solstone_core_import::segment_trash::preview(&root, &paths)
+        let imports=solstone_core_import::segment_trash::preview(&root, &paths);
+        let mut response=json!({"imports":imports});
+        let mut items=Vec::new();
+        for (segment, path) in request.segments.iter().zip(paths) {
+            if let Ok(directory)=solstone_core_journal_io::paths::contained_path(&root,&path)
+                && let Ok(entries)=std::fs::read_dir(directory)
+                && let Some(relative)=path.strip_prefix("chronicle/") {
+                let mut conversation_items=entries.filter_map(Result::ok).filter_map(|entry| {
+                    solstone_core_format::content::conversation::conversation_item(&root,relative,entry.file_name().to_str()?)
+                }).collect::<Vec<_>>();
+                conversation_items.sort_by(|l,r|l.file.cmp(&r.file));
+                if !conversation_items.is_empty() {
+                    items.push(json!({"day":segment.day,"stream":segment.stream,"key":segment.key,"conversation_items":conversation_items}));
+                }
+            }
+        }
+        if !items.is_empty(){ response["segments"]=json!(items); }
+        response
     })
     .await;
     match outcome {
-        Ok(imports) => Json(json!({"imports": imports})).into_response(),
+        Ok(payload) => Json(payload).into_response(),
         Err(_) => legacy_error_response(
             "segment_preview_failed",
             text(

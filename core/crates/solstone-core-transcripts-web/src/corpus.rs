@@ -707,6 +707,31 @@ mod tests {
         }
 
         #[tokio::test]
+        async fn delete_preview_names_the_chat_file_and_leaves_its_contents_in_place() {
+            let root = TempDir::new().unwrap();
+            let key = "101300_300";
+            let file = "conversation_transcript.jsonl";
+            let stream = "import.claude";
+            segment(root.path(),DAY,stream,key,&[(file,b"{\"imported\":{\"id\":\"sample\"}}\n{\"start\":\"00:00:00\",\"text\":\"hello\"}\n")]);
+            let (status, body) = call(
+                root.path(),
+                Method::POST,
+                "/app/transcripts/api/segments/imports",
+                &json!({"segments":[{"day":DAY,"stream":stream,"key":key}]}).to_string(),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+            let item = &body["segments"][0]["conversation_items"][0];
+            assert_eq!(item["file"], file);
+            assert_eq!(item["content_kind"], "messages");
+            assert!(
+                root.path()
+                    .join(format!("chronicle/{DAY}/{stream}/{key}/{file}"))
+                    .is_file()
+            );
+        }
+
+        #[tokio::test]
         async fn deleting_the_last_segment_takes_the_import_and_its_upload() {
             let root = journal(&[FIRST, LAST]);
             let (status, first) = call(root.path(), Method::DELETE, &url(FIRST), "").await;
@@ -1614,6 +1639,7 @@ mod tests {
             ]),
             think: None,
             item: None,
+            conversation_items: Vec::new(),
         };
         let value = serde_json::to_value(attach_visible_streams_to_ranges(
             &[("09:00".into(), "09:15".into())],
@@ -1782,6 +1808,116 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn day_list_and_detail_identify_the_same_conversation_file() {
+        let root = root();
+        let stream = "import.text";
+        let file = "conversation_transcript.jsonl";
+        for (key, reason, expected) in [
+            (
+                "101300_300",
+                Some("zoom_chat"),
+                json!({"file":file,"day":DAY,"source":"imported","content_kind":"messages"}),
+            ),
+            (
+                "101800_300",
+                Some("webvtt_cues"),
+                json!({"file":file,"day":DAY,"source":"imported","content_kind":"transcripts"}),
+            ),
+            (
+                "102300_300",
+                None,
+                json!({"file":file,"day":DAY,"source":"imported","conversation_state":"unresolved","reason_code":"insufficient_evidence"}),
+            ),
+        ] {
+            let mut header = json!({"imported":{"id":"fixture"}});
+            if let Some(reason) = reason {
+                header["imported"]["triage"] =
+                    json!({"kind":"transcripts","ruleset_version":7,"reasons":[reason]});
+            }
+            let row = json!({"start":"00:00:01","text":"stored words"});
+            let bytes = format!("{header}\n{row}\n");
+            segment(
+                root.path(),
+                DAY,
+                stream,
+                key,
+                &[
+                    (file, bytes.as_bytes()),
+                    ("note_transcript.md", b"neighbor"),
+                ],
+            );
+            for route in [
+                format!("/app/transcripts/api/segment/{DAY}/{stream}/{key}"),
+                format!("/app/transcripts/api/segments/{DAY}"),
+                format!("/app/transcripts/api/day/{DAY}"),
+            ] {
+                let (status, _, body) = response(app(root.path()), &route).await;
+                assert_eq!(status, StatusCode::OK);
+                let value: Value = serde_json::from_slice(&body).unwrap();
+                let segment = value["segments"].as_array().map_or(&value, |rows| {
+                    rows.iter()
+                        .find(|r| r["key"] == key && r["stream"] == stream)
+                        .unwrap()
+                });
+                assert_eq!(segment["conversation_items"], json!([expected]), "{route}");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn mixed_import_keeps_each_conversation_and_only_real_audio_on_the_timeline() {
+        let root = TempDir::new().unwrap();
+        config(root.path());
+        let stream = "import.text";
+        let key = "101300_300";
+        let file = "conversation_transcript.jsonl";
+        let source = concat!(
+            "{\"imported\":{\"id\":\"chat\",\"triage\":{\"kind\":\"transcripts\",\"ruleset_version\":7,\"reasons\":[\"zoom_chat\"]}}}\n",
+            "{\"start\":\"00:00:00\",\"text\":\"hello\"}\n",
+        );
+        segment(
+            root.path(),
+            DAY,
+            stream,
+            key,
+            &[
+                (file, source.as_bytes()),
+                ("saved_transcript.md", b"older dialogue"),
+            ],
+        );
+        let day_route = format!("/app/transcripts/api/day/{DAY}");
+        let day = || async {
+            let (_, _, body) = response(app(root.path()), &day_route).await;
+            serde_json::from_slice::<Value>(&body).unwrap()
+        };
+        let before = day().await;
+        assert_eq!(before["audio"], json!([]));
+        assert!(before["segments"][0]["data_state"].get("audio").is_none());
+        let (_, _, body) = response(
+            app(root.path()),
+            &format!("/app/transcripts/api/segment/{DAY}/{stream}/{key}"),
+        )
+        .await;
+        let detail: Value = serde_json::from_slice(&body).unwrap();
+        assert!(
+            detail["chunks"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|c| c["source_ref"]["filename"] == "saved_transcript.md"
+                    && c["markdown"] == "older dialogue")
+        );
+        write(
+            root.path(),
+            &format!("chronicle/{DAY}/{stream}/{key}/audio.jsonl"),
+            b"{\"start\":\"00:00:01\",\"text\":\"real speech\"}\n",
+        );
+        let after = day().await;
+        assert!(!after["audio"].as_array().unwrap().is_empty());
+        assert_eq!(after["segments"][0]["data_state"]["messages"], "analyzed");
+    }
+
+    #[tokio::test]
     async fn current_ai_imports_open_as_transcript_turns() {
         let root = TempDir::new().unwrap();
         write(
@@ -1811,8 +1947,28 @@ mod tests {
             )
             .await;
             assert_eq!(status, StatusCode::OK);
-            let detail: Value = serde_json::from_slice(&body).unwrap();
+            let mut detail: Value = serde_json::from_slice(&body).unwrap();
             assert!(detail["data_state"].get("audio").is_none(), "{stream}");
+            let message = detail["chunks"][0]
+                .as_object_mut()
+                .unwrap()
+                .remove("message")
+                .unwrap();
+            assert_eq!(message["author"], "Human");
+            assert!(message.get("is_owner").is_none());
+            assert!(message["sent_at"].is_null());
+            assert_eq!(
+                message["blocks"],
+                json!([{"kind":"paragraph","start":0,"end":13}])
+            );
+            assert_eq!(
+                message["turn_id"],
+                solstone_core_format::content::conversation::turn_id(
+                    "conversation_transcript.jsonl",
+                    0,
+                    "Can you help?"
+                )
+            );
             assert_eq!(
                 detail["chunks"],
                 json!([
@@ -1896,7 +2052,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn legacy_ai_imports_still_open_through_the_audio_reader() {
+    async fn legacy_ai_filenames_expose_messages_without_a_recording() {
         let root = TempDir::new().unwrap();
         config(root.path());
         for source in ["chatgpt", "claude", "gemini"] {
@@ -1923,9 +2079,13 @@ mod tests {
             assert_eq!(status, StatusCode::OK);
             let detail: Value = serde_json::from_slice(&body).unwrap();
             assert_eq!(detail["chunks"].as_array().unwrap().len(), 1, "{stream}");
-            assert_eq!(detail["chunks"][0]["type"], "audio", "{stream}");
-            assert_eq!(detail["chunks"][0]["markdown"], "Can you help?", "{stream}");
-            assert_eq!(detail["data_state"]["audio"], "analyzed", "{stream}");
+            assert_eq!(detail["chunks"][0]["type"], "transcript", "{stream}");
+            assert_eq!(detail["chunks"][0]["text"], "Can you help?", "{stream}");
+            assert_eq!(
+                detail["chunks"][0]["message"]["file"],
+                "imported_audio.jsonl"
+            );
+            assert!(detail["chunks"][0].get("speaker_actionable").is_none());
         }
     }
 
@@ -1941,6 +2101,7 @@ mod tests {
             data_state: BTreeMap::from([("audio".into(), "pending".into())]),
             think: None,
             item: None,
+            conversation_items: Vec::new(),
         };
 
         let ranges = attach_visible_streams_to_ranges(

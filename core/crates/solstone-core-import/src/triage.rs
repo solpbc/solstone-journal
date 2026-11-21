@@ -217,6 +217,13 @@ fn analysis_text(text: &str) -> Cow<'_, str> {
     )
 }
 
+pub(crate) fn strip_direction_marks(line: &str) -> &str {
+    line.trim_start_matches([
+        '\u{200e}', '\u{200f}', '\u{202a}', '\u{202b}', '\u{202c}', '\u{202d}', '\u{202e}',
+        '\u{2066}', '\u{2067}', '\u{2068}', '\u{2069}',
+    ])
+}
+
 /// Ignore front matter and code only during scoring. The written text is untouched.
 fn scoring_lines(text: &str) -> Vec<&str> {
     let mut lines: Vec<_> = text.lines().collect();
@@ -232,10 +239,7 @@ fn scoring_lines(text: &str) -> Vec<&str> {
     lines
         .into_iter()
         .map(|line| {
-            let line = line.trim_start_matches([
-                '\u{200e}', '\u{200f}', '\u{202a}', '\u{202b}', '\u{202c}', '\u{202d}', '\u{202e}',
-                '\u{2066}', '\u{2067}', '\u{2068}', '\u{2069}',
-            ]);
+            let line = strip_direction_marks(line);
             let trimmed = line.trim_start();
             if let Some(marker) = fence {
                 if trimmed.starts_with(marker)

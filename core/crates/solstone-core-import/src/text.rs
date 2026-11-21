@@ -795,6 +795,7 @@ struct Turn {
     /// Seconds from the start of the import.
     offset: u64,
     speaker: Option<String>,
+    recipient: Option<String>,
     text: String,
     stated: Option<StatedClock>,
 }
@@ -865,7 +866,65 @@ fn existing_timed_reading(text: &str) -> Option<Reading> {
     inline_turns(text)
 }
 
+fn zoom_chat_turns(text: &str) -> Option<Vec<Turn>> {
+    use std::sync::LazyLock;
+    static HEADER: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(solstone_core_format::content::conversation::ZOOM_CHAT_LINE)
+            .expect("Zoom saved chat header")
+    });
+    let mut turns: Vec<Turn> = Vec::new();
+    for line in text.trim_start_matches('\u{feff}').lines() {
+        let header_line = crate::triage::strip_direction_marks(line);
+        // A standalone CR is a line boundary in the classifier. Preserve such
+        // ambiguous input through the earlier reader instead of merging senders.
+        if line.contains('\r') {
+            return None;
+        }
+        if let Some(parts) = HEADER.captures(header_line) {
+            let body = header_line.get(parts.get(0)?.end()..)?;
+            let speaker = parts.name("speaker")?.as_str().trim();
+            if speaker.is_empty() {
+                return None;
+            }
+            turns.push(Turn {
+                offset: 0,
+                speaker: Some(speaker.to_owned()),
+                recipient: parts
+                    .name("recipient")
+                    .map(|name| name.as_str().trim().to_owned()),
+                text: body.to_owned(),
+                stated: None,
+            });
+        } else if let Some(turn) = turns.last_mut() {
+            if !turn.text.is_empty() {
+                turn.text.push('\n')
+            }
+            turn.text.push_str(line);
+        } else if !line.trim().is_empty() {
+            return None;
+        }
+    }
+    // A partial parse leaves the original import representation intact.
+    (!turns.is_empty()
+        && turns
+            .iter()
+            .all(|t| !t.text.trim().is_empty() && t.text.len() <= 8 * 1024))
+    .then_some(turns)
+}
+
 fn reading_for(text: &str, verdict: &Verdict) -> Reading {
+    if verdict.kind == ContentKind::Transcripts
+        && verdict.reasons.contains(&"zoom_chat")
+        && let Some(turns) = zoom_chat_turns(text)
+    {
+        // Zoom's saved chat carries a local clock but no date or time zone.
+        // Keep the filing time separate from a message's own send instant.
+        return Reading {
+            clock_start: None,
+            turns,
+            untimed: true,
+        };
+    }
     if verdict.kind == ContentKind::Transcripts
         && verdict.reasons.contains(&"existing_timed_layout")
         && let Some(reading) = existing_timed_reading(text)
@@ -968,6 +1027,7 @@ fn inline_turns(text: &str) -> Option<Reading> {
                 Turn {
                     offset: 0,
                     speaker: Some(speaker.to_owned()),
+                    recipient: None,
                     text: said.to_owned(),
                     stated: None,
                 },
@@ -995,6 +1055,7 @@ fn inline_turns(text: &str) -> Option<Reading> {
                     Turn {
                         offset: 0,
                         speaker: None,
+                        recipient: None,
                         text: line.to_owned(),
                         stated: None,
                     },
@@ -1091,6 +1152,7 @@ fn untimed_turns(text: &str) -> Vec<Turn> {
             turns.push(Turn {
                 offset: 0,
                 speaker: None,
+                recipient: None,
                 text: text.to_owned(),
                 stated: None,
             });
@@ -1132,6 +1194,7 @@ fn timed_turns(text: &str) -> Option<Vec<Turn>> {
                 turns.push(Turn {
                     offset: at,
                     speaker: Some(speaker.to_owned()),
+                    recipient: None,
                     text: said.to_owned(),
                     stated: None,
                 });
@@ -1154,6 +1217,7 @@ fn timed_turns(text: &str) -> Option<Vec<Turn>> {
                 turns.push(Turn {
                     offset: at,
                     speaker: None,
+                    recipient: None,
                     text: line.to_owned(),
                     stated: None,
                 });
@@ -1514,6 +1578,9 @@ fn jsonl_rows(
         if let Some(speaker) = &turn.speaker {
             entry.insert("speaker".to_owned(), Value::String(speaker.clone()));
         }
+        if let Some(to) = &turn.recipient {
+            entry.insert("to".into(), serde_json::json!([to]));
+        }
         entry.insert("text".to_owned(), Value::String(turn.text.clone()));
         entry.insert("source".to_owned(), Value::String("import".to_owned()));
         rows.push(Value::Object(entry));
@@ -1524,6 +1591,29 @@ fn jsonl_rows(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn zoom_keeps_each_sender_recipient_and_multiline_body_without_inventing_a_date() {
+        let source = "10:07:10 From Ivo to Everyone : Hold it.\n\n> quoted café\n\u{200e}10:07:12\u{a0}From\u{202f}Pia : Holding.";
+        let verdict = triage::classify(source.as_bytes(), "meeting.txt", Path::new(""), None, None);
+        assert!(verdict.reasons.contains(&"zoom_chat"));
+        let reading = reading_for(source, &verdict);
+        assert!(reading.untimed);
+        assert_eq!(reading.turns.len(), 2);
+        assert_eq!(reading.turns[0].speaker.as_deref(), Some("Ivo"));
+        assert_eq!(reading.turns[0].recipient.as_deref(), Some("Everyone"));
+        assert_eq!(reading.turns[0].text, "Hold it.\n\n> quoted café");
+        assert_eq!(reading.turns[1].recipient, None);
+        assert_eq!(reading.turns[1].speaker.as_deref(), Some("Pia"));
+        let long = format!("10:07:12 From Pia : {}", "é".repeat(6000));
+        assert!(zoom_chat_turns(&long).is_none());
+        assert!(
+            reading_for(&long, &verdict)
+                .turns
+                .iter()
+                .all(|turn| turn.text.len() <= 8 * 1024)
+        );
+    }
 
     #[test]
     fn document_evidence_wins_before_tiling_a_timed_excerpt() {
@@ -1539,6 +1629,7 @@ mod tests {
         Turn {
             offset,
             speaker: speaker.map(str::to_owned),
+            recipient: None,
             text: text.to_owned(),
             stated: None,
         }
@@ -1554,6 +1645,7 @@ mod tests {
         Turn {
             offset,
             speaker: speaker.map(str::to_owned),
+            recipient: None,
             text: text.to_owned(),
             stated: Some(StatedClock { day_shift, seconds }),
         }
