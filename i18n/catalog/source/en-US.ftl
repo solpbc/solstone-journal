@@ -18136,6 +18136,8 @@ journal.window.transcripts.date.years = Years
 
 journal.window.transcripts.date.yesterday = yesterday
 
+journal.window.transcripts.day.latest = latest from { $device } at { $time }
+
 journal.window.transcripts.day.load.error.status = day data failed:{ $slot1 }{ $status }
 
 journal.window.transcripts.day.load.retry = Try again

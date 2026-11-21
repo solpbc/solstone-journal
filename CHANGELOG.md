@@ -24,6 +24,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- on the transcripts page, each column of the detail timeline is headed by the device that added it. audio, screen, imports, pages and photos each keep one color on both timelines, and a key above them lists the kinds that day has. when you're viewing today, a line by the date says which device last added something to your journal and when, and anything new appears while the page is open. long messages and transcript lines now wrap at a comfortable reading width.
 - recordings from your Plaud sync, and files from a phone journal's audio folder, no longer appear in import history or in the import list an agent can read, so history shows what you chose to import. you can still delete them from transcripts. Oura's syncs still appear in import history for now.
 - on the android and iphone development journals, the audio folder's controls moved from the import page to settings, under sync. the import page's Plaud row and its sync now are gone too; Plaud syncs every hour once you turn it on in settings.
 

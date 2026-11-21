@@ -16,6 +16,66 @@
   margin: 0 auto;
   padding: 16px 24px;
   box-sizing: border-box;
+  /* One colour per kind. The day rail, the detail rail and the key above
+     them all read it from here, so a kind looks the same wherever it is
+     drawn. */
+  --tr-audio: var(--success);
+  --tr-screen: var(--warn);
+  --tr-import: var(--orange);
+  --tr-photo: var(--ink-faint);
+  --tr-pages: var(--hairline-2);
+  --tr-sleep: var(--ink-soft);
+  --tr-workout: var(--danger);
+}
+
+/* Which kind a block is: its edge colour, and how strongly it fills. The
+   blocks on both rails and the key's swatches take their colour from this. */
+.tr-seg-audio, .tr-zoom-pill-audio, .tr-legend-audio { --tr-kind: var(--tr-audio); }
+.tr-seg-screen, .tr-zoom-pill-screen, .tr-legend-screen { --tr-kind: var(--tr-screen); }
+.tr-seg-markdown, .tr-zoom-pill-markdown, .tr-legend-markdown { --tr-kind: var(--tr-import); --tr-kind-mix: 32%; }
+.tr-seg-image, .tr-zoom-pill-image, .tr-legend-image { --tr-kind: var(--tr-photo); --tr-kind-mix: 36%; }
+.tr-seg-browser, .tr-zoom-pill-browser, .tr-legend-browser { --tr-kind: var(--tr-pages); --tr-kind-fill: var(--cream-bright); }
+.tr-body-event-sleep, .tr-legend-sleep { --tr-kind: var(--tr-sleep); --tr-kind-mix: 40%; }
+.tr-body-event-workout, .tr-legend-workout { --tr-kind: var(--tr-workout); --tr-kind-mix: 30%; }
+/* A detail pill holding both audio and screen: half of each, side by side. */
+.tr-zoom-pill-both, .tr-legend-both {
+  --tr-kind: var(--tr-audio);
+  --tr-kind-fill: linear-gradient(to right, color-mix(in srgb, var(--tr-audio) 60%, transparent) 50%, color-mix(in srgb, var(--tr-screen) 60%, transparent) 50%);
+}
+.tr-seg, .tr-zoom-pill, .tr-body-event, .tr-legend-dot {
+  background: var(--tr-kind-fill, color-mix(in srgb, var(--tr-kind) var(--tr-kind-mix, 60%), transparent));
+  border: 1px solid var(--tr-kind);
+}
+
+/* The key: one line above both rails, naming the kinds this day draws. */
+.tr-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 12px;
+  min-height: 18px;
+  margin: 0 0 8px;
+  padding: 0 4px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ink-faint);
+}
+
+.tr-legend-item[hidden] { display: none; }
+
+/* Beside the heading on today: which device last added something, and when. */
+.tr-day-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+  min-width: 0;
+}
+
+.tr-day-latest {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--ink-faint-paper);
 }
 
 /* Under the day heading, only when part of the day was recorded on another
@@ -33,15 +93,21 @@
   border-radius: 12px;
   display: grid;
   --tr-day-col: 200px;
-  --tr-zoom-col: 120px;
   grid-template-columns: var(--tr-day-col) var(--tr-zoom-col) minmax(0, 1fr);
+  /* The detail rail widens a little for a day with several streams, so each
+     stream column has room for its device's label. */
+  --tr-zoom-streams: 1;
+  --tr-zoom-col: clamp(120px, calc(72px + var(--tr-zoom-streams) * 68px), max(120px, 24vw));
 }
+
+.tr-card[data-zoom-streams="2"] { --tr-zoom-streams: 2; }
+.tr-card[data-zoom-streams="3"] { --tr-zoom-streams: 3; }
+.tr-card[data-zoom-streams="4"] { --tr-zoom-streams: 4; }
 
 
 
 /* Left timeline */
 .tr-timeline {
-  --tr-legend-h: 30px;
   position: sticky;
   top: 16px;
   align-self: start;
@@ -74,32 +140,11 @@
   border-bottom: 1px solid var(--hairline);
 }
 
-.tr-timeline-legend {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: var(--tr-legend-h);
-  display: flex;
-  flex-wrap: wrap;
-  align-content: center;
-  justify-content: center;
-  box-sizing: border-box;
-  column-gap: 8px;
-  row-gap: 0;
-  padding: 0 4px;
-  font-size: 12px;
-  line-height: 14px;
-  color: var(--ink-faint);
-  background: var(--paper);
-  pointer-events: none;
-  z-index: 3;
-}
-
 .tr-legend-dot {
   display: inline-block;
-  width: 8px;
-  height: 8px;
+  box-sizing: border-box;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   margin-right: 4px;
   vertical-align: baseline;
@@ -110,7 +155,7 @@
 .tr-grid {
   position: absolute;
   top: 16px;
-  bottom: var(--tr-legend-h, 12px);
+  bottom: 12px;
   left: 0;
   right: 0;
 }
@@ -133,7 +178,7 @@
   position: absolute;
   left: 0;
   top: 16px;
-  bottom: var(--tr-legend-h, 12px);
+  bottom: 12px;
   width: 64px;
   background: var(--cream-bright);
   border-right: 1px solid var(--hairline);
@@ -231,7 +276,7 @@
   left: 64px;
   right: 0;
   top: 16px;
-  bottom: var(--tr-legend-h, 12px);
+  bottom: 12px;
   pointer-events: none;
   z-index: 1;
 }
@@ -278,29 +323,7 @@
 .tr-seg-col-0 { left: var(--seg-col-0); }
 .tr-seg-col-1 { left: var(--seg-col-1); }
 
-.tr-seg-audio {
-  background: color-mix(in srgb, var(--success) 60%, transparent);
-  border: 1px solid var(--success);
-}
-
-.tr-seg-screen {
-  background: color-mix(in srgb, var(--warn) 60%, transparent);
-  border: 1px solid var(--warn);
-}
-
-.tr-seg-browser {
-  background: var(--cream-bright);
-  border: 1px solid var(--hairline-2);
-}
-
-.tr-seg-markdown {
-  background: color-mix(in srgb, var(--orange) 32%, transparent);
-  border: 1px solid var(--orange);
-}
-
 .tr-seg-image {
-  background: color-mix(in srgb, var(--orange) 36%, transparent);
-  border: 1px solid var(--orange);
   min-height: 4px;
   border-radius: 2px;
 }
@@ -312,7 +335,7 @@
      200px day column instead of clipping. */
   left: 168px;
   top: 16px;
-  bottom: var(--tr-legend-h, 12px);
+  bottom: 12px;
   width: 24px;
   pointer-events: none;
   z-index: 1;
@@ -340,43 +363,21 @@
   outline-offset: 1px;
 }
 
-.tr-body-event-sleep {
-  background: color-mix(in srgb, var(--ink-soft) 40%, transparent);
-  border: 1px solid var(--ink-soft);
-}
+/* Sleep and workout take their colours from the kind rules at the top.
+   Workout is clay, not gold: gold on this timeline is screen, and nothing
+   else, so a workout never reads as screen in the key. */
 
-/* Workout is clay, not gold: gold on this timeline is screen, and nothing
-   else, so a workout never reads as screen in the legend. */
-.tr-body-event-workout {
-  background: color-mix(in srgb, var(--danger) 30%, transparent);
-  border: 1px solid var(--danger);
-}
-
+/* Pending is striped in the block's own kind colour. */
 .tr-seg-pending {
   opacity: 0.9;
   border-style: dashed;
-}
-
-.tr-seg-audio.tr-seg-pending {
   background:
     repeating-linear-gradient(
       135deg,
-      color-mix(in srgb, var(--success) 45%, transparent) 0,
-      color-mix(in srgb, var(--success) 45%, transparent) 3px,
-      color-mix(in srgb, var(--success) 16%, transparent) 3px,
-      color-mix(in srgb, var(--success) 16%, transparent) 8px
-    );
-  border-color: var(--hairline-2);
-}
-
-.tr-seg-screen.tr-seg-pending {
-  background:
-    repeating-linear-gradient(
-      135deg,
-      color-mix(in srgb, var(--warn) 45%, transparent) 0,
-      color-mix(in srgb, var(--warn) 45%, transparent) 3px,
-      color-mix(in srgb, var(--warn) 18%, transparent) 3px,
-      color-mix(in srgb, var(--warn) 18%, transparent) 8px
+      color-mix(in srgb, var(--tr-kind) 45%, transparent) 0,
+      color-mix(in srgb, var(--tr-kind) 45%, transparent) 3px,
+      color-mix(in srgb, var(--tr-kind) 16%, transparent) 3px,
+      color-mix(in srgb, var(--tr-kind) 16%, transparent) 8px
     );
   border-color: var(--hairline-2);
 }
@@ -389,16 +390,8 @@
   opacity: 1;
   border-style: solid;
   background: var(--paper);
-}
-
-.tr-seg-audio.tr-seg-awaiting {
-  border-color: var(--success);
-  box-shadow: inset 0 0 0 1px var(--success);
-}
-
-.tr-seg-screen.tr-seg-awaiting {
-  border-color: var(--warn);
-  box-shadow: inset 0 0 0 1px var(--warn);
+  border-color: var(--tr-kind);
+  box-shadow: inset 0 0 0 1px var(--tr-kind);
 }
 
 .tr-seg-analyzing {
@@ -412,8 +405,7 @@
    form, not hue. G1-211 named the screen rule; the audio sibling was teal, which the
    same token rule excludes, so both say in-progress the same way. Which
    modality a segment is stays in its own resting colour and in its lane. */
-.tr-seg-audio.tr-seg-analyzing,
-.tr-seg-screen.tr-seg-analyzing {
+.tr-seg-analyzing {
   background: color-mix(in srgb, var(--ink-faint) 42%, transparent);
   border-color: var(--ink-faint);
 }
@@ -1235,12 +1227,39 @@
   border-bottom: 1px solid var(--hairline);
 }
 
+/* Under the rail's heading, each stream column's device. 18px, which
+   ZOOM_STREAMS_HEIGHT in transcripts.js must equal. */
+.tr-zoom-streams {
+  position: absolute;
+  top: 16px;
+  left: 68px;
+  right: 4px;
+  height: 18px;
+  z-index: 3;
+}
+
+.tr-zoom-stream {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  box-sizing: border-box;
+  padding: 0 2px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ink-soft);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* 64px, the day rail's width: the detail rail names midnight too now, and 48px
    clipped it. .tr-zoom-segments clears it at 64 + 4. S-12. */
 .tr-zoom-labels {
   position: absolute;
   left: 0;
-  top: 16px;
+  top: 34px;
   bottom: 12px;
   width: 64px;
   background: var(--cream-bright);
@@ -1260,7 +1279,7 @@
 
 .tr-zoom-grid {
   position: absolute;
-  top: 16px;
+  top: 34px;
   bottom: 12px;
   left: 0;
   right: 0;
@@ -1270,7 +1289,7 @@
   position: absolute;
   left: 68px;
   right: 4px;
-  top: 16px;
+  top: 34px;
   bottom: 12px;
 }
 
@@ -1318,25 +1337,7 @@
   transform: scale(0.98);
 }
 
-.tr-zoom-pill-audio {
-  background: linear-gradient(135deg, color-mix(in srgb, var(--success) 80%, transparent), color-mix(in srgb, var(--success) 60%, transparent));
-  border: 1px solid var(--success);
-}
-
-.tr-zoom-pill-screen {
-  background: linear-gradient(135deg, color-mix(in srgb, var(--warn) 80%, transparent), color-mix(in srgb, var(--warn) 60%, transparent));
-  border: 1px solid var(--warn);
-}
-
-.tr-zoom-pill-markdown {
-  background: linear-gradient(135deg, color-mix(in srgb, var(--focus) 80%, transparent), color-mix(in srgb, var(--focus) 60%, transparent));
-  border: 1px solid var(--orange-ink);
-}
-
-.tr-zoom-pill-browser {
-  background: var(--cream-bright);
-  border: 1px solid var(--hairline-2);
-}
+/* A pill's colours come from the kind rules at the top, as the day rail's do. */
 
 /* A moment holding only screenshots: a short mark in screen's gold with the
    screenshot glyph, tall enough to see. */
@@ -1353,11 +1354,6 @@
   height: 13px;
 }
 
-.tr-zoom-pill-image {
-  background: color-mix(in srgb, var(--ink-faint) 24%, var(--paper));
-  border: 1px solid var(--ink-faint);
-}
-
 .tr-zoom-pill-photo {
   min-height: 18px;
   display: flex;
@@ -1371,47 +1367,15 @@
   height: 13px;
 }
 
-.tr-zoom-pill-both {
-  background: linear-gradient(to right, color-mix(in srgb, var(--success) 75%, transparent), color-mix(in srgb, var(--success) 70%, transparent) 50%, color-mix(in srgb, var(--warn) 75%, transparent));
-  border: 1px solid var(--success);
-}
-
 .tr-zoom-pill-pending {
   border-style: dashed;
-}
-
-.tr-zoom-pill-audio.tr-zoom-pill-pending {
   background:
     repeating-linear-gradient(
       135deg,
-      color-mix(in srgb, var(--success) 38%, transparent) 0,
-      color-mix(in srgb, var(--success) 38%, transparent) 4px,
-      color-mix(in srgb, var(--success) 18%, transparent) 4px,
-      color-mix(in srgb, var(--success) 18%, transparent) 10px
-    );
-  border-color: var(--hairline-2);
-}
-
-.tr-zoom-pill-screen.tr-zoom-pill-pending {
-  background:
-    repeating-linear-gradient(
-      135deg,
-      color-mix(in srgb, var(--warn) 38%, transparent) 0,
-      color-mix(in srgb, var(--warn) 38%, transparent) 4px,
-      color-mix(in srgb, var(--warn) 20%, transparent) 4px,
-      color-mix(in srgb, var(--warn) 20%, transparent) 10px
-    );
-  border-color: var(--hairline-2);
-}
-
-.tr-zoom-pill-both.tr-zoom-pill-pending {
-  background:
-    repeating-linear-gradient(
-      135deg,
-      color-mix(in srgb, var(--success) 38%, transparent) 0,
-      color-mix(in srgb, var(--success) 38%, transparent) 4px,
-      color-mix(in srgb, var(--success) 20%, transparent) 4px,
-      color-mix(in srgb, var(--success) 20%, transparent) 10px
+      color-mix(in srgb, var(--tr-kind) 38%, transparent) 0,
+      color-mix(in srgb, var(--tr-kind) 38%, transparent) 4px,
+      color-mix(in srgb, var(--tr-kind) 18%, transparent) 4px,
+      color-mix(in srgb, var(--tr-kind) 18%, transparent) 10px
     );
   border-color: var(--hairline-2);
 }
@@ -1420,27 +1384,13 @@
 .tr-zoom-pill-awaiting {
   border-style: solid;
   background: var(--paper);
-}
-
-.tr-zoom-pill-audio.tr-zoom-pill-awaiting,
-.tr-zoom-pill-both.tr-zoom-pill-awaiting {
-  border-color: var(--success);
-  box-shadow: inset 0 0 0 1px var(--success);
-}
-
-.tr-zoom-pill-screen.tr-zoom-pill-awaiting {
-  border-color: var(--warn);
-  box-shadow: inset 0 0 0 1px var(--warn);
+  border-color: var(--tr-kind);
+  box-shadow: inset 0 0 0 1px var(--tr-kind);
 }
 
 .tr-zoom-pill-analyzing {
   border-style: solid;
   animation: tr-analyzing-pulse 1.5s ease-in-out infinite;
-}
-
-.tr-zoom-pill-audio.tr-zoom-pill-analyzing,
-.tr-zoom-pill-screen.tr-zoom-pill-analyzing,
-.tr-zoom-pill-both.tr-zoom-pill-analyzing {
   background: color-mix(in srgb, var(--ink-faint) 44%, transparent);
   border-color: var(--ink-faint);
 }
@@ -1952,7 +1902,7 @@
 .tr-msg-who b { color: var(--ink); }
 .tr-msg-who time { font-size: 12px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
 .tr-msg-to { font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
-.tr-msg-body { margin-top: 6px; color: var(--ink); line-height: 1.55; overflow-wrap: anywhere; }
+.tr-msg-body { margin-top: 6px; max-width: 70ch; color: var(--ink); line-height: 1.55; overflow-wrap: anywhere; }
 .tr-msg-body p { margin: 0 0 8px; }
 .tr-msg-body p:last-child { margin-bottom: 0; }
 .tr-msg-quote { margin: 0 0 8px; padding: 2px 0 2px 12px; border-left: 3px solid var(--hairline-2); color: var(--ink-soft); }
@@ -2139,6 +2089,7 @@
 }
 
 .tr-entry-text {
+  max-width: 70ch;
   font-size: 14px;
   line-height: 1.5;
 }
@@ -2909,7 +2860,8 @@
 }
 
 /* ── Presentation mode (?present=1) — back-row legibility on a projector ── */
-body.presentation-mode .tr-card { --tr-day-col: 240px; --tr-zoom-col: 150px; }
+body.presentation-mode .tr-card { --tr-day-col: 240px; --tr-zoom-col: clamp(150px, calc(72px + var(--tr-zoom-streams) * 80px), max(150px, 24vw)); }
+body.presentation-mode .tr-zoom-stream { font-size: 14px; color: var(--ink); }
 body.presentation-mode .tr-timeline-label,
 body.presentation-mode .tr-zoom-timeline-label { font-size: 14px; font-weight: 700; }
 body.presentation-mode .tr-label,
@@ -2917,9 +2869,8 @@ body.presentation-mode .tr-zoom-label { font-size: 14px; color: var(--ink); }
 body.presentation-mode .tr-now-label { font-size: 14px; font-weight: 700; }
 body.presentation-mode .tr-now-marker { border-top-width: 3px; }
 body.presentation-mode .tr-seg { width: 48px; box-shadow: 0 2px 4px rgba(0,0,0,.10); }
-body.presentation-mode .tr-seg-audio:not(.tr-seg-pending, .tr-seg-analyzing, .tr-seg-awaiting) { background: color-mix(in srgb, var(--success) 85%, transparent); border-width: 2px; }
-body.presentation-mode .tr-seg-screen:not(.tr-seg-pending, .tr-seg-analyzing, .tr-seg-awaiting) { background: color-mix(in srgb, var(--warn) 85%, transparent); border-width: 2px; }
-body.presentation-mode .tr-seg-browser { background: var(--cream-bright); border-width: 2px; }
+body.presentation-mode :is(.tr-seg-audio, .tr-seg-screen):not(.tr-seg-pending, .tr-seg-analyzing, .tr-seg-awaiting) { --tr-kind-mix: 85%; border-width: 2px; }
+body.presentation-mode .tr-seg-browser { border-width: 2px; }
 body.presentation-mode .tr-zoom-pill { font-weight: 700; }
 body.presentation-mode .tr-content { padding: 8px 28px 28px; gap: 20px; }
 body.presentation-mode .tr-title { font-size: 28px; color: var(--ink); }
@@ -2999,10 +2950,24 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 <div class="tr-wrap">
   <div data-date-nav data-date-nav-keep-search></div>
   <div class="tr-day-head">
-    <h2 class="tr-day-heading" data-date-nav-heading></h2>
+    <div class="tr-day-title">
+      <h2 class="tr-day-heading" data-date-nav-heading></h2>
+      <p class="tr-day-latest" id="trDayLatest" hidden></p>
+    </div>
     <button type="button" id="trStretchBtn" class="tr-stretch-btn" hidden><span data-stretch-icon aria-hidden="true"></span><span data-stretch-label></span></button>
   </div>
   <p class="tr-day-zones" id="trDayZones" hidden></p>
+  <!-- The key for both rails: each kind the day draws, and nothing else -->
+  <div class="tr-legend" id="trLegend">
+    <span class="tr-legend-item" data-legend-kind="audio" hidden><span class="tr-legend-dot tr-legend-audio" aria-hidden="true"></span>{{journal.window.transcripts.visible.text.audio}}</span>
+    <span class="tr-legend-item" data-legend-kind="screen" hidden><span class="tr-legend-dot tr-legend-screen" aria-hidden="true"></span>{{journal.window.transcripts.visible.text.screen}}</span>
+    <span class="tr-legend-item" data-legend-kind="both" hidden><span class="tr-legend-dot tr-legend-both" aria-hidden="true"></span>{{journal.window.transcripts.kind.audio.and.screen}}</span>
+    <span class="tr-legend-item" data-legend-kind="markdown" hidden><span class="tr-legend-dot tr-legend-markdown" aria-hidden="true"></span>{{journal.window.transcripts.visible.text.import}}</span>
+    <span class="tr-legend-item" data-legend-kind="browser" hidden><span class="tr-legend-dot tr-legend-browser" aria-hidden="true"></span>{{journal.window.transcripts.kind.pages}}</span>
+    <span class="tr-legend-item" data-legend-kind="image" hidden><span class="tr-legend-dot tr-legend-image" aria-hidden="true"></span>{{journal.window.transcripts.photo.copy.label.photo}}</span>
+    <span class="tr-legend-item" data-legend-kind="sleep" hidden><span class="tr-legend-dot tr-legend-sleep" aria-hidden="true"></span>{{journal.window.transcripts.visible.text.sleep}}</span>
+    <span class="tr-legend-item" data-legend-kind="workout" hidden><span class="tr-legend-dot tr-legend-workout" aria-hidden="true"></span>{{journal.window.transcripts.visible.text.workout}}</span>
+  </div>
   <div class="tr-card">
     <!-- Left timeline -->
     <div id="trTimeline" class="tr-timeline" aria-label="{{journal.window.transcripts.accessible.name.day.timeline}}">
@@ -3017,18 +2982,12 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
           <div class="tr-bumper tr-bumper-bottom" data-handle="end" title="{{journal.window.transcripts.tooltip.drag.to.adjust.end}}"></div>
         </div>
       </div>
-      <div class="tr-timeline-legend">
-        <span><span class="tr-legend-dot" style="background: var(--success);"></span>{{journal.window.transcripts.visible.text.audio}}</span>
-        <span><span class="tr-legend-dot" style="background: var(--warn);"></span>{{journal.window.transcripts.visible.text.screen}}</span>
-        <span><span class="tr-legend-dot" style="background: var(--orange);"></span>{{journal.window.transcripts.visible.text.import}}</span>
-        <span><span class="tr-legend-dot" style="background: var(--ink-soft);"></span>{{journal.window.transcripts.visible.text.sleep}}</span>
-        <span><span class="tr-legend-dot" style="background: var(--danger);"></span>{{journal.window.transcripts.visible.text.workout}}</span>
-      </div>
     </div>
 
     <!-- Middle zoom timeline -->
     <div class="tr-zoom" id="trZoom">
       <div class="tr-zoom-timeline-label">{{journal.window.transcripts.visible.text.detail}}</div>
+      <div class="tr-zoom-streams" id="trZoomStreams" aria-hidden="true"></div>
       <div class="tr-zoom-grid" id="trZoomGrid"></div>
       <div class="tr-zoom-labels" id="trZoomLabels"></div>
       <div class="tr-zoom-segments" id="trZoomSegments"></div>

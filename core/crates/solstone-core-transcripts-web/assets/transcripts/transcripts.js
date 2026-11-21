@@ -453,6 +453,10 @@
     const zoomGrid = document.getElementById('trZoomGrid');
     const zoomLabels = document.getElementById('trZoomLabels');
     const zoomSegments = document.getElementById('trZoomSegments');
+    // The device heading each stream column of the detail rail.
+    const zoomStreams = document.getElementById('trZoomStreams');
+    // The card widens the detail rail for a day with several streams.
+    const railCard = document.querySelector('.tr-card');
     const segmentPicker = document.getElementById('trSegmentPicker');
     const segmentPickerLabel = document.getElementById('trSegmentPickerLabel');
     const segmentChoiceId = seg => JSON.stringify([seg.stream, seg.key]);
@@ -735,6 +739,10 @@
     let selectedSegment = null;
     let selectedSegmentZone = null;
     let updateNowPosition = null;
+    // Today's day read again while the page is open: the one in flight, and
+    // what the last answer drawn held.
+    let todayRead = null;
+    let drawnDayShape = '';
     let deleteModalReturnFocus = null;
     let deleteModalPrevOverflow = '';
 
@@ -2098,6 +2106,44 @@
       });
     }
 
+    // What a pill on the detail rail is drawn as. The day rail's blocks and
+    // the key above the rails use the same names, so a kind has one colour
+    // wherever it is drawn.
+    function pillKind(seg) {
+      const types = seg.types || [];
+      const hasAudio = types.includes('audio');
+      const hasScreen = types.includes('screen');
+      if (hasAudio && hasScreen) return 'both';
+      if (hasAudio) return 'audio';
+      if (types.includes('markdown') || (isWrittenOrUnplaced(seg) && !hasScreen)) return 'markdown';
+      if (types.includes('browser')) return 'browser';
+      if (types.includes('image') && !hasScreen) return 'image';
+      return 'screen';
+    }
+
+    // Each stream column on the detail rail is headed by its device's label.
+    // The label can be cut short, so its whole text and the stream's own name
+    // stay on hover.
+    function renderStreamHeads(streams) {
+      if (!zoomStreams) return;
+      zoomStreams.innerHTML = '';
+      const colWidth = 100 / Math.max(1, streams.length);
+      streams.forEach((stream, idx) => {
+        const head = document.createElement('div');
+        head.className = 'tr-zoom-stream';
+        const label = humanizeStreamName(stream);
+        head.textContent = label;
+        head.title = label + ' (' + stream + ')';
+        head.dataset.streamHead = stream;
+        if (streams.length > 1) {
+          head.style.left = (idx * colWidth) + '%';
+          head.style.right = 'auto';
+          head.style.width = colWidth + '%';
+        }
+        zoomStreams.appendChild(head);
+      });
+    }
+
     function buildZoomSegments() {
       const filtered = filterSegmentsInRange();
       const timed = filtered.filter(seg => !isDateOnlyImport(seg));
@@ -2105,6 +2151,13 @@
       const choices = [...dateOnly, ...timed];
       const streams = [...new Set(timed.map(s => s.stream))].sort();
       const colCount = streams.length;
+      // The rail's width follows the day's streams, not the range's, so moving
+      // the range never reflows the reading pane.
+      if (railCard) {
+        const dayStreams = new Set(allSegments.filter(seg => !isDateOnlyImport(seg)).map(seg => seg.stream));
+        railCard.dataset.zoomStreams = String(Math.min(4, dayStreams.size));
+      }
+      renderStreamHeads(streams);
       zoomSegments.innerHTML = '';
       segmentPicker.innerHTML = `<option value="">${window.JournalI18n.renderHtml('journal.window.transcripts.option.label.choose.a.segment')}</option>`;
       segmentPicker.disabled = choices.length === 0;
@@ -2200,21 +2253,7 @@
         const hasAnalyzingAdvertised = (seg.types || []).some(
           type => dataState[type] === 'analyzing'
         );
-        if (hasAudio && hasScreen) {
-          pill.classList.add('tr-zoom-pill-both');
-        } else if (hasAudio) {
-          pill.classList.add('tr-zoom-pill-audio');
-        } else if (hasMarkdown || isWritten) {
-          pill.classList.add('tr-zoom-pill-markdown');
-        } else if (hasBrowser) {
-          pill.classList.add('tr-zoom-pill-browser');
-        } else if (isPhotoOnly) {
-          pill.classList.add('tr-zoom-pill-image');
-        } else if (isActivityOnly) {
-          pill.classList.add('tr-zoom-pill-screen');
-        } else {
-          pill.classList.add('tr-zoom-pill-screen');
-        }
+        pill.classList.add('tr-zoom-pill-' + pillKind(seg));
         if (hasAnalyzingAdvertised) {
           pill.classList.add('tr-zoom-pill-analyzing');
         } else if (hasPendingAdvertised) {
@@ -5296,12 +5335,12 @@
       }
     }
 
-    // Rail content is inset below the header; the day rail reserves the legend
-    // band while the zoom rail keeps its compact bottom gutter.
-    const LEGEND_HEIGHT = 30;   // must equal --tr-legend-h in the .tr-timeline rule
-    const ZOOM_BOTTOM = 12;
-    const DAY_PADDING = HEADER_HEIGHT + LEGEND_HEIGHT;
-    const ZOOM_PADDING = HEADER_HEIGHT + ZOOM_BOTTOM;
+    // Rail content is inset below the header and keeps a compact bottom
+    // gutter; the zoom rail also reserves the band naming its stream columns.
+    const RAIL_BOTTOM = 12;          // the rails' `bottom: 12px` insets
+    const ZOOM_STREAMS_HEIGHT = 18;  // must equal .tr-zoom-streams' height
+    const DAY_PADDING = HEADER_HEIGHT + RAIL_BOTTOM;
+    const ZOOM_PADDING = HEADER_HEIGHT + ZOOM_STREAMS_HEIGHT + RAIL_BOTTOM;
 
     // One quiet line when part of the day was recorded on another clock, so
     // the grid's times (each on its own recording's clock) read right.
@@ -5328,6 +5367,213 @@
       el.textContent = text;
       el.hidden = !text;
     }
+
+    function journalToday() {
+      if (window.JournalClock) return window.JournalClock.today();
+      const now = new Date();
+      return String(now.getFullYear()) +
+        String(now.getMonth() + 1).padStart(2, '0') +
+        String(now.getDate()).padStart(2, '0');
+    }
+
+    // The day rail's blocks: audio and screen as the journal merged them, then
+    // each import, written message, page visit, desktop activity and photo.
+    // Each block says what it is, so the day switch can draw what it leaves
+    // out faintly. A range of audio is spoken words.
+    function drawDayIndicators(ranges, segments) {
+      segmentsLane.innerHTML = '';
+      const kindOf = (el, kind) => { el.dataset.showKind = kind; };
+      (ranges.audio || []).forEach(rg => {
+        kindOf(addSegmentIndicator('audio', parseTime(rg.start), parseTime(rg.end), 0, rg.streams, rg.state || 'analyzed', rg.think), 'transcripts');
+      });
+      (ranges.screen || []).forEach(rg => {
+        kindOf(addSegmentIndicator('screen', parseTime(rg.start), parseTime(rg.end), 1, rg.streams, rg.state || 'analyzed', rg.think), 'other');
+      });
+      [...markdownOnlySegments(segments), ...writtenSegments(segments)].forEach(seg => {
+        kindOf(addSegmentIndicator('markdown', parseTime(seg.start), parseTime(seg.end), 0, [seg.stream], 'analyzed', seg.think, seg), showKind(seg));
+      });
+      browserOnlySegments(segments).forEach(seg => {
+        kindOf(addSegmentIndicator('browser', parseTime(seg.start), parseTime(seg.end), 1, [seg.stream], 'analyzed', seg.think, seg), 'other');
+      });
+      desktopActivityOnlySegments(segments).forEach(seg => {
+        kindOf(addSegmentIndicator('desktop_activity', parseTime(seg.start), parseTime(seg.end), 1, [seg.stream], 'analyzed', seg.think, seg), 'other');
+      });
+      imageOnlySegments(segments).forEach(seg => {
+        kindOf(addSegmentIndicator('image', parseTime(seg.start), parseTime(seg.end), 1, [seg.stream], 'analyzed', seg.think, seg), 'other');
+      });
+    }
+
+    // The key above the rails names only the kinds this day draws, on either
+    // rail.
+    function renderLegend() {
+      const legend = document.getElementById('trLegend');
+      if (!legend) return;
+      const drawn = new Set(allSegments.filter(seg => !isDateOnlyImport(seg)).map(pillKind));
+      for (const kind of ['audio', 'screen', 'markdown', 'browser', 'image']) {
+        if (segmentsLane.querySelector('.tr-seg-' + kind)) drawn.add(kind);
+      }
+      for (const kind of ['sleep', 'workout']) {
+        if (bodyEventsLane.querySelector('.tr-body-event-' + kind)) drawn.add(kind);
+      }
+      legend.querySelectorAll('[data-legend-kind]').forEach(item => {
+        item.hidden = !drawn.has(item.dataset.legendKind);
+      });
+    }
+
+    // The newest thing a device captured today. Imports, written messages and
+    // what an agent wrote are not a device capturing.
+    const CAPTURED_TYPES = ['audio', 'screen', 'browser', 'desktop_activity', 'image'];
+    function latestCapture(segments) {
+      let latest = null;
+      for (const seg of segments) {
+        if (seg.item || isDateOnlyImport(seg) || isWrittenOrUnplaced(seg)) continue;
+        if (!(seg.types || []).some(type => CAPTURED_TYPES.includes(type))) continue;
+        if (window.JournalFormat.streamSays(seg.stream).imported) continue;
+        const end = parseTime(seg.end);
+        if (!latest || end > parseTime(latest.end) || (end === parseTime(latest.end) && seg.key > latest.key)) latest = seg;
+      }
+      return latest;
+    }
+
+    // On today, one quiet line by the heading: which device last added
+    // something, and when. It states a fact; whether capture is healthy is the
+    // status icon's to say. Nothing captured today, nothing said.
+    function renderLatest() {
+      const line = document.getElementById('trDayLatest');
+      if (!line) return;
+      const latest = day === journalToday() ? latestCapture(allSegments) : null;
+      line.hidden = !latest;
+      if (!latest) {
+        line.textContent = '';
+        line.removeAttribute('title');
+        return;
+      }
+      line.textContent = window.JournalI18n.render('journal.window.transcripts.day.latest', [
+        ['device', humanizeStreamName(latest.stream)],
+        ['time', window.JournalFormat.segmentTimeOfDay(latest.end.replace(':', '') + '00')],
+      ]);
+      line.title = latest.stream;
+    }
+
+    // What a read of the day drew from, to tell a changed day from the same one.
+    function dayShape(data) {
+      return JSON.stringify([data.audio || [], data.screen || [], data.segments || []]);
+    }
+
+    // The owner is in the middle of something a redraw would disturb.
+    function ownerMidAction() {
+      return Boolean(drag) || segPick.on || deleteSegmentModal.style.display !== 'none'
+        || Boolean(document.getElementById('trImageModal')) || document.activeElement === segmentPicker;
+    }
+
+    // A redraw replaces the rails' blocks. The one holding the focus is found
+    // again by what it stands for, so the focus stays where the owner left it.
+    function railFocus() {
+      const el = document.activeElement;
+      if (!el) return null;
+      if (el.parentElement === zoomSegments) return { lane: zoomSegments, key: el.dataset.key, stream: el.dataset.stream };
+      if (el.parentElement === segmentsLane) return { lane: segmentsLane, start: el.dataset.startMinute, col: el.classList.contains('tr-seg-col-1') };
+      return null;
+    }
+
+    function restoreRailFocus(focused) {
+      if (!focused) return;
+      const match = [...focused.lane.children].find(el => (focused.lane === zoomSegments
+        ? el.dataset.key === focused.key && el.dataset.stream === focused.stream
+        : el.dataset.startMinute === focused.start && el.classList.contains('tr-seg-col-1') === focused.col));
+      if (match) match.focus({ preventScroll: true });
+    }
+
+    function redrawDetail() {
+      const focused = railFocus();
+      buildZoomSegments();
+      dimLeftOut();
+      restoreRailFocus(focused);
+    }
+
+    // Today, while the page is open and in view, the day is read again on the
+    // now line's tick, so what arrives shows without a reload. Only the rails,
+    // the key and the latest line are redrawn: the range, the open segment
+    // and the reading pane stay as the owner left them. A tick is skipped
+    // while the owner is mid-action.
+    function readTodayAgain() {
+      if (document.hidden || todayRead || dayLoad !== 'ready' || day !== journalToday() || ownerMidAction()) return;
+      todayRead = dayFetch(`/app/transcripts/api/day/${day}`)
+        .then(r => {
+          if (!r.ok) throw new Error(`day read answered ${r.status}`);
+          return r.json();
+        })
+        .then(data => {
+          if (!ownerMidAction()) applyTodayAgain(data);
+        })
+        .catch(err => {
+          if (err?.name !== 'AbortError') console.warn('transcripts: reading today again did not complete:', err);
+        })
+        .finally(() => { todayRead = null; });
+    }
+
+    function listedImports(segments) {
+      return segments.filter(seg => seg.item || isWrittenOrUnplaced(seg)).map(segmentChoiceId).join('\n');
+    }
+
+    function applyTodayAgain(data) {
+      const shape = dayShape(data);
+      if (shape === drawnDayShape) return;
+      drawnDayShape = shape;
+      const before = new Map(allSegments.map(seg => [segmentChoiceId(seg), seg]));
+      const importsBefore = listedImports(allSegments);
+      const hadNone = allSegments.length === 0;
+      const switchBefore = dayShowsSwitch();
+      // A segment that has not changed keeps its object.
+      allSegments = (data.segments || []).map(seg => {
+        const old = before.get(segmentChoiceId(seg));
+        return old && JSON.stringify(old) === JSON.stringify(seg) ? old : seg;
+      });
+      renderDayZones(data.zones);
+
+      // The day rail only widens: what was in view stays in view.
+      const bounds = computeTimelineBounds(data);
+      if (bounds.start < timelineStart || bounds.end > timelineEnd) {
+        timelineStart = Math.min(timelineStart, bounds.start);
+        timelineEnd = Math.max(timelineEnd, bounds.end);
+        timeline.setAttribute('aria-label', window.JournalI18n.render('journal.window.transcripts.timeline.day.range', [['start_time', clockLabel(timelineStart)], ['end_time', clockLabel(timelineEnd)]]));
+        ppm = height / (timelineEnd - timelineStart);
+        buildGrid();
+        renderTimeline();
+        renderBodyEvents(dayBodyWindow);
+        if (updateNowPosition) updateNowPosition();
+      }
+
+      const focused = railFocus();
+      drawDayIndicators(data, allSegments);
+      buildZoomSegments();
+      dimLeftOut();
+      restoreRailFocus(focused);
+      if (!selectedSegment && hadNone && allSegments.length) panel.innerHTML = dayInvitationHtml;
+      if (switchBefore !== dayShowsSwitch()) applyShow();
+      else if (!selectedSegment && (hadNone || listedImports(allSegments) !== importsBefore)) refreshUnselectedLocation(null, true);
+      syncStretchButton();
+      renderLegend();
+      renderLatest();
+
+      // A device first met since the page loaded has its label read once.
+      const unread = [...new Set(allSegments.map(seg => seg.stream))].filter(stream => window.JournalFormat.needsStreamLabel(stream));
+      if (!unread.length) return;
+      const asked = dayEpoch;
+      Promise.all(unread.map(stream => window.JournalFormat.noteLiveStream(stream))).then(() => {
+        if (asked !== dayEpoch || ownerMidAction()) return;
+        redrawDetail();
+        renderLatest();
+      });
+    }
+
+    // Back in view, today shows what arrived while it was away at once.
+    ctx.on(document, 'visibilitychange', () => {
+      if (document.hidden || !nowTimer) return;
+      if (updateNowPosition) updateNowPosition();
+      renderLatest();
+      readTodayAgain();
+    });
 
     // Load combined transcript data
     function loadDayData() {
@@ -5370,17 +5616,13 @@
 
         // Set initial selection range within bounds
         // Center on current time if viewing today, otherwise midpoint
-        let todayStr;
+        const todayStr = journalToday();
         let nowMin;
         if (window.JournalClock) {
-          todayStr = window.JournalClock.today();
           const p = window.JournalClock.parts(window.JournalClock.now());
           nowMin = parseInt(p.hour, 10) * 60 + parseInt(p.minute, 10);
         } else {
           const now = new Date();
-          todayStr = String(now.getFullYear()) +
-            String(now.getMonth() + 1).padStart(2, '0') +
-            String(now.getDate()).padStart(2, '0');
           nowMin = now.getHours() * 60 + now.getMinutes();
         }
         let center;
@@ -5416,46 +5658,25 @@
         buildGrid();
         renderTimeline();
 
-        // Add segment indicators from ranges
-        // Each block says what it is, so the day switch can draw what it
-        // leaves out faintly. A range of audio is spoken words.
-        const kindOf = (el, kind) => { el.dataset.showKind = kind; };
-        (data.audio || []).forEach(rg => {
-          const s = parseTime(rg.start);
-          const e = parseTime(rg.end);
-          kindOf(addSegmentIndicator('audio', s, e, 0, rg.streams, rg.state || 'analyzed', rg.think), 'transcripts');
-        });
-        (data.screen || []).forEach(rg => {
-          const s = parseTime(rg.start);
-          const e = parseTime(rg.end);
-          kindOf(addSegmentIndicator('screen', s, e, 1, rg.streams, rg.state || 'analyzed', rg.think), 'other');
-        });
-        markdownOnlySegments(data.segments).forEach(seg => {
-          kindOf(addSegmentIndicator('markdown', parseTime(seg.start), parseTime(seg.end), 0, [seg.stream], 'analyzed', seg.think, seg), showKind(seg));
-        });
-        writtenSegments(data.segments).forEach(seg => {
-          kindOf(addSegmentIndicator('markdown', parseTime(seg.start), parseTime(seg.end), 0, [seg.stream], 'analyzed', seg.think, seg), showKind(seg));
-        });
-        browserOnlySegments(data.segments).forEach(seg => {
-          kindOf(addSegmentIndicator('browser', parseTime(seg.start), parseTime(seg.end), 1, [seg.stream], 'analyzed', seg.think, seg), 'other');
-        });
-        desktopActivityOnlySegments(data.segments).forEach(seg => {
-          kindOf(addSegmentIndicator('desktop_activity', parseTime(seg.start), parseTime(seg.end), 1, [seg.stream], 'analyzed', seg.think, seg), 'other');
-        });
-        imageOnlySegments(data.segments).forEach(seg => {
-          kindOf(addSegmentIndicator('image', parseTime(seg.start), parseTime(seg.end), 1, [seg.stream], 'analyzed', seg.think, seg), 'other');
-        });
+        drawDayIndicators(data, data.segments || []);
+        drawnDayShape = dayShape(data);
         fetchDayBodyWindow()
           .then(payload => {
             dayBodyWindow = payload;
             renderBodyEvents(dayBodyWindow);
+            renderLegend();
           })
           .catch(() => {
             dayBodyWindow = null;
             renderBodyEvents(null);
+            renderLegend();
           });
 
-        // Now-marker for today
+        // Now-marker for today. A reload of the day replaces the one it had.
+        if (nowTimer) clearInterval(nowTimer);
+        nowTimer = null;
+        updateNowPosition = null;
+        timeline.querySelectorAll('.tr-now-marker').forEach(old => old.remove());
         if (day === todayStr) {
           const marker = document.createElement('div');
           marker.className = 'tr-now-marker';
@@ -5483,7 +5704,12 @@
             }
           };
           updateNowPosition();
-          nowTimer = setInterval(updateNowPosition, 60000);
+          // The same tick reads today again while the page is in view.
+          nowTimer = setInterval(() => {
+            updateNowPosition();
+            renderLatest();
+            readTodayAgain();
+          }, 60000);
         }
 
         // Store segments and update zoom
@@ -5495,6 +5721,8 @@
         }
         updateZoom();
         applyShow();
+        renderLegend();
+        renderLatest();
         reportTranscriptsReady(allSegments.length ? 'content' : 'empty');
         refreshUnselectedLocation(null);
 
@@ -5518,6 +5746,7 @@
         dayLoad = 'error';
         syncStretchButton();
         zoomSegments.innerHTML = '';
+        renderStreamHeads([]);
         segmentPicker.innerHTML = `<option value="">${window.JournalI18n.renderHtml('journal.window.transcripts.option.label.choose.a.segment')}</option>`;
         segmentPicker.disabled = true;
         panel.innerHTML = window.SurfaceState.error({
@@ -5711,11 +5940,15 @@
         if (link.dataset.show === showFilter) link.setAttribute('aria-current', 'page');
         else link.removeAttribute('aria-current');
       }
-      const active = visible && showFilter !== 'everything';
+      dimLeftOut();
+      if (!selectedSegment && dayLoad === 'ready') renderDayImports(null, true);
+    }
+
+    function dimLeftOut() {
+      const active = dayShowsSwitch() && showFilter !== 'everything';
       for (const block of [...segmentsLane.querySelectorAll('.tr-seg'), ...zoomSegments.querySelectorAll('.tr-zoom-pill')]) {
         block.classList.toggle('tr-show-dim', active && block.dataset.showKind !== showFilter);
       }
-      if (!selectedSegment && dayLoad === 'ready') renderDayImports(null, true);
     }
 
     function refreshUnselectedLocation(glanceHtml = null, importsChanged = false) {
@@ -5929,6 +6162,8 @@
       nowTimer = null;
       updateNowPosition = null;
       timeline.querySelectorAll('.tr-now-marker').forEach(marker => marker.remove());
+      todayRead = null;
+      drawnDayShape = '';
       day = next;
       allSegments = [];
       locationSegments = [];
@@ -5938,9 +6173,12 @@
       segmentsLane.innerHTML = '';
       bodyEventsLane.innerHTML = '';
       zoomSegments.innerHTML = '';
+      renderStreamHeads([]);
       segmentPicker.innerHTML = `<option value="">${window.JournalI18n.renderHtml('journal.window.transcripts.option.label.choose.a.segment')}</option>`;
       segmentPicker.disabled = true;
       renderDayZones(null);
+      renderLegend();
+      renderLatest();
       window.DateNav?.setDay?.(next);
       loadDayData();
       loadLocationData();
@@ -6879,30 +7117,11 @@
       return dayFetch(`/app/transcripts/api/ranges/${day}`)
         .then(r => r.ok ? r.json() : Promise.reject(window.JournalI18n.render('journal.window.transcripts.window.explanation.failed.to.fetch.ranges')))
         .then(data => {
-          segmentsLane.innerHTML = '';
-          (data.audio || []).forEach(rg => {
-            const s = parseTime(rg.start);
-            const e = parseTime(rg.end);
-            addSegmentIndicator('audio', s, e, 0, rg.streams, rg.state || 'analyzed', rg.think);
-          });
-          (data.screen || []).forEach(rg => {
-            const s = parseTime(rg.start);
-            const e = parseTime(rg.end);
-            addSegmentIndicator('screen', s, e, 1, rg.streams, rg.state || 'analyzed', rg.think);
-          });
-          markdownOnlySegments(allSegments).forEach(seg => {
-            addSegmentIndicator('markdown', parseTime(seg.start), parseTime(seg.end), 0, [seg.stream], 'analyzed', seg.think, seg);
-          });
-          browserOnlySegments(allSegments).forEach(seg => {
-            addSegmentIndicator('browser', parseTime(seg.start), parseTime(seg.end), 1, [seg.stream], 'analyzed', seg.think, seg);
-          });
-          desktopActivityOnlySegments(allSegments).forEach(seg => {
-            addSegmentIndicator('desktop_activity', parseTime(seg.start), parseTime(seg.end), 1, [seg.stream], 'analyzed', seg.think, seg);
-          });
-          imageOnlySegments(allSegments).forEach(seg => {
-            addSegmentIndicator('image', parseTime(seg.start), parseTime(seg.end), 1, [seg.stream], 'analyzed', seg.think, seg);
-          });
+          drawDayIndicators(data, allSegments);
+          dimLeftOut();
           renderBodyEvents(dayBodyWindow);
+          renderLegend();
+          renderLatest();
         })
         .catch(() => {
           // Range indicators may be stale, but the main segment state is already updated.
