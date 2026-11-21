@@ -565,9 +565,16 @@ journal.window.entities.connections.you.latest.works.with = { $moments_quantity 
        *[other] { $moments } moments together · latest works with ({ $day })
     }
 
+journal.window.entities.delete.all.items.gone = { $removed_quantity ->
+        [one] it's no longer listed here.
+       *[other] they're no longer listed here.
+    }
+
 journal.window.entities.delete.couldn.t.erase.that = couldn't erase that entity
 
 journal.window.entities.delete.couldn.t.recover.that = couldn't recover that entity
+
+journal.window.entities.delete.detail.action.help = { $action_start }delete{ $action_end } { $description_start }moves it to the trash, where you can recover it until it's erased.{ $description_end }
 
 journal.window.entities.delete.erased.from.your.journal = { $total_quantity ->
         [one] erased { $total } entities from your journal
@@ -595,6 +602,11 @@ journal.window.entities.delete.facet.many.its.place.and.notes.in = { $facets_qua
 journal.window.entities.delete.gone.more.many.more.are.no.longer.listed = { $gone_quantity ->
         [one] { $gone } more is no longer listed.
        *[other] { $gone } more are no longer listed.
+    }
+
+journal.window.entities.delete.items.find.after.failed.erase = { $remaining_quantity ->
+        [one] look for it below or in the trash.
+       *[other] look for them below or in the trash.
     }
 
 journal.window.entities.delete.many.delete.entities = { $total_quantity ->
@@ -639,6 +651,21 @@ journal.window.entities.delete.none.still.many.are.still.in.your.journal = { $re
     }
 
 journal.window.entities.delete.noun.erased.from.your.journal = entity erased from your journal
+
+journal.window.entities.delete.other.items.gone = { $other_quantity ->
+        [one] the other is no longer listed here.
+       *[other] the others are no longer listed here.
+    }
+
+journal.window.entities.delete.partial.items.not.erased = { $remaining_quantity ->
+        [one] the other wasn't erased. look for it below or in the trash.
+       *[other] the others weren't erased. look for them below or in the trash.
+    }
+
+journal.window.entities.delete.partial.items.not.recovered = { $remaining_quantity ->
+        [one] the other is still in the trash. you can try again from there.
+       *[other] the others are still in the trash. you can try again from there.
+    }
 
 journal.window.entities.delete.pick.label.select.name = select { $entity_name }
 
@@ -758,6 +785,8 @@ journal.window.entities.hide.already.absent.count = { $existing_quantity ->
        *[other] { $existing } were already hidden or gone.
     }
 
+journal.window.entities.hide.detail.action.help = { $action_start }hide{ $action_end } { $description_start }moves it to hidden, where you can unhide it. its notes, and its detections in its facets, leave search, and connected agents can't reach them.{ $description_end }
+
 journal.window.entities.hide.done.count = { $hidden_quantity ->
         [one] hid 1 entity.
        *[other] hid { $hidden } entities.
@@ -780,7 +809,10 @@ journal.window.entities.hide.partial = { $remaining_quantity ->
     }. the rest weren't hidden.
     }
 
-journal.window.entities.hide.paused.reason = hiding is paused: { $record_detail }.
+journal.window.entities.hide.paused.records = { $records_quantity ->
+        [one] hiding is paused: a record in your journal can't be read ({ $paths }).
+       *[other] hiding is paused: { $records } records in your journal can't be read ({ $paths }).
+    }
 
 journal.window.entities.hide.progress = { $done_quantity ->
         [one] hiding… { $done } of { $total_quantity ->
@@ -814,6 +846,11 @@ journal.window.entities.hide.selection.progress = { $done_quantity ->
 journal.window.entities.hide.undo.done = { $restored_quantity ->
         [one] put back 1 entity.
        *[other] put back { $restored } entities.
+    }
+
+journal.window.entities.hide.undo.help = { $hidden_quantity ->
+        [one] undo puts it back, facets included. it's also under hidden whenever you want it.
+       *[other] undo puts them back, facets included. they're also under hidden whenever you want them.
     }
 
 journal.window.entities.hide.undo.partial = { $failed_quantity ->
@@ -952,11 +989,6 @@ journal.window.entities.merge.merge.partial = { $failed_quantity ->
     } pairs. { $failed } couldn't be merged.
     }
 
-journal.window.entities.merge.others.leave.list = { $pairs_quantity ->
-        [one] { $pairs } more pairs leave the list without merging: each includes an entity merged away above.
-       *[other] { $pairs } more pairs leave the list without merging: each includes an entity merged away above.
-    }
-
 journal.window.entities.merge.pair.confirm.aria = { $pairs_quantity ->
         [one] merge 1 pair?
        *[other] merge { $pairs } pairs?
@@ -983,6 +1015,16 @@ journal.window.entities.merge.progress = { $done_quantity ->
 journal.window.entities.merge.progress.initial = { $total_quantity ->
         [one] merging… 0 of { $total }
        *[other] merging… 0 of { $total }
+    }
+
+journal.window.entities.merge.unmerged.pair.count = { $pairs_quantity ->
+        [one] 1 more pair leaves the list without merging: it includes an entity merged away above.
+       *[other] { $pairs } more pairs leave the list without merging: each includes an entity merged away above.
+    }
+
+journal.window.entities.notes.count = { $notes_quantity ->
+        [one] 1 note
+       *[other] { $notes } notes
     }
 
 journal.window.entities.observation.coverage = { $observations_quantity ->
@@ -1023,6 +1065,48 @@ journal.window.entities.observation.show.all = { $observations_quantity ->
        *[other] show all { $observations } observations
     }
 
+journal.window.entities.response.alias.conflict = Alias '{ $alias }' conflicts with entity '{ $conflicting_name }'.
+
+journal.window.entities.response.alias.conflict.rename = Alias '{ $alias }' conflicts with entity '{ $conflicting_name }'
+
+journal.window.entities.response.ambiguity.dismiss.status = cannot dismiss ambiguity with status { $ambiguity_status }
+
+journal.window.entities.response.ambiguity.file.corrupt = ambiguity file { $file_path } contains a corrupt row
+
+journal.window.entities.response.entity.exists = Entity '{ $entity_name }' already exists
+
+journal.window.entities.response.entity.merged.permanent = '{ $merged_id }' was merged into '{ $survivor_id }'. Merges can't be undone, so that name can't be added as a new entity; use '{ $survivor_id }' instead.
+
+journal.window.entities.response.entity.missing = Entity '{ $entity_id }' not found
+
+journal.window.entities.response.entity.type.invalid = Invalid entity type { $entity_type }
+
+journal.window.entities.response.entity.type.invalid.query = Invalid entity type: { $entity_type }
+
+journal.window.entities.response.entity.type.invalid.write = Invalid entity type '{ $entity_type }'
+
+journal.window.entities.response.facet.entity.missing = '{ $entity_name }' isn't in this facet. add it here first, then add notes about it.
+
+journal.window.entities.response.ids.count.invalid = invalid ids count: { $id_count }
+
+journal.window.entities.response.operation.already.undone = operation { $operation_id } has already been undone
+
+journal.window.entities.response.operation.id.invalid = invalid operation id: { $operation_id }
+
+journal.window.entities.response.operation.limit.invalid = invalid limit: { $limit }
+
+journal.window.entities.response.principal.protected = principal entity is protected from this operation: { $entity_id }
+
+journal.window.entities.response.query.integer.bounded = { $parameter_name } must be between 0 and { $maximum }
+
+journal.window.entities.response.query.integer.required = { $parameter_name } must be an integer
+
+journal.window.entities.response.summary.limit.bounded = limit must be between 0 and { $maximum }
+
+journal.window.entities.scope.showing.facet = showing { $facet_name } ⌄
+
+journal.window.entities.scope.showing.journal = showing your whole journal ⌄
+
 journal.window.entities.search.finding.names = finding entities matching "{ $query }"…
 
 journal.window.entities.search.finding.type = finding { $entity_type } entities…
@@ -1036,11 +1120,16 @@ journal.window.entities.search.placeholder.entity.count = { $total_quantity ->
        *[other] search { $total } entities
     }
 
+journal.window.entities.tidy.duplicate.count = { $pairs_quantity ->
+        [one] { $pairs } possible duplicate
+       *[other] { $pairs } possible duplicates
+    }
+
 journal.window.entities.tidy.group.load.error = couldn't load this group.
 
-journal.window.entities.tidy.records.unreadable = { $records_quantity ->
-        [one] a record in your journal can't be read ({ $paths })
-       *[other] { $records } records in your journal can't be read ({ $paths })
+journal.window.entities.tidy.id.count = { $entities_quantity ->
+        [one] { $entities } looks like an ID
+       *[other] { $entities } look like an ID
     }
 
 journal.window.entities.tooltip.entity.type = type: { $entity_type }
@@ -1112,7 +1201,14 @@ journal.window.entities.trust.suggestion.details = { $source_name } → { $targe
 
 journal.window.entities.visible.text.detected.entities = detected entities
 
+journal.window.entities.voice.heading.count = { $samples_quantity ->
+        [one] voice samples ({ $samples })
+       *[other] voice samples ({ $samples })
+    }
+
 journal.window.entities.voice.sample.sentence = sentence { $sentence_id }
+
+journal.window.entities.window.explanation.look.like.an.id = look like an ID
 
 journal.window.handoff.spl.relay.rejected.with.status = the relay couldn't finish setting up your private network (error { $http_status }).
 
@@ -6749,37 +6845,15 @@ journal.window.entities.entity.delete.copy.lead.this.moves.the.entity.s.own = th
 
 journal.window.entities.entity.delete.copy.move.to.trash.move.to.trash = move to trash
 
-journal.window.entities.entity.delete.copy.none.erased.many.look.for.them.below.or.in = look for them below or in the trash.
-
-journal.window.entities.entity.delete.copy.none.erased.one.look.for.it.below.or.in = look for it below or in the trash.
-
-journal.window.entities.entity.delete.copy.none.gone.many.they.re.no.longer.listed.here = they're no longer listed here.
-
-journal.window.entities.entity.delete.copy.none.gone.one.it.s.no.longer.listed.here = it's no longer listed here.
-
 journal.window.entities.entity.delete.copy.open.trash.open.trash = open trash
 
 journal.window.entities.entity.delete.copy.other.this.wasn.t.erased.try.again = this wasn't erased. try again.
 
 journal.window.entities.entity.delete.copy.other.this.wasn.t.moved.try.again = this wasn't moved. try again.
 
-journal.window.entities.entity.delete.copy.others.gone.many.the.others.are.no.longer.listed = the others are no longer listed here.
-
-journal.window.entities.entity.delete.copy.others.gone.one.the.other.is.no.longer.listed = the other is no longer listed here.
-
 journal.window.entities.entity.delete.copy.own.many.this.erases.each.one.s.own = this erases each one's own details, version history, place and notes in each facet, and what your journal keeps about its voice, if anything.
 
 journal.window.entities.entity.delete.copy.own.many.this.moves.each.one.s.own = this moves each one's own details, version history, place and notes in each facet, and what your journal keeps about its voice, if anything.
-
-journal.window.entities.entity.delete.copy.pane.help.moves.it.to.the.trash.where = moves it to the trash, where you can recover it until it's erased.
-
-journal.window.entities.entity.delete.copy.part.erased.many.the.others.weren.t.erased.look = the others weren't erased. look for them below or in the trash.
-
-journal.window.entities.entity.delete.copy.part.erased.one.the.other.wasn.t.erased.look = the other wasn't erased. look for it below or in the trash.
-
-journal.window.entities.entity.delete.copy.part.recovered.many.the.others.are.still.in.the = the others are still in the trash. you can try again from there.
-
-journal.window.entities.entity.delete.copy.part.recovered.one.the.other.is.still.in.the = the other is still in the trash. you can try again from there.
 
 journal.window.entities.entity.delete.copy.principal.this.is.you.so.it.can = this is you, so it can't be deleted.
 
@@ -6889,11 +6963,7 @@ journal.window.entities.message.they.re.back.in.your.journal = they're back in y
 
 journal.window.entities.message.they.re.still.in.the.trash = they're still in the trash. you can try again from there.
 
-journal.window.entities.notes.many = { $count }{ $slot1 }notes
-
 journal.window.entities.notes.none = no notes
-
-journal.window.entities.notes.one = 1 note
 
 journal.window.entities.response.candidate.facet.already.exists = Facet '{ $facet }' already exists
 
@@ -7165,44 +7235,6 @@ journal.window.entities.response.detail.type.must.be.a.canonical.entity.type.or.
 
 journal.window.entities.response.detail.version.id.is.required = { $slot1 } is required
 
-journal.window.entities.response.formatted.alias.value1.conflicts.with.entity.value2 = Alias '{ $value1 }' conflicts with entity '{ $value2 }'.
-
-journal.window.entities.response.formatted.alias.value1.conflicts.with.entity.value2.variant2 = Alias '{ $value1 }' conflicts with entity '{ $value2 }'
-
-journal.window.entities.response.formatted.ambiguity.file.value1.contains.a.corrupt.row = ambiguity file{ $slot1 }{ $value1 }{ $slot2 }contains a corrupt row
-
-journal.window.entities.response.formatted.cannot.dismiss.ambiguity.with.status.value1 = cannot dismiss ambiguity with status{ $slot1 }{ $value1 }
-
-journal.window.entities.response.formatted.entity.value1.already.exists = Entity '{ $value1 }' already exists
-
-journal.window.entities.response.formatted.entity.value1.not.found = Entity '{ $value1 }' not found
-
-journal.window.entities.response.formatted.invalid.entity.type.value1 = Invalid entity type{ $slot1 }{ $value1 }
-
-journal.window.entities.response.formatted.invalid.entity.type.value1.variant2 = Invalid entity type:{ $slot1 }{ $value1 }
-
-journal.window.entities.response.formatted.invalid.entity.type.value1.variant3 = Invalid entity type '{ $value1 }'
-
-journal.window.entities.response.formatted.invalid.ids.count.value1 = invalid ids count:{ $slot1 }{ $value1 }
-
-journal.window.entities.response.formatted.invalid.limit.value1 = invalid limit:{ $slot1 }{ $value1 }
-
-journal.window.entities.response.formatted.invalid.operation.id.value1 = invalid operation id:{ $slot1 }{ $value1 }
-
-journal.window.entities.response.formatted.limit.bounded = limit must be between 0 and{ $slot1 }{ $value1 }
-
-journal.window.entities.response.formatted.operation.value1.has.already.been.undone = operation{ $slot1 }{ $value1 }{ $slot2 }has already been undone
-
-journal.window.entities.response.formatted.principal.entity.is.protected.from.this.operation.value1 = principal entity is protected from this operation:{ $slot1 }{ $value1 }
-
-journal.window.entities.response.formatted.query.bound = { $value1 }{ $slot1 }must be between 0 and{ $slot2 }{ $value2 }
-
-journal.window.entities.response.formatted.value1.isn.t.in.this.facet.add.it.here = '{ $value1 }' isn't in this facet. add it here first, then add notes about it.
-
-journal.window.entities.response.formatted.value1.must.be.an.integer = { $value1 }{ $slot1 }must be an integer
-
-journal.window.entities.response.formatted.value1.was.merged.into.value2.merges.can.t.be = '{ $value1 }' was merged into '{ $value2 }'. Merges can't be undone, so that name can't be added as a new entity; use '{ $value3 }' instead.
-
 journal.window.entities.response.merge.refusal.both.principal = can't merge these: both are marked as you.
 
 journal.window.entities.response.merge.refusal.person.type = can't merge a person into something that isn't a person.
@@ -7343,8 +7375,6 @@ journal.window.entities.visible.text.loading.this.entity = loading this entity�
 
 journal.window.entities.visible.text.more.about.hidden = more about hidden
 
-journal.window.entities.visible.text.more.pair.leaves.the.list.without = 1 more pair leaves the list without merging: it includes an entity merged away above.
-
 journal.window.entities.visible.text.name.is.required = name is required
 
 journal.window.entities.visible.text.names.shaped.like.codes.file.names = names shaped like codes, file names or request numbers. none has a note.
@@ -7415,15 +7445,7 @@ journal.window.entities.window.explanation.couldn.t.search.for.a.merge = couldn'
 
 journal.window.entities.window.explanation.failed.to.load.observations = failed to load observations
 
-journal.window.entities.window.explanation.look.like.an.id = look like an ID
-
-journal.window.entities.window.explanation.looks.like.an.id = looks like an ID
-
 journal.window.entities.window.explanation.this.entity.couldn.t.be.loaded = this entity couldn't be loaded, so it can't be edited.
-
-journal.window.entities.window.explanation.undo.puts.it.back.facets.included = undo puts it back, facets included. it's also under hidden whenever you want it.
-
-journal.window.entities.window.explanation.undo.puts.them.back.facets.included = undo puts them back, facets included. they're also under hidden whenever you want them.
 
 journal.window.entities.window.state.text.couldn.t.attach.entity = couldn't attach entity
 
@@ -7454,10 +7476,6 @@ journal.window.entities.window.state.text.loading.this.entity = loading this ent
 journal.window.entities.window.state.text.next.page = next page
 
 journal.window.entities.window.state.text.not.set = not set
-
-journal.window.entities.window.state.text.possible.duplicate = possible duplicate
-
-journal.window.entities.window.state.text.possible.duplicates = possible duplicates
 
 journal.window.entities.window.state.text.previous.page = previous page
 

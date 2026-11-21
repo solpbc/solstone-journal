@@ -1,0 +1,21 @@
+{
+  "description": "Refusal with a malformed type filter.",
+  "context": "Journal window. Refusal with a malformed type filter.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "entity_type",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "237835c70d2515da7a4cd8c592c56620a1b802853567458f0ebec6ea53a1a769",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

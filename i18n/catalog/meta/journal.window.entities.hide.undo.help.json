@@ -1,0 +1,26 @@
+{
+  "description": "Tidy receipt guidance for undoing a successful hide.",
+  "context": "Journal window. Tidy receipt guidance for undoing a successful hide.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "hidden_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "165b4deadca6ad711e84a1ac4927767c079008861009f6dc4df5db077a2b6c80",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "hidden_quantity",
+    "type": "cardinal"
+  }
+}

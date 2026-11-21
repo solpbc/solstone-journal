@@ -1,0 +1,25 @@
+{
+  "description": "Rename refusal when an alias matches an existing entity.",
+  "context": "Journal window. Rename refusal when an alias matches an existing entity.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "alias",
+      "type": "string"
+    },
+    {
+      "name": "conflicting_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "227009ca6e6e5cd5ec650a396fae0c3423883462c1391105a8f6d74eaf13fb38",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

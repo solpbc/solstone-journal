@@ -197,7 +197,9 @@ class PickNode {
   set innerHTML(value) { this._text = ''; this.children = []; this.html = String(value); }
   get innerHTML() { return this.html || ''; }
   appendChild(child) { child.parentElement = this; this.children.push(child); return child; }
-  append(...nodes) { nodes.forEach((node) => this.appendChild(node)); }
+  append(...nodes) {
+    nodes.forEach((node) => this.appendChild(typeof node === 'string' ? this.ownerDocument.createTextNode(node) : node));
+  }
   replaceChildren(...nodes) { this.children = []; this._text = ''; this.append(...nodes); }
   remove() { if (this.parentElement) this.parentElement.children = this.parentElement.children.filter((c) => c !== this); this.parentElement = null; }
   contains(node) { return node === this || this.children.some((child) => child.contains(node)); }
@@ -250,6 +252,11 @@ class PickNode {
 function pickHarness() {
   const doc = { activeElement: null, listeners: {}, registry: new Map() };
   doc.createElement = (tag) => new PickNode(doc, tag);
+  doc.createTextNode = (text) => {
+    const node = new PickNode(doc, '#text');
+    node.textContent = text;
+    return node;
+  };
   doc.body = new PickNode(doc, 'body');
   doc.getElementById = (id) => doc.registry.get(id) || null;
   doc.contains = () => true;
@@ -259,7 +266,7 @@ function pickHarness() {
     'entityDeleteModal', 'entityDeleteModalHeader', 'entityDeleteModalTitle', 'entityDeleteModalBody',
     'entityDeleteModalMoveFoot', 'entityDeleteModalEraseFoot', 'entityDeleteModalClose', 'entityDeleteModalErase',
     'entityDeleteModalCancel', 'entityDeleteModalConfirm', 'entityDeleteModalBack', 'entityDeleteModalEraseConfirm',
-    'journal-detail-delete-btn', 'journal-detail-delete-help', 'journal-detail-delete-help-name', 'journal-detail-delete-help-text',
+    'journal-detail-delete-btn', 'journal-detail-delete-help',
     'journal-select-btn', 'journal-pick-bar', 'journal-pick-idle', 'journal-pick-some', 'journal-pick-all', 'journal-pick-all-label',
     'journal-pick-count', 'journal-pick-delete', 'journal-pick-done-idle', 'journal-pick-done-some',
     'journal-entity-cards-content', 'no-journal-entities', 'journal-card-search-count', 'no-journal-card-matches',
@@ -395,8 +402,10 @@ async function entityDeleteCases(workspace) {
     h.context.api.renderEntityDeleteAction(ent('a'));
     const button = h.doc.getElementById('journal-detail-delete-btn');
     check(button.hidden === false && button.disabled === false && button.textContent === C.button, 'another entity has the delete button');
-    check(h.doc.getElementById('journal-detail-delete-help').hidden === false
-      && h.doc.getElementById('journal-detail-delete-help-text').textContent === C.paneHelp, 'the helper says delete moves it to the trash');
+    const help = h.doc.getElementById('journal-detail-delete-help');
+    check(help.hidden === false && help.children.find((child) => child.tagName === 'STRONG')?.textContent === 'delete'
+      && help.textContent === "delete moves it to the trash, where you can recover it until it's erased.",
+      'the helper says what delete does and keeps its action name bold');
     h.context.api.renderEntityDeleteAction(null);
     check(button.hidden === true, 'nothing to delete while the entity loads');
   }
@@ -627,11 +636,11 @@ async function entityDeleteCases(workspace) {
     const all = api.entitySetOutcome(false, ids, { done: ids.map((id) => ({ id, trash: { id: `T-${id}`, erase_at: '2099-11-17T00:00:00Z' } })), failed: [] }, there);
     check(all.receipt === C.set.moved && all.settled === true && all.keep.length === 0 && all.moved.length === 2, 'all moved: settled, select mode ends');
     const gone = api.entitySetOutcome(false, ids, { done: [], failed: [{ id: 'a', reason: 'gone' }, { id: 'b', reason: 'gone' }] }, there);
-    check(gone.receipt === C.set.noneMoved && gone.message === C.set.noneGoneMany && gone.keep.length === 0, 'refused because gone: nothing kept, no note');
+    check(gone.receipt === C.set.noneMoved && gone.message === C.set.noneGoneMessage(2) && gone.keep.length === 0, 'refused because gone: nothing kept, no note');
     const unanswered = api.entitySetOutcome(false, ids, null, (id) => id === 'a');
     check(unanswered.receipt === C.set.noAnswerMove && JSON.stringify(unanswered.keep) === JSON.stringify([['a', null]]), 'no answer: what is still listed stays picked without a note');
     const vanished = api.entitySetOutcome(false, ids, { done: [{ id: 'a', trash: { id: 'T-a' } }], failed: [{ id: 'b', reason: 'busy' }] }, (id) => id !== 'b');
-    check(vanished.keep.length === 0 && vanished.message === C.set.othersGoneOne, 'a refused one the reloaded list no longer shows is not counted and gets no note');
+    check(vanished.keep.length === 0 && vanished.message === C.set.othersGoneMessage(1), 'a refused one the reloaded list no longer shows is not counted and gets no note');
     const noList = api.entitySetOutcome(false, ids, { done: [], failed: [{ id: 'a', reason: 'busy' }, { id: 'b', reason: 'busy' }] }, null);
     check(noList.message === '' && noList.keep.length === 0, 'without a reloaded list nothing is said that needs it');
     const erased = api.entitySetOutcome(true, ids, { done: ids.map((id) => ({ id })), failed: [] }, there);
@@ -653,8 +662,8 @@ async function detectedHideCases(workspace, copy) {
   Object.keys(copy).filter((key) => key.startsWith('ENT_DETECTED_') || key === 'ENT_HIDE_PANE_HELP')
     .forEach((key) => check(typeof copy[key] === 'string' && copy[key].length > 0, `${key} has words`));
   const markup = journalContext({}).JournalI18n.renderWorkspace(workspace);
-  const paneHelp = /<strong>hide<\/strong>\s*<span id="journal-detail-hide-help"><\/span>/.test(markup)
-    && workspace.includes("hideHelp.textContent = ENT_COPY.ENT_HIDE_PANE_HELP");
+  const paneHelp = /<span id="journal-detail-hide-help"><strong>hide<\/strong><\/span>/.test(markup)
+    && workspace.includes("renderEntityActionHelp(hideHelp, 'journal.window.entities.hide.detail.action.help')");
   check(paneHelp, 'the pane helper takes its hide sentence from its copy key');
 
   const flush = async () => { for (let i = 0; i < 6; i += 1) await new Promise((resolve) => setImmediate(resolve)); };

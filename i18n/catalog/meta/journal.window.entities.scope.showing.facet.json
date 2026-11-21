@@ -1,0 +1,21 @@
+{
+  "description": "Scope menu trigger with the current facet title and the menu indicator.",
+  "context": "Journal window. Scope menu trigger with the current facet title and the menu indicator.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "facet_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "820b0bb82e0c952af621391a1f4c35a7ce2062fc1858133016dcf18444d57e37",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

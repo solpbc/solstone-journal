@@ -1,0 +1,21 @@
+{
+  "description": "Refusal when a named entity has yet to be attached to this facet.",
+  "context": "Journal window. Refusal when a named entity has yet to be attached to this facet.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "entity_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a40d0e8f9c821ca41b8d1b6b961216497ced3762d8b43427ef5bb31b929ce988",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

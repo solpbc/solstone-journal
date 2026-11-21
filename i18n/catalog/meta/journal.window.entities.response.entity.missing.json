@@ -1,0 +1,21 @@
+{
+  "description": "Refusal when the requested entity ID is missing.",
+  "context": "Journal window. Refusal when the requested entity ID is missing.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "entity_id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ef513b0a5c0b22863c98b8388773a81a86b154e8d94c0a02fa046193cd5dbc11",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

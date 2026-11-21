@@ -1,0 +1,21 @@
+{
+  "description": "Refusal when a saved ambiguity file has a corrupt row.",
+  "context": "Journal window. Refusal when a saved ambiguity file has a corrupt row.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "file_path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ee3c35b5874d6d37df5b3f58ec31ee3740f79d4003f88a56f7c44f5793406e34",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

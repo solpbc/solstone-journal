@@ -1,0 +1,30 @@
+{
+  "description": "Number of other pairs affected by a merge plan that will not merge them.",
+  "context": "Journal window. Number of other pairs affected by a merge plan that will not merge them.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "pairs_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "pairs",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "8c0feef15ea466cb336705fdba0ee2ea847dccf310cb01ad8f26ca1a0f605bdb",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "pairs_quantity",
+    "type": "cardinal"
+  }
+}

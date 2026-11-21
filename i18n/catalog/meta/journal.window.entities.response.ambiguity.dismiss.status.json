@@ -1,0 +1,21 @@
+{
+  "description": "Refusal that includes the current status of an ambiguity.",
+  "context": "Journal window. Refusal that includes the current status of an ambiguity.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "ambiguity_status",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c7eac299b2639b0b542d0a231693b6836e2eafa02e0c6a239b55b63933bc5353",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

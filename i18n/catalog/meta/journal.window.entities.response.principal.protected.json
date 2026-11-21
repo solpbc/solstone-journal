@@ -1,0 +1,21 @@
+{
+  "description": "Refusal with the protected principal entity ID.",
+  "context": "Journal window. Refusal with the protected principal entity ID.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "entity_id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8979e6f975a5e1c85bfe3608d3f858254a2637de838604638e79394ddf5b9743",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

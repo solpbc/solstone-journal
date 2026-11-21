@@ -1,0 +1,26 @@
+{
+  "description": "All selected items have already left the list.",
+  "context": "Journal window. All selected items have already left the list.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "removed_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "8587e950b02023f35ed681e81fd62af5644dc999a62becf71e1105475123c935",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "removed_quantity",
+    "type": "cardinal"
+  }
+}

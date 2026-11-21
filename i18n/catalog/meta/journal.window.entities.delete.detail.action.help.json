@@ -1,0 +1,33 @@
+{
+  "description": "Detail helper explaining what Delete does, with its action name in bold.",
+  "context": "Journal window. Detail helper explaining what Delete does, with its action name in bold.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "action_start",
+      "type": "string"
+    },
+    {
+      "name": "action_end",
+      "type": "string"
+    },
+    {
+      "name": "description_start",
+      "type": "string"
+    },
+    {
+      "name": "description_end",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5d572fa854b76d163a3cdb0b6604f77135de3ba41f491e5ba656c2adc29a2079",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

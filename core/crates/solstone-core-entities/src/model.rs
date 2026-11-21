@@ -9,7 +9,7 @@ use serde_json::Value;
 use solstone_core_convey_http::coalesce::ResponseLocale;
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_convey_http::window_catalog::{
-    ENGLISH, Value as CatalogValue, render, resolve_table, text,
+    ENGLISH, Value as CatalogValue, render, resolve_table, strings, text,
 };
 use std::sync::LazyLock;
 
@@ -65,11 +65,28 @@ pub fn compose_connections_horizon_note(earlier_days: usize) -> String {
 
 pub fn connections_horizon_note(locale: &str, earlier_days: usize) -> String {
     debug_assert!(earlier_days >= 1);
-    if earlier_days == 1 {
-        copy_text(locale, "ENT_CONN_HORIZON_ONE")
-    } else {
-        copy_text(locale, "ENT_CONN_HORIZON").replace("{n}", &earlier_days.to_string())
-    }
+    // Older API clients still receive a day placeholder in the compatibility
+    // note. The journal window renders from horizon_day and horizon_earlier_days.
+    let day = strings(
+        locale,
+        "journal.window.home.connections.horizon.day",
+        [("day", "{day}")],
+    );
+    let quantity = i32::try_from(earlier_days)
+        .map(i64::from)
+        .unwrap_or_else(|_| 1_000_000 + (earlier_days % 1_000_000) as i64);
+    let earlier = render(
+        locale,
+        "journal.window.home.connections.horizon.earlier.days",
+        &[
+            ("quantity", CatalogValue::Cardinal(quantity)),
+            (
+                "earlier_days",
+                CatalogValue::String(&earlier_days.to_string()),
+            ),
+        ],
+    );
+    format!("{day} {earlier}")
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -266,7 +283,13 @@ mod tests {
         );
         assert!(compose_connections_horizon_note(1).contains("{day}"));
         assert!(!compose_connections_horizon_note(1).contains("{n}"));
-        assert!(compose_connections_horizon_note(3).contains("{day}"));
-        assert!(!compose_connections_horizon_note(3).contains("{n}"));
+        for days in [3, 2_147_483_648] {
+            assert_eq!(
+                compose_connections_horizon_note(days),
+                format!(
+                    "connections from time in the same place go back only to {{day}}. the {days} earlier days are still in your journal; those connections haven't been built yet."
+                )
+            );
+        }
     }
 }

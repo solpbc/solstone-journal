@@ -1,0 +1,25 @@
+{
+  "description": "Refusal with the name and upper bound of an integer query parameter.",
+  "context": "Journal window. Refusal with the name and upper bound of an integer query parameter.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "parameter_name",
+      "type": "string"
+    },
+    {
+      "name": "maximum",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "37aac7d000ce47eaaccf12b5e4d018a4eccf9d4caf9698d50cd972a2f221185d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

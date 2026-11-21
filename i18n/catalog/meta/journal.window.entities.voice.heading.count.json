@@ -1,0 +1,30 @@
+{
+  "description": "Heading for voice samples with their exact displayed count.",
+  "context": "Journal window. Heading for voice samples with their exact displayed count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "samples_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "samples",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "51422db0ac3a57a6465faa9445b3d34376189acb514237a2667082138b3cf421",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "samples_quantity",
+    "type": "cardinal"
+  }
+}

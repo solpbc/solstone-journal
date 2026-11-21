@@ -1,0 +1,21 @@
+{
+  "description": "Refusal with the ID of an already undone operation.",
+  "context": "Journal window. Refusal with the ID of an already undone operation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "operation_id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "28d0497f1c6366080fcc7f4942ad0d1d6bf9f808466cc28120fe4e3dbfe001c2",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Refusal when an alias matches an existing entity, with final punctuation.",
+  "context": "Journal window. Refusal when an alias matches an existing entity, with final punctuation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "alias",
+      "type": "string"
+    },
+    {
+      "name": "conflicting_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ee30fc3f85aeb7cec01c8bb28fe6cb01e044e0608256dab0819c5d910a6b3efb",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

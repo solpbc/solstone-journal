@@ -1,0 +1,21 @@
+{
+  "description": "Refusal with the supplied type for a write.",
+  "context": "Journal window. Refusal with the supplied type for a write.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "entity_type",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f4111a92baf91c26e945f6ff0ab0c5df08fb6950563ae2049c93f702c927b080",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

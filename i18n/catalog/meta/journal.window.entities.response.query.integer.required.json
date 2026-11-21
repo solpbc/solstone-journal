@@ -1,0 +1,21 @@
+{
+  "description": "Refusal when the named query parameter must be an integer.",
+  "context": "Journal window. Refusal when the named query parameter must be an integer.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "parameter_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fb79239a86b2f5790339046717a0917c60fcc3411d0f660a5888474f89878f14",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

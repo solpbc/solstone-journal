@@ -1,0 +1,30 @@
+{
+  "description": "Title and summary for the Tidy group with names shaped like IDs.",
+  "context": "Journal window. Title and summary for the Tidy group with names shaped like IDs.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "entities_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "entities",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "5cec3b57b09de25f7f7920d5c49e0e3579ffd98acb671c3831665083190b73bf",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "entities_quantity",
+    "type": "cardinal"
+  }
+}

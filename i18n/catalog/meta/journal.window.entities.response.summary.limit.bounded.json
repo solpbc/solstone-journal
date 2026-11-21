@@ -1,0 +1,21 @@
+{
+  "description": "Refusal with the upper bound of a summary limit.",
+  "context": "Journal window. Refusal with the upper bound of a summary limit.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "maximum",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2fc01f2e34a280344dd9d6644cc040247bfcdc3f03e0996969ce0002ba9c700b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

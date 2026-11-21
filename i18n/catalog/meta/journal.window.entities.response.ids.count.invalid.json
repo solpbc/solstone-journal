@@ -1,0 +1,21 @@
+{
+  "description": "Refusal with the number of entity IDs supplied.",
+  "context": "Journal window. Refusal with the number of entity IDs supplied.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "id_count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "71ae6bce6537dc36320f3e8018ce2cc31a0b7ee37168f32bf6f65458a0173bd0",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

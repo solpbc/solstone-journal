@@ -1,0 +1,34 @@
+{
+  "description": "Tidy status when unreadable journal records pause hiding. Paths are diagnostic data.",
+  "context": "Journal window. Tidy status when unreadable journal records pause hiding. Paths are diagnostic data.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "records_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "records",
+      "type": "string"
+    },
+    {
+      "name": "paths",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "f67746d681a34e3746d577a3e6fbf502957463e6e6b7a4c188183732e0e859c3",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "records_quantity",
+    "type": "cardinal"
+  }
+}

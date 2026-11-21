@@ -1,0 +1,30 @@
+{
+  "description": "Count of available notes on an entity row.",
+  "context": "Journal window. Count of available notes on an entity row.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "notes_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "notes",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "5618f1ff15ac94f8b3853ab0cdcfc60cf53a274bfc4aaf29ddbddc3bd0e70b3e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "notes_quantity",
+    "type": "cardinal"
+  }
+}

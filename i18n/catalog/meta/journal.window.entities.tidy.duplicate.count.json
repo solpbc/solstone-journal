@@ -1,0 +1,30 @@
+{
+  "description": "Title and summary for the Tidy group with possible duplicate pairs.",
+  "context": "Journal window. Title and summary for the Tidy group with possible duplicate pairs.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "pairs_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "pairs",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "9f7f26d769a10364560fb0ae0e1de493afd910066aa30c724f099d5790bb1beb",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "pairs_quantity",
+    "type": "cardinal"
+  }
+}

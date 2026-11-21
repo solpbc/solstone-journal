@@ -1,0 +1,21 @@
+{
+  "description": "Refusal with the debug value of an unsupported entity type.",
+  "context": "Journal window. Refusal with the debug value of an unsupported entity type.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "entity_type",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "face2df2c501aad0eba2d89cba351a70ff0cae81d6688382c07b3e55620aafbf",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

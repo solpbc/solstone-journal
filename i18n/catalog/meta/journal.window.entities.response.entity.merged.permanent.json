@@ -1,0 +1,25 @@
+{
+  "description": "Source-English refusal when a retired entity ID resolves to its surviving entity.",
+  "context": "Journal window. Source-English refusal when a retired entity ID resolves to its surviving entity.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "merged_id",
+      "type": "string"
+    },
+    {
+      "name": "survivor_id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "40b368e4aae83af336e821b184c4d7e4a3c4dd33524470620a67647aaf6ca280",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

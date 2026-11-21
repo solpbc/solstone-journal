@@ -756,8 +756,8 @@ fn resolution_error_response(error: FacetResolutionError) -> Response {
         )) => refusal(
             ReasonCode::EntityAmbiguityCorrupt,
             RefusalDetail::Formatted(
-                "journal.window.entities.response.formatted.ambiguity.file.value1.contains.a.corrupt.row",
-                vec![("value1", path.display().to_string())],
+                "journal.window.entities.response.ambiguity.file.corrupt",
+                vec![("file_path", path.display().to_string())],
             ),
         ),
         FacetResolutionError::Facet(error) => {
@@ -964,8 +964,8 @@ async fn detect_entity_route(
         return refusal(
             ReasonCode::InvalidEntityType,
             RefusalDetail::Formatted(
-                "journal.window.entities.response.formatted.invalid.entity.type.value1",
-                vec![("value1", format!("{entity_type:?}"))],
+                "journal.window.entities.response.entity.type.invalid",
+                vec![("entity_type", format!("{entity_type:?}"))],
             ),
         );
     }
@@ -2783,8 +2783,8 @@ fn parse_journal_summary_query(
         return Err(Box::new(refusal(
             ReasonCode::InvalidRequestValue,
             RefusalDetail::Formatted(
-                "journal.window.entities.response.formatted.limit.bounded",
-                vec![("value1", JOURNAL_SUMMARY_MAX_LIMIT.to_string())],
+                "journal.window.entities.response.summary.limit.bounded",
+                vec![("maximum", JOURNAL_SUMMARY_MAX_LIMIT.to_string())],
             ),
         )));
     }
@@ -3072,8 +3072,8 @@ async fn journal_tidy_up_route(
         return refusal(
             ReasonCode::InvalidRequestValue,
             RefusalDetail::Formatted(
-                "journal.window.entities.response.formatted.limit.bounded",
-                vec![("value1", JOURNAL_SUMMARY_MAX_LIMIT.to_string())],
+                "journal.window.entities.response.summary.limit.bounded",
+                vec![("maximum", JOURNAL_SUMMARY_MAX_LIMIT.to_string())],
             ),
         );
     }
@@ -3171,8 +3171,8 @@ async fn update_journal_entity_route(
             return refusal(
                 ReasonCode::EntityNotFound,
                 RefusalDetail::Formatted(
-                    "journal.window.entities.response.formatted.entity.value1.not.found",
-                    vec![("value1", entity_id.to_string())],
+                    "journal.window.entities.response.entity.missing",
+                    vec![("entity_id", entity_id.to_string())],
                 ),
             );
         }
@@ -3210,8 +3210,8 @@ async fn update_journal_entity_route(
                 return refusal(
                     ReasonCode::InvalidEntityType,
                     RefusalDetail::Formatted(
-                        "journal.window.entities.response.formatted.invalid.entity.type.value1.variant2",
-                        vec![("value1", kind.to_string())],
+                        "journal.window.entities.response.entity.type.invalid.query",
+                        vec![("entity_type", kind.to_string())],
                     ),
                 );
             }
@@ -3610,30 +3610,30 @@ async fn block_journal_entities_route(
         Ok(Err(solstone_core_facets::BulkJournalError::InvalidOperationId(id))) => refusal(
             ReasonCode::InvalidRequestValue,
             RefusalDetail::Formatted(
-                "journal.window.entities.response.formatted.invalid.operation.id.value1",
-                vec![("value1", id.to_string())],
+                "journal.window.entities.response.operation.id.invalid",
+                vec![("operation_id", id.to_string())],
             ),
         ),
         Ok(Err(solstone_core_facets::BulkJournalError::InvalidIdsCount(count))) => refusal(
             ReasonCode::InvalidRequestValue,
             RefusalDetail::Formatted(
-                "journal.window.entities.response.formatted.invalid.ids.count.value1",
-                vec![("value1", count.to_string())],
+                "journal.window.entities.response.ids.count.invalid",
+                vec![("id_count", count.to_string())],
             ),
         ),
         Ok(Err(solstone_core_facets::BulkJournalError::OperationUndone(op))) => refusal(
             ReasonCode::OperationUndone,
             RefusalDetail::Formatted(
-                "journal.window.entities.response.formatted.operation.value1.has.already.been.undone",
-                vec![("value1", op.to_string())],
+                "journal.window.entities.response.operation.already.undone",
+                vec![("operation_id", op.to_string())],
             ),
         ),
         Ok(Err(solstone_core_facets::BulkJournalError::PrincipalEntityProtected { entity_id })) => {
             refusal(
                 ReasonCode::PrincipalEntityProtected,
                 RefusalDetail::Formatted(
-                    "journal.window.entities.response.formatted.principal.entity.is.protected.from.this.operation.value1",
-                    vec![("value1", entity_id.to_string())],
+                    "journal.window.entities.response.principal.protected",
+                    vec![("entity_id", entity_id.to_string())],
                 ),
             )
         }
@@ -3741,22 +3741,22 @@ async fn unblock_journal_operation_route(
         Ok(Err(solstone_core_facets::BulkJournalError::InvalidOperationId(id))) => refusal(
             ReasonCode::InvalidRequestValue,
             RefusalDetail::Formatted(
-                "journal.window.entities.response.formatted.invalid.operation.id.value1",
-                vec![("value1", id.to_string())],
+                "journal.window.entities.response.operation.id.invalid",
+                vec![("operation_id", id.to_string())],
             ),
         ),
         Ok(Err(solstone_core_facets::BulkJournalError::InvalidLimit(limit))) => refusal(
             ReasonCode::InvalidRequestValue,
             RefusalDetail::Formatted(
-                "journal.window.entities.response.formatted.invalid.limit.value1",
-                vec![("value1", limit.to_string())],
+                "journal.window.entities.response.operation.limit.invalid",
+                vec![("limit", limit.to_string())],
             ),
         ),
         Ok(Err(solstone_core_facets::BulkJournalError::OperationUndone(op))) => refusal(
             ReasonCode::OperationUndone,
             RefusalDetail::Formatted(
-                "journal.window.entities.response.formatted.operation.value1.has.already.been.undone",
-                vec![("value1", op.to_string())],
+                "journal.window.entities.response.operation.already.undone",
+                vec![("operation_id", op.to_string())],
             ),
         ),
         Ok(Err(solstone_core_facets::BulkJournalError::RelationshipsUnreadable { path })) => {
@@ -4039,8 +4039,8 @@ async fn dismiss_ambiguity_route(
         return refusal(
             ReasonCode::InvalidRequestValue,
             RefusalDetail::Formatted(
-                "journal.window.entities.response.formatted.cannot.dismiss.ambiguity.with.status.value1",
-                vec![("value1", status.to_string())],
+                "journal.window.entities.response.ambiguity.dismiss.status",
+                vec![("ambiguity_status", status.to_string())],
             ),
         );
     }
@@ -4664,11 +4664,10 @@ fn merged_entity_refusal(journal_root: &Path, identity_id: &str, successor: &str
     refusal(
         ReasonCode::EntityMerged,
         RefusalDetail::Formatted(
-            "!journal.window.entities.response.formatted.value1.was.merged.into.value2.merges.can.t.be",
+            "!journal.window.entities.response.entity.merged.permanent",
             vec![
-                ("value1", identity_id.to_string()),
-                ("value2", survivor.to_string()),
-                ("value3", survivor.to_string()),
+                ("merged_id", identity_id.to_string()),
+                ("survivor_id", survivor.to_string()),
             ],
         ),
     )
@@ -4807,8 +4806,8 @@ async fn attach_route(
         return refusal(
             ReasonCode::InvalidEntityType,
             RefusalDetail::Formatted(
-                "journal.window.entities.response.formatted.invalid.entity.type.value1.variant3",
-                vec![("value1", kind.to_string())],
+                "journal.window.entities.response.entity.type.invalid.write",
+                vec![("entity_type", kind.to_string())],
             ),
         );
     }
@@ -4897,8 +4896,8 @@ async fn create_entity_route(
         return refusal(
             ReasonCode::InvalidEntityType,
             RefusalDetail::Formatted(
-                "journal.window.entities.response.formatted.invalid.entity.type.value1.variant3",
-                vec![("value1", kind.to_string())],
+                "journal.window.entities.response.entity.type.invalid.write",
+                vec![("entity_type", kind.to_string())],
             ),
         );
     }
@@ -5381,8 +5380,8 @@ async fn observe_route(
             return refusal(
                 ReasonCode::EntityNotFound,
                 RefusalDetail::Formatted(
-                    "journal.window.entities.response.formatted.value1.isn.t.in.this.facet.add.it.here",
-                    vec![("value1", name.to_string())],
+                    "journal.window.entities.response.facet.entity.missing",
+                    vec![("entity_name", name.to_string())],
                 ),
             );
         }
@@ -5450,8 +5449,8 @@ async fn observe_route(
             refusal(
                 ReasonCode::EntityNotFound,
                 RefusalDetail::Formatted(
-                    "journal.window.entities.response.formatted.value1.isn.t.in.this.facet.add.it.here",
-                    vec![("value1", name.to_string())],
+                    "journal.window.entities.response.facet.entity.missing",
+                    vec![("entity_name", name.to_string())],
                 ),
             )
         }
@@ -5692,10 +5691,10 @@ async fn aka_route(
         })) => refusal(
             ReasonCode::EntityAliasConflict,
             RefusalDetail::Formatted(
-                "journal.window.entities.response.formatted.alias.value1.conflicts.with.entity.value2",
+                "journal.window.entities.response.alias.conflict",
                 vec![
-                    ("value1", alias.to_string()),
-                    ("value2", conflict_name.to_string()),
+                    ("alias", alias.to_string()),
+                    ("conflicting_name", conflict_name.to_string()),
                 ],
             ),
         ),
@@ -5820,8 +5819,8 @@ async fn update_entity_route(
         Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityExists { .. })) => refusal(
             ReasonCode::EntityAlreadyExists,
             RefusalDetail::Formatted(
-                "journal.window.entities.response.formatted.entity.value1.already.exists",
-                vec![("value1", new_name_for_detail.to_string())],
+                "journal.window.entities.response.entity.exists",
+                vec![("entity_name", new_name_for_detail.to_string())],
             ),
         ),
         Ok(Err(solstone_core_facets::FacetEntityWriteError::AkaConflict {
@@ -5830,10 +5829,10 @@ async fn update_entity_route(
         })) => refusal(
             ReasonCode::EntityAliasConflict,
             RefusalDetail::Formatted(
-                "journal.window.entities.response.formatted.alias.value1.conflicts.with.entity.value2.variant2",
+                "journal.window.entities.response.alias.conflict.rename",
                 vec![
-                    ("value1", alias.to_string()),
-                    ("value2", conflict_name.to_string()),
+                    ("alias", alias.to_string()),
+                    ("conflicting_name", conflict_name.to_string()),
                 ],
             ),
         ),
@@ -6261,8 +6260,8 @@ fn index_plate_store_error(error: solstone_core_entity::EntityStoreError) -> Res
         solstone_core_entity::EntityStoreError::AmbiguityInvalidRow { path, .. } => refusal(
             ReasonCode::EntityAmbiguityCorrupt,
             RefusalDetail::Formatted(
-                "journal.window.entities.response.formatted.ambiguity.file.value1.contains.a.corrupt.row",
-                vec![("value1", path.display().to_string())],
+                "journal.window.entities.response.ambiguity.file.corrupt",
+                vec![("file_path", path.display().to_string())],
             ),
         ),
         error => refusal(ReasonCode::EntityOperationFailed, error.to_string()),
@@ -6625,8 +6624,8 @@ fn index_plate_integer(
             Box::new(refusal(
                 ReasonCode::InvalidRequestValue,
                 RefusalDetail::Formatted(
-                    "journal.window.entities.response.formatted.value1.must.be.an.integer",
-                    vec![("value1", name.to_string())],
+                    "journal.window.entities.response.query.integer.required",
+                    vec![("parameter_name", name.to_string())],
                 ),
             ))
         }),
@@ -6652,8 +6651,8 @@ fn parse_network_bound(
         return Err(Box::new(refusal(
             ReasonCode::InvalidRequestValue,
             RefusalDetail::Formatted(
-                "journal.window.entities.response.formatted.value1.must.be.an.integer",
-                vec![("value1", name.to_string())],
+                "journal.window.entities.response.query.integer.required",
+                vec![("parameter_name", name.to_string())],
             ),
         )));
     }
@@ -6662,8 +6661,11 @@ fn parse_network_bound(
         _ => Err(Box::new(refusal(
             ReasonCode::InvalidRequestValue,
             RefusalDetail::Formatted(
-                "journal.window.entities.response.formatted.query.bound",
-                vec![("value1", name.to_owned()), ("value2", max.to_string())],
+                "journal.window.entities.response.query.integer.bounded",
+                vec![
+                    ("parameter_name", name.to_owned()),
+                    ("maximum", max.to_string()),
+                ],
             ),
         ))),
     }

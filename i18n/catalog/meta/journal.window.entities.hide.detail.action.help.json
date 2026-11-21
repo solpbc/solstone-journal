@@ -1,0 +1,33 @@
+{
+  "description": "Detail helper explaining what the Hide action does, with its action name in bold.",
+  "context": "Journal window. Detail helper explaining what the Hide action does, with its action name in bold.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "action_start",
+      "type": "string"
+    },
+    {
+      "name": "action_end",
+      "type": "string"
+    },
+    {
+      "name": "description_start",
+      "type": "string"
+    },
+    {
+      "name": "description_end",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ececfc78bdd54d67a0466e1071c154bcae4d130673bc640ac3280dfc32dee5bc",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

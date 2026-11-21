@@ -1,0 +1,21 @@
+{
+  "description": "Refusal when a proposed new name already exists.",
+  "context": "Journal window. Refusal when a proposed new name already exists.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "entity_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ce8963541037a6cc3cf3e15f6d02431075ae80aaa9e118fee28d56d0962966eb",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

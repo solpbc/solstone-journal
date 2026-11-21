@@ -1,0 +1,16 @@
+{
+  "description": "Scope menu trigger when the whole journal is selected.",
+  "context": "Journal window. Scope menu trigger when the whole journal is selected.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f594cbb18bfb43ad3d91a1a5cb17b3a9c0f207c2e0e963a94bde4e84d9ab374e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

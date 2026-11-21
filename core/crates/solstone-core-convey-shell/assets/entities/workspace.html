@@ -2274,8 +2274,8 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
       </div>
       <div id="block-action-error" class="error-message" style="display: none;"></div>
       <p style="margin-top: 0.75em; font-size: 0.85em; color: var(--ink-faint);">
-        <strong>{{journal.window.entities.visible.text.hide}}</strong> <span id="journal-detail-hide-help"></span>
-        <span id="journal-detail-delete-help" hidden><strong id="journal-detail-delete-help-name"></strong> <span id="journal-detail-delete-help-text"></span></span>
+        <span id="journal-detail-hide-help"><strong>{{journal.window.entities.visible.text.hide}}</strong></span>
+        <span id="journal-detail-delete-help" hidden></span>
       </p>
     </div>
   </div>
@@ -2561,7 +2561,7 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
       entitiesAwayReceipt(copy, one ? R.recovered : S.recovered, { n: ids.length }, [], { settled: true, icon: 'undo-2' });
     } else if (done.length) {
       const others = ids.length - done.length;
-      entitiesAwayReceipt(copy, S.partRecovered, { done: done.length, n: ids.length }, [entitiesOpenTrash(copy)], { message: others === 1 ? S.partRecoveredOne : S.partRecoveredMany });
+      entitiesAwayReceipt(copy, S.partRecovered, { done: done.length, n: ids.length }, [entitiesOpenTrash(copy)], { message: S.partRecoveredMessage(others) });
     } else {
       entitiesAwayReceipt(copy, one ? R.recoverFailed : S.recoverFailed, {}, [entitiesOpenTrash(copy)]);
     }
@@ -4155,8 +4155,10 @@ function renderScopeControl() {
   trigger.setAttribute('aria-haspopup', 'listbox');
   trigger.setAttribute('aria-expanded', 'false');
   trigger.setAttribute('aria-controls', 'entities-scope-menu');
-  const scope = currentFacetRecord()?.title || ENT_COPY.ENT_SCOPE_WHOLE_JOURNAL || '';
-  trigger.textContent = `${ENT_COPY.ENT_SCOPE_SHOWING || ''} ${scope} ⌄`;
+  const facetTitle = currentFacetRecord()?.title;
+  trigger.textContent = facetTitle
+    ? window.JournalI18n.render('journal.window.entities.scope.showing.facet', [['facet_name', facetTitle]])
+    : window.JournalI18n.render('journal.window.entities.scope.showing.journal');
 
   const layer = document.createElement('div');
   layer.id = 'entities-scope-layer';
@@ -4642,7 +4644,7 @@ function renderJournalDetailView(entity) {
   // Update action buttons based on state
   const blockBtn = document.getElementById('journal-detail-block-btn');
   const hideHelp = document.getElementById('journal-detail-hide-help');
-  if (hideHelp) hideHelp.textContent = ENT_COPY.ENT_HIDE_PANE_HELP || '';
+  if (hideHelp) renderEntityActionHelp(hideHelp, 'journal.window.entities.hide.detail.action.help');
 
   if (isPrincipal) {
     // Principal cannot be hidden; it has no delete at all.
@@ -5369,7 +5371,6 @@ function unblockJournalEntity() {
 // the entity's own.
 const ENTITY_DELETE_COPY = {
   button: window.JournalI18n.render('journal.window.entities.entity.delete.copy.button.delete'),
-  paneHelp: window.JournalI18n.render('journal.window.entities.entity.delete.copy.pane.help.moves.it.to.the.trash.where'),
   select: window.JournalI18n.render('journal.window.entities.entity.delete.copy.select.select'),
   selectAll: window.JournalI18n.render('journal.window.entities.entity.delete.copy.select.all.select.all'),
   selectAllPage: window.JournalI18n.render('journal.window.entities.entity.delete.copy.select.all.page.select.all.on.this.page'),
@@ -5456,23 +5457,18 @@ const ENTITY_DELETE_COPY = {
     still: ({ k }) => window.JournalI18n.render('journal.window.entities.delete.still.many.couldn.t.be.moved.and', entityCountArgs('remaining', k, String(k))),
     marked: ({ k }) => window.JournalI18n.render('journal.window.entities.delete.marked.many.couldn.t.be.moved.and', entityCountArgs('remaining', k, String(k))),
     goneMore: ({ g }) => window.JournalI18n.render('journal.window.entities.delete.gone.more.many.more.are.no.longer.listed', entityCountArgs('gone', g, String(g))),
-    othersGoneOne: window.JournalI18n.render('journal.window.entities.entity.delete.copy.others.gone.one.the.other.is.no.longer.listed'),
-    othersGoneMany: window.JournalI18n.render('journal.window.entities.entity.delete.copy.others.gone.many.the.others.are.no.longer.listed'),
+    othersGoneMessage: (count) => window.JournalI18n.render('journal.window.entities.delete.other.items.gone', [['other_quantity', window.JournalI18n.cardinalQuantity(count)]]),
     noneMoved: { title: window.JournalI18n.render('journal.window.entities.title.couldn.t.move.those.to.the') },
     noneStill: ({ k }) => window.JournalI18n.render('journal.window.entities.delete.none.still.many.are.still.in.your.journal', entityCountArgs('remaining', k, String(k))),
-    noneGoneOne: window.JournalI18n.render('journal.window.entities.entity.delete.copy.none.gone.one.it.s.no.longer.listed.here'),
-    noneGoneMany: window.JournalI18n.render('journal.window.entities.entity.delete.copy.none.gone.many.they.re.no.longer.listed.here'),
+    noneGoneMessage: (count) => window.JournalI18n.render('journal.window.entities.delete.all.items.gone', [['removed_quantity', window.JournalI18n.cardinalQuantity(count)]]),
     erased: { title: ({ n }) => window.JournalI18n.render('journal.window.entities.delete.erased.from.your.journal', [...entityCountArgs('total', n, String(n))]) },
     partErased: { title: ({ done, n }) => window.JournalI18n.render('journal.window.entities.delete.erased.of', [...entityCountArgs('processed', done, String(done)), ...entityCountArgs('total', n, String(n))]) },
-    partErasedOne: window.JournalI18n.render('journal.window.entities.entity.delete.copy.part.erased.one.the.other.wasn.t.erased.look'),
-    partErasedMany: window.JournalI18n.render('journal.window.entities.entity.delete.copy.part.erased.many.the.others.weren.t.erased.look'),
+    partErasedMessage: (count) => window.JournalI18n.render('journal.window.entities.delete.partial.items.not.erased', [['remaining_quantity', window.JournalI18n.cardinalQuantity(count)]]),
     noneErased: { title: window.JournalI18n.render('journal.window.entities.title.couldn.t.erase.those') },
-    noneErasedOne: window.JournalI18n.render('journal.window.entities.entity.delete.copy.none.erased.one.look.for.it.below.or.in'),
-    noneErasedMany: window.JournalI18n.render('journal.window.entities.entity.delete.copy.none.erased.many.look.for.them.below.or.in'),
+    noneErasedMessage: (count) => window.JournalI18n.render('journal.window.entities.delete.items.find.after.failed.erase', [['remaining_quantity', window.JournalI18n.cardinalQuantity(count)]]),
     recovered: { title: ({ n }) => window.JournalI18n.render('journal.window.entities.delete.recovered.count', [...entityCountArgs('total', n, String(n))]), message: window.JournalI18n.render('journal.window.entities.message.they.re.back.in.your.journal') },
     partRecovered: { title: ({ done, n }) => window.JournalI18n.render('journal.window.entities.delete.recovered.of', [...entityCountArgs('processed', done, String(done)), ...entityCountArgs('total', n, String(n))]) },
-    partRecoveredOne: window.JournalI18n.render('journal.window.entities.entity.delete.copy.part.recovered.one.the.other.is.still.in.the'),
-    partRecoveredMany: window.JournalI18n.render('journal.window.entities.entity.delete.copy.part.recovered.many.the.others.are.still.in.the'),
+    partRecoveredMessage: (count) => window.JournalI18n.render('journal.window.entities.delete.partial.items.not.recovered', [['remaining_quantity', window.JournalI18n.cardinalQuantity(count)]]),
     recoverFailed: { title: window.JournalI18n.render('journal.window.entities.title.couldn.t.recover.those'), message: window.JournalI18n.render('journal.window.entities.message.they.re.still.in.the.trash') },
     noAnswerMove: { title: window.JournalI18n.render('journal.window.entities.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.entities.message.they.may.already.be.in.the') },
     noAnswerErase: { title: window.JournalI18n.render('journal.window.entities.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.entities.message.they.may.already.be.erased.reload') },
@@ -5807,7 +5803,7 @@ async function recoverEntities(trashIds, reload) {
     entityReceipt(one ? R.recovered : S.recovered, { n: ids.length }, [], { settled: true, icon: 'undo-2' });
   } else if (done.length) {
     const others = ids.length - done.length;
-    entityReceipt(S.partRecovered, { done: done.length, n: ids.length }, [entityOpenTrashButton()], { message: others === 1 ? S.partRecoveredOne : S.partRecoveredMany });
+    entityReceipt(S.partRecovered, { done: done.length, n: ids.length }, [entityOpenTrashButton()], { message: S.partRecoveredMessage(others) });
   } else {
     entityReceipt(one ? R.recoverFailed : S.recoverFailed, {}, [entityOpenTrashButton()]);
   }
@@ -5868,10 +5864,10 @@ function entitySetOutcome(erase, ids, answer, stillThere) {
     if (erased) {
       out.receipt = S.partErased;
       out.fill.done = erased;
-      out.message = listed ? (n - erased === 1 ? S.partErasedOne : S.partErasedMany) : '';
+      out.message = listed ? S.partErasedMessage(n - erased) : '';
     } else {
       out.receipt = S.noneErased;
-      out.message = listed ? (n === 1 ? S.noneErasedOne : S.noneErasedMany) : '';
+      out.message = listed ? S.noneErasedMessage(n) : '';
     }
     return out;
   }
@@ -5885,7 +5881,7 @@ function entitySetOutcome(erase, ids, answer, stillThere) {
     if (!listed) out.message = '';
     else if (k && !g) out.message = S.still({ k });
     else if (k) out.message = S.marked({ k }) + goneMore;
-    else out.message = failed.length === 1 ? S.othersGoneOne : S.othersGoneMany;
+    else out.message = S.othersGoneMessage(failed.length);
     return out;
   }
   out.receipt = S.noneMoved;
@@ -5896,10 +5892,16 @@ function entitySetOutcome(erase, ids, answer, stillThere) {
     out.message = S.noneStill({ k }) + goneMore;
     out.buttons = [];
   } else {
-    out.message = failed.length === 1 ? S.noneGoneOne : S.noneGoneMany;
+    out.message = S.noneGoneMessage(failed.length);
     out.buttons = ['openTrash'];
   }
   return out;
+}
+
+function renderEntityActionHelp(help, id) {
+  const action = document.createElement('strong');
+  const description = document.createElement('span');
+  help.replaceChildren(...window.JournalI18n.renderMarkup(id, [], { elements: { action, description } }));
 }
 
 // The detail pane's delete: none for you, and the helper line says what it does.
@@ -5915,8 +5917,7 @@ function renderEntityDeleteAction(entity) {
   }
   if (help) {
     help.hidden = !offered;
-    document.getElementById('journal-detail-delete-help-name').textContent = ENTITY_DELETE_COPY.button;
-    document.getElementById('journal-detail-delete-help-text').textContent = ENTITY_DELETE_COPY.paneHelp;
+    renderEntityActionHelp(help, 'journal.window.entities.delete.detail.action.help');
   }
 }
 
@@ -6834,10 +6835,6 @@ function groupedCount(value) {
   return Number.isFinite(n) ? n.toLocaleString() : String(value ?? '');
 }
 
-function entityCountLabel(count) {
-  return `${groupedCount(count)} ${count === 1 ? 'entity' : 'entities'}`;
-}
-
 function journalListStateKey() {
   return `${journalEntitySearch}\u0000${journalFolder}\u0000${journalEntityPage}`;
 }
@@ -7036,7 +7033,7 @@ function renderJournalFolders() {
 function journalNotesLabel(count) {
   if (count === null || count === undefined) return '';
   if (count === 0) return window.JournalI18n.render('journal.window.entities.notes.none');
-  return count === 1 ? window.JournalI18n.render('journal.window.entities.notes.one') : window.JournalI18n.render('journal.window.entities.notes.many',[ ['count', String(groupedCount(count))] ]);
+  return window.JournalI18n.render('journal.window.entities.notes.count', entityCountArgs('notes', count));
 }
 
 function appendJournalRowCells(row, entity, {notes, day}) {
@@ -7709,10 +7706,6 @@ const tidyState = {
   running: false,
 };
 
-function tidyPlural(n, one, many) {
-  return n === 1 ? one : many;
-}
-
 function tidyPostJson(path, payload) {
   return apiJson(path, {
     method: 'POST',
@@ -7726,10 +7719,6 @@ function tidyPostJson(path, payload) {
 /// outcome unknown.
 function tidyIsRefusal(err) {
   return Boolean(err && err.status >= 400 && err.status < 500 && err.cause !== 'parse');
-}
-
-function tidyRecordsUnreadable(paths) {
-  return window.JournalI18n.render('journal.window.entities.tidy.records.unreadable', [...entityCountArgs('records', paths.length, String(paths.length)), ['paths', paths.join(', ')]]);
 }
 
 async function fetchTidyPage(offset) {
@@ -7846,13 +7835,13 @@ function renderTidyBand() {
   const ids = data.id_shaped || {};
   if (ids.count > 0) {
     const names = (ids.items || []).slice(0, 3).map(item => item.name).filter(Boolean);
-    card(`${groupedCount(ids.count)} ${tidyPlural(ids.count, window.JournalI18n.render('journal.window.entities.window.explanation.looks.like.an.id'), window.JournalI18n.render('journal.window.entities.window.explanation.look.like.an.id'))}`,
+    card(window.JournalI18n.render('journal.window.entities.tidy.id.count', entityCountArgs('entities', ids.count)),
       names.length ? window.JournalI18n.render('journal.window.entities.examples.names', [['names', String(names.join(', '))]]) : '', 'ids');
   }
   const dups = data.duplicates || {};
   if (dups.count > 0) {
     const first = (dups.items || [])[0];
-    card(`${groupedCount(dups.count)} ${tidyPlural(dups.count, window.JournalI18n.render('journal.window.entities.window.state.text.possible.duplicate'), window.JournalI18n.render('journal.window.entities.window.state.text.possible.duplicates'))}`,
+    card(window.JournalI18n.render('journal.window.entities.tidy.duplicate.count', entityCountArgs('pairs', dups.count)),
       first ? window.JournalI18n.render('journal.window.entities.examples.first.and.second', [['first_name', String(first.names[0])], ['second_name', String(first.names[1])]]) : '', 'duplicates');
   }
   band.hidden = band.children.length === 0;
@@ -7913,7 +7902,7 @@ function renderIdsPanel() {
   const damage = tidyState.data.damage || {count: 0, paths: []};
   const n = group.count || 0;
   const title = document.createElement('h3');
-  title.textContent = `${groupedCount(n)} ${tidyPlural(n, window.JournalI18n.render('journal.window.entities.window.explanation.looks.like.an.id'), window.JournalI18n.render('journal.window.entities.window.explanation.look.like.an.id'))}`;
+  title.textContent = window.JournalI18n.render('journal.window.entities.tidy.id.count', entityCountArgs('entities', n));
   const lede = document.createElement('p');
   lede.className = 'journal-tidy-lede';
   lede.textContent = window.JournalI18n.render('journal.window.entities.visible.text.names.shaped.like.codes.file.names');
@@ -7922,7 +7911,11 @@ function renderIdsPanel() {
     const paused = document.createElement('p');
     paused.className = 'journal-tidy-paused';
     paused.dataset.tidyState = 'paused';
-    paused.textContent = window.JournalI18n.render('journal.window.entities.hide.paused.reason', [['record_detail', String(tidyRecordsUnreadable(damage.paths || []))]]);
+    const paths = damage.paths || [];
+    paused.textContent = window.JournalI18n.render('journal.window.entities.hide.paused.records', [
+      ...entityCountArgs('records', paths.length, String(paths.length)),
+      ['paths', paths.join(', ')],
+    ]);
     panel.append(paused);
     appendHiddenExplainer(panel);
     return;
@@ -8255,9 +8248,9 @@ function tidyToastContent(op) {
       if (k > 0) text += ' ' + window.JournalI18n.render('journal.window.entities.hide.already.absent.count', [...entityCountArgs('existing', k)]);
       return {
         text,
-        small: m === 1
-          ? window.JournalI18n.render('journal.window.entities.window.explanation.undo.puts.it.back.facets.included')
-          : window.JournalI18n.render('journal.window.entities.window.explanation.undo.puts.them.back.facets.included'),
+        small: window.JournalI18n.render('journal.window.entities.hide.undo.help', [
+          ['hidden_quantity', window.JournalI18n.cardinalQuantity(m)],
+        ]),
         actions: m > 0 ? ['undo'] : [],
       };
     }
@@ -8400,7 +8393,7 @@ function renderDupsPanel() {
   const group = tidyState.data.duplicates || {};
   const n = group.count || 0;
   const title = document.createElement('h3');
-  title.textContent = `${groupedCount(n)} ${tidyPlural(n, window.JournalI18n.render('journal.window.entities.window.state.text.possible.duplicate'), window.JournalI18n.render('journal.window.entities.window.state.text.possible.duplicates'))}`;
+  title.textContent = window.JournalI18n.render('journal.window.entities.tidy.duplicate.count', entityCountArgs('pairs', n));
   const lede = document.createElement('p');
   lede.className = 'journal-tidy-lede';
   lede.textContent = window.JournalI18n.renderEnglish('journal.window.entities.visible.text.pairs.that.might.be.the.same');
@@ -8581,9 +8574,7 @@ function renderMergeConfirm(plan) {
   if (plan.leaving.length) {
     const k = plan.leaving.length;
     const line = document.createElement('p');
-    line.textContent = k === 1
-      ? window.JournalI18n.render('journal.window.entities.visible.text.more.pair.leaves.the.list.without')
-      : window.JournalI18n.render('journal.window.entities.merge.others.leave.list', [...entityCountArgs('pairs', k)]);
+    line.textContent = window.JournalI18n.render('journal.window.entities.merge.unmerged.pair.count', entityCountArgs('pairs', k));
     const leaving = document.createElement('ul');
     leaving.dataset.list = 'leaving';
     plan.leaving.forEach(member => {
@@ -9156,7 +9147,9 @@ async function loadVoiceSamples(entity, cursor = 0, append = false) {
       const heading = document.createElement('h4');
       heading.id = 'voice-samples-heading';
       heading.tabIndex = -1;
-      heading.textContent = `${ENT_COPY.ENT_VOICE_HEADING} (${data.total})`;
+      heading.textContent = window.JournalI18n.render('journal.window.entities.voice.heading.count', [
+        ...entityCountArgs('samples', data.total, String(data.total)),
+      ]);
       panel.appendChild(heading);
     }
     if (!data.total) {

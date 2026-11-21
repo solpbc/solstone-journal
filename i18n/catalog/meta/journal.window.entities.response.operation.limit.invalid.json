@@ -1,0 +1,21 @@
+{
+  "description": "Refusal with the invalid supplied operation limit.",
+  "context": "Journal window. Refusal with the invalid supplied operation limit.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "limit",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "61b739b68b3322ee0dc469845d381eccb140a9d0e9ac1364c5c7e8ee4d70e949",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

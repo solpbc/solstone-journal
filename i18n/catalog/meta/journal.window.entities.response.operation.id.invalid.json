@@ -1,0 +1,21 @@
+{
+  "description": "Refusal with the malformed operation ID.",
+  "context": "Journal window. Refusal with the malformed operation ID.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "operation_id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f15ba8ca78c463bd1de9f8c70c1ca8a82b7d56721ccabf326a57a2a25c992f6e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
