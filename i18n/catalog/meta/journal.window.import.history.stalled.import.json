@@ -1,0 +1,21 @@
+{
+  "description": "A history row stopped receiving progress and names its import identifier.",
+  "context": "Journal window. A history row stopped receiving progress and names its import identifier.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "import_id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "11e398d92f6d737472ee36a10655752f4a2b1b76748968d896b14670ad02ef89",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

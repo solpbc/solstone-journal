@@ -1,0 +1,39 @@
+{
+  "description": "Load the next history page and report how many of the matching imports are visible.",
+  "context": "Journal window. Load the next history page and report how many of the matching imports are visible.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "shown_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "total_count",
+      "type": "string"
+    },
+    {
+      "name": "shown_count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "b99809a32db995b1a0a4dd74adc49a0b7e07b661de544377d65f0c60b8b75526",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "total_quantity",
+    "type": "cardinal"
+  }
+}

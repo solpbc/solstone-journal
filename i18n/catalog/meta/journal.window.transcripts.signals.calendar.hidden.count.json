@@ -1,0 +1,30 @@
+{
+  "description": "Count of deduplicated calendar events omitted from the compact view.",
+  "context": "Journal window. Count of deduplicated calendar events omitted from the compact view.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "dd42e4c14c2bd556a915788a8807bdfb98a7753c1a7bd6faf3dca43f9cb525f6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

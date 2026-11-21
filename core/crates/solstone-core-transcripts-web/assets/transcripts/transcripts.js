@@ -1460,7 +1460,7 @@
     function bodyCountText(item) {
       const label = String(item?.count_label ?? item?.count ?? '').trim();
       if (!label) return '';
-      if (/[a-z]/i.test(label)) return label;
+      if (!/^[\p{Nd}\p{Zs}\p{P}]+$/u.test(label)) return label;
       return window.JournalI18n.render('journal.window.transcripts.body.entry.count', transcriptCount('entries', Number(item?.count), label));
     }
 
@@ -1499,7 +1499,7 @@
         .join('\n');
       const briefExtra = (payload.signals || []).length - 10;
       const briefOverflow = briefExtra > 0
-        ? `<li class="tr-body-panel-more"><a href="/app/body/${day}">+${briefExtra} ${window.JournalI18n.renderHtml('journal.window.transcripts.link.label.more.in.body')}</a></li>`
+        ? `<li class="tr-body-panel-more"><a href="/app/body/${day}">${window.JournalI18n.renderHtml('journal.window.transcripts.body.panel.more.count', [['quantity', window.JournalI18n.cardinalQuantity(briefExtra)], ['count', String(briefExtra)]])}</a></li>`
         : '';
       const sources = (payload.sources?.chips || [])
         .map(source => `<span class="tr-signal-chip">${escapeHtml(source.name)} · ${escapeHtml(bodyCountText(source))}</span>`)
@@ -3208,8 +3208,9 @@
             : when;
           return `<li><strong>${escapeHtml(event.title || window.JournalI18n.render('journal.window.transcripts.status.text.untitled.event'))}</strong><br><span class="tr-signal-label">${escapeHtml(timing)}</span></li>`;
         }).join('');
-        const more = calendarEvents.length > 12
-          ? `<div class="tr-signal-label">${calendarEvents.length - 12} ${window.JournalI18n.renderHtml('journal.window.transcripts.visible.text.more.deduped.calendar.events.hidden.in')}</div>`
+        const hiddenEvents = calendarEvents.length - 12;
+        const more = hiddenEvents > 0
+          ? `<div class="tr-signal-label">${window.JournalI18n.renderHtml('journal.window.transcripts.signals.calendar.hidden.count', [['quantity', window.JournalI18n.cardinalQuantity(hiddenEvents)], ['count', String(hiddenEvents)]])}</div>`
           : '';
         html += renderSignalSection(
           window.JournalI18n.render('journal.window.transcripts.signals.section.calendar.snapshot'),

@@ -1,0 +1,30 @@
+{
+  "description": "Standalone confidence label beside a sentence attribution.",
+  "context": "Journal window. Standalone confidence label beside a sentence attribution.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "confidence",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "8e30ae8d795357d5f0b15fafaa5e9d56f7ea97f3b6b7647c361f4ef52b780a88",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "confidence",
+    "type": "string",
+    "enum_values": [
+      "high",
+      "medium"
+    ],
+    "enum_default": "medium"
+  }
+}

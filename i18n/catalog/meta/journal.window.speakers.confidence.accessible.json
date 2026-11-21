@@ -1,0 +1,30 @@
+{
+  "description": "Accessible confidence of this sentence attribution.",
+  "context": "Journal window. Accessible confidence of this sentence attribution.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "confidence",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "25de9a9d0839521bba3c303f823cbf7cf47586137ee5ef6eb909c672291cb51e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "confidence",
+    "type": "string",
+    "enum_values": [
+      "high",
+      "medium"
+    ],
+    "enum_default": "medium"
+  }
+}

@@ -1753,6 +1753,17 @@ function quantityArgs(value, name = 'count', selector = 'quantity', display = St
   return [[selector, window.JournalI18n.cardinalQuantity(value)], [name, display]];
 }
 
+function historyLoadMoreLabel(shown, total) {
+  return window.JournalI18n.renderHtml('journal.window.import.history.load.more.count', [
+    ...quantityArgs(shown, 'shown_count', 'shown_quantity'),
+    ...quantityArgs(total, 'total_count', 'total_quantity'),
+  ]);
+}
+
+function guideStepLabel(step) {
+  return window.JournalI18n.renderHtml('journal.window.import.guide.step.number', [['step_number', String(step)]]);
+}
+
 function formattedEntryCount(count) {
   return window.JournalI18n.render('journal.window.import.progress.count.entries',
     quantityArgs(count, 'count', 'quantity', count.toLocaleString()));
@@ -2785,7 +2796,7 @@ async function loadImports() {
       html += `
         <div id="importLoadMore" style="text-align: center; margin: 1.5rem 0;">
           <button class="import-primary-btn" data-import-load-more>
-            ${window.JournalI18n.renderHtml('journal.window.import.button.label.load.more')}${importsCache.length} ${window.JournalI18n.renderHtml('journal.window.import.button.label.of')} ${data.total} ${window.JournalI18n.renderHtml('journal.window.import.button.label.shown')}
+            ${historyLoadMoreLabel(importsCache.length, data.total)}
           </button>
         </div>
       `;
@@ -2893,7 +2904,7 @@ async function loadMoreImports() {
       if (data.page < data.pages) {
         drawMarkup(loadMoreContainer, `
           <button class="import-primary-btn" data-import-load-more>
-            ${window.JournalI18n.renderHtml('journal.window.import.button.label.load.more')}${importsCache.length} ${window.JournalI18n.renderHtml('journal.window.import.button.label.of')} ${data.total} ${window.JournalI18n.renderHtml('journal.window.import.button.label.shown')}
+            ${historyLoadMoreLabel(importsCache.length, data.total)}
           </button>`);
       } else {
         // On the last page the button goes: the first row it brought takes its place.
@@ -2931,7 +2942,7 @@ function markRowStalled(importId) {
     writeClass(row, 'import-row--stalled', true);
     const statusCell = row.querySelector('.status-cell');
     if (statusCell) {
-      drawMarkup(statusCell, `<span class="import-status stalled">${window.JournalI18n.renderHtml('journal.window.import.visible.text.stalled')}</span><button type="button" class="import-retry-btn" data-import-check-status="${escapeHtml(importId)}">${window.JournalI18n.renderHtml('journal.window.import.button.label.check.status')}</button><div class="progress-detail import-stalled-meta">${window.JournalI18n.renderHtml('journal.window.import.visible.text.stalled.no.updates.in.minutes.import')} ${escapeHtml(importId)}. ${window.CONVEY_COPY.RELOAD_HINT}</div><div class="import-retry-result"></div>`);
+      drawMarkup(statusCell, `<span class="import-status stalled">${window.JournalI18n.renderHtml('journal.window.import.visible.text.stalled')}</span><button type="button" class="import-retry-btn" data-import-check-status="${escapeHtml(importId)}">${window.JournalI18n.renderHtml('journal.window.import.button.label.check.status')}</button><div class="progress-detail import-stalled-meta">${window.JournalI18n.renderHtml('journal.window.import.history.stalled.import', [['import_id', String(importId)]])} ${window.CONVEY_COPY.RELOAD_HINT}</div><div class="import-retry-result"></div>`);
     }
   }
 
@@ -3161,7 +3172,7 @@ async function loadGuidedFlow(sourceName) {
     const response = await ctx.fetch(`/app/import/api/guide/${sourceName}`);
     if (response.ok) {
       const markdown = await response.text();
-      guideHtml = `<li><div class="import-step"><div class="import-step-number">${window.JournalI18n.renderHtml('journal.window.import.visible.text.step')} ${guideStepNumber}</div><div class="import-guide-content">${window.AppServices.renderMarkdown(markdown)}</div></div></li>`;
+      guideHtml = `<li><div class="import-step"><div class="import-step-number">${guideStepLabel(guideStepNumber)}</div><div class="import-guide-content">${window.AppServices.renderMarkdown(markdown)}</div></div></li>`;
       guideStepNumber += 1;
     }
   }
@@ -3178,7 +3189,7 @@ async function loadGuidedFlow(sourceName) {
     <form id="guidedImportForm" onsubmit="return false;"><ol class="import-steps-list">
     ${guideHtml}
       <li><div class="import-step">
-        <div class="import-step-number">${window.JournalI18n.renderHtml('journal.window.import.visible.text.step')} ${uploadStepNumber}</div>
+        <div class="import-step-number">${guideStepLabel(uploadStepNumber)}</div>
         ${source.input_type === 'path_input' && folderPicker ? `
           ${folderPicker}
         ` : source.input_type === 'path_input' ? `
@@ -3198,7 +3209,7 @@ async function loadGuidedFlow(sourceName) {
         <div id="guidedDedupNotice"></div>
       </div></li>
       <li><div class="import-step">
-        <div class="import-step-number">${window.JournalI18n.renderHtml('journal.window.import.visible.text.step')} ${configureStepNumber}</div>
+        <div class="import-step-number">${guideStepLabel(configureStepNumber)}</div>
         <div id="guidedSizePreview" role="status" aria-live="polite"></div>
         ${source.name === 'journal_archive' ? `
           <h4>${window.JournalI18n.renderHtml('journal.window.import.visible.text.preview.then.merge.your.archive')}</h4>
@@ -3424,7 +3435,7 @@ function renderQuickImportFlow() {
     <form id="importForm">
       <ol class="import-steps-list">
         <li><div class="import-step">
-          <div class="import-step-number">${window.JournalI18n.renderHtml('journal.window.import.visible.text.step.variant2')}</div>
+          <div class="import-step-number">${guideStepLabel(1)}</div>
           <div class="import-upload-area" id="dropArea" role="button" tabindex="0" aria-label="${window.JournalI18n.renderHtml('journal.window.import.accessible.name.choose.file.to.upload')}">
             <p>${window.JournalI18n.renderHtml('journal.window.import.visible.text.drop.a.file.here.or.choose')}</p>
             <input id="fileInput" type="file" style="display:none" />
@@ -3432,7 +3443,7 @@ function renderQuickImportFlow() {
           </div>
         </div></li>
         <li><div class="import-step">
-          <div class="import-step-number">${window.JournalI18n.renderHtml('journal.window.import.visible.text.step.variant3')}</div>
+          <div class="import-step-number">${guideStepLabel(2)}</div>
           <textarea id="pasteText" class="import-paste-text" placeholder="${window.JournalI18n.renderHtml('journal.window.import.field.placeholder.paste.text.here')}"></textarea>
           <div class="import-inline-fields">
             <div class="confirm-field">
@@ -4571,7 +4582,7 @@ function showProgressView(importId, eventData = null) {
       <div class="import-step-number">${window.JournalI18n.renderHtml('journal.window.import.visible.text.progress')}</div>
       <h3 class="import-progress-title">${escapeHtml(displayName)}</h3>
       <p class="import-progress-message">${escapeHtml(stageLabel)}</p>
-      ${currentEvent?.elapsed_ms && !apple ? `<div class="progress-detail">${escapeHtml(formatElapsed(currentEvent.elapsed_ms))} ${window.JournalI18n.renderHtml('journal.window.import.visible.text.elapsed')}</div>` : ''}
+      ${currentEvent?.elapsed_ms && !apple ? `<div class="progress-detail">${window.JournalI18n.renderHtml('journal.window.import.progress.time.elapsed', [['elapsed_time', formatElapsed(currentEvent.elapsed_ms)]])}</div>` : ''}
       <div id="progressReconcileError" role="alert" aria-live="polite" style="display:none; color:var(--danger); margin-top:0.5rem; font-size:0.9rem;"></div>
       ${progressHtml}
       <div class="import-thinking-progress" role="status" aria-live="polite">${renderThinkingProgress(currentEvent?.thinking)}</div>
@@ -5103,7 +5114,14 @@ function renderContentSummary(data) {
   const iconSvg = data.source_icon_svg || '';
   const display = data.source_display || '';
   const iconHtml = iconSvg ? `<span class="import-content-summary-icon" aria-hidden="true">${iconSvg}</span>` : '';
-  el.innerHTML = `${iconHtml}<strong>${escapeHtml(display)}</strong>, ${data.total} ${window.JournalI18n.renderHtml('journal.window.import.visible.text.items')}`;
+  const name = document.createElement('strong');
+  name.textContent = display;
+  el.innerHTML = iconHtml;
+  for (const part of window.JournalI18n.renderMarkup('journal.window.import.detail.content.summary.count', quantityArgs(data.total), {
+    fixed: { source_name: name },
+  })) {
+    el.appendChild(typeof part === 'string' ? importPage.createTextNode(part) : part);
+  }
 }
 
 function renderContentMonths(months) {

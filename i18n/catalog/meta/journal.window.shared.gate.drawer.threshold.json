@@ -1,0 +1,21 @@
+{
+  "description": "The minimum for the metric in this setup check.",
+  "context": "Journal window. The minimum for the metric in this setup check.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "threshold",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "896a5d3d73aba835062eba52f6c491fb1056fc5af5ea0223193c95fa2364cbdf",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

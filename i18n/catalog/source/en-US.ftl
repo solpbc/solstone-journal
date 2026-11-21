@@ -3159,6 +3159,11 @@ journal.window.import.detail.content.messages = { $quantity ->
    *[other] { $count } messages
 }
 
+journal.window.import.detail.content.summary.count = { $quantity ->
+    [one] { $source_name }, { $count } items
+   *[other] { $source_name }, { $count } items
+}
+
 journal.window.import.detail.count.entities = { $quantity ->
     [one] { $count } entity
    *[other] { $count } entities
@@ -3296,6 +3301,8 @@ journal.window.import.folder.schedule.active = automatic sync is on: { $cadences
 
 journal.window.import.folder.schedule.conflicts = custom schedules stay unchanged: { $schedule_names }.
 
+journal.window.import.guide.step.number = step { $step_number }
+
 journal.window.import.history.archive.left.out = { $quantity ->
     [one] { $count } members left out
    *[other] { $count } members left out
@@ -3341,6 +3348,19 @@ journal.window.import.history.count.summary = { $import_quantity ->
        *[other] { $imports } imports, { $entries } entries.
     }
 }
+
+journal.window.import.history.load.more.count = { $total_quantity ->
+    [one] { $shown_quantity ->
+        [one] load more ({ $shown_count } of { $total_count } shown)
+       *[other] load more ({ $shown_count } of { $total_count } shown)
+    }
+   *[other] { $shown_quantity ->
+        [one] load more ({ $shown_count } of { $total_count } shown)
+       *[other] load more ({ $shown_count } of { $total_count } shown)
+    }
+}
+
+journal.window.import.history.stalled.import = stalled: no updates in 10 minutes. import id: { $import_id }.
 
 journal.window.import.preview.apple.daily.totals = { $quantity ->
     [one] { $count } daily total
@@ -4271,6 +4291,8 @@ journal.window.more.review.count = { $quantity ->
     }
 
 journal.window.network.address.home.invalid.port = use the address your journal is reachable at, with port { $port }: either one on your own network, like 192.168.1.44:{ $port }, or a public address you've exported.
+
+journal.window.network.client.last.added.at = last added { $timestamp }
 
 journal.window.network.delivery.checkin.never = never
 
@@ -5845,6 +5867,16 @@ journal.window.shared.day.grid.range.anchor = finishes the range from{ $slot1 }{
 
 journal.window.shared.day.grid.range.start = range starts{ $slot1 }{ $start_day }. pick the last day.
 
+journal.window.shared.gate.drawer.audio.recordings.count = { $quantity ->
+    [one] recordings with audio: { $count }
+   *[other] recordings with audio: { $count }
+}
+
+journal.window.shared.gate.drawer.manual.tags.count = { $quantity ->
+    [one] statements you taught: { $count }
+   *[other] statements you taught: { $count }
+}
+
 journal.window.shared.gate.drawer.statement.median.required.seconds = median statement length { $observed }s, needs { $minimum }s
 
 journal.window.shared.gate.drawer.statement.median.seconds = median statement length { $observed }s
@@ -5868,6 +5900,8 @@ journal.window.shared.gate.drawer.statements.observed.count = { $quantity ->
         [one] { $observed } longer statements so far
        *[other] { $observed } longer statements so far
     }
+
+journal.window.shared.gate.drawer.threshold = needs { $threshold }
 
 journal.window.shared.import.item.kind.conversation = conversation
 
@@ -10879,8 +10913,6 @@ journal.window.home.text.backup.status.is.unavailable = backup status is unavail
 
 journal.window.home.text.no.time.measured = no time measured
 
-journal.window.home.text.originals = originals ·{ $slot1 }
-
 journal.window.home.text.originals.the.list.couldn.t.be = originals · the list couldn't be loaded.
 
 journal.window.home.text.queued.work.status.is.unavailable = queued work status is unavailable.
@@ -12229,15 +12261,9 @@ journal.window.shared.error.handler.window.explanation.navigation.aborted.a.read
 
 journal.window.shared.error.handler.window.explanation.something.on.this.page.didn.t = something on this page didn't work.
 
-journal.window.shared.gate.drawer.audio.recordings = recordings with audio:
-
-journal.window.shared.gate.drawer.manual.tags = statements you taught:
-
 journal.window.shared.gate.drawer.median.length = median length
 
 journal.window.shared.gate.drawer.open.label = why not yet?
-
-journal.window.shared.gate.drawer.visible.text.needs = needs
 
 journal.window.shared.gate.drawer.window.explanation.pick.longer.statements.when.you.teach = pick longer statements when you teach your voice.
 
@@ -12525,8 +12551,6 @@ journal.window.speakers.accessible.name.apply.correction = apply correction
 
 journal.window.speakers.accessible.name.assign.speaker = assign speaker
 
-journal.window.speakers.accessible.name.confidence = confidence
-
 journal.window.speakers.accessible.name.correct.attribution = correct attribution
 
 journal.window.speakers.accessible.name.dismiss = dismiss
@@ -12638,6 +12662,16 @@ journal.window.speakers.button.label.look.for.new.voices = look for new voices
 journal.window.speakers.button.label.needs.review = needs review
 
 journal.window.speakers.button.label.show.sentences.and.details = show sentences and details
+
+journal.window.speakers.confidence.accessible = { $confidence ->
+    [high] high confidence
+   *[medium] medium confidence
+}
+
+journal.window.speakers.confidence.label = { $confidence ->
+    [high] high
+   *[medium] medium
+}
 
 journal.window.speakers.copy.action.not.now = not now
 
@@ -15217,6 +15251,11 @@ journal.window.transcripts.body.hours.remaining = { $hours_quantity ->
        *[other] and { $hours } more hours
     }
 
+journal.window.transcripts.body.panel.more.count = { $quantity ->
+    [one] +{ $count } more in body
+   *[other] +{ $count } more in body
+}
+
 journal.window.transcripts.body.sleep.count = { $sessions_quantity ->
         [one] 1 sleep session
        *[other] { $sessions } sleep sessions
@@ -15420,6 +15459,11 @@ journal.window.transcripts.show.left.out = { $conversations_quantity ->
 journal.window.transcripts.show.messages = messages
 
 journal.window.transcripts.show.transcripts = transcripts
+
+journal.window.transcripts.signals.calendar.hidden.count = { $quantity ->
+    [one] { $count } more deduped calendar events hidden in this compact view
+   *[other] { $count } more deduped calendar events hidden in this compact view
+}
 
 journal.window.transcripts.signals.calendar.repeated = { $visits_quantity ->
         [one] { $range } · seen { $visits }x
@@ -18108,8 +18152,6 @@ journal.window.transcripts.kind.pages = pages
 
 journal.window.transcripts.kind.photos = photos
 
-journal.window.transcripts.link.label.more.in.body = more in body
-
 journal.window.transcripts.link.label.open.full.body.day = open full body day
 
 journal.window.transcripts.media.audio.duration = segment audio ·{ $slot1 }{ $duration }
@@ -18670,8 +18712,6 @@ journal.window.transcripts.visible.text.loading.this.day = loading this day…
 
 journal.window.transcripts.visible.text.location.for.this.day.couldn.t = location for this day couldn't be loaded.
 
-journal.window.transcripts.visible.text.more.deduped.calendar.events.hidden.in = more deduped calendar events hidden in this compact view
-
 journal.window.transcripts.visible.text.no.body.context.in.this.window = no body context in this window.
 
 journal.window.transcripts.visible.text.nothing.in.this.range = nothing in this range
@@ -18894,11 +18934,7 @@ journal.window.import.button.label.connect.folder = connect folder
 
 journal.window.import.button.label.forget.folder = forget folder
 
-journal.window.import.button.label.load.more = load more (
-
 journal.window.import.button.label.next = next
-
-journal.window.import.button.label.of = of
 
 journal.window.import.button.label.prev = prev
 
@@ -18907,8 +18943,6 @@ journal.window.import.button.label.preview.import = preview import
 journal.window.import.button.label.remove.schedule = remove schedule
 
 journal.window.import.button.label.save.schedule = save schedule
-
-journal.window.import.button.label.shown = shown)
 
 journal.window.import.button.label.sync.now = sync now
 
@@ -19840,8 +19874,6 @@ journal.window.import.visible.text.drop.a.file.here.or.choose = drop a file here
 
 journal.window.import.visible.text.duration = duration:
 
-journal.window.import.visible.text.elapsed = elapsed
-
 journal.window.import.visible.text.entities.seeded = entities seeded:
 
 journal.window.import.visible.text.entries.written = entries written:
@@ -19855,8 +19887,6 @@ journal.window.import.visible.text.error.loading.content.variant2 = Error loadin
 journal.window.import.visible.text.folder.saved.but.import.setup.could = folder saved, but import setup could not be confirmed. check your imports before choosing it again.
 
 journal.window.import.visible.text.import.id = import id:
-
-journal.window.import.visible.text.items = items
 
 journal.window.import.visible.text.leave.this.empty.to.use.recording = leave this empty to use recording filenames. a manifest and its recordings must be together in the selected folder. the manifest can specify its own times.
 
@@ -19904,19 +19934,11 @@ journal.window.import.visible.text.stalled = stalled
 
 journal.window.import.visible.text.stalled.no.updates.in.minutes = stalled: no updates in 10 minutes.
 
-journal.window.import.visible.text.stalled.no.updates.in.minutes.import = stalled: no updates in 10 minutes. import id:
-
 journal.window.import.visible.text.start.import = start import
 
 journal.window.import.visible.text.starting = starting
 
 journal.window.import.visible.text.status.unavailable = status unavailable
-
-journal.window.import.visible.text.step = step
-
-journal.window.import.visible.text.step.variant2 = step 1
-
-journal.window.import.visible.text.step.variant3 = step 2
 
 journal.window.import.visible.text.still.working = still working…
 

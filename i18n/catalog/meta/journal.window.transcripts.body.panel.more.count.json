@@ -1,0 +1,30 @@
+{
+  "description": "Number of additional Body signals the full day link will show.",
+  "context": "Journal window. Number of additional Body signals the full day link will show.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "15bec51c3cebaedbb5ee3523d722e2e46d8e9d157141a7633e21d061f370dd04",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}
