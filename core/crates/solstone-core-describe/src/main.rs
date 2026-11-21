@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use serde_json::Value;
-use solstone_core_cli_boundary::DESCRIBE_USAGE;
 use solstone_core_describe::selection::CategoryOverride;
 use solstone_core_describe::{WinnowConfig, pipeline};
 use solstone_core_journal::{
@@ -79,7 +78,7 @@ fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), CliError> {
         #[cfg(not(any(target_os = "ios", target_os = "android")))]
         return run_face_backfill(&arguments[1..]);
         #[cfg(any(target_os = "ios", target_os = "android"))]
-        return Err(usage("face backfill is available on desktop journals only"));
+        return Err(usage("journal.cli.describe.usage.backfill.desktop"));
     }
     match parse_arguments(arguments)? {
         Command::Version => {
@@ -93,7 +92,10 @@ fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), CliError> {
             Ok(())
         }
         Command::Help => {
-            print!("{DESCRIBE_USAGE}");
+            println!(
+                "{}",
+                solstone_core_cli_copy::text("journal.cli.describe.usage.help")
+            );
             Ok(())
         }
         Command::CategoryRegistry => {
@@ -178,13 +180,13 @@ fn run_face_backfill(args: &[OsString]) -> Result<(), CliError> {
     use solstone_core_describe::faces;
     use solstone_core_segment::{face_backfill, output_attempt::OutputClaims};
     if args.len() != 3 {
-        return Err(usage("face backfill requires JOURNAL RAW SECONDS"));
+        return Err(usage("journal.cli.describe.usage.backfill.arguments"));
     }
     let seconds = args[2]
         .to_str()
         .and_then(|s| s.parse::<u64>().ok())
         .filter(|n| *n > 0 && *n <= face_backfill::MAX_SECONDS)
-        .ok_or_else(|| usage("face backfill budget is outside the allowed range"))?;
+        .ok_or_else(|| usage("journal.cli.describe.usage.backfill.budget"))?;
     let journal = Path::new(&args[0]);
     let raw = Path::new(&args[1]);
     let screen = raw.with_extension("jsonl");
@@ -270,17 +272,17 @@ fn describe_deferred_message(reason: Option<&str>) -> String {
 fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Command, CliError> {
     let mut values = arguments.into_iter();
     let Some(first) = values.next() else {
-        return Err(usage("the following arguments are required: FILE"));
+        return Err(usage("journal.cli.describe.usage.file.required"));
     };
     if first == "--version" {
         if values.next().is_some() {
-            return Err(usage("--version does not accept other arguments"));
+            return Err(usage("journal.cli.describe.usage.version.extra"));
         }
         return Ok(Command::Version);
     }
     if first == "--category-registry" {
         if values.next().is_some() {
-            return Err(usage("--category-registry does not accept other arguments"));
+            return Err(usage("journal.cli.describe.usage.registry.extra"));
         }
         return Ok(Command::CategoryRegistry);
     }
@@ -295,17 +297,17 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Comm
     while let Some(argument) = pending.take().or_else(|| values.next()) {
         if argument == "-h" || argument == "--help" {
             if values.next().is_some() {
-                return Err(usage("--help does not accept other arguments"));
+                return Err(usage("journal.cli.describe.usage.help.extra"));
             }
             return Ok(Command::Help);
         } else if argument == "--frames-only" {
             if frames_only {
-                return Err(usage("--frames-only was provided more than once"));
+                return Err(usage("journal.cli.describe.usage.frames.repeated"));
             }
             frames_only = true;
         } else if argument == "--describe" {
             if describe {
-                return Err(usage("--describe was provided more than once"));
+                return Err(usage("journal.cli.describe.usage.describe.repeated"));
             }
             describe = true;
         } else if matches!(
@@ -315,50 +317,48 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Comm
             // Owner-facing dispatcher flags are intentionally accepted as no-ops.
         } else if argument == "--redo" {
             if redo {
-                return Err(usage("--redo was provided more than once"));
+                return Err(usage("journal.cli.describe.usage.redo.repeated"));
             }
             redo = true;
         } else if argument == "-j" || argument == "--jobs" {
             let Some(value) = values.next() else {
-                return Err(usage("--jobs requires a positive integer"));
+                return Err(usage("journal.cli.describe.usage.jobs.positive"));
             };
             let value = value
                 .to_string_lossy()
                 .parse::<usize>()
                 .ok()
                 .filter(|value| *value > 0)
-                .ok_or_else(|| usage("--jobs requires a positive integer"))?;
+                .ok_or_else(|| usage("journal.cli.describe.usage.jobs.positive"))?;
             if jobs.replace(value).is_some() {
-                return Err(usage("--jobs was provided more than once"));
+                return Err(usage("journal.cli.describe.usage.jobs.repeated"));
             }
         } else if argument == "--journal" {
             let Some(path) = values.next() else {
-                return Err(usage("--journal requires a path"));
+                return Err(usage("journal.cli.describe.usage.journal.path"));
             };
             if journal.replace(PathBuf::from(path)).is_some() {
-                return Err(usage("--journal was provided more than once"));
+                return Err(usage("journal.cli.describe.usage.journal.repeated"));
             }
         } else if argument.to_string_lossy().starts_with('-') {
-            return Err(usage(&format!(
-                "unknown argument: {}",
-                argument.to_string_lossy()
+            return Err(CliError::Usage(solstone_core_cli_copy::strings(
+                "journal.cli.describe.usage.argument.unknown",
+                [("argument", &argument.to_string_lossy())],
             )));
         } else if video_path.replace(PathBuf::from(argument)).is_some() {
-            return Err(usage("only one video path may be provided"));
+            return Err(usage("journal.cli.describe.usage.file.extra"));
         }
     }
 
     if frames_only == describe {
-        return Err(usage(
-            "exactly one of --frames-only or --describe is required",
-        ));
+        return Err(usage("journal.cli.describe.usage.mode.required"));
     }
     let Some(video_path) = video_path else {
-        return Err(usage("the following arguments are required: FILE"));
+        return Err(usage("journal.cli.describe.usage.file.required"));
     };
     if frames_only {
         if redo {
-            return Err(usage("--redo requires --describe"));
+            return Err(usage("journal.cli.describe.usage.redo.mode"));
         }
         Ok(Command::FramesOnly(FramesOnlyArguments {
             video_path,
@@ -420,10 +420,8 @@ fn read_config(journal_path: &Path) -> Result<DescribeConfig, CliError> {
     })
 }
 
-fn usage(message: &str) -> CliError {
-    CliError::Usage(format!(
-        "{DESCRIBE_USAGE}solstone journal describe: error: {message}"
-    ))
+fn usage(id: &str) -> CliError {
+    CliError::Usage(solstone_core_cli_copy::text(id))
 }
 
 #[cfg(all(test, not(feature = "full-tests")))]

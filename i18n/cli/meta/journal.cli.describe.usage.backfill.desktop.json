@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for backfill desktop.",
+  "context": "Journal command-line text for backfill desktop.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a2b4defa75df69a3bcab51dc97ecf88d11ef4b3acc1146f1dcb5aadb93cf1814",
+  "max_length": 137,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE"
+    },
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal describe"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

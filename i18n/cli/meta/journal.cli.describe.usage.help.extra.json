@@ -1,0 +1,38 @@
+{
+  "description": "Journal command-line text for help extra.",
+  "context": "Journal command-line text for help extra.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c06b516cbbee30e0d734e0af07e1f3c57741fb78587f77cdc7f6f5f524819e94",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE"
+    },
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal describe"
+    },
+    {
+      "name": "help_flag",
+      "kind": "flag",
+      "value": "--help"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

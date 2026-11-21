@@ -1,0 +1,38 @@
+{
+  "description": "Journal command-line text for journal path.",
+  "context": "Journal command-line text for journal path.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "14dfbf3ef1825ae0fa56a1978535e51f81fdebcd7d4f04325fc9859ab0ed2cd8",
+  "max_length": 119,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE"
+    },
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal describe"
+    },
+    {
+      "name": "journal_flag",
+      "kind": "flag",
+      "value": "--journal"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

@@ -148,6 +148,616 @@
       "selector": null
     },
     {
+      "id": "journal.cli.describe.usage.argument.unknown",
+      "resource": "m6a6f75726e616c2e636c692e64657363726962652e75736167652e617267756d656e742e756e6b6e6f776e",
+      "namespace": "journal.cli.describe.usage.argument",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "argument",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "syntax",
+          "kind": "command",
+          "value": "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE"
+        },
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "solstone journal describe"
+        },
+        {
+          "name": "line_break",
+          "kind": "whitespace",
+          "value": "\n"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.describe.usage.backfill.arguments",
+      "resource": "m6a6f75726e616c2e636c692e64657363726962652e75736167652e6261636b66696c6c2e617267756d656e7473",
+      "namespace": "journal.cli.describe.usage.backfill",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "syntax",
+          "kind": "command",
+          "value": "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE"
+        },
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "solstone journal describe"
+        },
+        {
+          "name": "arguments",
+          "kind": "accepted-input",
+          "value": "JOURNAL RAW SECONDS"
+        },
+        {
+          "name": "line_break",
+          "kind": "whitespace",
+          "value": "\n"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.describe.usage.backfill.budget",
+      "resource": "m6a6f75726e616c2e636c692e64657363726962652e75736167652e6261636b66696c6c2e627564676574",
+      "namespace": "journal.cli.describe.usage.backfill",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "syntax",
+          "kind": "command",
+          "value": "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE"
+        },
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "solstone journal describe"
+        },
+        {
+          "name": "line_break",
+          "kind": "whitespace",
+          "value": "\n"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.describe.usage.backfill.desktop",
+      "resource": "m6a6f75726e616c2e636c692e64657363726962652e75736167652e6261636b66696c6c2e6465736b746f70",
+      "namespace": "journal.cli.describe.usage.backfill",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "syntax",
+          "kind": "command",
+          "value": "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE"
+        },
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "solstone journal describe"
+        },
+        {
+          "name": "line_break",
+          "kind": "whitespace",
+          "value": "\n"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.describe.usage.describe.repeated",
+      "resource": "m6a6f75726e616c2e636c692e64657363726962652e75736167652e64657363726962652e7265706561746564",
+      "namespace": "journal.cli.describe.usage.describe",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "syntax",
+          "kind": "command",
+          "value": "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE"
+        },
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "solstone journal describe"
+        },
+        {
+          "name": "describe_flag",
+          "kind": "flag",
+          "value": "--describe"
+        },
+        {
+          "name": "line_break",
+          "kind": "whitespace",
+          "value": "\n"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.describe.usage.file.extra",
+      "resource": "m6a6f75726e616c2e636c692e64657363726962652e75736167652e66696c652e6578747261",
+      "namespace": "journal.cli.describe.usage.file",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "syntax",
+          "kind": "command",
+          "value": "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE"
+        },
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "solstone journal describe"
+        },
+        {
+          "name": "line_break",
+          "kind": "whitespace",
+          "value": "\n"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.describe.usage.file.required",
+      "resource": "m6a6f75726e616c2e636c692e64657363726962652e75736167652e66696c652e7265717569726564",
+      "namespace": "journal.cli.describe.usage.file",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "syntax",
+          "kind": "command",
+          "value": "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE"
+        },
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "solstone journal describe"
+        },
+        {
+          "name": "file",
+          "kind": "accepted-input",
+          "value": "FILE"
+        },
+        {
+          "name": "line_break",
+          "kind": "whitespace",
+          "value": "\n"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.describe.usage.frames.repeated",
+      "resource": "m6a6f75726e616c2e636c692e64657363726962652e75736167652e6672616d65732e7265706561746564",
+      "namespace": "journal.cli.describe.usage.frames",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "syntax",
+          "kind": "command",
+          "value": "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE"
+        },
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "solstone journal describe"
+        },
+        {
+          "name": "frames_only_flag",
+          "kind": "flag",
+          "value": "--frames-only"
+        },
+        {
+          "name": "line_break",
+          "kind": "whitespace",
+          "value": "\n"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.describe.usage.help",
+      "resource": "m6a6f75726e616c2e636c692e64657363726962652e75736167652e68656c70",
+      "namespace": "journal.cli.describe.usage",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "syntax",
+          "kind": "command",
+          "value": "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.describe.usage.help.extra",
+      "resource": "m6a6f75726e616c2e636c692e64657363726962652e75736167652e68656c702e6578747261",
+      "namespace": "journal.cli.describe.usage.help",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "syntax",
+          "kind": "command",
+          "value": "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE"
+        },
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "solstone journal describe"
+        },
+        {
+          "name": "help_flag",
+          "kind": "flag",
+          "value": "--help"
+        },
+        {
+          "name": "line_break",
+          "kind": "whitespace",
+          "value": "\n"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.describe.usage.jobs.positive",
+      "resource": "m6a6f75726e616c2e636c692e64657363726962652e75736167652e6a6f62732e706f736974697665",
+      "namespace": "journal.cli.describe.usage.jobs",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "syntax",
+          "kind": "command",
+          "value": "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE"
+        },
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "solstone journal describe"
+        },
+        {
+          "name": "jobs_flag",
+          "kind": "flag",
+          "value": "--jobs"
+        },
+        {
+          "name": "line_break",
+          "kind": "whitespace",
+          "value": "\n"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.describe.usage.jobs.repeated",
+      "resource": "m6a6f75726e616c2e636c692e64657363726962652e75736167652e6a6f62732e7265706561746564",
+      "namespace": "journal.cli.describe.usage.jobs",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "syntax",
+          "kind": "command",
+          "value": "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE"
+        },
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "solstone journal describe"
+        },
+        {
+          "name": "jobs_flag",
+          "kind": "flag",
+          "value": "--jobs"
+        },
+        {
+          "name": "line_break",
+          "kind": "whitespace",
+          "value": "\n"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.describe.usage.journal.path",
+      "resource": "m6a6f75726e616c2e636c692e64657363726962652e75736167652e6a6f75726e616c2e70617468",
+      "namespace": "journal.cli.describe.usage.journal",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "syntax",
+          "kind": "command",
+          "value": "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE"
+        },
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "solstone journal describe"
+        },
+        {
+          "name": "journal_flag",
+          "kind": "flag",
+          "value": "--journal"
+        },
+        {
+          "name": "line_break",
+          "kind": "whitespace",
+          "value": "\n"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.describe.usage.journal.repeated",
+      "resource": "m6a6f75726e616c2e636c692e64657363726962652e75736167652e6a6f75726e616c2e7265706561746564",
+      "namespace": "journal.cli.describe.usage.journal",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "syntax",
+          "kind": "command",
+          "value": "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE"
+        },
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "solstone journal describe"
+        },
+        {
+          "name": "journal_flag",
+          "kind": "flag",
+          "value": "--journal"
+        },
+        {
+          "name": "line_break",
+          "kind": "whitespace",
+          "value": "\n"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.describe.usage.mode.required",
+      "resource": "m6a6f75726e616c2e636c692e64657363726962652e75736167652e6d6f64652e7265717569726564",
+      "namespace": "journal.cli.describe.usage.mode",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "syntax",
+          "kind": "command",
+          "value": "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE"
+        },
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "solstone journal describe"
+        },
+        {
+          "name": "frames_only_flag",
+          "kind": "flag",
+          "value": "--frames-only"
+        },
+        {
+          "name": "describe_flag",
+          "kind": "flag",
+          "value": "--describe"
+        },
+        {
+          "name": "line_break",
+          "kind": "whitespace",
+          "value": "\n"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.describe.usage.redo.mode",
+      "resource": "m6a6f75726e616c2e636c692e64657363726962652e75736167652e7265646f2e6d6f6465",
+      "namespace": "journal.cli.describe.usage.redo",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "syntax",
+          "kind": "command",
+          "value": "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE"
+        },
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "solstone journal describe"
+        },
+        {
+          "name": "redo_flag",
+          "kind": "flag",
+          "value": "--redo"
+        },
+        {
+          "name": "describe_flag",
+          "kind": "flag",
+          "value": "--describe"
+        },
+        {
+          "name": "line_break",
+          "kind": "whitespace",
+          "value": "\n"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.describe.usage.redo.repeated",
+      "resource": "m6a6f75726e616c2e636c692e64657363726962652e75736167652e7265646f2e7265706561746564",
+      "namespace": "journal.cli.describe.usage.redo",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "syntax",
+          "kind": "command",
+          "value": "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE"
+        },
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "solstone journal describe"
+        },
+        {
+          "name": "redo_flag",
+          "kind": "flag",
+          "value": "--redo"
+        },
+        {
+          "name": "line_break",
+          "kind": "whitespace",
+          "value": "\n"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.describe.usage.registry.extra",
+      "resource": "m6a6f75726e616c2e636c692e64657363726962652e75736167652e72656769737472792e6578747261",
+      "namespace": "journal.cli.describe.usage.registry",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "syntax",
+          "kind": "command",
+          "value": "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE"
+        },
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "solstone journal describe"
+        },
+        {
+          "name": "category_registry_flag",
+          "kind": "flag",
+          "value": "--category-registry"
+        },
+        {
+          "name": "line_break",
+          "kind": "whitespace",
+          "value": "\n"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.describe.usage.version.extra",
+      "resource": "m6a6f75726e616c2e636c692e64657363726962652e75736167652e76657273696f6e2e6578747261",
+      "namespace": "journal.cli.describe.usage.version",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "syntax",
+          "kind": "command",
+          "value": "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE"
+        },
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "solstone journal describe"
+        },
+        {
+          "name": "version_flag",
+          "kind": "flag",
+          "value": "--version"
+        },
+        {
+          "name": "line_break",
+          "kind": "whitespace",
+          "value": "\n"
+        }
+      ],
+      "selector": null
+    },
+    {
       "id": "journal.cli.doctor.backlog.band",
       "resource": "m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e62616e64",
       "namespace": "journal.cli.doctor.backlog",

@@ -1,0 +1,38 @@
+{
+  "description": "Journal command-line text for journal repeated.",
+  "context": "Journal command-line text for journal repeated.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cbcc80c3092ef95d601055e1fdb3a25c1c981402f193830558b50abec4ba4f6e",
+  "max_length": 131,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE"
+    },
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal describe"
+    },
+    {
+      "name": "journal_flag",
+      "kind": "flag",
+      "value": "--journal"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

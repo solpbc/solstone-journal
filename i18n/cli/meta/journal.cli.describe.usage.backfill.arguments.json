@@ -1,0 +1,38 @@
+{
+  "description": "Journal command-line text for backfill arguments.",
+  "context": "Journal command-line text for backfill arguments.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "921c3a6c5cc1412663d113d0da275c1ef69ba47dcb7213b9e3c825771df85e9e",
+  "max_length": 123,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE"
+    },
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal describe"
+    },
+    {
+      "name": "arguments",
+      "kind": "accepted-input",
+      "value": "JOURNAL RAW SECONDS"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

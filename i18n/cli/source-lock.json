@@ -65,6 +65,139 @@
       "locales": []
     },
     {
+      "id": "journal.cli.describe.usage.argument.unknown",
+      "source": "a27c61846ac927e3e01ea72ae4a2416f97863bc731312f174b4b12f9d0046410",
+      "contract": "0d13e010a8b8e98eab549f0a72e5d902514e6907939d3c5e7dc387a11df58a76",
+      "protected": "b90e7a2e1504d7340e1c4cb545b41bdf8df6e1063c63f62a6e6fb785b13b1f82",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.describe.usage.backfill.arguments",
+      "source": "921c3a6c5cc1412663d113d0da275c1ef69ba47dcb7213b9e3c825771df85e9e",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "2c448738d556d20422ad41c27d3b99d5f58fb24dfdbc9498851ca2c48007641b",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.describe.usage.backfill.budget",
+      "source": "cdb9caa080fae5bc2b13dd524db33c5546981742424b6bb2a4b43f830cdc2237",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "b90e7a2e1504d7340e1c4cb545b41bdf8df6e1063c63f62a6e6fb785b13b1f82",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.describe.usage.backfill.desktop",
+      "source": "a2b4defa75df69a3bcab51dc97ecf88d11ef4b3acc1146f1dcb5aadb93cf1814",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "b90e7a2e1504d7340e1c4cb545b41bdf8df6e1063c63f62a6e6fb785b13b1f82",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.describe.usage.describe.repeated",
+      "source": "fbab481aebee2899d19ad85fa21235c5a6d649de975cac8e353f5e8a37a2167f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "2d30cac0920c19900a96b6c34f57bd29d484bc0692c58ce939dbc89e342bef2a",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.describe.usage.file.extra",
+      "source": "c3992bc72a948f4585e35009eca58f7280e6837770a738311c8aaeb5c0081204",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "b90e7a2e1504d7340e1c4cb545b41bdf8df6e1063c63f62a6e6fb785b13b1f82",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.describe.usage.file.required",
+      "source": "f9d1bb47f4f48fbdf2af681d0d8d2d82119164efbceb84c864a8c9eaf48dea99",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "67d39c44e9de869e8a5762bb2803a962929362e0d4cd82d20847fde6aaadcfbd",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.describe.usage.frames.repeated",
+      "source": "cf103944500f94d14d5018ba29342887cc71175c909988fcdddcc67b5e5f1e99",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "b513e896454e9f2694e73133cc84e5e292fb22a262e35c36ebbeaa0f35b4c9ec",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.describe.usage.help",
+      "source": "6ded81f9571f0cedd45f361f8e3355b68941d9484132c7499112f9e3254b2bb8",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "5a090efc809b020d51932247828450ddd8598037e3dc37d995c64765a9c31b83",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.describe.usage.help.extra",
+      "source": "c06b516cbbee30e0d734e0af07e1f3c57741fb78587f77cdc7f6f5f524819e94",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "d088432a099b0b3d9c913ea4a17c013722f56935e0be6f09d3af0bf3746abcbd",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.describe.usage.jobs.positive",
+      "source": "f4bda64e7bf96315e15084bf5a33b49acb4f7ddd408ee695f63661fb84bbb0bf",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "78f6601f618c8d8d3445777415fb913ebabfc90ce1825a2963b52bc5784e7ee5",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.describe.usage.jobs.repeated",
+      "source": "0a255075a770fa8addf6d8a9b06a668c1dae7bd7d08c6e9d537db393e81735d4",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "78f6601f618c8d8d3445777415fb913ebabfc90ce1825a2963b52bc5784e7ee5",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.describe.usage.journal.path",
+      "source": "14dfbf3ef1825ae0fa56a1978535e51f81fdebcd7d4f04325fc9859ab0ed2cd8",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "ec54c06385272c53b59050dae03c4f5febbc1255441052aaeec2da52790c5f6b",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.describe.usage.journal.repeated",
+      "source": "cbcc80c3092ef95d601055e1fdb3a25c1c981402f193830558b50abec4ba4f6e",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "ec54c06385272c53b59050dae03c4f5febbc1255441052aaeec2da52790c5f6b",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.describe.usage.mode.required",
+      "source": "3a9ae0195a0305c538edabafc4815026ca9c3646787f14752ef68366673a65f8",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "3c4611a1aa8bee57b90482ce318b3313eb1e9c50771d356ca1e95dfacac726d6",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.describe.usage.redo.mode",
+      "source": "f5dc416f2530d3ad25536c381e1cb2a29c9ec5cf1c58a6eee1179b6432eb0ebb",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "4e0c9333bffe718828ffb4df3e94469f2ee0e80a953342900d7daae34917f534",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.describe.usage.redo.repeated",
+      "source": "02dbb2768507fe4aa1b9b2902db48c26f59d29526c7fa2fe17e822511b8aaf31",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "a52f7146636370748a3281abf268dca823109ab58f2ef5488a631d0cf7a9ec2a",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.describe.usage.registry.extra",
+      "source": "6fff1e3ce5cffd38d9b32b4d1f1400da0689e70adbc0da2c5d65c0e3dc1ccb8d",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "9e503d4da09e6afdc4c9e1501dcabe527c8290858603deb18c5da103b8aa31dc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.describe.usage.version.extra",
+      "source": "61cdc5ce7b0dc3ce455b64d0bbaa7aae1604611c59cc29be28ce210e1c45f0ae",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "1c0c308506d9f501a7384b09766fd92c8f336dea2fc73dc71c2f2bea1746b9ab",
+      "locales": []
+    },
+    {
       "id": "journal.cli.doctor.backlog.band",
       "source": "1c264ef64d988ef0cd437a0e339d2ad23b2b958d90266fb16bf66a7022d534ec",
       "contract": "a9dcaceaddfe7bf5c5b12326425f9781236561dd18c828361f4a09dec75e3239",

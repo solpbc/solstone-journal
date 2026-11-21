@@ -1,0 +1,43 @@
+{
+  "description": "Journal command-line text for mode required.",
+  "context": "Journal command-line text for mode required.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3a9ae0195a0305c538edabafc4815026ca9c3646787f14752ef68366673a65f8",
+  "max_length": 156,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE"
+    },
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal describe"
+    },
+    {
+      "name": "frames_only_flag",
+      "kind": "flag",
+      "value": "--frames-only"
+    },
+    {
+      "name": "describe_flag",
+      "kind": "flag",
+      "value": "--describe"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

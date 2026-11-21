@@ -1,0 +1,38 @@
+{
+  "description": "Journal command-line text for frames repeated.",
+  "context": "Journal command-line text for frames repeated.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cf103944500f94d14d5018ba29342887cc71175c909988fcdddcc67b5e5f1e99",
+  "max_length": 135,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE"
+    },
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal describe"
+    },
+    {
+      "name": "frames_only_flag",
+      "kind": "flag",
+      "value": "--frames-only"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

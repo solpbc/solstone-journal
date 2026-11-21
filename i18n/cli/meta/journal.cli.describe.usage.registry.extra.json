@@ -1,0 +1,38 @@
+{
+  "description": "Journal command-line text for registry extra.",
+  "context": "Journal command-line text for registry extra.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6fff1e3ce5cffd38d9b32b4d1f1400da0689e70adbc0da2c5d65c0e3dc1ccb8d",
+  "max_length": 145,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE"
+    },
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal describe"
+    },
+    {
+      "name": "category_registry_flag",
+      "kind": "flag",
+      "value": "--category-registry"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "description": "Journal command-line text for redo mode.",
+  "context": "Journal command-line text for redo mode.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f5dc416f2530d3ad25536c381e1cb2a29c9ec5cf1c58a6eee1179b6432eb0ebb",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE"
+    },
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal describe"
+    },
+    {
+      "name": "redo_flag",
+      "kind": "flag",
+      "value": "--redo"
+    },
+    {
+      "name": "describe_flag",
+      "kind": "flag",
+      "value": "--describe"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

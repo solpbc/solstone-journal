@@ -16,6 +16,44 @@ m6a6f75726e616c2e636c692e636c69656e742e6572726f722e756e7265616461626c65 = The jo
 
 m6a6f75726e616c2e636c692e636c69656e742e706f72742e696e76616c6964 = { "SOLSTONE_CONVEY_PORT" } must be an integer from 1 to 65535.
 
+m6a6f75726e616c2e636c692e64657363726962652e75736167652e617267756d656e742e756e6b6e6f776e = usage: { "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE" }{ "\u000a" }{ "solstone journal describe" }: error: unknown argument: { $argument }
+
+m6a6f75726e616c2e636c692e64657363726962652e75736167652e6261636b66696c6c2e617267756d656e7473 = usage: { "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE" }{ "\u000a" }{ "solstone journal describe" }: error: face backfill requires { "JOURNAL RAW SECONDS" }
+
+m6a6f75726e616c2e636c692e64657363726962652e75736167652e6261636b66696c6c2e627564676574 = usage: { "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE" }{ "\u000a" }{ "solstone journal describe" }: error: face backfill budget is outside the allowed range
+
+m6a6f75726e616c2e636c692e64657363726962652e75736167652e6261636b66696c6c2e6465736b746f70 = usage: { "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE" }{ "\u000a" }{ "solstone journal describe" }: error: face backfill is available on desktop journals only
+
+m6a6f75726e616c2e636c692e64657363726962652e75736167652e64657363726962652e7265706561746564 = usage: { "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE" }{ "\u000a" }{ "solstone journal describe" }: error: { "--describe" } was provided more than once
+
+m6a6f75726e616c2e636c692e64657363726962652e75736167652e66696c652e6578747261 = usage: { "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE" }{ "\u000a" }{ "solstone journal describe" }: error: only one video path may be provided
+
+m6a6f75726e616c2e636c692e64657363726962652e75736167652e66696c652e7265717569726564 = usage: { "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE" }{ "\u000a" }{ "solstone journal describe" }: error: the following arguments are required: { "FILE" }
+
+m6a6f75726e616c2e636c692e64657363726962652e75736167652e6672616d65732e7265706561746564 = usage: { "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE" }{ "\u000a" }{ "solstone journal describe" }: error: { "--frames-only" } was provided more than once
+
+m6a6f75726e616c2e636c692e64657363726962652e75736167652e68656c70 = usage: { "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE" }
+
+m6a6f75726e616c2e636c692e64657363726962652e75736167652e68656c702e6578747261 = usage: { "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE" }{ "\u000a" }{ "solstone journal describe" }: error: { "--help" } does not accept other arguments
+
+m6a6f75726e616c2e636c692e64657363726962652e75736167652e6a6f62732e706f736974697665 = usage: { "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE" }{ "\u000a" }{ "solstone journal describe" }: error: { "--jobs" } requires a positive integer
+
+m6a6f75726e616c2e636c692e64657363726962652e75736167652e6a6f62732e7265706561746564 = usage: { "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE" }{ "\u000a" }{ "solstone journal describe" }: error: { "--jobs" } was provided more than once
+
+m6a6f75726e616c2e636c692e64657363726962652e75736167652e6a6f75726e616c2e70617468 = usage: { "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE" }{ "\u000a" }{ "solstone journal describe" }: error: { "--journal" } requires a path
+
+m6a6f75726e616c2e636c692e64657363726962652e75736167652e6a6f75726e616c2e7265706561746564 = usage: { "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE" }{ "\u000a" }{ "solstone journal describe" }: error: { "--journal" } was provided more than once
+
+m6a6f75726e616c2e636c692e64657363726962652e75736167652e6d6f64652e7265717569726564 = usage: { "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE" }{ "\u000a" }{ "solstone journal describe" }: error: exactly one of { "--frames-only" } or { "--describe" } is required
+
+m6a6f75726e616c2e636c692e64657363726962652e75736167652e7265646f2e6d6f6465 = usage: { "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE" }{ "\u000a" }{ "solstone journal describe" }: error: { "--redo" } requires { "--describe" }
+
+m6a6f75726e616c2e636c692e64657363726962652e75736167652e7265646f2e7265706561746564 = usage: { "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE" }{ "\u000a" }{ "solstone journal describe" }: error: { "--redo" } was provided more than once
+
+m6a6f75726e616c2e636c692e64657363726962652e75736167652e72656769737472792e6578747261 = usage: { "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE" }{ "\u000a" }{ "solstone journal describe" }: error: { "--category-registry" } does not accept other arguments
+
+m6a6f75726e616c2e636c692e64657363726962652e75736167652e76657273696f6e2e6578747261 = usage: { "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE" }{ "\u000a" }{ "solstone journal describe" }: error: { "--version" } does not accept other arguments
+
 m6a6f75726e616c2e636c692e646f63746f722e6261636b6c6f672e62616e64 = { $i18nCategory ->
     [one] band { $band }: { $recordings } recording ready / { $recordings_left } left, { $outputs } daily { $i18nCategory-output_count ->
         [one] output

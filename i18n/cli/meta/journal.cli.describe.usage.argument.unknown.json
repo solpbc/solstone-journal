@@ -1,0 +1,38 @@
+{
+  "description": "Journal command-line text for argument unknown.",
+  "context": "Journal command-line text for argument unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "argument",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a27c61846ac927e3e01ea72ae4a2416f97863bc731312f174b4b12f9d0046410",
+  "max_length": 117,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE"
+    },
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal describe"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

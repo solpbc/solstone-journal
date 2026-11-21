@@ -4929,7 +4929,7 @@ dependencies = [
  "signal-hook",
  "solstone-core-assets",
  "solstone-core-callosum",
- "solstone-core-cli-boundary",
+ "solstone-core-cli-copy",
  "solstone-core-depict",
  "solstone-core-describe-categories",
  "solstone-core-distribution",

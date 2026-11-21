@@ -1,0 +1,38 @@
+{
+  "description": "Journal command-line text for version extra.",
+  "context": "Journal command-line text for version extra.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "61cdc5ce7b0dc3ce455b64d0bbaa7aae1604611c59cc29be28ce210e1c45f0ae",
+  "max_length": 135,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE"
+    },
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal describe"
+    },
+    {
+      "name": "version_flag",
+      "kind": "flag",
+      "value": "--version"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

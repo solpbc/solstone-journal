@@ -5656,7 +5656,7 @@ dependencies = [
  "sha2 0.10.9",
  "solstone-core-assets",
  "solstone-core-callosum",
- "solstone-core-cli-boundary",
+ "solstone-core-cli-copy",
  "solstone-core-describe-categories",
  "solstone-core-format",
  "solstone-core-generate",
