@@ -53,6 +53,15 @@ pub(super) fn bound_read<T>(
     medium: ConversationMedium,
     read: impl FnOnce(&mut File, FileReadVersion) -> Result<T, Error>,
 ) -> Result<T, Error> {
+    read_if_medium(path, relative, medium, read)?.ok_or(Error::Changed)
+}
+
+pub(super) fn read_if_medium<T>(
+    path: &Path,
+    relative: &str,
+    medium: ConversationMedium,
+    read: impl FnOnce(&mut File, FileReadVersion) -> Result<T, Error>,
+) -> Result<Option<T>, Error> {
     let parent = path.parent().ok_or(Error::Io)?;
     let root_path = parent
         .ancestors()
@@ -68,12 +77,15 @@ pub(super) fn bound_read<T>(
     let name = path.file_name().and_then(|s| s.to_str()).ok_or(Error::Io)?;
     directory
         .read_versioned(name.as_ref(), |file, version| {
-            let check = |file: &mut File| -> Result<(), Error> {
+            let check = |file: &mut File| -> Result<bool, Error> {
                 file.seek(SeekFrom::Start(0)).map_err(|_| Error::Io)?;
                 let header = solstone_core_processing_record::read_jsonl_header_from(file);
+                if header.is_none() && medium == ConversationMedium::Spoken {
+                    return Err(Error::Io);
+                }
                 // A native chat stream may contain an explicitly transcribed
                 // recording. A typed speech header on this handle takes priority.
-                use solstone_core_processing_record::{header_is_early_transcribe, header_names_transcribe, jsonl_has_row_with_key_from};
+                use solstone_core_processing_record::{header_is_early_transcribe, header_names_transcribe, try_jsonl_has_row_with_key_from};
                 let mut spoken = false;
                 if let Some(map) = header.as_ref().and_then(serde_json::Value::as_object) {
                     spoken = header_names_transcribe(map);
@@ -83,7 +95,7 @@ pub(super) fn bound_read<T>(
                             match directory.read_versioned(sibling.as_os_str(), |_,_| ()) {
                                 Ok(()) => {
                                     file.seek(SeekFrom::Start(0)).map_err(|_| Error::Io)?;
-                                    spoken = jsonl_has_row_with_key_from(&mut *file, solstone_core_processing_record::vocab::AUDIO_TRANSCRIPT_ROW_KEY);
+                                    spoken = try_jsonl_has_row_with_key_from(&mut *file, solstone_core_processing_record::vocab::AUDIO_TRANSCRIPT_ROW_KEY).map_err(|_| Error::Io)?;
                                     break;
                                 }
                                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
@@ -93,16 +105,22 @@ pub(super) fn bound_read<T>(
                     }
                 }
                 let current = file_medium_with_header(path, relative, || spoken, || header);
-                if current == Some(medium) {
-                    Ok(())
-                } else {
-                    Err(Error::Changed)
+                // Only positive written evidence can settle a voice candidate
+                // as non-acoustic. Missing or unreadable historical evidence
+                // goes through catch-up's bounded retry path.
+                if medium == ConversationMedium::Spoken && matches!(current, None | Some(ConversationMedium::Unresolved)) {
+                    return Err(Error::Changed);
                 }
+                Ok(current == Some(medium))
             };
-            check(file)?;
+            if !check(file)? {
+                return Ok(None);
+            }
             let result = read(file, version)?;
-            check(file)?;
-            Ok(result)
+            if !check(file)? {
+                return Err(Error::Changed);
+            }
+            Ok(Some(result))
         })
         .map_err(|_| Error::Changed)?
 }

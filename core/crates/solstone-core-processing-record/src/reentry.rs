@@ -130,7 +130,12 @@ pub fn jsonl_has_row_with_key(path: &Path, row_key: &str) -> bool {
 }
 
 pub fn jsonl_has_row_with_key_from(file: impl Read, row_key: &str) -> bool {
-    read_leading_rows(BufReader::new(file), Some(row_key)).is_ok_and(|rows| {
+    try_jsonl_has_row_with_key_from(file, row_key).unwrap_or(false)
+}
+
+/// A source-admission reader can retry an interrupted read of the recording.
+pub fn try_jsonl_has_row_with_key_from(file: impl Read, row_key: &str) -> std::io::Result<bool> {
+    read_leading_rows(BufReader::new(file), Some(row_key)).map(|rows| {
         rows.iter()
             .any(|row| matches!(row, LeadingRow::Object { has_key: true, .. }))
     })

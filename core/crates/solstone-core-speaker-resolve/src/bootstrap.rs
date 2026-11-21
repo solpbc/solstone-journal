@@ -693,7 +693,10 @@ pub(crate) fn scan_segments(journal_root: &Path) -> Result<Vec<ScannedSegment>, 
 }
 
 fn parse_conversation_speakers(segment_dir: &Path) -> Vec<(i64, String)> {
-    let Ok(contents) = fs::read_to_string(segment_dir.join("conversation_transcript.jsonl")) else {
+    let Ok(Some(contents)) = solstone_core_transcripts::read_spoken_conversation(
+        &segment_dir.join("conversation_transcript.jsonl"),
+        |file| std::io::read_to_string(file),
+    ) else {
         return Vec::new();
     };
     let mut entries = contents

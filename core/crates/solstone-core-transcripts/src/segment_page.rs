@@ -38,6 +38,25 @@ pub struct AgentSpeakers {
     pub owner: String,
 }
 
+/// Read attribution from an imported conversation only while the retained
+/// source is positively identified as speech. A neighboring audio file alone
+/// does not make the writer of a message a speaker.
+pub fn read_spoken_conversation<T>(
+    path: &Path,
+    read: impl FnOnce(&mut File) -> std::io::Result<T>,
+) -> Result<Option<T>, SegmentTranscriptReadError> {
+    let parent = path.parent().ok_or(SegmentTranscriptReadError::Io)?;
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or(SegmentTranscriptReadError::Io)?;
+    let relative = format!("{}/{name}", segment_origin(parent));
+    long_message::read_if_medium(path, &relative, ConversationMedium::Spoken, |file, _| {
+        file.rewind().map_err(|_| SegmentTranscriptReadError::Io)?;
+        read(file).map_err(|_| SegmentTranscriptReadError::Io)
+    })
+}
+
 /// Ordinary source window. A historical oversized written turn may take one
 /// initial record scan of up to 32 MiB, then 8 KiB per continuation.
 pub const MAX_TRANSCRIPT_PAGE_BYTES: usize = 64 * 1024;
