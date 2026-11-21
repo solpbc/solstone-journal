@@ -40,6 +40,12 @@ pub fn render(source: RegistrySource, plan: ImportPlan, import_id: &str) -> Rend
                 "text": entry.text,
                 "source": "import",
                 "source_ms": entry.source_ms,
+                "sent_at": entry.sent_at.map(|time| time.to_string()),
+                "is_owner": match entry.speaker.as_str() {
+                    "Human" => Some(true),
+                    "Assistant" => Some(false),
+                    _ => None,
+                },
             });
             if let Some(thread) = plan.threads.get(entry.thread) {
                 if let Some(id) = &thread.id {

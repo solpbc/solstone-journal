@@ -97,7 +97,7 @@ fn claude_unfamiliar_or_missing_senders_are_not_assigned_to_either_participant()
     let tree = TempTree::new();
     let path = tree.path().join("unknown-senders.zip");
     let messages = [
-        json!({"sender": "human", "text": "owner message"}),
+        json!({"sender": "human", "text": "owner message", "created_at":"2026-03-11T12:00:00Z"}),
         json!({"sender": "assistant", "text": "assistant message"}),
         json!({"sender": "tool", "text": "tool message"}),
         json!({"sender": "user", "text": "unrecognized native sender"}),
@@ -138,6 +138,15 @@ fn claude_unfamiliar_or_missing_senders_are_not_assigned_to_either_participant()
     for ((row, message), speaker) in rows.iter().zip(&messages).zip(expected) {
         assert_eq!(row["speaker"], speaker);
         assert_eq!(row["text"], message["text"]);
+        assert_eq!(row["sent_at"], message["created_at"]);
+        assert_eq!(
+            row["is_owner"],
+            match speaker {
+                "You" => json!(true),
+                "Assistant" => json!(false),
+                _ => Value::Null,
+            }
+        );
     }
     assert_eq!(rendered.items[0]["preview"], "owner message");
 }

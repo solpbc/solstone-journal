@@ -244,6 +244,7 @@ fn parse_message(
         None
     };
     entries.push(ParsedEntry {
+        sent_at: Some(timestamp),
         timestamp,
         speaker: if role == Some("user") {
             "Human".to_owned()
