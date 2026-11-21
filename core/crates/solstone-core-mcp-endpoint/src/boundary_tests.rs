@@ -17448,3 +17448,167 @@ fn imported_material_previews_describe_content_and_photo_fetch_keeps_its_literal
         "{hit}"
     );
 }
+
+#[test]
+fn conversation_grants_agree_across_listing_direct_batch_and_search() {
+    use solstone_core_indexer_query::{Order, OwnerBoundary, SearchRequest, search};
+    let journal = fixture();
+    let root = journal.path();
+    let day = "20260308";
+    let cases = [
+        (
+            "import.chatgpt",
+            "090000_300",
+            "conversation_transcript.jsonl",
+            None,
+            "amberchat",
+        ),
+        (
+            "import.claude",
+            "100000_300",
+            "imported_audio.jsonl",
+            None,
+            "legacychat",
+        ),
+        (
+            "import.text",
+            "110000_300",
+            "conversation_transcript.jsonl",
+            None,
+            "neutralturn",
+        ),
+        (
+            "import.text",
+            "120000_300",
+            "conversation_transcript.jsonl",
+            Some("webvtt_cues"),
+            "cobaltcaption",
+        ),
+        (
+            "import.text",
+            "130000_300",
+            "conversation_transcript.jsonl",
+            Some("zoom_chat"),
+            "quartzwritten",
+        ),
+    ];
+    for (stream, segment, file, reason, word) in cases {
+        let mut header = json!({"imported":{"id":"synthetic"}});
+        if let Some(reason) = reason {
+            header["imported"]["triage"] =
+                json!({"kind":"transcripts","ruleset_version":7,"reasons":[reason]});
+        }
+        let row = json!({"start":"00:00:00","speaker":"Rae","text":word});
+        write_segment_file(
+            root,
+            day,
+            stream,
+            segment,
+            "alpha",
+            file,
+            &format!("{header}\n{row}\n"),
+        );
+    }
+    write_segment_file(
+        root,
+        day,
+        "import.text",
+        "110000_300",
+        "alpha",
+        "note_transcript.md",
+        "adjacentnote",
+    );
+    write_segment_file(
+        root,
+        day,
+        "import.text",
+        "140000_300",
+        "alpha",
+        "imported.md",
+        "oldneutralmarkdown",
+    );
+    solstone_core_indexer_store::scan::scan_journal(root, true).unwrap();
+    for (_, _, _, _, word) in cases {
+        let hits = search(
+            root,
+            OwnerBoundary,
+            &SearchRequest::new(word, Order::Recency),
+            jiff::civil::date(2026, 3, 8),
+        )
+        .unwrap();
+        assert!(!hits.results.is_empty(), "{word}");
+    }
+    for (kinds, visible) in [
+        (
+            vec!["messages"],
+            vec!["amberchat", "legacychat", "quartzwritten"],
+        ),
+        (vec!["transcripts"], vec!["cobaltcaption"]),
+        (
+            vec!["transcripts", "messages"],
+            vec![
+                "cobaltcaption",
+                "amberchat",
+                "legacychat",
+                "quartzwritten",
+                "neutralturn",
+            ],
+        ),
+        (vec!["notes"], vec!["adjacentnote"]),
+    ] {
+        PermissionStore::open(root)
+            .set_permission(
+                CONNECTION,
+                ReadPermission {
+                    categories: kinds.iter().map(|kind| String::from(*kind)).collect(),
+                    scope: ReadScope::WholeJournal,
+                },
+            )
+            .unwrap();
+        let list = probe(&journal, "list_transcripts", json!({"day":day,"limit":100})).unwrap();
+        let mut direct_text = String::new();
+        for row in list["transcripts"].as_array().unwrap() {
+            let reference = &row["reference"];
+            let direct = probe(&journal, "get_transcript", json!({"reference":reference})).unwrap();
+            let batch = probe(
+                &journal,
+                "get_transcript",
+                json!({"references":[reference]}),
+            )
+            .unwrap();
+            assert_eq!(direct["entries"], batch["items"][0]["result"]["entries"]);
+            direct_text.push_str(&direct["entries"].to_string());
+        }
+        let both = kinds.contains(&"messages") && kinds.contains(&"transcripts");
+        assert_eq!(direct_text.contains("oldneutralmarkdown"), both);
+        let legacy = probe(&journal, "search", json!({"query":"oldneutralmarkdown"})).unwrap();
+        assert_eq!(
+            !legacy["results"].as_array().unwrap().is_empty(),
+            both,
+            "{kinds:?}"
+        );
+        if both {
+            for kind in ["messages", "transcripts"] {
+                let filtered = probe(
+                    &journal,
+                    "search",
+                    json!({"query":"oldneutralmarkdown","kind":kind}),
+                )
+                .unwrap();
+                assert!(filtered["results"].as_array().unwrap().is_empty());
+            }
+        }
+        for word in cases.iter().map(|case| case.4).chain(["adjacentnote"]) {
+            assert_eq!(
+                direct_text.contains(word),
+                visible.contains(&word),
+                "{kinds:?}: {word}"
+            );
+            let hits = probe(&journal, "search", json!({"query":word})).unwrap();
+            assert_eq!(
+                !hits["results"].as_array().unwrap().is_empty(),
+                kinds.contains(&"notes") && word == "adjacentnote"
+            );
+        }
+    }
+}

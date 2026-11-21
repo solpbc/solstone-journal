@@ -15,6 +15,7 @@ use super::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     Transcripts,
+    Messages,
     Notes,
     Documents,
     Screen,
@@ -58,6 +59,17 @@ pub const KINDS: &[KindSpec] = &[
             description_id: "journal.window.agents.permission.kind.transcripts.description",
         }),
         checked_by_default: true,
+    },
+    KindSpec {
+        kind: Kind::Messages,
+        stored_word: "messages",
+        permission: Some(AdmittedCategory::Messages),
+        query_alias: Some("Messages"),
+        permission_copy: Some(PermissionCopy {
+            label_id: "journal.window.agents.permission.kind.messages.label",
+            description_id: "journal.window.agents.permission.kind.messages.description",
+        }),
+        checked_by_default: false,
     },
     KindSpec {
         kind: Kind::Entities,
@@ -358,6 +370,9 @@ pub fn indexed_permission(
     path: &str,
     stored: AdmittedCategory,
 ) -> AdmittedCategory {
+    if super::conversation::unresolved_markdown(path) {
+        return AdmittedCategory::Transcripts;
+    }
     if body_material::is_body_path(path) {
         return AdmittedCategory::Body;
     }
@@ -398,8 +413,11 @@ pub fn indexed_permission(
     }
 }
 
-/// The weekly reflection includes verbatim passages from transcripts.
+/// Extra access needed in addition to the primary indexed kind.
 pub fn additional_indexed_permission(path: &str) -> Option<AdmittedCategory> {
+    if super::conversation::unresolved_markdown(path) {
+        return Some(AdmittedCategory::Messages);
+    }
     path.strip_prefix("reflections/weekly/")
         .filter(|name| name.ends_with(".md") && !name.contains('/'))
         .map(|_| AdmittedCategory::Transcripts)
@@ -601,6 +619,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             [
                 (Kind::Transcripts, Some("transcripts")),
+                (Kind::Messages, Some("messages")),
                 (Kind::Entities, Some("entities")),
                 (Kind::ProfilePics, Some("profile_pics")),
                 (Kind::Facets, Some("facets")),

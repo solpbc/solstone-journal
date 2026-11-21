@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use super::*;
+use solstone_core_format::content::granola::legacy_id;
 use std::collections::VecDeque;
 const ID: &str = "not_1d3tmYTlCICgjy";
 const REV: &str = "2026-11-01T09:10:00Z";

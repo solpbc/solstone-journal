@@ -196,7 +196,10 @@ pub(crate) fn decode_text(bytes: &[u8]) -> Option<Cow<'_, str>> {
                 _ => char::from(byte),
             })
             .collect();
-        if rules::subtitle(&scoring_lines(&analysis_text(&legacy)), false) {
+        if solstone_core_format::content::conversation::subtitle(
+            &scoring_lines(&analysis_text(&legacy)),
+            false,
+        ) {
             return Some(Cow::Owned(legacy));
         }
     }

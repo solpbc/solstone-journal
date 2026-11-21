@@ -62,6 +62,7 @@ const NOTHING: ToolRequirement = ToolRequirement {
 pub(crate) const SEGMENT_KINDS: &[AdmittedCategory] = &[
     AdmittedCategory::Screenshots,
     AdmittedCategory::Transcripts,
+    AdmittedCategory::Messages,
     AdmittedCategory::Body,
     AdmittedCategory::Notes,
     AdmittedCategory::Documents,
@@ -86,11 +87,15 @@ const FACETS: ToolRequirement = ToolRequirement {
     any_of: false,
     one_of: &[],
 };
-const FACETS_AND_TRANSCRIPTS_OR_BODY: ToolRequirement = ToolRequirement {
+const FACETS_AND_SOURCE: ToolRequirement = ToolRequirement {
     read: &[AdmittedCategory::Facets],
     whole_journal: false,
     any_of: false,
-    one_of: &[AdmittedCategory::Transcripts, AdmittedCategory::Body],
+    one_of: &[
+        AdmittedCategory::Transcripts,
+        AdmittedCategory::Messages,
+        AdmittedCategory::Body,
+    ],
 };
 const WEEK: ToolRequirement = ToolRequirement {
     read: &[AdmittedCategory::Transcripts, AdmittedCategory::Facets],
@@ -101,6 +106,7 @@ const WEEK: ToolRequirement = ToolRequirement {
 const SEARCH: ToolRequirement = ToolRequirement {
     read: &[
         AdmittedCategory::Transcripts,
+        AdmittedCategory::Messages,
         AdmittedCategory::ScreenText,
         AdmittedCategory::Body,
         AdmittedCategory::Facets,
@@ -234,7 +240,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         title: "read activity sources",
         description: "read the transcript or body sources for activities. pass either reference for one activity or references for up to 12. use activity_reference from a filtered list, or reference from the activity list without the shared find filters or from get_week. each batch item carries its own result or error in input order. pass next_cursor as cursor with that single reference to read the rest. only quote from the source text. give the owner a journal link when available.",
         input_schema: get_activity_sources_input_schema,
-        requires: FACETS_AND_TRANSCRIPTS_OR_BODY,
+        requires: FACETS_AND_SOURCE,
         audit_name: solstone_core_mcp_audit::ToolName::GetActivitySources,
     },
     ToolEntry {

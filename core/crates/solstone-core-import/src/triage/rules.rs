@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use super::*;
+use solstone_core_format::content::conversation::{ZOOM_CHAT_LINE, subtitle};
 
 mod exports;
 mod screenshot_names;
@@ -96,7 +97,7 @@ macro_rules! rule {
             matcher: Matcher::Check($check),
         }
     };
-    ($priority:literal, $id:literal, $source:literal, $shape:ident, $pattern:literal $(, $verified:literal)?) => {
+    ($priority:literal, $id:literal, $source:literal, $shape:ident, $pattern:expr $(, $verified:literal)?) => {
         Rule {
             id: $id,
             stage: Turns,
@@ -305,7 +306,7 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             "zoom_chat",
             "zoomchattr: saved chat line and block exports",
             ExportBlock,
-            r"^[0-9]{2}:[0-9]{2}:[0-9]{2}[ \t]+From (?P<speaker>[^:]{1,100}?)(?:\s+to\s+[^:]{1,100}?)?\s*[:：](?:\s|$)"
+            ZOOM_CHAT_LINE
         ),
         rule!(
             51,
@@ -1598,63 +1599,6 @@ fn is_export_notice(line: &str) -> bool {
             && line
                 .trim_matches(|c: char| c == '|' || c.is_whitespace())
                 .is_empty()
-}
-
-pub(super) fn subtitle(lines: &[&str], vtt: bool) -> bool {
-    static VTT_TIME: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"^(?:[0-9]{2,}:)?[0-5][0-9]:[0-5][0-9]\.[0-9]{3}[ \t]+-->[ \t]+(?:[0-9]{2,}:)?[0-5][0-9]:[0-5][0-9]\.[0-9]{3}(?:[ \t]+.*)?$").unwrap()
-    });
-    static SRT_TIME: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"^[0-9]{2,}:[0-5][0-9]:[0-5][0-9][,.][0-9]{3}[ \t]+-->[ \t]+[0-9]{2,}:[0-5][0-9]:[0-5][0-9][,.][0-9]{3}(?:[ \t]+.*)?$").unwrap()
-    });
-    let lines = if vtt {
-        let Some((header, rest)) = lines.split_first() else {
-            return false;
-        };
-        if !(*header == "WEBVTT" || header.starts_with("WEBVTT ") || header.starts_with("WEBVTT\t"))
-        {
-            return false;
-        }
-        // The header and any header text end at the first blank line.
-        let Some(split) = rest.iter().position(|line| line.trim().is_empty()) else {
-            return false;
-        };
-        &rest[split + 1..]
-    } else {
-        lines
-    };
-    let mut cues = 0usize;
-    let mut malformed_cues = 0usize;
-    for block in lines
-        .split(|line| line.trim().is_empty())
-        .filter(|block| !block.is_empty())
-    {
-        if vtt && (matches!(block[0], "STYLE" | "REGION" | "NOTE") || block[0].starts_with("NOTE "))
-        {
-            continue;
-        }
-        let timing = if vtt { &*VTT_TIME } else { &*SRT_TIME };
-        let index = usize::from(!vtt || !timing.is_match(block[0]));
-        if !vtt && (block[0].is_empty() || !block[0].bytes().all(|byte| byte.is_ascii_digit())) {
-            return false;
-        }
-        if block.len() <= index + 1 || !timing.is_match(block[index]) {
-            if vtt
-                && (block[0].contains("-->")
-                    || block.get(1).is_some_and(|line| line.contains("-->")))
-            {
-                malformed_cues += 1;
-                continue;
-            }
-            return false;
-        }
-        cues += 1;
-    }
-    if vtt {
-        cues >= 1 && (malformed_cues == 0 || cues >= 4 && malformed_cues * 4 <= cues)
-    } else {
-        cues >= 2
-    }
 }
 
 fn whisper_tsv(lines: &[&str]) -> bool {

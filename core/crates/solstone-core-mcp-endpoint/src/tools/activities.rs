@@ -1499,6 +1499,11 @@ pub(crate) fn sources_of(
                         break;
                     }
                 }
+                Err(solstone_core_transcripts::SegmentTranscriptReadError::NoPermittedFiles) => {
+                    // A withheld sibling contributes no unit or read failure.
+                    segment_lines.clear();
+                    break;
+                }
                 Err(_) => {
                     read_failed = true;
                     break;

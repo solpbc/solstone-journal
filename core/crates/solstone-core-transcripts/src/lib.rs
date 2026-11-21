@@ -1699,34 +1699,60 @@ fn heard_owner_voices(
     Some((source, names))
 }
 
-/// What the owner said in a segment: the text of every sentence `VoiceNames`
-/// names as the owner, by recognized voice or the owner's own answer, in
-/// transcript order.
-pub fn owner_voice_lines(dir: &Path, voices: &VoiceNames) -> Vec<String> {
+/// One source sentence attributed to the owner. The file is relative to
+/// the chronicle, so the coordinate survives a moved journal.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OwnerVoiceSentence {
+    pub file: String,
+    pub sentence_id: i64,
+    pub text: String,
+}
+
+pub fn owner_voice_sentences(dir: &Path, voices: &VoiceNames) -> Vec<OwnerVoiceSentence> {
     let Some((source, names)) = segment_voices(dir, voices) else {
         return Vec::new();
     };
-    let Ok(text) = fs::read_to_string(dir.join(format!("{source}.jsonl"))) else {
+    let name = format!("{source}.jsonl");
+    let path = dir.join(&name);
+    if !path.symlink_metadata().is_ok_and(|m| m.is_file()) {
+        return Vec::new();
+    }
+    let Ok(text) = fs::read_to_string(&path) else {
         return Vec::new();
     };
+    let file = format!(
+        "{}/{name}",
+        solstone_core_journal_io::paths::segment_origin(dir)
+    );
     let mut ordinal = 0;
     text.lines()
-        .filter_map(|line| match serde_json::from_str::<Value>(line.trim()) {
-            Ok(Value::Object(record)) => Some(record),
-            _ => None,
-        })
-        .filter(|record| {
-            next_line_coordinate(record, &mut ordinal)
-                .and_then(|id| names.get(&id))
+        .filter_map(|line| {
+            let record: Map<String, Value> = serde_json::from_str(line.trim()).ok()?;
+            let sentence_id = next_line_coordinate(&record, &mut ordinal)?;
+            if !names
+                .get(&sentence_id)
                 .is_some_and(|name| name == voices.owner_label())
-        })
-        .filter_map(|record| {
-            ["corrected", "text"]
+            {
+                return None;
+            }
+            let text = ["corrected", "text"]
                 .iter()
                 .filter_map(|key| record.get(*key).and_then(Value::as_str))
-                .find(|text| !text.trim().is_empty())
-                .map(str::to_owned)
+                .find(|text| !text.trim().is_empty())?;
+            Some(OwnerVoiceSentence {
+                file: file.clone(),
+                sentence_id,
+                text: text.to_owned(),
+            })
         })
+        .collect()
+}
+
+/// What the owner said, in transcript order.
+pub fn owner_voice_lines(dir: &Path, voices: &VoiceNames) -> Vec<String> {
+    owner_voice_sentences(dir, voices)
+        .into_iter()
+        .map(|sentence| sentence.text)
         .collect()
 }
 
@@ -1740,11 +1766,13 @@ pub fn labelled_audio_source(dir: &Path) -> Option<String> {
             continue;
         };
         if let Some(stem) = name.strip_suffix(".npz")
+            && speaker_coordinates::may_have_voice_labels(dir, stem)
             && (stem == "audio" || stem.ends_with("_audio"))
         {
             embedded.push(stem.to_owned());
         } else if let Some(stem) = name.strip_suffix(".jsonl")
             && stem.ends_with("audio")
+            && speaker_coordinates::may_have_voice_labels(dir, stem)
         {
             transcripts.push(stem.to_owned());
         }

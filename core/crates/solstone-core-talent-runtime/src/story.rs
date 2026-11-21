@@ -732,6 +732,20 @@ pub(crate) fn owner_heard(
     record: &Map<String, Value>,
     voices: Option<&VoiceNames>,
 ) -> Option<Vec<String>> {
+    owner_heard_sentences(root, day, record, voices).map(|sentences| {
+        sentences
+            .into_iter()
+            .map(|sentence| sentence.text)
+            .collect()
+    })
+}
+
+pub(crate) fn owner_heard_sentences(
+    root: &std::path::Path,
+    day: &str,
+    record: &Map<String, Value>,
+    voices: Option<&VoiceNames>,
+) -> Option<Vec<solstone_core_transcripts::OwnerVoiceSentence>> {
     let day_dir = root.join("chronicle").join(day);
     // A record that names its stream reads only that stream's audio: another
     // stream can hold a segment with the same key.
@@ -776,7 +790,9 @@ pub(crate) fn owner_heard(
                 continue;
             }
             if let Some(voices) = voices {
-                said.extend(solstone_core_transcripts::owner_voice_lines(&dir, voices));
+                said.extend(solstone_core_transcripts::owner_voice_sentences(
+                    &dir, voices,
+                ));
             }
         }
     }

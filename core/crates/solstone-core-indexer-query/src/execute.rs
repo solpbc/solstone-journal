@@ -580,7 +580,18 @@ fn append_connection_prefilter(plan: &mut SqlPlan, boundary: &ConnectionBoundary
         .categories()
         .contains(&AdmittedCategory::Transcripts)
     {
-        push_keyed(plan, " AND NOT solstone_indexed_quotes(chunks.path)", &[]);
+        push_keyed(
+            plan,
+            " AND solstone_extra_permission(chunks.path) != 'transcripts'",
+            &[],
+        );
+    }
+    if boundary.has_kind_filter() || !boundary.categories().contains(&AdmittedCategory::Messages) {
+        push_keyed(
+            plan,
+            " AND solstone_extra_permission(chunks.path) != 'messages'",
+            &[],
+        );
     }
 }
 
@@ -649,12 +660,15 @@ fn register_indexed_permissions(
         },
     )?;
     connection.create_scalar_function(
-        "solstone_indexed_quotes",
+        "solstone_extra_permission",
         1,
         FunctionFlags::SQLITE_UTF8
             | FunctionFlags::SQLITE_DETERMINISTIC
             | FunctionFlags::SQLITE_DIRECTONLY,
-        |context| Ok(additional_indexed_permission(context.get_raw(0).as_str()?).is_some()),
+        |context| {
+            Ok(additional_indexed_permission(context.get_raw(0).as_str()?)
+                .map_or("", AdmittedCategory::as_str))
+        },
     )
 }
 

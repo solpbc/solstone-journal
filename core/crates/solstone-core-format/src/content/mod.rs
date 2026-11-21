@@ -227,6 +227,7 @@ pub struct ScreenTalentRawScreen {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AdmittedCategory {
     Transcripts,
+    Messages,
     Entities,
     Facets,
     ScreenText,

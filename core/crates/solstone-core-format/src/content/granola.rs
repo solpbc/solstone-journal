@@ -12,6 +12,28 @@ pub const HEADER_KEY: &str = "granola";
 /// One stable meeting stream per remote note.
 pub const STREAM_PREFIX: &str = "import.granola.";
 
+pub fn is_note_id(value: &str) -> bool {
+    value.strip_prefix("not_").is_some_and(|suffix| {
+        suffix.len() == 14 && suffix.bytes().all(|b| b.is_ascii_alphanumeric())
+    })
+}
+
+/// The former single-stream importer also stored UUID document ids.
+pub fn legacy_id(value: &str) -> Option<String> {
+    if is_note_id(value) {
+        return Some(value.to_owned());
+    }
+    (value.len() == 36
+        && value.bytes().enumerate().all(|(i, byte)| {
+            if [8, 13, 18, 23].contains(&i) {
+                byte == b'-'
+            } else {
+                byte.is_ascii_hexdigit()
+            }
+        }))
+    .then(|| value.to_ascii_lowercase())
+}
+
 pub(super) fn render(metadata: &JsonObject, records: &[JsonObject]) -> ProducedChunks {
     let note = &metadata[HEADER_KEY];
     let mut context = Vec::new();

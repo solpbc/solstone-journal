@@ -92,6 +92,10 @@ impl ConnectionBoundary {
         self
     }
 
+    pub(crate) fn has_kind_filter(&self) -> bool {
+        self.kind_filter.is_some()
+    }
+
     pub fn selects_kind(&self, kind: AdmittedCategory) -> bool {
         self.kind_filter
             .as_ref()
@@ -124,7 +128,9 @@ impl ConnectionBoundary {
         let path = &classification.path;
         let category =
             solstone_core_format::content::kinds::indexed_permission(Some(journal), path, stored);
-        if !self.categories.contains(&category)
+        if (self.kind_filter.is_some()
+            && solstone_core_format::content::conversation::unresolved_markdown(path))
+            || !self.categories.contains(&category)
             || !self.selects_kind(category)
             || solstone_core_format::content::kinds::additional_indexed_permission(path)
                 .is_some_and(|required| !self.categories.contains(&required))
