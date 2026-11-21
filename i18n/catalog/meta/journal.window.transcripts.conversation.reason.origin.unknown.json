@@ -1,0 +1,16 @@
+{
+  "description": "Reason shown under why: the journal has no usable record of the original imported file, or can't confirm the file at that place is the original.",
+  "context": "Journal window, transcripts view. Only for the origin_unknown reason.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e87f7d35fbb1fe0a684f44759067578e0ca35b76188cd71e5bdf9d8f9a818a6a",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

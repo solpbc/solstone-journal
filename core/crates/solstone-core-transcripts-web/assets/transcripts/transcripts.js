@@ -4101,9 +4101,12 @@
     function renderUnresolvedNotice(seg) {
       const item = conversationItem(seg);
       if (conversationKind(seg) !== 'conversation') return '';
-      const reason = item.reason_code === 'original_missing'
-        ? 'journal.window.transcripts.conversation.reason.original.missing'
-        : 'journal.window.transcripts.conversation.reason.insufficient.evidence';
+      // Absence only when the journal confirmed it; no usable record of the
+      // original is its own case; otherwise the kept file was inconclusive.
+      const reason = {
+        original_missing: 'journal.window.transcripts.conversation.reason.original.missing',
+        origin_unknown: 'journal.window.transcripts.conversation.reason.origin.unknown',
+      }[item.reason_code] || 'journal.window.transcripts.conversation.reason.insufficient.evidence';
       return '<div class="tr-unresolved">'
         + `<p>${window.JournalI18n.renderHtml('journal.window.transcripts.conversation.unresolved')}</p>`
         + `<details class="tr-unresolved-why"><summary>${window.JournalI18n.renderHtml('journal.window.transcripts.conversation.why')}</summary>`

@@ -1630,7 +1630,9 @@
 .tr-day-left-out { margin: 12px 4px 0; color: var(--ink-soft); }
 .tr-day-left-out a { color: var(--orange-text-aa); }
 @media (max-width: 600px) {
-  .tr-show { order: 3; flex: 1 0 100%; margin-right: 0; }
+  /* On a phone the switch spans the width directly under the day's title. */
+  .tr-show { order: 1; flex: 1 0 100%; margin-right: 0; }
+  .tr-day-head .tr-stretch-btn { order: 2; }
   .tr-show-item { flex: 1; padding: 0 8px; }
 }
 .tr-stretch-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 14px; background: var(--paper); color: var(--ink-soft); border: 1px solid var(--hairline); border-radius: 9px; font: inherit; font-size: .9em; cursor: pointer; }

@@ -15320,6 +15320,8 @@ journal.window.transcripts.consent.trash.selection.move.title = { $segments_quan
 
 journal.window.transcripts.conversation.reason.insufficient.evidence = the file it came from doesn't show whether it was spoken or written.
 
+journal.window.transcripts.conversation.reason.origin.unknown = your journal can't tell which file it came from.
+
 journal.window.transcripts.conversation.reason.original.missing = the file it came from isn't in your journal.
 
 journal.window.transcripts.conversation.unresolved = your journal can't tell if this conversation was spoken or written.

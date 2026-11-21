@@ -4088,6 +4088,7 @@ test('a conversation the journal cannot place says so, with one reason per code'
   for (const [code, id] of [
     ['original_missing', 'journal.window.transcripts.conversation.reason.original.missing'],
     ['insufficient_evidence', 'journal.window.transcripts.conversation.reason.insufficient.evidence'],
+    ['origin_unknown', 'journal.window.transcripts.conversation.reason.origin.unknown'],
   ]) {
     const segs = conversationSegments();
     segs[2].conversation_items[0].reason_code = code;
@@ -4099,6 +4100,9 @@ test('a conversation the journal cannot place says so, with one reason per code'
     const pane = env.doc.querySelector('#tr-tabpanel-transcript');
     assert.ok(pane.innerHTML.includes(env.window.JournalI18n.renderHtml('journal.window.transcripts.conversation.unresolved')), pane.innerHTML);
     assert.ok(pane.innerHTML.includes(env.window.JournalI18n.renderHtml(id)), code);
+    for (const other of ['original.missing', 'insufficient.evidence', 'origin.unknown'].map(key => `journal.window.transcripts.conversation.reason.${key}`).filter(key => key !== id)) {
+      assert.ok(!pane.innerHTML.includes(env.window.JournalI18n.renderHtml(other)), `${code} shows only its own reason`);
+    }
     assert.ok(pane.innerHTML.includes('are we still on for saturday'));
     assert.equal(pane.querySelectorAll('.tr-msg').length, 0, 'an unplaced conversation is not read as messages');
   }
