@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for stamp changed.",
+  "context": "Journal command-line text for stamp changed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "12f2d73d12040925575b6dbadf8f1a6868dfb7235c7be0eeb96808dc09d77d84",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

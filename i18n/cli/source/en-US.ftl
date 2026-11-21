@@ -1247,3 +1247,43 @@ journal.cli.path.utf8 = journal-path failed: config is not valid { $encoding }
 journal.cli.stats.overrides = stats validation failed: failed to read talent overrides from { $path }
 
 journal.cli.path.create = could not create journal directory ({ $source }): { $path }: { $error }
+
+journal.cli.backfill.committed = COMMITTED
+
+journal.cli.backfill.day.missing = Day { $day } was not found in the journal
+
+journal.cli.backfill.days = Could not list chronicle days: { $error }
+
+journal.cli.backfill.flags.conflict = usage: { $syntax }{ $line_break }{ $syntax_continuation_1 }{ $line_break }{ $command }: error: argument { $flag }: not allowed with argument { $previous }
+
+journal.cli.backfill.flags.missing = usage: { $syntax }{ $line_break }{ $syntax_continuation_1 }{ $line_break }{ $command }: error: argument { $day_flag }: expected one argument
+
+journal.cli.backfill.flags.unknown = usage: { $syntax }{ $line_break }{ $syntax_continuation_1 }{ $line_break }{ $command }: error: unrecognized arguments: { $argument }
+
+journal.cli.backfill.help = usage: { $syntax }{ $line_break }{ $syntax_continuation_1 }{ $line_break }{ $line_break }Backfill empty processing records onto stuck header-only native{ $line_break }{ $handlers } outputs{ $line_break }{ $line_break }options:{ $line_break }{ $indent_2 }{ $help_option }{ $gap_5 }show this help message and exit{ $line_break }{ $indent_2 }{ $day_option }{ $gap_6 }Day in { $date_format } format; defaults to all days{ $line_break }{ $indent_2 }{ $commit_option }{ $gap_7 }Rewrite eligible { $jsonl_format } headers with empty processing records{ $line_break }{ $indent_2 }{ $dry_run_option }{ $gap_6 }Preview eligible outputs without writing changes{ $line_break }{ $indent_2 }{ $verbose_option }{ $gap_2 }Enable verbose output{ $line_break }{ $indent_2 }{ $debug_option }{ $gap_4 }Enable debug logging
+
+journal.cli.backfill.identity.ambiguous = named stream directory "{ $default_stream }" cannot be spelled as a record identity: { $path }
+
+journal.cli.backfill.identity.duplicate = multiple segments share stream { $stream } key { $key }
+
+journal.cli.backfill.identity.encoding = segment path is not { $encoding } representable: { $path }
+
+journal.cli.backfill.invalid.day = expected day in { $date_format } format
+
+journal.cli.backfill.marker = Stamped { $path }, but could not mark day { $day } updated: { $error }
+
+journal.cli.backfill.preview = DRY RUN (no changes written)
+
+journal.cli.backfill.segment.directory = Could not list segment directory { $path }: { $error }
+
+journal.cli.backfill.segments = Could not list segments for day { $day }: { $error }
+
+journal.cli.backfill.stamp.changed = Could not stamp { $path }: file changed after classification
+
+journal.cli.backfill.stamp.read = Could not stamp { $path }: could not re-read file: { $error }
+
+journal.cli.backfill.stamp.write = Could not stamp { $path }: write failed: { $error }
+
+journal.cli.backfill.stream.directory = Could not list stream directory { $path }: not a directory
+
+journal.cli.backfill.stream.encoding = segment stream is not { $encoding } representable: { $path }

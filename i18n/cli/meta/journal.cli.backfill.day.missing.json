@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for day missing.",
+  "context": "Journal command-line text for day missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "16ffed9adf267e884df2332ec0826375bcb779407f8e59ccdc23a16f97606bc7",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

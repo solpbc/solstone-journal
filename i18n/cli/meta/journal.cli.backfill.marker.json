@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for marker.",
+  "context": "Journal command-line text for marker.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "86cecf3a8fc210228ad315cb960c539f073d1e5f02f631d93d0b45b2659d4796",
+  "max_length": 102,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

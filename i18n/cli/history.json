@@ -76,6 +76,605 @@
       "selector": null
     },
     {
+      "id": "journal.cli.backfill.committed",
+      "resource": "m6a6f75726e616c2e636c692e6261636b66696c6c2e636f6d6d6974746564",
+      "namespace": "journal.cli.backfill",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.backfill.day.missing",
+      "resource": "m6a6f75726e616c2e636c692e6261636b66696c6c2e6461792e6d697373696e67",
+      "namespace": "journal.cli.backfill.day",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.backfill.days",
+      "resource": "m6a6f75726e616c2e636c692e6261636b66696c6c2e64617973",
+      "namespace": "journal.cli.backfill",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.backfill.flags.conflict",
+      "resource": "m6a6f75726e616c2e636c692e6261636b66696c6c2e666c6167732e636f6e666c696374",
+      "namespace": "journal.cli.backfill.flags",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "flag",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "previous",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "syntax",
+          "kind": "command",
+          "value": "solstone journal backfill-processing-records [-h] [--day DAY] [--commit |"
+        },
+        {
+          "name": "syntax_continuation_1",
+          "kind": "accepted-input",
+          "value": "                                           --dry-run] [-v] [-d]"
+        },
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "solstone journal backfill-processing-records"
+        },
+        {
+          "name": "line_break",
+          "kind": "whitespace",
+          "value": "\n"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.backfill.flags.missing",
+      "resource": "m6a6f75726e616c2e636c692e6261636b66696c6c2e666c6167732e6d697373696e67",
+      "namespace": "journal.cli.backfill.flags",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "syntax",
+          "kind": "command",
+          "value": "solstone journal backfill-processing-records [-h] [--day DAY] [--commit |"
+        },
+        {
+          "name": "syntax_continuation_1",
+          "kind": "accepted-input",
+          "value": "                                           --dry-run] [-v] [-d]"
+        },
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "solstone journal backfill-processing-records"
+        },
+        {
+          "name": "day_flag",
+          "kind": "flag",
+          "value": "--day"
+        },
+        {
+          "name": "line_break",
+          "kind": "whitespace",
+          "value": "\n"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.backfill.flags.unknown",
+      "resource": "m6a6f75726e616c2e636c692e6261636b66696c6c2e666c6167732e756e6b6e6f776e",
+      "namespace": "journal.cli.backfill.flags",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "argument",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "syntax",
+          "kind": "command",
+          "value": "solstone journal backfill-processing-records [-h] [--day DAY] [--commit |"
+        },
+        {
+          "name": "syntax_continuation_1",
+          "kind": "accepted-input",
+          "value": "                                           --dry-run] [-v] [-d]"
+        },
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "solstone journal backfill-processing-records"
+        },
+        {
+          "name": "line_break",
+          "kind": "whitespace",
+          "value": "\n"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.backfill.help",
+      "resource": "m6a6f75726e616c2e636c692e6261636b66696c6c2e68656c70",
+      "namespace": "journal.cli.backfill",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "syntax",
+          "kind": "command",
+          "value": "solstone journal backfill-processing-records [-h] [--day DAY] [--commit |"
+        },
+        {
+          "name": "syntax_continuation_1",
+          "kind": "accepted-input",
+          "value": "                                           --dry-run] [-v] [-d]"
+        },
+        {
+          "name": "handlers",
+          "kind": "command",
+          "value": "describe/transcribe"
+        },
+        {
+          "name": "indent_2",
+          "kind": "whitespace",
+          "value": "  "
+        },
+        {
+          "name": "help_option",
+          "kind": "accepted-input",
+          "value": "-h, --help"
+        },
+        {
+          "name": "gap_5",
+          "kind": "whitespace",
+          "value": "     "
+        },
+        {
+          "name": "day_option",
+          "kind": "accepted-input",
+          "value": "--day DAY"
+        },
+        {
+          "name": "gap_6",
+          "kind": "whitespace",
+          "value": "      "
+        },
+        {
+          "name": "date_format",
+          "kind": "accepted-input",
+          "value": "YYYYMMDD"
+        },
+        {
+          "name": "commit_option",
+          "kind": "accepted-input",
+          "value": "--commit"
+        },
+        {
+          "name": "gap_7",
+          "kind": "whitespace",
+          "value": "       "
+        },
+        {
+          "name": "jsonl_format",
+          "kind": "accepted-input",
+          "value": "JSONL"
+        },
+        {
+          "name": "dry_run_option",
+          "kind": "accepted-input",
+          "value": "--dry-run"
+        },
+        {
+          "name": "verbose_option",
+          "kind": "accepted-input",
+          "value": "-v, --verbose"
+        },
+        {
+          "name": "gap_2",
+          "kind": "whitespace",
+          "value": "  "
+        },
+        {
+          "name": "debug_option",
+          "kind": "accepted-input",
+          "value": "-d, --debug"
+        },
+        {
+          "name": "gap_4",
+          "kind": "whitespace",
+          "value": "    "
+        },
+        {
+          "name": "line_break",
+          "kind": "whitespace",
+          "value": "\n"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.backfill.identity.ambiguous",
+      "resource": "m6a6f75726e616c2e636c692e6261636b66696c6c2e6964656e746974792e616d626967756f7573",
+      "namespace": "journal.cli.backfill.identity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "default_stream",
+          "kind": "accepted-input",
+          "value": "_default"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.backfill.identity.duplicate",
+      "resource": "m6a6f75726e616c2e636c692e6261636b66696c6c2e6964656e746974792e6475706c6963617465",
+      "namespace": "journal.cli.backfill.identity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "stream",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "key",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.backfill.identity.encoding",
+      "resource": "m6a6f75726e616c2e636c692e6261636b66696c6c2e6964656e746974792e656e636f64696e67",
+      "namespace": "journal.cli.backfill.identity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "encoding",
+          "kind": "accepted-input",
+          "value": "UTF-8"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.backfill.invalid.day",
+      "resource": "m6a6f75726e616c2e636c692e6261636b66696c6c2e696e76616c69642e646179",
+      "namespace": "journal.cli.backfill.invalid",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "date_format",
+          "kind": "accepted-input",
+          "value": "YYYYMMDD"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.backfill.marker",
+      "resource": "m6a6f75726e616c2e636c692e6261636b66696c6c2e6d61726b6572",
+      "namespace": "journal.cli.backfill",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.backfill.preview",
+      "resource": "m6a6f75726e616c2e636c692e6261636b66696c6c2e70726576696577",
+      "namespace": "journal.cli.backfill",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.backfill.segment.directory",
+      "resource": "m6a6f75726e616c2e636c692e6261636b66696c6c2e7365676d656e742e6469726563746f7279",
+      "namespace": "journal.cli.backfill.segment",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.backfill.segments",
+      "resource": "m6a6f75726e616c2e636c692e6261636b66696c6c2e7365676d656e7473",
+      "namespace": "journal.cli.backfill",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.backfill.stamp.changed",
+      "resource": "m6a6f75726e616c2e636c692e6261636b66696c6c2e7374616d702e6368616e676564",
+      "namespace": "journal.cli.backfill.stamp",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.backfill.stamp.read",
+      "resource": "m6a6f75726e616c2e636c692e6261636b66696c6c2e7374616d702e72656164",
+      "namespace": "journal.cli.backfill.stamp",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.backfill.stamp.write",
+      "resource": "m6a6f75726e616c2e636c692e6261636b66696c6c2e7374616d702e7772697465",
+      "namespace": "journal.cli.backfill.stamp",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.backfill.stream.directory",
+      "resource": "m6a6f75726e616c2e636c692e6261636b66696c6c2e73747265616d2e6469726563746f7279",
+      "namespace": "journal.cli.backfill.stream",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.backfill.stream.encoding",
+      "resource": "m6a6f75726e616c2e636c692e6261636b66696c6c2e73747265616d2e656e636f64696e67",
+      "namespace": "journal.cli.backfill.stream",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "encoding",
+          "kind": "accepted-input",
+          "value": "UTF-8"
+        }
+      ],
+      "selector": null
+    },
+    {
       "id": "journal.cli.client.error.malformed",
       "resource": "m6a6f75726e616c2e636c692e636c69656e742e6572726f722e6d616c666f726d6564",
       "namespace": "journal.cli.client.error",

@@ -1,0 +1,43 @@
+{
+  "description": "Journal command-line text for flags unknown.",
+  "context": "Journal command-line text for flags unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "argument",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "801e597e431096f6587dbea6c9be2747a77a5420d09e86748cef758df5f7fe78",
+  "max_length": 164,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal backfill-processing-records [-h] [--day DAY] [--commit |"
+    },
+    {
+      "name": "syntax_continuation_1",
+      "kind": "accepted-input",
+      "value": "                                           --dry-run] [-v] [-d]"
+    },
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal backfill-processing-records"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

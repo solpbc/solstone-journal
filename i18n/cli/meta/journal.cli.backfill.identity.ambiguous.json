@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for identity ambiguous.",
+  "context": "Journal command-line text for identity ambiguous.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8e4f8bedbe9b2bf26eab27065fd34342b65a518c1e48b33ce193762ecd3d5da6",
+  "max_length": 126,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "default_stream",
+      "kind": "accepted-input",
+      "value": "_default"
+    }
+  ]
+}

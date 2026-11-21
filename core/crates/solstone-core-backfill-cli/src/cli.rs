@@ -1,28 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use solstone_core_cli_copy as copy;
+
 use std::ffi::{OsStr, OsString};
-
-pub const USAGE: &str = concat!(
-    "usage: solstone journal backfill-processing-records [-h] [--day DAY] [--commit |\n",
-    "                                           --dry-run] [-v] [-d]\n",
-);
-
-pub const HELP: &str = concat!(
-    "usage: solstone journal backfill-processing-records [-h] [--day DAY] [--commit |\n",
-    "                                           --dry-run] [-v] [-d]\n",
-    "\n",
-    "Backfill empty processing records onto stuck header-only native\n",
-    "describe/transcribe outputs\n",
-    "\n",
-    "options:\n",
-    "  -h, --help     show this help message and exit\n",
-    "  --day DAY      Day in YYYYMMDD format; defaults to all days\n",
-    "  --commit       Rewrite eligible JSONL headers with empty processing records\n",
-    "  --dry-run      Preview eligible outputs without writing changes\n",
-    "  -v, --verbose  Enable verbose output\n",
-    "  -d, --debug    Enable debug logging\n",
-);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Options {
@@ -58,8 +39,9 @@ pub fn parse(args: &[OsString]) -> Result<ParseResult, String> {
             if let Some(previous) = mode
                 && previous != next
             {
-                return Err(format!(
-                    "argument {next}: not allowed with argument {previous}"
+                return Err(copy::display(
+                    "journal.cli.backfill.flags.conflict",
+                    [("flag", &next), ("previous", &previous)],
                 ));
             }
             mode = Some(next);
@@ -76,10 +58,10 @@ pub fn parse(args: &[OsString]) -> Result<ParseResult, String> {
         }
         if argument == OsStr::new("--day") {
             let Some(value) = args.get(index + 1) else {
-                return Err("argument --day: expected one argument".to_owned());
+                return Err(copy::text("journal.cli.backfill.flags.missing"));
             };
             if value.to_string_lossy().starts_with('-') {
-                return Err("argument --day: expected one argument".to_owned());
+                return Err(copy::text("journal.cli.backfill.flags.missing"));
             }
             day = Some(value.to_string_lossy().into_owned());
             index += 2;
@@ -90,9 +72,9 @@ pub fn parse(args: &[OsString]) -> Result<ParseResult, String> {
             index += 1;
             continue;
         }
-        return Err(format!(
-            "unrecognized arguments: {}",
-            argument.to_string_lossy()
+        return Err(copy::display(
+            "journal.cli.backfill.flags.unknown",
+            [("argument", &argument.to_string_lossy())],
         ));
     }
 

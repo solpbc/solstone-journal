@@ -6,6 +6,46 @@ m6a6f75726e616c2e636c692e61626f75742e75736167652e6a6f75726e616c = usage: { "sols
 
 m6a6f75726e616c2e636c692e61626f75742e75736167652e72656d6f7465 = usage: { "solstone about [-h | --help]" }
 
+m6a6f75726e616c2e636c692e6261636b66696c6c2e636f6d6d6974746564 = COMMITTED
+
+m6a6f75726e616c2e636c692e6261636b66696c6c2e6461792e6d697373696e67 = Day { $day } was not found in the journal
+
+m6a6f75726e616c2e636c692e6261636b66696c6c2e64617973 = Could not list chronicle days: { $error }
+
+m6a6f75726e616c2e636c692e6261636b66696c6c2e666c6167732e636f6e666c696374 = usage: { "solstone journal backfill-processing-records [-h] [--day DAY] [--commit |" }{ "\u000a" }{ "                                           --dry-run] [-v] [-d]" }{ "\u000a" }{ "solstone journal backfill-processing-records" }: error: argument { $flag }: not allowed with argument { $previous }
+
+m6a6f75726e616c2e636c692e6261636b66696c6c2e666c6167732e6d697373696e67 = usage: { "solstone journal backfill-processing-records [-h] [--day DAY] [--commit |" }{ "\u000a" }{ "                                           --dry-run] [-v] [-d]" }{ "\u000a" }{ "solstone journal backfill-processing-records" }: error: argument { "--day" }: expected one argument
+
+m6a6f75726e616c2e636c692e6261636b66696c6c2e666c6167732e756e6b6e6f776e = usage: { "solstone journal backfill-processing-records [-h] [--day DAY] [--commit |" }{ "\u000a" }{ "                                           --dry-run] [-v] [-d]" }{ "\u000a" }{ "solstone journal backfill-processing-records" }: error: unrecognized arguments: { $argument }
+
+m6a6f75726e616c2e636c692e6261636b66696c6c2e68656c70 = usage: { "solstone journal backfill-processing-records [-h] [--day DAY] [--commit |" }{ "\u000a" }{ "                                           --dry-run] [-v] [-d]" }{ "\u000a" }{ "\u000a" }Backfill empty processing records onto stuck header-only native{ "\u000a" }{ "describe/transcribe" } outputs{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "     " }show this help message and exit{ "\u000a" }{ "  " }{ "--day DAY" }{ "      " }Day in { "YYYYMMDD" } format; defaults to all days{ "\u000a" }{ "  " }{ "--commit" }{ "       " }Rewrite eligible { "JSONL" } headers with empty processing records{ "\u000a" }{ "  " }{ "--dry-run" }{ "      " }Preview eligible outputs without writing changes{ "\u000a" }{ "  " }{ "-v, --verbose" }{ "  " }Enable verbose output{ "\u000a" }{ "  " }{ "-d, --debug" }{ "    " }Enable debug logging
+
+m6a6f75726e616c2e636c692e6261636b66696c6c2e6964656e746974792e616d626967756f7573 = named stream directory "{ "_default" }" cannot be spelled as a record identity: { $path }
+
+m6a6f75726e616c2e636c692e6261636b66696c6c2e6964656e746974792e6475706c6963617465 = multiple segments share stream { $stream } key { $key }
+
+m6a6f75726e616c2e636c692e6261636b66696c6c2e6964656e746974792e656e636f64696e67 = segment path is not { "UTF-8" } representable: { $path }
+
+m6a6f75726e616c2e636c692e6261636b66696c6c2e696e76616c69642e646179 = expected day in { "YYYYMMDD" } format
+
+m6a6f75726e616c2e636c692e6261636b66696c6c2e6d61726b6572 = Stamped { $path }, but could not mark day { $day } updated: { $error }
+
+m6a6f75726e616c2e636c692e6261636b66696c6c2e70726576696577 = DRY RUN (no changes written)
+
+m6a6f75726e616c2e636c692e6261636b66696c6c2e7365676d656e742e6469726563746f7279 = Could not list segment directory { $path }: { $error }
+
+m6a6f75726e616c2e636c692e6261636b66696c6c2e7365676d656e7473 = Could not list segments for day { $day }: { $error }
+
+m6a6f75726e616c2e636c692e6261636b66696c6c2e7374616d702e6368616e676564 = Could not stamp { $path }: file changed after classification
+
+m6a6f75726e616c2e636c692e6261636b66696c6c2e7374616d702e72656164 = Could not stamp { $path }: could not re-read file: { $error }
+
+m6a6f75726e616c2e636c692e6261636b66696c6c2e7374616d702e7772697465 = Could not stamp { $path }: write failed: { $error }
+
+m6a6f75726e616c2e636c692e6261636b66696c6c2e73747265616d2e6469726563746f7279 = Could not list stream directory { $path }: not a directory
+
+m6a6f75726e616c2e636c692e6261636b66696c6c2e73747265616d2e656e636f64696e67 = segment stream is not { "UTF-8" } representable: { $path }
+
 m6a6f75726e616c2e636c692e636c69656e742e6572726f722e6d616c666f726d6564 = the journal response couldn't be read.
 
 m6a6f75726e616c2e636c692e636c69656e742e6572726f722e74696d656f7574 = The journal didn't answer in time.

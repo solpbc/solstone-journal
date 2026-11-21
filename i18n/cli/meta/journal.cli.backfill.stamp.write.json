@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for stamp write.",
+  "context": "Journal command-line text for stamp write.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6ff72fb8aea5fe65c0b33380d1a636cbd134decd6352fb4cbed52b66fa05fc0d",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

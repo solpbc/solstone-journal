@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for days.",
+  "context": "Journal command-line text for days.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8ac178334b323687e3b8f294cca7bc196e9819205d5f2b3b50c4314819f95c8d",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

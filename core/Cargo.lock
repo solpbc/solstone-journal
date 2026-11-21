@@ -4436,6 +4436,7 @@ version = "2.0.86"
 dependencies = [
  "jiff 1.0.0",
  "serde_json",
+ "solstone-core-cli-copy",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-processing-record",

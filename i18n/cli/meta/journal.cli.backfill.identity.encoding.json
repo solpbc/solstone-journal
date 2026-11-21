@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for identity encoding.",
+  "context": "Journal command-line text for identity encoding.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "85029add71eb6e0751c672902dd771b48a50f6c425816d3859a7636f546439bf",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "encoding",
+      "kind": "accepted-input",
+      "value": "UTF-8"
+    }
+  ]
+}

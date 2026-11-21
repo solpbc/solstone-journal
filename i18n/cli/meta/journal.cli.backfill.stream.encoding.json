@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for stream encoding.",
+  "context": "Journal command-line text for stream encoding.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7e132eaab9e5e5bb42705c3e2878421f089c958008e283ea8cd944478a8f29be",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "encoding",
+      "kind": "accepted-input",
+      "value": "UTF-8"
+    }
+  ]
+}

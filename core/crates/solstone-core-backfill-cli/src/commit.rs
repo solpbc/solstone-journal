@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::fmt;
+use solstone_core_cli_copy as copy;
+
 use std::fs;
 use std::path::Path;
 
@@ -47,13 +48,23 @@ pub(crate) enum CommitError {
     Marker(String),
 }
 
-impl fmt::Display for CommitError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl CommitError {
+    pub(crate) fn display_for(&self, item: &Eligible) -> String {
+        let path = item.path.display();
         match self {
-            Self::Changed => formatter.write_str("file changed after classification"),
-            Self::Read(error) => write!(formatter, "could not re-read file: {error}"),
-            Self::Write(error) => write!(formatter, "write failed: {error}"),
-            Self::Marker(error) => write!(formatter, "stream marker write failed: {error}"),
+            Self::Changed => copy::display("journal.cli.backfill.stamp.changed", [("path", &path)]),
+            Self::Read(error) => copy::display(
+                "journal.cli.backfill.stamp.read",
+                [("path", &path), ("error", error)],
+            ),
+            Self::Write(error) => copy::display(
+                "journal.cli.backfill.stamp.write",
+                [("path", &path), ("error", error)],
+            ),
+            Self::Marker(error) => copy::display(
+                "journal.cli.backfill.marker",
+                [("path", &path), ("day", &item.day), ("error", error)],
+            ),
         }
     }
 }

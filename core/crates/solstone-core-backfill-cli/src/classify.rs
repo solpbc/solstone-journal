@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use solstone_core_cli_copy as copy;
+
 use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
@@ -164,6 +166,26 @@ pub(crate) fn is_day_key(value: &str) -> bool {
     value.len() == 8 && value.bytes().all(|byte| byte.is_ascii_digit())
 }
 
+pub(crate) fn identity_error(error: &SegmentIdentityError) -> String {
+    match error {
+        SegmentIdentityError::NotUtf8 { path } => copy::display(
+            "journal.cli.backfill.identity.encoding",
+            [("path", &path.display())],
+        ),
+        SegmentIdentityError::AmbiguousNamedDefault { path } => copy::display(
+            "journal.cli.backfill.identity.ambiguous",
+            [("path", &path.display())],
+        ),
+        SegmentIdentityError::DuplicateKey { stream, key } => copy::display(
+            "journal.cli.backfill.identity.duplicate",
+            [
+                ("stream", &(format!("{stream:?}"))),
+                ("key", &(format!("{key:?}"))),
+            ],
+        ),
+    }
+}
+
 pub(crate) fn refuse_ambiguous_named_default(
     journal: &Path,
     requested_day: Option<&str>,
@@ -198,7 +220,11 @@ pub(crate) fn plan(
     let days = match day_dirs(journal) {
         Ok(days) => days,
         Err(error) => {
-            let _ = writeln!(stderr, "Could not list chronicle days: {error}");
+            let _ = writeln!(
+                stderr,
+                "{}",
+                copy::display("journal.cli.backfill.days", [("error", &error)])
+            );
             HashMap::new()
         }
     };
@@ -213,7 +239,14 @@ pub(crate) fn plan(
         let segments = match iter_segments(journal, PathOrDay::Directory(&day_path)) {
             Ok(segments) => segments,
             Err(error) => {
-                let _ = writeln!(stderr, "Could not list segments for day {day}: {error}");
+                let _ = writeln!(
+                    stderr,
+                    "{}",
+                    copy::display(
+                        "journal.cli.backfill.segments",
+                        [("day", &day), ("error", &error)]
+                    )
+                );
                 continue;
             }
         };
@@ -223,8 +256,11 @@ pub(crate) fn plan(
                 Err(SegmentIdentityError::NotUtf8 { .. }) => {
                     let _ = writeln!(
                         stderr,
-                        "segment stream is not UTF-8 representable: {}",
-                        segment.path().display()
+                        "{}",
+                        copy::display(
+                            "journal.cli.backfill.stream.encoding",
+                            [("path", &(segment.path().display()))]
+                        )
                     );
                     report.counts.add(Outcome::SkipUnreadable);
                     continue;
@@ -236,8 +272,11 @@ pub(crate) fn plan(
                 Err(error) => {
                     let _ = writeln!(
                         stderr,
-                        "Could not list segment directory {}: {error}",
-                        segment.path().display()
+                        "{}",
+                        copy::display(
+                            "journal.cli.backfill.segment.directory",
+                            [("path", &(segment.path().display())), ("error", &error)]
+                        )
                     );
                     continue;
                 }
@@ -273,8 +312,11 @@ fn report_non_directory_day_entries(day_path: &Path, stderr: &mut dyn Write) {
     }) {
         let _ = writeln!(
             stderr,
-            "Could not list stream directory {}: not a directory",
-            entry.path.display()
+            "{}",
+            copy::display(
+                "journal.cli.backfill.stream.directory",
+                [("path", &entry.path.display())]
+            )
         );
     }
 }
@@ -288,7 +330,11 @@ fn select_days(
         return match days.get(day) {
             Some(path) => vec![(day.to_owned(), path.clone())],
             None => {
-                let _ = writeln!(stderr, "Day {day} was not found in the journal");
+                let _ = writeln!(
+                    stderr,
+                    "{}",
+                    copy::display("journal.cli.backfill.day.missing", [("day", &day)])
+                );
                 Vec::new()
             }
         };

@@ -8,6 +8,8 @@ mod cli;
 mod commit;
 mod record;
 
+use solstone_core_cli_copy as copy;
+
 use std::ffi::OsString;
 use std::io::Write;
 use std::path::Path;
@@ -30,16 +32,12 @@ pub fn run(
 ) -> i32 {
     let options = match cli::parse(args) {
         Ok(cli::ParseResult::Help) => {
-            let _ = stdout.write_all(cli::HELP.as_bytes());
+            let _ = writeln!(stdout, "{}", copy::text("journal.cli.backfill.help"));
             return 0;
         }
         Ok(cli::ParseResult::Options(options)) => options,
         Err(error) => {
-            let _ = stderr.write_all(cli::USAGE.as_bytes());
-            let _ = writeln!(
-                stderr,
-                "solstone journal backfill-processing-records: error: {error}"
-            );
+            let _ = writeln!(stderr, "{error}");
             return 2;
         }
     };
@@ -47,13 +45,13 @@ pub fn run(
     if let Some(day) = options.day.as_deref()
         && !classify::is_day_key(day)
     {
-        let _ = writeln!(stderr, "expected day in YYYYMMDD format");
+        let _ = writeln!(stderr, "{}", copy::text("journal.cli.backfill.invalid.day"));
         return 1;
     }
 
     if let Err(errors) = classify::refuse_ambiguous_named_default(journal, options.day.as_deref()) {
         for error in errors {
-            let _ = writeln!(stderr, "{error}");
+            let _ = writeln!(stderr, "{}", classify::identity_error(&error));
         }
         return 1;
     }
@@ -61,7 +59,7 @@ pub fn run(
     let mut report = match classify::plan(journal, options.day.as_deref(), instant, stderr) {
         Ok(report) => report,
         Err(error) => {
-            let _ = writeln!(stderr, "{error}");
+            let _ = writeln!(stderr, "{}", classify::identity_error(&error));
             return 1;
         }
     };
@@ -73,9 +71,9 @@ pub fn run(
         stdout,
         "{}",
         if options.commit {
-            "COMMITTED"
+            copy::text("journal.cli.backfill.committed")
         } else {
-            "DRY RUN (no changes written)"
+            copy::text("journal.cli.backfill.preview")
         }
     );
     report.counts.write_to(stdout);
@@ -89,21 +87,9 @@ pub(crate) fn commit_eligible(
     stderr: &mut dyn Write,
 ) {
     for item in &report.eligible {
-        match commit::commit(journal, item, writer) {
-            Ok(()) => {}
-            Err(commit::CommitError::Marker(error)) => {
-                report.counts.move_stamp_to_write_failed();
-                let _ = writeln!(
-                    stderr,
-                    "Stamped {}, but could not mark day {} updated: {error}",
-                    item.path.display(),
-                    item.day
-                );
-            }
-            Err(error) => {
-                report.counts.move_stamp_to_write_failed();
-                let _ = writeln!(stderr, "Could not stamp {}: {error}", item.path.display());
-            }
+        if let Err(error) = commit::commit(journal, item, writer) {
+            report.counts.move_stamp_to_write_failed();
+            let _ = writeln!(stderr, "{}", error.display_for(item));
         }
     }
 }

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for committed.",
+  "context": "Journal command-line text for committed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5e4ca5f7f3cd682ff0d3020983fbf0bd6028f5f921d59f9673d878f81f1f4288",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

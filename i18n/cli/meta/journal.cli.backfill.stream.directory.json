@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for stream directory.",
+  "context": "Journal command-line text for stream directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d6ef1e38a3f4a08d80a8d0f61173d0352f47973a6e72ab6b606b0cf47fcba067",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

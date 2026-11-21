@@ -1,0 +1,43 @@
+{
+  "description": "Journal command-line text for flags missing.",
+  "context": "Journal command-line text for flags missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a8254630de00cf09c0d1997f7b3a53a879a2b1d7aca74693619b72098c36bf35",
+  "max_length": 172,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal backfill-processing-records [-h] [--day DAY] [--commit |"
+    },
+    {
+      "name": "syntax_continuation_1",
+      "kind": "accepted-input",
+      "value": "                                           --dry-run] [-v] [-d]"
+    },
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal backfill-processing-records"
+    },
+    {
+      "name": "day_flag",
+      "kind": "flag",
+      "value": "--day"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

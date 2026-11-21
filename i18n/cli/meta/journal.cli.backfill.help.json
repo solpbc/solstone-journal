@@ -1,0 +1,108 @@
+{
+  "description": "Journal command-line text for help.",
+  "context": "Journal command-line text for help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "13557da0015282dffdca34cb0da8db061851d2c04c9c2b6a2a0159d1cb2c9444",
+  "max_length": 834,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal backfill-processing-records [-h] [--day DAY] [--commit |"
+    },
+    {
+      "name": "syntax_continuation_1",
+      "kind": "accepted-input",
+      "value": "                                           --dry-run] [-v] [-d]"
+    },
+    {
+      "name": "handlers",
+      "kind": "command",
+      "value": "describe/transcribe"
+    },
+    {
+      "name": "indent_2",
+      "kind": "whitespace",
+      "value": "  "
+    },
+    {
+      "name": "help_option",
+      "kind": "accepted-input",
+      "value": "-h, --help"
+    },
+    {
+      "name": "gap_5",
+      "kind": "whitespace",
+      "value": "     "
+    },
+    {
+      "name": "day_option",
+      "kind": "accepted-input",
+      "value": "--day DAY"
+    },
+    {
+      "name": "gap_6",
+      "kind": "whitespace",
+      "value": "      "
+    },
+    {
+      "name": "date_format",
+      "kind": "accepted-input",
+      "value": "YYYYMMDD"
+    },
+    {
+      "name": "commit_option",
+      "kind": "accepted-input",
+      "value": "--commit"
+    },
+    {
+      "name": "gap_7",
+      "kind": "whitespace",
+      "value": "       "
+    },
+    {
+      "name": "jsonl_format",
+      "kind": "accepted-input",
+      "value": "JSONL"
+    },
+    {
+      "name": "dry_run_option",
+      "kind": "accepted-input",
+      "value": "--dry-run"
+    },
+    {
+      "name": "verbose_option",
+      "kind": "accepted-input",
+      "value": "-v, --verbose"
+    },
+    {
+      "name": "gap_2",
+      "kind": "whitespace",
+      "value": "  "
+    },
+    {
+      "name": "debug_option",
+      "kind": "accepted-input",
+      "value": "-d, --debug"
+    },
+    {
+      "name": "gap_4",
+      "kind": "whitespace",
+      "value": "    "
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

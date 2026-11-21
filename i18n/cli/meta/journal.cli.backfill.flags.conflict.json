@@ -1,0 +1,47 @@
+{
+  "description": "Journal command-line text for flags conflict.",
+  "context": "Journal command-line text for flags conflict.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "flag",
+      "type": "string"
+    },
+    {
+      "name": "previous",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4e5594c5bf444ae883c284cb7848356ffd2180f18f58c625dca28a83edcd0d94",
+  "max_length": 186,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal backfill-processing-records [-h] [--day DAY] [--commit |"
+    },
+    {
+      "name": "syntax_continuation_1",
+      "kind": "accepted-input",
+      "value": "                                           --dry-run] [-v] [-d]"
+    },
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal backfill-processing-records"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

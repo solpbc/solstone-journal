@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for segment directory.",
+  "context": "Journal command-line text for segment directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "65f245bf8d1dfb990e56ccc0ebd3cf19a7c254bc5eab3c817169dc3eda78a344",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for segments.",
+  "context": "Journal command-line text for segments.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6bb9d4efc5dc9c9d9c2131f41758060d374956b0e33f71cf956430bff786f8cf",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}
