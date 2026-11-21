@@ -268,12 +268,6 @@ fn apply_permanent_devices_shell_divergence(expected: &mut Value) {
     apps.retain(|app| app["name"] != "observer");
 }
 
-/// Permanent documented divergence, introduced 2026-10-20, with no expiry
-/// condition: the status answer now lists what the journal understands from a
-/// linked device, which the frozen record predates. The corpus CANNOT be
-/// regenerated, so the one added member is taken out of the live payload after
-/// checking it names calendar notes. Narrowness is the safeguard: it removes
-/// exactly that member and nothing else.
 /// The security advisory check's report, a native addition on a desktop
 /// journal. Before the check first compares, it says it is checking.
 fn strip_permanent_status_security_addition_from_actual(actual: &mut Value) {
@@ -293,6 +287,12 @@ fn strip_permanent_status_security_addition_from_actual(actual: &mut Value) {
     );
 }
 
+/// Permanent documented divergence, introduced 2026-10-20, with no expiry
+/// condition: the status answer now lists what the journal understands from a
+/// linked device, which the frozen record predates. The corpus CANNOT be
+/// regenerated, so the one added member is taken out of the live payload after
+/// checking it names calendar notes. Narrowness is the safeguard: it removes
+/// exactly that member and nothing else.
 fn strip_permanent_status_capabilities_addition_from_actual(actual: &mut Value) {
     let capabilities = actual
         .as_object_mut()
@@ -304,6 +304,21 @@ fn strip_permanent_status_capabilities_addition_from_actual(actual: &mut Value) 
             .as_array()
             .is_some_and(|names| names.iter().any(|name| name == "calendar_notes")),
         "system status lists calendar notes"
+    );
+}
+
+/// The shared-source revision token, a native addition to system status that
+/// the frozen corpus predates. On a healthy established journal it is a
+/// non-empty opaque string; validate it before stripping it from the replay.
+fn strip_permanent_status_sources_rev_addition_from_actual(actual: &mut Value) {
+    let sources_rev = actual
+        .as_object_mut()
+        .expect("system status is an object")
+        .remove("sources_rev")
+        .expect("system status reports sources_rev");
+    assert!(
+        sources_rev.as_str().is_some_and(|rev| !rev.is_empty()),
+        "system status reports a non-empty sources_rev token: {sources_rev}"
     );
 }
 
@@ -1058,6 +1073,7 @@ async fn corpus_gate_and_converted_surface_match_all_non_deferred_cases() {
                     apply_client_capture_projection_rename(&mut expected);
                     strip_permanent_status_capabilities_addition_from_actual(&mut actual);
                     strip_permanent_status_security_addition_from_actual(&mut actual);
+                    strip_permanent_status_sources_rev_addition_from_actual(&mut actual);
                 }
                 if phase == "established" && path == "/app/speakers/api/state" {
                     // The corpus checks the state contract, not the evolving
