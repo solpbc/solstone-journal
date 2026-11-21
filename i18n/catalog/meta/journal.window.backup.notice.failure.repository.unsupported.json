@@ -1,0 +1,16 @@
+{
+  "description": "Notification about repeated attempts to back up the journal. The latest attempt reported repository_unsupported.",
+  "context": "Notification about repeated attempts to back up the journal. The latest attempt reported repository_unsupported.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f3719df565da2e0f5d232673b90bf03c62979cd28e2c1280796e50b4f5a710e4",
+  "max_length": 123,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

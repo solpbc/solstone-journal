@@ -1,0 +1,16 @@
+{
+  "description": "Notification about repeated attempts to back up the journal. Title when the episode is cleared.",
+  "context": "Notification about repeated attempts to back up the journal. Title when the episode is cleared.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a8ad579b085d91b4d507d9a80496903b76d76e06af58450b36c2586305c4b1cf",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

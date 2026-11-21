@@ -2,6 +2,8 @@
 // Copyright (c) 2026 sol pbc
 
 #[cfg(windows)]
+use solstone_core_window_catalog as copy;
+#[cfg(windows)]
 use std::env;
 #[cfg(windows)]
 use std::io;
@@ -14,17 +16,20 @@ pub fn resolve_package_bin_and_root() -> io::Result<(PathBuf, PathBuf)> {
     let bin_dir = exe.parent().ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::NotFound,
-            "current executable has no parent directory",
+            copy::text(copy::ENGLISH, "journal.window.backup.detail.bin.parent"),
         )
     })?;
     if bin_dir.file_name() != Some(std::ffi::OsStr::new("bin")) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "current executable is not in a bin directory",
+            copy::text(copy::ENGLISH, "journal.window.backup.detail.bin.directory"),
         ));
     }
     let package_root = bin_dir.parent().ok_or_else(|| {
-        io::Error::new(io::ErrorKind::NotFound, "package root directory not found")
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            copy::text(copy::ENGLISH, "journal.window.backup.detail.package.root"),
+        )
     })?;
     Ok((bin_dir.to_path_buf(), package_root.to_path_buf()))
 }

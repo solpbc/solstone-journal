@@ -1,0 +1,16 @@
+{
+  "description": "Notification about repeated attempts to back up the journal. The latest attempt reported restic_unavailable.",
+  "context": "Notification about repeated attempts to back up the journal. The latest attempt reported restic_unavailable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b1e13705f4ed79ecd86ce64c5122b3b8cbb41918d58d9d74a54f7b63932098ff",
+  "max_length": 108,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

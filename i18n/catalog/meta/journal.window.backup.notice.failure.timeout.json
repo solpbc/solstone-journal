@@ -1,0 +1,16 @@
+{
+  "description": "Notification about repeated attempts to back up the journal. The latest attempt reported timeout.",
+  "context": "Notification about repeated attempts to back up the journal. The latest attempt reported timeout.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3c477de48fdd5624dee5195c0d27578b3aeab27c3d18e260c7dbba2833cbfc29",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

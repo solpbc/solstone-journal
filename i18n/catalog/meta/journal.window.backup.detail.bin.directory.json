@@ -1,0 +1,23 @@
+{
+  "description": "Backup worker discovery on Windows. The installed executable must live in the named directory.",
+  "context": "Backup worker discovery on Windows. The installed executable must live in the named directory.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b3716897f753b313343e11e3527794913727d4affca265bf106ff92c7194c453",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "bin_directory",
+      "kind": "accepted-input",
+      "value": "bin"
+    }
+  ]
+}

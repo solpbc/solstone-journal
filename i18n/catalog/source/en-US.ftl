@@ -20394,3 +20394,41 @@ journal.window.network.pairing.refusal.same.machine.boolean = { $field_name } mu
 journal.window.network.pairing.refusal.randomness.unavailable = system randomness unavailable
 
 journal.window.network.pairing.refusal.nonce.encoding = nonce encoding is invalid
+
+journal.window.backup.notice.title.raised = backup has been failing
+
+journal.window.backup.notice.title.cleared = backup is working again
+
+journal.window.backup.notice.failure.auth.failed = your journal's key couldn't unlock the backup at your backup destination. open backup to check it.
+
+journal.window.backup.notice.failure.repo.missing = no backup was found at your backup destination. open backup to check it.
+
+journal.window.backup.notice.failure.broker.unreachable = encrypted backup couldn't be reached. open backup for details.
+
+journal.window.backup.notice.failure.rclone.unavailable = encrypted backup is missing a part it needs where your journal runs. open backup for details.
+
+journal.window.backup.notice.failure.restic.unavailable = encrypted backup can't run where your journal runs. open backup for details.
+
+journal.window.backup.notice.failure.hosted.entitlement.inactive = encrypted backup isn't turned on in the services portal. open backup for details.
+
+journal.window.backup.notice.failure.binding.invalid = your journal's link to encrypted backup was refused. open backup for details.
+
+journal.window.backup.notice.failure.repository.unsupported = the repository in your backup settings doesn't match its storage. open backup to change it.
+
+journal.window.backup.notice.failure.timeout = the latest attempt ran out of time. open backup for details.
+
+journal.window.backup.notice.failure.locked = your backup destination was busy with backup maintenance. open backup for details.
+
+journal.window.backup.notice.failure.unknown = the latest attempt stopped with an error. open backup for details.
+
+journal.window.backup.notice.recovery.incomplete = the latest backup attempt finished, but some of your journal couldn't be read. open backup for details.
+
+journal.window.backup.notice.recovery.complete = the latest backup attempt finished. open backup for details.
+
+journal.window.backup.detail.path.line.break = journal path contains a line break
+
+journal.window.backup.detail.bin.parent = current executable has no parent directory
+
+journal.window.backup.detail.bin.directory = current executable is not in a { $bin_directory } directory
+
+journal.window.backup.detail.package.root = package root directory not found

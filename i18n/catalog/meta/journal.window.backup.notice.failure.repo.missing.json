@@ -1,0 +1,16 @@
+{
+  "description": "Notification about repeated attempts to back up the journal. The latest attempt reported repo_missing.",
+  "context": "Notification about repeated attempts to back up the journal. The latest attempt reported repo_missing.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1c3aac4b7fb7eccbfbf8dc18850770f947a902dba7875edb5139e933b803a52e",
+  "max_length": 104,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

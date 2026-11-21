@@ -1,0 +1,16 @@
+{
+  "description": "Notification about repeated attempts to back up the journal. The latest attempt reported hosted_entitlement_inactive.",
+  "context": "Notification about repeated attempts to back up the journal. The latest attempt reported hosted_entitlement_inactive.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dce6ef5588e00d3edc7907243e56850282fc5be98ed0605d734a164d505ff9cc",
+  "max_length": 113,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

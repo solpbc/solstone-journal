@@ -486,6 +486,8 @@ Follow the [catalog compiler guide](tools/i18n/README.md) to refresh source
 revisions. Run
 `make journal-window-catalog` and commit the generated resources.
 
+Backup notices and stored backup diagnostics use the window catalog. Render the English text when writing a backup record or broadcasting a notice on Callosum.
+
 ### Journal command-line strings
 
 Put command-line help, progress and human-readable errors in
