@@ -778,7 +778,7 @@ async function createEnvironment(
     },
     solPathContext: () => ({ day: '20200115' }),
     AppServices: {
-      escapeHtml: (s) => String(s ?? ''),
+      escapeHtml: (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'),
       renderMarkdown: (s) => String(s ?? ''),
       notifications: {
         show: (notice) => { notifications.push(notice); return notifications.length; },
@@ -2536,6 +2536,27 @@ test('audio archive placement parts switch audio source and seek relative to par
   const legacyAudioElement = env.doc.querySelector('audio[data-role="segment-audio"]');
   legacyEntries[1].dispatchEvent({ type: 'click' });
   assert.strictEqual(legacyAudioElement.currentTime, 30);
+});
+
+test('imported turns use the transcript row with literal text and optional times', async () => {
+  const env = await createEnvironment(
+    'https://journal.example/app/transcripts/20200115?stream=room#114500_300/transcript'
+  );
+  await env.releasePendingSegmentGets('analyzed', {
+    data_state: {},
+    chunks: [
+      { type: 'transcript', time: '11:45:02', speaker: 'Lena <Guest>', text: 'a < b\nsecond line' },
+      { type: 'transcript', time: null, text: 'No time for this turn' },
+    ],
+  });
+  const pane = env.doc.querySelector('#tr-tabpanel-transcript');
+  const rows = pane.querySelectorAll('.tr-entry-transcript');
+  assert.equal(rows.length, 2);
+  assert.match(pane.innerHTML, /11:45:02/);
+  assert.match(pane.innerHTML, /<strong>Lena &lt;Guest&gt;:<\/strong> a &lt; b<br>second line/);
+  assert.match(pane.innerHTML, /class="tr-entry-time"><\/div>/);
+  assert.match(pane.innerHTML, /No time for this turn/);
+  assert.doesNotMatch(pane.innerHTML, /tr-entry-audio|data-speaker-slot|<audio\b/);
 });
 
 const MOMENT_CHUNKS = [
