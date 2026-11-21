@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- messages is off for every agent, including agents you've already connected. if an agent has transcripts, it can still read the words spoken in a meeting. turn on messages for that agent to share written chats it has access to, including the meeting chat. an agent needs both transcripts and messages to read a conversation when your journal can't tell if it was spoken or written.
 - an agent you've let see your whole journal, with transcripts and summaries, can now read a date range of up to a year as one row per day. each day carries its journal link and, when available, a top memory and quotes with their activity title. it can also include body, places, photos, notes and people for the kinds you've allowed.
 - new imports show where you added them from. when you import from the linux app, you can close the import window while your files are on their way to your journal.
 - when you choose an Obsidian vault, your journal uses the names you gave your paired devices and leaves out devices you removed.

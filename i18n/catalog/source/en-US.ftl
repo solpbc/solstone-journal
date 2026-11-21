@@ -5733,6 +5733,10 @@ journal.window.agents.permission.kind.facets.description = facet descriptions, a
 
 journal.window.agents.permission.kind.facets.label = summaries
 
+journal.window.agents.permission.kind.messages.description = words written and sent in chats and AI chats you imported, and details drawn from those words. an agent needs both transcripts and messages to read a conversation when your journal can't tell if it was spoken or written.
+
+journal.window.agents.permission.kind.messages.label = messages
+
 journal.window.agents.permission.kind.notes.description = notes you import, highlights and notes saved by other agents.
 
 journal.window.agents.permission.kind.notes.label = notes
@@ -5757,7 +5761,7 @@ journal.window.agents.permission.kind.screen.text.description = text and summari
 
 journal.window.agents.permission.kind.screen.text.label = screen text
 
-journal.window.agents.permission.kind.transcripts.description = words spoken or typed in conversations, and details drawn from those words.
+journal.window.agents.permission.kind.transcripts.description = words spoken aloud, details drawn from those words, and the notes a meeting app keeps with them.
 
 journal.window.agents.permission.kind.transcripts.label = transcripts
 
