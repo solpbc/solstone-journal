@@ -8,12 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- an agent you've let see your whole journal, with transcripts and summaries, can now read a date range of up to a year as one row per day. each day carries its journal link and, when available, a top memory and quotes with their activity title. it can also include body, places, photos, notes and people for the kinds you've allowed.
-- new imports show where you added them from. when you import from the linux app, you can close the import window while your files are on their way to your journal.
-- when you choose an Obsidian vault, your journal uses the names you gave your paired devices and leaves out devices you removed.
-
-- an agent connected to your journal now gets instructions for showing your photos in something it builds for you, such as a printable book. in apps that let a page reach your journal, the instructions are for a page that loads each photo from your journal when you open it. your journal makes no public link for them.
-- notes shared alongside a photo from the solstone app on android now appear with the photo, separated from your journal's generated description.
+- when you import from the solstone app for linux, you can close the window while your files are on their way to your journal.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
@@ -21,11 +16,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- imported conversations that opened to an empty pane now show their text in transcripts.
-- on windows, setting up a journal could occasionally fail with an access-denied error while saving installation details.
-- on linux, `solstone journal setup` could stop at its first step after you installed solstone with apt, dnf or zypper, with a `disk_space` error in `solstone journal doctor`. that check makes sure there is room to download the next version beside the current one, which a package install doesn't need, because an update replaces it in place. it now skips package installs.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
-- profile pic suggestions from past meetings could take an extra day to appear.
 - fixed a problem that could make the android and iphone development journals close unexpectedly when you stopped local thinking.
 - the iphone development journal now runs local thinking and speech-to-text one at a time to reduce memory pressure. if a local thinking request is interrupted, the same model may need to load again before the next request.
 - home could show a speech repair message in the android and iphone development journals even when speech was ready. it now uses the same check as setup.
@@ -57,7 +48,25 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - on the settings page on an iphone, choosing any section but facets or support from the section menu now leaves focus on the menu. before, focus was dropped as the menu closed.
 - on an iphone, choosing from a menu now leaves focus on that menu in more places: in settings, the pronouns, transcription backend and parakeet.cpp device menus; the level menu in health's service logs; the source menu in import; the "call it" menu on a map place; and the type menu when you edit an entity. before, focus was dropped as the menu closed.
 - on an iphone, when a priority change on the settings page can't be saved, its menu no longer opens again by itself.
+
+## [2.0.87] - 2026-11-21
+
+### Added
+
+- an agent you've let see your whole journal, with transcripts and summaries, can now read a date range of up to a year as one row per day. each day carries its journal link and, when available, a top memory and quotes with their activity title. it can also include body, places, photos, notes and people for the kinds you've allowed.
+- an agent connected to your journal now gets instructions for showing your photos in something it builds for you, such as a printable book. where the agent's own app lets a page reach your journal, the instructions are for a page that loads each photo from your journal when you open it. your journal makes no public link for them.
+- an agent connected to your journal now sees where each search result and entry came from and what kind it is, such as a note, a photo or a transcript. asking for one source, such as Obsidian, now covers everything from that source it may read.
+- notes shared alongside a photo from the solstone app for android now appear with the photo, separated from your journal's generated description.
+- your import list now shows where an import came from when your journal knows, such as your browser, the command line or your phone.
+- when you choose an Obsidian vault your journal already has from another device, the notice now names that device the way you named it, and leaves out devices you removed.
+
+### Fixed
+
+- imported conversations that opened to an empty pane now show their text in transcripts.
 - when terminal text from earlier comes back into view, such as when an agent redraws its replies or you scroll back, your journal is less likely to describe it as something you just did. thanks @dvanduzer for the report (#422).
+- profile pic suggestions from past meetings could take an extra day to appear.
+- on linux, `solstone journal setup` could stop at its first step after you installed solstone with apt, dnf or zypper, with a `disk_space` error in `solstone journal doctor`. it now skips that check for package installs.
+- on windows, setting up a journal could occasionally fail with an access-denied error while saving installation details.
 
 ## [2.0.86] - 2026-11-20
 
