@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for check index.",
+  "context": "Journal command-line text for check index.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1087b39fe780d5162f3e459ee6c59a989eb49a84db1dfdaab8598c6f1f7c48b5",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for check marker no stream.",
+  "context": "Journal command-line text for check marker no stream.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "780459dab557f758b1e4d7284f1a66c15ec32e1904861400825b9444ab0f3168",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "stream_file",
+      "kind": "accepted-input",
+      "value": "stream.json"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for list heading size.",
+  "context": "Journal command-line text for list heading size.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f566897cfae125a1d318fd25724acb988daed600620ce9b17fc68444a69d091f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

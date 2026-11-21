@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for move plan index.",
+  "context": "Journal command-line text for move plan index.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "chunks",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "85f1b78ad71173646148ec67f97f645c293c86491a993b5be3b87d15afe7ef7d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for move stream mismatch.",
+  "context": "Journal command-line text for move stream mismatch.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path_stream",
+      "type": "string"
+    },
+    {
+      "name": "marker_stream",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0a3c09bc7b278f59d7011ad24788b14ba38f85f8ba1421ad097b8c4acc453bf3",
+  "max_length": 124,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "stream_file",
+      "kind": "accepted-input",
+      "value": "stream.json"
+    }
+  ]
+}

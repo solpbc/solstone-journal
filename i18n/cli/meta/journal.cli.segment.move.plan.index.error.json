@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for move plan index error.",
+  "context": "Journal command-line text for move plan index error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2cd1b295d9a280a4a1f4f0ba63dd65d725760b492c93dfb1be3e2e8667cf3ce6",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "index_command",
+      "kind": "command",
+      "value": "solstone journal indexer --rescan"
+    }
+  ]
+}

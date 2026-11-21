@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for move successor none.",
+  "context": "Journal command-line text for move successor none.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c16d96e712375283e9fa09e0689e96d6769efe48626361bff859d8aa56218ad3",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

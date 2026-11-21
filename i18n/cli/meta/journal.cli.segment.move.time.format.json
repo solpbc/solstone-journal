@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for move time format.",
+  "context": "Journal command-line text for move time format.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e6fcf26e0a94c75937347833eec87b06a4c4982f144201c958afec1fcff2a9b5",
+  "max_length": 103,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "time_format",
+      "kind": "accepted-input",
+      "value": "HHMMSS"
+    },
+    {
+      "name": "to_time_flag",
+      "kind": "flag",
+      "value": "--to-time"
+    }
+  ]
+}

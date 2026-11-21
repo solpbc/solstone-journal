@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for move plan tail.",
+  "context": "Journal command-line text for move plan tail.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "928859f1dc07f1eb541a71b1d8fc3f36dae06dd3669e76d10c523e60478f46c1",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

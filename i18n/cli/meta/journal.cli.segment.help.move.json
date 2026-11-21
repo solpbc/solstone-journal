@@ -1,0 +1,93 @@
+{
+  "description": "Journal command-line text for help move.",
+  "context": "Journal command-line text for help move.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "14231ef13bba6a34222788f1b3a26be934f328bec488c2573c45ba6122e7bc65",
+  "max_length": 586,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal segment <command> [options] move [-h] --to-day TO_DAY"
+    },
+    {
+      "name": "syntax_line_1",
+      "kind": "accepted-input",
+      "value": "                                                [--to-time TO_TIME]"
+    },
+    {
+      "name": "syntax_line_2",
+      "kind": "accepted-input",
+      "value": "                                                [--dry-run] [-v]"
+    },
+    {
+      "name": "syntax_line_3",
+      "kind": "accepted-input",
+      "value": "                                                path"
+    },
+    {
+      "name": "option_6",
+      "kind": "accepted-input",
+      "value": "  path               "
+    },
+    {
+      "name": "syntax_line_7",
+      "kind": "accepted-input",
+      "value": "                     20260304/default/090000_300)"
+    },
+    {
+      "name": "option_10",
+      "kind": "accepted-input",
+      "value": "  -h, --help         "
+    },
+    {
+      "name": "option_11",
+      "kind": "accepted-input",
+      "value": "  --to-day TO_DAY    "
+    },
+    {
+      "name": "option_12",
+      "kind": "accepted-input",
+      "value": "  --to-time TO_TIME  "
+    },
+    {
+      "name": "option_13",
+      "kind": "accepted-input",
+      "value": "  --dry-run          "
+    },
+    {
+      "name": "option_14",
+      "kind": "accepted-input",
+      "value": "  -v, --verbose      "
+    },
+    {
+      "name": "break",
+      "kind": "whitespace",
+      "value": "\n"
+    },
+    {
+      "name": "day_format",
+      "kind": "accepted-input",
+      "value": "YYYYMMDD"
+    },
+    {
+      "name": "time_format",
+      "kind": "accepted-input",
+      "value": "HHMMSS"
+    },
+    {
+      "name": "example_path",
+      "kind": "accepted-input",
+      "value": "day/stream/segment"
+    }
+  ]
+}

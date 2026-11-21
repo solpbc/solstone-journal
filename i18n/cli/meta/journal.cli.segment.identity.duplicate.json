@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for identity duplicate.",
+  "context": "Journal command-line text for identity duplicate.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "stream",
+      "type": "string"
+    },
+    {
+      "name": "key",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "85fb203ad83ac85a278935fc7315ce7f2b71c374b2a731a31d0b3eaee6c1a57e",
+  "max_length": 109,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

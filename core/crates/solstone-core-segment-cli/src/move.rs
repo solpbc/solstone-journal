@@ -4,14 +4,15 @@
 use std::path::Path;
 
 use serde_json::Value;
+use solstone_core_cli_copy as copy;
 use solstone_core_segment::{
     DEFAULT_STREAM, LockOptions, Relocation, RelocationOutcome, RelocationRefusal, RepairOutcome,
-    available_segment_key, read_text, relocate_segment, touch_stream_health_marker,
+    available_segment_key, read_text, relocate_segment_for, touch_stream_health_marker,
 };
 
 use crate::index::{SegmentIndexStatus, read_segment_index};
 use crate::location::SegmentLocation;
-use crate::read::{checks, read_marker, render_checks, successors};
+use crate::read::{checks_in, read_marker, render_checks, successors};
 
 #[derive(Debug)]
 pub(crate) struct MovePlan {
@@ -55,7 +56,7 @@ impl SegmentOperations for NativeOperations {
         &self,
         relocation: &Relocation<'_>,
     ) -> Result<RelocationOutcome, RelocationRefusal> {
-        relocate_segment(relocation)
+        relocate_segment_for(relocation, copy::cli_locale())
     }
 
     fn enqueue_path(&self, journal: &Path, path: &Path) -> Result<(), String> {
@@ -74,74 +75,110 @@ pub(crate) fn build_plan(
     to_day: &str,
     to_time: Option<&str>,
 ) -> Result<MovePlan, MoveRefusal> {
+    let locale = copy::cli_locale();
     if !to_day.bytes().all(|byte| byte.is_ascii_digit()) || to_day.len() != 8 {
-        return Err(MoveRefusal::Message(format!(
-            "Invalid --to-day format: {to_day} (expected YYYYMMDD)"
+        return Err(MoveRefusal::Message(copy::display_for(
+            locale,
+            "journal.cli.segment.move.day.format",
+            [("to_day", &to_day)],
         )));
     }
     let mut destination_segment = source.segment.clone();
     if let Some(time) = to_time {
         if time.len() != 6 || !time.bytes().all(|byte| byte.is_ascii_digit()) {
-            return Err(MoveRefusal::Message(format!(
-                "Invalid --to-time format: {time} (expected HHMMSS)"
+            return Err(MoveRefusal::Message(copy::display_for(
+                locale,
+                "journal.cli.segment.move.time.format",
+                [("time", &time)],
             )));
         }
         let Some((_, duration)) = source.segment.split_once('_') else {
-            return Err(MoveRefusal::Message(
-                "Source segment key has no duration".to_owned(),
-            ));
+            return Err(MoveRefusal::Message(copy::render_for(
+                locale,
+                "journal.cli.segment.move.no.duration",
+                &[],
+            )));
         };
         destination_segment = format!("{time}_{duration}");
     }
     if source.day == to_day && source.segment == destination_segment {
-        return Err(MoveRefusal::Message(
-            "Source and destination are the same".to_owned(),
-        ));
+        return Err(MoveRefusal::Message(copy::render_for(
+            locale,
+            "journal.cli.segment.move.same",
+            &[],
+        )));
     }
     let mut destination =
         SegmentLocation::resolve(journal, to_day, &source.stream, &destination_segment)
             .map_err(|error| MoveRefusal::Message(error.to_string()))?;
     if destination.path.exists() {
         if to_time.is_none() {
-            return Err(MoveRefusal::Message(format!(
-                "Segment {destination_segment} already exists on {to_day}/{}. Use --to-time to specify an alternate time.",
-                source.stream
+            return Err(MoveRefusal::Message(copy::display_for(
+                locale,
+                "journal.cli.segment.move.exists",
+                [
+                    ("segment", &destination_segment),
+                    ("day", &to_day),
+                    ("stream", &source.stream),
+                ],
             )));
         }
         let parent = journal.join(&destination.parent_rel);
         let available = available_segment_key(&parent, &destination_segment, 100)
             .map_err(|error| MoveRefusal::Message(error.to_string()))?;
         let Some(available) = available else {
-            return Err(MoveRefusal::Message(format!(
-                "No available segment slot near {destination_segment} on {to_day}"
+            return Err(MoveRefusal::Message(copy::display_for(
+                locale,
+                "journal.cli.segment.move.no.slot",
+                [
+                    ("destination_segment", &destination_segment),
+                    ("to_day", &to_day),
+                ],
             )));
         };
         destination = SegmentLocation::resolve(journal, to_day, &source.stream, &available)
             .map_err(|error| MoveRefusal::Message(error.to_string()))?;
     }
-    let Some(marker) = read_marker(&source.path)
-        .map_err(|_| MoveRefusal::Message("No stream.json in source segment".to_owned()))?
+    let Some(marker) = read_marker(&source.path).map_err(|_| {
+        MoveRefusal::Message(copy::render_for(
+            locale,
+            "journal.cli.segment.move.no.marker",
+            &[],
+        ))
+    })?
     else {
-        return Err(MoveRefusal::Message(
-            "No stream.json in source segment".to_owned(),
-        ));
+        return Err(MoveRefusal::Message(copy::render_for(
+            locale,
+            "journal.cli.segment.move.no.marker",
+            &[],
+        )));
     };
     let marker_stream = marker
         .get("stream")
         .and_then(Value::as_str)
         .filter(|value| !value.is_empty())
         .ok_or_else(|| {
-            MoveRefusal::Message(format!(
-                "Stream mismatch: path says '{}' but stream.json says '{:?}'",
-                source.stream,
-                marker.get("stream")
+            MoveRefusal::Message(copy::display_for(
+                locale,
+                "journal.cli.segment.move.stream.mismatch",
+                [
+                    ("path_stream", &source.stream),
+                    (
+                        "marker_stream",
+                        &(format_args!("{:?}", marker.get("stream"))),
+                    ),
+                ],
             ))
         })?
         .to_owned();
     if source.stream != DEFAULT_STREAM && marker_stream != source.stream {
-        return Err(MoveRefusal::Message(format!(
-            "Stream mismatch: path says '{}' but stream.json says '{marker_stream}'",
-            source.stream
+        return Err(MoveRefusal::Message(copy::display_for(
+            locale,
+            "journal.cli.segment.move.stream.mismatch",
+            [
+                ("path_stream", &source.stream),
+                ("marker_stream", &marker_stream),
+            ],
         )));
     }
     let events = read_text(source.path.join("events.jsonl"), String::new())
@@ -150,8 +187,14 @@ pub(crate) fn build_plan(
         .filter(|line| !line.trim().is_empty())
         .count() as u64;
     let index = read_segment_index(journal, &source.index_rel);
-    let successors = successors(journal, &source.day, &marker_stream, &source.segment)
-        .map_err(MoveRefusal::Message)?;
+    let successors = successors(
+        journal,
+        &source.day,
+        &marker_stream,
+        &source.segment,
+        locale,
+    )
+    .map_err(MoveRefusal::Message)?;
     Ok(MovePlan {
         source,
         destination,
@@ -164,28 +207,77 @@ pub(crate) fn build_plan(
 }
 
 pub(crate) fn render_plan(plan: &MovePlan) -> String {
+    let locale = copy::cli_locale();
     let mut output = format!(
-        "Move: {} -> {}\n  events.jsonl lines: {}\n",
-        plan.source.token(),
-        plan.destination.token(),
-        plan.events
+        "{}\n  {}\n",
+        copy::display_for(
+            locale,
+            "journal.cli.segment.move.plan",
+            [
+                ("source", &(plan.source.token())),
+                ("destination", &(plan.destination.token()))
+            ]
+        ),
+        copy::display_for(
+            locale,
+            "journal.cli.segment.move.plan.events",
+            [("count", &plan.events)]
+        )
     );
     match plan.successors.as_slice() {
-        [] => output.push_str("  successor to patch: (none - stream tail)\n"),
-        [successor] => output.push_str(&format!("  successor to patch: {}\n", successor.token())),
-        many => output.push_str(&format!(
-            "  successor to patch: (ambiguous: {} successors)\n",
-            many.len()
+        [] => output.push_str(&format!(
+            "  {}\n",
+            copy::render_for(locale, "journal.cli.segment.move.plan.tail", &[])
         )),
+        [successor] => output.push_str(&format!(
+            "  {}\n",
+            copy::display_for(
+                locale,
+                "journal.cli.segment.move.plan.successor",
+                [("path", &(successor.token()))]
+            )
+        )),
+        many => output.push_str(&format!("  {}\n", {
+            let count = i64::try_from(many.len()).unwrap_or(i64::MAX);
+            copy::render_for(
+                locale,
+                "journal.cli.segment.move.plan.ambiguous",
+                &[
+                    ("quantity", copy::Value::Cardinal(count)),
+                    ("count", copy::Value::Integer(count)),
+                ],
+            )
+        })),
     }
     match &plan.index {
-        SegmentIndexStatus::Ready { chunks, .. } => output.push_str(&format!("  index chunks: {chunks}\n")),
-        SegmentIndexStatus::Unreadable { error } => output.push_str(&format!("  index read error: {error} (delete+reindex will be attempted; run: solstone journal indexer --rescan)\n")),
+        SegmentIndexStatus::Ready { chunks, .. } => output.push_str(&format!(
+            "  {}\n",
+            copy::display_for(
+                locale,
+                "journal.cli.segment.move.plan.index",
+                [("chunks", &chunks)]
+            )
+        )),
+        SegmentIndexStatus::Unreadable { error } => output.push_str(&format!(
+            "  {}\n",
+            copy::display_for(
+                locale,
+                "journal.cli.segment.move.plan.index.error",
+                [("error", &error)]
+            )
+        )),
         SegmentIndexStatus::Absent => {}
     }
     output.push_str(&format!(
-        "  health markers: {}, {}\n",
-        plan.source.day, plan.destination.day
+        "  {}\n",
+        copy::display_for(
+            locale,
+            "journal.cli.segment.move.plan.markers",
+            [
+                ("source_day", &plan.source.day),
+                ("destination_day", &plan.destination.day)
+            ]
+        )
     ));
     output
 }
@@ -203,7 +295,11 @@ pub(crate) fn execute_plan(
     locks: LockOptions,
     operations: &dyn SegmentOperations,
 ) -> MoveExecution {
-    let mut stdout = "\nExecuting move...\n".to_owned();
+    let locale = copy::cli_locale();
+    let mut stdout = format!(
+        "\n{}\n",
+        copy::render_for(locale, "journal.cli.segment.move.running", &[])
+    );
     let mut stderr = String::new();
     let source = plan.source.relocation_end();
     let destination = plan.destination.relocation_end();
@@ -227,8 +323,12 @@ pub(crate) fn execute_plan(
             return MoveExecution {
                 stdout,
                 stderr: format!(
-                    "Destination {} already exists; no changes made\n",
-                    plan.destination.token()
+                    "{}\n",
+                    copy::display_for(
+                        locale,
+                        "journal.cli.segment.move.directory.exists",
+                        [("destination", &(plan.destination.token()))]
+                    )
                 ),
                 exit_code: 1,
             };
@@ -237,7 +337,12 @@ pub(crate) fn execute_plan(
             return MoveExecution {
                 stdout,
                 stderr: format!(
-                    "step 1 directory move failed: {error}; source and index remain authoritative\n"
+                    "{}\n",
+                    copy::display_for(
+                        locale,
+                        "journal.cli.segment.move.directory.failed",
+                        [("error", &error)]
+                    )
                 ),
                 exit_code: 3,
             };
@@ -245,68 +350,134 @@ pub(crate) fn execute_plan(
     };
     if verbose {
         stdout.push_str(&format!(
-            "  created directory: {}\n",
-            journal.join(&plan.destination.parent_rel).display()
+            "  {}\n",
+            copy::display_for(
+                locale,
+                "journal.cli.segment.move.directory.created",
+                [(
+                    "path",
+                    &(journal.join(&plan.destination.parent_rel).display())
+                )]
+            )
         ));
     }
     stdout.push_str(&format!(
-        "  moved directory: {} -> {}\n",
-        plan.source.segment, plan.destination.segment
+        "  {}\n",
+        copy::display_for(
+            locale,
+            "journal.cli.segment.move.directory.moved",
+            [
+                ("source", &plan.source.segment),
+                ("destination", &plan.destination.segment)
+            ]
+        )
     ));
     let mut failures = PostMoveFailures::default();
     match outcome.events {
         Ok(count) if count > 0 => stdout.push_str(&format!(
-            "  rewrote {count} events.jsonl lines (day: {}->{}, segment: {}->{})\n",
-            plan.source.day, plan.destination.day, plan.source.segment, plan.destination.segment
+            "  {}\n",
+            copy::render_for(
+                locale,
+                "journal.cli.segment.move.events.rewritten",
+                &[
+                    (
+                        "quantity",
+                        copy::Value::Cardinal(i64::try_from(count).unwrap_or(i64::MAX))
+                    ),
+                    ("count", copy::Value::String(&count.to_string())),
+                    (
+                        "source_day",
+                        copy::Value::String(&plan.source.day.to_string())
+                    ),
+                    (
+                        "destination_day",
+                        copy::Value::String(&plan.destination.day.to_string())
+                    ),
+                    (
+                        "source",
+                        copy::Value::String(&plan.source.segment.to_string())
+                    ),
+                    (
+                        "destination",
+                        copy::Value::String(&plan.destination.segment.to_string())
+                    )
+                ]
+            )
         )),
-        Ok(_) if verbose => stdout.push_str("  no events.jsonl to rewrite\n"),
+        Ok(_) if verbose => stdout.push_str(&format!(
+            "  {}\n",
+            copy::render_for(locale, "journal.cli.segment.move.events.none", &[])
+        )),
         Ok(_) => {}
-        Err(error) => failures.push(&mut stderr, 2, "events rewrite", error.to_string()),
-    }
-    match plan.successors.as_slice() {
-        [] if verbose => stdout.push_str("  no successor to patch (stream tail)\n"),
-        [] => {}
-        [successor] => match outcome.successor {
-            Some(Err(error)) => failures.push(&mut stderr, 3, "successor patch", error.to_string()),
-            _ => stdout.push_str(&format!("  patched successor {}\n", successor.token())),
-        },
-        successors => failures.push(
+        Err(error) => failures.push(
             &mut stderr,
-            3,
-            "successor patch",
-            format!(
-                "ambiguous chain: {} successors left unpatched",
-                successors.len()
+            copy::display_for(
+                locale,
+                "journal.cli.segment.move.fail.events",
+                [("detail", &error)],
             ),
         ),
     }
+    match plan.successors.as_slice() {
+        [] if verbose => stdout.push_str(&format!(
+            "  {}\n",
+            copy::render_for(locale, "journal.cli.segment.move.successor.none", &[])
+        )),
+        [] => {}
+        [successor] => match outcome.successor {
+            Some(Err(error)) => failures.push(
+                &mut stderr,
+                copy::display_for(
+                    locale,
+                    "journal.cli.segment.move.fail.successor",
+                    [("detail", &error)],
+                ),
+            ),
+            _ => stdout.push_str(&format!(
+                "  {}\n",
+                copy::display_for(
+                    locale,
+                    "journal.cli.segment.move.successor.patched",
+                    [("path", &(successor.token()))]
+                )
+            )),
+        },
+        successors => failures.push(&mut stderr, {
+            let count = i64::try_from(successors.len()).unwrap_or(i64::MAX);
+            copy::render_for(
+                locale,
+                "journal.cli.segment.move.fail.ambiguous",
+                &[
+                    ("quantity", copy::Value::Cardinal(count)),
+                    ("count", copy::Value::Integer(count)),
+                ],
+            )
+        }),
+    }
     match outcome.tail {
-        RepairOutcome::Repaired | RepairOutcome::Unchanged(_) => {
-            stdout.push_str(&format!("  rebuilt stream state: {}\n", plan.marker_stream))
-        }
+        RepairOutcome::Repaired | RepairOutcome::Unchanged(_) => stdout.push_str(&format!(
+            "  {}\n",
+            copy::display_for(
+                locale,
+                "journal.cli.segment.move.stream.rebuilt",
+                [("stream", &plan.marker_stream)]
+            )
+        )),
         RepairOutcome::NoRecord => failures.push(
             &mut stderr,
-            4,
-            "stream-tail repair",
-            "no stream record; identity was not re-authored".to_owned(),
+            copy::render_for(locale, "journal.cli.segment.move.fail.tail.no.record", &[]),
         ),
         RepairOutcome::Malformed => failures.push(
             &mut stderr,
-            4,
-            "stream-tail repair",
-            "malformed stream record".to_owned(),
+            copy::render_for(locale, "journal.cli.segment.move.fail.tail.malformed", &[]),
         ),
         RepairOutcome::Locked => failures.push(
             &mut stderr,
-            4,
-            "stream-tail repair",
-            "could not lock stream record".to_owned(),
+            copy::render_for(locale, "journal.cli.segment.move.fail.tail.locked", &[]),
         ),
         RepairOutcome::WriteFailed => failures.push(
             &mut stderr,
-            4,
-            "stream-tail repair",
-            "atomic publication failed".to_owned(),
+            copy::render_for(locale, "journal.cli.segment.move.fail.tail.write", &[]),
         ),
     }
     let mut search_queued = true;
@@ -315,33 +486,58 @@ pub(crate) fn execute_plan(
             search_queued = false;
             failures.push(
                 &mut stderr,
-                5,
-                "search update",
-                format!("the search update could not be queued: {error}"),
+                copy::display_for(
+                    locale,
+                    "journal.cli.segment.move.fail.search",
+                    [("error", &error)],
+                ),
             );
         }
     }
     if search_queued {
-        stdout.push_str("  search updates queued\n");
+        stdout.push_str(&format!(
+            "  {}\n",
+            copy::render_for(locale, "journal.cli.segment.move.search.queued", &[])
+        ));
     }
     let mutated_days = outcome.mutated_days;
     for day in &mutated_days {
         if let Err(error) = operations.touch_health(journal, day) {
-            failures.push(&mut stderr, 6, "health-marker touch", error);
+            failures.push(
+                &mut stderr,
+                copy::display_for(
+                    locale,
+                    "journal.cli.segment.move.fail.health.marker",
+                    [("detail", &error)],
+                ),
+            );
         }
     }
     stdout.push_str(&format!(
-        "  touched health markers: {}\n",
-        mutated_days.iter().cloned().collect::<Vec<_>>().join(", ")
+        "  {}\n",
+        copy::display_for(
+            locale,
+            "journal.cli.segment.move.markers.touched",
+            [(
+                "days",
+                &(mutated_days.iter().cloned().collect::<Vec<_>>().join(", "))
+            )]
+        )
     ));
     if verbose {
-        stdout.push_str("    think will re-run daily talents on the touched days\n");
+        stdout.push_str(&format!(
+            "    {}\n",
+            copy::render_for(locale, "journal.cli.segment.move.talents", &[])
+        ));
     }
-    let results = checks(journal, &plan.destination);
+    let results = checks_in(journal, &plan.destination, locale);
     stdout.push('\n');
-    stdout.push_str(&render_checks(&results));
+    stdout.push_str(&render_checks(&results, locale));
     let passed = results.iter().filter(|check| check.passed).count();
-    stdout.push_str(&format!("\n{passed}/{} checks passed\n", results.len()));
+    stdout.push_str(&format!(
+        "\n{}\n",
+        crate::check_summary(locale, passed, results.len(), false)
+    ));
     MoveExecution {
         stdout,
         stderr,
@@ -355,10 +551,9 @@ struct PostMoveFailures {
 }
 
 impl PostMoveFailures {
-    fn push(&mut self, stderr: &mut String, step: u8, name: &str, detail: String) {
+    fn push(&mut self, stderr: &mut String, message: String) {
         self.any = true;
-        stderr.push_str(&format!(
-            "step {step} {name} inconsistent after move: {detail}\n"
-        ));
+        stderr.push_str(&message);
+        stderr.push('\n');
     }
 }

@@ -493,7 +493,7 @@ Put command-line help, progress and human-readable errors in
 shows the same copy. Keep machine output stable, including JSON keys, codes
 and values. Run `make journal-cli-catalog` after changing the CLI catalog.
 
-Converted crates: `solstone-core-about`, `solstone-core-backfill-cli`, `solstone-core-cli-boundary`, `solstone-core-doctor`, `solstone-core-journal-stats-cli`, `solstone-core-reprocess-cli`, `solstone-core-retention`, `solstone-core-streams-cli`.
+Converted crates: `solstone-core-about`, `solstone-core-backfill-cli`, `solstone-core-cli-boundary`, `solstone-core-doctor`, `solstone-core-journal-stats-cli`, `solstone-core-reprocess-cli`, `solstone-core-retention`, `solstone-core-segment-cli`, `solstone-core-streams-cli`.
 
 ## 9. File headers, naming, dependencies
 

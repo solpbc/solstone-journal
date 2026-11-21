@@ -1,0 +1,30 @@
+{
+  "description": "Journal command-line text for inspect indexed.",
+  "context": "Journal command-line text for inspect indexed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "chunks",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "0ea62eda5b475bc1886010434437f29dcbc6fd5325a9f291d10fff922f484336",
+  "max_length": 141,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for move markers touched.",
+  "context": "Journal command-line text for move markers touched.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d6f8825914c2fbd22672c12062bfc654024aef0be6e0e25e21045db8763f8b5f",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

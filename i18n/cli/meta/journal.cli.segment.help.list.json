@@ -1,0 +1,68 @@
+{
+  "description": "Journal command-line text for help list.",
+  "context": "Journal command-line text for help list.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5de49c4dafcc5fcc9495e10399e7f1c08c1a9fc7851659d44665e621a5539c4a",
+  "max_length": 369,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal segment <command> [options] list [-h] [--stream STREAM]"
+    },
+    {
+      "name": "syntax_line_1",
+      "kind": "accepted-input",
+      "value": "                                                [--json]"
+    },
+    {
+      "name": "syntax_line_2",
+      "kind": "accepted-input",
+      "value": "                                                day"
+    },
+    {
+      "name": "option_5",
+      "kind": "accepted-input",
+      "value": "  day              "
+    },
+    {
+      "name": "option_8",
+      "kind": "accepted-input",
+      "value": "  -h, --help       "
+    },
+    {
+      "name": "option_9",
+      "kind": "accepted-input",
+      "value": "  --stream STREAM  "
+    },
+    {
+      "name": "option_10",
+      "kind": "accepted-input",
+      "value": "  --json           "
+    },
+    {
+      "name": "break",
+      "kind": "whitespace",
+      "value": "\n"
+    },
+    {
+      "name": "day_format",
+      "kind": "accepted-input",
+      "value": "YYYYMMDD"
+    },
+    {
+      "name": "json_format",
+      "kind": "accepted-input",
+      "value": "JSON"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for move talents.",
+  "context": "Journal command-line text for move talents.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d03b5fe2899b10a250c31fdd1f43ed499d5c71ed9f5c483a2041a2aaabae3676",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "think"
+    }
+  ]
+}

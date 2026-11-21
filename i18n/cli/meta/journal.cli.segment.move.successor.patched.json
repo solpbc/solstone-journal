@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for move successor patched.",
+  "context": "Journal command-line text for move successor patched.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1493f841e780849cc7356456293c068ac70d7d2cd527a585ac04055ecaea6870",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

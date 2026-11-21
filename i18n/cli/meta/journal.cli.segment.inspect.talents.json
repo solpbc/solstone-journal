@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for inspect talents.",
+  "context": "Journal command-line text for inspect talents.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3a510eab689a169dd5e181ebff50a6fdbb97188af5cd228628cc3486ce433b51",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

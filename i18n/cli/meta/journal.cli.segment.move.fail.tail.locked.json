@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for move fail tail locked.",
+  "context": "Journal command-line text for move fail tail locked.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e47a570e1ef7966063cc246826c0756839a125cdbe59f92e20510ec04d445dee",
+  "max_length": 111,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

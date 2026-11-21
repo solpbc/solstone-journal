@@ -61,8 +61,16 @@ fn revalidate(root: &JournalRoot) -> Result<()> {
 }
 
 fn live(segment: &Path) -> Result<()> {
+    live_for(segment, solstone_core_cli_copy::ENGLISH)
+}
+
+fn live_for(segment: &Path, locale: &str) -> Result<()> {
     if crate::owner_deleted(segment).map_err(|error| refusal(error.to_string()))? {
-        return Err(refusal("segment was deleted by its owner"));
+        return Err(refusal(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.segment.relocation.deleted",
+            &[],
+        )));
     }
     Ok(())
 }
@@ -347,10 +355,14 @@ pub struct SegmentMutation {
 impl SegmentMutation {
     /// Acquire after output attempts, when any exist. Does not create ancestors.
     pub fn acquire(segment: &Path, options: LockOptions) -> Result<Self> {
+        Self::acquire_for(segment, options, solstone_core_cli_copy::ENGLISH)
+    }
+
+    pub(crate) fn acquire_for(segment: &Path, options: LockOptions, locale: &str) -> Result<Self> {
         let root = admit(parent(segment)?)?;
         let lock = acquire_bound(&root, &lock_name(segment)?, options)?;
         revalidate(&root)?;
-        live(segment)?;
+        live_for(segment, locale)?;
         Ok(Self {
             _parent: root,
             _lock: lock,

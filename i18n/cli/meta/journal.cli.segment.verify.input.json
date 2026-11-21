@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for verify input.",
+  "context": "Journal command-line text for verify input.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "59c56ac927982313363e7dada18cd5b8e042e7612adfdfc8a6a2732b6819967b",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "verb",
+      "kind": "command",
+      "value": "verify"
+    },
+    {
+      "name": "day_flag",
+      "kind": "flag",
+      "value": "--day"
+    }
+  ]
+}

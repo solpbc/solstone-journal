@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for check forward.",
+  "context": "Journal command-line text for check forward.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cceebb117870459e83a3b9889763e88e7227133a0b2fa328f5cc527f5d793c29",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

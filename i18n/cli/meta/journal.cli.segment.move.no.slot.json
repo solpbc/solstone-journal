@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for move no slot.",
+  "context": "Journal command-line text for move no slot.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "destination_segment",
+      "type": "string"
+    },
+    {
+      "name": "to_day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cf30981f8926df7bd6dbe0a5b7b5da870eccae6ae8eda35c96ae1cb38d7868be",
+  "max_length": 102,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

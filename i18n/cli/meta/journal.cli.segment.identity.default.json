@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for identity default.",
+  "context": "Journal command-line text for identity default.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "16c3c259a78cba4f9d2645e38e442ee71e83137b33d2379ec74fc0ec156acf08",
+  "max_length": 148,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "default_stream",
+      "kind": "accepted-input",
+      "value": "_default"
+    }
+  ]
+}

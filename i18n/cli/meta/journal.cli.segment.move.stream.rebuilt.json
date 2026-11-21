@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for move stream rebuilt.",
+  "context": "Journal command-line text for move stream rebuilt.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "stream",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "648a2f3492d171f8e69bb9ea9722d8f867d424ab1b249304b8a51886dbc714ff",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for guard activity.",
+  "context": "Journal command-line text for guard activity.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5288fc166b21d2564a4c91e62f3d5b216d929ab88e49aeb91fcd193a3de32b85",
+  "max_length": 105,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

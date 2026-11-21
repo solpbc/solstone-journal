@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for inspect next none.",
+  "context": "Journal command-line text for inspect next none.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c437c839b63ec32eb656d08c807236cdffc0cb14d381a5646c9c7cb0d6b14c63",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

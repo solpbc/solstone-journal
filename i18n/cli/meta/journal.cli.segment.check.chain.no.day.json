@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for check chain no day.",
+  "context": "Journal command-line text for check chain no day.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "49687d062ffc0ca9981a7ffcecd8f3ae9dc0ccfb06a78a0f0454aa71ba9e9e81",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "prev_segment_key",
+      "kind": "accepted-input",
+      "value": "prev_segment"
+    },
+    {
+      "name": "prev_day_key",
+      "kind": "accepted-input",
+      "value": "prev_day"
+    }
+  ]
+}

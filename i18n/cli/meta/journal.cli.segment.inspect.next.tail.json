@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for inspect next tail.",
+  "context": "Journal command-line text for inspect next tail.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5fb616a73a602d857f35d45d7a7f75f5a1d5c25b649e712a500502811e5d5444",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

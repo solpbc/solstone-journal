@@ -1,0 +1,58 @@
+{
+  "description": "Journal command-line text for help inspect.",
+  "context": "Journal command-line text for help inspect.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ba9b8d1cd8dbf22c678941c05f75b92a0901f7d7b023e6bd52761672cc0251c9",
+  "max_length": 298,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal segment <command> [options] inspect [-h] [--json] path"
+    },
+    {
+      "name": "option_3",
+      "kind": "accepted-input",
+      "value": "  path        "
+    },
+    {
+      "name": "syntax_line_4",
+      "kind": "accepted-input",
+      "value": "              20260304/default/090000_300)"
+    },
+    {
+      "name": "option_7",
+      "kind": "accepted-input",
+      "value": "  -h, --help  "
+    },
+    {
+      "name": "option_8",
+      "kind": "accepted-input",
+      "value": "  --json      "
+    },
+    {
+      "name": "break",
+      "kind": "whitespace",
+      "value": "\n"
+    },
+    {
+      "name": "example_path",
+      "kind": "accepted-input",
+      "value": "day/stream/segment"
+    },
+    {
+      "name": "json_format",
+      "kind": "accepted-input",
+      "value": "JSON"
+    }
+  ]
+}

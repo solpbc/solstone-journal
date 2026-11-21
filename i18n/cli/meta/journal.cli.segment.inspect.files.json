@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for inspect files.",
+  "context": "Journal command-line text for inspect files.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "992952c6ff29ade064c5038bfebe07d6bbac4d42e0186de640a69565b3b6c8d8",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

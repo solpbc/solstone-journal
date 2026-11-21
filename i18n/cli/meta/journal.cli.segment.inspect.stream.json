@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for inspect stream.",
+  "context": "Journal command-line text for inspect stream.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "stream",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "53778cb1973103ba43abf683d6f71a6379f04279c7d79c355397d3ff3e217227",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

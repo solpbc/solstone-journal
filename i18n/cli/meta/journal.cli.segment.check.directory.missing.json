@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for check directory missing.",
+  "context": "Journal command-line text for check directory missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1ea1692e7efd98a77657772d1fcda326356b023d56d083ad0c82146d910e97a9",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for identity refused.",
+  "context": "Journal command-line text for identity refused.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c2296c6eb9250df68984c5bd4b5ae8fe244b185fbf5b1c0c6a7a5b556454abd7",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

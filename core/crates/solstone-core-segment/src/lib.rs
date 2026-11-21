@@ -88,7 +88,7 @@ pub use projection::project_stream_name;
 pub use relocate::{
     AgentLayoutMigrationReport, Relocation, RelocationEnd, RelocationError, RelocationOutcome,
     RelocationRefusal, SegmentRestructureReport, available_segment_key, migrate_agent_layout,
-    relocate_segment, restructure_segments_by_stream,
+    relocate_segment, relocate_segment_for, restructure_segments_by_stream,
 };
 pub use segment_dir::{
     Arrival, OwnerDeletionState, RetainedOwnerDeletion, SegmentDir, day_has_tombstone,

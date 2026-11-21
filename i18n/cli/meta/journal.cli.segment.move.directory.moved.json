@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for move directory moved.",
+  "context": "Journal command-line text for move directory moved.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    },
+    {
+      "name": "destination",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7eadbfecbedb52843490f76a02b03f90af58cd1f70550c979c71825133ccd782",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

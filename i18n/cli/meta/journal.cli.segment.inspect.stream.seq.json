@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for inspect stream seq.",
+  "context": "Journal command-line text for inspect stream seq.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "stream",
+      "type": "string"
+    },
+    {
+      "name": "sequence",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5f2c6f98a821ceeff552856966361fafe194d5348a1610be6515686b9ee99b4d",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

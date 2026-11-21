@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for move search queued.",
+  "context": "Journal command-line text for move search queued.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "19ed8e6fcdb4609259b8abe0cee3c8531fb483cf6f610416027dd2af63738d9b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

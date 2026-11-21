@@ -127,7 +127,14 @@ pub fn available_segment_key(
 pub fn relocate_segment(
     relocation: &Relocation<'_>,
 ) -> Result<RelocationOutcome, RelocationRefusal> {
-    let guard = Cooperation::admit(relocation.journal)
+    relocate_segment_for(relocation, solstone_core_cli_copy::ENGLISH)
+}
+
+pub fn relocate_segment_for(
+    relocation: &Relocation<'_>,
+    locale: &'static str,
+) -> Result<RelocationOutcome, RelocationRefusal> {
+    let guard = Cooperation::admit_for(relocation.journal, locale)
         .map_err(|error| RelocationRefusal::Failed(RelocationError(error)))?;
     for end in [
         Some(relocation.source),
@@ -144,10 +151,13 @@ pub fn relocate_segment(
         .map_err(|error| RelocationRefusal::Failed(RelocationError(error)))?;
     ensure_directory(&guard.journal().join(&relocation.destination.parent_rel))
         .map_err(|error| RelocationRefusal::Failed(RelocationError(error.to_string())))?;
-    let _live_locks = claim_pivots([
-        relocation.source.path.clone(),
-        relocation.destination.path.clone(),
-    ])
+    let _live_locks = claim_pivots(
+        [
+            relocation.source.path.clone(),
+            relocation.destination.path.clone(),
+        ],
+        locale,
+    )
     .map_err(RelocationRefusal::Failed)?;
     let admitted = solstone_core_journal_io::JournalRoot::open(&relocation.source.path)
         .map_err(|error| RelocationRefusal::Failed(RelocationError(error.to_string())))?;
@@ -159,7 +169,11 @@ pub fn relocate_segment(
             .map_err(|error| RelocationRefusal::Failed(RelocationError(error.to_string())))?
         {
             return Err(RelocationRefusal::Failed(RelocationError::new(
-                "segment was deleted by its owner",
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.segment.relocation.deleted",
+                    &[],
+                ),
             )));
         }
     }
@@ -223,9 +237,11 @@ fn validate_end(guard: &Cooperation, end: &RelocationEnd) -> Result<(), Relocati
         || end.path.parent() != Some(guard.journal().join(&end.parent_rel).as_path())
         || !end.path.starts_with(day)
     {
-        return Err(RelocationError::new(
-            "the segment location does not match the planned move",
-        ));
+        return Err(RelocationError::new(solstone_core_cli_copy::render_for(
+            guard.locale,
+            "journal.cli.segment.relocation.location",
+            &[],
+        )));
     }
     Ok(())
 }
@@ -235,18 +251,20 @@ fn validate_end(guard: &Cooperation, end: &RelocationEnd) -> Result<(), Relocati
 // cycle with that holder regardless of chronological/path ordering.
 fn claim_pivots(
     paths: impl IntoIterator<Item = PathBuf>,
+    locale: &str,
 ) -> Result<Vec<crate::output_attempt::SegmentMutation>, RelocationError> {
     paths
         .into_iter()
         .collect::<BTreeSet<_>>()
         .into_iter()
         .map(|path| {
-            crate::output_attempt::SegmentMutation::acquire(
+            crate::output_attempt::SegmentMutation::acquire_for(
                 &path,
                 LockOptions {
                     timeout: std::time::Duration::ZERO,
                     ..LockOptions::default()
                 },
+                locale,
             )
             .map_err(|error| RelocationError(error.to_string()))
         })
@@ -329,13 +347,27 @@ fn patch_successor(
     guard: &Cooperation,
 ) -> Result<(), RelocationError> {
     let path = successor.path.join("stream.json");
-    let text = read_text(&path, String::new())
-        .map_err(|_| RelocationError::new("could not read marker"))?;
-    let mut marker = serde_json::from_str::<Value>(&text)
-        .map_err(|_| RelocationError::new("could not read marker"))?;
-    let object = marker
-        .as_object_mut()
-        .ok_or_else(|| RelocationError::new("could not read marker"))?;
+    let text = read_text(&path, String::new()).map_err(|_| {
+        RelocationError::new(solstone_core_cli_copy::render_for(
+            guard.locale,
+            "journal.cli.segment.relocation.marker",
+            &[],
+        ))
+    })?;
+    let mut marker = serde_json::from_str::<Value>(&text).map_err(|_| {
+        RelocationError::new(solstone_core_cli_copy::render_for(
+            guard.locale,
+            "journal.cli.segment.relocation.marker",
+            &[],
+        ))
+    })?;
+    let object = marker.as_object_mut().ok_or_else(|| {
+        RelocationError::new(solstone_core_cli_copy::render_for(
+            guard.locale,
+            "journal.cli.segment.relocation.marker",
+            &[],
+        ))
+    })?;
     object.insert("prev_day".to_owned(), Value::String(day.to_owned()));
     object.insert("prev_segment".to_owned(), Value::String(segment.to_owned()));
     guard
@@ -470,7 +502,7 @@ pub fn restructure_segments_by_stream(
                         .before_phase(&[&segment])
                         .map_err(|reason| restructure_hold(&report, reason))?;
                 }
-                let _live_locks = claim_pivots([segment.clone()])?;
+                let _live_locks = claim_pivots([segment.clone()], solstone_core_cli_copy::ENGLISH)?;
                 if !is_empty_segment(&segment)? {
                     return Err(RelocationError::new("segment changed during restructure"));
                 }
@@ -502,7 +534,10 @@ pub fn restructure_segments_by_stream(
             }
             ensure_directory(&parent.join(&stream))
                 .map_err(|error| RelocationError(error.to_string()))?;
-            let _live_locks = claim_pivots([segment.clone(), destination.clone()])?;
+            let _live_locks = claim_pivots(
+                [segment.clone(), destination.clone()],
+                solstone_core_cli_copy::ENGLISH,
+            )?;
             if crate::owner_deleted(&segment).map_err(|error| RelocationError(error.to_string()))?
                 || crate::owner_deleted(&destination)
                     .map_err(|error| RelocationError(error.to_string()))?

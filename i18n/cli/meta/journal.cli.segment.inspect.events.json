@@ -1,0 +1,30 @@
+{
+  "description": "Journal command-line text for inspect events.",
+  "context": "Journal command-line text for inspect events.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "entries",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "6fc50c59ff49f0c8c68d3ceb77ca46fec8391e59309d7eaf095a724b8047f13d",
+  "max_length": 126,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

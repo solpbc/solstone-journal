@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for inspect prev missing.",
+  "context": "Journal command-line text for inspect prev missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "63f664e8ce9eb3c0343bb2270c6e4376459795d334488d06f2a5b7dc3a83212e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for move fail tail write.",
+  "context": "Journal command-line text for move fail tail write.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7293c2fa6c147858914a56f4ff0462b0ba3a8a9413689a84e6de961c280a4bb2",
+  "max_length": 108,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

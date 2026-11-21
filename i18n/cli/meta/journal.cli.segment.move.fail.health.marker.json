@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for move fail health marker.",
+  "context": "Journal command-line text for move fail health marker.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b4c8dd4e93a6f59b9a4efbeaf736e0df0bb14728e03f5d2e54702312d5ce3089",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for move no duration.",
+  "context": "Journal command-line text for move no duration.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d305a2879f9b3070d23f0b160bf5ff204538418796f151b9b2264460c0698fe9",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

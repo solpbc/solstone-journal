@@ -10,6 +10,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+solstone-core-cli-copy.workspace = true
 caseless = "0.2.2"
 serde = { workspace = true }
 serde_json = { workspace = true, features = ["raw_value"] }

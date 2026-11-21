@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for move no marker.",
+  "context": "Journal command-line text for move no marker.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a4ac18ac849e46038a769de0f5d398749f953e8f146939d8c4a74c1c01c8844c",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "stream_file",
+      "kind": "accepted-input",
+      "value": "stream.json"
+    }
+  ]
+}
