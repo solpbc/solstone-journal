@@ -1,0 +1,16 @@
+{
+  "description": "Search refusal when the index is absent.",
+  "context": "Journal window. Search refusal when the index is absent.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "919fd5a3541d52be62757858cae822cf719aed8f3e6338e577164ee480de956d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

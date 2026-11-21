@@ -1,0 +1,30 @@
+{
+  "description": "Days still owned by an earlier import after this one is moved.",
+  "context": "Journal window. Days still owned by an earlier import after this one is moved.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "shared_days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "1b5f2fe8652d9e0a7470804a1c10018326a45b87d052ea10884833d4f6ea849e",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

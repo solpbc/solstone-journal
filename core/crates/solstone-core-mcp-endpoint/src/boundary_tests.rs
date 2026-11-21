@@ -18885,3 +18885,419 @@ fn transcripts_only_connection_never_sees_unpermitted_kinds_or_sources() {
     assert_eq!(week["activities"][0]["content_kind"], "facets");
     assert!(week.get("body").is_none());
 }
+
+#[test]
+fn get_activity_sources_keeps_embedded_headings_in_one_unit_and_splits_real_kinds_and_body_segments()
+ {
+    use solstone_core_format::content::body_records::{BodyRow, RowKind, encode_rows};
+
+    let journal = base_activity_journal();
+    let root = journal.path();
+    let day = "20260407";
+
+    fs::create_dir_all(root.join("streams")).unwrap();
+    for (idx, stream) in ["import.text", "import.chatgpt", "import.apple_health"]
+        .into_iter()
+        .enumerate()
+    {
+        fs::write(
+            root.join(format!("streams/{stream}.json")),
+            json!({
+                "name": stream,
+                "kind": "import",
+                "host": null,
+                "platform": null,
+                "created_at": (idx as u64) + 1,
+                "last_day": day,
+                "last_segment": null,
+                "seq": 1
+            })
+            .to_string(),
+        )
+        .unwrap();
+    }
+
+    // 1. A single note containing headings matching both the CHANNEL and SEGMENT patterns.
+    let trip_note = concat!(
+        "# Trip log\n",
+        "### Photo\n",
+        "the one by the lake, need to print it\n",
+        "### Document\n",
+        "passport renewal form is in the drawer\n",
+        "### Screenshot\n",
+        "saved the booking confirmation\n",
+        "## 2026-04-07 10:00:00 - 10:05:00\n",
+        "### Budget\n",
+        "about 400\n",
+    );
+    write_segment_file(
+        root,
+        day,
+        "import.text",
+        "090000_300",
+        "alpha",
+        "note_transcript.md",
+        trip_note,
+    );
+    fs::write(
+        root.join(format!(
+            "chronicle/{day}/import.text/090000_300/stream.json"
+        )),
+        json!({"stream": "import.text"}).to_string(),
+    )
+    .unwrap();
+
+    // 2. A note containing older channel headings and an explicit Source channel line.
+    let older_headings_note = concat!(
+        "# Notes on headings\n",
+        "### Note\n",
+        "first section\n",
+        "### Transcript\n",
+        "second section\n",
+        "### Highlights\n",
+        "third section\n",
+        "### Body Records\n",
+        "fourth section\n",
+        "Source channel: Photo\n",
+    );
+    write_segment_file(
+        root,
+        day,
+        "import.text",
+        "091000_300",
+        "alpha",
+        "note_transcript.md",
+        older_headings_note,
+    );
+    fs::write(
+        root.join(format!(
+            "chronicle/{day}/import.text/091000_300/stream.json"
+        )),
+        json!({"stream": "import.text"}).to_string(),
+    )
+    .unwrap();
+
+    // 3. Multiline imported chat message whose later lines look like channel and segment headings.
+    write_segment_file(
+        root,
+        day,
+        "import.chatgpt",
+        "092000_300",
+        "alpha",
+        "conversation_transcript.jsonl",
+        concat!(
+            "{\"untimed\":true,\"imported\":{}}\n",
+            "{\"start\":\"00:00:00\",\"speaker\":\"Ana\",\"text\":\"First line\\n### Photo\\nnot a photo\\n## 2026-04-07 10:00:00 - 10:05:00\\nstill chat\"}\n",
+        ),
+    );
+    fs::write(
+        root.join(format!(
+            "chronicle/{day}/import.chatgpt/092000_300/stream.json"
+        )),
+        json!({"stream": "import.chatgpt"}).to_string(),
+    )
+    .unwrap();
+
+    // 4. A real two-kind segment whose note also contains a ### Document and segment heading.
+    write_segment_file(
+        root,
+        day,
+        "import.text",
+        "102000_300",
+        "alpha",
+        "document_transcript.md",
+        "# Pump Manual\nCheck valve pressure.\n",
+    );
+    fs::write(
+        root.join(format!(
+            "chronicle/{day}/import.text/102000_300/note_transcript.md"
+        )),
+        "# Field Notes\n### Document\nstill part of the note\n## 2026-04-07 11:00:00 - 11:05:00\nend of note\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join(format!(
+            "chronicle/{day}/import.text/102000_300/stream.json"
+        )),
+        json!({"stream": "import.text"}).to_string(),
+    )
+    .unwrap();
+
+    // 5. A body-only window segment referenced by an activity.
+    let mut hr_row = BodyRow::new(
+        RowKind::Reading,
+        "hr1".to_owned(),
+        "apple_health",
+        "HKQuantityTypeIdentifierHeartRate",
+        "heart rate".to_owned(),
+    );
+    hr_row.at = Some("2026-04-07 07:15:00 -0400".to_owned());
+    hr_row.value = Some("64 bpm".to_owned());
+    let body_dir = root.join(format!("chronicle/{day}/import.apple_health/070000_3600"));
+    fs::create_dir_all(body_dir.join("talents")).unwrap();
+    fs::write(body_dir.join("body.jsonl"), encode_rows(&[hr_row])).unwrap();
+    fs::write(
+        body_dir.join("stream.json"),
+        json!({"stream": "import.apple_health"}).to_string(),
+    )
+    .unwrap();
+    fs::write(
+        body_dir.join("talents/facets.json"),
+        r#"[{"facet":"alpha"}]"#,
+    )
+    .unwrap();
+
+    for (idx, (id, title, kind, seg, stream)) in [
+        ("act_trip", "Trip Log", "note", "090000_300", "import.text"),
+        (
+            "act_older",
+            "Heading Notes",
+            "note",
+            "091000_300",
+            "import.text",
+        ),
+        (
+            "act_chat",
+            "Chat With Headings",
+            "conversation",
+            "092000_300",
+            "import.chatgpt",
+        ),
+        (
+            "act_two",
+            "Combined Segment",
+            "import",
+            "102000_300",
+            "import.text",
+        ),
+        (
+            "act_body_seg",
+            "Morning Heart Rate",
+            "health",
+            "070000_3600",
+            "import.apple_health",
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        write_activity_line(
+            root,
+            "alpha",
+            day,
+            id,
+            title,
+            100 + idx as i64,
+            Some(kind),
+            Some(&[seg]),
+            None,
+            None,
+            Some(stream),
+            None,
+            None,
+        );
+    }
+
+    // Permissions are unchanged: a connection holding only `notes` (or `facets` + `notes`)
+    // cannot invoke get_activity_sources (which requires facets + transcripts/body).
+    for categories in [vec!["notes"], vec!["facets", "notes"]] {
+        PermissionStore::open(root)
+            .set_permission(
+                CONNECTION,
+                ReadPermission {
+                    categories: categories.iter().copied().map(str::to_owned).collect(),
+                    scope: ReadScope::WholeJournal,
+                },
+            )
+            .unwrap();
+        assert!(
+            probe(
+                &journal,
+                "get_activity_sources",
+                json!({"reference": format!("{day}/alpha/act_trip")}),
+            )
+            .is_err()
+        );
+    }
+
+    // Narrowest grants that can call get_activity_sources on a note without holding
+    // photos, documents or screen_text: facets + body + notes (also excludes transcripts)
+    // and facets + transcripts + notes (also excludes body).
+    for (categories, forbidden) in [
+        (
+            vec!["facets", "body", "notes"],
+            vec![
+                "\"photos\"",
+                "\"documents\"",
+                "\"screen_text\"",
+                "\"transcripts\"",
+            ],
+        ),
+        (
+            vec!["facets", "transcripts", "notes"],
+            vec!["\"photos\"", "\"documents\"", "\"screen_text\"", "\"body\""],
+        ),
+    ] {
+        PermissionStore::open(root)
+            .set_permission(
+                CONNECTION,
+                ReadPermission {
+                    categories: categories.iter().copied().map(str::to_owned).collect(),
+                    scope: ReadScope::WholeJournal,
+                },
+            )
+            .unwrap();
+        let res = probe(
+            &journal,
+            "get_activity_sources",
+            json!({"reference": format!("{day}/alpha/act_trip")}),
+        )
+        .unwrap();
+        assert_no_leaked_keys(&res);
+        let serialized = res.to_string();
+        for word in &forbidden {
+            assert!(
+                !serialized.contains(word),
+                "unexpected kind {word} in {serialized}"
+            );
+        }
+        let units = res["units"].as_array().unwrap();
+        assert_eq!(units.len(), 1, "{res}");
+        assert_eq!(units[0]["kind"], "import");
+        assert_eq!(units[0]["content_kind"], "notes");
+        assert_eq!(units[0]["timestamp"], "2026-04-07 09:00:00 - 09:05:00");
+        assert_eq!(units[0]["source_link"]["source"], "imported file");
+        assert_eq!(
+            units[0]["text"].as_str().unwrap(),
+            format!(
+                "Activity type: note\n## 2026-04-07 09:00:00 - 09:05:00\n\nSource channel: Note\n### Note\n\n{trip_note}"
+            )
+        );
+
+        let older = probe(
+            &journal,
+            "get_activity_sources",
+            json!({"reference": format!("{day}/alpha/act_older")}),
+        )
+        .unwrap();
+        assert_no_leaked_keys(&older);
+        let older_units = older["units"].as_array().unwrap();
+        assert_eq!(older_units.len(), 1, "{older}");
+        assert_eq!(older_units[0]["kind"], "import");
+        assert_eq!(older_units[0]["content_kind"], "notes");
+        assert_eq!(
+            older_units[0]["text"].as_str().unwrap(),
+            format!(
+                "Activity type: note\n## 2026-04-07 09:10:00 - 09:15:00\n\nSource channel: Note\n### Note\n\n{older_headings_note}"
+            )
+        );
+    }
+
+    // Multiline imported chat message with embedded headings stays one untimed unit.
+    PermissionStore::open(root)
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec![
+                    "facets".into(),
+                    "transcripts".into(),
+                    "notes".into(),
+                    "documents".into(),
+                ],
+                scope: ReadScope::WholeJournal,
+            },
+        )
+        .unwrap();
+    let withheld = probe(
+        &journal,
+        "get_activity_sources",
+        json!({"reference": format!("{day}/alpha/act_chat")}),
+    )
+    .unwrap();
+    assert!(
+        withheld["units"].as_array().unwrap().is_empty(),
+        "{withheld}"
+    );
+    let store = PermissionStore::open(root);
+    let mut approved = store
+        .get_permission(CONNECTION)
+        .unwrap()
+        .unwrap()
+        .read
+        .unwrap();
+    approved.categories.push("messages".into());
+    store.set_permission(CONNECTION, approved).unwrap();
+    let chat = probe(
+        &journal,
+        "get_activity_sources",
+        json!({"reference": format!("{day}/alpha/act_chat")}),
+    )
+    .unwrap();
+    assert_no_leaked_keys(&chat);
+    let chat_units = chat["units"].as_array().unwrap();
+    assert_eq!(chat_units.len(), 1, "{chat}");
+    assert_eq!(chat_units[0]["kind"], "import");
+    assert_eq!(chat_units[0]["content_kind"], "messages");
+    assert_eq!(chat_units[0]["untimed"], true);
+    assert!(chat_units[0].get("timestamp").is_none());
+    let chat_text = literal_display_text(chat_units[0]["text"].as_str().unwrap());
+    assert!(chat_text.contains("Source channel: ChatGPT Conversation\n"));
+    assert!(chat_text.contains("not a photo"));
+    assert!(chat_text.contains("still chat"));
+
+    // Real two-kind segment splits into exactly two units with the right kinds,
+    // while keeping the note's own ### Document and segment heading inside the note unit.
+    let two = probe(
+        &journal,
+        "get_activity_sources",
+        json!({"reference": format!("{day}/alpha/act_two")}),
+    )
+    .unwrap();
+    assert_no_leaked_keys(&two);
+    let two_units = two["units"].as_array().unwrap();
+    assert_eq!(two_units.len(), 2, "{two}");
+    assert_eq!(two_units[0]["kind"], "import");
+    assert_eq!(two_units[0]["content_kind"], "documents");
+    assert_eq!(two_units[0]["timestamp"], "2026-04-07 10:20:00 - 10:25:00");
+    assert_eq!(
+        two_units[0]["text"].as_str().unwrap(),
+        "Activity type: import\n## 2026-04-07 10:20:00 - 10:25:00\n\nSource channel: Document\n### Document\n\n# Pump Manual\nCheck valve pressure.\n"
+    );
+    assert_eq!(two_units[1]["kind"], "import");
+    assert_eq!(two_units[1]["content_kind"], "notes");
+    assert_eq!(two_units[1]["timestamp"], "2026-04-07 10:20:00 - 10:25:00");
+    assert_eq!(
+        two_units[1]["text"].as_str().unwrap(),
+        "Activity type: import\n## 2026-04-07 10:20:00 - 10:25:00\n\nSource channel: Note\n### Note\n\n# Field Notes\n### Document\nstill part of the note\n## 2026-04-07 11:00:00 - 11:05:00\nend of note\n"
+    );
+
+    // Body-only segment referenced by an activity yields one Body Records unit with content_kind "body".
+    PermissionStore::open(root)
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec!["facets".into(), "body".into()],
+                scope: ReadScope::WholeJournal,
+            },
+        )
+        .unwrap();
+    let body = probe(
+        &journal,
+        "get_activity_sources",
+        json!({"reference": format!("{day}/alpha/act_body_seg")}),
+    )
+    .unwrap();
+    assert_no_leaked_keys(&body);
+    let body_units = body["units"].as_array().unwrap();
+    assert_eq!(body_units.len(), 1, "{body}");
+    assert_eq!(body_units[0]["kind"], "import");
+    assert_eq!(body_units[0]["content_kind"], "body");
+    assert_eq!(body_units[0]["timestamp"], "2026-04-07 07:00:00 - 08:00:00");
+    let body_text = literal_display_text(body_units[0]["text"].as_str().unwrap());
+    assert!(
+        body_text.contains("Source channel: Body Records\n"),
+        "{body_text}"
+    );
+    assert!(body_text.contains("heart rate"), "{body_text}");
+    assert!(body_text.contains("64 bpm"), "{body_text}");
+}

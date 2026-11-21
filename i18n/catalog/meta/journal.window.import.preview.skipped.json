@@ -1,0 +1,30 @@
+{
+  "description": "Items skipped during the import preview.",
+  "context": "Journal window. Items skipped during the import preview.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "650fc7b77f8856874957fc63b20c85b96da5e4dbadb75cce4d72365ba291b133",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

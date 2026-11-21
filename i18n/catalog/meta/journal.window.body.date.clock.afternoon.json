@@ -1,0 +1,25 @@
+{
+  "description": "A Body time on its 12-hour clock in the afternoon.",
+  "context": "Journal window. A Body time on its 12-hour clock in the afternoon.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "hour",
+      "type": "string"
+    },
+    {
+      "name": "minute",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8e26d317eddff35df2c8632f72f488ead5660b98446736cf6ad27c1c1ff483f0",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

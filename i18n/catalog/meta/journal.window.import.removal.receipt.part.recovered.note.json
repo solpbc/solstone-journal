@@ -1,0 +1,26 @@
+{
+  "description": "Items still in Trash after partial recovery.",
+  "context": "Journal window. Items still in Trash after partial recovery.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "35df12d0af33e9b8978ccb33fb646854078b7e60d397f18148378a47ef922822",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

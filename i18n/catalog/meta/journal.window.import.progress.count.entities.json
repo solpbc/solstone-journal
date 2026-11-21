@@ -1,0 +1,30 @@
+{
+  "description": "Number of entities seeded by the import.",
+  "context": "Journal window. Number of entities seeded by the import.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "b0982843784342ebe27412dc606d108c0f4472471ddb002f3764e7f8a44b676d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

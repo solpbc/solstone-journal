@@ -1,0 +1,16 @@
+{
+  "description": "Search refusal when the index is empty.",
+  "context": "Journal window. Search refusal when the index is empty.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2610eabb366ceb58896e30df2d16bf54bcf118561f55323571650924189c66a9",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Progress while reading the named source.",
+  "context": "Journal window. Progress while reading the named source.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "87ad164bef8bd5db7a0d9cdda32a189af723f0184a64fc56b2d67bdb1a33fb03",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

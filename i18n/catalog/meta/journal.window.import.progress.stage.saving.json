@@ -1,0 +1,16 @@
+{
+  "description": "Status while writing imported material.",
+  "context": "Journal window. Status while writing imported material.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ad3077eb9288aeedec496d249e2ac237c451d22da4d90c0a9da4b6e9d801d53f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

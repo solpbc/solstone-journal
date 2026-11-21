@@ -1,0 +1,21 @@
+{
+  "description": "A carried-over Body experience with its recorded kind.",
+  "context": "Journal window. A carried-over Body experience with its recorded kind.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "experience_kind",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "71e05f4e4099224955c44565478b6b89cf8b88d6f6af8cecf4b6ef60b66d2e9e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

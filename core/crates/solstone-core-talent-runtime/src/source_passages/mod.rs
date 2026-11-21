@@ -31,7 +31,10 @@ use solstone_core_generate::{GenerateExecutor, GenerateRequest, GenerateResponse
 
 pub use activity::{ActivityPassages, activity_passages};
 pub use select::{EDGE_CONTEXT_CHARS, MAX_RENDERED_CHARS, PASSAGE_PREFIX};
-pub use units::{SourceKind, SourceUnit, UNIT_MAX_CHARS, UNIT_OVERLAP_CHARS, source_units};
+pub use units::{
+    SourceChannel, SourceKind, SourceUnit, UNIT_MAX_CHARS, UNIT_OVERLAP_CHARS, source_units,
+    source_units_from_channels,
+};
 
 /// The identifier of the passage document this module emits.
 pub const SCHEMA: &str = "solstone-source-passages-v1";

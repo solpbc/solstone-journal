@@ -141,6 +141,8 @@ pub struct SegmentTranscriptEntry {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SegmentTranscriptPage {
     pub entries: Vec<SegmentTranscriptEntry>,
+    /// Registry-settled content kind of the file each entry in `entries` came from.
+    entry_content_kinds: Vec<Option<&'static str>>,
     pub next: Option<SegmentTranscriptCursor>,
     pub version: SegmentTranscriptVersion,
     pub untimed: bool,
@@ -150,6 +152,18 @@ pub struct SegmentTranscriptPage {
     pub content_kinds: Vec<&'static str>,
     /// An admitted file could contain either speech or messages.
     pub unresolved_conversation: bool,
+}
+
+impl SegmentTranscriptPage {
+    /// Each projected entry paired with the registry-settled content kind of
+    /// the file its text came from.
+    pub fn entries_with_content_kind(
+        &self,
+    ) -> impl Iterator<Item = (&SegmentTranscriptEntry, Option<&'static str>)> {
+        self.entries
+            .iter()
+            .zip(self.entry_content_kinds.iter().copied())
+    }
 }
 
 /// Failure while reading a bounded transcript page.
@@ -294,6 +308,7 @@ pub fn read_segment_transcript_page_with_permissions(
 
     let mut message = cursor.and_then(|c| c.message);
     let mut entries = Vec::new();
+    let mut entry_content_kinds = Vec::new();
     while source_index < files.len() && entries.len() < MAX_TRANSCRIPT_PAGE_ITEMS {
         let path = &files[source_index];
         let name = path
@@ -302,6 +317,14 @@ pub fn read_segment_transcript_page_with_permissions(
             .unwrap_or_default();
         let relative = format!("{segment_origin}/{name}");
         let medium = media.get(path).copied();
+        let content_kind = match medium {
+            Some(ConversationMedium::Unresolved) => None,
+            Some(ConversationMedium::Written) => Some("messages"),
+            Some(ConversationMedium::Spoken) => Some("transcripts"),
+            None => Some(
+                solstone_core_format::content::kinds::segment_file_permission(&relative).as_str(),
+            ),
+        };
         let (window, advanced, exhausted) = if message.is_some() {
             (Vec::new(), 0, false)
         } else if let Some(medium) = medium.filter(|_| name.ends_with(".jsonl")) {
@@ -341,6 +364,7 @@ pub fn read_segment_transcript_page_with_permissions(
             byte_offset = passage.next_offset;
             message = passage.bounds;
             if !passage.text.is_empty() {
+                entry_content_kinds.push(content_kind);
                 entries.push(SegmentTranscriptEntry {
                     channel: source_channel(&segment_origin, name, false, media.get(path).copied()),
                     text: passage.text,
@@ -412,6 +436,7 @@ pub fn read_segment_transcript_page_with_permissions(
                 )
             };
             if !text.trim().is_empty() {
+                entry_content_kinds.push(content_kind);
                 entries.push(SegmentTranscriptEntry {
                     turn_part: None,
                     channel: source_channel(
@@ -455,6 +480,7 @@ pub fn read_segment_transcript_page_with_permissions(
     });
     Ok(SegmentTranscriptPage {
         entries,
+        entry_content_kinds,
         next,
         version,
         untimed,
@@ -2336,5 +2362,65 @@ mod tests {
         )
         .unwrap();
         assert!(without_screen.content_kinds.is_empty());
+    }
+
+    #[test]
+    fn entries_carry_each_files_registry_content_kind() {
+        use solstone_core_format::content::body_records::{BodyRow, RowKind, encode_rows};
+
+        let root = tempfile::tempdir().unwrap();
+        let mixed = root
+            .path()
+            .join("chronicle/20260407/import.obsidian/090000_300");
+        fs::create_dir_all(&mixed).unwrap();
+        // Both files get channel "Note" on import.obsidian, yet carry distinct
+        // registry kinds (documents vs notes).
+        fs::write(mixed.join("document_transcript.md"), "manual line\n").unwrap();
+        fs::write(mixed.join("note_transcript.md"), "### Photo\nfield note\n").unwrap();
+        let segment = iter_segments(root.path(), PathOrDay::Day("20260407"))
+            .unwrap()
+            .into_iter()
+            .find(|seg| seg.path() == mixed)
+            .unwrap();
+        let page = read_segment_transcript_page(&segment, None, None, None).unwrap();
+        let paired: Vec<(&str, Option<&str>, &str)> = page
+            .entries_with_content_kind()
+            .map(|(entry, kind)| (entry.channel, kind, entry.text.as_str()))
+            .collect();
+        assert_eq!(
+            paired,
+            vec![
+                ("Note", Some("documents"), "manual line"),
+                ("Note", Some("notes"), "### Photo"),
+                ("Note", Some("notes"), "field note"),
+            ]
+        );
+
+        // Body-only segment carries channel "Body Records" and content_kind "body".
+        let body_seg = root
+            .path()
+            .join("chronicle/20260407/import.apple_health/070000_3600");
+        fs::create_dir_all(&body_seg).unwrap();
+        let mut row = BodyRow::new(
+            RowKind::Reading,
+            "hr1".to_owned(),
+            "apple_health",
+            "HKQuantityTypeIdentifierHeartRate",
+            "heart rate".to_owned(),
+        );
+        row.at = Some("2026-04-07 07:15:00 -0400".to_owned());
+        row.value = Some("64 bpm".to_owned());
+        fs::write(body_seg.join("body.jsonl"), encode_rows(&[row])).unwrap();
+        let segment = iter_segments(root.path(), PathOrDay::Day("20260407"))
+            .unwrap()
+            .into_iter()
+            .find(|seg| seg.path() == body_seg)
+            .unwrap();
+        let page = read_segment_transcript_page(&segment, None, None, None).unwrap();
+        let paired: Vec<(&str, Option<&str>)> = page
+            .entries_with_content_kind()
+            .map(|(entry, kind)| (entry.channel, kind))
+            .collect();
+        assert_eq!(paired, vec![("Body Records", Some("body"))]);
     }
 }

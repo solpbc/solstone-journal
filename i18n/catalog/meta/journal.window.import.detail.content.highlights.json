@@ -1,0 +1,30 @@
+{
+  "description": "Metadata count on a recorded content row.",
+  "context": "Journal window. Metadata count on a recorded content row.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "3288a41f09e991b8032725d7107ff0195d330e3519fbc7a416ffba5b947ced8a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

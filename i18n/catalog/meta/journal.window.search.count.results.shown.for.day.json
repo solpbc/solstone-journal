@@ -1,0 +1,39 @@
+{
+  "description": "How many search results are visible on this day out of its total matches. The two quantities select independently.",
+  "context": "Journal window. How many search results are visible on this day out of its total matches. The two quantities select independently.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "match_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "shown_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "shown_count",
+      "type": "string"
+    },
+    {
+      "name": "match_count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "40688e765bb1215715edc57a1d9fabf4b05d27ca2415f99e2576f7a1cdb6742b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "match_quantity",
+    "type": "cardinal"
+  }
+}

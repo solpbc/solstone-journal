@@ -1,0 +1,21 @@
+{
+  "description": "Access retained for a folder previously chosen by the owner. The folder is its displayed name.",
+  "context": "Journal window. Access retained for a folder previously chosen by the owner. The folder is its displayed name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "folder",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1ea083433a6b48cbc279ebcc9fa02ee87e283badf81b960cca7d8369aa232d44",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

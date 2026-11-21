@@ -1,0 +1,25 @@
+{
+  "description": "Moving time for a Strava workout in the Body details.",
+  "context": "Journal window. Moving time for a Strava workout in the Body details.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "hours",
+      "type": "string"
+    },
+    {
+      "name": "minutes",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "95af3d38358ef2010c3040541dafb9d2a26394fb97e8e95b81de6130e8e00888",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

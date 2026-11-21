@@ -123,8 +123,8 @@
     }
     const connection = row.connection;
     details.textContent = !connection ? window.JournalI18n.render('journal.window.import.visible.text.no.folder.connected')
-      : connection.access_state === 'ready' ? window.JournalI18n.renderEnglish('journal.window.import.visible.text.value1.read.access.remembered.for.future', [['value1', String(connection.folder_name)]])
-      : window.JournalI18n.render('journal.window.import.visible.text.value1.choose.the.folder.again.to', [['value1', String(connection.folder_name)]]);
+      : connection.access_state === 'ready' ? window.JournalI18n.renderEnglish('journal.window.import.folder.access.remembered', [['folder', String(connection.folder_name)]])
+      : window.JournalI18n.render('journal.window.import.folder.access.repeat', [['folder', String(connection.folder_name)]]);
     const actions = row.node.querySelector('[data-source-connection-actions]');
     actions.innerHTML = connection
       ? `<button type="button" class="import-secondary-btn" data-source-change="reauthorize">${window.JournalI18n.renderHtml('journal.window.import.button.label.choose.folder.again')}</button> <button type="button" class="import-secondary-btn" data-source-change="replace">${window.JournalI18n.renderHtml('journal.window.import.button.label.change.folder')}</button> <button type="button" class="import-secondary-btn" data-source-change="forget">${window.JournalI18n.renderHtml('journal.window.import.button.label.forget.folder')}</button>`
@@ -143,10 +143,10 @@
     form.querySelector('select').innerHTML = options.map(([value, label]) => `<option value="${escape(value)}"${value === every ? ' selected' : ''}>${escape(label)}</option>`).join('');
     form.querySelector('input').checked = schedule.enabled;
     form.querySelector('[data-source-schedule-state]').textContent = active.length
-      ? window.JournalI18n.render('journal.window.import.visible.text.automatic.sync.is.on.value1', [['value1', String(active.map(item => item.entry.every).join(', '))]])
+      ? window.JournalI18n.render('journal.window.import.folder.schedule.active', [['cadences', String(active.map(item => item.entry.every).join(', '))]])
       : window.JournalI18n.render('journal.window.import.visible.text.automatic.sync.is.off');
     form.querySelector('[data-source-conflicts]').textContent = schedule.blocked_names.length
-      ? window.JournalI18n.render('journal.window.import.visible.text.custom.schedules.stay.unchanged.value1', [['value1', String(schedule.blocked_names.join(', '))]]) : '';
+      ? window.JournalI18n.render('journal.window.import.folder.schedule.conflicts', [['schedule_names', String(schedule.blocked_names.join(', '))]]) : '';
   }
 
   async function refresh(row) {

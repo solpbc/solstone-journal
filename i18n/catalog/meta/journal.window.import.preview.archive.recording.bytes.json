@@ -1,0 +1,30 @@
+{
+  "description": "Size in bytes of recordings in an audio archive.",
+  "context": "Journal window. Size in bytes of recordings in an audio archive.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "99cd15a71050f586b891be5fe84df91788397cc27ff5cb8aaefa0497d2952175",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

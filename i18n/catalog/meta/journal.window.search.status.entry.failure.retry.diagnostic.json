@@ -1,0 +1,21 @@
+{
+  "description": "Entry read retry notice with the raw diagnostic.",
+  "context": "Journal window. Entry read retry notice with the raw diagnostic.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "diagnostic",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "637cde729275e8e70b9a06440907a49593be2b140bc2365fc79c15a641c4e0fb",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

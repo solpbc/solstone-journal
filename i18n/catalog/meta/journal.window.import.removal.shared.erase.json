@@ -1,0 +1,30 @@
+{
+  "description": "Days still owned by an earlier import after this one is permanently erased.",
+  "context": "Journal window. Days still owned by an earlier import after this one is permanently erased.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "shared_days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "3bec079a1b9af0d69f456e29a69e69ad8274028f1cde2448fee47e1a58718303",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

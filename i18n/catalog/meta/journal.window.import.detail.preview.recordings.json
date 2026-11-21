@@ -1,0 +1,39 @@
+{
+  "description": "Saved import preview with independent recording and day counts.",
+  "context": "Journal window. Saved import preview with independent recording and day counts.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "recording_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "day_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "recordings",
+      "type": "string"
+    },
+    {
+      "name": "days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "0b4fc6fe4402c6c463838cddbae2a540b84dd51b59e0a3da808f652959c921be",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "recording_quantity",
+    "type": "cardinal"
+  }
+}

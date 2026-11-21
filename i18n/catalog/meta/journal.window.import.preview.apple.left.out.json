@@ -1,0 +1,30 @@
+{
+  "description": "Count of types elided from the short Apple Health preview.",
+  "context": "Journal window. Count of types elided from the short Apple Health preview.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "dc59fac5eab153afd31d7eed81e4dea7ac6ef4c73ed59c72014e1e25974f7929",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Storage required for the preview and storage currently free.",
+  "context": "Journal window. Storage required for the preview and storage currently free.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "needed",
+      "type": "string"
+    },
+    {
+      "name": "free",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "51df5fa76ad6e447834335370dbf2d51ef33e6c4fca519f5ea2f0bfbf88243e2",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

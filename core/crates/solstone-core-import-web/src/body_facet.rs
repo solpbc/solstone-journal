@@ -20,7 +20,7 @@ use axum::{Extension, Json, extract::State, http::StatusCode, response::Response
 use serde_json::{Value, json};
 use solstone_core_convey_http::{
     coalesce::ResponseLocale,
-    window_catalog::{response_locale, text as catalog_text},
+    window_catalog::{response_locale, strings as catalog_strings, text as catalog_text},
 };
 use solstone_core_journal_config::PREFERRED_BODY_FACET;
 
@@ -31,7 +31,7 @@ pub(crate) const COPY: &[(&str, &str)] = &[
     ("heading", "journal.window.import.body.facet.shared.heading"),
     (
         "ask_existing",
-        "!journal.window.import.body.facet.shared.ask.existing",
+        "!journal.window.import.body.facet.shared.ask.named",
     ),
     (
         "ask_make_body",
@@ -57,7 +57,7 @@ pub(crate) const COPY: &[(&str, &str)] = &[
     ),
     (
         "files_earlier",
-        "!journal.window.import.body.facet.shared.files.earlier",
+        "!journal.window.import.body.facet.shared.files.named",
     ),
     (
         "none_hint",
@@ -83,7 +83,7 @@ pub(crate) const COPY: &[(&str, &str)] = &[
 pub(crate) const APPLE_COPY: &[(&str, &str)] = &[
     (
         "ask_existing",
-        "!journal.window.import.body.facet.apple.ask.existing",
+        "!journal.window.import.body.facet.apple.ask.named",
     ),
     (
         "ask_make_body",
@@ -99,7 +99,7 @@ pub(crate) const APPLE_COPY: &[(&str, &str)] = &[
     ),
     (
         "files_earlier",
-        "!journal.window.import.body.facet.apple.files.earlier",
+        "!journal.window.import.body.facet.apple.files.named",
     ),
     (
         "none_hint",
@@ -112,14 +112,22 @@ fn for_apple(source: Option<&str>) -> bool {
     source == Some("apple_health")
 }
 
+fn copy_line(locale: &str, key: &str, id: &str) -> String {
+    if matches!(key, "ask_existing" | "files_earlier") {
+        catalog_strings(locale, id, [("facet_name", "{facet}")])
+    } else {
+        catalog_text(locale, id)
+    }
+}
+
 fn copy(locale: &str, apple: bool) -> Value {
     let mut words: serde_json::Map<String, Value> = COPY
         .iter()
-        .map(|(key, id)| ((*key).to_owned(), json!(catalog_text(locale, id))))
+        .map(|(key, id)| ((*key).to_owned(), json!(copy_line(locale, key, id))))
         .collect();
     if apple {
         for (key, id) in APPLE_COPY {
-            words.insert((*key).to_owned(), json!(catalog_text(locale, id)));
+            words.insert((*key).to_owned(), json!(copy_line(locale, key, id)));
         }
     }
     Value::Object(words)

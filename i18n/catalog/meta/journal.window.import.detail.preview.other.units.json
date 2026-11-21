@@ -1,0 +1,25 @@
+{
+  "description": "Independent count and recorded unit name supplied by an import worker.",
+  "context": "Journal window. Independent count and recorded unit name supplied by an import worker.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "unit",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e0c614dbb5adf5dfd21a804bdfdb03d30360dda02fc3960ed08812a51d3a1a2d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

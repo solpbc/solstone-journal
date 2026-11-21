@@ -1,0 +1,30 @@
+{
+  "description": "Count of saved audio parts in the running archive import.",
+  "context": "Journal window. Count of saved audio parts in the running archive import.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "dc5437990419b807e2cbf0024d0849df1ce43a5f9f1682422bfb350db2a4e05a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

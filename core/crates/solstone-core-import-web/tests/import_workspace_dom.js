@@ -5,7 +5,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
-const { journalContext } = require('../../solstone-core-convey-shell/tests/journal_catalog_dom.js');
+const { journalContext, markupNode } = require('../../solstone-core-convey-shell/tests/journal_catalog_dom.js');
 
 const crateDir = process.argv[2];
 assert.ok(crateDir, 'crate directory argument is required');
@@ -116,7 +116,9 @@ function makeContext(globals) {
   };
   withShell(caseWindow);
   Object.defineProperty(context, 'window', { configurable: true, enumerable: true, get: () => caseWindow, set: (value) => { caseWindow = withShell(value); } });
-  for (const name of ['importHost', 'enableHandoff', 'handoffText', 'setImportButton', 'invalidateImportPreview', 'restoreImportButton', 'prepareImportPreview', 'renderThinkingProgress', 'scheduleThinkingProgress']) {
+  for (const name of ['quantityArgs', 'formattedEntryCount', 'importCopyText', 'createImportDeleteCopy',
+    'importHost', 'enableHandoff', 'handoffText', 'setImportButton', 'invalidateImportPreview', 'restoreImportButton',
+    'prepareImportPreview', 'renderThinkingProgress', 'scheduleThinkingProgress']) {
     vm.runInContext(functionSource(source, name), context);
   }
   return context;
@@ -687,7 +689,7 @@ function runStravaFacetSaysWhatANoMeansFirst() {
   vm.runInContext(`stravaFacet = ${offer('chosen', 'body')}; renderStravaFacet();`, harness.context);
   assert.ok(slot.innerHTML.includes('<option value="body" selected>'), 'the remembered facet is preselected');
   assert.ok(slot.innerHTML.includes('NONE'), 'no facet is always a choice');
-  assert.strictEqual(hint.textContent, 'EARLIER Body');
+  assert.strictEqual(hint.textContent, 'this files every workout in this download under Body, including any already listed on the activities page. the preview says how many of those would move.');
   vm.runInContext(`stravaFacet = ${offer('declined', null)}; renderStravaFacet();`, harness.context);
   assert.ok(slot.innerHTML.includes('<option value="" selected>'), 'a no preselects no facet');
   cases += 1;
@@ -807,9 +809,9 @@ function runHistoryHeaderSummary() {
   installRealEscapeHtml(context);
   assertEscaperIsReal(context);
   // The header is drawn as select mode paints it, so it reads the mode and its words.
-  vm.runInContext(`const IMPORT_DELETE_COPY = { select: 'select', selectAll: 'select all', selected: '{n} selected', delete: 'delete', done: 'done' };
+  vm.runInContext(`const IMPORT_DELETE_COPY = createImportDeleteCopy();
     const importPick = { on: false, ids: new Set(), notes: new Map() };`, context);
-  for (const name of ['sourceLabel', 'sourceFilterOptionsHtml', 'importDeleteFill', 'buildHistoryHeader']) {
+  for (const name of ['sourceLabel', 'sourceFilterOptionsHtml', 'buildHistoryHeader']) {
     vm.runInContext(functionSource(workspace, name), context);
   }
 
@@ -2836,14 +2838,14 @@ function runEveryOwnerSinkEscapes() {
     "let currentSourceFilter = '';",
     `let importSourceOptions = [${JSON.stringify(ESCAPE_PAYLOAD)}];`,
     `let importsCache = [{ timestamp: 'h0', source_type: ${JSON.stringify(ESCAPE_PAYLOAD)}, source_display: ${JSON.stringify(ESCAPE_PAYLOAD)} }];`,
-    "const IMPORT_DELETE_COPY = { select: 'select', selectAll: 'select all', selected: '{n} selected', delete: 'delete', done: 'done' };",
+    'const IMPORT_DELETE_COPY = createImportDeleteCopy();',
     'const importPick = { on: false, ids: new Set(), notes: new Map() };',
   ].join('\n'), historyContext);
   installRealEscapeHtml(historyContext);
   assertEscaperIsReal(historyContext);
   for (const name of [
     'capitalizeStage', 'renderSourceDisplay', 'formatImportStats', 'sourceLabel', 'bodyStateLabel', 'renderImportRow',
-    'sourceFilterOptionsHtml', 'importDeleteFill', 'buildHistoryHeader',
+    'sourceFilterOptionsHtml', 'buildHistoryHeader',
   ]) {
     vm.runInContext(functionSource(workspace, name), historyContext);
   }
@@ -3851,9 +3853,10 @@ async function runThinkingRefreshKeepsControlsAndFocus() {
     setTimeout: callback => { timer = callback; return 1; },
     clearTimeout: () => {},
     importEvents: { id: {} },
-    document: { activeElement: control, querySelector: () => panel },
+    document: { activeElement: control, querySelector: () => panel, createElement: markupNode, createTextNode: value => String(value) },
     window: { createViewReady: () => () => {}, location: { hash: '#progress/id' }, apiJson: async () => ({ thinking: { status: 'current', recordings: 3, ready: 1, waiting: 1, held: 1, unreadable: 0 } }) },
   });
+  context.importPage = context.document;
   installRealEscapeHtml(context);
   context.scheduleThinkingProgress();
   await timer();
@@ -3861,6 +3864,7 @@ async function runThinkingRefreshKeepsControlsAndFocus() {
   context.document.activeElement = null;
   await timer();
   assert.ok(panel.innerHTML.includes('1'), 'thinking counts refresh without a publication event');
+  assert.ok(panel.innerHTML.includes('1 held — <a href="/app/health/">review on Health</a>'), panel.innerHTML);
   assert.strictEqual(context.importEvents.id.thinking.ready, 1);
   context.window.location.hash = '#history';
   await timer();
@@ -4516,11 +4520,11 @@ async function runImportDeleteDialog() {
   const full = lines(preview);
   assert.strictEqual(full.length, 3);
   assert.ok(full[0].includes('12') && full[0].includes('d:20261005') && full[0].includes('d:20261009'));
-  assert.strictEqual(full[1], C.list.originalOne);
+  assert.strictEqual(full[1], 'the original file it kept');
   assert.strictEqual(full[2], C.list.row);
   assert.deepStrictEqual(lines({ segments: 0, originals: 0 }), [C.list.row], 'no segments and no original: only its row');
   assert.ok(lines({ segments: 3, days: ['20261005', '20261005'], originals: 2 })[0].includes('d:20261005'));
-  assert.strictEqual(lines({ segments: 3, days: ['20261005', '20261005'], originals: 2 })[1], C.list.originalMany.replace('{n}', 2));
+  assert.strictEqual(lines({ segments: 3, days: ['20261005', '20261005'], originals: 2 })[1], 'the 2 original files it kept');
 
   // One import's dialog opens at once, then fills from the preview.
   let acted = null;
@@ -4586,7 +4590,7 @@ function runImportSetDialogListsFiveThenMore() {
   assert.ok(list.children[0].textContent.includes('S0') && list.children[0].textContent.includes('d:20261100'));
   const more = list.children[5];
   assert.ok(more.matches('.trash-set-more'));
-  assert.strictEqual(more.textContent, C.more.replace('{n}', 2));
+  assert.strictEqual(more.textContent, 'and 2 more');
   assert.deepStrictEqual([reach.textContent, own.textContent, stays.textContent], [C.move.reachMany, C.move.ownMany, C.move.staysMany]);
   const five = h.api.importSetBody('erase', items.slice(0, 5))[0];
   assert.strictEqual(five.children.length, 5, 'five or fewer: no more line');
@@ -4595,12 +4599,12 @@ function runImportSetDialogListsFiveThenMore() {
   const W = C.waiting;
   const waits = (nodes) => Array.from(nodes).filter((node) => node.matches && node.matches('.import-delete-waiting')).map((node) => String(node.textContent));
   const withWaiting = [{ id: '20261101_120000', source: 'audio', waiting: 2 }, { id: '20261102_120000', source: 'audio', waiting: 1 }];
-  assert.deepStrictEqual(waits(h.api.importSetBody('erase', withWaiting)), [W.manyMany.replace('{w}', 3)]);
+  assert.deepStrictEqual(waits(h.api.importSetBody('erase', withWaiting)), ['the 3 segments from them that wait in the trash on their own are erased with them.']);
   assert.deepStrictEqual(waits(h.api.importSetBody('move', withWaiting)), [], 'the move step leaves them in the trash');
   assert.deepStrictEqual(waits(h.api.importSetBody('erase', items)), [], 'none waiting: no line');
   const one = { id: '20261101_120000', source: 'audio' };
-  assert.deepStrictEqual(waits(h.api.importOneBody('erase', one, { source: 'audio', segments: 1, waiting: 1 })), [W.oneOne]);
-  assert.deepStrictEqual(waits(h.api.importOneBody('erase', one, { source: 'audio', segments: 1, waiting: 2 })), [W.oneMany.replace('{w}', 2)]);
+  assert.deepStrictEqual(waits(h.api.importOneBody('erase', one, { source: 'audio', segments: 1, waiting: 1 })), ['the segment from it that waits in the trash on its own is erased with it.']);
+  assert.deepStrictEqual(waits(h.api.importOneBody('erase', one, { source: 'audio', segments: 1, waiting: 2 })), ['the 2 segments from it that wait in the trash on their own are erased with it.']);
   assert.deepStrictEqual(waits(h.api.importOneBody('erase', one, null)), [W.oneUnknown], 'no preview: the conditional line');
   assert.deepStrictEqual(waits(h.api.importOneBody('erase', one, { source: 'audio', segments: 1, waiting: 0 })), []);
   assert.deepStrictEqual(waits(h.api.importOneBody('move', one, null)), []);
@@ -4712,8 +4716,7 @@ async function runImportSetRefusalsStaySelected() {
   const moved = api.importSetOutcome(false, ids, answer, listed);
   assert.deepStrictEqual(Array.from(moved.keep, (entry) => Array.from(entry)), [[ids[1], 'busy'], [ids[2], 'importing']]);
   assert.strictEqual(moved.receipt, C.set.partMoved);
-  assert.ok(moved.message.startsWith(C.set.markedMany.replace('{k}', 2)), 'refused rows still listed are marked below');
-  assert.ok(moved.message.endsWith(C.set.goneMoreOne.replace('{g}', 1)), 'the one no longer listed is counted apart');
+  assert.strictEqual(moved.message, "2 couldn't be moved and are marked below. 1 more is no longer listed.");
   assert.deepStrictEqual(Array.from(moved.buttons), ['recover', 'openTrash']);
   const erased = api.importSetOutcome(true, ids, answer, listed);
   assert.deepStrictEqual(Array.from(erased.keep, (entry) => entry[1]), ['busy', 'eraseImporting'], 'an erase keys its own notes');
@@ -4732,7 +4735,7 @@ async function runImportSetRefusalsStaySelected() {
   api.enterImportPick();
   api.selectAllImports();
   api.deleteChosenImports();
-  assert.strictEqual(h.byId.importDeleteModalTitle.textContent, C.move.titleMany.replace('{n}', 4));
+  assert.strictEqual(h.byId.importDeleteModalTitle.textContent, 'delete 4 imports?');
   h.byId.importDeleteModalConfirm.listeners.click[0]();
   for (let turn = 0; turn < 4; turn += 1) await flushDelete();
   const post = h.requests.find((request) => request.options.method === 'POST');
@@ -4746,8 +4749,8 @@ async function runImportSetRefusalsStaySelected() {
   assert.strictEqual(note(tableRows[3]).textContent, C.notes.other);
   assert.strictEqual(note(tableRows[0]), null);
   const notice = notices[notices.length - 1];
-  assert.strictEqual(notice.title, C.set.partMoved.title.replace('{done}', 1).replace('{n}', 4));
-  assert.strictEqual(notice.message, C.set.stillMany.replace('{k}', 3));
+  assert.strictEqual(notice.title, 'moved 1 of 4 to the trash');
+  assert.strictEqual(notice.message, "3 couldn't be moved and are still in your journal, marked below.");
   assert.strictEqual(notice.autoDismiss, undefined, 'a partial card stays');
   assert.strictEqual(notice.buttons[0].label, C.buttons.recover);
 

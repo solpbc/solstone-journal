@@ -1,0 +1,30 @@
+{
+  "description": "One count in the history row for an imported audio archive.",
+  "context": "Journal window. One count in the history row for an imported audio archive.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "4a42c6e82bf0e439980695dd0bfccd54b8d1c322a62d6d3cc2a2decb5617f2fe",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

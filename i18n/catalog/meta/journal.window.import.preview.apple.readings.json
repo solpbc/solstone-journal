@@ -1,0 +1,30 @@
+{
+  "description": "Count for one group in an Apple Health preview.",
+  "context": "Journal window. Count for one group in an Apple Health preview.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "a33a1ae0434fb1dc126fd5e03ea6d03d977059588cbdc34f5aa13c070db38b10",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

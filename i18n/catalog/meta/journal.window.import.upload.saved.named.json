@@ -1,0 +1,21 @@
+{
+  "description": "Saved upload or folder label with its recorded name.",
+  "context": "Journal window. Saved upload or folder label with its recorded name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f5d4e72d20d24074c44c0bbbc25ff779073233f27d59b27becefb7fd0b72963d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

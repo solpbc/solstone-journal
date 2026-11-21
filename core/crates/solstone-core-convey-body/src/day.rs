@@ -31,7 +31,7 @@ use solstone_core_format::content::body_records::{
 };
 use solstone_core_location::body_records::{LINE_VALUE, day_faces, line_distance};
 
-use crate::fmt::{clock, count_noun, grouped, long_day, parse_day, short_day, short_day_year};
+use crate::fmt::{clock, count_label, grouped, long_day, parse_day, short_day, short_day_year};
 use crate::hidden::drop_hidden_rows;
 use crate::listing::{DaySources, body_days};
 use crate::old_lines::day_lines;
@@ -175,7 +175,7 @@ fn experience_item(
         .values
         .get(LINE_VALUE)
         .and_then(|value| line_distance(value));
-    json!({
+    let mut item = json!({
         "kind": kind,
         "name": title.cloned().unwrap_or_else(|| row.label.clone()),
         "start": time_words(row.start.as_deref(), day, zone, locale),
@@ -183,7 +183,18 @@ fn experience_item(
         "by": row.by,
         "distance": distance,
         "continuing": continuing,
-    })
+    });
+    if continuing {
+        item["continuing_label"] = json!(row.experience.as_deref().map_or_else(
+            || text(locale, "journal.window.body.experience.continuing.generic"),
+            |kind| strings(
+                locale,
+                "journal.window.body.experience.continuing.named",
+                [("experience_kind", kind)],
+            ),
+        ));
+    }
+    item
 }
 
 fn logged_who(row: &BodyRow, locale: &str) -> Option<String> {
@@ -303,7 +314,7 @@ fn source_section(
             json!({
                 "name": name,
                 "count": tally.count,
-                "count_label": count_noun(tally.count, "journal.window.body.count.reading.one", "journal.window.body.count.reading.other", locale),
+                "count_label": count_label(tally.count, "journal.window.body.count.reading", locale),
                 "first": first,
                 "last": last,
                 "by": by,
@@ -319,7 +330,7 @@ fn source_section(
                     .total
                     .map(|total| display_value(&sum.record_type, total, sum.unit.as_deref())),
                 "count": sum.count,
-                "count_label": count_noun(sum.count, "journal.window.body.count.entry.one", "journal.window.body.count.entry.other", locale),
+                "count_label": count_label(sum.count, "journal.window.body.count.entry", locale),
                 "by": sum.by,
             })
         })
@@ -331,7 +342,7 @@ fn source_section(
             json!({
                 "name": name,
                 "count": tally.count,
-                "count_label": count_noun(tally.count, "journal.window.body.count.entry.one", "journal.window.body.count.entry.other", locale),
+                "count_label": count_label(tally.count, "journal.window.body.count.entry", locale),
                 "first": first,
                 "last": last,
                 "who": who,
