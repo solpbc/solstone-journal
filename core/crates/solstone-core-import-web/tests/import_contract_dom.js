@@ -1280,6 +1280,21 @@ module.exports = async function importContractCases(crateDir) {
     assert.ok(p.clock.live() === 0, 'no timer');
   });
 
+  await test('the cards carry a link to sources, which a guide hides and the grid shows again', async () => {
+    const p = await boot(env);
+    const link = p.byId('importSourcesLink');
+    assert.ok(link && link.tagName === 'A', 'the link is there');
+    assert.strictEqual(link.getAttribute('href'), '/app/sources/');
+    assert.strictEqual(link.textContent, JournalI18n.render('journal.window.import.link.label.see.when.your.devices.last.added.something'));
+    assert.ok(link.style.display === '', 'it shows with the cards');
+    const guided = await boot(env, '/app/import/#guide/chatgpt');
+    const hidden = guided.byId('importSourcesLink');
+    assert.ok(hidden.style.display === 'none', 'a guide hides it');
+    guided.press(guided.q('.import-back-link'));
+    await settle();
+    assert.ok(hidden.style.display === '', 'back on the cards it shows again');
+  });
+
   await test("each markup handler acts by its own event after an in-page mount, and the router's press stays out of it", async () => {
     const p = await boot(env, '/app/import/#guide/chatgpt');
     assert.ok(p.byId('importGuide').style.display === '', 'the guide shows from the address');

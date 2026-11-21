@@ -95,6 +95,18 @@
   color: var(--ink);
 }
 
+.import-sources-link {
+  display: inline-block;
+  margin-bottom: 1rem;
+  color: var(--orange-text-aa);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.import-sources-link:hover {
+  text-decoration: underline;
+}
+
 .import-step {
   border-top: 1px solid var(--hairline);
   padding-top: 1rem;
@@ -720,6 +732,7 @@
 </style>
 <div id="importListView">
 <div class="workspace-content-wide">
+  <a href="/app/sources/" id="importSourcesLink" class="import-sources-link">{{journal.window.import.link.label.see.when.your.devices.last.added.something}}</a>
   <div id="importGrid" class="import-source-grid"></div>
 
   <div id="importGuide" class="import-guided-flow" style="display:none">
@@ -1377,6 +1390,7 @@ async function navigateTo(view, options = {}) {
   const held = options.held !== undefined ? options.held : importHeld();
   const leftSource = options.leftSource !== undefined ? options.leftSource : currentGuideSource;
   const grid = document.getElementById('importGrid');
+  const sourcesLink = document.getElementById('importSourcesLink');
   const guide = document.getElementById('importGuide');
   const cleanView = view ? String(view).replace(/^#/, '') : '';
   const nextHash = cleanView === 'grid' || !cleanView ? '' : `#${cleanView}`;
@@ -1387,6 +1401,10 @@ async function navigateTo(view, options = {}) {
 
   if (grid) {
     grid.style.display = cleanView === 'grid' || !cleanView ? '' : 'none';
+  }
+  // The link to sources shows and hides with the cards.
+  if (sourcesLink) {
+    sourcesLink.style.display = cleanView === 'grid' || !cleanView ? '' : 'none';
   }
   if (guide) {
     guide.style.display = cleanView === 'grid' || !cleanView ? 'none' : '';

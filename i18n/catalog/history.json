@@ -80587,6 +80587,18 @@
       "selector": null
     },
     {
+      "id": "journal.window.import.link.label.see.when.your.devices.last.added.something",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e6c696e6b2e6c6162656c2e7365652e7768656e2e796f75722e646576696365732e6c6173742e61646465642e736f6d657468696e67",
+      "namespace": "journal.window.import.link.label.see.when.your.devices.last.added",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.import.link.label.view.imported.content",
       "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e6c696e6b2e6c6162656c2e766965772e696d706f727465642e636f6e74656e74",
       "namespace": "journal.window.import.link.label.view.imported",
@@ -131571,6 +131583,18 @@
       "id": "journal.window.sources.copy.error.this.didn.t.load",
       "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e636f70792e6572726f722e746869732e6469646e2e742e6c6f6164",
       "namespace": "journal.window.sources.copy.error.this.didn.t",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.copy.import.import.files.from.other.apps",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e636f70792e696d706f72742e696d706f72742e66696c65732e66726f6d2e6f746865722e61707073",
+      "namespace": "journal.window.sources.copy.import.import.files.from.other",
       "owner": "journal",
       "tombstone": false,
       "replacement": null,

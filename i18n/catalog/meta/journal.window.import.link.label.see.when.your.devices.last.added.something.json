@@ -1,0 +1,16 @@
+{
+  "description": "Link label in the journal's import view, above the import source cards.",
+  "context": "Journal window, import view. Link label. Opens the sources view, which lists when each of the owner's devices last added something to their journal. The arrow marks a link to another view.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "71bbfdd7f8f9dacc096720a2a15692a393a881ea1fe2f3b5e92491e367135188",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

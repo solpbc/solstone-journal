@@ -15,12 +15,14 @@
     empty: global.JournalI18n.render('journal.window.sources.copy.empty.no.devices.are.paired.yet'),
     pair: global.JournalI18n.render('journal.window.sources.copy.pair.pair.a.device'),
     manage: global.JournalI18n.render('journal.window.sources.copy.manage.manage.devices'),
+    importFiles: global.JournalI18n.render('journal.window.sources.copy.import.import.files.from.other.apps'),
     nothing: global.JournalI18n.render('journal.window.sources.copy.nothing.nothing.added.yet'),
     error: global.JournalI18n.render('journal.window.sources.copy.error.this.didn.t.load'),
     retry: global.JournalI18n.render('journal.window.sources.copy.retry.try.again'),
   };
 
   const NETWORK = '/app/network/';
+  const IMPORT = '/app/import/';
   const CLIENTS = '/app/network/api/clients';
 
   const NAMED = [
@@ -197,10 +199,18 @@
     return node;
   }
 
-  function networkLink(doc, className, label) {
-    const link = text(doc, 'a', className, label);
-    link.setAttribute('href', NETWORK);
-    return link;
+  function link(doc, className, label, href) {
+    const node = text(doc, 'a', className, label);
+    node.setAttribute('href', href);
+    return node;
+  }
+
+  // The device link, then the way to import files from other apps.
+  function links(doc, deviceLink) {
+    const row = el(doc, 'div', 'sources-links');
+    row.appendChild(deviceLink);
+    row.appendChild(link(doc, 'sources-import', COPY.importFiles, IMPORT));
+    return row;
   }
 
   function fillDevice(doc, box, client, rows, opts) {
@@ -219,7 +229,7 @@
   // The controls a draw makes. A redraw takes out whichever one held focus,
   // so focus goes to the same control drawn again, or else to the view's
   // root, which ships with the page and is never redrawn.
-  const CONTROLS = ['sources-retry', 'sources-manage', 'sources-pair'];
+  const CONTROLS = ['sources-retry', 'sources-manage', 'sources-pair', 'sources-import'];
 
   function focusedControl(doc, root) {
     const active = doc.activeElement;
@@ -259,10 +269,10 @@
     const clients = body.clients;
     if (clients.length === 0) {
       root.appendChild(text(doc, 'p', 'sources-empty', COPY.empty));
-      root.appendChild(networkLink(doc, 'sources-pair', COPY.pair));
+      root.appendChild(links(doc, link(doc, 'sources-pair', COPY.pair, NETWORK)));
       return;
     }
-    root.appendChild(networkLink(doc, 'sources-manage', COPY.manage));
+    root.appendChild(links(doc, link(doc, 'sources-manage', COPY.manage, NETWORK)));
     const rows = rowsFor(clients);
     const cards = opts.layout === 'cards';
     if (!cards && rows.length > 0) {
