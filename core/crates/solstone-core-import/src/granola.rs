@@ -192,15 +192,9 @@ fn instant(value: &str) -> Result<Timestamp, Error> {
         .map_err(|_| Error::Response)
 }
 fn note_id(value: &str) -> Result<String, Error> {
-    if value.is_ascii()
-        && value.len() == 18
-        && value.starts_with("not_")
-        && value[4..].bytes().all(|b| b.is_ascii_alphanumeric())
-    {
-        Ok(value.to_owned())
-    } else {
-        Err(Error::Response)
-    }
+    solstone_core_format::content::granola::is_note_id(value)
+        .then(|| value.to_owned())
+        .ok_or(Error::Response)
 }
 fn stream(id: &str) -> String {
     // Preserve every API ID byte on case-insensitive filesystems.
@@ -209,21 +203,6 @@ fn stream(id: &str) -> String {
         "{}{encoded}",
         solstone_core_format::content::granola::STREAM_PREFIX
     )
-}
-fn legacy_id(value: &str) -> Option<String> {
-    if let Ok(id) = note_id(value) {
-        return Some(id);
-    }
-    // Only UUID document IDs have a case-insensitive canonical spelling.
-    (value.len() == 36
-        && value.bytes().enumerate().all(|(i, byte)| {
-            if [8, 13, 18, 23].contains(&i) {
-                byte == b'-'
-            } else {
-                byte.is_ascii_hexdigit()
-            }
-        }))
-    .then(|| value.to_ascii_lowercase())
 }
 fn state(root: &Path) -> Result<State, Error> {
     match fs::read(root.join(STATE)) {
@@ -439,7 +418,11 @@ fn run(
             let transcript = note.transcript.as_ref().ok_or(Error::Transcript)?;
             let origin = validate_note(&note, transcript)?;
             if !state.notes.contains_key(&id) {
-                let old_id = note.web_url.rsplit('/').next().and_then(legacy_id);
+                let old_id = note
+                    .web_url
+                    .rsplit('/')
+                    .next()
+                    .and_then(solstone_core_format::content::granola::legacy_id);
                 let local =
                     origin.to_zoned_datetime(solstone_core_journal_config::owner_zone(root));
                 let end = transcript
@@ -713,7 +696,7 @@ fn legacy_ids(root: &Path) -> Result<BTreeSet<String>, Error> {
                     .get("imported")
                     .and_then(|v| v.get("id"))
                     .and_then(Value::as_str)
-                    .and_then(legacy_id)
+                    .and_then(solstone_core_format::content::granola::legacy_id)
                 {
                     ids.insert(id);
                 }

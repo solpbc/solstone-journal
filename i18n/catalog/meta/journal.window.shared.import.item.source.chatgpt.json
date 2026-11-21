@@ -1,0 +1,16 @@
+{
+  "description": "The product an imported AI chat came from: ChatGPT. A product name.",
+  "context": "Journal window. Transcripts and search display the kind and provenance of a filed import.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1b208aaea9e1ffd74afb80bd07721d55754b961f8f46e36ceea4ca6bc657a349",
+  "max_length": 40,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

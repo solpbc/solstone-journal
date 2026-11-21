@@ -180,7 +180,26 @@ pub fn load_transcribed_cluster_inputs(
         }
     });
 
-    let bytes = fs::read(transcript_path)?;
+    let name = transcript_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or_default();
+    let bytes = if solstone_core_format::content::conversation::is_conversation_jsonl(
+        &segment.stream,
+        name,
+    ) {
+        match solstone_core_transcripts::read_spoken_conversation(transcript_path, |file| {
+            let mut bytes = Vec::new();
+            std::io::Read::read_to_end(file, &mut bytes)?;
+            Ok(bytes)
+        }) {
+            Ok(Some(bytes)) => bytes,
+            Ok(None) => return Ok(TranscribedClusterLoad::NoClusters),
+            Err(_) => return Ok(TranscribedClusterLoad::Unreadable),
+        }
+    } else {
+        fs::read(transcript_path)?
+    };
     let is_single = is_single_evidence_header(&bytes);
     let read = read_transcript_rows(&bytes)?;
 
@@ -511,6 +530,47 @@ mod tests {
         let load =
             load_transcribed_cluster_inputs(journal.path(), &jsonl_path, &garbage_npz).unwrap();
         assert_eq!(load, TranscribedClusterLoad::NoClusters);
+    }
+
+    #[test]
+    fn a_chat_row_with_a_numbered_author_does_not_open_embeddings() {
+        let journal = TempJournal::new();
+        let segment = journal
+            .path()
+            .join("chronicle/20260101/import.chatgpt/090000_60");
+        fs::create_dir_all(&segment).unwrap();
+        let path = segment.join("imported_audio.jsonl");
+        let row = json!({"sentence_id":1,"start":"00:00:00","speaker":1,"text":"hello"});
+        fs::write(&path, format!("{{}}\n{row}\n")).unwrap();
+        let _hook = set_read_hook(|kind, _| assert_ne!(kind, ReadKind::Embeddings));
+        let load = load_transcribed_cluster_inputs(
+            journal.path(),
+            &path,
+            &segment.join("imported_audio.npz"),
+        )
+        .unwrap();
+        assert_eq!(load, TranscribedClusterLoad::NoClusters);
+        fs::write(path.with_extension("wav"), "recording").unwrap();
+        fs::write(&path, format!("{{\"model\":\"unknown\"}}\n{row}\n")).unwrap();
+        assert_eq!(
+            load_transcribed_cluster_inputs(
+                journal.path(),
+                &path,
+                &segment.join("imported_audio.npz")
+            )
+            .unwrap(),
+            TranscribedClusterLoad::Unreadable
+        );
+        fs::remove_file(&path).unwrap();
+        assert_eq!(
+            load_transcribed_cluster_inputs(
+                journal.path(),
+                &path,
+                &segment.join("imported_audio.npz")
+            )
+            .unwrap(),
+            TranscribedClusterLoad::Unreadable
+        );
     }
 
     #[test]

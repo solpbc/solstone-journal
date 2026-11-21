@@ -223,6 +223,7 @@ pub(crate) fn issue_segment_links(
                     source_index: None,
                     byte_offset: None,
                     statement_ordinal: None,
+                    message: None,
                 };
                 if let Ok(token) =
                     crate::dispatch::segment_reference(journal_root, principal, snapshot, target)

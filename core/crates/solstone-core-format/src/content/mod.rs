@@ -227,6 +227,7 @@ pub struct ScreenTalentRawScreen {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AdmittedCategory {
     Transcripts,
+    Messages,
     Entities,
     Facets,
     ScreenText,
@@ -2499,7 +2500,7 @@ fn partial_markers(record: &JsonObject) -> impl Iterator<Item = &Value> {
     .filter(|v| v.is_object())
 }
 
-fn has_partial_input(record: &JsonObject) -> bool {
+pub fn has_partial_input(record: &JsonObject) -> bool {
     partial_markers(record).next().is_some()
 }
 

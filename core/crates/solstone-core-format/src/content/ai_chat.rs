@@ -29,18 +29,8 @@ pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
     let mut chunks = Vec::new();
 
     for record in records {
-        if !record.contains_key("start") {
+        let Some(content) = indexed_turn_text(record) else {
             continue;
-        }
-        let speaker = record.get("speaker").and_then(Value::as_str).unwrap_or("");
-        let text = record.get("text").and_then(Value::as_str).unwrap_or("");
-        if text.is_empty() {
-            continue;
-        }
-        let content = if speaker.is_empty() {
-            text.to_owned()
-        } else {
-            format!("**{speaker}:** {text}")
         };
         chunks.push(recorded_chunk(
             content,
@@ -55,6 +45,24 @@ pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
         header: Some(ai_chat_header(&source_key, metadata)),
         error: None,
         warnings: Vec::new(),
+    }
+}
+
+pub(super) fn indexed_turn_text(record: &JsonObject) -> Option<String> {
+    if !record.contains_key("start") {
+        return None;
+    }
+    let text = record
+        .get("text")?
+        .as_str()
+        .filter(|text| !text.is_empty())?;
+    match record
+        .get("speaker")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+    {
+        Some(speaker) => Some(format!("**{speaker}:** {text}")),
+        None => Some(text.to_owned()),
     }
 }
 

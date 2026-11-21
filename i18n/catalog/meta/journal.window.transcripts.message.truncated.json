@@ -1,0 +1,16 @@
+{
+  "description": "Ends a message whose source copy was itself cut short. Never shown for a page or loading limit.",
+  "context": "Journal window, transcripts view. After the last kept words of a message.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7d4f1633a323eba917f41f73c0c6f408eb273f2d0571bcd8c6605439a598ca5f",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

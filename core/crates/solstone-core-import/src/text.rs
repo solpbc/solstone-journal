@@ -361,7 +361,7 @@ fn import(
     let mut created = Vec::new();
 
     let (planned, untimed) = plan_tiles(
-        reading_for(&text, &verdict),
+        reading_for(&text, &verdict, stream),
         day_dir,
         start_time,
         stream,
@@ -588,7 +588,7 @@ pub fn preview(
 ) -> Result<crate::size::ImportSize, TextImportError> {
     let (text, verdict, _) = read_source(path)?;
     let (planned, _) = plan_tiles(
-        reading_for(&text, &verdict),
+        reading_for(&text, &verdict, stream),
         day_dir,
         start_time,
         stream,
@@ -789,12 +789,29 @@ struct StatedClock {
     seconds: u64,
 }
 
+mod export_turns;
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+enum ExportTime {
+    #[default]
+    Unspecified,
+    Sent(Timestamp),
+    NoSendInstant,
+    Caption {
+        start: String,
+        end: String,
+    },
+}
+
 /// One entry of the transcript as the file gives it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Turn {
     /// Seconds from the start of the import.
     offset: u64,
     speaker: Option<String>,
+    exporter_notice: bool,
+    export_time: ExportTime,
+    recipient: Option<String>,
     text: String,
     stated: Option<StatedClock>,
 }
@@ -865,7 +882,131 @@ fn existing_timed_reading(text: &str) -> Option<Reading> {
     inline_turns(text)
 }
 
-fn reading_for(text: &str, verdict: &Verdict) -> Reading {
+fn zoom_chat_turns(text: &str) -> Option<Vec<Turn>> {
+    use std::sync::LazyLock;
+    static HEADER: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(solstone_core_format::content::conversation::ZOOM_CHAT_LINE)
+            .expect("Zoom saved chat header")
+    });
+    let mut turns: Vec<Turn> = Vec::new();
+    let mut block_body = false;
+    for line in text.trim_start_matches('\u{feff}').lines() {
+        let header_line = crate::triage::strip_direction_marks(line);
+        // A standalone CR is a line boundary in the classifier. Preserve such
+        // ambiguous input through the earlier reader instead of merging senders.
+        if line.contains('\r') {
+            return None;
+        }
+        if let Some(parts) = HEADER.captures(header_line) {
+            let body = header_line.get(parts.get(0)?.end()..)?;
+            block_body = body.is_empty();
+            let speaker = parts.name("speaker")?.as_str().trim();
+            if speaker.is_empty() {
+                return None;
+            }
+            turns.push(Turn {
+                offset: 0,
+                speaker: Some(speaker.to_owned()),
+                exporter_notice: false,
+                export_time: ExportTime::Unspecified,
+                recipient: parts
+                    .name("recipient")
+                    .map(|name| name.as_str().trim().to_owned()),
+                text: body.to_owned(),
+                stated: None,
+            });
+        } else if let Some(turn) = turns.last_mut() {
+            if !turn.text.is_empty() {
+                turn.text.push('\n')
+            }
+            turn.text.push_str(if block_body {
+                line.strip_prefix('\t').unwrap_or(line)
+            } else {
+                line
+            });
+        } else if !line.trim().is_empty() {
+            return None;
+        }
+    }
+    // A partial parse leaves the original import representation intact.
+    (!turns.is_empty() && turns.iter().all(|t| !t.text.trim().is_empty())).then_some(turns)
+}
+
+/// The ordinary reader takes one line per turn. Registered text exchanges
+/// can also resume within a large row, provided its encoded JSON fits.
+fn readable_export(reading: &Reading, verdict: &Verdict, stream: &str) -> bool {
+    use solstone_core_format::content::conversation::{
+        ConversationMedium, MAX_CONVERSATION_ROW_BYTES, verdict_medium_with_notice,
+    };
+    let fields = |turn: &Turn| {
+        turn.text.len()
+            + turn.speaker.as_deref().unwrap_or_default().len()
+            + turn.recipient.as_deref().unwrap_or_default().len()
+            + match &turn.export_time {
+                ExportTime::Caption { start, end } => start.len() + end.len(),
+                _ => 0,
+            }
+    };
+    if reading.turns.iter().all(|turn| fields(turn) <= 8 * 1024) {
+        return true;
+    }
+    let notice = reading.turns.iter().any(|turn| turn.exporter_notice);
+    if stream != "import.text"
+        || reading
+            .turns
+            .iter()
+            .any(|t| matches!(t.export_time, ExportTime::Caption { .. }))
+        || verdict_medium_with_notice(&serde_json::json!(verdict), notice)
+            == ConversationMedium::Spoken
+    {
+        return false;
+    }
+    // Reserve room for generated keys, times and the newline. Small values
+    // fit even at JSON's worst expansion. Measure larger values as encoded.
+    let budget = MAX_CONVERSATION_ROW_BYTES - 1024;
+    reading.turns.iter().all(|turn| {
+        let bytes = fields(turn);
+        if bytes <= budget / 6 {
+            return true;
+        }
+        if bytes > budget {
+            return false;
+        }
+        [
+            Some(turn.text.as_str()),
+            turn.speaker.as_deref(),
+            turn.recipient.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        .flat_map(str::bytes)
+        .map(|byte| match byte {
+            b'"' | b'\\' | 8 | 9 | 10 | 12 | 13 => 2usize,
+            0..=31 => 6,
+            _ => 1,
+        })
+        .sum::<usize>()
+            <= budget
+    })
+}
+
+fn reading_for(text: &str, verdict: &Verdict, stream: &str) -> Reading {
+    if verdict.kind == ContentKind::Transcripts {
+        let reading = export_turns::read(text, &verdict.reasons).or_else(|| {
+            if !verdict.reasons.contains(&"zoom_chat") {
+                return None;
+            }
+            // The export carries a local clock without a date or timezone.
+            Some(Reading {
+                clock_start: None,
+                turns: zoom_chat_turns(text)?,
+                untimed: true,
+            })
+        });
+        if let Some(reading) = reading.filter(|r| readable_export(r, verdict, stream)) {
+            return reading;
+        }
+    }
     if verdict.kind == ContentKind::Transcripts
         && verdict.reasons.contains(&"existing_timed_layout")
         && let Some(reading) = existing_timed_reading(text)
@@ -968,6 +1109,9 @@ fn inline_turns(text: &str) -> Option<Reading> {
                 Turn {
                     offset: 0,
                     speaker: Some(speaker.to_owned()),
+                    exporter_notice: false,
+                    export_time: ExportTime::Unspecified,
+                    recipient: None,
                     text: said.to_owned(),
                     stated: None,
                 },
@@ -995,6 +1139,9 @@ fn inline_turns(text: &str) -> Option<Reading> {
                     Turn {
                         offset: 0,
                         speaker: None,
+                        exporter_notice: false,
+                        export_time: ExportTime::Unspecified,
+                        recipient: None,
                         text: line.to_owned(),
                         stated: None,
                     },
@@ -1091,6 +1238,9 @@ fn untimed_turns(text: &str) -> Vec<Turn> {
             turns.push(Turn {
                 offset: 0,
                 speaker: None,
+                exporter_notice: false,
+                export_time: ExportTime::Unspecified,
+                recipient: None,
                 text: text.to_owned(),
                 stated: None,
             });
@@ -1132,6 +1282,9 @@ fn timed_turns(text: &str) -> Option<Vec<Turn>> {
                 turns.push(Turn {
                     offset: at,
                     speaker: Some(speaker.to_owned()),
+                    exporter_notice: false,
+                    export_time: ExportTime::Unspecified,
+                    recipient: None,
                     text: said.to_owned(),
                     stated: None,
                 });
@@ -1154,6 +1307,9 @@ fn timed_turns(text: &str) -> Option<Vec<Turn>> {
                 turns.push(Turn {
                     offset: at,
                     speaker: None,
+                    exporter_notice: false,
+                    export_time: ExportTime::Unspecified,
+                    recipient: None,
                     text: line.to_owned(),
                     stated: None,
                 });
@@ -1474,6 +1630,14 @@ fn jsonl_rows(
     // Keep the source-format evidence with this import's rows. A neighboring
     // note, attachment or earlier sidecar may have a different origin.
     imported.insert("triage".to_owned(), serde_json::json!(verdict));
+    if verdict
+        .reasons
+        .iter()
+        .any(|r| matches!(*r, "whatsapp_bracketed" | "whatsapp_dash"))
+        && turns.iter().any(|t| t.exporter_notice)
+    {
+        imported.insert("whatsapp_export_notice".into(), Value::Bool(true));
+    }
     if let Some(facet) = facet.filter(|value| !value.is_empty()) {
         imported.insert("facet".to_owned(), Value::String(facet.to_owned()));
     }
@@ -1489,6 +1653,14 @@ fn jsonl_rows(
     );
     // Every entry still needs a `start` to render and be searched, so an untimed file's
     // entries sit at `00:00:00`; this tells any reader that none of them is a real time.
+    let sent = turns.iter().filter_map(|turn| match turn.export_time {
+        ExportTime::Sent(instant) => Some(instant),
+        _ => None,
+    });
+    if let (Some(first), Some(last)) = (sent.clone().min(), sent.max()) {
+        header.insert("first_sent_at".into(), Value::String(first.to_string()));
+        header.insert("last_sent_at".into(), Value::String(last.to_string()));
+    }
     if untimed {
         header.insert("untimed".to_owned(), Value::Bool(true));
     }
@@ -1509,10 +1681,29 @@ fn jsonl_rows(
             "start".to_owned(),
             Value::String(clock_text(turn.offset - tile_offset)),
         );
-        let source_ms = crate::timestamp::epoch_millis(after(origin, turn.offset));
+        let source_ms = match turn.export_time {
+            ExportTime::Sent(instant) => instant.as_millisecond(),
+            _ => crate::timestamp::epoch_millis(after(origin, turn.offset)),
+        };
         entry.insert("source_ms".to_owned(), Value::Number(source_ms.into()));
+        match &turn.export_time {
+            ExportTime::Sent(instant) => {
+                entry.insert("sent_at".into(), Value::String(instant.to_string()));
+            }
+            ExportTime::Caption { start, end } => {
+                entry.insert("cue_start".into(), Value::String(start.clone()));
+                entry.insert("cue_end".into(), Value::String(end.clone()));
+            }
+            ExportTime::NoSendInstant => {
+                entry.insert("sent_at".into(), Value::Null);
+            }
+            ExportTime::Unspecified => {}
+        }
         if let Some(speaker) = &turn.speaker {
             entry.insert("speaker".to_owned(), Value::String(speaker.clone()));
+        }
+        if let Some(to) = &turn.recipient {
+            entry.insert("to".into(), serde_json::json!([to]));
         }
         entry.insert("text".to_owned(), Value::String(turn.text.clone()));
         entry.insert("source".to_owned(), Value::String("import".to_owned()));
@@ -1526,12 +1717,56 @@ mod tests {
     use super::*;
 
     #[test]
+    fn zoom_keeps_each_sender_recipient_and_multiline_body_without_inventing_a_date() {
+        let source = "10:07:10 From Ivo to Everyone : Hold it.\n\n> quoted café\n\u{200e}10:07:12\u{a0}From\u{202f}Pia : Holding.";
+        let verdict = triage::classify(source.as_bytes(), "meeting.txt", Path::new(""), None, None);
+        assert!(verdict.reasons.contains(&"zoom_chat"));
+        let reading = reading_for(source, &verdict, "import.text");
+        assert!(reading.untimed);
+        assert_eq!(reading.turns.len(), 2);
+        assert_eq!(reading.turns[0].speaker.as_deref(), Some("Ivo"));
+        assert_eq!(reading.turns[0].recipient.as_deref(), Some("Everyone"));
+        assert_eq!(reading.turns[0].text, "Hold it.\n\n> quoted café");
+        assert_eq!(reading.turns[1].recipient, None);
+        assert_eq!(reading.turns[1].speaker.as_deref(), Some("Pia"));
+        let body = format!("{}\n\nLast paragraph.", "é".repeat(38_000));
+        let long = format!("10:07:12 From Pia : {body}\n10:08:12 From Ivo : Done.");
+        let long_verdict =
+            triage::classify(long.as_bytes(), "meeting.txt", Path::new(""), None, None);
+        let long_reading = reading_for(&long, &long_verdict, "import.text");
+        assert_eq!(long_reading.turns.len(), 2);
+        assert_eq!(long_reading.turns[0].text, body);
+        assert_eq!(long_reading.turns[0].speaker.as_deref(), Some("Pia"));
+        assert!(
+            reading_for(&long, &long_verdict, "custom")
+                .turns
+                .iter()
+                .all(|t| t.text.len() <= 8 * 1024)
+        );
+    }
+
+    #[test]
+    fn a_padded_caption_clock_cannot_create_an_unreadable_spoken_row() {
+        let hours = "0".repeat(70_000);
+        let text = format!("WEBVTT\n\n{hours}:00:00.000 --> {hours}:00:01.000\nHello.\n");
+        let verdict = Verdict {
+            kind: ContentKind::Transcripts,
+            reasons: vec!["webvtt_cues"],
+            ..triage::classify(b"", "captions.vtt", Path::new(""), None, None)
+        };
+        let parsed = export_turns::read(&text, &verdict.reasons).unwrap();
+        assert!(!readable_export(&parsed, &verdict, "import.text"));
+        let fallback = reading_for(&text, &verdict, "import.text");
+        assert!(fallback.turns.iter().all(|t| t.text.len() <= 8 * 1024));
+    }
+
+    #[test]
     fn document_evidence_wins_before_tiling_a_timed_excerpt() {
         let text = "*** START OF THE PROJECT GUTENBERG EBOOK CLAY ***\n\n[00:00:00] Val: Ready.\n[00:10:00] Lio: Yes.\n";
         let verdict = triage::classify(text.as_bytes(), "document.txt", Path::new(""), None, None);
         assert_eq!(verdict.kind, ContentKind::Documents);
         assert!(verdict.reasons.contains(&"existing_timed_layout"));
-        let reading = reading_for(text, &verdict);
+        let reading = reading_for(text, &verdict, "import.text");
         assert!(reading.turns.iter().all(|turn| turn.offset == 0));
     }
 
@@ -1539,6 +1774,9 @@ mod tests {
         Turn {
             offset,
             speaker: speaker.map(str::to_owned),
+            exporter_notice: false,
+            export_time: ExportTime::Unspecified,
+            recipient: None,
             text: text.to_owned(),
             stated: None,
         }
@@ -1554,6 +1792,9 @@ mod tests {
         Turn {
             offset,
             speaker: speaker.map(str::to_owned),
+            exporter_notice: false,
+            export_time: ExportTime::Unspecified,
+            recipient: None,
             text: text.to_owned(),
             stated: Some(StatedClock { day_shift, seconds }),
         }

@@ -554,6 +554,7 @@ mod tests {
             .map(|(index, row)| (format!("### 09:00:{index:02}\n\nframe"), row.clone()))
             .collect::<Vec<_>>();
         Some(EntrySource {
+            conversation_medium: None,
             path: "/journal/chronicle/20400102/device_1/090000_300/left_DP-1_screen.jsonl".into(),
             sha256: "invented-source-hash".into(),
             rendered_range: 0..1000,

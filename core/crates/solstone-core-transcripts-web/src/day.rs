@@ -41,7 +41,7 @@ pub(crate) async fn ranges(
                 Ok(value) => value,
                 Err(response) => return response,
             };
-            Json(json!({"audio": attach_visible_streams_to_ranges(&prepared.audio, &prepared.segments, "audio"), "screen": attach_visible_streams_to_ranges(&prepared.screen, &prepared.segments, "screen")})).into_response()
+            Json(json!({"audio": attach_visible_streams_to_ranges(&prepared.display_audio, &prepared.segments, "audio"), "screen": attach_visible_streams_to_ranges(&prepared.screen, &prepared.segments, "screen")})).into_response()
         },
     )
     .await
@@ -95,7 +95,7 @@ pub(crate) async fn day(
                 &prepared.segments,
                 &solstone_core_journal_config::owner_zone(&journal_root),
             );
-            let mut payload = json!({"audio": attach_visible_streams_to_ranges(&prepared.audio, &prepared.segments, "audio"), "screen": attach_visible_streams_to_ranges(&prepared.screen, &prepared.segments, "screen"), "segments": prepared.segments});
+            let mut payload = json!({"audio": attach_visible_streams_to_ranges(&prepared.display_audio, &prepared.segments, "audio"), "screen": attach_visible_streams_to_ranges(&prepared.screen, &prepared.segments, "screen"), "segments": prepared.segments});
             // Only a day with recordings on another clock carries `zones`, so
             // every other day's payload is unchanged.
             if !zones.is_null() {
@@ -109,6 +109,7 @@ pub(crate) async fn day(
 
 pub(crate) struct PreparedDay {
     pub(crate) audio: Vec<TimeRange>,
+    display_audio: Vec<TimeRange>,
     pub(crate) screen: Vec<TimeRange>,
     pub(crate) segments: Vec<TranscriptSegment>,
 }
@@ -121,10 +122,25 @@ pub(crate) fn prepare_day(
     let (audio, screen, segments) = scan_day(&FilesystemSegmentSource, journal_root, day, now)
         .map_err(TranscriptError::health)?;
     let mut segments = segments.into_iter().map(from_native).collect::<Vec<_>>();
-    normalize_markdown_only_segments(journal_root, day, &mut segments);
+    let originally_audio: Vec<bool> = segments
+        .iter()
+        .map(|s| s.types.iter().any(|k| k == "audio"))
+        .collect();
+    normalize_markdown_only_segments(journal_root, day, &mut segments, true);
+    let display_audio = solstone_core_system_health::ranges_for_segment_keys(
+        segments
+            .iter()
+            .zip(originally_audio)
+            .filter(|(s, originally)| {
+                *originally
+                    && (s.conversation_items.is_empty() || s.data_state.contains_key("audio"))
+            })
+            .map(|(s, _)| s.key.as_str()),
+    );
     attach_think_to_segments(journal_root, day, &mut segments)?;
     Ok(PreparedDay {
         audio,
+        display_audio,
         screen,
         segments,
     })
@@ -164,6 +180,7 @@ pub(crate) fn from_native(segment: DaySegment) -> TranscriptSegment {
         data_state: segment.data_state.0,
         think: None,
         item: None,
+        conversation_items: Vec::new(),
     }
 }
 #[allow(clippy::result_large_err)]

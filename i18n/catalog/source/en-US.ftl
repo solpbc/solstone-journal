@@ -4372,6 +4372,12 @@ journal.window.not.found.heading = Not Found
 
 journal.window.not.found.title = 404 Not Found
 
+journal.window.search.message.everyone = everyone
+
+journal.window.search.message.meta = { $sender } to { $recipients }
+
+journal.window.search.message.you = you
+
 journal.window.search.count.results.across.days = { $match_quantity ->
     [one] { $day_quantity ->
         [one] { $match_count } match across { $day_count } day.
@@ -5915,6 +5921,16 @@ journal.window.shared.gate.drawer.statements.observed.count = { $quantity ->
 
 journal.window.shared.gate.drawer.threshold = needs { $threshold }
 
+journal.window.shared.import.item.kind.conversation = conversation
+
+journal.window.shared.import.item.kind.messages = messages
+
+journal.window.shared.import.item.source.chatgpt = ChatGPT
+
+journal.window.shared.import.item.source.claude = Claude
+
+journal.window.shared.import.item.source.gemini = Gemini
+
 journal.window.shared.report.error.journal.version = journal{ $slot1 }{ $version }
 
 journal.window.shared.status.pane.age.elapsed.day = { $quantity ->
@@ -6513,6 +6529,10 @@ journal.window.agents.permission.kind.facets.description = facet descriptions, a
 
 journal.window.agents.permission.kind.facets.label = summaries
 
+journal.window.agents.permission.kind.messages.description = words written and sent in chats and AI chats you imported, and details drawn from those words. an agent needs both transcripts and messages to read a conversation when your journal can't tell if it was spoken or written.
+
+journal.window.agents.permission.kind.messages.label = messages
+
 journal.window.agents.permission.kind.notes.description = notes you import, highlights and notes saved by other agents.
 
 journal.window.agents.permission.kind.notes.label = notes
@@ -6537,7 +6557,7 @@ journal.window.agents.permission.kind.screen.text.description = text and summari
 
 journal.window.agents.permission.kind.screen.text.label = screen text
 
-journal.window.agents.permission.kind.transcripts.description = words spoken or typed in conversations, and details drawn from those words.
+journal.window.agents.permission.kind.transcripts.description = words spoken aloud, details drawn from those words, and the notes a meeting app keeps with them.
 
 journal.window.agents.permission.kind.transcripts.label = transcripts
 
@@ -15202,6 +15222,10 @@ journal.window.time.duration.week.count = { $quantity ->
        *[other] { $count } weeks
     }
 
+journal.window.transcripts.also.at.this.time = also at this time:
+
+journal.window.transcripts.also.item = { $label }, { $span }
+
 journal.window.transcripts.analysis.analyzing.audio = audio observed · analyzing…
 
 journal.window.transcripts.analysis.analyzing.image = photos · analyzing…
@@ -15267,6 +15291,10 @@ journal.window.transcripts.consent.stretch.erase.range = this erases everything 
 journal.window.transcripts.consent.stretch.journal.zone = times are in your journal's time zone, { $journal_zone }.
 
 journal.window.transcripts.consent.stretch.move.range = this moves everything in your journal from { $start_time } to { $end_time }.
+
+journal.window.transcripts.consent.trash.copy.conversation.conversation = conversation
+
+journal.window.transcripts.consent.trash.copy.messages.messages = messages
 
 journal.window.transcripts.consent.trash.import.erase.files.count = { $retained_files_quantity ->
         [one] it's the last segment from its import, so the { $retained_files } files it kept and its row in your import history are erased with it.
@@ -15347,6 +15375,16 @@ journal.window.transcripts.consent.trash.selection.move.title = { $segments_quan
        *[other] delete { $segments } segments?
     }
 
+journal.window.transcripts.conversation.reason.insufficient.evidence = the file it came from doesn't show whether it was spoken or written.
+
+journal.window.transcripts.conversation.reason.origin.unknown = your journal can't tell which file it came from.
+
+journal.window.transcripts.conversation.reason.original.missing = the file it came from isn't in your journal.
+
+journal.window.transcripts.conversation.unresolved = your journal can't tell if this conversation was spoken or written.
+
+journal.window.transcripts.conversation.why = why
+
 journal.window.transcripts.entries.quantity = { $items_quantity ->
         [one] transcript entries, { $items } item
        *[other] transcript entries, { $items } items
@@ -15403,12 +15441,42 @@ journal.window.transcripts.media.frames.decoding = { $decoded_quantity ->
     } ({ $percent }%)…
     }
 
+journal.window.transcripts.message.show.from.start = show from the start
+
+journal.window.transcripts.message.to = to { $recipients }
+
+journal.window.transcripts.message.to.everyone = to everyone
+
+journal.window.transcripts.message.to.only = to { $recipient } only
+
+journal.window.transcripts.message.truncated = the rest of this message wasn't kept.
+
+journal.window.transcripts.message.words.before = { $words_quantity ->
+        [one] { $words } word before this passage
+       *[other] { $words } words before this passage
+    }
+
+journal.window.transcripts.message.you = you
+
 journal.window.transcripts.raw.json.summary = raw { $json_label }, { $summary }
 
 journal.window.transcripts.segment.range.entries = { $entries_quantity ->
         [one] { $range } · { $entries } entry
        *[other] { $range } · { $entries } entries
     }
+
+journal.window.transcripts.show.everything = everything
+
+journal.window.transcripts.show.label = show
+
+journal.window.transcripts.show.left.out = { $conversations_quantity ->
+        [one] { $conversations } conversation shows only in { $everything_start }everything{ $everything_end }: your journal can't tell if it was spoken or written.
+       *[other] { $conversations } conversations show only in { $everything_start }everything{ $everything_end }: your journal can't tell if they were spoken or written.
+    }
+
+journal.window.transcripts.show.messages = messages
+
+journal.window.transcripts.show.transcripts = transcripts
 
 journal.window.transcripts.signals.calendar.hidden.count = { $quantity ->
     [one] { $count } more deduped calendar event hidden in this compact view

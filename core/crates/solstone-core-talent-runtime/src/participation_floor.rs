@@ -763,8 +763,12 @@ fn parse_all(
                 let is_speech = if let Some(s) = src {
                     s.is_speech_transcript()
                 } else {
-                    heading != "### agent memory original"
-                        && body.lines().any(is_time_bracket_line)
+                    !matches!(
+                        heading.as_str(),
+                        "### agent memory original"
+                            | "### Written Messages"
+                            | "### Imported Conversation"
+                    ) && body.lines().any(is_time_bracket_line)
                         && has_oversized_speech_file(journal, day, &segment_key)
                 };
 

@@ -138,10 +138,8 @@ fn parse_conversation(
             );
             continue;
         }
-        let timestamp = string_at(message, "created_at")
-            .and_then(parse_iso_utc)
-            .or(conversation_timestamp);
-        let Some(timestamp) = timestamp else {
+        let sent_at = string_at(message, "created_at").and_then(parse_iso_utc);
+        let Some(timestamp) = sent_at.or(conversation_timestamp) else {
             skip_message(
                 skipped,
                 conversation_index,
@@ -151,6 +149,7 @@ fn parse_conversation(
             continue;
         };
         entries.push(ParsedEntry {
+            sent_at,
             timestamp,
             speaker: match string_at(message, "sender") {
                 Some("human") => "Human",

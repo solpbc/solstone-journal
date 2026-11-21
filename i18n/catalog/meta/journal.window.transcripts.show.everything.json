@@ -1,0 +1,16 @@
+{
+  "description": "Day switch choice that shows every item of the day.",
+  "context": "Journal window, transcripts view. Day switch choice.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cd8964b2c791177055a6cda1cca90320261abdff2bd86367053aba22a22c8aad",
+  "max_length": 30,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

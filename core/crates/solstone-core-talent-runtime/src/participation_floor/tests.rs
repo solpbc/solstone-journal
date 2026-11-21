@@ -462,6 +462,46 @@ fn test_case_3_screen_share_call() {
     assert!(transcript.contains("frames left out") || transcript.contains("entries left out"));
 }
 
+#[test]
+fn large_chat_with_clock_lines_remains_writing_beside_large_speech() {
+    let day = "20261029";
+    let (_root, _paths, context) = setup_env(day);
+    let segment = "090000_300";
+    let directory = context.journal.join("chronicle").join(day);
+    let audio = directory.join("microphone").join(segment);
+    let chat = directory.join("import.chatgpt").join(segment);
+    fs::create_dir_all(&audio).unwrap();
+    fs::create_dir_all(&chat).unwrap();
+    fs::write(
+        audio.join("audio.jsonl"),
+        "{\"start\":\"00:00:01\",\"speaker\":1,\"text\":\"spoken line\"}\n".repeat(1800),
+    )
+    .unwrap();
+    let text = "[09:00:00] quoted historical clock\n".repeat(2500);
+    fs::write(
+        chat.join("conversation_transcript.jsonl"),
+        format!(
+            "{{\"imported\":{{\"id\":\"abc\"}}}}\n{}\n",
+            json!({"text":text})
+        ),
+    )
+    .unwrap();
+    let cfg = json!({"name":"participation","day":day,"segment":segment,"stream":"import.chatgpt","sources":{"transcripts":true}});
+    let loaded =
+        crate::transcript::load_transcript(&context.journal, cfg.as_object().unwrap()).unwrap();
+    assert!(loaded.sources[0].is_none());
+    let parsed = parse_all(
+        &loaded.text,
+        &loaded.sources,
+        &loaded.layout,
+        &context.journal,
+        day,
+    )
+    .unwrap();
+    assert_eq!(parsed.total_speech_lines, 0);
+    assert_eq!(parsed.total_pool_entries, 1);
+}
+
 // Case 4: Oversized speech file (> 64 KiB) through loader, then sample_to_budget
 #[test]
 fn test_case_4_oversized_speech_file() {
@@ -530,6 +570,7 @@ fn test_case_4_oversized_speech_file() {
 fn test_case_5_fixed_budget_sample_to_budget() {
     let transcript = "## 2026-10-29 09:00:00 - 09:05:00\n\n### Screen Activity\n### 09:00:00\nF0\n### 09:01:00\nF1\n### 09:02:00\nF2\n### 09:03:00\nF3\n### 09:04:00\nF4\n### 09:05:00\nF5\n\n";
     let sources: Vec<Option<EntrySource>> = vec![Some(EntrySource {
+        conversation_medium: None,
         path: PathBuf::from("mock_screen.jsonl"),
         sha256: "sha".into(),
         rendered_range: 0..0,

@@ -210,13 +210,21 @@ fn search_response_with_index_in(
     let page = days.into_iter().skip(offset).take(20).collect::<Vec<_>>();
 
     let page_days: Vec<String> = page.iter().map(|(day, _)| day.clone()).collect();
-    let day_hits_vec =
-        match owner_index.fetch_day_hits(&filtered_resolved.plan, &page_days, request.limit) {
-            Ok(hits) => hits,
-            Err(error) => return search_failed(&error, locale),
-        };
+    let day_hits_vec = match if owner_view {
+        owner_index.fetch_day_hits_with_passages(&filtered_resolved.plan, &page_days, request.limit)
+    } else {
+        owner_index.fetch_day_hits(&filtered_resolved.plan, &page_days, request.limit)
+    } {
+        Ok(hits) => hits,
+        Err(error) => return search_failed(&error, locale),
+    };
     debug_assert_eq!(page.len(), day_hits_vec.len());
 
+    let mut conversation_hits = if owner_view {
+        owner_conversation_hits(journal_root, &day_hits_vec)
+    } else {
+        BTreeMap::new()
+    };
     let mut day_results = Vec::new();
     let mut source_checks = std::collections::BTreeMap::new();
     let facets = facets(journal_root);
@@ -296,6 +304,13 @@ fn search_response_with_index_in(
                     "idx": hit.metadata.idx,
                     "score": hit.score,
                 });
+                if let Some((item, message)) = conversation_hits.remove(&hit.row_id) {
+                    hit_obj["conversation_item"] = item;
+                    if let Some(mut message) = message {
+                        if let Some(snippet) = message.as_object_mut().and_then(|fields|fields.remove("snippet")) { hit_obj["text"] = snippet; }
+                        hit_obj["message"] = message;
+                    }
+                }
                 if let Some(item) =
                     solstone_core_format::content::kinds::DashboardImportItem::from_file(&hit.metadata.path)
                 {
@@ -1004,6 +1019,149 @@ fn search_display_text<'a>(path: &str, text: &'a str) -> Cow<'a, str> {
     Cow::Owned(visible)
 }
 
+/// Only a live turn whose indexed text still matches gets a passage link. Group by
+/// file so a result page with many hits in one thread reads the file once.
+fn owner_conversation_hits(
+    root: &std::path::Path,
+    days: &[(String, Vec<solstone_core_indexer_query::SearchHit>)],
+) -> BTreeMap<i64, (Value, Option<Value>)> {
+    use solstone_core_format::content::conversation;
+    use solstone_core_journal_io::{JournalRoot, read_relative_file_bounded};
+    let mut result = BTreeMap::new();
+    let mut files = BTreeMap::new();
+    for hit in days.iter().flat_map(|(_, hits)| hits) {
+        files
+            .entry(&hit.metadata.path)
+            .or_insert_with(Vec::new)
+            .push(hit);
+    }
+    let journal = JournalRoot::open(root).ok();
+    for (path, hits) in files {
+        let rel = path.strip_prefix("chronicle/").unwrap_or(path);
+        let Some((segment, name)) = rel.rsplit_once('/') else {
+            continue;
+        };
+        let Some(item) = conversation::conversation_item(root, segment, name) else {
+            continue;
+        };
+        let written = item.content_kind == Some("messages");
+        let descriptor = json!(item);
+        for hit in &hits {
+            result.insert(hit.row_id, (descriptor.clone(), None));
+        }
+        if !written {
+            continue;
+        }
+        let Some(file) = journal.as_ref().and_then(|root| {
+            read_relative_file_bounded(
+                root,
+                &std::path::Path::new("chronicle").join(rel),
+                16 * 1024 * 1024,
+            )
+            .ok()
+            .flatten()
+        }) else {
+            continue;
+        };
+        let Ok(file) = std::str::from_utf8(&file.bytes) else {
+            continue;
+        };
+        let Ok(records) = file
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(serde_json::from_str::<Map<String, Value>>)
+            .collect::<Result<Vec<_>, _>>()
+        else {
+            continue;
+        };
+        let untimed = records
+            .first()
+            .and_then(|r| r.get("untimed"))
+            .and_then(Value::as_bool)
+            == Some(true);
+        let stream = segment.split('/').nth(1).unwrap_or_default();
+        let mut wanted = hits
+            .into_iter()
+            .map(|hit| (hit.metadata.idx, hit))
+            .collect::<BTreeMap<_, _>>();
+        for (idx, (turn, row)) in records
+            .iter()
+            .filter(|r| r.contains_key("start"))
+            .enumerate()
+            .filter(|(_, r)| {
+                r.get("text")
+                    .and_then(Value::as_str)
+                    .is_some_and(|s| !s.is_empty())
+            })
+            .enumerate()
+        {
+            let Some(hit) = wanted.remove(&(idx as i64)) else {
+                continue;
+            };
+            let Some(indexed) = conversation::indexed_message(row) else {
+                continue;
+            };
+            if indexed.trim() != hit.text {
+                continue;
+            }
+            let Some(mut message) = conversation::message_fields(stream, name, turn, row, untimed)
+            else {
+                continue;
+            };
+            let original = row["text"].as_str().unwrap_or_default();
+            let prefix = row
+                .get("speaker")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+                .map_or(0, |s| s.len() + "**:** ".len());
+            let trim = indexed.len() - indexed.trim_start().len();
+            if let Some(span) = hit.match_spans.iter().find_map(|span| {
+                let start = (span.start + trim).checked_sub(prefix)?;
+                let end = (span.end + trim).checked_sub(prefix)?;
+                (end <= original.len() && original.get(start..end) == hit.text.get(span.clone()))
+                    .then_some(start..end)
+            }) {
+                message["offset"] = json!(span.start);
+                message["snippet"] = Value::from(message_excerpt(original, span));
+            }
+            result.insert(hit.row_id, (descriptor.clone(), Some(message)));
+            if wanted.is_empty() {
+                break;
+            }
+        }
+    }
+    result
+}
+
+/// Keep the matched byte range intact. Prefer whole surrounding words inside
+/// the context budget, leaving a clipped unbroken string visibly abbreviated.
+fn message_excerpt(original: &str, span: std::ops::Range<usize>) -> String {
+    let mut start = original.ceil_char_boundary(span.start.saturating_sub(100));
+    let mut end = original.floor_char_boundary(span.end.saturating_add(180).min(original.len()));
+    if start > 0
+        && !original[..start].ends_with(char::is_whitespace)
+        && let Some((at, space)) = original[start..span.start]
+            .char_indices()
+            .find(|(_, c)| c.is_whitespace())
+    {
+        start += at + space.len_utf8();
+    }
+    if end < original.len()
+        && !original[end..].starts_with(char::is_whitespace)
+        && let Some(at) = original[span.end..end].rfind(char::is_whitespace)
+    {
+        end = span.end + at;
+    }
+    format!(
+        "{}{}<strong>{}</strong>{}{}",
+        if start == 0 { "" } else { "… " },
+        html_escape(&original[start..span.start]),
+        html_escape(&original[span.clone()]),
+        html_escape(&original[span.end..end]),
+        if end == original.len() { "" } else { " …" }
+    )
+}
+
 fn highlight(text: &str, query: &str) -> String {
     let text = cap_words(text);
     let lower = text.to_ascii_lowercase();
@@ -1282,6 +1440,25 @@ mod search_failure_detail_tests {
 #[cfg(test)]
 mod highlight_phrase_tests {
     use super::*;
+
+    #[test]
+    fn a_message_excerpt_keeps_its_hit_and_trims_partial_context_words() {
+        let text = format!(
+            "{}For {}shelves {}afternoon",
+            "é".repeat(80),
+            "w ".repeat(49),
+            "m ".repeat(88)
+        );
+        let start = text.find("shelves").unwrap();
+        let excerpt = message_excerpt(&text, start..start + 7);
+        assert!(excerpt.starts_with("… w "), "{excerpt}");
+        assert!(excerpt.contains("<strong>shelves</strong>"));
+        assert!(excerpt.ends_with("m …"), "{excerpt}");
+        assert_eq!(
+            message_excerpt("é <wood>", 3..9),
+            "é <strong>&lt;wood&gt;</strong>"
+        );
+    }
 
     #[test]
     fn screen_text_excerpts_decode_one_literal_layer_before_html_escaping() {

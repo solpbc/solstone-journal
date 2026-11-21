@@ -576,11 +576,23 @@ fn append_connection_prefilter(plan: &mut SqlPlan, boundary: &ConnectionBoundary
     }
     clause.push(')');
     push_keyed(plan, &format!(" AND {clause}"), &params);
+    plan.where_clause.push_str(" AND (chunks.path NOT GLOB 'imports/*/summary.md' OR solstone_current_summary_chunk(chunks.path,chunks.idx,chunks.content))");
     if !boundary
         .categories()
         .contains(&AdmittedCategory::Transcripts)
     {
-        push_keyed(plan, " AND NOT solstone_indexed_quotes(chunks.path)", &[]);
+        push_keyed(
+            plan,
+            " AND solstone_extra_permission(chunks.path) != 'transcripts'",
+            &[],
+        );
+    }
+    if boundary.has_kind_filter() || !boundary.categories().contains(&AdmittedCategory::Messages) {
+        push_keyed(
+            plan,
+            " AND solstone_extra_permission(chunks.path) != 'messages'",
+            &[],
+        );
     }
 }
 
@@ -621,9 +633,45 @@ fn register_indexed_permissions(
     connection: &Connection,
     journal: Option<PathBuf>,
 ) -> rusqlite::Result<()> {
-    use solstone_core_format::content::kinds::{additional_indexed_permission, indexed_permission};
+    use solstone_core_format::content::kinds::{
+        additional_indexed_permission, agent_indexed_permission,
+    };
     // The same path may back many indexed chunks. Cache only within this
     // reader, as with body import manifests before the other kinds were added.
+    let summary_root = journal.clone();
+    // Chunks for the same file can satisfy several terms. Retain only the
+    // last file in this connection, independently of how many imports exist.
+    let last_summary = std::cell::RefCell::new(
+        None::<(
+            String,
+            Option<Vec<solstone_core_format::chunker::MarkdownChunk>>,
+        )>,
+    );
+    connection.create_scalar_function(
+        "solstone_current_summary_chunk",
+        3,
+        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DIRECTONLY,
+        move |ctx| {
+            let path = ctx.get_raw(0).as_str()?;
+            let index = usize::try_from(ctx.get_raw(1).as_i64()?).ok();
+            let text = ctx.get_raw(2).as_str()?;
+            let mut last = last_summary.borrow_mut();
+            if !last.as_ref().is_some_and(|(old, _)| old == path) {
+                *last = Some((
+                    path.to_owned(),
+                    summary_root.as_deref().and_then(|root| {
+                        solstone_core_format::content::kinds::current_import_summary_chunks(
+                            root, path,
+                        )
+                    }),
+                ));
+            }
+            Ok(last
+                .as_ref()
+                .and_then(|(_, chunks)| chunks.as_ref()?.get(index?))
+                .is_some_and(|chunk| chunk.markdown.trim() == text))
+        },
+    )?;
     let paths = Mutex::new(BTreeMap::new());
     connection.create_scalar_function(
         "solstone_indexed_permission",
@@ -644,17 +692,20 @@ fn register_indexed_permissions(
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             let category = paths
                 .entry((path.to_owned(), stored))
-                .or_insert_with(|| indexed_permission(journal.as_deref(), path, stored));
-            Ok(Some(category.as_str()))
+                .or_insert_with(|| agent_indexed_permission(journal.as_deref(), path, stored));
+            Ok(category.map(AdmittedCategory::as_str))
         },
     )?;
     connection.create_scalar_function(
-        "solstone_indexed_quotes",
+        "solstone_extra_permission",
         1,
         FunctionFlags::SQLITE_UTF8
             | FunctionFlags::SQLITE_DETERMINISTIC
             | FunctionFlags::SQLITE_DIRECTONLY,
-        |context| Ok(additional_indexed_permission(context.get_raw(0).as_str()?).is_some()),
+        |context| {
+            Ok(additional_indexed_permission(context.get_raw(0).as_str()?)
+                .map_or("", AdmittedCategory::as_str))
+        },
     )
 }
 
@@ -782,7 +833,17 @@ impl OwnerIndex {
         days: &[String],
         per_day_limit: usize,
     ) -> Result<Vec<(String, Vec<SearchHit>)>, IndexAccessError> {
-        self.connection.fetch_day_hits(&plan.0, days, per_day_limit)
+        self.connection
+            .fetch_day_hits(&plan.0, days, per_day_limit, false)
+    }
+
+    pub fn fetch_day_hits_with_passages(
+        &mut self,
+        plan: &SearchPlan,
+        days: &[String],
+        limit: usize,
+    ) -> Result<Vec<(String, Vec<SearchHit>)>, IndexAccessError> {
+        self.connection.fetch_day_hits(&plan.0, days, limit, true)
     }
 
     #[cfg(any(test, feature = "test-hooks"))]
@@ -2205,6 +2266,7 @@ impl QueryConnection {
                 let calendar = CalendarHit::from_columns(row.get(11)?, row.get(12)?, row.get(13)?);
                 let agent = agent.unwrap_or_default();
                 Ok(SearchHit {
+                    match_spans: Vec::new(),
                     row_id,
                     id: format!("{path}:{idx}"),
                     text: content,
@@ -2233,6 +2295,7 @@ impl QueryConnection {
         plan: &SqlPlan,
         days: &[String],
         per_day_limit: usize,
+        passages: bool,
     ) -> Result<Vec<(String, Vec<SearchHit>)>, IndexAccessError> {
         if days.is_empty() {
             return Ok(Vec::new());
@@ -2264,8 +2327,13 @@ impl QueryConnection {
             ("0.0", "ORDER BY day DESC, rowid DESC")
         };
         let (extra_columns, joins) = self.hit_projection()?;
+        let marked = if passages && plan.has_live_match_expression {
+            "CASE WHEN path GLOB '*/conversation_transcript.jsonl' OR path GLOB '*/imported_audio.jsonl' THEN highlight(chunks,0,char(1),char(1)) END"
+        } else {
+            "NULL"
+        };
         let sql = format!(
-            "SELECT content, path, day, facet, agent, stream, idx, {score_expr}, chunks.rowid, {extra_columns} FROM chunks{joins} WHERE {} AND day IN ({placeholders}) {order_clause}",
+            "SELECT content, path, day, facet, agent, stream, idx, {score_expr}, chunks.rowid, {extra_columns}, {marked} FROM chunks{joins} WHERE {} AND day IN ({placeholders}) {order_clause}",
             plan.where_clause
         );
         let mut values = plan.params.clone();
@@ -2296,7 +2364,25 @@ impl QueryConnection {
                 let source_digest: Option<String> = row.get(10)?;
                 let calendar = CalendarHit::from_columns(row.get(11)?, row.get(12)?, row.get(13)?);
                 let agent = agent.unwrap_or_default();
+                let marked: Option<String> = row.get(14)?;
+                let mut match_spans = Vec::new();
+                if let Some(marked) = marked
+                    && !content.contains('\u{1}')
+                {
+                    let mut offset = 0;
+                    for (i, part) in marked.split('\u{1}').enumerate() {
+                        let end = offset + part.len();
+                        if i % 2 == 1 {
+                            match_spans.push(offset..end);
+                            if match_spans.len() == 128 {
+                                break;
+                            }
+                        }
+                        offset = end;
+                    }
+                }
                 Ok(SearchHit {
+                    match_spans,
                     row_id,
                     id: format!("{path}:{idx}"),
                     text: content,

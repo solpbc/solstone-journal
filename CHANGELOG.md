@@ -8,10 +8,12 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- messages is off for every agent, including agents you've already connected. if an agent has transcripts, it can still read the words spoken in a meeting. turn on messages for that agent to share written chats it has access to, including the meeting chat. an agent needs both transcripts and messages to read a conversation when your journal can't tell if it was spoken or written.
 - an agent you've let see your whole journal, with transcripts and summaries, can now read a date range of up to a year as one row per day. each day carries its journal link and, when available, a top memory and quotes with their activity title. it can also include body, places, photos, notes and people for the kinds you've allowed.
 - new imports show where you added them from. when you import from the linux app, you can close the import window while your files are on their way to your journal.
 - when you choose an Obsidian vault, your journal uses the names you gave your paired devices and leaves out devices you removed.
 - for troubleshooting, setting `debug.log_talent_requests` to `true` in `config/journal.json` keeps the exact request each thinking run made in that run's log, so the run can be sent again exactly as it ran. it's off by default. while it's on, run logs hold another copy of what each run read, and a busy journal can grow by tens of megabytes a day. those copies are removed with the rest of the run log, after 30 days by default. deleting or erasing the segment they came from doesn't remove them sooner, and backups keep them as long as they keep the rest of your journal.
+- on a day with written chats, the transcripts page has a switch at the top: everything, transcripts or messages. what it leaves out stays on the day, drawn faintly. a chat or AI chat you imported reads as messages: who sent each one, who it went to and when it was sent, when the chat says. a search match in a long message opens at the matching passage.
 
 - an agent connected to your journal now gets instructions for showing your photos in something it builds for you, such as a printable book. in apps that let a page reach your journal, the instructions are for a page that loads each photo from your journal when you open it. your journal makes no public link for them.
 - notes shared alongside a photo from the solstone app on android now appear with the photo, separated from your journal's generated description.
@@ -29,6 +31,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - work an agent does on its own in a tmux session you've listed in `output_sessions` is now usually described as the agent's, such as "the agent in qa ran the tests", so your journal is less likely to credit it to you. thanks @dvanduzer for the report (#424).
 - imported conversations that opened to an empty pane now show their text in transcripts.
+- search results from imported captions show the speaker's name instead of caption markup.
 - on windows, setting up a journal could occasionally fail with an access-denied error while saving installation details.
 - on linux, `solstone journal setup` could stop at its first step after you installed solstone with apt, dnf or zypper, with a `disk_space` error in `solstone journal doctor`. that check makes sure there is room to download the next version beside the current one, which a package install doesn't need, because an update replaces it in place. it now skips package installs.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.

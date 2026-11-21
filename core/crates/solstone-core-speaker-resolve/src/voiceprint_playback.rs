@@ -4,6 +4,7 @@
 //! Playback admission shared by every path that learns a person's voice.
 
 use serde_json::Value;
+use solstone_core_format::content::conversation::is_conversation_jsonl;
 use solstone_core_journal_io::SegmentLayout;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -22,6 +23,22 @@ fn playback(header: &Value) -> bool {
 }
 
 pub(crate) fn allows_transcript(path: &Path) -> bool {
+    let origin = path
+        .parent()
+        .map(solstone_core_journal_io::paths::segment_origin)
+        .unwrap_or_default();
+    let stream = origin.split('/').nth(1).unwrap_or_default();
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    if is_conversation_jsonl(stream, name) {
+        return solstone_core_transcripts::read_spoken_conversation(path, |file| {
+            let header = solstone_core_processing_record::read_jsonl_header_from(file);
+            Ok(header.is_some_and(|header| !playback(&header)))
+        })
+        .is_ok_and(|allowed| allowed == Some(true));
+    }
     let read = || -> Result<bool, Box<dyn std::error::Error>> {
         let file = match File::open(path) {
             Ok(file) => file,
@@ -72,7 +89,7 @@ pub(crate) fn allows_metadata(journal: &Path, metadata: &Value) -> bool {
     };
     match crate::segment_catalog::resolve_exact(journal, day, stream, key, layout) {
         Ok(Some(dir)) => allows_transcript(&dir.join(format!("{source}.jsonl"))),
-        Ok(None) => true,
+        Ok(None) => !is_conversation_jsonl(stream, &format!("{source}.jsonl")),
         Err(error) => {
             log::warn!("voice sample admission could not resolve recording: {error}");
             false
@@ -84,6 +101,26 @@ pub(crate) fn allows_metadata(journal: &Path, metadata: &Value) -> bool {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn chat_imports_never_supply_an_unverified_audio_sample() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root
+            .path()
+            .join("chronicle/20260808/import.claude/110000_300");
+        std::fs::create_dir_all(&dir).unwrap();
+        let alias = dir.join("imported_audio.jsonl");
+        let native = json!({"imported":{"id":"thread"},"model":"chat"});
+        let row = json!({"start":"00:00:00","text":"hello"});
+        std::fs::write(alias.with_extension("wav"), "audio").unwrap();
+        std::fs::write(&alias, format!("{native}\n{row}\n")).unwrap();
+        assert!(!allows_transcript(&alias));
+        let header = json!({"_solstone_processing":{"handler":"transcribe"}});
+        std::fs::write(&alias, format!("{header}\n")).unwrap();
+        assert!(allows_transcript(&alias));
+        std::fs::remove_file(&alias).unwrap();
+        assert!(!allows_transcript(&alias));
+    }
 
     #[test]
     fn dominant_playback_is_excluded_but_background_music_is_not() {

@@ -125,6 +125,8 @@ pub struct DayReport {
 /// Something the owner said, by their recognized voice, on one of the week's days.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Said {
+    pub speech_file: String,
+    pub sentence_id: i64,
     pub day: String,
     pub facet: String,
     pub record_id: String,
@@ -814,6 +816,8 @@ struct JsonDayItem<'a> {
 
 #[derive(Serialize)]
 struct JsonSaidSource {
+    speech_file: String,
+    sentence_id: i64,
     kind: &'static str,
     uri: String,
 }
@@ -897,7 +901,9 @@ fn said_on_day(
             else {
                 continue;
             };
-            let Some(owner_lines) = crate::story::owner_heard(journal, day, &record, voices) else {
+            let Some(owner_lines) =
+                crate::story::owner_heard_sentences(journal, day, &record, voices)
+            else {
                 continue;
             };
 
@@ -905,7 +911,10 @@ fn said_on_day(
                 if passage.split_whitespace().count() < 3 {
                     continue;
                 }
-                if let Some(span) = matched_owner_span(passage, &owner_lines) {
+                if let Some((index, span)) = solstone_core_transcripts::unique_owner_span(
+                    passage,
+                    owner_lines.iter().map(|line| line.text.as_str()),
+                ) {
                     let words = span
                         .to_lowercase()
                         .split(|c: char| !c.is_alphanumeric())
@@ -914,6 +923,8 @@ fn said_on_day(
                         .join(" ");
                     if seen.insert(words) {
                         said.push(Said {
+                            speech_file: owner_lines[index].file.clone(),
+                            sentence_id: owner_lines[index].sentence_id,
                             day: day.to_owned(),
                             facet: facet.clone(),
                             record_id: record_id.to_owned(),
@@ -929,40 +940,10 @@ fn said_on_day(
 }
 
 /// Keep a passage only when it identifies one complete-word source span.
+#[cfg(test)]
 fn matched_owner_span<'a>(passage: &str, owner_lines: &'a [String]) -> Option<&'a str> {
-    if passage.is_empty() {
-        return None;
-    }
-    let mut found = None;
-    for line in owner_lines {
-        for (start, _) in line.char_indices() {
-            if !line[start..].starts_with(passage) {
-                continue;
-            }
-            let end = start + passage.len();
-            let cuts_first_word = passage.chars().next().is_some_and(char::is_alphanumeric)
-                && line[..start]
-                    .chars()
-                    .next_back()
-                    .is_some_and(char::is_alphanumeric);
-            let cuts_last_word = passage
-                .chars()
-                .next_back()
-                .is_some_and(char::is_alphanumeric)
-                && line[end..]
-                    .chars()
-                    .next()
-                    .is_some_and(char::is_alphanumeric);
-            if cuts_first_word || cuts_last_word {
-                continue;
-            }
-            if found.is_some() {
-                return None;
-            }
-            found = Some(&line[start..end]);
-        }
-    }
-    found
+    solstone_core_transcripts::unique_owner_span(passage, owner_lines.iter().map(String::as_str))
+        .map(|(_, span)| span)
 }
 
 fn extract_passages(body: &str) -> Vec<&str> {
@@ -1241,6 +1222,8 @@ pub fn assemble_reflection(
             day: &said.day,
             quote: &said.quote,
             source: JsonSaidSource {
+                speech_file: said.speech_file.clone(),
+                sentence_id: said.sentence_id,
                 kind: "activity",
                 uri: said_uri(said),
             },
@@ -2784,6 +2767,8 @@ mod tests {
             slots: vec![],
             all_candidates: vec![],
             said: vec![Said {
+                speech_file: "20260309/mic/090000_300/audio.jsonl".into(),
+                sentence_id: 1,
                 day: "20260309".to_owned(),
                 facet: "work".to_owned(),
                 record_id: "meeting_1".to_owned(),
@@ -2814,6 +2799,11 @@ mod tests {
         assert_eq!(doc["intro"], json!([]));
         let entry = &doc["said"][0];
         assert_eq!(entry["id"], "s-20260309-0");
+        assert_eq!(
+            entry["source"]["speech_file"],
+            "20260309/mic/090000_300/audio.jsonl"
+        );
+        assert_eq!(entry["source"]["sentence_id"], 1);
         assert_eq!(entry["quote"], "I'll get you the deck by friday");
         assert_eq!(entry["source"]["kind"], "activity");
         assert_eq!(

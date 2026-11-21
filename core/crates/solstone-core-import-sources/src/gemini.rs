@@ -177,6 +177,7 @@ fn parse_activity(
     };
     if !prompt.is_empty() {
         entries.push(ParsedEntry {
+            sent_at: None,
             timestamp,
             speaker: "Human".to_owned(),
             text: prompt,
@@ -186,6 +187,7 @@ fn parse_activity(
     }
     if !response.is_empty() {
         entries.push(ParsedEntry {
+            sent_at: None,
             timestamp,
             speaker: "Assistant".to_owned(),
             text: response,

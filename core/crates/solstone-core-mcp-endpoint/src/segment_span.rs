@@ -369,7 +369,9 @@ pub(crate) fn read_segment_span(
             .and_then(|position| position.inside.clone());
         let mut inside = resumed.clone();
         let mut entries = Vec::new();
+        let mut turn_parts = Vec::new();
         let mut content_kinds = Vec::new();
+        let mut unresolved_conversation = false;
         let mut untimed = false;
         let mut last_version;
         loop {
@@ -383,6 +385,7 @@ pub(crate) fn read_segment_span(
                         source_index: inside.source_index,
                         byte_offset: inside.byte_offset,
                         statement_ordinal: inside.statement_ordinal,
+                        message: inside.message,
                         version:
                             solstone_core_transcripts::SegmentTranscriptVersion::from_fingerprint(
                                 inside.version,
@@ -428,6 +431,7 @@ pub(crate) fn read_segment_span(
                 }
             };
             untimed |= page.untimed;
+            unresolved_conversation |= page.unresolved_conversation;
             for kind in page.content_kinds {
                 if !content_kinds.contains(&kind) {
                     content_kinds.push(kind);
@@ -435,7 +439,11 @@ pub(crate) fn read_segment_span(
             }
             let version = page.version.fingerprint();
             last_version = version;
+            let empty_page = page.entries.is_empty();
             for entry in page.entries {
+                if let Some(part) = entry.turn_part {
+                    turn_parts.push(json!({"entry":entries.len(),"part":part}));
+                }
                 let text = solstone_core_format::markdown::literal_text(&entry.text);
                 bytes += text.len();
                 entries.push(text);
@@ -447,8 +455,9 @@ pub(crate) fn read_segment_span(
                         source_index: more.source_index,
                         byte_offset: more.byte_offset,
                         statement_ordinal: more.statement_ordinal,
+                        message: more.message,
                     });
-                    if bytes >= SPAN_PAGE_BYTES {
+                    if empty_page || bytes >= SPAN_PAGE_BYTES {
                         next = Some(SegmentSpanPosition {
                             stream: item.stream.clone(),
                             segment: item.name.clone(),
@@ -471,9 +480,15 @@ pub(crate) fn read_segment_span(
                 "reference": crate::dispatch::segment_reference(journal_root, principal, snapshot, SegmentReference {
                     day: reference.day.clone(), stream: item.stream.clone(), segment: item.name.clone(),
                     version: last_version, source_index: None,
-                    byte_offset: None, statement_ordinal: None,
+                    byte_offset: None, statement_ordinal: None, message:None,
                 })?,
             });
+            if !turn_parts.is_empty() {
+                section["turn_parts"] = json!(turn_parts);
+            }
+            if unresolved_conversation {
+                section["conversation_state"] = json!("unresolved");
+            }
             owner_links.attach(
                 journal_root,
                 &mut section,

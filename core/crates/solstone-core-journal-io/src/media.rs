@@ -242,6 +242,13 @@ fn checked_length(current: u64, count: u64) -> io::Result<u64> {
         .ok_or_else(|| invalid("media length overflow"))
 }
 
+/// Native identity and change stamp of the descriptor used for a paged read.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct FileReadVersion {
+    identity: MediaIdentity,
+    stamp: platform::Stamp,
+}
+
 /// Existing-only directory with its entire admitted chain retained.
 pub struct MediaDirectory {
     inner: platform::Directory,
@@ -303,6 +310,29 @@ impl MediaDirectory {
         let available = self.inner.available_bytes()?;
         self.revalidate()?;
         Ok(available)
+    }
+
+    /// Bind a seekable read to one ordinary child. Validate both the retained
+    /// directory chain and the file's name and change stamp before returning.
+    pub fn read_versioned<T>(
+        &self,
+        name: &OsStr,
+        read: impl FnOnce(&mut File, FileReadVersion) -> T,
+    ) -> io::Result<T> {
+        plain_name(name)?;
+        self.revalidate()?;
+        let mut file = platform::open_plain(&self.inner, name)?.ok_or(io::ErrorKind::NotFound)?;
+        let version = FileReadVersion {
+            identity: platform::identity(&file)?,
+            stamp: platform::stamp(&file)?,
+        };
+        let result = read(&mut file, version);
+        if platform::stamp(&file)? != version.stamp {
+            return Err(changed());
+        }
+        platform::check_leaf(&self.inner, name, version.identity)?;
+        self.revalidate()?;
+        Ok(result)
     }
 
     /// Observe one no-follow plain file with bounded streaming. Non-files refuse.

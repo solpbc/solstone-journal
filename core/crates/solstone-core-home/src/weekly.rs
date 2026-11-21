@@ -48,11 +48,21 @@ pub enum Said {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TrustedSaid {
+    pub evidence: SaidEvidence,
     pub id: String,
     pub key: String,
     pub day: String,
     pub quote: String,
     pub uri: String,
+}
+
+/// A stored coordinate is compared with live, admitted speech. Never open
+/// a path supplied by this field. Older weeks carry only the activity URI.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SaidEvidence {
+    Legacy,
+    Sentence { file: String, sentence_id: i64 },
+    Unreadable,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -514,7 +524,18 @@ fn activity_said(
     if !activity_said_uri(uri, day) {
         return None;
     }
+    let evidence = match (source.get("speech_file"), source.get("sentence_id")) {
+        (None, None) => SaidEvidence::Legacy,
+        (Some(Value::String(file)), Some(id)) if !file.is_empty() && id.as_i64().is_some() => {
+            SaidEvidence::Sentence {
+                file: file.clone(),
+                sentence_id: id.as_i64()?,
+            }
+        }
+        _ => SaidEvidence::Unreadable,
+    };
     Some(TrustedSaid {
+        evidence,
         id: id.to_string(),
         key: key.to_string(),
         day: day.to_string(),
@@ -2603,6 +2624,26 @@ mod tests {
             Said::Unreadable => panic!("unknown kind refused the list"),
         }
 
+        for (additional, expected) in [
+            ("", SaidEvidence::Legacy),
+            (
+                r#""speech_file":"20260309/mic/090000_300/audio.jsonl","sentence_id":1,"#,
+                SaidEvidence::Sentence {
+                    file: "20260309/mic/090000_300/audio.jsonl".into(),
+                    sentence_id: 1,
+                },
+            ),
+            (r#""speech_file":null,"#, SaidEvidence::Unreadable),
+            (r#""sentence_id":"unknown","#, SaidEvidence::Unreadable),
+        ] {
+            let item = valid.replace(r#""source":{"#, &format!(r#""source":{{{additional}"#));
+            let Said::Entries(entries) =
+                judged_page(root.path(), &week_with_said(&format!("[{item}]"))).said
+            else {
+                panic!("supported week")
+            };
+            assert_eq!(entries[0].evidence, expected);
+        }
         let same_id_as_skipped = format!(
             r#"[{{"id":"s-20260309-0","key":"said-key","source":{{"kind":"note"}}}},{valid}]"#
         );

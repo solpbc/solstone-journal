@@ -532,9 +532,9 @@ fn fetch_target_missing_kind(
                 return None;
             };
             use solstone_core_format::content::kinds::{
-                additional_indexed_permission, indexed_permission,
+                additional_indexed_permission, agent_indexed_permission,
             };
-            let category = indexed_permission(Some(journal_root), path, category);
+            let category = agent_indexed_permission(Some(journal_root), path, category)?;
             [Some(category), additional_indexed_permission(path)]
                 .into_iter()
                 .flatten()
@@ -2273,7 +2273,7 @@ fn search(
             } else {
                 category
             };
-            value["content_kind"] = json!(hit_kind.as_str());
+            insert_indexed_kind(&mut value, &hit.metadata.path, hit_kind);
             if let Some(stream) =
                 indexed_hit_stream(&hit.metadata.stream, &hit.metadata.path, record.as_ref())
             {
@@ -3094,8 +3094,12 @@ fn fetch(
                 "title": entry_title(&entry.day),
                 "date": entry.day,
                 "text": decoded.as_deref().unwrap_or(&text),
-                "content_kind": indexed_entry_kind(journal_root, &entry.path, record.as_ref()).as_str(),
             });
+            insert_indexed_kind(
+                &mut value,
+                &entry.path,
+                indexed_entry_kind(journal_root, &entry.path, record.as_ref()),
+            );
             if let Some(stream) = indexed_hit_stream(&entry.stream, &entry.path, record.as_ref()) {
                 value["source"] = json!(source_label(&source_labels(journal_root), stream));
             }
@@ -4125,13 +4129,14 @@ fn list_transcripts(
                     source_index: None,
                     byte_offset: None,
                     statement_ordinal: None,
+                    message: None,
                 },
             )?;
 
             targets.push(format!("{day}/{stream}/{name}"));
             let time_str = clock.as_ref().map(|c| c.label.as_str()).unwrap_or("");
             let mut seg_val = json!({
-                "title": segment_title(&page.content_kinds, day),
+                "title": segment_title(&page.content_kinds, page.unresolved_conversation, day),
                 "date": day,
                 "time": time_str,
                 "source": source_label(&sources, &stream),
@@ -4140,6 +4145,9 @@ fn list_transcripts(
                 // How much was said, so a segment can be chosen without reading it.
                 "lines": page.entries.len(),
             });
+            if page.unresolved_conversation {
+                seg_val["conversation_state"] = json!("unresolved");
+            }
             owner_links.attach(journal_root, &mut seg_val, day, &stream, &name);
             if let Some(clock) = &clock {
                 seg_val["seconds"] = json!(
@@ -4394,6 +4402,7 @@ pub(crate) fn read_segment(
                 byte_offset: cursor
                     .byte_offset
                     .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?,
+                message: cursor.message,
                 statement_ordinal: cursor
                     .statement_ordinal
                     .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?,
@@ -4492,6 +4501,7 @@ pub(crate) fn read_segment(
                         source_index: Some(next.source_index),
                         byte_offset: Some(next.byte_offset),
                         statement_ordinal: Some(next.statement_ordinal),
+                        message: next.message,
                     }),
                 )
                 .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))
@@ -4501,6 +4511,17 @@ pub(crate) fn read_segment(
         "{}/{}/{}",
         reference.day, reference.stream, reference.segment
     );
+    let parts = page
+        .entries
+        .iter()
+        .enumerate()
+        .filter_map(|(index, entry)| {
+            entry
+                .turn_part
+                .as_ref()
+                .map(|part| json!({"entry":index,"part":part}))
+        })
+        .collect::<Vec<_>>();
     let entries = page
         .entries
         .into_iter()
@@ -4517,6 +4538,12 @@ pub(crate) fn read_segment(
         "content_kinds": content_kinds,
         "next_cursor": next_cursor,
     });
+    if !parts.is_empty() {
+        response_val["turn_parts"] = json!(parts);
+    }
+    if page.unresolved_conversation {
+        response_val["conversation_state"] = json!("unresolved");
+    }
     crate::journal_links::Recordings::default().attach(
         journal_root,
         &mut response_val,
@@ -4621,6 +4648,15 @@ fn indexed_hit_stream<'a>(
     None
 }
 
+/// Older imported Markdown may be admitted without establishing a medium.
+fn insert_indexed_kind(value: &mut Value, path: &str, kind: AdmittedCategory) {
+    if solstone_core_format::content::conversation::unresolved_markdown(path) {
+        value["conversation_state"] = json!("unresolved");
+    } else {
+        value["content_kind"] = json!(kind.as_str());
+    }
+}
+
 /// Content kind of an indexed entry as the registry and permission check settle it.
 fn indexed_entry_kind(
     journal_root: &Path,
@@ -4647,14 +4683,19 @@ fn indexed_entry_kind(
 
 /// Title for a listed segment row: speech keeps `"Transcript segment — {day}"`;
 /// segments holding no speech are titled by what they actually hold.
-fn segment_title(content_kinds: &[&str], day: &str) -> String {
+fn segment_title(content_kinds: &[&str], unresolved: bool, day: &str) -> String {
     if content_kinds.contains(&AdmittedCategory::Transcripts.as_str()) {
         return format!("Transcript segment — {day}");
     }
     if content_kinds.is_empty() {
-        return format!("Segment — {day}");
+        return if unresolved {
+            format!("Conversation — {day}")
+        } else {
+            format!("Segment — {day}")
+        };
     }
     let noun = |kind: &str| match kind {
+        "messages" => "messages",
         "notes" => "note",
         "documents" => "document",
         "photos" => "photo",
@@ -4666,7 +4707,10 @@ fn segment_title(content_kinds: &[&str], day: &str) -> String {
         "entities" => "entity",
         _ => "segment",
     };
-    let nouns: Vec<&str> = content_kinds.iter().map(|kind| noun(kind)).collect();
+    let mut nouns: Vec<&str> = content_kinds.iter().map(|kind| noun(kind)).collect();
+    if unresolved {
+        nouns.push("conversation");
+    }
     let phrase = match nouns.as_slice() {
         [only] => (*only).to_owned(),
         [first, second] => format!("{first} and {second}"),
@@ -4835,6 +4879,7 @@ pub(crate) fn canonical_content(value: &Value) -> Value {
                             | "continuation"
                             | "content_kind"
                             | "content_kinds"
+                            | "conversation_state"
                     )
                 })
                 .collect::<Vec<_>>();

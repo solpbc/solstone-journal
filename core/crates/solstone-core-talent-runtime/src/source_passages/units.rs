@@ -158,6 +158,46 @@ pub fn source_units(transcript: &str, activity_kind: &str) -> Vec<SourceUnit> {
     units
 }
 
+/// Use only the segment and entry headings the renderer actually wrote.
+pub(super) fn source_units_from_layout(
+    text: &str,
+    kind: &str,
+    layout: &solstone_core_transcripts::TranscriptLayout,
+) -> Vec<SourceUnit> {
+    let mut units = Vec::new();
+    for (group, start) in layout.groups.iter().copied().enumerate() {
+        let end = layout.groups.get(group + 1).copied().unwrap_or(text.len());
+        let entries = &layout.entries[layout.entries.partition_point(|i| *i < start)
+            ..layout.entries.partition_point(|i| *i < end)];
+        let Some(first) = entries.first() else {
+            continue;
+        };
+        let header = &text[start..*first];
+        let time = header
+            .lines()
+            .next()
+            .and_then(|line| line.strip_prefix("## "))
+            .unwrap_or_default();
+        for (index, offset) in entries.iter().copied().enumerate() {
+            let entry = &text[offset..entries.get(index + 1).copied().unwrap_or(end)];
+            let channel = entry
+                .lines()
+                .next()
+                .and_then(|l| l.strip_prefix("### "))
+                .unwrap_or("unknown");
+            let region = Region {
+                text: entry,
+                timestamp: time,
+                channel,
+                segment: group + 1,
+                channel_number: index + 1,
+            };
+            push_region_units(&mut units, &region, Some(header), kind);
+        }
+    }
+    units
+}
+
 /// Bounded source units built directly from known segment and channel
 /// boundaries, without scanning channel text for segment or channel headings.
 ///
@@ -302,6 +342,22 @@ fn unit(region: &Region, text: String, chunk: usize) -> SourceUnit {
 mod tests {
     use super::*;
 
+    #[test]
+    fn real_message_heading_and_literal_message_heading_have_different_sources() {
+        let text = "## 2026-11-20 09:00:00 - 09:05:00\n\n### Browser Content\n### Written Messages\ninside page\n\n### Written Messages\nSam: outside page\n";
+        let layout = solstone_core_transcripts::TranscriptLayout {
+            groups: vec![0],
+            entries: vec![
+                text.find("### Browser").unwrap(),
+                text.rfind("### Written").unwrap(),
+            ],
+        };
+        let units = source_units_from_layout(text, "work", &layout);
+        assert_eq!(units.len(), 2);
+        assert_eq!(units[0].kind, SourceKind::Browser);
+        assert!(units[0].text.contains("### Written Messages\ninside page"));
+        assert!(units[1].text.contains("Source channel: Written Messages"));
+    }
     #[test]
     fn each_channel_is_a_unit_headed_by_its_activity_segment_and_channel() {
         let transcript = concat!(
@@ -526,6 +582,10 @@ mod tests {
                 r#"{"type":"text","text":"Booking confirmation screen"},"#,
                 r#"{"type":"heading","text":"Imported Transcript"},"#,
                 r#"{"type":"text","text":"Notes on transcripts"},"#,
+                r#"{"type":"heading","text":"Imported Messages"},"#,
+                r#"{"type":"text","text":"Saved messages"},"#,
+                r#"{"type":"heading","text":"Imported Conversation"},"#,
+                r#"{"type":"text","text":"Saved conversations"},"#,
                 r#"{"type":"heading","text":"Body Records"},"#,
                 r#"{"type":"text","text":"Workout notes"}"#,
                 "]}\n",

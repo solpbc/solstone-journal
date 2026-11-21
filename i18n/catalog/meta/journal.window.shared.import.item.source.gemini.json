@@ -1,0 +1,16 @@
+{
+  "description": "The product an imported AI chat came from: Gemini. A product name.",
+  "context": "Journal window. Transcripts and search display the kind and provenance of a filed import.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7fa2fb4fab2644ce1dca0b1a44f7bb47f31e48dff178bcbbe7f8e6973e727a86",
+  "max_length": 40,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

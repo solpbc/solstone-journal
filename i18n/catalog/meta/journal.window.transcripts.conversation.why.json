@@ -1,0 +1,16 @@
+{
+  "description": "Disclosure that shows why the journal can't tell if a conversation was spoken or written.",
+  "context": "Journal window, transcripts view. Beside the unresolved conversation line.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f1bd079111ad85e116181dd0c4f57dc5d5bc80016a39be14eb3766f4d5a87694",
+  "max_length": 20,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

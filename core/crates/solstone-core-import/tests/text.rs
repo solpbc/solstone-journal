@@ -523,17 +523,12 @@ fn a_recognized_subtitle_is_kept_whole_with_no_times_invented() {
     assert_eq!(created.len(), 1);
     assert_eq!(created[0].segment, "120000_300");
     let saved = rows(&created[0].path);
-    assert_eq!(saved[0]["untimed"], true);
-    assert_eq!(
-        saved[1..]
-            .iter()
-            .map(|row| row["text"].as_str().unwrap())
-            .collect::<Vec<_>>(),
-        text.lines()
-            .filter(|line| !line.is_empty())
-            .collect::<Vec<_>>()
-    );
-    assert!(saved[1..].iter().all(|row| row.get("speaker").is_none()));
+    assert!(saved[0].get("untimed").is_none());
+    assert_eq!(saved.len(), 2);
+    assert_eq!(saved[1]["cue_start"], "00:01.000");
+    assert_eq!(saved[1]["cue_end"], "00:03.000");
+    assert_eq!(saved[1]["text"], "A bell rings.");
+    assert!(saved[1].get("speaker").is_none());
 }
 
 #[test]
@@ -604,7 +599,6 @@ fn header_keeps_caller_and_model_setting_slots_distinct() {
                 "triage": {"kind": "transcripts", "ruleset_version": 7, "reasons": ["webvtt_cues"]}
             },
             "raw": "../../../imports/id/t.txt",
-            "untimed": true,
             "topics": "planning",
             "setting": "office"
         })

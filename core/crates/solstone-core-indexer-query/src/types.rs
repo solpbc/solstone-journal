@@ -92,6 +92,10 @@ impl ConnectionBoundary {
         self
     }
 
+    pub(crate) fn has_kind_filter(&self) -> bool {
+        self.kind_filter.is_some()
+    }
+
     pub fn selects_kind(&self, kind: AdmittedCategory) -> bool {
         self.kind_filter
             .as_ref()
@@ -122,9 +126,16 @@ impl ConnectionBoundary {
             return false;
         };
         let path = &classification.path;
-        let category =
-            solstone_core_format::content::kinds::indexed_permission(Some(journal), path, stored);
-        if !self.categories.contains(&category)
+        let Some(category) = solstone_core_format::content::kinds::agent_indexed_permission(
+            Some(journal),
+            path,
+            stored,
+        ) else {
+            return false;
+        };
+        if (self.kind_filter.is_some()
+            && solstone_core_format::content::conversation::unresolved_markdown(path))
+            || !self.categories.contains(&category)
             || !self.selects_kind(category)
             || solstone_core_format::content::kinds::additional_indexed_permission(path)
                 .is_some_and(|required| !self.categories.contains(&required))
@@ -312,6 +323,10 @@ pub struct ConnectionStartAfter {
 /// One FTS row, shaped like the Python journal search result.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct SearchHit {
+    /// Byte spans in the indexed content matched by SQLite, when an owner
+    /// opens a passage from a saved conversation.
+    #[serde(skip)]
+    pub match_spans: Vec<std::ops::Range<usize>>,
     #[serde(skip)]
     pub row_id: i64,
     pub id: String,

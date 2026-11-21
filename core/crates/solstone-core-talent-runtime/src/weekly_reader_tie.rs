@@ -67,12 +67,16 @@ fn producer_week_opens_in_the_reader() {
 
         let said = vec![
             Said {
+                speech_file: format!("{}/mic/090000_300/audio.jsonl", reports[0].day),
+                sentence_id: 1,
                 day: reports[0].day.clone(),
                 facet: "work".to_owned(),
                 record_id: "meeting_1".to_owned(),
                 quote: "I'll get you the deck by friday".to_owned(),
             },
             Said {
+                speech_file: format!("{}/mic/090000_300/audio.jsonl", reports[1].day),
+                sentence_id: 1,
                 day: reports[1].day.clone(),
                 facet: "work".to_owned(),
                 record_id: "meeting_1".to_owned(),

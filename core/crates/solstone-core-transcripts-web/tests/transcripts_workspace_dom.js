@@ -627,6 +627,10 @@ function createTranscriptsDOM() {
   const zoomSegments = doc.createElement('div');
   zoomSegments.id = 'trZoomSegments';
   zoom.appendChild(zoomSegments);
+  const dayHead = doc.createElement('div');
+  dayHead.className = 'tr-day-head';
+  doc.body.appendChild(dayHead);
+
   const segmentPicker = doc.createElement('select');
   segmentPicker.id = 'trSegmentPicker';
   doc.body.appendChild(segmentPicker);
@@ -1082,6 +1086,8 @@ async function createEnvironment(
     },
     URL,
     URLSearchParams,
+    TextEncoder,
+    TextDecoder,
     AbortController,
     ResizeObserver: MockResizeObserver,
     MutationObserver: MockMutationObserver,
@@ -3908,6 +3914,215 @@ test('dispose takes back the listeners, timers, observers and globals the view a
     assert.strictEqual((env.windowListeners[type] || []).length, 0, `no ${type} listener on the window`);
   }
   assert.strictEqual(env.intervals.size, 0, 'no timer left');
+});
+
+// ----- Messages and transcripts -----
+// Synthetic segments shaped like the day route's saved conversations.
+function conversationSegments() {
+  return [
+    { key: '100000_300', stream: 'import.text', start: '10:00', end: '10:05', types: ['audio'], data_state: { audio: 'analyzed' },
+      item: { kind: 'transcripts', source: 'imported' },
+      conversation_items: [{ file: 'conversation_transcript.jsonl', day: '20200115', source: 'imported', content_kind: 'transcripts' }] },
+    { key: '100200_300', stream: 'import.text', start: '10:02', end: '10:07', types: ['messages'], data_state: { messages: 'analyzed' },
+      item: { kind: 'transcripts', source: 'imported' },
+      conversation_items: [{ file: 'conversation_transcript.jsonl', day: '20200115', untimed: true, source: 'imported', content_kind: 'messages' }] },
+    { key: '130400_300', stream: 'import.text', start: '13:04', end: '13:09', types: ['conversation'], data_state: { conversation: 'analyzed' },
+      item: { kind: 'transcripts', source: 'imported' },
+      conversation_items: [{ file: 'conversation_transcript.jsonl', day: '20200115', untimed: true, source: 'imported', conversation_state: 'unresolved', reason_code: 'original_missing' }] },
+    { key: '183100_300', stream: 'import.chatgpt', start: '18:31', end: '18:36', types: ['messages'], data_state: { messages: 'analyzed' },
+      conversation_items: [{ file: 'conversation_transcript.jsonl', day: '20200115', first_sent_at: '2020-01-16T01:31:05Z', last_sent_at: '2020-01-16T01:44:00Z', source: 'ChatGPT', content_kind: 'messages' }] },
+  ];
+}
+
+async function conversationEnvironment(url = 'https://journal.example/app/transcripts/20200115', segments = conversationSegments()) {
+  return createEnvironment(url, 'analyzed', false, segments, {
+    postResponse: () => ({ status: 200, body: { imports: [] } }),
+    journalFormat: seededJournalFormat({ 'import.text': 'text label', 'import.chatgpt': 'chat label' }),
+    journalClock: seededJournalClock('America/Denver'),
+  });
+}
+
+function dayRows(doc) {
+  return doc.querySelectorAll('.tr-day-imports button').map(button => button.textContent);
+}
+
+test('the day switch shows only on days with messages, filters by kind, and lives in the address', async () => {
+  const env = await conversationEnvironment();
+  const fmt = env.window.JournalFormat;
+  const nav = env.doc.querySelector('.tr-show');
+  assert.ok(nav && !nav.hidden, 'a day holding messages shows the switch');
+  assert.equal(nav.querySelector('[aria-current="page"]').dataset.show, 'everything');
+  const date = fmt.filedDay('20200115');
+  const rows = dayRows(env.doc);
+  assert.equal(rows.length, 4, rows.join(' | '));
+  // An item with no send time reads by date, never by the time it was filed.
+  assert.ok(rows.some(row => row.includes(fmt.conversationItem({ content_kind: 'messages', source: 'imported' })) && row.includes(date)), rows.join(' | '));
+  assert.ok(rows.some(row => row.includes(fmt.conversationItem({ conversation_state: 'unresolved', source: 'imported' }))), rows.join(' | '));
+  // A chat with send times reads by them, on the journal's clock.
+  assert.ok(rows.some(row => row.includes(fmt.conversationItem({ content_kind: 'messages', source: 'ChatGPT' })) && row.includes('18:31 – 18:44')), rows.join(' | '));
+  assert.ok(!rows.some(row => row.includes('10:02')), 'an untimed message never shows its filing time');
+
+  nav.querySelector('[data-show="messages"]').dispatchEvent({ type: 'click', preventDefault() {} });
+  assert.equal(new URLSearchParams(env.window.location.search).get('show'), 'messages');
+  assert.equal(nav.querySelector('[aria-current="page"]').dataset.show, 'messages');
+  assert.equal(dayRows(env.doc).length, 2, dayRows(env.doc).join(' | '));
+  const leftOut = env.doc.querySelector('.tr-day-left-out');
+  assert.ok(leftOut, 'the conversation the journal cannot place is named under a filter');
+  const back = leftOut.querySelector('a');
+  assert.ok(back && !back.getAttribute('href').includes('show='), back && back.getAttribute('href'));
+  const transcriptPill = getZoomPills(env.doc).find(pill => pill.dataset.key === '100000_300');
+  assert.ok(transcriptPill.classList.contains('tr-show-dim'), 'left-out blocks stay, drawn faintly');
+
+  nav.querySelector('[data-show="transcripts"]').dispatchEvent({ type: 'click', preventDefault() {} });
+  assert.equal(dayRows(env.doc).length, 1);
+  assert.ok(!transcriptPill.classList.contains('tr-show-dim'));
+
+  env.history.back();
+  await env.flushHashchanges();
+  assert.equal(nav.querySelector('[aria-current="page"]').dataset.show, 'messages', 'back undoes the switch');
+  back.dispatchEvent({ type: 'click', preventDefault() {} });
+  assert.equal(new URLSearchParams(env.window.location.search).get('show'), null);
+  assert.equal(dayRows(env.doc).length, 4);
+  assert.equal(env.doc.querySelector('.tr-day-left-out'), null);
+});
+
+test('the day switch stays away from a day without messages, whatever the address says', async () => {
+  const plain = [{ key: '115000_300', stream: 'room', start: '11:50', end: '11:55', types: ['audio'], data_state: { audio: 'analyzed' } }];
+  const env = await conversationEnvironment('https://journal.example/app/transcripts/20200115?show=messages', plain);
+  assert.ok(env.doc.querySelector('.tr-show').hidden);
+  assert.ok(!getZoomPills(env.doc)[0].classList.contains('tr-show-dim'));
+});
+
+test('a message reads as who, to whom and when, and an unsent time stays off', async () => {
+  const env = await conversationEnvironment();
+  const seg = conversationSegments()[1];
+  env.doc.querySelectorAll('.tr-day-imports button').find(button => button.textContent.includes(env.window.JournalFormat.filedDay('20200115'))
+    && button.textContent.includes(env.window.JournalFormat.conversationItem(seg.conversation_items[0]))).dispatchEvent({ type: 'click' });
+  const message = (author, to, text, index) => ({ type: 'transcript', time: null, timestamp: null, speaker: author, text,
+    message: { file: 'conversation_transcript.jsonl', turn_id: `conversation_transcript.jsonl#${index}-x`, author, to, blocks: [{ kind: 'paragraph', start: 0, end: Buffer.byteLength(text) }] } });
+  await env.releasePendingSegmentGets('analyzed', {
+    item: seg.item, conversation_items: seg.conversation_items, data_state: { messages: 'analyzed' },
+    chunks: [
+      message('Theo Park', ['Everyone'], 'link to the shelf quote is in the shared folder', 0),
+      message('Theo Park', ['Mira Alder'], "I think it's 16x20", 1),
+    ],
+  });
+  const pane = env.doc.querySelector('#tr-tabpanel-transcript');
+  const entries = pane.querySelectorAll('.tr-msg');
+  assert.equal(entries.length, 2, pane.innerHTML);
+  assert.equal(entries[0].querySelector('.tr-msg-who b').textContent, 'Theo Park');
+  assert.equal(entries[0].querySelector('time'), null, 'no send time from a clock-only source');
+  assert.equal(entries[0].querySelector('.tr-msg-to').textContent, env.window.JournalI18n.render('journal.window.transcripts.message.to.everyone'));
+  assert.equal(entries[1].querySelector('.tr-msg-to').textContent,
+    env.window.JournalI18n.render('journal.window.transcripts.message.to.only', [['recipient', 'Mira Alder']]));
+  assert.equal(pane.querySelectorAll('[data-speaker-slot]').length, 0, 'a message carries no voice controls');
+  assert.equal(env.doc.querySelector('.tr-title').textContent, env.window.JournalFormat.conversationItem(seg.conversation_items[0]));
+  assert.equal(env.doc.querySelector('#trTabs').classList.contains('visible'), false);
+  // The delete confirm lists what the segment holds: its messages.
+  env.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
+  const parts = env.doc.querySelectorAll('#trDeleteSegmentModalBody .tr-delete-segment-list li').map(li => li.textContent);
+  assert.deepStrictEqual(parts, [TRASH_COPY.parts.messages, TRASH_COPY.parts.analysis]);
+});
+
+test('a search opens a long message at its passage, folded behind its word count', async () => {
+  const seg = conversationSegments()[3];
+  const before = 'é '.repeat(40) + 'earlier words here.';
+  const passage = 'The shelves arrive Tuesday.';
+  const text = `${before}\n\n> is the bottom deck hot?\n\n${passage}\n\n\`\`\`\ncone 6 hold 15m\n\`\`\``;
+  const bytes = (value) => Buffer.byteLength(value);
+  const p2 = bytes(`${before}\n\n> is the bottom deck hot?\n\n`);
+  const blocks = [
+    { kind: 'paragraph', start: 0, end: bytes(before) },
+    { kind: 'quote', start: bytes(`${before}\n\n`), end: bytes(`${before}\n\n> is the bottom deck hot?`) },
+    { kind: 'paragraph', start: p2, end: p2 + bytes(passage) },
+    { kind: 'code', start: p2 + bytes(passage) + 2, end: bytes(text) },
+  ];
+  const turn = 'conversation_transcript.jsonl#1-abc';
+  const url = `https://journal.example/app/transcripts/20200115?stream=import.chatgpt&turn=${encodeURIComponent(turn)}&at=${p2 + 4}#${seg.key}/transcript`;
+  const env = await conversationEnvironment(url);
+  await env.releasePendingSegmentGets('analyzed', {
+    conversation_items: seg.conversation_items, data_state: { messages: 'analyzed' },
+    chunks: [
+      { type: 'transcript', time: '18:31:05', timestamp: 0, speaker: 'You', text: 'hello',
+        message: { file: 'conversation_transcript.jsonl', turn_id: 'conversation_transcript.jsonl#0-a', sent_at: '2020-01-16T01:31:05Z', is_owner: true, role: 'user', blocks: [{ kind: 'paragraph', start: 0, end: 5 }] } },
+      { type: 'transcript', time: '18:44:00', timestamp: 0, speaker: 'You', text,
+        message: { file: 'conversation_transcript.jsonl', turn_id: turn, sent_at: '2020-01-16T01:44:00Z', is_owner: true, role: 'user', truncated: true, blocks } },
+    ],
+  });
+  const pane = env.doc.querySelector('#tr-tabpanel-transcript');
+  const entry = pane.querySelectorAll('.tr-msg').find(el => el.dataset.turnId === turn);
+  assert.ok(entry, pane.innerHTML);
+  assert.ok(entry.classList.contains('tr-entry-active'));
+  assert.equal(entry.querySelector('.tr-msg-who b').textContent, env.window.JournalI18n.render('journal.window.transcripts.message.you'), 'the owner reads as you only from is_owner');
+  assert.equal(entry.querySelector('time').textContent, '18:44');
+  const words = 40 + 3 + 6; // "é" ×40, "earlier words here.", "> is the bottom deck hot?"
+  assert.equal(entry.querySelector('.tr-msg-fold span').textContent,
+    env.window.JournalI18n.render('journal.window.transcripts.message.words.before', [['words_quantity', words], ['words', String(words)]]));
+  assert.ok(entry.querySelector('.tr-msg-passage').textContent.startsWith(passage), entry.querySelector('.tr-msg-passage').textContent);
+  assert.ok(entry.querySelector('.tr-msg-earlier').hidden);
+  assert.ok(entry.querySelector('.tr-msg-quote'), 'a quote keeps its block');
+  assert.ok(!entry.querySelector('.tr-msg-code').textContent.includes('```'), 'fences are delimiters, not contents');
+  assert.ok(entry.querySelector('.tr-msg-cut'), 'a source cut says the rest was not kept');
+  assert.ok(pane.innerHTML.includes(env.window.JournalI18n.renderHtml('journal.window.transcripts.message.truncated')));
+  entry.querySelector('.tr-msg-unfold').dispatchEvent({ type: 'click' });
+  assert.ok(!entry.querySelector('.tr-msg-earlier').hidden);
+  assert.equal(entry.querySelector('.tr-msg-fold'), null);
+});
+
+test('a match without an offset opens the turn and promises no passage', async () => {
+  const seg = conversationSegments()[3];
+  const turn = 'conversation_transcript.jsonl#0-a';
+  const env = await conversationEnvironment(`https://journal.example/app/transcripts/20200115?stream=import.chatgpt&turn=${encodeURIComponent(turn)}#${seg.key}/transcript`);
+  await env.releasePendingSegmentGets('analyzed', {
+    conversation_items: seg.conversation_items, data_state: { messages: 'analyzed' },
+    chunks: [{ type: 'transcript', time: null, timestamp: null, speaker: 'Mira', text: 'one two three',
+      message: { file: 'conversation_transcript.jsonl', turn_id: turn, author: 'Mira', blocks: [{ kind: 'paragraph', start: 0, end: 13 }] } }],
+  });
+  const entry = env.doc.querySelector('#tr-tabpanel-transcript .tr-msg');
+  assert.ok(entry.classList.contains('tr-entry-active'));
+  assert.equal(entry.querySelector('.tr-msg-fold'), null);
+  assert.equal(entry.querySelector('.tr-msg-cut'), null);
+});
+
+test('a conversation the journal cannot place says so, with one reason per code', async () => {
+  for (const [code, id] of [
+    ['original_missing', 'journal.window.transcripts.conversation.reason.original.missing'],
+    ['insufficient_evidence', 'journal.window.transcripts.conversation.reason.insufficient.evidence'],
+    ['origin_unknown', 'journal.window.transcripts.conversation.reason.origin.unknown'],
+  ]) {
+    const segs = conversationSegments();
+    segs[2].conversation_items[0].reason_code = code;
+    const env = await conversationEnvironment(`https://journal.example/app/transcripts/20200115?stream=import.text#${segs[2].key}/transcript`, segs);
+    await env.releasePendingSegmentGets('analyzed', {
+      item: segs[2].item, conversation_items: segs[2].conversation_items, data_state: { conversation: 'analyzed' },
+      chunks: [{ type: 'transcript', time: null, timestamp: null, speaker: 'Mira', text: 'are we still on for saturday' }],
+    });
+    const pane = env.doc.querySelector('#tr-tabpanel-transcript');
+    assert.ok(pane.innerHTML.includes(env.window.JournalI18n.renderHtml('journal.window.transcripts.conversation.unresolved')), pane.innerHTML);
+    assert.ok(pane.innerHTML.includes(env.window.JournalI18n.renderHtml(id)), code);
+    for (const other of ['original.missing', 'insufficient.evidence', 'origin.unknown'].map(key => `journal.window.transcripts.conversation.reason.${key}`).filter(key => key !== id)) {
+      assert.ok(!pane.innerHTML.includes(env.window.JournalI18n.renderHtml(other)), `${code} shows only its own reason`);
+    }
+    assert.ok(pane.innerHTML.includes('are we still on for saturday'));
+    assert.equal(pane.querySelectorAll('.tr-msg').length, 0, 'an unplaced conversation is not read as messages');
+  }
+});
+
+test('also at this time links timed overlapping items, and never an item with no send time', async () => {
+  const segs = conversationSegments();
+  segs[3] = { ...segs[3], key: '100100_300', start: '10:01', end: '10:06',
+    conversation_items: [{ ...segs[3].conversation_items[0], first_sent_at: '2020-01-15T17:01:00Z', last_sent_at: '2020-01-15T17:03:00Z' }] };
+  const env = await conversationEnvironment(`https://journal.example/app/transcripts/20200115?stream=import.text#${segs[0].key}/transcript`, segs);
+  await env.releasePendingSegmentGets('analyzed', {
+    item: segs[0].item, conversation_items: segs[0].conversation_items, data_state: { audio: 'analyzed' },
+    chunks: [{ type: 'transcript', time: '00:00:02.000', timestamp: null, speaker: 'Mira Alder', text: 'Morning.' }],
+  });
+  const also = env.doc.querySelector('#tr-tabpanel-transcript .tr-also');
+  assert.ok(also, env.doc.querySelector('#tr-tabpanel-transcript').innerHTML);
+  const links = also.querySelectorAll('a');
+  assert.deepStrictEqual(links.map(link => link.dataset.alsoKey), ['100100_300'], 'the untimed sidebar has no time to overlap');
+  assert.ok(links[0].textContent.includes('10:01 – 10:03'), links[0].textContent);
+  assert.ok(env.doc.querySelector('#tr-tabpanel-transcript').innerHTML.includes('>00:00:02<'), 'a cue clock shows seconds');
 });
 
 async function run() {

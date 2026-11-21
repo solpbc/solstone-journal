@@ -98,7 +98,7 @@ pub fn load_who_spoke(
     source: Option<&str>,
     max_bytes: Option<usize>,
 ) -> WhoSpoke {
-    let (labels, mut rows) = journal_rows(segment_dir, max_bytes);
+    let (labels, rows) = journal_rows(segment_dir, max_bytes);
     let entries = match owner_entries(segment_dir, max_bytes) {
         Ok(entries) => entries,
         Err(detail) => {
@@ -117,7 +117,20 @@ pub fn load_who_spoke(
         Some(source) => applying(segment_dir, source, entries),
         None => BTreeMap::new(),
     };
-    for (sentence_id, answer) in &owner_set {
+    let rows = apply_answers(rows, &owner_set);
+    WhoSpoke {
+        labels,
+        owner_unreadable: None,
+        rows,
+        owner_set,
+    }
+}
+
+fn apply_answers(
+    mut rows: Vec<Map<String, Value>>,
+    owner_set: &BTreeMap<i64, OwnerAnswer>,
+) -> Vec<Map<String, Value>> {
+    for (sentence_id, answer) in owner_set {
         let line = |row: &Map<String, Value>| {
             row.get("sentence_id").and_then(Value::as_i64) == Some(*sentence_id)
         };
@@ -134,12 +147,35 @@ pub fn load_who_spoke(
             None => rows.push(answer_row(*sentence_id, answer)),
         }
     }
-    WhoSpoke {
-        labels,
-        owner_unreadable: None,
-        rows,
-        owner_set,
-    }
+    rows
+}
+
+/// Resolve labels and overrides using only the source bytes already admitted
+/// by a bounded journal reader. Missing files are normal; damaged files fail closed.
+pub(super) fn load_who_spoke_snapshot(
+    journal: &Path,
+    dir: &Path,
+    source: &str,
+    max_bytes: usize,
+) -> Option<(String, Vec<Map<String, Value>>)> {
+    use solstone_core_journal_io::{JournalRoot, read_relative_file_bounded};
+    let root = JournalRoot::open(journal).ok()?;
+    let relative = dir.strip_prefix(journal).ok()?;
+    let read =
+        |path: &Path| read_relative_file_bounded(&root, &relative.join(path), max_bytes).ok();
+    let text = String::from_utf8(read(Path::new(&format!("{source}.jsonl")))??.bytes).ok()?;
+    let labels = read(Path::new("talents/speaker_labels.json"))?;
+    let answers = read(&owner_line_labels_path(Path::new("")))?;
+    let rows = match labels {
+        Some(file) => label_rows(&file.bytes)?,
+        None => Vec::new(),
+    };
+    let entries = match answers {
+        Some(file) => decode_owner_line_labels(&file.bytes).ok()?,
+        None => Vec::new(),
+    };
+    let owner_set = matching_answers(source, entries, || Some(text.as_bytes()));
+    Some((text, apply_answers(rows, &owner_set)))
 }
 
 fn answer_row(sentence_id: i64, answer: &OwnerAnswer) -> Map<String, Value> {
@@ -185,27 +221,27 @@ fn journal_rows(
         Some(max_bytes) => read_bounded(&path, max_bytes).ok().flatten(),
         None => std::fs::read(&path).ok(),
     };
-    let rows = bytes
-        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
-        .and_then(|payload| match payload {
-            Value::Object(mut payload) => match payload.remove("labels") {
-                Some(Value::Array(rows)) => Some(rows),
-                _ => None,
-            },
-            _ => None,
-        });
-    match rows {
-        Some(rows) => (
-            JournalLabels::Loaded,
-            rows.into_iter()
-                .filter_map(|row| match row {
-                    Value::Object(row) => Some(row),
-                    _ => None,
-                })
-                .collect(),
-        ),
+    match bytes.as_deref().and_then(label_rows) {
+        Some(rows) => (JournalLabels::Loaded, rows),
         None => (JournalLabels::Damaged, Vec::new()),
     }
+}
+
+fn label_rows(bytes: &[u8]) -> Option<Vec<Map<String, Value>>> {
+    let Value::Object(mut payload) = serde_json::from_slice(bytes).ok()? else {
+        return None;
+    };
+    let Value::Array(rows) = payload.remove("labels")? else {
+        return None;
+    };
+    Some(
+        rows.into_iter()
+            .filter_map(|value| match value {
+                Value::Object(row) => Some(row),
+                _ => None,
+            })
+            .collect(),
+    )
 }
 
 fn owner_entries(
@@ -231,6 +267,18 @@ fn applying(
     source: &str,
     entries: Vec<OwnerLineEntry>,
 ) -> BTreeMap<i64, OwnerAnswer> {
+    matching_answers(source, entries, || {
+        File::open(segment_dir.join(format!("{source}.jsonl")))
+            .ok()
+            .map(BufReader::new)
+    })
+}
+
+fn matching_answers<R: BufRead>(
+    source: &str,
+    entries: Vec<OwnerLineEntry>,
+    open: impl FnOnce() -> Option<R>,
+) -> BTreeMap<i64, OwnerAnswer> {
     let mut wanted = entries
         .into_iter()
         .filter(|entry| entry.source == source)
@@ -239,12 +287,12 @@ fn applying(
     let Some(last) = wanted.keys().next_back().copied() else {
         return BTreeMap::new();
     };
-    let Ok(file) = File::open(segment_dir.join(format!("{source}.jsonl"))) else {
+    let Some(file) = open() else {
         return BTreeMap::new();
     };
     let mut applying = BTreeMap::new();
     let mut ordinal = 0;
-    for line in BufReader::new(file).split(b'\n') {
+    for line in file.split(b'\n') {
         let Ok(line) = line else {
             break;
         };
