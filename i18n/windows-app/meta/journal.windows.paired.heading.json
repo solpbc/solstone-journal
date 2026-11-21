@@ -1,0 +1,21 @@
+{
+  "description": "Windows journal app paired heading.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [
+    {
+      "name": "label",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 78,
+  "source_revision": "8743c314b7cac7ecabd5cf54cc888d3b8209bcbcc95d9ac2f36cb48f66cbb439",
+  "risk": "routine",
+  "auto_merge": true
+}

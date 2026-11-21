@@ -1,0 +1,16 @@
+{
+  "description": "Error icon empty.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "6223f896a1fc89afbd73bcbd0dd725d0a485ed4cbfec6e113439d105e314c6c1",
+  "risk": "routine",
+  "auto_merge": true
+}

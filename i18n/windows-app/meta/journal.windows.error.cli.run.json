@@ -1,0 +1,28 @@
+{
+  "description": "Error cli run.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 82,
+  "source_revision": "fe21f10561e38e6ff52cc29069ecfe02c51f64e03f4e2181dd13450705d8feea",
+  "risk": "routine",
+  "auto_merge": true,
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal"
+    }
+  ]
+}

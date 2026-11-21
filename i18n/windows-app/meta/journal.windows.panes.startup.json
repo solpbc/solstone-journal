@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app panes startup.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "69a5637099ea588cb4d168d6f8f36a50899d1c23e6e3fc923ffa769943817e1c",
+  "risk": "routine",
+  "auto_merge": true
+}

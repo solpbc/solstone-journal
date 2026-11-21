@@ -1,0 +1,16 @@
+{
+  "description": "Error step save.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 72,
+  "source_revision": "3f39a4f1a3a92b852ef9bd8530fa7b20a6c61b32d498ffdbab138390a2f34f89",
+  "risk": "routine",
+  "auto_merge": true
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app copy about failed.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 86,
+  "source_revision": "98e024791b2e15644f81ca3862fc412aafdaba561887b76289994d96c8781699",
+  "risk": "routine",
+  "auto_merge": true
+}

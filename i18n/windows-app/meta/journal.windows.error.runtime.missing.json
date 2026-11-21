@@ -1,0 +1,16 @@
+{
+  "description": "Error runtime missing.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 250,
+  "source_revision": "72667fc4a8be0939cf4980e2b63d9a75f51c9e9ecb7ac1167eb3d75fab14c67b",
+  "risk": "routine",
+  "auto_merge": true
+}

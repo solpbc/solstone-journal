@@ -1,0 +1,16 @@
+{
+  "description": "Network closed help windows.",
+  "context": "Explanation below the Windows devices pane network status.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 628,
+  "source_revision": "91160fedebcf66ac937e901edbf5814eaa101360b3068beaf5e29886a2266e48",
+  "risk": "routine",
+  "auto_merge": true
+}

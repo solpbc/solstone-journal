@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app mark unavailable name.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 84,
+  "source_revision": "f277612f15576d37a909d39911c49c05a9ce8a40b9901ab12ac6d8d9d450c07a",
+  "risk": "routine",
+  "auto_merge": true
+}

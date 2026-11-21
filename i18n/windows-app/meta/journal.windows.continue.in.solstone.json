@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app continue in solstone.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 56,
+  "source_revision": "9f0ad7336fe006f0490251cb00c4184099e7bd25da2c13c2557633ae354867c7",
+  "risk": "routine",
+  "auto_merge": true
+}

@@ -11,6 +11,9 @@ mod update;
 
 // Compile the production Windows journal bridge used by startup/apply. The
 // updater cases inject ApplyHooks, so these imports do not start a journal.
+#[allow(dead_code)]
+#[path = "../src/i18n.rs"]
+mod i18n;
 #[cfg(windows)]
 #[allow(dead_code)]
 #[path = "../src/journal.rs"]

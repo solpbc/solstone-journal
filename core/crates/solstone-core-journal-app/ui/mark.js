@@ -5,11 +5,13 @@
 // one the journal's own pages show; the tile is the app icon, drawn to the
 // same geometry as the Mac app's icon so one journal looks the same on both.
 
+import { t } from './i18n.js';
+
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const GENERIC = {
   chips: ['#B06A1A', '#A57F0E'],
   paper: '#FEFCF8',
-  words: ['your', 'journal'],
+  words: t('mark.placeholder.words').split('·'),
 };
 const PLATE_FILL = '#FCF3E4';
 const WORD_INK = '#3F3830';
@@ -100,7 +102,8 @@ function renderWords(words, pair) {
   const sep = document.createElement('span');
   sep.className = 'mark-sep';
   sep.textContent = '·';
-  words.replaceChildren(pair[0], sep, pair[1]);
+  if (pair.length === 1) words.textContent = pair[0];
+  else words.replaceChildren(pair[0], sep, pair.slice(1).join('·'));
 }
 
 // The mark card. With no mark yet it shows the journal's "no identity yet"
@@ -127,8 +130,8 @@ export function renderMarkCard(container, mark, confirmedLine, unavailable = fal
       chip.appendChild(q);
       chips.appendChild(chip);
     }
-    renderWords(words, ['mark', 'unavailable']);
-    container.setAttribute('aria-label', "your journal's mark, unavailable right now");
+    renderWords(words, t('mark.unavailable.words').split('·'));
+    container.setAttribute('aria-label', t('mark.unavailable.name'));
   } else if (known) {
     for (const icon of [mark.icon1, mark.icon2]) {
       const chip = document.createElement('div');
@@ -141,7 +144,7 @@ export function renderMarkCard(container, mark, confirmedLine, unavailable = fal
     }
     renderWords(words, mark.words);
     container.setAttribute('aria-label',
-      `${mark.icon1.color.name || ''}, ${mark.icon2.color.name || ''} · ${mark.words.join(' ')}`);
+      t('mark.name', { first: mark.icon1.color.name || '', second: mark.icon2.color.name || '', words: mark.words.join(' ') }));
   } else {
     GENERIC.chips.forEach((hex, index) => {
       const chip = document.createElement('div');
@@ -151,7 +154,7 @@ export function renderMarkCard(container, mark, confirmedLine, unavailable = fal
       chips.appendChild(chip);
     });
     renderWords(words, GENERIC.words);
-    container.setAttribute('aria-label', 'your journal, not set up yet');
+    container.setAttribute('aria-label', t('mark.empty.name'));
   }
   container.setAttribute('role', 'img');
   container.classList.toggle('confirmed', Boolean(known && confirmedLine));
@@ -224,7 +227,7 @@ function drawWords(ctx, tile, words) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
   ctx.fillText(lower[0], tile / 2, tile * 0.70);
-  ctx.fillText(lower[1], tile / 2, tile * 0.86);
+  if (lower.length > 1) ctx.fillText(lower.slice(1).join('·'), tile / 2, tile * 0.86);
 }
 
 async function drawTile(tile, mark) {

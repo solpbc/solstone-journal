@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app backup line.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 120,
+  "source_revision": "8ef9b32c45b3e77d0fcfd191167debbf2e9c431d7b5289ddb0001ff5967fe1a4",
+  "risk": "routine",
+  "auto_merge": true
+}

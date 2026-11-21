@@ -1,0 +1,21 @@
+{
+  "description": "Error icon size.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [
+    {
+      "name": "side",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "f8949952042387e1b0d7e866ad14252f92fd4023841525f4ea835649eefcba36",
+  "risk": "routine",
+  "auto_merge": true
+}

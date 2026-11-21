@@ -40,21 +40,23 @@ fn answer_bound(path: &str) -> Duration {
 /// since another account's journal, or anything else, can hold it.
 #[cfg(windows)]
 pub fn is_own_journal(journal: &str) -> bool {
-    use solstone_core_local_endpoint as endpoint;
-    let Ok(Some(pipe)) = endpoint::socket_path() else {
-        return false;
-    };
-    let Ok(response) =
-        endpoint::pipe_request(&pipe, "GET", endpoint::RUNTIME_ROUTE, None, ANSWER_BOUND)
-    else {
-        return false;
-    };
     let canonical = |path: &std::path::Path| std::fs::canonicalize(path).ok();
-    response.status == 200
-        && serde_json::from_slice::<endpoint::RuntimeRecord>(&response.body).is_ok_and(|record| {
-            let own = canonical(std::path::Path::new(journal));
-            own.is_some() && canonical(&record.journal_root) == own
-        })
+    own_runtime().is_some_and(|record| {
+        let own = canonical(std::path::Path::new(journal));
+        own.is_some() && canonical(&record.journal_root) == own
+    })
+}
+
+#[cfg(windows)]
+fn own_runtime() -> Option<solstone_core_local_endpoint::RuntimeRecord> {
+    use solstone_core_local_endpoint as endpoint;
+    let pipe = endpoint::socket_path().ok().flatten()?;
+    let response =
+        endpoint::pipe_request(&pipe, "GET", endpoint::RUNTIME_ROUTE, None, ANSWER_BOUND).ok()?;
+    if response.status != 200 {
+        return None;
+    }
+    serde_json::from_slice(&response.body).ok()
 }
 
 #[cfg(not(windows))]
@@ -122,7 +124,35 @@ pub enum InitProbe {
 
 impl Convey {
     pub fn new(port: Option<u16>) -> Self {
-        let agent: Agent = Agent::config_builder()
+        let locale = crate::i18n::locale();
+        #[cfg(windows)]
+        let locale = if locale != "en-US"
+            && own_runtime().is_none_or(|record| record.tcp_port != port.unwrap_or(DEFAULT_PORT))
+        {
+            "en-US"
+        } else {
+            locale
+        };
+        Self::with_locale(port, locale)
+    }
+
+    fn with_locale(port: Option<u16>, locale: &'static str) -> Self {
+        let mut config = Agent::config_builder();
+        if locale != "en-US" {
+            // A translated request belongs on the private loopback connection,
+            // including when this account has an HTTP proxy configured.
+            config = config.proxy(None).middleware(
+                move |mut request: ureq::http::Request<ureq::SendBody>,
+                      next: ureq::middleware::MiddlewareNext| {
+                    request.headers_mut().insert(
+                        "x-solstone-locale",
+                        ureq::http::HeaderValue::from_static(locale),
+                    );
+                    next.handle(request)
+                },
+            );
+        }
+        let agent: Agent = config
             .timeout_global(Some(ANSWER_BOUND))
             .http_status_as_error(false)
             .max_redirects(0)
@@ -216,7 +246,7 @@ impl Convey {
     /// Whether a pairing link has been used, by the nonce pair-start returned.
     pub fn pairing_status(&self, nonce: &str) -> Result<Value, Refusal> {
         if !is_nonce(nonce) {
-            return Err(Refusal::from("that isn't a pairing link".to_owned()));
+            return Err(Refusal::from(crate::i18n::text("error.pairing.link")));
         }
         self.get(&format!("/app/network/api/pair/nonce-status?nonce={nonce}"))
     }
@@ -257,7 +287,10 @@ impl Convey {
         match response.status().as_u16() {
             300..=399 => Ok(InitProbe::Complete),
             200 => Ok(InitProbe::Incomplete),
-            status => Err(format!("your journal answered {status}")),
+            status => Err(crate::i18n::strings(
+                "error.journal.response",
+                &[("status", &status.to_string())],
+            )),
         }
     }
 }
@@ -268,7 +301,10 @@ fn refusal(status: u16, value: &Value) -> Refusal {
     let message = ["detail", "error", "message"]
         .iter()
         .find_map(|key| value.get(key).and_then(Value::as_str))
-        .map_or_else(|| format!("your journal answered {status}"), str::to_owned);
+        .map_or_else(
+            || crate::i18n::strings("error.journal.response", &[("status", &status.to_string())]),
+            str::to_owned,
+        );
     Refusal {
         status: Some(status),
         reason_code: value
@@ -331,6 +367,60 @@ mod tests {
 
         use super::super::Convey;
         use crate::setup_flow::{Effect, Event, Phase, Session, SetupAction, Step, reduce, view};
+
+        #[test]
+        fn journal_http_requests_carry_only_their_clients_language() {
+            let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let server = std::thread::spawn(move || {
+                for expected in [Some("en-XA"), None] {
+                    for (method, path) in [
+                        ("GET", "/init/api/state"),
+                        ("POST", "/init/api/action"),
+                        ("PUT", "/app/settings/api/config"),
+                        ("GET", "/api/system/status"),
+                        ("GET", "/init"),
+                    ] {
+                        let (mut stream, _) = listener.accept().unwrap();
+                        let mut reader = BufReader::new(&stream);
+                        let mut line = String::new();
+                        reader.read_line(&mut line).unwrap();
+                        assert_eq!(line, format!("{method} {path} HTTP/1.1\r\n"));
+                        let mut tags = Vec::new();
+                        let mut length = 0;
+                        loop {
+                            line.clear();
+                            assert_ne!(reader.read_line(&mut line).unwrap(), 0);
+                            if line == "\r\n" {
+                                break;
+                            }
+                            let (name, value) = line.split_once(':').unwrap();
+                            if name.eq_ignore_ascii_case("x-solstone-locale") {
+                                tags.push(value.trim().to_owned());
+                            } else if name.eq_ignore_ascii_case("content-length") {
+                                length = value.trim().parse().unwrap();
+                            }
+                        }
+                        assert_eq!(tags, expected.into_iter().collect::<Vec<_>>());
+                        std::io::Read::read_exact(&mut reader, &mut vec![0; length]).unwrap();
+                        stream
+                        .write_all(
+                            b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
+                        )
+                        .unwrap();
+                    }
+                }
+            });
+            for tag in ["en-XA", "en-US"] {
+                let client = Convey::with_locale(Some(port), tag);
+                client.setup_state().unwrap();
+                client.post("/init/api/action", Some(&json!({}))).unwrap();
+                client.put("/app/settings/api/config", &json!({})).unwrap();
+                assert!(client.answer().0);
+                client.init_probe().unwrap();
+            }
+            server.join().unwrap();
+        }
 
         /// Longer than a quick read is allowed, as the journal answered setup
         /// on a two-core PC while its services were first starting.

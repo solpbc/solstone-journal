@@ -1,0 +1,16 @@
+{
+  "description": "Two-line mark placeholder.",
+  "context": "The middle dot optionally separates the two printed lines of the mark.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "fec1adcfd81a3d50096b48043604008d3c381d92d724a31e905c984936638750",
+  "risk": "routine",
+  "auto_merge": true
+}

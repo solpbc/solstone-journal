@@ -1,0 +1,16 @@
+{
+  "description": "Error cli no reason.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 44,
+  "source_revision": "2f51d450387524ad9b5ee6e01c9ac2ec0750fa8a5cfdef431747705c6340e354",
+  "risk": "routine",
+  "auto_merge": true
+}

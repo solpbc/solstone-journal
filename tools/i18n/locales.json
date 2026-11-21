@@ -333,6 +333,13 @@
         "en-US",
         "en-XA"
       ]
+    },
+    {
+      "id": "journal-windows-app",
+      "locales": [
+        "en-US",
+        "en-XA"
+      ]
     }
   ]
 }

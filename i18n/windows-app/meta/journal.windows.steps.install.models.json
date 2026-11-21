@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app steps install models.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "e07c3ec2f9120ca1754b688c2db37acfe75416c27e74981fc9419ce8b52d2871",
+  "risk": "routine",
+  "auto_merge": true
+}

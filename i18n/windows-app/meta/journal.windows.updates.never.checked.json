@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app updates never checked.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 50,
+  "source_revision": "343ee3e42a127172ed6fe2b4505516501823436b2cc1c003e4efea3a1998cb0e",
+  "risk": "routine",
+  "auto_merge": true
+}

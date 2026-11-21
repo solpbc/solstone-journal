@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app other account title.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 106,
+  "source_revision": "6045d3372ff8f6deacfca35bd6e54cdb264900cb25e59bf67ce23b86355c6244",
+  "risk": "routine",
+  "auto_merge": true
+}

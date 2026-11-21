@@ -13,6 +13,7 @@
 // The portable modules serve the Windows app; elsewhere only their tests use them.
 #![cfg_attr(not(windows), allow(dead_code))]
 
+mod i18n;
 mod ico;
 mod setup_events;
 mod setup_flow;

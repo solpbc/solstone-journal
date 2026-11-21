@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app mark empty name.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 56,
+  "source_revision": "1a1802ba66f1ae2bc23e3356a25a3c0981799da3a35e93469ce59997c1e058ea",
+  "risk": "routine",
+  "auto_merge": true
+}

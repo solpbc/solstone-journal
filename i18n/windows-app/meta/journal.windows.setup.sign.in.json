@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app setup sign in.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 98,
+  "source_revision": "3a0773d735e846b3733b24581ecea7db5e0d0829f5d967488dbf2d122e7a1e6a",
+  "risk": "routine",
+  "auto_merge": true
+}

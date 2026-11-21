@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app show in explorer.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 42,
+  "source_revision": "e59e417e77dc97b9bddae7f5a6e9f8701e251f4090afbcb0729577a7562055f5",
+  "risk": "routine",
+  "auto_merge": true
+}

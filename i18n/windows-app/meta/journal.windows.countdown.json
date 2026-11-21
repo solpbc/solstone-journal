@@ -1,0 +1,21 @@
+{
+  "description": "Windows journal app countdown.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [
+    {
+      "name": "time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "407051bf6849610e6e99b74ba59c94ac6d48de107ee82d64fb7d5b6501752813",
+  "risk": "routine",
+  "auto_merge": true
+}

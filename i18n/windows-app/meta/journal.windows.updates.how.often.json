@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app updates how often.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "7989b404c7031cfb49ec8a716f8b3c00e7419a323711c6360df64835d970d17a",
+  "risk": "routine",
+  "auto_merge": true
+}

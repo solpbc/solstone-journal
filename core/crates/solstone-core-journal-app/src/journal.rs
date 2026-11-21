@@ -34,6 +34,9 @@ fn command(args: &[&str]) -> Command {
         .args(args)
         .stdin(Stdio::null())
         .creation_flags(CREATE_NO_WINDOW);
+    if args.first() == Some(&"setup-copy") {
+        command.env("SOLSTONE_LOCALE", crate::i18n::locale());
+    }
     command
 }
 
@@ -42,7 +45,7 @@ fn command(args: &[&str]) -> Command {
 pub fn run(args: &[&str]) -> Result<String, String> {
     let output = command(args)
         .output()
-        .map_err(|error| format!("couldn't run solstone journal: {error}"))?;
+        .map_err(|error| crate::i18n::strings("error.cli.run", &[("error", &error.to_string())]))?;
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     if output.status.success() {
         return Ok(stdout);
@@ -58,8 +61,8 @@ pub fn run(args: &[&str]) -> Result<String, String> {
                 .trim_start_matches("journal: ")
         })
         .find(|line| !line.is_empty())
-        .unwrap_or("journal didn't say why")
-        .to_owned();
+        .map(str::to_owned)
+        .unwrap_or_else(|| crate::i18n::text("error.cli.no.reason"));
     Err(reason)
 }
 
@@ -101,7 +104,8 @@ pub fn models_ready() -> Result<(), String> {
 /// Read setup copy without requiring a journal, as `solstone journal setup-copy --json` does.
 pub fn setup_copy() -> Result<serde_json::Value, String> {
     let text = run(&["setup-copy", "--json"])?;
-    serde_json::from_str(&text).map_err(|error| format!("invalid setup copy JSON: {error}"))
+    serde_json::from_str(&text)
+        .map_err(|error| crate::i18n::strings("error.setup.copy", &[("error", &error.to_string())]))
 }
 
 pub fn set_starts_at_sign_in(on: bool) -> Result<(), String> {
@@ -121,15 +125,16 @@ pub fn setup(
     mut progress: impl FnMut(SetupProgress),
 ) -> Result<Option<String>, String> {
     let mut cmd = Command::new(solstone_exe());
-    cmd.arg("journal")
+    cmd.env("SOLSTONE_LOCALE", crate::i18n::locale())
+        .arg("journal")
         .args(args)
         .stdin(Stdio::null())
         .creation_flags(CREATE_NO_WINDOW)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let mut child = cmd
-        .spawn()
-        .map_err(|error| format!("couldn't start setup: {error}"))?;
+    let mut child = cmd.spawn().map_err(|error| {
+        crate::i18n::strings("error.setup.start", &[("error", &error.to_string())])
+    })?;
     let stderr = child.stderr.take();
     let stderr_reader = std::thread::spawn(move || {
         let mut text = String::new();
@@ -154,9 +159,9 @@ pub fn setup(
             }
         }
     }
-    let status = child
-        .wait()
-        .map_err(|error| format!("setup didn't finish: {error}"))?;
+    let status = child.wait().map_err(|error| {
+        crate::i18n::strings("error.setup.wait", &[("error", &error.to_string())])
+    })?;
     let stderr = stderr_reader.join().unwrap_or_default();
     if status.success() {
         return Ok(None);
@@ -174,7 +179,7 @@ pub fn setup(
                 .find(|line| !line.is_empty())
                 .map(str::to_owned)
         })
-        .unwrap_or_else(|| "setup didn't finish".to_owned()))
+        .unwrap_or_else(|| crate::i18n::text("error.setup.unfinished")))
 }
 
 /// Whether `folder` already holds a journal, so setup adopts it in place

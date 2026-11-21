@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app steps service.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 42,
+  "source_revision": "ebe62ea5e11e5ce2360190fcd4959db889eb9c866d094d51c1f978b1f13a9a06",
+  "risk": "routine",
+  "auto_merge": true
+}

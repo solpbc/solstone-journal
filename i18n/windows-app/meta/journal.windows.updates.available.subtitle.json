@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app updates available subtitle.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 164,
+  "source_revision": "6e03c7e2696bb15bace6ff7e6529e57e4a6c8374f9ae5f1f7159d1f6d38db74f",
+  "risk": "routine",
+  "auto_merge": true
+}

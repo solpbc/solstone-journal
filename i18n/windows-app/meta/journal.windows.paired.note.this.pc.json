@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app paired note this pc.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 182,
+  "source_revision": "27a60458d1711743feb7b2a796a2ca73dc11d5e06bcf9c7fd155a865d6872716",
+  "risk": "routine",
+  "auto_merge": true
+}

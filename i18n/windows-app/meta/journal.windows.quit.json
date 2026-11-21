@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app quit.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "c20be37a9e17af146948a8003744050dffda18dad972676e547e856d2fd98264",
+  "risk": "routine",
+  "auto_merge": true
+}

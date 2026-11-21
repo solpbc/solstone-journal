@@ -1,0 +1,16 @@
+{
+  "description": "Error journal address.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 66,
+  "source_revision": "dcd77c26db4c07f86259081c95ab714eeee5b494c78148ed6f904d9c33c552f8",
+  "risk": "routine",
+  "auto_merge": true
+}

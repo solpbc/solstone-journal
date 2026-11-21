@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app pairing opening.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "d9c6cdca115c4d925a9f7ec0c783e4c513bb55a5bb5edc7f6fdb19c8d736b617",
+  "risk": "routine",
+  "auto_merge": true
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Error parameter missing.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "153329b78b8248d7048917f88366dc45d8b7c3de8d56d5bb7c2b12886d3b404b",
+  "risk": "routine",
+  "auto_merge": true
+}

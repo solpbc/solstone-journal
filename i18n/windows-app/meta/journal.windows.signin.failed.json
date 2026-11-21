@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app signin failed.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 42,
+  "source_revision": "bc5f3c3c9f1f9a7b85a971ee0dbe323ba5ec14a3fa84bf5b04c508884da0c486",
+  "risk": "routine",
+  "auto_merge": true
+}

@@ -275,6 +275,7 @@ fn create_environment(data_dir: &Path) -> Result<ICoreWebView2Environment, Strin
     // handler runs on this thread while `wait_with_pump` pumps its messages.
     unsafe {
         // No SmartScreen address checks: the window only shows built-in pages.
+        options.set_language(crate::i18n::locale().to_owned());
         options.set_additional_browser_arguments(
             "--disable-features=msSmartScreenProtection".to_owned(),
         );
@@ -327,10 +328,10 @@ fn create_controller(
 
 /// What the owner reads when Windows has no web view runtime to draw with.
 fn webview_runtime_missing() -> String {
-    "this PC is missing the Microsoft Edge WebView2 Runtime. install the WebView2 Runtime from Microsoft, then open journal again.".to_owned()
+    crate::i18n::text("error.runtime.missing")
 }
 
 /// Any other reason the window could not be drawn, with Windows' own words.
 fn window_failed(reason: impl std::fmt::Debug) -> String {
-    format!("the journal app couldn't open its window.\n{reason:?}")
+    crate::i18n::strings("error.window.open", &[("reason", &format!("{reason:?}"))])
 }

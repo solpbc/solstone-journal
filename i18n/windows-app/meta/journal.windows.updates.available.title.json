@@ -1,0 +1,21 @@
+{
+  "description": "Windows journal app updates available title.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [
+    {
+      "name": "target",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 64,
+  "source_revision": "49baa5fedc8bebf1040acae26a077df045fa8ec557d303fa43b3945f452f442c",
+  "risk": "routine",
+  "auto_merge": true
+}

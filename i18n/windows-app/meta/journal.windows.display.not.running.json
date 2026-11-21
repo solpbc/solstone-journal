@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app display not running.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "bd58e16a7b7b2dcb6b1461c89d630a20893bf50a67b9858ba0cd527e9dc4b9e2",
+  "risk": "routine",
+  "auto_merge": true
+}

@@ -16,19 +16,25 @@ const PNG_SIGNATURE: [u8; 8] = [0x89, b'P', b'N', b'G', b'\r', b'\n', 0x1A, b'\n
 /// side; anything else is refused rather than written as a broken icon.
 pub fn pack_png_icon(images: &[(u32, Vec<u8>)]) -> Result<Vec<u8>, String> {
     if images.is_empty() {
-        return Err("no icon images".to_owned());
+        return Err(crate::i18n::text("error.icon.empty"));
     }
     let mut sides = Vec::with_capacity(images.len());
     for (side, png) in images {
         if !ICON_SIDES.contains(side) || sides.contains(side) {
-            return Err(format!("unexpected icon size {side}"));
+            return Err(crate::i18n::strings(
+                "error.icon.size",
+                &[("side", &side.to_string())],
+            ));
         }
         if png_side(png) != Some((*side, *side)) {
-            return Err(format!("the {side} px icon image is not a {side} px PNG"));
+            return Err(crate::i18n::strings(
+                "error.icon.png",
+                &[("side", &side.to_string())],
+            ));
         }
         sides.push(*side);
     }
-    let count = u16::try_from(images.len()).map_err(|_| "too many icon images".to_owned())?;
+    let count = u16::try_from(images.len()).map_err(|_| crate::i18n::text("error.icon.count"))?;
     let directory = 6 + 16 * images.len();
     let mut out = Vec::new();
     out.extend_from_slice(&0_u16.to_le_bytes());

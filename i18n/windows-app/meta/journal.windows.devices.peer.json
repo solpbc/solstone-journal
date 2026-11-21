@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app devices peer.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "edf9fc3661f4321633bead8a846173e21f109d8760983ec889b7a9c4c3542f3f",
+  "risk": "routine",
+  "auto_merge": true
+}

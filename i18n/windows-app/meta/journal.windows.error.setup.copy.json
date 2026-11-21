@@ -1,0 +1,21 @@
+{
+  "description": "Error setup copy.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 70,
+  "source_revision": "52550129cf9267a4840a340b771556e57ef994d1fb7c47b3693e9a000c05bd46",
+  "risk": "routine",
+  "auto_merge": true
+}

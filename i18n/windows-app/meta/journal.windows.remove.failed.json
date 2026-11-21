@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app remove failed.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 54,
+  "source_revision": "0590f797a33c954704df90190165566626922d8f43c94aed92238ede67eada1b",
+  "risk": "routine",
+  "auto_merge": true
+}

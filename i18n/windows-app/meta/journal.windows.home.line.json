@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app home line.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 180,
+  "source_revision": "8bedb01019bdb184d37b5bb81ec951c74a5b75c18ea2f6049117f2afde3249e6",
+  "risk": "routine",
+  "auto_merge": true
+}

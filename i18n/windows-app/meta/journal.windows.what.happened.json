@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app what happened.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "6bc7e4389ba7bc03c5f06081715197c68f029a0cd68e255019bbfefbec32333f",
+  "risk": "routine",
+  "auto_merge": true
+}

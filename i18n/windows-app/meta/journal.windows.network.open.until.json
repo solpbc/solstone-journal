@@ -1,0 +1,16 @@
+{
+  "description": "Network open until.",
+  "context": "Explanation below the Windows devices pane network status.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 314,
+  "source_revision": "5b052f003f465b15eb0f1782c6d5438942fa109f72de449f5d164b82cc8e7ee0",
+  "risk": "routine",
+  "auto_merge": true
+}

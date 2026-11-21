@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app paired remove failed.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 134,
+  "source_revision": "082597f1433281ff359794cf47f73ec20531eccc49656167ea00f52ba6c26994",
+  "risk": "routine",
+  "auto_merge": true
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app pairing code.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "92e6be0dd9e3023223bad9dcf4424fc67ed5b3f6e692de42519db8d3e8283ea6",
+  "risk": "routine",
+  "auto_merge": true
+}

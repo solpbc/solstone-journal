@@ -1,0 +1,16 @@
+{
+  "description": "Network open direct.",
+  "context": "Explanation below the Windows devices pane network status.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 128,
+  "source_revision": "8c4e7e93a1edba3e57f71b81b0a60c4f72771adec4a9e903014dcb2521120e6c",
+  "risk": "routine",
+  "auto_merge": true
+}

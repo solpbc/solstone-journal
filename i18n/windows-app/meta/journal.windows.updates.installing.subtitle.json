@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app updates installing subtitle.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 78,
+  "source_revision": "755e9639c59cae8ec7420e51641f07ba5fe438031b7bd7c475b4b51d53587933",
+  "risk": "routine",
+  "auto_merge": true
+}

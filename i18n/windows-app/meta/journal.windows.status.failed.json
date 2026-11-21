@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app status failed.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 56,
+  "source_revision": "356c295dc091d452d49dbb84e9c85bc4b74c5f40e7159520a973348e371472f7",
+  "risk": "routine",
+  "auto_merge": true
+}

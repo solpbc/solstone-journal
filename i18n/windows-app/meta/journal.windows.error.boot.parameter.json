@@ -1,0 +1,16 @@
+{
+  "description": "Error boot parameter.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 64,
+  "source_revision": "7f7f285fd9fcf1356a3c307580ed7361f01e50b5aec8728a84dcbb5fb49088a1",
+  "risk": "routine",
+  "auto_merge": true
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Error redirect.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 62,
+  "source_revision": "ed1f118ac8863630bd5a83dd9a7ed3bc0af7b6faf4dd7bf4c217dc143eb9bb72",
+  "risk": "routine",
+  "auto_merge": true
+}

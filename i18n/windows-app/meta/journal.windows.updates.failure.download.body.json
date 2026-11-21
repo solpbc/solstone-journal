@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app updates failure download body.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 56,
+  "source_revision": "7839ddc38c51f626e9de4a843746524ed8c78d5ab9f1796cc0d7047383c79068",
+  "risk": "routine",
+  "auto_merge": true
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app restart.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "2a78c8984c102e6da80bc7aae1c495d66021664066a9dd115856ca86de729d18",
+  "risk": "routine",
+  "auto_merge": true
+}

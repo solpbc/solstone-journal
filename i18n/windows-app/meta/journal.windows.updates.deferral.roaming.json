@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app updates deferral roaming.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 110,
+  "source_revision": "9ef148f783047a8b9c7209c2dde86bb90c120bc5a7a1c58766aa2d5a15713216",
+  "risk": "routine",
+  "auto_merge": true
+}

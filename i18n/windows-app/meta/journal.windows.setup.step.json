@@ -1,0 +1,21 @@
+{
+  "description": "Windows journal app setup step.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [
+    {
+      "name": "n",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "e0be97892144185ddebc8c89563a5b3a8f18092b601623818477479f1d74467e",
+  "risk": "routine",
+  "auto_merge": true
+}

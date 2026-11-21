@@ -1,0 +1,21 @@
+{
+  "description": "Error shell open.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [
+    {
+      "name": "target",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 66,
+  "source_revision": "aea6c26404bb96f1df4c1af3ad78a19667866a13684d7b4f7b2cfb1408815e34",
+  "risk": "routine",
+  "auto_merge": true
+}

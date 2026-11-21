@@ -1,0 +1,21 @@
+{
+  "description": "Windows journal app updates downloading retains downloaded.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [
+    {
+      "name": "downloaded",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 136,
+  "source_revision": "289b0774a048b927ec0163601d7db5e13811ffcff4192981801068bdbafcf1f6",
+  "risk": "routine",
+  "auto_merge": true
+}

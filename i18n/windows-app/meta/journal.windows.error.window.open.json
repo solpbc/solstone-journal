@@ -1,0 +1,28 @@
+{
+  "description": "Error window open.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 106,
+  "source_revision": "cf9ca6cc1c8b2fbb0401fc42c2708adf8ac7ededa32bc2ba6d36eb67e005315d",
+  "risk": "routine",
+  "auto_merge": true,
+  "protected_slots": [
+    {
+      "name": "linebreak",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

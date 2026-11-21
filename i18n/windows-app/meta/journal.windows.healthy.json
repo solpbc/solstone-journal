@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app healthy.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "7aa2db79528c9fc7819ec38f3203d96e68bdaf4fd2ea3f54688c9c54d488a247",
+  "risk": "routine",
+  "auto_merge": true
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app paired unpair.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "b54afe5dd44cb339516496f47347aa83aa0d5078682dcdbf255a0756ad5b9e9f",
+  "risk": "routine",
+  "auto_merge": true
+}

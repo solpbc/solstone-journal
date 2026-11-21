@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app setup title.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 46,
+  "source_revision": "171e41b913654f876e968294cb5f264bf99c0a8bf080992049c1b6d3ee85756e",
+  "risk": "routine",
+  "auto_merge": true
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Windows journal app remove body.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 136,
+  "source_revision": "aa7d0a00b6a3711ddbeadf2db14125f1e2217106a9e9c63beb6843aee1fdfc47",
+  "risk": "consent",
+  "auto_merge": false
+}

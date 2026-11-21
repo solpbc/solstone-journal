@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app updates failure install missing.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 144,
+  "source_revision": "96923fff4c9c983673d03936ad9106a386bc87b6b3d23c0fa1345455399a0f4d",
+  "risk": "routine",
+  "auto_merge": true
+}

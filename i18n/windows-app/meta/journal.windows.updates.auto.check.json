@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app updates auto check.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 62,
+  "source_revision": "60ab51cbccf911ffbe7468d675575f6ffb352cc58f8125bdf48b1eadf87489f4",
+  "risk": "routine",
+  "auto_merge": true
+}

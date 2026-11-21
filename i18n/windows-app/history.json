@@ -1,0 +1,3381 @@
+{
+  "history_version": 1,
+  "records": [
+    {
+      "id": "journal.windows.add.device",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6164642e646576696365",
+      "namespace": "journal.windows.add",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.admin.terminal",
+      "resource": "m6a6f75726e616c2e77696e646f77732e61646d696e2e7465726d696e616c",
+      "namespace": "journal.windows.admin",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.adopt.landing.line",
+      "resource": "m6a6f75726e616c2e77696e646f77732e61646f70742e6c616e64696e672e6c696e65",
+      "namespace": "journal.windows.adopt.landing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.backup.line",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6261636b75702e6c696e65",
+      "namespace": "journal.windows.backup",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.backup.title",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6261636b75702e7469746c65",
+      "namespace": "journal.windows.backup",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.brand",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6272616e64",
+      "namespace": "journal.windows",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.browser.failed",
+      "resource": "m6a6f75726e616c2e77696e646f77732e62726f777365722e6661696c6564",
+      "namespace": "journal.windows.browser",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.browser.line",
+      "resource": "m6a6f75726e616c2e77696e646f77732e62726f777365722e6c696e65",
+      "namespace": "journal.windows.browser",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.browser.title",
+      "resource": "m6a6f75726e616c2e77696e646f77732e62726f777365722e7469746c65",
+      "namespace": "journal.windows.browser",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.cancel",
+      "resource": "m6a6f75726e616c2e77696e646f77732e63616e63656c",
+      "namespace": "journal.windows",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.choose.location",
+      "resource": "m6a6f75726e616c2e77696e646f77732e63686f6f73652e6c6f636174696f6e",
+      "namespace": "journal.windows.choose",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.close",
+      "resource": "m6a6f75726e616c2e77696e646f77732e636c6f7365",
+      "namespace": "journal.windows",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.confirmed.line",
+      "resource": "m6a6f75726e616c2e77696e646f77732e636f6e6669726d65642e6c696e65",
+      "namespace": "journal.windows.confirmed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.continue.button",
+      "resource": "m6a6f75726e616c2e77696e646f77732e636f6e74696e75652e627574746f6e",
+      "namespace": "journal.windows.continue",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.continue.in.solstone",
+      "resource": "m6a6f75726e616c2e77696e646f77732e636f6e74696e75652e696e2e736f6c73746f6e65",
+      "namespace": "journal.windows.continue.in",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.copied",
+      "resource": "m6a6f75726e616c2e77696e646f77732e636f70696564",
+      "namespace": "journal.windows",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.copied.about",
+      "resource": "m6a6f75726e616c2e77696e646f77732e636f706965642e61626f7574",
+      "namespace": "journal.windows.copied",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.copy.about",
+      "resource": "m6a6f75726e616c2e77696e646f77732e636f70792e61626f7574",
+      "namespace": "journal.windows.copy",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.copy.about.failed",
+      "resource": "m6a6f75726e616c2e77696e646f77732e636f70792e61626f75742e6661696c6564",
+      "namespace": "journal.windows.copy.about",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.copy.link",
+      "resource": "m6a6f75726e616c2e77696e646f77732e636f70792e6c696e6b",
+      "namespace": "journal.windows.copy",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.countdown",
+      "resource": "m6a6f75726e616c2e77696e646f77732e636f756e74646f776e",
+      "namespace": "journal.windows",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "time",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.devices.empty.body",
+      "resource": "m6a6f75726e616c2e77696e646f77732e646576696365732e656d7074792e626f6479",
+      "namespace": "journal.windows.devices.empty",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.devices.empty.title",
+      "resource": "m6a6f75726e616c2e77696e646f77732e646576696365732e656d7074792e7469746c65",
+      "namespace": "journal.windows.devices.empty",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.devices.load.failed",
+      "resource": "m6a6f75726e616c2e77696e646f77732e646576696365732e6c6f61642e6661696c6564",
+      "namespace": "journal.windows.devices.load",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.devices.loading",
+      "resource": "m6a6f75726e616c2e77696e646f77732e646576696365732e6c6f6164696e67",
+      "namespace": "journal.windows.devices",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.devices.not.running.body",
+      "resource": "m6a6f75726e616c2e77696e646f77732e646576696365732e6e6f742e72756e6e696e672e626f6479",
+      "namespace": "journal.windows.devices.not.running",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.devices.not.running.title",
+      "resource": "m6a6f75726e616c2e77696e646f77732e646576696365732e6e6f742e72756e6e696e672e7469746c65",
+      "namespace": "journal.windows.devices.not.running",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.devices.peer",
+      "resource": "m6a6f75726e616c2e77696e646f77732e646576696365732e70656572",
+      "namespace": "journal.windows.devices",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.devices.title",
+      "resource": "m6a6f75726e616c2e77696e646f77732e646576696365732e7469746c65",
+      "namespace": "journal.windows.devices",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.disk.used",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6469736b2e75736564",
+      "namespace": "journal.windows.disk",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.display.not.running",
+      "resource": "m6a6f75726e616c2e77696e646f77732e646973706c61792e6e6f742e72756e6e696e67",
+      "namespace": "journal.windows.display.not",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.display.other.account",
+      "resource": "m6a6f75726e616c2e77696e646f77732e646973706c61792e6f746865722e6163636f756e74",
+      "namespace": "journal.windows.display.other",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.display.running",
+      "resource": "m6a6f75726e616c2e77696e646f77732e646973706c61792e72756e6e696e67",
+      "namespace": "journal.windows.display",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.display.starting",
+      "resource": "m6a6f75726e616c2e77696e646f77732e646973706c61792e7374617274696e67",
+      "namespace": "journal.windows.display",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.display.stopped",
+      "resource": "m6a6f75726e616c2e77696e646f77732e646973706c61792e73746f70706564",
+      "namespace": "journal.windows.display",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.display.stopping",
+      "resource": "m6a6f75726e616c2e77696e646f77732e646973706c61792e73746f7070696e67",
+      "namespace": "journal.windows.display",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.download.solstone",
+      "resource": "m6a6f75726e616c2e77696e646f77732e646f776e6c6f61642e736f6c73746f6e65",
+      "namespace": "journal.windows.download",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.downloads.progress",
+      "resource": "m6a6f75726e616c2e77696e646f77732e646f776e6c6f6164732e70726f6772657373",
+      "namespace": "journal.windows.downloads",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "done",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.boot.parameter",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e626f6f742e706172616d65746572",
+      "namespace": "journal.windows.error.boot",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.cli.no.reason",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e636c692e6e6f2e726561736f6e",
+      "namespace": "journal.windows.error.cli.no",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.cli.run",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e636c692e72756e",
+      "namespace": "journal.windows.error.cli",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "solstone journal"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.download.changed",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e646f776e6c6f61642e6368616e676564",
+      "namespace": "journal.windows.error.download",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.flow.intent",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e666c6f772e696e74656e74",
+      "namespace": "journal.windows.error.flow",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "intent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.folder.missing",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e666f6c6465722e6d697373696e67",
+      "namespace": "journal.windows.error.folder",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.folder.required",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e666f6c6465722e7265717569726564",
+      "namespace": "journal.windows.error.folder",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.handoff.failed",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e68616e646f66662e6661696c6564",
+      "namespace": "journal.windows.error.handoff",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.icon.bytes",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e69636f6e2e6279746573",
+      "namespace": "journal.windows.error.icon",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.icon.count",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e69636f6e2e636f756e74",
+      "namespace": "journal.windows.error.icon",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.icon.empty",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e69636f6e2e656d707479",
+      "namespace": "journal.windows.error.icon",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.icon.no.image",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e69636f6e2e6e6f2e696d616765",
+      "namespace": "journal.windows.error.icon.no",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.icon.no.size",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e69636f6e2e6e6f2e73697a65",
+      "namespace": "journal.windows.error.icon.no",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.icon.png",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e69636f6e2e706e67",
+      "namespace": "journal.windows.error.icon",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "side",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.icon.size",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e69636f6e2e73697a65",
+      "namespace": "journal.windows.error.icon",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "side",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.journal.address",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e6a6f75726e616c2e61646472657373",
+      "namespace": "journal.windows.error.journal",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.journal.offline",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e6a6f75726e616c2e6f66666c696e65",
+      "namespace": "journal.windows.error.journal",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.journal.response",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e6a6f75726e616c2e726573706f6e7365",
+      "namespace": "journal.windows.error.journal",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "status",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.mark.changed",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e6d61726b2e6368616e676564",
+      "namespace": "journal.windows.error.mark",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.page.unsupported",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e706167652e756e737570706f72746564",
+      "namespace": "journal.windows.error.page",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.pairing.link",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e70616972696e672e6c696e6b",
+      "namespace": "journal.windows.error.pairing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.parameter.missing",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e706172616d657465722e6d697373696e67",
+      "namespace": "journal.windows.error.parameter",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.redirect",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e7265646972656374",
+      "namespace": "journal.windows.error",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.request.unknown",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e726571756573742e756e6b6e6f776e",
+      "namespace": "journal.windows.error.request",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "command",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.route.unknown",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e726f7574652e756e6b6e6f776e",
+      "namespace": "journal.windows.error.route",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "method",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.runtime.missing",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e72756e74696d652e6d697373696e67",
+      "namespace": "journal.windows.error.runtime",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.setup.actions",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e73657475702e616374696f6e73",
+      "namespace": "journal.windows.error.setup",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.setup.copy",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e73657475702e636f7079",
+      "namespace": "journal.windows.error.setup",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.setup.sequence",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e73657475702e73657175656e6365",
+      "namespace": "journal.windows.error.setup",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.setup.start",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e73657475702e7374617274",
+      "namespace": "journal.windows.error.setup",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.setup.state",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e73657475702e7374617465",
+      "namespace": "journal.windows.error.setup",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.setup.unfinished",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e73657475702e756e66696e6973686564",
+      "namespace": "journal.windows.error.setup",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.setup.wait",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e73657475702e77616974",
+      "namespace": "journal.windows.error.setup",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.shell.open",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e7368656c6c2e6f70656e",
+      "namespace": "journal.windows.error.shell",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "target",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.signin.open",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e7369676e696e2e6f70656e",
+      "namespace": "journal.windows.error.signin",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "opened",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.signin.write",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e7369676e696e2e7772697465",
+      "namespace": "journal.windows.error.signin",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "result",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.status.missing",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e7374617475732e6d697373696e67",
+      "namespace": "journal.windows.error.status",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.status.schema",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e7374617475732e736368656d61",
+      "namespace": "journal.windows.error.status",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "schema",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.step.save",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e737465702e73617665",
+      "namespace": "journal.windows.error.step",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.terminal.open",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e7465726d696e616c2e6f70656e",
+      "namespace": "journal.windows.error.terminal",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.thinking.choice",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e7468696e6b696e672e63686f696365",
+      "namespace": "journal.windows.error.thinking",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.thinking.unavailable",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e7468696e6b696e672e756e617661696c61626c65",
+      "namespace": "journal.windows.error.thinking",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.error.window.open",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6572726f722e77696e646f772e6f70656e",
+      "namespace": "journal.windows.error.window",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "reason",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "linebreak",
+          "kind": "whitespace",
+          "value": "\n"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.health",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6865616c7468",
+      "namespace": "journal.windows",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.healthy",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6865616c746879",
+      "namespace": "journal.windows",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.home.line",
+      "resource": "m6a6f75726e616c2e77696e646f77732e686f6d652e6c696e65",
+      "namespace": "journal.windows.home",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.home.title",
+      "resource": "m6a6f75726e616c2e77696e646f77732e686f6d652e7469746c65",
+      "namespace": "journal.windows.home",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.journal.found",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6a6f75726e616c2e666f756e64",
+      "namespace": "journal.windows.journal",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.last.seen",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6c6173742e7365656e",
+      "namespace": "journal.windows.last",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "relative",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.last.seen.just.now",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6c6173742e7365656e2e6a7573742e6e6f77",
+      "namespace": "journal.windows.last.seen.just",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.last.seen.just.now.paired",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6c6173742e7365656e2e6a7573742e6e6f772e706169726564",
+      "namespace": "journal.windows.last.seen.just.now",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "date",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.last.seen.paired",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6c6173742e7365656e2e706169726564",
+      "namespace": "journal.windows.last.seen",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "relative",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "date",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.last.seen.unknown",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6c6173742e7365656e2e756e6b6e6f776e",
+      "namespace": "journal.windows.last.seen",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.last.seen.unknown.paired",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6c6173742e7365656e2e756e6b6e6f776e2e706169726564",
+      "namespace": "journal.windows.last.seen.unknown",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "date",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.link.expired.body",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6c696e6b2e657870697265642e626f6479",
+      "namespace": "journal.windows.link.expired",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.link.expired.title",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6c696e6b2e657870697265642e7469746c65",
+      "namespace": "journal.windows.link.expired",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.location",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6c6f636174696f6e",
+      "namespace": "journal.windows",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.location.title",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6c6f636174696f6e2e7469746c65",
+      "namespace": "journal.windows.location",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.mark.empty.name",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6d61726b2e656d7074792e6e616d65",
+      "namespace": "journal.windows.mark.empty",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.mark.name",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6d61726b2e6e616d65",
+      "namespace": "journal.windows.mark",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "first",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "second",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "words",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.mark.placeholder.words",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6d61726b2e706c616365686f6c6465722e776f726473",
+      "namespace": "journal.windows.mark.placeholder",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.mark.unavailable.name",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6d61726b2e756e617661696c61626c652e6e616d65",
+      "namespace": "journal.windows.mark.unavailable",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.mark.unavailable.words",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6d61726b2e756e617661696c61626c652e776f726473",
+      "namespace": "journal.windows.mark.unavailable",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.models.downloading",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6d6f64656c732e646f776e6c6f6164696e67",
+      "namespace": "journal.windows.models",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.models.missing",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6d6f64656c732e6d697373696e67",
+      "namespace": "journal.windows.models",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.network.close.confirm",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6e6574776f726b2e636c6f73652e636f6e6669726d",
+      "namespace": "journal.windows.network.close",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.network.close.cta",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6e6574776f726b2e636c6f73652e637461",
+      "namespace": "journal.windows.network.close",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.network.closed",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6e6574776f726b2e636c6f736564",
+      "namespace": "journal.windows.network",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.network.closed.help",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6e6574776f726b2e636c6f7365642e68656c70",
+      "namespace": "journal.windows.network.closed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.network.closed.help.windows",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6e6574776f726b2e636c6f7365642e68656c702e77696e646f7773",
+      "namespace": "journal.windows.network.closed.help",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.network.failed",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6e6574776f726b2e6661696c6564",
+      "namespace": "journal.windows.network",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.network.not.reachable",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6e6574776f726b2e6e6f742e726561636861626c65",
+      "namespace": "journal.windows.network.not",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.network.open",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6e6574776f726b2e6f70656e",
+      "namespace": "journal.windows.network",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.network.open.agents",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6e6574776f726b2e6f70656e2e6167656e7473",
+      "namespace": "journal.windows.network.open",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.network.open.agents.windows",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6e6574776f726b2e6f70656e2e6167656e74732e77696e646f7773",
+      "namespace": "journal.windows.network.open.agents",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.network.open.cta",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6e6574776f726b2e6f70656e2e637461",
+      "namespace": "journal.windows.network.open",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.network.open.direct",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6e6574776f726b2e6f70656e2e646972656374",
+      "namespace": "journal.windows.network.open",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.network.open.direct.windows",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6e6574776f726b2e6f70656e2e6469726563742e77696e646f7773",
+      "namespace": "journal.windows.network.open.direct",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.network.open.until",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6e6574776f726b2e6f70656e2e756e74696c",
+      "namespace": "journal.windows.network.open",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.network.open.until.windows",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6e6574776f726b2e6f70656e2e756e74696c2e77696e646f7773",
+      "namespace": "journal.windows.network.open.until",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.never.connected",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6e657665722e636f6e6e6563746564",
+      "namespace": "journal.windows.never",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.never.connected.paired",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6e657665722e636f6e6e65637465642e706169726564",
+      "namespace": "journal.windows.never.connected",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "date",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.open.backup",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6f70656e2e6261636b7570",
+      "namespace": "journal.windows.open",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.open.browser",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6f70656e2e62726f77736572",
+      "namespace": "journal.windows.open",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.open.fresh.link",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6f70656e2e66726573682e6c696e6b",
+      "namespace": "journal.windows.open.fresh",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.open.journal",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6f70656e2e6a6f75726e616c",
+      "namespace": "journal.windows.open",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.other.account.body",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6f746865722e6163636f756e742e626f6479",
+      "namespace": "journal.windows.other.account",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.other.account.title",
+      "resource": "m6a6f75726e616c2e77696e646f77732e6f746865722e6163636f756e742e7469746c65",
+      "namespace": "journal.windows.other.account",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.pair.this.pc",
+      "resource": "m6a6f75726e616c2e77696e646f77732e706169722e746869732e7063",
+      "namespace": "journal.windows.pair.this",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.paired.done",
+      "resource": "m6a6f75726e616c2e77696e646f77732e7061697265642e646f6e65",
+      "namespace": "journal.windows.paired",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.paired.heading",
+      "resource": "m6a6f75726e616c2e77696e646f77732e7061697265642e68656164696e67",
+      "namespace": "journal.windows.paired",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "label",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.paired.heading.unnamed",
+      "resource": "m6a6f75726e616c2e77696e646f77732e7061697265642e68656164696e672e756e6e616d6564",
+      "namespace": "journal.windows.paired.heading",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.paired.note",
+      "resource": "m6a6f75726e616c2e77696e646f77732e7061697265642e6e6f7465",
+      "namespace": "journal.windows.paired",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.paired.note.anywhere",
+      "resource": "m6a6f75726e616c2e77696e646f77732e7061697265642e6e6f74652e616e797768657265",
+      "namespace": "journal.windows.paired.note",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.paired.note.this.pc",
+      "resource": "m6a6f75726e616c2e77696e646f77732e7061697265642e6e6f74652e746869732e7063",
+      "namespace": "journal.windows.paired.note.this",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.paired.remove.failed",
+      "resource": "m6a6f75726e616c2e77696e646f77732e7061697265642e72656d6f76652e6661696c6564",
+      "namespace": "journal.windows.paired.remove",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.paired.removed",
+      "resource": "m6a6f75726e616c2e77696e646f77732e7061697265642e72656d6f766564",
+      "namespace": "journal.windows.paired",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.paired.unpair",
+      "resource": "m6a6f75726e616c2e77696e646f77732e7061697265642e756e70616972",
+      "namespace": "journal.windows.paired",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.pairing.closed",
+      "resource": "m6a6f75726e616c2e77696e646f77732e70616972696e672e636c6f736564",
+      "namespace": "journal.windows.pairing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.pairing.code",
+      "resource": "m6a6f75726e616c2e77696e646f77732e70616972696e672e636f6465",
+      "namespace": "journal.windows.pairing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.pairing.failed.title",
+      "resource": "m6a6f75726e616c2e77696e646f77732e70616972696e672e6661696c65642e7469746c65",
+      "namespace": "journal.windows.pairing.failed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.pairing.instructions",
+      "resource": "m6a6f75726e616c2e77696e646f77732e70616972696e672e696e737472756374696f6e73",
+      "namespace": "journal.windows.pairing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.pairing.opening",
+      "resource": "m6a6f75726e616c2e77696e646f77732e70616972696e672e6f70656e696e67",
+      "namespace": "journal.windows.pairing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.pairing.this.pc",
+      "resource": "m6a6f75726e616c2e77696e646f77732e70616972696e672e746869732e7063",
+      "namespace": "journal.windows.pairing.this",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.pairing.this.pc.copy",
+      "resource": "m6a6f75726e616c2e77696e646f77732e70616972696e672e746869732e70632e636f7079",
+      "namespace": "journal.windows.pairing.this.pc",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.panes.backup",
+      "resource": "m6a6f75726e616c2e77696e646f77732e70616e65732e6261636b7570",
+      "namespace": "journal.windows.panes",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.panes.devices",
+      "resource": "m6a6f75726e616c2e77696e646f77732e70616e65732e64657669636573",
+      "namespace": "journal.windows.panes",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.panes.home",
+      "resource": "m6a6f75726e616c2e77696e646f77732e70616e65732e686f6d65",
+      "namespace": "journal.windows.panes",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.panes.journal",
+      "resource": "m6a6f75726e616c2e77696e646f77732e70616e65732e6a6f75726e616c",
+      "namespace": "journal.windows.panes",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.panes.run",
+      "resource": "m6a6f75726e616c2e77696e646f77732e70616e65732e72756e",
+      "namespace": "journal.windows.panes",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.panes.startup",
+      "resource": "m6a6f75726e616c2e77696e646f77732e70616e65732e73746172747570",
+      "namespace": "journal.windows.panes",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.panes.updates",
+      "resource": "m6a6f75726e616c2e77696e646f77732e70616e65732e75706461746573",
+      "namespace": "journal.windows.panes",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.peer.journals",
+      "resource": "m6a6f75726e616c2e77696e646f77732e706565722e6a6f75726e616c73",
+      "namespace": "journal.windows.peer",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.quit",
+      "resource": "m6a6f75726e616c2e77696e646f77732e71756974",
+      "namespace": "journal.windows",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.quitting",
+      "resource": "m6a6f75726e616c2e77696e646f77732e7175697474696e67",
+      "namespace": "journal.windows",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.relay.setup",
+      "resource": "m6a6f75726e616c2e77696e646f77732e72656c61792e7365747570",
+      "namespace": "journal.windows.relay",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.remove",
+      "resource": "m6a6f75726e616c2e77696e646f77732e72656d6f7665",
+      "namespace": "journal.windows",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.remove.body",
+      "resource": "m6a6f75726e616c2e77696e646f77732e72656d6f76652e626f6479",
+      "namespace": "journal.windows.remove",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.remove.failed",
+      "resource": "m6a6f75726e616c2e77696e646f77732e72656d6f76652e6661696c6564",
+      "namespace": "journal.windows.remove",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.remove.title",
+      "resource": "m6a6f75726e616c2e77696e646f77732e72656d6f76652e7469746c65",
+      "namespace": "journal.windows.remove",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.restart",
+      "resource": "m6a6f75726e616c2e77696e646f77732e72657374617274",
+      "namespace": "journal.windows",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.run.state.link",
+      "resource": "m6a6f75726e616c2e77696e646f77732e72756e2e73746174652e6c696e6b",
+      "namespace": "journal.windows.run.state",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.setup.app.term",
+      "resource": "m6a6f75726e616c2e77696e646f77732e73657475702e6170702e7465726d",
+      "namespace": "journal.windows.setup.app",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.setup.app.text",
+      "resource": "m6a6f75726e616c2e77696e646f77732e73657475702e6170702e74657874",
+      "namespace": "journal.windows.setup.app",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.setup.band",
+      "resource": "m6a6f75726e616c2e77696e646f77732e73657475702e62616e64",
+      "namespace": "journal.windows.setup",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.setup.fits.title",
+      "resource": "m6a6f75726e616c2e77696e646f77732e73657475702e666974732e7469746c65",
+      "namespace": "journal.windows.setup.fits",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.setup.folder.label",
+      "resource": "m6a6f75726e616c2e77696e646f77732e73657475702e666f6c6465722e6c6162656c",
+      "namespace": "journal.windows.setup.folder",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.setup.folder.text",
+      "resource": "m6a6f75726e616c2e77696e646f77732e73657475702e666f6c6465722e74657874",
+      "namespace": "journal.windows.setup.folder",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.setup.folder.title",
+      "resource": "m6a6f75726e616c2e77696e646f77732e73657475702e666f6c6465722e7469746c65",
+      "namespace": "journal.windows.setup.folder",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.setup.journal.term",
+      "resource": "m6a6f75726e616c2e77696e646f77732e73657475702e6a6f75726e616c2e7465726d",
+      "namespace": "journal.windows.setup.journal",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.setup.journal.text",
+      "resource": "m6a6f75726e616c2e77696e646f77732e73657475702e6a6f75726e616c2e74657874",
+      "namespace": "journal.windows.setup.journal",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.setup.local.desc",
+      "resource": "m6a6f75726e616c2e77696e646f77732e73657475702e6c6f63616c2e64657363",
+      "namespace": "journal.windows.setup.local",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.setup.on.this.pc",
+      "resource": "m6a6f75726e616c2e77696e646f77732e73657475702e6f6e2e746869732e7063",
+      "namespace": "journal.windows.setup.on.this",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.setup.sign.in",
+      "resource": "m6a6f75726e616c2e77696e646f77732e73657475702e7369676e2e696e",
+      "namespace": "journal.windows.setup.sign",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.setup.start",
+      "resource": "m6a6f75726e616c2e77696e646f77732e73657475702e7374617274",
+      "namespace": "journal.windows.setup",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.setup.step",
+      "resource": "m6a6f75726e616c2e77696e646f77732e73657475702e73746570",
+      "namespace": "journal.windows.setup",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "n",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.setup.stopped",
+      "resource": "m6a6f75726e616c2e77696e646f77732e73657475702e73746f70706564",
+      "namespace": "journal.windows.setup",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.setup.subtitle",
+      "resource": "m6a6f75726e616c2e77696e646f77732e73657475702e7375627469746c65",
+      "namespace": "journal.windows.setup",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.setup.thinking.lead",
+      "resource": "m6a6f75726e616c2e77696e646f77732e73657475702e7468696e6b696e672e6c656164",
+      "namespace": "journal.windows.setup.thinking",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.setup.thinking.term",
+      "resource": "m6a6f75726e616c2e77696e646f77732e73657475702e7468696e6b696e672e7465726d",
+      "namespace": "journal.windows.setup.thinking",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.setup.thinking.text",
+      "resource": "m6a6f75726e616c2e77696e646f77732e73657475702e7468696e6b696e672e74657874",
+      "namespace": "journal.windows.setup.thinking",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.setup.thinking.title",
+      "resource": "m6a6f75726e616c2e77696e646f77732e73657475702e7468696e6b696e672e7469746c65",
+      "namespace": "journal.windows.setup.thinking",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.setup.title",
+      "resource": "m6a6f75726e616c2e77696e646f77732e73657475702e7469746c65",
+      "namespace": "journal.windows.setup",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.show.in.explorer",
+      "resource": "m6a6f75726e616c2e77696e646f77732e73686f772e696e2e6578706c6f726572",
+      "namespace": "journal.windows.show.in",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.signin.failed",
+      "resource": "m6a6f75726e616c2e77696e646f77732e7369676e696e2e6661696c6564",
+      "namespace": "journal.windows.signin",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.size.bytes",
+      "resource": "m6a6f75726e616c2e77696e646f77732e73697a652e6279746573",
+      "namespace": "journal.windows.size",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.windows.size.gb",
+      "resource": "m6a6f75726e616c2e77696e646f77732e73697a652e6762",
+      "namespace": "journal.windows.size",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "value",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.size.kb",
+      "resource": "m6a6f75726e616c2e77696e646f77732e73697a652e6b62",
+      "namespace": "journal.windows.size",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "value",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.size.mb",
+      "resource": "m6a6f75726e616c2e77696e646f77732e73697a652e6d62",
+      "namespace": "journal.windows.size",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "value",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.size.tb",
+      "resource": "m6a6f75726e616c2e77696e646f77732e73697a652e7462",
+      "namespace": "journal.windows.size",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "value",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.start",
+      "resource": "m6a6f75726e616c2e77696e646f77732e7374617274",
+      "namespace": "journal.windows",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.start.at.sign.in",
+      "resource": "m6a6f75726e616c2e77696e646f77732e73746172742e61742e7369676e2e696e",
+      "namespace": "journal.windows.start.at.sign",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.startup.title",
+      "resource": "m6a6f75726e616c2e77696e646f77732e737461727475702e7469746c65",
+      "namespace": "journal.windows.startup",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.status.failed",
+      "resource": "m6a6f75726e616c2e77696e646f77732e7374617475732e6661696c6564",
+      "namespace": "journal.windows.status",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.steps.brain",
+      "resource": "m6a6f75726e616c2e77696e646f77732e73746570732e627261696e",
+      "namespace": "journal.windows.steps",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.steps.doctor",
+      "resource": "m6a6f75726e616c2e77696e646f77732e73746570732e646f63746f72",
+      "namespace": "journal.windows.steps",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.steps.install.models",
+      "resource": "m6a6f75726e616c2e77696e646f77732e73746570732e696e7374616c6c2e6d6f64656c73",
+      "namespace": "journal.windows.steps.install",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.steps.journal",
+      "resource": "m6a6f75726e616c2e77696e646f77732e73746570732e6a6f75726e616c",
+      "namespace": "journal.windows.steps",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.steps.service",
+      "resource": "m6a6f75726e616c2e77696e646f77732e73746570732e73657276696365",
+      "namespace": "journal.windows.steps",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.stop",
+      "resource": "m6a6f75726e616c2e77696e646f77732e73746f70",
+      "namespace": "journal.windows",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.title",
+      "resource": "m6a6f75726e616c2e77696e646f77732e7469746c65",
+      "namespace": "journal.windows",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.try.again",
+      "resource": "m6a6f75726e616c2e77696e646f77732e7472792e616761696e",
+      "namespace": "journal.windows.try",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.unknown",
+      "resource": "m6a6f75726e616c2e77696e646f77732e756e6b6e6f776e",
+      "namespace": "journal.windows",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.unnamed.device",
+      "resource": "m6a6f75726e616c2e77696e646f77732e756e6e616d65642e646576696365",
+      "namespace": "journal.windows.unnamed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.auto.check",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e6175746f2e636865636b",
+      "namespace": "journal.windows.updates.auto",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.auto.download",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e6175746f2e646f776e6c6f6164",
+      "namespace": "journal.windows.updates.auto",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.automatic",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e6175746f6d61746963",
+      "namespace": "journal.windows.updates",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.available.subtitle",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e617661696c61626c652e7375627469746c65",
+      "namespace": "journal.windows.updates.available",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.available.title",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e617661696c61626c652e7469746c65",
+      "namespace": "journal.windows.updates.available",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "target",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.check.again",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e636865636b2e616761696e",
+      "namespace": "journal.windows.updates.check",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.check.now",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e636865636b2e6e6f77",
+      "namespace": "journal.windows.updates.check",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.checking",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e636865636b696e67",
+      "namespace": "journal.windows.updates",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.checking.with.downloaded",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e636865636b696e672e776974682e646f776e6c6f61646564",
+      "namespace": "journal.windows.updates.checking.with",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "downloaded",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.day",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e646179",
+      "namespace": "journal.windows.updates",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.deferral.metered",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e646566657272616c2e6d657465726564",
+      "namespace": "journal.windows.updates.deferral",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.deferral.restricted",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e646566657272616c2e72657374726963746564",
+      "namespace": "journal.windows.updates.deferral",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.deferral.roaming",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e646566657272616c2e726f616d696e67",
+      "namespace": "journal.windows.updates.deferral",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.deferral.unknown",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e646566657272616c2e756e6b6e6f776e",
+      "namespace": "journal.windows.updates.deferral",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.download",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e646f776e6c6f6164",
+      "namespace": "journal.windows.updates",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.downloading.retains.downloaded",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e646f776e6c6f6164696e672e72657461696e732e646f776e6c6f61646564",
+      "namespace": "journal.windows.updates.downloading.retains",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "downloaded",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.downloading.title",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e646f776e6c6f6164696e672e7469746c65",
+      "namespace": "journal.windows.updates.downloading",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "target",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.failure.check.body",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e6661696c7572652e636865636b2e626f6479",
+      "namespace": "journal.windows.updates.failure.check",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.failure.check.retained.body",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e6661696c7572652e636865636b2e72657461696e65642e626f6479",
+      "namespace": "journal.windows.updates.failure.check.retained",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.failure.check.title",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e6661696c7572652e636865636b2e7469746c65",
+      "namespace": "journal.windows.updates.failure.check",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.failure.download.body",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e6661696c7572652e646f776e6c6f61642e626f6479",
+      "namespace": "journal.windows.updates.failure.download",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.failure.download.retained.body",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e6661696c7572652e646f776e6c6f61642e72657461696e65642e626f6479",
+      "namespace": "journal.windows.updates.failure.download.retained",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "downloaded",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.failure.download.title",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e6661696c7572652e646f776e6c6f61642e7469746c65",
+      "namespace": "journal.windows.updates.failure.download",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.failure.install.body",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e6661696c7572652e696e7374616c6c2e626f6479",
+      "namespace": "journal.windows.updates.failure.install",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.failure.install.missing",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e6661696c7572652e696e7374616c6c2e6d697373696e67",
+      "namespace": "journal.windows.updates.failure.install",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.failure.install.title",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e6661696c7572652e696e7374616c6c2e7469746c65",
+      "namespace": "journal.windows.updates.failure.install",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.failure.stop.body",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e6661696c7572652e73746f702e626f6479",
+      "namespace": "journal.windows.updates.failure.stop",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.failure.stop.title",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e6661696c7572652e73746f702e7469746c65",
+      "namespace": "journal.windows.updates.failure.stop",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.header",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e686561646572",
+      "namespace": "journal.windows.updates",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "version",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.how.often",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e686f772e6f6674656e",
+      "namespace": "journal.windows.updates.how",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.install",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e696e7374616c6c",
+      "namespace": "journal.windows.updates",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.installing.subtitle",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e696e7374616c6c696e672e7375627469746c65",
+      "namespace": "journal.windows.updates.installing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.installing.title",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e696e7374616c6c696e672e7469746c65",
+      "namespace": "journal.windows.updates.installing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "downloaded",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.just.now",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e6a7573742e6e6f77",
+      "namespace": "journal.windows.updates.just",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.last.checked",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e6c6173742e636865636b6564",
+      "namespace": "journal.windows.updates.last",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "relative",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.month",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e6d6f6e7468",
+      "namespace": "journal.windows.updates",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.never.checked",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e6e657665722e636865636b6564",
+      "namespace": "journal.windows.updates.never",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.privacy",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e70726976616379",
+      "namespace": "journal.windows.updates",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.ready.title",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e72656164792e7469746c65",
+      "namespace": "journal.windows.updates.ready",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "downloaded",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.retry.check",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e72657472792e636865636b",
+      "namespace": "journal.windows.updates.retry",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.retry.download",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e72657472792e646f776e6c6f6164",
+      "namespace": "journal.windows.updates.retry",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.unavailable.subtitle",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e756e617661696c61626c652e7375627469746c65",
+      "namespace": "journal.windows.updates.unavailable",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.unavailable.title",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e756e617661696c61626c652e7469746c65",
+      "namespace": "journal.windows.updates.unavailable",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.up.to.date",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e75702e746f2e64617465",
+      "namespace": "journal.windows.updates.up.to",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.updates.week",
+      "resource": "m6a6f75726e616c2e77696e646f77732e757064617465732e7765656b",
+      "namespace": "journal.windows.updates",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.what.happened",
+      "resource": "m6a6f75726e616c2e77696e646f77732e776861742e68617070656e6564",
+      "namespace": "journal.windows.what",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.windows.your.devices",
+      "resource": "m6a6f75726e616c2e77696e646f77732e796f75722e64657669636573",
+      "namespace": "journal.windows.your",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app setup stopped.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 66,
+  "source_revision": "4145781059e1acf60f56510645c75883fa5f13843f3fb3eb4a2f0796c34515c2",
+  "risk": "routine",
+  "auto_merge": true
+}

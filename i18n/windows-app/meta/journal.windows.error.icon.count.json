@@ -1,0 +1,16 @@
+{
+  "description": "Error icon count.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "89a66fa20efd11cb0857bc5be4168e778d9bd38eda468b93b15e188f4f929b5c",
+  "risk": "routine",
+  "auto_merge": true
+}

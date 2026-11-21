@@ -1,0 +1,16 @@
+{
+  "description": "Error thinking unavailable.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 88,
+  "source_revision": "0ce9b1eec554366cfdde4da72a396155c0c89f1cd417206439cc51fc6fb7cbba",
+  "risk": "routine",
+  "auto_merge": true
+}

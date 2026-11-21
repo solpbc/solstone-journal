@@ -1,0 +1,16 @@
+{
+  "description": "Error pairing link.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 50,
+  "source_revision": "77fccdfd7000edcb93e7c603bea684baed487f8096e9b3370a39286e91d89cff",
+  "risk": "routine",
+  "auto_merge": true
+}

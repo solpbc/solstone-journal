@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app browser failed.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 50,
+  "source_revision": "861ee9229a20613a3c9a81f54bd0b9d8540225de51bf7cc2b8ce6ef2c5e22872",
+  "risk": "routine",
+  "auto_merge": true
+}

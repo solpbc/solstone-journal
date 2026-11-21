@@ -1,0 +1,21 @@
+{
+  "description": "Error signin open.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [
+    {
+      "name": "opened",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 116,
+  "source_revision": "40abbd58c815bbce6029fde6db3676e1bb85c3d364f1d37aea3103095a031c8e",
+  "risk": "routine",
+  "auto_merge": true
+}

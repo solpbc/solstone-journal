@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app devices load failed.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 52,
+  "source_revision": "6327113827983288d6b4fbf8fe28f08a957066f1e2fdb6c44ce2be99fa9f36f9",
+  "risk": "routine",
+  "auto_merge": true
+}

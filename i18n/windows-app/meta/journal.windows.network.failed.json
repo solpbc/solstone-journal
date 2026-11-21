@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app network failed.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 166,
+  "source_revision": "7389170ef6c04a2f686f63fab9392ef293a4bf21ad697bc1964782dcaad4d98d",
+  "risk": "routine",
+  "auto_merge": true
+}

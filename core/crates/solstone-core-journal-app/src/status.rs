@@ -36,10 +36,13 @@ impl ServiceStatus {
             .lines()
             .rev()
             .find(|line| line.trim_start().starts_with('{'))
-            .ok_or_else(|| "the journal reported no status".to_owned())?;
+            .ok_or_else(|| crate::i18n::text("error.status.missing"))?;
         let status: Self = serde_json::from_str(line).map_err(|error| error.to_string())?;
         if status.schema != APP_STATUS_SCHEMA {
-            return Err(format!("unexpected status schema {}", status.schema));
+            return Err(crate::i18n::strings(
+                "error.status.schema",
+                &[("schema", &status.schema)],
+            ));
         }
         Ok(status)
     }

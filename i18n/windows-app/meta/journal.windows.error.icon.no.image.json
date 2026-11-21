@@ -1,0 +1,16 @@
+{
+  "description": "Error icon no image.",
+  "context": "Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "8175624a21198f11fc2170383dc86c68665e6b724916bc013d0d00aa47792a1d",
+  "risk": "routine",
+  "auto_merge": true
+}

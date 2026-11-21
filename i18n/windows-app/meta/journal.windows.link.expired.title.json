@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app link expired title.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "2abdd36b5312868590107945f325247be6abe35b4090469f5a435802a0a87949",
+  "risk": "routine",
+  "auto_merge": true
+}

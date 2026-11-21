@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app display stopping.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "d9d62f962479295211a2da030f1c5ebf0b0a77077560d9841e3d31f1943bb640",
+  "risk": "routine",
+  "auto_merge": true
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app pairing closed.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 484,
+  "source_revision": "9e8d4460106c75a654c4df67edeac070bdb914f87317d1bf6b20a7793fef6966",
+  "risk": "routine",
+  "auto_merge": true
+}

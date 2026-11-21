@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app devices loading.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "e02222b8df1733967b8de1e5c5c87b0e015c6ce7cb824e3989458d95de05e372",
+  "risk": "routine",
+  "auto_merge": true
+}

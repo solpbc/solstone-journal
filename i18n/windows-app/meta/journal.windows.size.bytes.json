@@ -1,0 +1,26 @@
+{
+  "description": "Windows journal app size bytes.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "max_length": 40,
+  "source_revision": "bc2e5705dece71530241af95d9f0d630246a7986fb0fcf20768055478f129946",
+  "risk": "routine",
+  "auto_merge": true,
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Error route unknown.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [
+    {
+      "name": "method",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 112,
+  "source_revision": "47972fdc8063314aa983c2947bcb3d919324c47eaae9a0b41bba8b9f25038b2e",
+  "risk": "routine",
+  "auto_merge": true
+}

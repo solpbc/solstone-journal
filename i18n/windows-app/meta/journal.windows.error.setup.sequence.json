@@ -1,0 +1,16 @@
+{
+  "description": "Error setup sequence.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 86,
+  "source_revision": "605e077d4434ebcec627c334a0f8ffc211344f63be81c729b7203fbca0513f5d",
+  "risk": "routine",
+  "auto_merge": true
+}

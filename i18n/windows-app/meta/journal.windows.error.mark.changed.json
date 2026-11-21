@@ -1,0 +1,16 @@
+{
+  "description": "Error mark changed.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 66,
+  "source_revision": "1b0dc4c463189a8ae095cca88ebb55f334cd35a005df9162a950ee4d09798b7c",
+  "risk": "routine",
+  "auto_merge": true
+}

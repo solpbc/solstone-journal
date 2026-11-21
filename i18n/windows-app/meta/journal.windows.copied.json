@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app copied.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "3b730de67e680f70db79d8fc21a594ce22e47f02c75e2af872f67d8b1f567120",
+  "risk": "routine",
+  "auto_merge": true
+}

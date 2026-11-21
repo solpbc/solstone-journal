@@ -445,6 +445,11 @@ Generic software principles (DRY, KISS, YAGNI, single responsibility, small focu
 
 ### Journal window and setup strings
 
+The Windows journal app keeps its native and WebView messages in
+`i18n/windows-app`. Add each owner-facing message there and regenerate both
+readers with `make windows-app-catalog`. Keep setup event names, command
+arguments and journal responses in their existing contracts.
+
 Use `i18n/catalog/source/en-US.ftl` for copy in `solstone-core-convey-shell`,
 `solstone-core-backup-web`, `solstone-core-facets-web`,
 `solstone-core-health-web`, `solstone-core-home-web`, `solstone-core-import-web`,

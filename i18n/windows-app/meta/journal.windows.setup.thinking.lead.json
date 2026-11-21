@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app setup thinking lead.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 184,
+  "source_revision": "bad2b75e6153c67776fe162fbe2e191da8eec7d2f1d8d11505bae9f262fff32f",
+  "risk": "consent",
+  "auto_merge": false
+}

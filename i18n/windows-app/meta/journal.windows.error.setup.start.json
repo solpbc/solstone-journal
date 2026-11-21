@@ -1,0 +1,21 @@
+{
+  "description": "Error setup start.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 64,
+  "source_revision": "ccb501eb3a9137b0528a28f1bfb5f7a82798117a4fc77fe30be596e6648933ee",
+  "risk": "routine",
+  "auto_merge": true
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app paired note anywhere.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 244,
+  "source_revision": "7fd2828cbd471f38d58c2406a690d81a71b08fc956a3f517dc4b8a041ac4e9e1",
+  "risk": "routine",
+  "auto_merge": true
+}

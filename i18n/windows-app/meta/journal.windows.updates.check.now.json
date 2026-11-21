@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app updates check now.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "b05a174ef7667abfc07de6ca8da426907b89d7384d84fa603b8d54a79b5661d7",
+  "risk": "routine",
+  "auto_merge": true
+}

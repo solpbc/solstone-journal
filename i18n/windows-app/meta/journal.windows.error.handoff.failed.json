@@ -1,0 +1,16 @@
+{
+  "description": "Error handoff failed.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 100,
+  "source_revision": "637d0f5f84a2006cbd8556b867f266814d5f94fa49171d60060ffd33de9331bc",
+  "risk": "routine",
+  "auto_merge": true
+}

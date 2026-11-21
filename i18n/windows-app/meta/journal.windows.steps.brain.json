@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app steps brain.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "00753c0c91baefae0df0df332cede4540b13022841ca4a6fa583061dd8f1170d",
+  "risk": "routine",
+  "auto_merge": true
+}

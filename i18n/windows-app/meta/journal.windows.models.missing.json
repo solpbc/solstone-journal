@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app models missing.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 126,
+  "source_revision": "4c83fec5ddc064e895535da18b1a1d8cd3b9b60a59f3675152869d601dfaf39d",
+  "risk": "routine",
+  "auto_merge": true
+}

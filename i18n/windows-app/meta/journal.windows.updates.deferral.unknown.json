@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app updates deferral unknown.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 154,
+  "source_revision": "4985ccdc50f7340a4f030144025f221bd9dcf5c44fe279aa8f542da33dd75c12",
+  "risk": "routine",
+  "auto_merge": true
+}

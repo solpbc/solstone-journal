@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app updates week.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "602a025170f5425d8dc6169646573cc7072d162e2954ba026c2e45f0ea314c7f",
+  "risk": "routine",
+  "auto_merge": true
+}

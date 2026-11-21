@@ -1,0 +1,21 @@
+{
+  "description": "Updates failure download retained body.",
+  "context": "Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [
+    {
+      "name": "downloaded",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 146,
+  "source_revision": "f18cb823653b292ba2f2ee8a6d02bdd6d5a85e5392ff9f77674324b188f1b25a",
+  "risk": "routine",
+  "auto_merge": true
+}

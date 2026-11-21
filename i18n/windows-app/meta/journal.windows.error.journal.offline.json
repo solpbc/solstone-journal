@@ -1,0 +1,16 @@
+{
+  "description": "Error journal offline.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 54,
+  "source_revision": "c1d2f85de7b63cff7d50c204dea3ae7d723244e0815b2bd3c64c732ba0b5b8a0",
+  "risk": "routine",
+  "auto_merge": true
+}

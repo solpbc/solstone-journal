@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app updates failure stop title.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 48,
+  "source_revision": "fdb06e270d3778730eb853f6258f8d6aa77ed6ea1471f981e47b6ac8f2451458",
+  "risk": "routine",
+  "auto_merge": true
+}

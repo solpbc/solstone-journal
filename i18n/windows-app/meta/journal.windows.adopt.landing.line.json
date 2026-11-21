@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app adopt landing line.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 88,
+  "source_revision": "8ad28d0f80cbe8a471cf675badc94519f35151f23355452a7a2a9fd35c8faa74",
+  "risk": "routine",
+  "auto_merge": true
+}

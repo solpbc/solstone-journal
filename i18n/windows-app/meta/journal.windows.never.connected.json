@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app never connected.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "f50cf6b3c25ac57f49b015fa291186e5bb0a36ef4f72bdee095539877c922fda",
+  "risk": "routine",
+  "auto_merge": true
+}

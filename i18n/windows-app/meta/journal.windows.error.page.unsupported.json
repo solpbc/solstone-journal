@@ -1,0 +1,16 @@
+{
+  "description": "Error page unsupported.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 66,
+  "source_revision": "f78ec830e6794b290ad1365300aa2a6d5d645a0fa0c364cdce4d1c94b1676ae8",
+  "risk": "routine",
+  "auto_merge": true
+}

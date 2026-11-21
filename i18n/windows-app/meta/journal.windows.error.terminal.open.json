@@ -1,0 +1,21 @@
+{
+  "description": "Error terminal open.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 72,
+  "source_revision": "ab28c89e4b0a4104c8edb362daa04f93dea4a02d1f9dd4cbcf8a7ce6694eb412",
+  "risk": "routine",
+  "auto_merge": true
+}

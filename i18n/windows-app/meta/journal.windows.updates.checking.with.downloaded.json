@@ -1,0 +1,21 @@
+{
+  "description": "Windows journal app updates checking with downloaded.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [
+    {
+      "name": "downloaded",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 128,
+  "source_revision": "a517dd957c36d34406360c5436e39183a85d3571b1ef6eda086e12b1efcf586e",
+  "risk": "routine",
+  "auto_merge": true
+}

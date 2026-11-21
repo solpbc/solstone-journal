@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app updates failure check body.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 78,
+  "source_revision": "66b369a7d93029fb3b9e0cc27a4c2995e6c01d65f4a99d35c0f7f30139b24963",
+  "risk": "routine",
+  "auto_merge": true
+}

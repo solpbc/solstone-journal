@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app admin terminal.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "41d995d29be008de0e8fad29bd6c2496855d28f3337a338f671b92b835f1bdfd",
+  "risk": "routine",
+  "auto_merge": true
+}

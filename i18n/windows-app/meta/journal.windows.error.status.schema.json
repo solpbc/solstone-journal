@@ -1,0 +1,21 @@
+{
+  "description": "Error status schema.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [
+    {
+      "name": "schema",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 72,
+  "source_revision": "565f85deee9ec5bfa681798bb063b3267d992f6db66951c1e137142b99f23e7c",
+  "risk": "routine",
+  "auto_merge": true
+}

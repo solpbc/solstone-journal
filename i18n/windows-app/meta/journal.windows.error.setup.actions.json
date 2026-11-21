@@ -1,0 +1,16 @@
+{
+  "description": "Error setup actions.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 100,
+  "source_revision": "e447ee7e90e8a24b191cd428c87bb81a524ddaa4f51e7b4851e1652eb4844197",
+  "risk": "routine",
+  "auto_merge": true
+}

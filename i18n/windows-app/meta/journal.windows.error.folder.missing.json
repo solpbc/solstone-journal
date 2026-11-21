@@ -1,0 +1,16 @@
+{
+  "description": "Error folder missing.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 46,
+  "source_revision": "1cb77f9532b868b13120d41d4ea765f13022ad2cff5bc280193d9d2e2332b010",
+  "risk": "routine",
+  "auto_merge": true
+}

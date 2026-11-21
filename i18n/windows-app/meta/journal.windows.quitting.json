@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app quitting.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 44,
+  "source_revision": "31129970c0683b4e8a7b3a0b50819ccc4bf7670311ba449cb4206c5b07b46e8b",
+  "risk": "routine",
+  "auto_merge": true
+}

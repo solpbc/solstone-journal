@@ -1,0 +1,21 @@
+{
+  "description": "Error request unknown.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 56,
+  "source_revision": "d3e9cc07df3ddf70f1af584fea46f8fe6b6d37eed391bb705984c318bda411cc",
+  "risk": "routine",
+  "auto_merge": true
+}

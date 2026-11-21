@@ -1,0 +1,21 @@
+{
+  "description": "Error setup wait.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 62,
+  "source_revision": "fbc666d31f845ca9c2acb1b231df78d3365dd4deb45fd6cadf479ffc911691ac",
+  "risk": "routine",
+  "auto_merge": true
+}

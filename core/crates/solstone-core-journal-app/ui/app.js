@@ -1,213 +1,198 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-// The journal app's window. Every word the owner reads is in COPY; the Mac
-// journal app's words are kept wherever they say the same thing here.
-
+import { t, locale } from './i18n.js';
 import { renderMarkCard, markIconImages, sameMark, validMark, displayableMark } from './mark.js';
 
 const COPY = {
   panes: {
-    home: 'home',
-    journal: 'location',
-    run: 'run state',
-    devices: 'devices',
-    backup: 'backup',
-    startup: 'startup',
-    updates: 'updates',
+    home: t('panes.home'),
+    journal: t('panes.journal'),
+    run: t('panes.run'),
+    devices: t('panes.devices'),
+    backup: t('panes.backup'),
+    startup: t('panes.startup'),
+    updates: t('panes.updates'),
   },
-  adminTerminal: 'open a terminal',
-  quit: 'quit journal',
-  quitting: 'stopping your journal…',
-  homeTitle: 'your journal, at a glance',
-  homeLine: 'this app keeps your journal running on this PC. your journal itself opens in your browser.',
-  openJournal: 'open your journal',
-  start: 'start',
-  stop: 'stop',
-  restart: 'restart',
-  runStateLink: 'run state →',
-  confirmedLine: 'this is your journal',
+  adminTerminal: t('admin.terminal'),
+  quit: t('quit'),
+  quitting: t('quitting'),
+  homeTitle: t('home.title'),
+  homeLine: t('home.line'),
+  openJournal: t('open.journal'),
+  start: t('start'),
+  stop: t('stop'),
+  restart: t('restart'),
+  runStateLink: t('run.state.link'),
+  confirmedLine: t('confirmed.line'),
   display: {
-    starting: 'starting…',
-    running: 'running',
-    stopping: 'stopping…',
-    stopped: 'stopped',
-    'not-running': 'not running',
-    'other-account': 'not running',
+    starting: t('display.starting'),
+    running: t('display.running'),
+    stopping: t('display.stopping'),
+    stopped: t('display.stopped'),
+    'not-running': t('display.not.running'),
+    'other-account': t('display.other.account'),
   },
-  otherAccountTitle: 'another account\'s journal is running on this computer',
-  otherAccountBody: 'one journal runs on a computer at a time, and another account here is running its own. yours can start once that account stops its journal or logs off.',
-  health: 'health',
-  healthy: 'healthy',
-  unknown: 'unknown',
-  location: 'location',
-  showInExplorer: 'show in File Explorer',
-  copyAbout: 'copy',
-  copiedAbout: 'copied',
-  copyAboutFailed: "couldn't copy. select the text and copy it.",
-  diskUsed: 'disk used',
-  browserTitle: 'finish setting up in your browser',
-  browserLine: 'this window moves on when you finish.',
-  openBrowser: 'open the setup page',
-  browserFailed: "your browser didn't open.",
-  modelsMissing: 'repair or reinstall the journal app, then restart your journal.',
-  modelsDownloading: 'downloading…',
-  devicesTitle: 'devices',
-  yourDevices: 'your devices',
-  devicesLoading: 'loading devices…',
-  devicesEmptyTitle: 'no devices yet',
-  devicesEmptyBody: 'pair a device and it joins your journal.',
-  devicesNotRunningTitle: "your journal isn't running",
-  devicesNotRunningBody: 'start the journal, then try again.',
-  devicesLoadFailed: "couldn't load your devices",
-  addDevice: 'pair a device',
-  unnamedDevice: 'unnamed device',
-  peerJournals: 'peer journals',
-  neverConnected: 'never connected',
-  lastSeenJustNow: 'last seen just now',
-  lastSeenUnknown: 'last seen unknown',
-  lastSeen: relative => `last seen ${relative}`,
-  paired: date => `paired ${date}`,
-  remove: 'remove',
-  removeTitle: name => `remove ${name}?`,
-  removeBody: name => `${name} loses access to your journal. you can pair it again later.`,
-  removeFailed: "couldn't remove this device",
-  cancel: 'cancel',
-  close: 'close',
-  pairThisPc: 'pair the solstone app on this PC',
-  pairingOpening: 'opening pairing…',
-  pairingInstructions: 'scan this code or open the pairing link on the device you want to add.',
-  pairingThisPc: "this pairing link works only for the solstone app on this PC. it's copied, so paste it into the solstone app to pair.",
-  pairingThisPcCopy: 'this pairing link works only for the solstone app on this PC. copy it, then paste it into the solstone app to pair.',
-  pairingCode: 'pairing code',
-  copyLink: 'copy pairing link',
-  copied: 'copied ✓',
-  countdown: seconds => `expires in ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`,
-  linkExpiredTitle: 'pairing link expired',
-  linkExpiredBody: 'open a fresh pairing link to pair a device.',
-  openFreshLink: 'open a fresh pairing link',
-  pairingFailedTitle: "couldn't open pairing",
-  pairedHeading: label => `"${label}" can now reach your journal`,
-  pairedHeadingUnnamed: 'a new device can now reach your journal',
-  pairedNote: "on that device, check it shows this same mark, then answer there. didn't pair it?",
-  pairedNoteAnywhere: "on that device, check it shows this same mark, then answer there. it can reach your journal from anywhere. didn't pair it?",
-  pairedNoteThisPc: "if the solstone app asks, check it shows this same mark, then answer there. didn't pair it?",
-  pairedDone: 'done',
-  pairedUnpair: 'unpair this device',
-  pairedRemoved: "unpaired. the device can't reach your journal until it's paired again.",
-  pairedRemoveFailed: "couldn't unpair this device. try again, or remove it under devices.",
-  pairingClosed: "your journal is closed to devices on your network, so another device can't reach it directly yet. open your journal to devices on your network, or turn on your private network to pair from anywhere. the solstone app on this PC can still pair.",
-  relaySetup: 'turn on your private network in your journal →',
+  otherAccountTitle: t('other.account.title'),
+  otherAccountBody: t('other.account.body'),
+  health: t('health'),
+  healthy: t('healthy'),
+  unknown: t('unknown'),
+  location: t('location'),
+  showInExplorer: t('show.in.explorer'),
+  copyAbout: t('copy.about'),
+  copiedAbout: t('copied.about'),
+  copyAboutFailed: t('copy.about.failed'),
+  diskUsed: t('disk.used'),
+  browserTitle: t('browser.title'),
+  browserLine: t('browser.line'),
+  openBrowser: t('open.browser'),
+  browserFailed: t('browser.failed'),
+  modelsMissing: t('models.missing'),
+  modelsDownloading: t('models.downloading'),
+  devicesTitle: t('devices.title'),
+  yourDevices: t('your.devices'),
+  devicesLoading: t('devices.loading'),
+  devicesEmptyTitle: t('devices.empty.title'),
+  devicesEmptyBody: t('devices.empty.body'),
+  devicesNotRunningTitle: t('devices.not.running.title'),
+  devicesNotRunningBody: t('devices.not.running.body'),
+  devicesLoadFailed: t('devices.load.failed'),
+  addDevice: t('add.device'),
+  unnamedDevice: t('unnamed.device'),
+  peerJournals: t('peer.journals'),
+  remove: t('remove'),
+  removeTitle: name => t('remove.title', { name }),
+  removeBody: name => t('remove.body', { name }, 'en-US'),
+  removeFailed: t('remove.failed'),
+  cancel: t('cancel'),
+  close: t('close'),
+  pairThisPc: t('pair.this.pc'),
+  pairingOpening: t('pairing.opening'),
+  pairingInstructions: t('pairing.instructions'),
+  pairingThisPc: t('pairing.this.pc'),
+  pairingThisPcCopy: t('pairing.this.pc.copy'),
+  pairingCode: t('pairing.code'),
+  copyLink: t('copy.link'),
+  copied: t('copied'),
+  countdown: seconds => t('countdown', { time: `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}` }),
+  linkExpiredTitle: t('link.expired.title'),
+  linkExpiredBody: t('link.expired.body'),
+  openFreshLink: t('open.fresh.link'),
+  pairingFailedTitle: t('pairing.failed.title'),
+  pairedHeading: label => t('paired.heading', { label }),
+  pairedHeadingUnnamed: t('paired.heading.unnamed'),
+  pairedNote: t('paired.note'),
+  pairedNoteAnywhere: t('paired.note.anywhere'),
+  pairedNoteThisPc: t('paired.note.this.pc'),
+  pairedDone: t('paired.done'),
+  pairedUnpair: t('paired.unpair'),
+  pairedRemoved: t('paired.removed'),
+  pairedRemoveFailed: t('paired.remove.failed'),
+  pairingClosed: t('pairing.closed'),
+  relaySetup: t('relay.setup'),
   // whether the journal is open to devices on the network (the journal's own words)
   network: {
-    closed: 'closed to devices on your network',
-    closedNote: 'the solstone app on this PC can still pair from here, and so can another device once your private network is on. to pair a phone or another computer over your own network, open your journal to it.',
-    windowsAsks: 'windows may then ask whether journal can use the network, and on a standard account an administrator has to allow it.',
-    open: 'open to devices on your network',
-    openNote: 'devices on the same network can pair with your journal directly.',
-    agentsNote: 'your journal stays open to devices on your network while "agents on your network" is on.',
-    agentsClosesNote: 'it closes to them when you turn that off in agents, in your journal.',
-    firewallNote: "if windows didn't ask and a device still can't reach your journal, an earlier choice in windows may be blocking journal. an administrator can allow it in Windows Security, under Firewall & network protection › Allow an app through firewall.",
-    notReachable: "devices can't reach your journal right now.",
-    openCta: 'open to devices on your network',
-    closeCta: 'close to devices on your network',
-    closeConfirm: 'close your journal to devices on your network? any device connected over your network now will disconnect.',
-    failed: "couldn't change whether your journal is open to devices on your network. try again.",
+    closed: t('network.closed'),
+    open: t('network.open'),
+    notReachable: t('network.not.reachable'),
+    openCta: t('network.open.cta'),
+    closeCta: t('network.close.cta'),
+    closeConfirm: t('network.close.confirm', {}, 'en-US'),
+    failed: t('network.failed'),
   },
-  tryAgain: 'try again',
-  backupTitle: 'backup',
-  backupLine: 'backup keeps your journal safe. set it up from your journal.',
-  openBackup: 'open backup',
-  startupTitle: 'startup',
-  startAtSignIn: 'start the journal when you sign in',
+  tryAgain: t('try.again'),
+  backupTitle: t('backup.title'),
+  backupLine: t('backup.line'),
+  openBackup: t('open.backup'),
+  startupTitle: t('startup.title'),
+  startAtSignIn: t('start.at.sign.in'),
   // first run
-  locationTitle: "let's create your journal on this PC",
-  chooseLocation: 'choose',
-  continueButton: 'continue',
-  continueInSolstone: 'continue in the solstone app',
-  downloadSolstone: 'download the solstone app for windows',
-  journalFound: 'journal found',
-  setupTitle: 'setting up your journal',
-  setupSubtitle: 'this can take a minute.',
-  setupStopped: "setup stopped before it finished.",
-  whatHappened: 'what happened',
+  locationTitle: t('location.title'),
+  chooseLocation: t('choose.location'),
+  continueButton: t('continue.button'),
+  continueInSolstone: t('continue.in.solstone'),
+  downloadSolstone: t('download.solstone'),
+  journalFound: t('journal.found'),
+  setupTitle: t('setup.title'),
+  setupSubtitle: t('setup.subtitle'),
+  setupStopped: t('setup.stopped'),
+  whatHappened: t('what.happened'),
   steps: {
-    doctor: 'checking this PC',
-    journal: 'preparing your journal',
-    install_models: 'downloading models',
-    service: 'starting your journal',
-    brain: 'setting up the model',
+    doctor: t('steps.doctor'),
+    journal: t('steps.journal'),
+    install_models: t('steps.install.models'),
+    service: t('steps.service'),
+    brain: t('steps.brain'),
   },
-  adoptLandingLine: 'nothing moved. your journal was always here.',
+  adoptLandingLine: t('adopt.landing.line'),
   setup: {
-    band: 'your journal',
-    fitsTitle: 'what this sets up',
-    journalTerm: 'your journal',
-    journalText: 'lives on this PC and keeps everything that goes into it.',
-    appTerm: 'the solstone app',
-    appText: 'runs on this PC. your microphone, screen and computer sound each stay off until you turn them on.',
-    thinkingTerm: 'thinking',
-    thinkingText: 'helps your journal make sense of what it keeps. you choose where during setup, or later.',
-    signIn: 'start automatically after you sign in to this PC.',
-    start: 'start setup',
-    folderTitle: 'where your journal lives',
-    folderText: 'everything your journal keeps stays in this folder, on this PC.',
-    folderLabel: 'journal folder',
-    thinkingTitle: 'where does the thinking happen?',
-    thinkingLead: 'your journal stays on this PC whatever you choose. this only decides where thinking happens.',
-    onThisPc: 'on this PC',
-    localDesc: 'model requests stay on this PC. continue starts the download.',
-    step: n => `step ${n} of 8`,
+    band: t('setup.band'),
+    fitsTitle: t('setup.fits.title'),
+    journalTerm: t('setup.journal.term'),
+    journalText: t('setup.journal.text'),
+    appTerm: t('setup.app.term'),
+    appText: t('setup.app.text', {}, 'en-US'),
+    thinkingTerm: t('setup.thinking.term'),
+    thinkingText: t('setup.thinking.text'),
+    signIn: t('setup.sign.in'),
+    start: t('setup.start'),
+    folderTitle: t('setup.folder.title'),
+    folderText: t('setup.folder.text'),
+    folderLabel: t('setup.folder.label'),
+    thinkingTitle: t('setup.thinking.title'),
+    thinkingLead: t('setup.thinking.lead', {}, 'en-US'),
+    onThisPc: t('setup.on.this.pc'),
+    localDesc: t('setup.local.desc', {}, 'en-US'),
+    step: n => t('setup.step', { n: String(n) }),
   },
   // updates (the Mac app's update words)
   updates: {
-    header: version => `journal ${version}`,
-    checkNow: 'check now',
-    checkAgain: 'check again',
-    checking: 'checking…',
-    checkingWithDownloaded: downloaded => `version ${downloaded} is downloaded. checking for a newer one…`,
-    neverChecked: 'never checked for updates',
-    justNow: 'just now',
-    upToDate: 'the journal is up to date',
-    lastChecked: relative => `last checked ${relative}`,
-    availableTitle: target => `version ${target} is available`,
-    availableSubtitle: 'the journal app will download it in the background when this connection allows it.',
+    header: version => t('updates.header', { version }),
+    checkNow: t('updates.check.now'),
+    checkAgain: t('updates.check.again'),
+    checking: t('updates.checking'),
+    checkingWithDownloaded: downloaded => t('updates.checking.with.downloaded', { downloaded }),
+    neverChecked: t('updates.never.checked'),
+    justNow: t('updates.just.now'),
+    upToDate: t('updates.up.to.date'),
+    lastChecked: relative => t('updates.last.checked', { relative }),
+    availableTitle: target => t('updates.available.title', { target }),
+    availableSubtitle: t('updates.available.subtitle'),
     deferral: {
-      metered: 'this connection is metered, so the download is waiting.',
-      roaming: 'this connection is roaming, so the download is waiting.',
-      restricted: 'this connection does not allow a background download, so it is waiting.',
-      unknown: 'the connection is not known to allow a background download, so it is waiting.',
+      metered: t('updates.deferral.metered'),
+      roaming: t('updates.deferral.roaming'),
+      restricted: t('updates.deferral.restricted'),
+      unknown: t('updates.deferral.unknown'),
     },
-    download: 'download',
-    downloadingTitle: target => `downloading ${target}`,
-    downloadingRetainsDownloaded: downloaded => `version ${downloaded} stays downloaded until the new one finishes.`,
-    readyTitle: downloaded => `version ${downloaded} is downloaded. the journal installs it the next time the journal app starts.`,
-    install: 'install now',
-    installingTitle: downloaded => `installing ${downloaded}`,
-    installingSubtitle: 'the journal app is applying the update.',
-    failureCheckTitle: 'the check failed',
-    failureCheckBody: 'the journal could not finish the check.',
-    failureCheckRemains: 'the downloaded update is still here.',
-    retryCheck: 'retry check',
-    failureDownloadTitle: 'the download failed',
-    failureDownloadBody: 'the download did not finish.',
-    failureDownloadRetained: downloaded => `version ${downloaded} is still downloaded.`,
-    retryDownload: 'retry download',
-    failureStopTitle: 'the update did not start',
-    failureStopBody: 'the update could not start. the downloaded update is still here.',
-    failureInstallTitle: 'the update did not finish',
-    failureInstallBody: 'the downloaded update is still here. the journal installs it the next time the journal app starts.',
-    failureInstallMissing: 'the downloaded update is no longer available. check for an update again.',
-    unavailableTitle: 'updates are unavailable',
-    unavailableSubtitle: 'this build cannot check for updates on its own.',
-    automatic: 'automatic updates',
-    autoCheck: 'check for updates automatically',
-    autoDownload: 'download updates in the background',
-    howOften: 'how often',
-    day: 'every day',
-    week: 'every week',
-    month: 'every month',
-    privacy: 'no usage data is sent. a check fetches the version list. a background download runs only on an unrestricted connection.',
+    download: t('updates.download'),
+    downloadingTitle: target => t('updates.downloading.title', { target }),
+    downloadingRetainsDownloaded: downloaded => t('updates.downloading.retains.downloaded', { downloaded }),
+    readyTitle: downloaded => t('updates.ready.title', { downloaded }),
+    install: t('updates.install'),
+    installingTitle: downloaded => t('updates.installing.title', { downloaded }),
+    installingSubtitle: t('updates.installing.subtitle'),
+    failureCheckTitle: t('updates.failure.check.title'),
+    failureCheckBody: t('updates.failure.check.body'),
+    retryCheck: t('updates.retry.check'),
+    failureDownloadTitle: t('updates.failure.download.title'),
+    failureDownloadBody: t('updates.failure.download.body'),
+    retryDownload: t('updates.retry.download'),
+    failureStopTitle: t('updates.failure.stop.title'),
+    failureStopBody: t('updates.failure.stop.body'),
+    failureInstallTitle: t('updates.failure.install.title'),
+    failureInstallBody: t('updates.failure.install.body'),
+    failureInstallMissing: t('updates.failure.install.missing'),
+    unavailableTitle: t('updates.unavailable.title'),
+    unavailableSubtitle: t('updates.unavailable.subtitle'),
+    automatic: t('updates.automatic'),
+    autoCheck: t('updates.auto.check'),
+    autoDownload: t('updates.auto.download'),
+    howOften: t('updates.how.often'),
+    day: t('updates.day'),
+    week: t('updates.week'),
+    month: t('updates.month'),
+    privacy: t('updates.privacy', {}, 'en-US'),
   },
 };
 
@@ -227,7 +212,7 @@ function call(cmd, args = {}) {
 const listeners = { setup: [], update: [], shown: [], flow: [], 'sign-in-launch': [] };
 
 listeners['sign-in-launch'].push(data => {
-  state.message = data.error || data.message || 'sign-in launch failed';
+  state.message = data.error || data.message || t('signin.failed');
   render();
 });
 
@@ -383,7 +368,7 @@ async function retrySyncSignIn() {
     const status = await call('status');
     state.status = status;
     const on = status?.service?.starts_at_sign_in;
-    if (typeof on !== 'boolean') throw new Error("couldn't read journal status");
+    if (typeof on !== 'boolean') throw new Error(t('status.failed'));
     await call('syncSignInLaunch', { on });
     syncRetryNeeded = false;
     state.message = null;
@@ -743,7 +728,7 @@ function renderFooterDownloads(view) {
       if (typeof speech.bytes_total === 'number' && speech.bytes_total > 0) {
         const done = speech.bytes_done || 0;
         const total = speech.bytes_total;
-        parts.push(el('span', { class: 'setup-download-bytes' }, document.createTextNode(`${formatBytes(done)} of ${formatBytes(total)}`)));
+        parts.push(el('span', { class: 'setup-download-bytes' }, document.createTextNode(t('downloads.progress', { done: formatBytes(done), total: formatBytes(total) }))));
         const pct = Math.max(0, Math.min(100, Math.round((done / total) * 100)));
         const fill = el('span', { class: 'setup-download-fill' });
         fill.style.width = `${pct}%`;
@@ -801,7 +786,7 @@ function renderFooterDownloads(view) {
       if (typeof thinking.bytes_total === 'number' && thinking.bytes_total > 0) {
         const done = thinking.bytes_done || 0;
         const total = thinking.bytes_total;
-        parts.push(el('span', { class: 'setup-download-bytes' }, document.createTextNode(`${formatBytes(done)} of ${formatBytes(total)}`)));
+        parts.push(el('span', { class: 'setup-download-bytes' }, document.createTextNode(t('downloads.progress', { done: formatBytes(done), total: formatBytes(total) }))));
         const pct = Math.max(0, Math.min(100, Math.round((done / total) * 100)));
         const fill = el('span', { class: 'setup-download-fill' });
         fill.style.width = `${pct}%`;
@@ -895,7 +880,7 @@ async function finishSetupToHome(view) {
     root.replaceChildren();
 
     const band = el('header', { class: 'setup-band' },
-      el('img', { class: 'setup-lockup', src: '/lockup-solstone-horizontal.svg', alt: 'solstone' }),
+      el('img', { class: 'setup-lockup', src: '/lockup-solstone-horizontal.svg', alt: t('brand') }),
       el('span', { class: 'setup-band-label' }, document.createTextNode(COPY.setup.band))
     );
     const lead = el('div', { class: 'setup-lead' });
@@ -984,7 +969,7 @@ function renderFlow(view) {
   root.setAttribute('data-phase', view.phase);
 
   const band = el('header', { class: 'setup-band' },
-    el('img', { class: 'setup-lockup', src: '/lockup-solstone-horizontal.svg', alt: 'solstone' }),
+    el('img', { class: 'setup-lockup', src: '/lockup-solstone-horizontal.svg', alt: t('brand') }),
     el('span', { class: 'setup-band-label' }, document.createTextNode(COPY.setup.band))
   );
 
@@ -1524,7 +1509,7 @@ function showsBytes(download) {
 function byteText(download) {
   const done = typeof download.bytes_done === 'number' ? download.bytes_done : 0;
   if (typeof download.bytes_total === 'number' && download.bytes_total > 0) {
-    return `${formatBytes(done)} of ${formatBytes(download.bytes_total)}`;
+    return t('downloads.progress', { done: formatBytes(done), total: formatBytes(download.bytes_total) });
   }
   return done > 0 ? formatBytes(done) : '';
 }
@@ -1786,7 +1771,7 @@ function isPeerJournal(device) {
 }
 
 function deviceName(device) {
-  if (isPeerJournal(device)) return 'another journal';
+  if (isPeerJournal(device)) return t('devices.peer');
   const name = [device.display_label, device.device_label, device.observer_handle]
     .map(value => String(value ?? '').trim()).find(Boolean);
   return name || COPY.unnamedDevice;
@@ -1800,20 +1785,24 @@ function deviceTime(value) {
 }
 
 function deviceDetail(device) {
-  const parts = [];
-  if (device.last_seen_at == null) {
-    parts.push(COPY.neverConnected);
-  } else {
-    const seen = deviceTime(device.last_seen_at);
-    if (!seen) parts.push(COPY.lastSeenUnknown);
-    else if (Date.now() - seen.getTime() < 60000) parts.push(COPY.lastSeenJustNow);
-    else parts.push(COPY.lastSeen(relative(seen.getTime() / 1000)));
-  }
   const paired = deviceTime(device.paired_at);
-  if (paired) {
-    parts.push(COPY.paired(paired.toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' })));
+  const args = {};
+  let key;
+  if (device.last_seen_at == null) key = 'never.connected';
+  else {
+    const seen = deviceTime(device.last_seen_at);
+    if (!seen) key = 'last.seen.unknown';
+    else if (Date.now() - seen.getTime() < 60000) key = 'last.seen.just.now';
+    else {
+      key = 'last.seen';
+      args.relative = relative(seen.getTime() / 1000);
+    }
   }
-  return parts.join(' · ');
+  if (paired) {
+    args.date = paired.toLocaleDateString(locale, { month: 'short', day: 'numeric', year: 'numeric' });
+    key += '.paired';
+  }
+  return t(key, args);
 }
 
 // Devices that have connected first, as the Mac app lists them.
@@ -1878,13 +1867,14 @@ function networkSection() {
   if (network.listening_on === 'local_network') {
     title = n.open;
     // Agents is what holds it open only when the owner's own choice is closed.
-    const agents = network.agents_on_network === true
-      ? [n.agentsNote, network.source === 'agents_on_network' ? n.agentsClosesNote : '']
-      : [n.openNote];
-    note = [...agents, windows ? n.firewallNote : ''].filter(Boolean).join(' ');
+    let explanation = 'network.open.direct';
+    if (network.agents_on_network === true) {
+      explanation = network.source === 'agents_on_network' ? 'network.open.until' : 'network.open.agents';
+    }
+    note = t(windows ? explanation + '.windows' : explanation);
   } else if (network.listening_on === 'this_pc') {
     title = n.closed;
-    note = [n.closedNote, windows ? n.windowsAsks : ''].filter(Boolean).join(' ');
+    note = t(windows ? 'network.closed.help.windows' : 'network.closed.help');
   }
   const open = network.open === true;
   const section = el('section', { class: 'network' }, el('h2', {}, title), note ? el('p', { class: 'muted' }, note) : null);
@@ -2208,20 +2198,22 @@ async function copyText(text) {
 }
 
 function formatBytes(bytes) {
-  const units = ['bytes', 'KB', 'MB', 'GB', 'TB'];
+  const units = ['size.bytes', 'size.kb', 'size.mb', 'size.gb', 'size.tb'];
   let value = bytes;
   let unit = 0;
   while (value >= 1000 && unit < units.length - 1) {
     value /= 1000;
     unit += 1;
   }
-  return unit === 0 ? `${value} ${units[0]}` : `${value.toFixed(value < 10 ? 1 : 0)} ${units[unit]}`;
+  if (unit === 0) return t('size.bytes', { quantity: value });
+  const formatted = value.toFixed(value < 10 ? 1 : 0);
+  return t(units[unit], { value: formatted });
 }
 
 function relative(seconds) {
   const elapsed = Date.now() / 1000 - seconds;
   if (elapsed < 60) return COPY.updates.justNow;
-  const format = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
+  const format = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
   for (const [unit, size] of [['day', 86400], ['hour', 3600], ['minute', 60]]) {
     if (elapsed >= size) return format.format(-Math.floor(elapsed / size), unit);
   }
@@ -2330,10 +2322,9 @@ function renderUpdates() {
         body.push(el('div', { class: 'actions' }, retained ? action(u.install, 'install', true) : action(u.checkAgain, 'check', true)));
       } else if (view.failure === 'download') {
         body.push(el('h2', {}, u.failureDownloadTitle));
-        let bodyMsg = u.failureDownloadBody;
-        if (view.downloaded_version) {
-          bodyMsg += ' ' + u.failureDownloadRetained(view.downloaded_version);
-        }
+        const bodyMsg = view.downloaded_version
+          ? t('updates.failure.download.retained.body', { downloaded: view.downloaded_version })
+          : u.failureDownloadBody;
         body.push(el('p', { class: 'muted' }, bodyMsg));
         const actions = [action(u.retryDownload, 'download', true)];
         if (view.downloaded_version && view.next_start) {
@@ -2342,10 +2333,9 @@ function renderUpdates() {
         body.push(el('div', { class: 'actions' }, ...actions));
       } else {
         body.push(el('h2', {}, u.failureCheckTitle));
-        let bodyMsg = u.failureCheckBody;
-        if (view.downloaded_version) {
-          bodyMsg += ' ' + u.failureCheckRemains;
-        }
+        const bodyMsg = view.downloaded_version
+          ? t('updates.failure.check.retained.body')
+          : u.failureCheckBody;
         body.push(el('p', { class: 'muted' }, bodyMsg));
         const actions = [action(u.retryCheck, 'check', true)];
         if (view.downloaded_version && view.next_start) {
@@ -2464,7 +2454,7 @@ async function continueStartup() {
     await refreshStatus(true);
   } catch (error) {
     $('loading').replaceChildren(
-      el('p', { class: 'error' }, document.createTextNode(error.message || "couldn't read journal status")),
+      el('p', { class: 'error' }, document.createTextNode(error.message || t('status.failed'))),
       el('button', {
         type: 'button',
         on: { click: () => continueStartup() },
@@ -2475,7 +2465,7 @@ async function continueStartup() {
 
   if (typeof state.status?.service?.installed !== 'boolean') {
     $('loading').replaceChildren(
-      el('p', { class: 'error' }, document.createTextNode(state.message || "couldn't read journal status")),
+      el('p', { class: 'error' }, document.createTextNode(state.message || t('status.failed'))),
       el('button', {
         type: 'button',
         on: { click: () => continueStartup() },
@@ -2536,6 +2526,7 @@ async function main() {
   state.init = await call('init');
   // The locked mark the app last drew, until the running journal says.
   if (validMark(state.init?.mark)) state.mark = state.init.mark;
+  else if (locale !== 'en-US') await applyIcon(null);
   await continueStartup();
 }
 

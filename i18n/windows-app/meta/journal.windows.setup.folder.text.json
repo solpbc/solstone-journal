@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app setup folder text.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 126,
+  "source_revision": "b236e4eb91f38c3a57bb51f7a57d1992e51750918c59acf36ad7d8fcfbd7cef8",
+  "risk": "routine",
+  "auto_merge": true
+}

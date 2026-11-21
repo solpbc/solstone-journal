@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app open browser.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "b85e80a5177781eb75da7670d7138fba87cadf51dd2b4b74621bbb76219f5e81",
+  "risk": "routine",
+  "auto_merge": true
+}

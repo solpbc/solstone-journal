@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app location title.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 72,
+  "source_revision": "f35e1c1e421803a57b7e5ec0152c77d879ebdcf9d56d022530cddd21fdb5aeae",
+  "risk": "routine",
+  "auto_merge": true
+}

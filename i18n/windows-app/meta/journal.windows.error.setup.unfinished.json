@@ -1,0 +1,16 @@
+{
+  "description": "Error setup unfinished.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "ae959d23f5375bb01d5860fbfacb428ab184c5ecb12df8f26263726b7f594669",
+  "risk": "routine",
+  "auto_merge": true
+}

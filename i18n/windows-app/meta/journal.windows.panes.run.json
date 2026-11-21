@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app panes run.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "290401bcdb2f6044a9924317896bdf924f524209d097967e915378dd24482b3f",
+  "risk": "routine",
+  "auto_merge": true
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Last seen unknown paired.",
+  "context": "Last connection and pairing date on the Windows devices pane.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [
+    {
+      "name": "date",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 72,
+  "source_revision": "e0920a93572cd246401b159e3d2e96e32a77d60c07796095e62db24bcd6854cb",
+  "risk": "routine",
+  "auto_merge": true
+}

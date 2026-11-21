@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app network close confirm.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 212,
+  "source_revision": "1b6c986a7cd2248865ec06bb9527a9cdb90134b97da76b582c508c0f4d0031fe",
+  "risk": "consent",
+  "auto_merge": false
+}

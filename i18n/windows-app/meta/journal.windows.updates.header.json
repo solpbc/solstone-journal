@@ -1,0 +1,21 @@
+{
+  "description": "Windows journal app updates header.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [
+    {
+      "name": "version",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "cbb7941ca50f52267d9d9961bb2ef037c84d3c21a51e8aa924f2268803d63fec",
+  "risk": "routine",
+  "auto_merge": true
+}

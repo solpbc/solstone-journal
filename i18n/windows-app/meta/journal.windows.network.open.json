@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app network open.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 62,
+  "source_revision": "11b3ca0ab99e0077eb6b40b49660007ad5e08b3f537d70bb02fbb211bb8f86ec",
+  "risk": "routine",
+  "auto_merge": true
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Error thinking choice.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 46,
+  "source_revision": "e6f275e4564ef73b450b13c9aeee805f3095599025f3e1944b6dd71dc626100d",
+  "risk": "routine",
+  "auto_merge": true
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app open fresh link.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 50,
+  "source_revision": "9a49a0d70966d9920d1d9fa8f22849d9d7a95ac8030e3299ee17059c91f41d4b",
+  "risk": "routine",
+  "auto_merge": true
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Windows journal app updates downloading title.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [
+    {
+      "name": "target",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 46,
+  "source_revision": "c32a544f21ee79ea9de5489763e9c3c51b3ada8ddc768bfd97645c211c50af50",
+  "risk": "routine",
+  "auto_merge": true
+}

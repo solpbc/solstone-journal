@@ -1,0 +1,16 @@
+{
+  "description": "Updates failure check retained body.",
+  "context": "Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 152,
+  "source_revision": "5379971b00266468545c6590a63d02ca28bfb2d801601f95d8fe90bab92460c7",
+  "risk": "routine",
+  "auto_merge": true
+}

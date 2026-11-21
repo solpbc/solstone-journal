@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app setup thinking term.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "77bd5ed23464ba452f6aa283d6282f488aba9c73c469753fe111f4b7b38ec4d8",
+  "risk": "routine",
+  "auto_merge": true
+}

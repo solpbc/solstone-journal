@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app relay setup.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 92,
+  "source_revision": "449a1fbac342637485e6800a1048f94d18c0e5e5c3f7908cc973bfe35e50564e",
+  "risk": "routine",
+  "auto_merge": true
+}

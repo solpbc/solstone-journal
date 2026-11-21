@@ -1,0 +1,21 @@
+{
+  "description": "Windows journal app size gb.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "9686268e8bb51978565b3730483333de11a1162eb093b6c93056aaf224cdc844",
+  "risk": "routine",
+  "auto_merge": true
+}

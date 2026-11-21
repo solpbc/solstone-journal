@@ -1,0 +1,16 @@
+{
+  "description": "Network open agents.",
+  "context": "Explanation below the Windows devices pane network status.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 176,
+  "source_revision": "5000868b95841652547c264941bb3c42735612f03ee68edbdd64a4b6de8f74d0",
+  "risk": "routine",
+  "auto_merge": true
+}

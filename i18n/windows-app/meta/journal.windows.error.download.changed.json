@@ -1,0 +1,16 @@
+{
+  "description": "Error download changed.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 74,
+  "source_revision": "ca908b9f71e2ab0da6a10075d3ad4cb34a81836f9b0aef813a799e42566d4c05",
+  "risk": "routine",
+  "auto_merge": true
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app updates deferral metered.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 110,
+  "source_revision": "8d1efdeea6a36129591a37f45f91ee8d482a8cb293c2dfe7a5c6f0d26befd475",
+  "risk": "routine",
+  "auto_merge": true
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app updates privacy.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 238,
+  "source_revision": "462eab1b5f1f6a21ea042c6a9a59f3a504f5cd660979205394762ab7a9bae074",
+  "risk": "legal",
+  "auto_merge": false
+}

@@ -752,6 +752,8 @@ const root = () => $('firstrun');
 
 statusPlan.push({ fail: "couldn't read journal status" });
 
+document.documentElement = { lang: 'en-US' };
+await import('../../../../i18n/generated/windows-app/classic/journal-windows-app/api.js');
 await import('../ui/app.js');
 await flush();
 

@@ -1,0 +1,21 @@
+{
+  "description": "Windows journal app updates last checked.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [
+    {
+      "name": "relative",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 52,
+  "source_revision": "2ad0371138a11d90da70c0d05f2db5f0051bf1599aa353b33b989efad41fcd3a",
+  "risk": "routine",
+  "auto_merge": true
+}

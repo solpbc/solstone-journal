@@ -1545,6 +1545,7 @@ ci-under-poison:
 	fi
 	@$(MAKE) check-standalone-lockfiles
 	@$(MAKE) check-journal-window-catalog
+	@$(MAKE) check-windows-app-catalog
 	@$(MAKE) check-rust-fmt
 	@$(MAKE) check-rust-ci-topology
 	@$(SOLSTONE_DISTRIBUTION) check-build-features
@@ -1718,5 +1719,22 @@ check-journal-window-catalog:
 	if ! $(JOURNAL_WINDOW_CATALOG) --out "$$check_dir/window" || \
 	   ! diff -qr i18n/generated/window "$$check_dir/window"; then \
 		echo "Journal window catalog is stale. Refresh source revisions if needed, then run make journal-window-catalog." >&2; \
+		exit 1; \
+	fi
+
+WINDOWS_APP_CATALOG = CARGO_TARGET_DIR="$(RUST_TARGET_DIR)/i18n-catalog" cargo run --quiet --manifest-path tools/i18n/Cargo.toml --locked --offline -- targets i18n/windows-app --channel production --target rust --target classic
+
+.PHONY: windows-app-catalog check-windows-app-catalog
+windows-app-catalog:
+	$(WINDOWS_APP_CATALOG) --out i18n/generated/windows-app
+
+check-windows-app-catalog:
+	@set -eu; \
+	mkdir -p "$(RUST_TARGET_DIR)"; \
+	check_dir=$$(mktemp -d "$(RUST_TARGET_DIR)/journal-catalog.XXXXXX"); \
+	trap 'rm -rf "$$check_dir"' 0 1 2 15; \
+	if ! $(WINDOWS_APP_CATALOG) --out "$$check_dir/window" || \
+	   ! diff -qr i18n/generated/windows-app "$$check_dir/window"; then \
+		echo "Windows journal app catalog is stale. Refresh source revisions if needed, then run make windows-app-catalog." >&2; \
 		exit 1; \
 	fi

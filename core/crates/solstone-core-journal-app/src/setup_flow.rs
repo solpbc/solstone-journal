@@ -304,7 +304,7 @@ pub fn withhold_remote(
     let Some(port) = port else {
         effects.retain(|effect| !is_remote(effect));
         if session.error.is_none() {
-            session.error = Some("the journal isn't answering".to_owned());
+            session.error = Some(crate::i18n::text("error.journal.offline"));
         }
         session.busy = false;
         session.inflight = None;
@@ -360,7 +360,7 @@ pub fn event_from_intent(intent: &str, args: &Value) -> Result<Event, String> {
     Ok(match intent {
         "boot" => {
             let Some(task_installed) = args.get("task_installed").and_then(Value::as_bool) else {
-                return Err("task_installed must be a boolean".to_owned());
+                return Err(crate::i18n::text("error.boot.parameter"));
             };
             Event::Boot { task_installed }
         }
@@ -411,7 +411,12 @@ pub fn event_from_intent(intent: &str, args: &Value) -> Result<Event, String> {
         "dismiss-error" | "dismissError" => Event::DismissError,
         "continue-solstone" => Event::ContinueInSolstone,
         "download-solstone" => Event::DownloadSolstoneClicked,
-        _ => return Err(format!("unknown flow intent {intent}")),
+        _ => {
+            return Err(crate::i18n::strings(
+                "error.flow.intent",
+                &[("intent", intent)],
+            ));
+        }
     })
 }
 
@@ -516,7 +521,7 @@ pub fn setup_argv(journal: &Path, task_installed: bool, start_at_sign_in: bool) 
 }
 
 fn format_bytes(bytes: u64) -> String {
-    let units = ["bytes", "KB", "MB", "GB", "TB"];
+    let units = ["size.bytes", "size.kb", "size.mb", "size.gb", "size.tb"];
     let mut value = bytes as f64;
     let mut unit = 0;
     while value >= 1000.0 && unit < units.len() - 1 {
@@ -524,12 +529,14 @@ fn format_bytes(bytes: u64) -> String {
         unit += 1;
     }
     if unit == 0 {
-        format!("{bytes} bytes")
-    } else if value < 10.0 {
-        format!("{:.1} {}", value, units[unit])
-    } else {
-        format!("{:.0} {}", value, units[unit])
+        return crate::i18n::byte_count(bytes as u16);
     }
+    let number = if value < 10.0 {
+        format!("{value:.1}")
+    } else {
+        format!("{value:.0}")
+    };
+    crate::i18n::strings(units[unit], &[("value", &number)])
 }
 
 pub fn filled_default_line(
@@ -822,7 +829,7 @@ pub fn reduce(session: &Session, event: &Event) -> Step {
             if next.journal_path.as_os_str().is_empty()
                 || next.journal_path.to_string_lossy().trim().is_empty()
             {
-                next.error = Some("choose where your journal lives".into());
+                next.error = Some(crate::i18n::text("error.folder.required"));
                 return Step {
                     session: next,
                     effects,
@@ -1009,7 +1016,7 @@ pub fn reduce(session: &Session, event: &Event) -> Step {
                 };
             }
             if proposal_id.trim().is_empty() {
-                next.error = Some("that mark isn't the one on screen".to_owned());
+                next.error = Some(crate::i18n::text("error.mark.changed"));
                 return Step {
                     session: next,
                     effects,
@@ -1042,7 +1049,7 @@ pub fn reduce(session: &Session, event: &Event) -> Step {
                 };
             }
             if !matches!(choice.as_str(), "local" | "byo" | "spp" | "later") {
-                next.error = Some("unknown thinking choice".into());
+                next.error = Some(crate::i18n::text("error.thinking.choice"));
                 return Step {
                     session: next,
                     effects,
@@ -1055,7 +1062,7 @@ pub fn reduce(session: &Session, event: &Event) -> Step {
                     .and_then(|s| s.pointer("/thinking/capability"))
                     .and_then(Value::as_str);
                 if capability != Some("ok") {
-                    next.error = Some("local thinking is unavailable on this device".into());
+                    next.error = Some(crate::i18n::text("error.thinking.unavailable"));
                     return Step {
                         session: next,
                         effects,
@@ -1116,7 +1123,7 @@ pub fn reduce(session: &Session, event: &Event) -> Step {
                 };
             }
             if attempt_id.trim().is_empty() {
-                next.error = Some("that download isn't the one on screen".to_owned());
+                next.error = Some(crate::i18n::text("error.download.changed"));
                 return Step {
                     session: next,
                     effects,
@@ -1191,7 +1198,7 @@ pub fn reduce(session: &Session, event: &Event) -> Step {
             if next.stored_redirect.as_deref() == Some(APP_HOME_PATH) {
                 effects.push(Effect::Browser(BrowserEffect::OpenHome));
             } else {
-                next.error = Some("unexpected redirect destination".into());
+                next.error = Some(crate::i18n::text("error.redirect"));
                 effects.push(Effect::Browser(BrowserEffect::Rejected));
             }
         }
@@ -1299,7 +1306,7 @@ pub fn reduce(session: &Session, event: &Event) -> Step {
                 Err(_) => {
                     next.inflight = None;
                     next.busy = false;
-                    next.error = Some("could not save this step. try again.".to_owned());
+                    next.error = Some(crate::i18n::text("error.step.save"));
                 }
             }
         }
@@ -1337,8 +1344,7 @@ pub fn reduce(session: &Session, event: &Event) -> Step {
                 }
                 ContinueOutcome::Failed => {
                     next.continuation_pending = true;
-                    next.error =
-                        Some("could not continue in the solstone app. try again.".to_owned());
+                    next.error = Some(crate::i18n::text("error.handoff.failed"));
                 }
                 ContinueOutcome::Unsupported => {
                     next.continuation_pending = true;
@@ -1645,7 +1651,7 @@ fn apply_snapshot(session: &mut Session, effects: &mut Vec<Effect>, state: &Valu
     if admit_setup_state(state).is_err() {
         session.authoritative = false;
         if session.error.is_none() {
-            session.error = Some("the journal's setup state could not be read".to_owned());
+            session.error = Some(crate::i18n::text("error.setup.state"));
         }
         return;
     }

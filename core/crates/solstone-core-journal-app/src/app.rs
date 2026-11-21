@@ -38,11 +38,32 @@ pub enum Launch {
     AfterUpdate,
 }
 
+fn index_html() -> &'static str {
+    static PAGE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    PAGE.get_or_init(|| {
+        let title = crate::i18n::text("title")
+            .replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('"', "&quot;");
+        include_str!("../ui/index.html")
+            .replace("{{locale}}", crate::i18n::locale())
+            .replace("{{title}}", &title)
+    })
+}
+
 /// The pages built into the app, and the journal's own type and font.
 fn asset(path: &str) -> Option<(&'static [u8], &'static str)> {
     Some(match path {
-        "/" | "/index.html" => (include_bytes!("../ui/index.html"), "text/html"),
+        "/" | "/index.html" => (index_html().as_bytes(), "text/html"),
         "/app.css" => (include_bytes!("../ui/app.css"), "text/css"),
+        "/catalog.js" => (
+            include_bytes!(
+                "../../../../i18n/generated/windows-app/classic/journal-windows-app/api.js"
+            ),
+            "text/javascript",
+        ),
+        "/i18n.js" => (include_bytes!("../ui/i18n.js"), "text/javascript"),
         "/app.js" => (include_bytes!("../ui/app.js"), "text/javascript"),
         "/mark.js" => (include_bytes!("../ui/mark.js"), "text/javascript"),
         // The journal's own QR code maker, the one its pairing page draws with.
@@ -252,7 +273,7 @@ fn dispatch_effect(context: &Context, effect: &crate::setup_flow::Effect, port: 
                             crate::setup_flow::Event::PendingRecorded {
                                 generation: expected_gen,
                                 timezone: tz,
-                                result: Err("could not save this step. try again.".to_owned()),
+                                result: Err(crate::i18n::text("error.step.save")),
                             },
                         ));
                         return;
@@ -268,10 +289,10 @@ fn dispatch_effect(context: &Context, effect: &crate::setup_flow::Effect, port: 
                         contract.limits.lock_acquire_ms,
                         &mut clock,
                     )
-                    .map_err(|_| "could not save this step. try again.".to_owned())?;
+                    .map_err(|_| crate::i18n::text("error.step.save"))?;
                     let id = crate::setup_handoff::generate_uuid();
                     crate::setup_handoff::write_pending(&state_dir, &id)
-                        .map_err(|_| "could not save this step. try again.".to_owned())?;
+                        .map_err(|_| crate::i18n::text("error.step.save"))?;
                     Ok(())
                 })();
                 proxy.send_event(UserEvent::Flow(crate::setup_flow::Event::PendingRecorded {
@@ -540,7 +561,7 @@ fn handle(context: &Context, window: &Window, message: &str) {
         }
         "syncSignInLaunch" => {
             let Some(on) = args.get("on").and_then(Value::as_bool) else {
-                context.reply(&id, Err("missing on parameter".to_owned()));
+                context.reply(&id, Err(crate::i18n::text("error.parameter.missing")));
                 return;
             };
             context.reply(&id, shell::set_sign_in_launch(on).map(|()| Value::Null));
@@ -583,7 +604,7 @@ fn handle(context: &Context, window: &Window, message: &str) {
         }
         "setup" if !crate::setup_flow::SETUP_SEQUENCE_ENABLED => {
             let Some(path) = text("path").filter(|path| !path.trim().is_empty()) else {
-                context.reply(&id, Err("choose where your journal lives".to_owned()));
+                context.reply(&id, Err(crate::i18n::text("error.folder.required")));
                 return;
             };
             let proxy = context.proxy.clone();
@@ -601,7 +622,7 @@ fn handle(context: &Context, window: &Window, message: &str) {
         "initProbe" if !crate::setup_flow::SETUP_SEQUENCE_ENABLED => {
             context.spawn(id, move || {
                 let port =
-                    journal_port().ok_or_else(|| "the journal isn't answering".to_owned())?;
+                    journal_port().ok_or_else(|| crate::i18n::text("error.journal.offline"))?;
                 Convey::new(Some(port)).init_probe().map(|probe| {
                     json!(match probe {
                         InitProbe::Complete => "complete",
@@ -614,10 +635,7 @@ fn handle(context: &Context, window: &Window, message: &str) {
             let method = text("method").unwrap_or_else(|| "GET".to_owned());
             let path = text("path").unwrap_or_default();
             if !crate::setup_flow::SETUP_SEQUENCE_ENABLED && path.starts_with("/init/") {
-                context.reply(
-                    &id,
-                    Err("native setup actions are unavailable in this build".into()),
-                );
+                context.reply(&id, Err(crate::i18n::text("error.setup.actions")));
                 return;
             }
             let renderer_port = args
@@ -633,14 +651,15 @@ fn handle(context: &Context, window: &Window, message: &str) {
                 crate::setup_flow::ConveyDispatch::Rejected => {
                     context.reply(
                         &id,
-                        Err(format!(
-                            "{method} {path} isn't a journal route the app uses"
+                        Err(crate::i18n::strings(
+                            "error.route.unknown",
+                            &[("method", &method), ("path", &path)],
                         )),
                     );
                     return;
                 }
                 crate::setup_flow::ConveyDispatch::Unanswered => {
-                    context.reply(&id, Err("the journal isn't answering".to_owned()));
+                    context.reply(&id, Err(crate::i18n::text("error.journal.offline")));
                     return;
                 }
                 crate::setup_flow::ConveyDispatch::Use(port) => port,
@@ -676,13 +695,13 @@ fn handle(context: &Context, window: &Window, message: &str) {
                 if Path::new(&path).is_dir() {
                     shell::open(&path)
                 } else {
-                    Err("that folder isn't there".to_owned())
+                    Err(crate::i18n::text("error.folder.missing"))
                 }
             } else if !crate::setup_flow::SETUP_SEQUENCE_ENABLED
                 && matches!(target.as_str(), "journal" | "init")
             {
                 journal_port()
-                    .ok_or_else(|| "the journal isn't answering".to_owned())
+                    .ok_or_else(|| crate::i18n::text("error.journal.offline"))
                     .and_then(|port| {
                         let path = if target == "init" {
                             "/init"
@@ -715,10 +734,10 @@ fn handle(context: &Context, window: &Window, message: &str) {
                             .borrow()
                             .error
                             .clone()
-                            .unwrap_or_else(|| "the journal isn't answering".to_owned())),
+                            .unwrap_or_else(|| crate::i18n::text("error.journal.offline"))),
                     },
                     crate::setup_flow::BrowserEffect::Rejected => {
-                        Err("unexpected redirect destination".to_owned())
+                        Err(crate::i18n::text("error.redirect"))
                     }
                     crate::setup_flow::BrowserEffect::None => Ok(()),
                 }
@@ -727,18 +746,15 @@ fn handle(context: &Context, window: &Window, message: &str) {
                 if is_loopback_base(&base) {
                     open_journal_page(&base, page)
                 } else {
-                    Err("that isn't your journal's address".to_owned())
+                    Err(crate::i18n::text("error.journal.address"))
                 }
             } else {
-                Err("that page isn't one the app opens".to_owned())
+                Err(crate::i18n::text("error.page.unsupported"))
             };
             context.reply(&id, result.map(|()| Value::Null));
         }
         "flow" if !crate::setup_flow::SETUP_SEQUENCE_ENABLED => {
-            context.reply(
-                &id,
-                Err("setup sequence is unavailable in this build".to_owned()),
-            );
+            context.reply(&id, Err(crate::i18n::text("error.setup.sequence")));
         }
         "flow" => {
             let intent = text("intent").unwrap_or_default();
@@ -807,7 +823,13 @@ fn handle(context: &Context, window: &Window, message: &str) {
                 context.proxy.send_event(UserEvent::Exit);
             }
         }
-        _ => context.reply(&id, Err(format!("unknown request {command}"))),
+        _ => context.reply(
+            &id,
+            Err(crate::i18n::strings(
+                "error.request.unknown",
+                &[("command", command)],
+            )),
+        ),
     }
 }
 
@@ -818,23 +840,32 @@ fn set_icon(window: &Window, args: &Value) -> Result<Value, String> {
     let images = args
         .get("images")
         .and_then(Value::as_array)
-        .ok_or("no icon images")?
+        .ok_or_else(|| crate::i18n::text("error.icon.empty"))?
         .iter()
         .map(|image| {
-            let side = image.get(0).and_then(Value::as_u64).ok_or("no icon size")? as u32;
+            let side = image
+                .get(0)
+                .and_then(Value::as_u64)
+                .ok_or_else(|| crate::i18n::text("error.icon.no.size"))?
+                as u32;
             let bytes = image
                 .get(1)
                 .and_then(Value::as_array)
-                .ok_or("no icon image")?
+                .ok_or_else(|| crate::i18n::text("error.icon.no.image"))?
                 .iter()
                 .map(|byte| byte.as_u64().and_then(|byte| u8::try_from(byte).ok()))
                 .collect::<Option<Vec<u8>>>()
-                .ok_or("an icon image isn't bytes")?;
+                .ok_or_else(|| crate::i18n::text("error.icon.bytes"))?;
             Ok((side, bytes))
         })
-        .collect::<Result<Vec<_>, &str>>()?;
+        .collect::<Result<Vec<_>, String>>()?;
     let icon = ico::pack_png_icon(&images)?;
-    let path = prefs::mark_icon_path();
+    let generic = args.get("mark") == Some(&Value::Null);
+    let path = if generic {
+        prefs::mark_icon_path().with_file_name("generic-icon.ico")
+    } else {
+        prefs::mark_icon_path()
+    };
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
@@ -842,6 +873,9 @@ fn set_icon(window: &Window, args: &Value) -> Result<Value, String> {
     std::fs::write(&temporary, icon).map_err(|error| error.to_string())?;
     std::fs::rename(&temporary, &path).map_err(|error| error.to_string())?;
     shell::set_window_icon(window.hwnd(), Some(&path));
+    if generic {
+        return Ok(Value::Null);
+    }
     let shortcut = shell::set_shortcut_icon(Some(&path))?;
     prefs::update_icon_mark(args.get("mark").cloned());
     Ok(json!({"shortcut": shortcut}))
@@ -868,7 +902,7 @@ pub fn run(launch: Launch, update_feed: Option<String>) {
         let _ = crate::journal::restore_update_intent();
     }
     // A sign-in start waits in the taskbar; the owner opens it from there.
-    let window = Window::new("journal", launch == Launch::SignIn);
+    let window = Window::new(&crate::i18n::text("title"), launch == Launch::SignIn);
     let proxy = window.proxy();
     {
         let proxy = proxy.clone();
@@ -919,7 +953,7 @@ pub fn run(launch: Launch, update_feed: Option<String>) {
     ) {
         Ok(page) => page,
         Err(reason) => {
-            shell::alert("journal", &reason);
+            shell::alert(&crate::i18n::text("title"), &reason);
             return;
         }
     };

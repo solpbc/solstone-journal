@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app devices not running body.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 68,
+  "source_revision": "ab341a2eab3f51e44e37120c0de93b4dea3042417edc3acba88ede990fb342b6",
+  "risk": "routine",
+  "auto_merge": true
+}

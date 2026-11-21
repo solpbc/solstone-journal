@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app updates auto download.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 68,
+  "source_revision": "d15c80725c2df2d98ba0a4900b2f1a7f512dd8899e3d04287b9dac4196ed9b60",
+  "risk": "routine",
+  "auto_merge": true
+}

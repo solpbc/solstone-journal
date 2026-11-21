@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app last seen unknown.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "5829e636b45109addc1e1d07b184855cb1def8a0a8d14b8d586bf7d4fbbcd642",
+  "risk": "routine",
+  "auto_merge": true
+}

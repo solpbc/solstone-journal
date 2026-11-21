@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app pairing failed title.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 42,
+  "source_revision": "fef89067740bb6fb1540ffb6a0048915fe59548eeb5ebf6ddf4b4c85a846d916",
+  "risk": "routine",
+  "auto_merge": true
+}

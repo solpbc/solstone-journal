@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app updates install.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "21cf529f08b6df79da64780d7ffcac84129a3a91728ec5bee856e663577bc776",
+  "risk": "routine",
+  "auto_merge": true
+}

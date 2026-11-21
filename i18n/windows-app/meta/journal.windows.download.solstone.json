@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app download solstone.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 74,
+  "source_revision": "035197ebf81566781c3e3bfd0b700a5066844beaf78ebff789189d89ab6412d7",
+  "risk": "routine",
+  "auto_merge": true
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app steps doctor.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "c433a41601627b7b5188bcbff6b25b81c63bfcbb8f41cdbe1f5c71011f55c4c6",
+  "risk": "routine",
+  "auto_merge": true
+}

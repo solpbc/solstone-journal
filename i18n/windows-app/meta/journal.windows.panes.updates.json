@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app panes updates.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "5435eec9883140ac61ea0040049b5d111a9c753c721976d64955d2e833fb9145",
+  "risk": "routine",
+  "auto_merge": true
+}

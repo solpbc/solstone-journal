@@ -1,0 +1,21 @@
+{
+  "description": "Error signin write.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [
+    {
+      "name": "result",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 120,
+  "source_revision": "bcbe4b1502df97d574a878f5c96bf9ca667825e05f1a56025585c701ee3031c4",
+  "risk": "routine",
+  "auto_merge": true
+}

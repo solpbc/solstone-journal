@@ -1,0 +1,21 @@
+{
+  "description": "Error journal response.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [
+    {
+      "name": "status",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 66,
+  "source_revision": "e020e5f2d9c671abb465a6e835c0580dcbf466f6282ccff2789038a6e2b97e96",
+  "risk": "routine",
+  "auto_merge": true
+}

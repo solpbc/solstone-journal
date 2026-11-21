@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app updates unavailable subtitle.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 94,
+  "source_revision": "70ce78d539a774504bfd16550ea7c17102021dc53e3ae9f582087c9fed1ea311",
+  "risk": "routine",
+  "auto_merge": true
+}

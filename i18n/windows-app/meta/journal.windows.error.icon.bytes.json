@@ -1,0 +1,16 @@
+{
+  "description": "Error icon bytes.",
+  "context": "Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 50,
+  "source_revision": "3a85dd668e17098b75f43c636d580eb4842ca5d7d9e0d272a974b9a50977c975",
+  "risk": "routine",
+  "auto_merge": true
+}

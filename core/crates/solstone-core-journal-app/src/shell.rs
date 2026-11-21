@@ -66,7 +66,10 @@ pub fn open(target: &str) -> Result<(), String> {
     if result as usize > 32 {
         Ok(())
     } else {
-        Err(format!("windows couldn't open {target}"))
+        Err(crate::i18n::strings(
+            "error.shell.open",
+            &[("target", target)],
+        ))
     }
 }
 
@@ -135,7 +138,9 @@ pub fn open_admin_terminal(bin: &Path, home: &Path) -> Result<(), String> {
         .creation_flags(CREATE_NEW_CONSOLE)
         .spawn()
         .map(drop)
-        .map_err(|error| format!("couldn't open a terminal: {error}"))
+        .map_err(|error| {
+            crate::i18n::strings("error.terminal.open", &[("error", &error.to_string())])
+        })
 }
 
 const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
@@ -163,8 +168,9 @@ pub fn set_sign_in_launch(on: bool) -> Result<(), String> {
         )
     };
     if opened != 0 {
-        return Err(format!(
-            "couldn't open the sign-in list (windows error {opened})"
+        return Err(crate::i18n::strings(
+            "error.signin.open",
+            &[("opened", &opened.to_string())],
         ));
     }
     let result = if on {
@@ -194,8 +200,9 @@ pub fn set_sign_in_launch(on: bool) -> Result<(), String> {
     if result == 0 {
         Ok(())
     } else {
-        Err(format!(
-            "couldn't change the sign-in list (windows error {result})"
+        Err(crate::i18n::strings(
+            "error.signin.write",
+            &[("result", &result.to_string())],
         ))
     }
 }

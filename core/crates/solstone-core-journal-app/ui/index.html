@@ -1,25 +1,26 @@
 <!doctype html>
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 <!-- Copyright (c) 2026 sol pbc -->
-<html lang="en">
+<html lang="{{locale}}">
 <head>
   <meta charset="utf-8">
-  <title>journal</title>
+  <title>{{title}}</title>
   <link rel="stylesheet" href="tokens.css">
   <link rel="stylesheet" href="tokens-dark.css" media="(prefers-color-scheme: dark)">
   <link rel="stylesheet" href="app.css">
+  <script src="catalog.js"></script>
   <script src="pairing-qr.js"></script>
   <script src="sunarc.js"></script>
   <script type="module" src="app.js"></script>
 </head>
 <body>
-  <div id="loading" class="center"><p class="muted">journal</p></div>
+  <div id="loading" class="center"><p class="muted">{{title}}</p></div>
 
   <div id="setup-ground" aria-hidden="true" hidden></div>
   <section id="firstrun" class="center" hidden></section>
 
   <div id="main" hidden>
-    <nav id="sidebar" aria-label="journal">
+    <nav id="sidebar" aria-label="{{title}}">
       <ul id="panes" role="tablist"></ul>
       <div class="sidebar-foot">
         <button type="button" id="admin-terminal" class="link"></button>

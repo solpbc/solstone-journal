@@ -1,0 +1,16 @@
+{
+  "description": "Error folder required.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 62,
+  "source_revision": "f675901307ebd6207622b345be2f68999e4ff7baa8e5167a057041871d320b45",
+  "risk": "routine",
+  "auto_merge": true
+}

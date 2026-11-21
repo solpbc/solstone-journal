@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app setup thinking text.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 176,
+  "source_revision": "cf17e6a7a520de44fe32232576d6fb1c6bcac141d3b101c720199c39469ce854",
+  "risk": "routine",
+  "auto_merge": true
+}

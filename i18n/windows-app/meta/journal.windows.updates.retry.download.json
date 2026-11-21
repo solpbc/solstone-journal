@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app updates retry download.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "d39af4ffa3fbb6ab11a116aa593a98dd70eb2c1d6a0f6f3877b386406cc1d92d",
+  "risk": "routine",
+  "auto_merge": true
+}

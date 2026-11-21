@@ -1,0 +1,21 @@
+{
+  "description": "Error flow intent.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [
+    {
+      "name": "intent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 62,
+  "source_revision": "147ac64b87be55d1e3de4b05ab4af3aedc29b6af6d370564581020c5e1799c9e",
+  "risk": "routine",
+  "auto_merge": true
+}

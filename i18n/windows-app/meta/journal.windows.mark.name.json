@@ -1,0 +1,29 @@
+{
+  "description": "Windows journal app mark name.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [
+    {
+      "name": "first",
+      "type": "string"
+    },
+    {
+      "name": "second",
+      "type": "string"
+    },
+    {
+      "name": "words",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "max_length": 72,
+  "source_revision": "d1a05f1d4a0a77fb737ad9fde0615223ca9af708f34a2652723c63d520d29cf8",
+  "risk": "routine",
+  "auto_merge": true
+}

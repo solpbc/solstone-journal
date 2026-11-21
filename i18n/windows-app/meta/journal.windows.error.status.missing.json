@@ -1,0 +1,16 @@
+{
+  "description": "Error status missing.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 60,
+  "source_revision": "896398d967de6d6658ce6200f9335d8d7b49730d639938ec77517bf38cb17d46",
+  "risk": "routine",
+  "auto_merge": true
+}

@@ -1,0 +1,1748 @@
+{
+  "lock_version": 1,
+  "messages": [
+    {
+      "id": "journal.windows.add.device",
+      "source": "2b50268026aebd328925dfc9b484df4f8aef5680c1cb86c7b162788a424648b8",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.admin.terminal",
+      "source": "41d995d29be008de0e8fad29bd6c2496855d28f3337a338f671b92b835f1bdfd",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.adopt.landing.line",
+      "source": "8ad28d0f80cbe8a471cf675badc94519f35151f23355452a7a2a9fd35c8faa74",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.backup.line",
+      "source": "8ef9b32c45b3e77d0fcfd191167debbf2e9c431d7b5289ddb0001ff5967fe1a4",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.backup.title",
+      "source": "a1b2d383f144e276e8cccc711d226fe1748e6cbd5512651095724cfe60ba6bc9",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.brand",
+      "source": "bf38593db11de7fe3f5a21bc5fad9ba9de265ad0f9c30825d125df8f075566a3",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.browser.failed",
+      "source": "861ee9229a20613a3c9a81f54bd0b9d8540225de51bf7cc2b8ce6ef2c5e22872",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.browser.line",
+      "source": "c192907ae96dff4cdeb978fb5770b1230e4c0a0c4b340650cf58bb238e78cf72",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.browser.title",
+      "source": "70299b747e69eeec290d37f8318a370fedcc55b90515eb22bfd748f005049b96",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.cancel",
+      "source": "2fb1b0b4511f744f1f8617c9484ba0385da245221e9a958f185c1f0a1c255879",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.choose.location",
+      "source": "fff071df3a796b0e7d2582559d38c8725db2b96a4074e67230e548b38999edaf",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.close",
+      "source": "a1f34abf437ec17e427804fd2f06f257c671423b17b647a1bd82dd7ac195af73",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.confirmed.line",
+      "source": "1c9b5b6c8c538ab46bf72673712c486354349f0d47a56ee7793eb900b8231ae7",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.continue.button",
+      "source": "cacd477d0f0714ce579bdb1040df9a4afc7d8a6776827adef662c920b61a4b6f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.continue.in.solstone",
+      "source": "9f0ad7336fe006f0490251cb00c4184099e7bd25da2c13c2557633ae354867c7",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.copied",
+      "source": "3b730de67e680f70db79d8fc21a594ce22e47f02c75e2af872f67d8b1f567120",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.copied.about",
+      "source": "67f81d3c65b9266a733b33fe06fe735f692604bb5d79bc206e555902e6dd785e",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.copy.about",
+      "source": "7080b571d8e9a243e0f5ee2d250e53b9578ef07310d7a048d070b490cf45621c",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.copy.about.failed",
+      "source": "98e024791b2e15644f81ca3862fc412aafdaba561887b76289994d96c8781699",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.copy.link",
+      "source": "48fe19be58987614d105e469c2d14be99d23c9d81dc312aa0044c8669d141d3f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.countdown",
+      "source": "407051bf6849610e6e99b74ba59c94ac6d48de107ee82d64fb7d5b6501752813",
+      "contract": "2d16102d08e2b249b186681a706dc45ccfbe2fb586e6c90258b722d5814b8535",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.devices.empty.body",
+      "source": "9251777fbf26d932018d48d1126a899b7083efefff7975113bb214d1cbf45fba",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.devices.empty.title",
+      "source": "af032840a3852dfe68bf5a7baec8588fccd260ba9d508e11fc212b832e5941bb",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.devices.load.failed",
+      "source": "6327113827983288d6b4fbf8fe28f08a957066f1e2fdb6c44ce2be99fa9f36f9",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.devices.loading",
+      "source": "e02222b8df1733967b8de1e5c5c87b0e015c6ce7cb824e3989458d95de05e372",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.devices.not.running.body",
+      "source": "ab341a2eab3f51e44e37120c0de93b4dea3042417edc3acba88ede990fb342b6",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.devices.not.running.title",
+      "source": "1c2f6c1b72716c20f2ff737fc5d85fb7ab0244888b9556a0f5a256d37d419c52",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.devices.peer",
+      "source": "edf9fc3661f4321633bead8a846173e21f109d8760983ec889b7a9c4c3542f3f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.devices.title",
+      "source": "d48e648e6c0b144d6fde462418c0bf77f0b6a2b5e66a080b8b883d534291feff",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.disk.used",
+      "source": "b51761347cffbfdd9b16c1e0bc3574899ced833268e641748de91ff7100fc0b8",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.display.not.running",
+      "source": "bd58e16a7b7b2dcb6b1461c89d630a20893bf50a67b9858ba0cd527e9dc4b9e2",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.display.other.account",
+      "source": "bd58e16a7b7b2dcb6b1461c89d630a20893bf50a67b9858ba0cd527e9dc4b9e2",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.display.running",
+      "source": "51abeaec6e8e3212204617e760f35cbfecd424023d8adbdc61668b2e60aa24b9",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.display.starting",
+      "source": "86c0e85e91f9bea3f24b68537ab8e16a899d2a345a59321e4be8261bad6145d1",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.display.stopped",
+      "source": "1c1cc4feaf896a2ffc78fa3585c4b3ab59157702f265adf605758c776ba3b376",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.display.stopping",
+      "source": "d9d62f962479295211a2da030f1c5ebf0b0a77077560d9841e3d31f1943bb640",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.download.solstone",
+      "source": "035197ebf81566781c3e3bfd0b700a5066844beaf78ebff789189d89ab6412d7",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.downloads.progress",
+      "source": "d67645f6768c373104f5126e88d71e20bae2126d34ff7d6c15d3c24dd45548d2",
+      "contract": "ff2c5f39372e1da459f1490c2e7ea020c40e12a9bfafa4c5e8581d7427516539",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.boot.parameter",
+      "source": "7f7f285fd9fcf1356a3c307580ed7361f01e50b5aec8728a84dcbb5fb49088a1",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.cli.no.reason",
+      "source": "2f51d450387524ad9b5ee6e01c9ac2ec0750fa8a5cfdef431747705c6340e354",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.cli.run",
+      "source": "fe21f10561e38e6ff52cc29069ecfe02c51f64e03f4e2181dd13450705d8feea",
+      "contract": "cd8338c1064eb3d9bfc46b2711e69439e425fd8648ee88e9b2df7001e57ee8db",
+      "protected": "03ac92aae3fda8fc565c8414fb42f45e4cf282c0782fa2b2c59a478d8614b86b",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.download.changed",
+      "source": "ca908b9f71e2ab0da6a10075d3ad4cb34a81836f9b0aef813a799e42566d4c05",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.flow.intent",
+      "source": "147ac64b87be55d1e3de4b05ab4af3aedc29b6af6d370564581020c5e1799c9e",
+      "contract": "3f0e6d8149e2d3d18841af4ba76d2adaf00b768c1037b1d2d9c0491863e7b239",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.folder.missing",
+      "source": "1cb77f9532b868b13120d41d4ea765f13022ad2cff5bc280193d9d2e2332b010",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.folder.required",
+      "source": "f675901307ebd6207622b345be2f68999e4ff7baa8e5167a057041871d320b45",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.handoff.failed",
+      "source": "637d0f5f84a2006cbd8556b867f266814d5f94fa49171d60060ffd33de9331bc",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.icon.bytes",
+      "source": "3a85dd668e17098b75f43c636d580eb4842ca5d7d9e0d272a974b9a50977c975",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.icon.count",
+      "source": "89a66fa20efd11cb0857bc5be4168e778d9bd38eda468b93b15e188f4f929b5c",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.icon.empty",
+      "source": "6223f896a1fc89afbd73bcbd0dd725d0a485ed4cbfec6e113439d105e314c6c1",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.icon.no.image",
+      "source": "8175624a21198f11fc2170383dc86c68665e6b724916bc013d0d00aa47792a1d",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.icon.no.size",
+      "source": "270e1409fb8cdceab9ce50ef03f813525c997d4393d7c420d7faf7c0fc504704",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.icon.png",
+      "source": "c81413897053559c649d1bd88a3a687c46972980a14f5000b0964ac716695eb1",
+      "contract": "2a812a40c6d7eba1b72d6c56ee243f5a558a137d91bfb3ea6af49723d74191a5",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.icon.size",
+      "source": "f8949952042387e1b0d7e866ad14252f92fd4023841525f4ea835649eefcba36",
+      "contract": "2a812a40c6d7eba1b72d6c56ee243f5a558a137d91bfb3ea6af49723d74191a5",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.journal.address",
+      "source": "dcd77c26db4c07f86259081c95ab714eeee5b494c78148ed6f904d9c33c552f8",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.journal.offline",
+      "source": "c1d2f85de7b63cff7d50c204dea3ae7d723244e0815b2bd3c64c732ba0b5b8a0",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.journal.response",
+      "source": "e020e5f2d9c671abb465a6e835c0580dcbf466f6282ccff2789038a6e2b97e96",
+      "contract": "632d2ec147898b3d85161a426ae9dda5ecd965642bb199d0f8d9cdbbd0379482",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.mark.changed",
+      "source": "1b0dc4c463189a8ae095cca88ebb55f334cd35a005df9162a950ee4d09798b7c",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.page.unsupported",
+      "source": "f78ec830e6794b290ad1365300aa2a6d5d645a0fa0c364cdce4d1c94b1676ae8",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.pairing.link",
+      "source": "77fccdfd7000edcb93e7c603bea684baed487f8096e9b3370a39286e91d89cff",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.parameter.missing",
+      "source": "153329b78b8248d7048917f88366dc45d8b7c3de8d56d5bb7c2b12886d3b404b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.redirect",
+      "source": "ed1f118ac8863630bd5a83dd9a7ed3bc0af7b6faf4dd7bf4c217dc143eb9bb72",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.request.unknown",
+      "source": "d3e9cc07df3ddf70f1af584fea46f8fe6b6d37eed391bb705984c318bda411cc",
+      "contract": "3410a03735de41954d36dad3918ed1a82f57e24efcb7e8568553666d51eec176",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.route.unknown",
+      "source": "47972fdc8063314aa983c2947bcb3d919324c47eaae9a0b41bba8b9f25038b2e",
+      "contract": "124cf20185b02b6e00bb78a81745f782d9fd8d8776058eab6abb8eb3a894269f",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.runtime.missing",
+      "source": "72667fc4a8be0939cf4980e2b63d9a75f51c9e9ecb7ac1167eb3d75fab14c67b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.setup.actions",
+      "source": "e447ee7e90e8a24b191cd428c87bb81a524ddaa4f51e7b4851e1652eb4844197",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.setup.copy",
+      "source": "52550129cf9267a4840a340b771556e57ef994d1fb7c47b3693e9a000c05bd46",
+      "contract": "cd8338c1064eb3d9bfc46b2711e69439e425fd8648ee88e9b2df7001e57ee8db",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.setup.sequence",
+      "source": "605e077d4434ebcec627c334a0f8ffc211344f63be81c729b7203fbca0513f5d",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.setup.start",
+      "source": "ccb501eb3a9137b0528a28f1bfb5f7a82798117a4fc77fe30be596e6648933ee",
+      "contract": "cd8338c1064eb3d9bfc46b2711e69439e425fd8648ee88e9b2df7001e57ee8db",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.setup.state",
+      "source": "947d5a489d0713bc6fb5326149baeec0682bc3911e88ac087a431439d6a7d4be",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.setup.unfinished",
+      "source": "ae959d23f5375bb01d5860fbfacb428ab184c5ecb12df8f26263726b7f594669",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.setup.wait",
+      "source": "fbc666d31f845ca9c2acb1b231df78d3365dd4deb45fd6cadf479ffc911691ac",
+      "contract": "cd8338c1064eb3d9bfc46b2711e69439e425fd8648ee88e9b2df7001e57ee8db",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.shell.open",
+      "source": "aea6c26404bb96f1df4c1af3ad78a19667866a13684d7b4f7b2cfb1408815e34",
+      "contract": "a72ba38c062d4538d2c76639b1412cfc756937ca848f90ac9f7337002d486123",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.signin.open",
+      "source": "40abbd58c815bbce6029fde6db3676e1bb85c3d364f1d37aea3103095a031c8e",
+      "contract": "f34a86c3b8a58397e136925c927b65e2ae7f1390e616ef376e1496053ab028a5",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.signin.write",
+      "source": "bcbe4b1502df97d574a878f5c96bf9ca667825e05f1a56025585c701ee3031c4",
+      "contract": "7d8c7442699e328313d27e98a00057d33c61313c17bfa548519a32f4445f5a9d",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.status.missing",
+      "source": "896398d967de6d6658ce6200f9335d8d7b49730d639938ec77517bf38cb17d46",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.status.schema",
+      "source": "565f85deee9ec5bfa681798bb063b3267d992f6db66951c1e137142b99f23e7c",
+      "contract": "df6eb27d37fb545477475bd0c0eae91ef6693dfae762cedc476a9aa153ab0f63",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.step.save",
+      "source": "3f39a4f1a3a92b852ef9bd8530fa7b20a6c61b32d498ffdbab138390a2f34f89",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.terminal.open",
+      "source": "ab28c89e4b0a4104c8edb362daa04f93dea4a02d1f9dd4cbcf8a7ce6694eb412",
+      "contract": "cd8338c1064eb3d9bfc46b2711e69439e425fd8648ee88e9b2df7001e57ee8db",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.thinking.choice",
+      "source": "e6f275e4564ef73b450b13c9aeee805f3095599025f3e1944b6dd71dc626100d",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.thinking.unavailable",
+      "source": "0ce9b1eec554366cfdde4da72a396155c0c89f1cd417206439cc51fc6fb7cbba",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.error.window.open",
+      "source": "cf9ca6cc1c8b2fbb0401fc42c2708adf8ac7ededa32bc2ba6d36eb67e005315d",
+      "contract": "59d2e3ecd32f990e4f3aabeb502e32f02d792e3c833c17a9fb91ea02b32115b6",
+      "protected": "f3d9ac8f045e6b6b50c6ec02dfbda32bc068ba045a991d32bf7c5c63cb60a62a",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.health",
+      "source": "f6af85f654b5d71c2d7b51b2ff48cd56c6cbc0ef59e28e23f801172d2d4ce49d",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.healthy",
+      "source": "7aa2db79528c9fc7819ec38f3203d96e68bdaf4fd2ea3f54688c9c54d488a247",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.home.line",
+      "source": "8bedb01019bdb184d37b5bb81ec951c74a5b75c18ea2f6049117f2afde3249e6",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.home.title",
+      "source": "f203c02c2f84b8c5c7c4f8b9560493108b6c4777b3ab3c5ce781dab9acbdf60b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.journal.found",
+      "source": "2f7099f21f491e54f3c901cfb5e44011244a8dfc71f4b9f853a08dd4ef872dc0",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.last.seen",
+      "source": "5dcb6db71348cb7fd24604268fb8a47466c8de226efd033a18489c674a5c703b",
+      "contract": "6979d4d46857d915950df394a8566197077b1e1a3e797b2be0cb5523bc6d69a3",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.last.seen.just.now",
+      "source": "23b801df2eda671b5db98fd493b6123e7dbd2d032ae6b1e88f06901f18f84fd9",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.last.seen.just.now.paired",
+      "source": "a02ab06b7ae4a72c9c8fb922032a42f5014cac3d1791fcca4af7437a4782f43e",
+      "contract": "62b40d2a9bcacdd386d5105aa93d46746f10ff9efcfae5ec2ea39133009a3368",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.last.seen.paired",
+      "source": "4857f7028d9d5a9fe64cb96ed1f4edd26119d8954fe03d3bbc6c9578b18606f0",
+      "contract": "ce2b8bd0ce36fb68f85bfa9ad27ed8787393fa64b17cbfa21d3b96d32bd5e2b4",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.last.seen.unknown",
+      "source": "5829e636b45109addc1e1d07b184855cb1def8a0a8d14b8d586bf7d4fbbcd642",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.last.seen.unknown.paired",
+      "source": "e0920a93572cd246401b159e3d2e96e32a77d60c07796095e62db24bcd6854cb",
+      "contract": "62b40d2a9bcacdd386d5105aa93d46746f10ff9efcfae5ec2ea39133009a3368",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.link.expired.body",
+      "source": "3d7d98dd86a5eefbb131014a847656a0104fca8d2390ec6bf5de6bfed0995528",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.link.expired.title",
+      "source": "2abdd36b5312868590107945f325247be6abe35b4090469f5a435802a0a87949",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.location",
+      "source": "25cf10f2c3e02071b3b420b2eb1f8cdfad716c2b2ca1ec3e18d82d9124992374",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.location.title",
+      "source": "f35e1c1e421803a57b7e5ec0152c77d879ebdcf9d56d022530cddd21fdb5aeae",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.mark.empty.name",
+      "source": "1a1802ba66f1ae2bc23e3356a25a3c0981799da3a35e93469ce59997c1e058ea",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.mark.name",
+      "source": "d1a05f1d4a0a77fb737ad9fde0615223ca9af708f34a2652723c63d520d29cf8",
+      "contract": "1d6642a284864c270328cbbb625b6eabe1fa9d25a28f286704c0c46caa7766be",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.mark.placeholder.words",
+      "source": "fec1adcfd81a3d50096b48043604008d3c381d92d724a31e905c984936638750",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.mark.unavailable.name",
+      "source": "f277612f15576d37a909d39911c49c05a9ce8a40b9901ab12ac6d8d9d450c07a",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.mark.unavailable.words",
+      "source": "3674927697214d128b27a00e2e56196ac435e8076ec18cbd2820b3edb122962b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.models.downloading",
+      "source": "6b4e93bb459b9c008ba668dbcb73fec1855326aeaf1f86fb14cbb1df20680805",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.models.missing",
+      "source": "4c83fec5ddc064e895535da18b1a1d8cd3b9b60a59f3675152869d601dfaf39d",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.network.close.confirm",
+      "source": "1b6c986a7cd2248865ec06bb9527a9cdb90134b97da76b582c508c0f4d0031fe",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.network.close.cta",
+      "source": "1f0714b6b843334fb54eb242170a04699a8efb1f4af27f47d3ccd57fee19b65a",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.network.closed",
+      "source": "b1685b11d33508e1b15a0edac543d79ab627eb7f9c3b6b6ffd0f6d3df26314e1",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.network.closed.help",
+      "source": "fe504c09037740f00c0ff625ec5717a03d9026fedac8528f8e80c7a56137045a",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.network.closed.help.windows",
+      "source": "91160fedebcf66ac937e901edbf5814eaa101360b3068beaf5e29886a2266e48",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.network.failed",
+      "source": "7389170ef6c04a2f686f63fab9392ef293a4bf21ad697bc1964782dcaad4d98d",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.network.not.reachable",
+      "source": "6a512b71937b72f234f7f3c964d0c1f45eb183dc48e6bc3457a897e4a2b4d2c5",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.network.open",
+      "source": "11b3ca0ab99e0077eb6b40b49660007ad5e08b3f537d70bb02fbb211bb8f86ec",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.network.open.agents",
+      "source": "5000868b95841652547c264941bb3c42735612f03ee68edbdd64a4b6de8f74d0",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.network.open.agents.windows",
+      "source": "7631863505bf683697a8012e05ec2b06cced6c2a0901db815ad1e3ad07edde1f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.network.open.cta",
+      "source": "11b3ca0ab99e0077eb6b40b49660007ad5e08b3f537d70bb02fbb211bb8f86ec",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.network.open.direct",
+      "source": "8c4e7e93a1edba3e57f71b81b0a60c4f72771adec4a9e903014dcb2521120e6c",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.network.open.direct.windows",
+      "source": "4a971582654f214db377f866e249a1d34b17e1d95f53570b1a84db19f4fb2cf4",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.network.open.until",
+      "source": "5b052f003f465b15eb0f1782c6d5438942fa109f72de449f5d164b82cc8e7ee0",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.network.open.until.windows",
+      "source": "c45fb58cb6141501e39b6ad9c1c3d8b6c6fafe1ba5b484497a1c633566cbb07b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.never.connected",
+      "source": "f50cf6b3c25ac57f49b015fa291186e5bb0a36ef4f72bdee095539877c922fda",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.never.connected.paired",
+      "source": "2aed476c58fac69a5f3383484ff8fc06b2c6721cee8b7872ce0a823815339cfa",
+      "contract": "62b40d2a9bcacdd386d5105aa93d46746f10ff9efcfae5ec2ea39133009a3368",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.open.backup",
+      "source": "c3fe7e54ea0e771cead764ef2443bac1da49944b9ee597766d57b072080bcf14",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.open.browser",
+      "source": "b85e80a5177781eb75da7670d7138fba87cadf51dd2b4b74621bbb76219f5e81",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.open.fresh.link",
+      "source": "9a49a0d70966d9920d1d9fa8f22849d9d7a95ac8030e3299ee17059c91f41d4b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.open.journal",
+      "source": "53eb791a3a6e5cacfb9ca3525170989f5f15ad4d1fbbc7ce2128d3dd92a48dc8",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.other.account.body",
+      "source": "5fc9fefff1a3e271e3fe734c1c1469f5ff739cd1dbfcc8b444a4240271c7572d",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.other.account.title",
+      "source": "6045d3372ff8f6deacfca35bd6e54cdb264900cb25e59bf67ce23b86355c6244",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.pair.this.pc",
+      "source": "224ab3e65b5bc199df8d593bf7da8327c014b220b20ed4a4057451786ac43524",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.paired.done",
+      "source": "d73e995d8e06641547f0fc9d9da8046932e0d18d65854c93bcd7370fed8f7485",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.paired.heading",
+      "source": "8743c314b7cac7ecabd5cf54cc888d3b8209bcbcc95d9ac2f36cb48f66cbb439",
+      "contract": "cec471e840bbb44a2ffe2a72b3d629e67302e1f35a2a8c15824f8a1875e37d11",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.paired.heading.unnamed",
+      "source": "e351d55d83f591e5bfd43b94bd8411ce61f35898660f10945c1f80a1050c4150",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.paired.note",
+      "source": "e8a128f3eec24a31d0572b730cf01ed4af22c65eee50ea6bcf173ce9fc9104c0",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.paired.note.anywhere",
+      "source": "7fd2828cbd471f38d58c2406a690d81a71b08fc956a3f517dc4b8a041ac4e9e1",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.paired.note.this.pc",
+      "source": "27a60458d1711743feb7b2a796a2ca73dc11d5e06bcf9c7fd155a865d6872716",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.paired.remove.failed",
+      "source": "082597f1433281ff359794cf47f73ec20531eccc49656167ea00f52ba6c26994",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.paired.removed",
+      "source": "7edc603a62266f5a41b0deafb9185e63ed1c876c16db6b7a25240437e629b114",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.paired.unpair",
+      "source": "b54afe5dd44cb339516496f47347aa83aa0d5078682dcdbf255a0756ad5b9e9f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.pairing.closed",
+      "source": "9e8d4460106c75a654c4df67edeac070bdb914f87317d1bf6b20a7793fef6966",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.pairing.code",
+      "source": "92e6be0dd9e3023223bad9dcf4424fc67ed5b3f6e692de42519db8d3e8283ea6",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.pairing.failed.title",
+      "source": "fef89067740bb6fb1540ffb6a0048915fe59548eeb5ebf6ddf4b4c85a846d916",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.pairing.instructions",
+      "source": "181c437a25b292734b5096b05da272a432dafc735d12b8d52e0cbb854d7e8e0b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.pairing.opening",
+      "source": "d9c6cdca115c4d925a9f7ec0c783e4c513bb55a5bb5edc7f6fdb19c8d736b617",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.pairing.this.pc",
+      "source": "2e2cb233e34cfd4353897514897523bf63320e866c61b035c4bc31fd73fcd90d",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.pairing.this.pc.copy",
+      "source": "386cd793e69a9f89f6edf2a2ea903ba7422648cb1bc77c413d11809a2d878243",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.panes.backup",
+      "source": "a1b2d383f144e276e8cccc711d226fe1748e6cbd5512651095724cfe60ba6bc9",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.panes.devices",
+      "source": "d48e648e6c0b144d6fde462418c0bf77f0b6a2b5e66a080b8b883d534291feff",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.panes.home",
+      "source": "682640950b9214f1f3bffe5f94b9d89e3b5effafbf3e9c21647605df43b5e7d2",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.panes.journal",
+      "source": "25cf10f2c3e02071b3b420b2eb1f8cdfad716c2b2ca1ec3e18d82d9124992374",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.panes.run",
+      "source": "290401bcdb2f6044a9924317896bdf924f524209d097967e915378dd24482b3f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.panes.startup",
+      "source": "69a5637099ea588cb4d168d6f8f36a50899d1c23e6e3fc923ffa769943817e1c",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.panes.updates",
+      "source": "5435eec9883140ac61ea0040049b5d111a9c753c721976d64955d2e833fb9145",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.peer.journals",
+      "source": "a7694ae27623e736d3efa5df24445e1c86a439aaaff5d4780f522ef81da345aa",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.quit",
+      "source": "c20be37a9e17af146948a8003744050dffda18dad972676e547e856d2fd98264",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.quitting",
+      "source": "31129970c0683b4e8a7b3a0b50819ccc4bf7670311ba449cb4206c5b07b46e8b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.relay.setup",
+      "source": "449a1fbac342637485e6800a1048f94d18c0e5e5c3f7908cc973bfe35e50564e",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.remove",
+      "source": "d257dacfdc4ab27815b38826a31678bbb77e1a516b0c365afa7277a9515652a1",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.remove.body",
+      "source": "aa7d0a00b6a3711ddbeadf2db14125f1e2217106a9e9c63beb6843aee1fdfc47",
+      "contract": "85053d723b7e1f28ae28297c665d0d09f73ecf55449bd50a1109e25a8c40f725",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.remove.failed",
+      "source": "0590f797a33c954704df90190165566626922d8f43c94aed92238ede67eada1b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.remove.title",
+      "source": "80462bad3cf9fec9e89a89f36ab4fa236e8ac14e6eb9c474f741f26e33161266",
+      "contract": "85053d723b7e1f28ae28297c665d0d09f73ecf55449bd50a1109e25a8c40f725",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.restart",
+      "source": "2a78c8984c102e6da80bc7aae1c495d66021664066a9dd115856ca86de729d18",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.run.state.link",
+      "source": "7706d24aeb94db078a290ab9d4be2f0b52d321d610f057148798ace670e7abe7",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.setup.app.term",
+      "source": "46ab32d94ece872a095500400bb641116913bcc2332e3d8f3ad5b56a8e5238f5",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.setup.app.text",
+      "source": "5dbba62c229fcf8dc829e88a800da2dd0f004cc0ec19d17f9cd9f22a5ba3258c",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.setup.band",
+      "source": "f190cff975cfb762322a318d36eb1568178fe94bcd17fdfc8777816d4470dfbf",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.setup.fits.title",
+      "source": "cf05434f51c14475f0bc253b63c539a1f50da79500dbbda252dd96ff682d1a68",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.setup.folder.label",
+      "source": "de31456826203cf41a742107cc40476723e237d515375540ee29c8fa3edaf56e",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.setup.folder.text",
+      "source": "b236e4eb91f38c3a57bb51f7a57d1992e51750918c59acf36ad7d8fcfbd7cef8",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.setup.folder.title",
+      "source": "37fd0a503e93f36f6e7d65c559d14e30fbbec0d8cac443209929733f8be7c3db",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.setup.journal.term",
+      "source": "f190cff975cfb762322a318d36eb1568178fe94bcd17fdfc8777816d4470dfbf",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.setup.journal.text",
+      "source": "db14bb3cd8087e2fa2801e02a416023b2cccca38fbe6ecec1e9266452ed10e6d",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.setup.local.desc",
+      "source": "6a9f36885bde74375911c92d0b95b06fc9a66b04e48d43d9447ddd0e178d926a",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.setup.on.this.pc",
+      "source": "d3b8138c8f425cdf95ae23f742036f12483d854ab95fc621c00f39e6f8ac83ab",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.setup.sign.in",
+      "source": "3a0773d735e846b3733b24581ecea7db5e0d0829f5d967488dbf2d122e7a1e6a",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.setup.start",
+      "source": "8cbf6a8ccfac5638cdb8e410a1eea78f5a91ed2deb2d21512b634ef5c18301e9",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.setup.step",
+      "source": "e0be97892144185ddebc8c89563a5b3a8f18092b601623818477479f1d74467e",
+      "contract": "f30e5d3f5930fd553df33351dd1fb01d348c7536ab65006c50f5cfee1e6d0ebf",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.setup.stopped",
+      "source": "4145781059e1acf60f56510645c75883fa5f13843f3fb3eb4a2f0796c34515c2",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.setup.subtitle",
+      "source": "6723ed0eb5e8f03fa5b2d7cc73494e0e9bc9aec2be97b19f07ba55bdce5407e1",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.setup.thinking.lead",
+      "source": "bad2b75e6153c67776fe162fbe2e191da8eec7d2f1d8d11505bae9f262fff32f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.setup.thinking.term",
+      "source": "77bd5ed23464ba452f6aa283d6282f488aba9c73c469753fe111f4b7b38ec4d8",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.setup.thinking.text",
+      "source": "cf17e6a7a520de44fe32232576d6fb1c6bcac141d3b101c720199c39469ce854",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.setup.thinking.title",
+      "source": "7efdd36ea377ebd33013a7273a3d210216f4fa78dedbc30f60711f25beaf8d5b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.setup.title",
+      "source": "171e41b913654f876e968294cb5f264bf99c0a8bf080992049c1b6d3ee85756e",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.show.in.explorer",
+      "source": "e59e417e77dc97b9bddae7f5a6e9f8701e251f4090afbcb0729577a7562055f5",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.signin.failed",
+      "source": "bc5f3c3c9f1f9a7b85a971ee0dbe323ba5ec14a3fa84bf5b04c508884da0c486",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.size.bytes",
+      "source": "bc2e5705dece71530241af95d9f0d630246a7986fb0fcf20768055478f129946",
+      "contract": "b13a7cfe977efb192ccf75fd0753b985200c118e7b9ae49a9c3cf357de42b4c3",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.size.gb",
+      "source": "9686268e8bb51978565b3730483333de11a1162eb093b6c93056aaf224cdc844",
+      "contract": "9cf396ba34ede9eab732feebd7a1d0477ae59ea3abe03341b4db03d24af554fd",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.size.kb",
+      "source": "4415c66968de9951a35402f73bf4d5d106ab2e3b9dae58a7daed14baea1f4181",
+      "contract": "9cf396ba34ede9eab732feebd7a1d0477ae59ea3abe03341b4db03d24af554fd",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.size.mb",
+      "source": "2a6eb648787c051b542ad9bcdfabf39e1732a8baf3db8efa0bd60cd8f404a690",
+      "contract": "9cf396ba34ede9eab732feebd7a1d0477ae59ea3abe03341b4db03d24af554fd",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.size.tb",
+      "source": "d0a23d57c4442237ffbe303e770f931d0980fc5e3dd90766678ab5721ab14ea2",
+      "contract": "9cf396ba34ede9eab732feebd7a1d0477ae59ea3abe03341b4db03d24af554fd",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.start",
+      "source": "47bdd3e1fd57d43740bb1cb835222ae44d90c2b3abea26c229541abf8ef224a9",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.start.at.sign.in",
+      "source": "e233e8aeffc67333ce2c583aa0400058e47265921150775f48eb115cbeb652ac",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.startup.title",
+      "source": "69a5637099ea588cb4d168d6f8f36a50899d1c23e6e3fc923ffa769943817e1c",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.status.failed",
+      "source": "356c295dc091d452d49dbb84e9c85bc4b74c5f40e7159520a973348e371472f7",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.steps.brain",
+      "source": "00753c0c91baefae0df0df332cede4540b13022841ca4a6fa583061dd8f1170d",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.steps.doctor",
+      "source": "c433a41601627b7b5188bcbff6b25b81c63bfcbb8f41cdbe1f5c71011f55c4c6",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.steps.install.models",
+      "source": "e07c3ec2f9120ca1754b688c2db37acfe75416c27e74981fc9419ce8b52d2871",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.steps.journal",
+      "source": "0684c8d62eb521485524fd59f76f90d641be4f2e5f64ef607b8683f3cdc51de1",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.steps.service",
+      "source": "ebe62ea5e11e5ce2360190fcd4959db889eb9c866d094d51c1f978b1f13a9a06",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.stop",
+      "source": "6c180d33471ea7c00596419062765675f3e825b724d46ca69a92b2b15734f08f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.title",
+      "source": "a2066fbd38242d700ca044704ab3b2162561180f1e524d0b34c07041ce88978f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.try.again",
+      "source": "792b970ee1cc04df695b3cc5b2f74194c23593ca0544074d1273612a9894e871",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.unknown",
+      "source": "2642526c3fad2ee76ba9d4b61184c7918fd26f1c4e0c8484492f2e4b15ca7ce4",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.unnamed.device",
+      "source": "389a808a609fd709905d5673616c49951eef8f833c47c046c088fd2371269cf0",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.auto.check",
+      "source": "60ab51cbccf911ffbe7468d675575f6ffb352cc58f8125bdf48b1eadf87489f4",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.auto.download",
+      "source": "d15c80725c2df2d98ba0a4900b2f1a7f512dd8899e3d04287b9dac4196ed9b60",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.automatic",
+      "source": "f1020836f6ee4b9f27c60e2f4cd34f39c6b19d3d2ef964227806745be09acc4f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.available.subtitle",
+      "source": "6e03c7e2696bb15bace6ff7e6529e57e4a6c8374f9ae5f1f7159d1f6d38db74f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.available.title",
+      "source": "49baa5fedc8bebf1040acae26a077df045fa8ec557d303fa43b3945f452f442c",
+      "contract": "a72ba38c062d4538d2c76639b1412cfc756937ca848f90ac9f7337002d486123",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.check.again",
+      "source": "cc48a30e7622ebf74eeeb965c49777bb6f38856c9b0dc4b23387e672453db1d3",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.check.now",
+      "source": "b05a174ef7667abfc07de6ca8da426907b89d7384d84fa603b8d54a79b5661d7",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.checking",
+      "source": "83b64f0c6dd04c120aa94a05a8730e94e84e78ae40e51a28cebcd4943e53b278",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.checking.with.downloaded",
+      "source": "a517dd957c36d34406360c5436e39183a85d3571b1ef6eda086e12b1efcf586e",
+      "contract": "5ae84952b67e7eebd7645ca2c38afb11d7deecffa421585b6d80207b93df4d2f",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.day",
+      "source": "1ba80179cc71ffcf420e8984b9461925b4accb5c3bc3aa3229a5f4c06e914425",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.deferral.metered",
+      "source": "8d1efdeea6a36129591a37f45f91ee8d482a8cb293c2dfe7a5c6f0d26befd475",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.deferral.restricted",
+      "source": "814c890106dc8e908ce02237f162676bfdc045521464d0938bdc2336c299342d",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.deferral.roaming",
+      "source": "9ef148f783047a8b9c7209c2dde86bb90c120bc5a7a1c58766aa2d5a15713216",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.deferral.unknown",
+      "source": "4985ccdc50f7340a4f030144025f221bd9dcf5c44fe279aa8f542da33dd75c12",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.download",
+      "source": "5da5ece3ca03104810ab6fbf99c2306c376ac8053f51c919291d63283d27d737",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.downloading.retains.downloaded",
+      "source": "289b0774a048b927ec0163601d7db5e13811ffcff4192981801068bdbafcf1f6",
+      "contract": "5ae84952b67e7eebd7645ca2c38afb11d7deecffa421585b6d80207b93df4d2f",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.downloading.title",
+      "source": "c32a544f21ee79ea9de5489763e9c3c51b3ada8ddc768bfd97645c211c50af50",
+      "contract": "a72ba38c062d4538d2c76639b1412cfc756937ca848f90ac9f7337002d486123",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.failure.check.body",
+      "source": "66b369a7d93029fb3b9e0cc27a4c2995e6c01d65f4a99d35c0f7f30139b24963",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.failure.check.retained.body",
+      "source": "5379971b00266468545c6590a63d02ca28bfb2d801601f95d8fe90bab92460c7",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.failure.check.title",
+      "source": "576ff7259da68c1c67401cc775a6e6614543b917738680a48cf1d9f32a73ee02",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.failure.download.body",
+      "source": "7839ddc38c51f626e9de4a843746524ed8c78d5ab9f1796cc0d7047383c79068",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.failure.download.retained.body",
+      "source": "f18cb823653b292ba2f2ee8a6d02bdd6d5a85e5392ff9f77674324b188f1b25a",
+      "contract": "5ae84952b67e7eebd7645ca2c38afb11d7deecffa421585b6d80207b93df4d2f",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.failure.download.title",
+      "source": "f485377676da41c0be77e2687eb683b0c113d75172f6a355536a1727783c29ec",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.failure.install.body",
+      "source": "ebc959498f82b84eb68a2a62bcadf64f384704a97b8836452cb9a8ea5420ce8a",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.failure.install.missing",
+      "source": "96923fff4c9c983673d03936ad9106a386bc87b6b3d23c0fa1345455399a0f4d",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.failure.install.title",
+      "source": "08a6805bf2dacf52f02620cfab5867499b8237422dc62ca692cbb9fe2605e3c3",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.failure.stop.body",
+      "source": "32b551f326b5b621b365c3f46ffe0934141b5d7acee7db2ee189942f7e4eff55",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.failure.stop.title",
+      "source": "fdb06e270d3778730eb853f6258f8d6aa77ed6ea1471f981e47b6ac8f2451458",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.header",
+      "source": "cbb7941ca50f52267d9d9961bb2ef037c84d3c21a51e8aa924f2268803d63fec",
+      "contract": "3e6ad1b6b0d35e7958b398151606dc9bb9b008495ef88fc742773d6b277c5804",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.how.often",
+      "source": "7989b404c7031cfb49ec8a716f8b3c00e7419a323711c6360df64835d970d17a",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.install",
+      "source": "21cf529f08b6df79da64780d7ffcac84129a3a91728ec5bee856e663577bc776",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.installing.subtitle",
+      "source": "755e9639c59cae8ec7420e51641f07ba5fe438031b7bd7c475b4b51d53587933",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.installing.title",
+      "source": "7e0046ebd6091a940c59af30b8ba6a15dcf0d44fd4142fbb6639173d74dc921b",
+      "contract": "5ae84952b67e7eebd7645ca2c38afb11d7deecffa421585b6d80207b93df4d2f",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.just.now",
+      "source": "95d31b7ca8349d7453fae3cd77f41a7476baa262a222237aa2dfb2b4d2cc9f86",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.last.checked",
+      "source": "2ad0371138a11d90da70c0d05f2db5f0051bf1599aa353b33b989efad41fcd3a",
+      "contract": "6979d4d46857d915950df394a8566197077b1e1a3e797b2be0cb5523bc6d69a3",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.month",
+      "source": "c26f646d455b3a81d5ecf13a6ea6c7348b89f7dab62b5851843cbd95facaefe0",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.never.checked",
+      "source": "343ee3e42a127172ed6fe2b4505516501823436b2cc1c003e4efea3a1998cb0e",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.privacy",
+      "source": "462eab1b5f1f6a21ea042c6a9a59f3a504f5cd660979205394762ab7a9bae074",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.ready.title",
+      "source": "2364ee26c32772fb6b51de53e5591fae0f369facb650b19d8b19a2b1ebe3c197",
+      "contract": "5ae84952b67e7eebd7645ca2c38afb11d7deecffa421585b6d80207b93df4d2f",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.retry.check",
+      "source": "2a07de111fcf874e33ee9a66fc7f6f266bac68959baa28e2fc7ca98d2f116519",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.retry.download",
+      "source": "d39af4ffa3fbb6ab11a116aa593a98dd70eb2c1d6a0f6f3877b386406cc1d92d",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.unavailable.subtitle",
+      "source": "70ce78d539a774504bfd16550ea7c17102021dc53e3ae9f582087c9fed1ea311",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.unavailable.title",
+      "source": "55963b2ef8146ad17fa4202ca2bb7087c453d3d84d5f185a62fed4b79c72adc8",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.up.to.date",
+      "source": "2a6201553cbe05cdeb55887780f59064d3d4df4feba6968552a6a2ed97e155d5",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.updates.week",
+      "source": "602a025170f5425d8dc6169646573cc7072d162e2954ba026c2e45f0ea314c7f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.what.happened",
+      "source": "6bc7e4389ba7bc03c5f06081715197c68f029a0cd68e255019bbfefbec32333f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.windows.your.devices",
+      "source": "d4f5ca6546a433cd8d99ee1f4f9ead2db63547f26ddfa204743c2efe7b8ab2a3",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    }
+  ]
+}

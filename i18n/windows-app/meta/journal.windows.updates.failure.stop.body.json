@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app updates failure stop body.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 128,
+  "source_revision": "32b551f326b5b621b365c3f46ffe0934141b5d7acee7db2ee189942f7e4eff55",
+  "risk": "routine",
+  "auto_merge": true
+}

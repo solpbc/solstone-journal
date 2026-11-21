@@ -1,0 +1,16 @@
+{
+  "description": "Windows journal app updates retry check.",
+  "context": "Shown by the Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "2a07de111fcf874e33ee9a66fc7f6f266bac68959baa28e2fc7ca98d2f116519",
+  "risk": "routine",
+  "auto_merge": true
+}

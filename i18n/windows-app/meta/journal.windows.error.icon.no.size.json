@@ -1,0 +1,16 @@
+{
+  "description": "Error icon no size.",
+  "context": "Windows journal app.",
+  "surfaces": [
+    "journal-windows-app"
+  ],
+  "bundles": [
+    "journal-windows-app"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "max_length": 40,
+  "source_revision": "270e1409fb8cdceab9ce50ef03f813525c997d4393d7c420d7faf7c0fc504704",
+  "risk": "routine",
+  "auto_merge": true
+}
