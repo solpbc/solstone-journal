@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup refusal whole journal restore is pending.",
+  "context": "Journal setup refusal whole journal restore is pending.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1be4044aaac5b3a85af1b2a9f2c233e3925cb095ca88e4ec03e34090500f438a",
+  "max_length": 52,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

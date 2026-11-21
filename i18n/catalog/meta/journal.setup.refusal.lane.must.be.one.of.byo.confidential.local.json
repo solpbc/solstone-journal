@@ -1,0 +1,23 @@
+{
+  "description": "Journal setup refusal lane must be one of byo confidential local.",
+  "context": "Journal setup refusal lane must be one of byo confidential local.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f09dc2af5cd5b7a76221dfcd1525727cf20c1460ef3703b9910c6674234f8cee",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ],
+  "protected_slots": [
+    {
+      "name": "byo_value",
+      "kind": "accepted-input",
+      "value": "byo"
+    }
+  ]
+}

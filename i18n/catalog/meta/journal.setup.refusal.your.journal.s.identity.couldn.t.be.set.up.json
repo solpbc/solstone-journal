@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup refusal your journal s identity couldn t be set up.",
+  "context": "Journal setup refusal your journal s identity couldn t be set up.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dc0f0e83a52938f19149af3c0cbec81037c987f68b8362e4cea0c515d2bfb8cc",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

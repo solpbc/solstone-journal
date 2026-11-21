@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup speech cannot start.",
+  "context": "Journal setup speech cannot start.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "051027af0753726244a0146336a4b9a3049426d11888535e739a5a9dc9acfc7e",
+  "max_length": 50,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

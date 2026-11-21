@@ -1,0 +1,28 @@
+{
+  "description": "Journal setup identity state state json instance id is missing.",
+  "context": "Journal setup identity state state json instance id is missing.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "86bc095ea4c714a724339239bc17777898f70ba075e4a3618af7a52fdb448adb",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ],
+  "protected_slots": [
+    {
+      "name": "state_file",
+      "kind": "accepted-input",
+      "value": "state.json"
+    },
+    {
+      "name": "identity_key",
+      "kind": "accepted-input",
+      "value": "instance_id"
+    }
+  ]
+}

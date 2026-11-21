@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup cancel identity.",
+  "context": "Journal setup cancel identity.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "66faa35390cf49a061d2e71bdb8c6856d67b8c1b99285c4d6b1afd80ea16507a",
+  "max_length": 53,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

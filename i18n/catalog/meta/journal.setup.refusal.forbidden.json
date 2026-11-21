@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup refusal forbidden.",
+  "context": "Journal setup refusal forbidden.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e6db1d3dc369d392b81e2a3db8659ea5022977107933ada91a654776735b1ef7",
+  "max_length": 40,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

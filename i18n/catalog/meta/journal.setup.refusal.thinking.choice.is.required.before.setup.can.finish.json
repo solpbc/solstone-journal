@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup refusal thinking choice is required before setup can finish.",
+  "context": "Journal setup refusal thinking choice is required before setup can finish.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ea6672de2fc61d0810ea3cd16a5ca59dea524011476fb71b50f0ddf47677766a",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

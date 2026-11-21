@@ -1,0 +1,28 @@
+{
+  "description": "Journal setup journal path file.",
+  "context": "Journal setup journal path file.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bd2618d9ac4b12e8906b0a899b15fae976399cdee89649a969b7a3576b77dc49",
+  "max_length": 99,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ],
+  "protected_slots": [
+    {
+      "name": "option",
+      "kind": "flag",
+      "value": "--journal <other-path>"
+    }
+  ]
+}

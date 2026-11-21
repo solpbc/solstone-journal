@@ -418,19 +418,32 @@ pub(crate) fn stop(owner: &Value) -> Result<(), String> {
 }
 
 pub(crate) fn cancel(journal: &Path, attempt: &str) -> Result<status::InstallStatus, String> {
+    cancel_for_locale(
+        journal,
+        attempt,
+        solstone_core_convey_http::window_catalog::ENGLISH,
+    )
+}
+
+pub(crate) fn cancel_for_locale(
+    journal: &Path,
+    attempt: &str,
+    locale: &str,
+) -> Result<status::InstallStatus, String> {
+    use solstone_core_convey_http::window_catalog::text;
     if solstone_core_local::embedded::supports_key(
         &solstone_core_local::install::pins::platform_key(),
     ) {
-        return mobile::cancel(journal, attempt);
+        return mobile::cancel(journal, attempt, locale);
     }
     let _guard = ADMISSION
         .lock()
-        .map_err(|_| "installer admission unavailable")?;
+        .map_err(|_| text(locale, "journal.setup.cancel.admission"))?;
     #[cfg(windows)]
     {
         let current = status::read_status(journal, "local").map_err(|error| error.to_string())?;
         if current.attempt_id.as_deref() != Some(attempt) {
-            return Err("install attempt changed".into());
+            return Err(text(locale, "journal.setup.cancel.changed"));
         }
         // The root can release its lease before its Job descendants retire.
         // Reconcile retained authority even when the domain no longer sees a writer.
@@ -443,11 +456,14 @@ pub(crate) fn cancel(journal: &Path, attempt: &str) -> Result<status::InstallSta
         }
     }
     solstone_core_local::install::cancel_local_bootstrap(journal, "local", attempt, stop).map_err(
-        |error| {
-            error
-                .envelope
-                .error
-                .map_or("cancel failed".to_owned(), |error| error.message)
+        |error| match error.envelope.error {
+            Some(error) => match error.reason_code.as_str() {
+                "attempt_mismatch" => text(locale, "journal.setup.cancel.changed"),
+                "owner_unavailable" => text(locale, "journal.setup.cancel.identity"),
+                "install_busy" => text(locale, "journal.setup.cancel.busy"),
+                _ => error.message,
+            },
+            None => text(locale, "journal.setup.cancel.failed"),
         },
     )
 }

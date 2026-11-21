@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup refusal your thinking choice changed review it before trying again.",
+  "context": "Journal setup refusal your thinking choice changed review it before trying again.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "54bb9133125fe0c1bb3674c4af2d1e5acddc60b5556eb86cf154a507e35b65bb",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

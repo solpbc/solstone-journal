@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup refusal settings lock unavailable.",
+  "context": "Journal setup refusal settings lock unavailable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9acea3c6f17c8296a0e31be2a461507c9d6e261b0bfcb3c9fecbcfb2409bf73b",
+  "max_length": 45,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

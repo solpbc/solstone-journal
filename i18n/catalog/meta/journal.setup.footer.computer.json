@@ -1,0 +1,16 @@
+{
+  "description": "Copy for the footer section of journal setup.",
+  "context": "Journal setup, copy for the footer section of journal setup.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "91c7e1f3c1dfce319e8e39ede1fe7dc7294d842b7790712675489bf52fa7c687",
+  "max_length": 105,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

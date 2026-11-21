@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup refusal malformed lock request.",
+  "context": "Journal setup refusal malformed lock request.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1476c3b461d222f743d19de7ad94299981d403272df98366beca94bdc3d574de",
+  "max_length": 42,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

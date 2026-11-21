@@ -1,0 +1,21 @@
+{
+  "description": "Journal setup doctor timeout.",
+  "context": "Journal setup doctor timeout.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "seconds",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6e3509609b749810b22e0151b7d6e17ce2b7e4a6a510fe9feff484f18e1da04c",
+  "max_length": 56,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

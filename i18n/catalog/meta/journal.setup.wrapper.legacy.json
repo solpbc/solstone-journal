@@ -1,0 +1,23 @@
+{
+  "description": "Journal setup wrapper legacy.",
+  "context": "Journal setup wrapper legacy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9a1b174c58b54f7a011869fd5b738885c52e3f37944be1304c417635bfc585f1",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ],
+  "protected_slots": [
+    {
+      "name": "path",
+      "kind": "accepted-input",
+      "value": "~/.local/bin/journal"
+    }
+  ]
+}

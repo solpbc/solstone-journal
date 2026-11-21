@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup speech starting.",
+  "context": "Journal setup speech starting.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "733880a7c316bc72f747e5b780e68485505b7c12749b9d8e8c6dcf6e904b14f2",
+  "max_length": 46,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

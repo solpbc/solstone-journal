@@ -15,6 +15,22 @@ pub const ENGLISH: &str = "en-US";
 
 pub use compiled::Value;
 
+pub fn packaged_locale(requested: Option<&str>) -> &'static str {
+    const LOCALES: &[&str] = include!(concat!(env!("OUT_DIR"), "/locales.rs"));
+    requested
+        .and_then(|tag| {
+            LOCALES
+                .iter()
+                .copied()
+                .find(|locale| locale.eq_ignore_ascii_case(tag))
+        })
+        .unwrap_or(ENGLISH)
+}
+
+pub fn cli_locale() -> &'static str {
+    packaged_locale(std::env::var("SOLSTONE_LOCALE").ok().as_deref())
+}
+
 pub fn text(locale: &str, id: &str) -> String {
     render(locale, id, &[])
 }

@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup refusal setup target use was refused.",
+  "context": "Journal setup refusal setup target use was refused.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f3f11344b1e019497ed4704dc8b2f5062be1650eab594373b6c9b7c1f7270f8c",
+  "max_length": 48,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

@@ -505,7 +505,10 @@ pub fn run_setup_copy(rest: &[OsString]) -> Outcome {
         }
     } else if rest.len() == 1 && rest[0] == "--json" {
         let facts = solstone_core_thinking_copy::current_setup_facts();
-        let copy = solstone_core_thinking_copy::setup_copy(&facts);
+        let copy = solstone_core_thinking_copy::localized_setup_copy(
+            &facts,
+            solstone_core_window_catalog::cli_locale(),
+        );
         let output = format!(
             "{}\n",
             serde_json::to_string_pretty(&copy).expect("setup copy serializes")

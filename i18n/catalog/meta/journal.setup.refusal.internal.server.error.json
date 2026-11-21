@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup refusal internal server error.",
+  "context": "Journal setup refusal internal server error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "105afe4518fe86206c18a2d429dcb79c2dbd4f5f5e45c80d4324b362b45bd70c",
+  "max_length": 41,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

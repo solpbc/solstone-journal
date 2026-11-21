@@ -1,0 +1,21 @@
+{
+  "description": "Journal setup identity state candidate directory.",
+  "context": "Journal setup identity state candidate directory.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5b67391c953d40d30f1929f30029563022182ef4ab221484fd0ad3584b9f97bf",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

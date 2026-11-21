@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup speech unavailable.",
+  "context": "Journal setup speech unavailable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1b650e0d73587a02f47c8824a92fa899c75fe0a59f892dd755371ffcdbbd04d5",
+  "max_length": 40,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

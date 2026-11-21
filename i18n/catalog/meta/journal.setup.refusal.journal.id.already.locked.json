@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup refusal journal id already locked.",
+  "context": "Journal setup refusal journal id already locked.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6a918f6d3139dedf867ef16b0c42ca5f4c4096c2f1ab495860003cfcd64ccbad",
+  "max_length": 45,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

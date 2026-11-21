@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup refusal setup routes require a localhost connection.",
+  "context": "Journal setup refusal setup routes require a localhost connection.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f002c6e47f85da9c91e7fb9a4140dd2438bcc5ba694c0e193f14566be6f86f99",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup refusal bad request.",
+  "context": "Journal setup refusal bad request.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1c92ed5aa665b215a0d9437b4e7bdbcb9379948376f827ed614bf58e7594e1cf",
+  "max_length": 40,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

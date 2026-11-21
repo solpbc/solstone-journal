@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup refusal unknown action.",
+  "context": "Journal setup refusal unknown action.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "71626d9c2e9002dbffd079707ca9bb89ad983ab4c1e91fbb630e1cb50428a46c",
+  "max_length": 40,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

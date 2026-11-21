@@ -1,0 +1,23 @@
+{
+  "description": "Journal setup wrapper legacy retry.",
+  "context": "Journal setup wrapper legacy retry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "07d2bf76e8a8ba89ff90d569d974a52598828a5d2c05d76c1db3b4a12af45ef0",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ],
+  "protected_slots": [
+    {
+      "name": "path",
+      "kind": "accepted-input",
+      "value": "~/.local/bin/solstone"
+    }
+  ]
+}

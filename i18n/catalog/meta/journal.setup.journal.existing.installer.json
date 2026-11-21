@@ -1,0 +1,64 @@
+{
+  "description": "Journal setup journal existing installer.",
+  "context": "Journal setup journal existing installer. The arguments accept, new, verb and explain each contain a complete copyable command, including the executable path.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "accept",
+      "type": "string"
+    },
+    {
+      "name": "new",
+      "type": "string"
+    },
+    {
+      "name": "verb",
+      "type": "string"
+    },
+    {
+      "name": "explain",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "012d64fee985852a6016d32ad1944a99e35d63b5603c7b92b4636575ed320b1d",
+  "max_length": 493,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ],
+  "protected_slots": [
+    {
+      "name": "setup",
+      "kind": "command",
+      "value": "solstone journal setup"
+    },
+    {
+      "name": "line",
+      "kind": "whitespace",
+      "value": "\n"
+    },
+    {
+      "name": "paragraph",
+      "kind": "whitespace",
+      "value": "\n\n"
+    },
+    {
+      "name": "indent",
+      "kind": "whitespace",
+      "value": "\n  "
+    },
+    {
+      "name": "installer",
+      "kind": "command",
+      "value": "install.sh"
+    }
+  ]
+}

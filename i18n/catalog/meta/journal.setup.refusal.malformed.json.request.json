@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup refusal malformed json request.",
+  "context": "Journal setup refusal malformed json request.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "616545b264c55e27773270c3c4e16d2fc4d35b7b9d97dee79bc9292de3729061",
+  "max_length": 42,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

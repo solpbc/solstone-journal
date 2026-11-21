@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup refusal action is required.",
+  "context": "Journal setup refusal action is required.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4ebc1990bb42fb9cc934d58783ca35e5de414b2d90d11ae746fa9ab10cb119fc",
+  "max_length": 40,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

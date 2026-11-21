@@ -6335,6 +6335,7 @@ dependencies = [
  "solstone-core-thinking-copy",
  "solstone-core-time",
  "solstone-core-trash",
+ "solstone-core-window-catalog",
  "windows-sys 0.61.2",
 ]
 
@@ -6960,6 +6961,7 @@ dependencies = [
  "solstone-core-skill-state",
  "solstone-core-system",
  "solstone-core-time",
+ "solstone-core-window-catalog",
  "toml_edit",
 ]
 

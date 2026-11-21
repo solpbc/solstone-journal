@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup refusal settings write failed.",
+  "context": "Journal setup refusal settings write failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e4d69494d359b89e94e3e3f2a0d3fbbe491c06c39ec6ab76aabf39ca38e1ae6b",
+  "max_length": 41,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

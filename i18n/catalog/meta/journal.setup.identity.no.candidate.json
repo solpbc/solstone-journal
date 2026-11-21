@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup identity no candidate.",
+  "context": "Journal setup identity no candidate.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cc2cc64eaf6e3ac303c21a5720186faa50aa99c720fa01564b871441e949c852",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

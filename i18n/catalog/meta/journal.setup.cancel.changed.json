@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup cancel changed.",
+  "context": "Journal setup cancel changed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "866f0d99fdec0dc2dbd11bc9e123ecda325e951f57b8174c4875c09114f49ec5",
+  "max_length": 43,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

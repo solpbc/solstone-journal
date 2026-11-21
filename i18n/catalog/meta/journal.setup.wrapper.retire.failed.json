@@ -1,0 +1,21 @@
+{
+  "description": "Journal setup wrapper retire failed.",
+  "context": "Journal setup wrapper retire failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c0999c96cab1e4d737b7a18c6bf218e045fd44b1ce447b0b7abb0b2f182e346d",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

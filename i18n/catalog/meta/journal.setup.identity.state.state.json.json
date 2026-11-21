@@ -1,0 +1,28 @@
+{
+  "description": "Journal setup identity state state json.",
+  "context": "Journal setup identity state state json.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "dcaf75cf83a43d0730b96617de622b60d9a2eda068dc8adba4d2adf5ea559fa1",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ],
+  "protected_slots": [
+    {
+      "name": "state_file",
+      "kind": "accepted-input",
+      "value": "state.json"
+    }
+  ]
+}

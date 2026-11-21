@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup refusal choose local thinking before starting its download.",
+  "context": "Journal setup refusal choose local thinking before starting its download.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5cb384c3e3e472bdfbeaddc29114807c961c1c15b906521ce44441d08a212b82",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

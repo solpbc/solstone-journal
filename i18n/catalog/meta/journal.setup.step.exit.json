@@ -1,0 +1,25 @@
+{
+  "description": "Journal setup step exit.",
+  "context": "Journal setup step exit.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "step",
+      "type": "string"
+    },
+    {
+      "name": "status",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b29214549d78da4c5ee0fcc8f163e9fa7cbb98a988aa91486d49753c68b38a1e",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal setup identity state state json must be an object.",
+  "context": "Journal setup identity state state json must be an object.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2f4a588bf087d0420d19713d7dcf87935c6baf8a82c2cfc5ac01f54e15909527",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ],
+  "protected_slots": [
+    {
+      "name": "state_file",
+      "kind": "accepted-input",
+      "value": "state.json"
+    }
+  ]
+}

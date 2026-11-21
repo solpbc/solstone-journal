@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup refusal invalid timezone.",
+  "context": "Journal setup refusal invalid timezone.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e58eeff696f405345fc135a3a2dece87312cbdd96c01d01c867ec816a0c5b4e7",
+  "max_length": 40,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

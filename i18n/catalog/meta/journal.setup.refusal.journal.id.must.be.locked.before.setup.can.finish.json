@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup refusal journal id must be locked before setup can finish.",
+  "context": "Journal setup refusal journal id must be locked before setup can finish.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "64fba00d1cca14090b281ef78527e72b63fc6e309db3404f485c879cfcd7dffc",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

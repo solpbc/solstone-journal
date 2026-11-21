@@ -383,7 +383,10 @@ fn report_drive_cannot_run<W: Write>(
     stdout: &mut W,
     stderr: &mut impl Write,
 ) -> ExitCode {
-    let message = solstone_core_system::storage_privacy::DRIVE_CANNOT_RUN;
+    let message = solstone_core_window_catalog::text(
+        solstone_core_window_catalog::cli_locale(),
+        "journal.setup.drive.unsupported",
+    );
     if jsonl {
         let mut emitter = JsonlEmitter::new(stdout);
         let _ = emitter.emit(
@@ -426,6 +429,7 @@ fn report_identity_failure<W: Write>(
     executable_dir: &std::path::Path,
     namespace: Option<&str>,
 ) -> ExitCode {
+    use solstone_core_window_catalog::{cli_locale, strings};
     let code = identity_error_code(error);
     // A foreign guard or uncertain ownership cannot justify the standard
     // cleanup: those paths may be another installation's working artifacts.
@@ -475,16 +479,26 @@ fn report_identity_failure<W: Write>(
     } else {
         "\n    systemctl --user disable --now solstone.service"
     };
-    let mut message = format!(
-        "this installation couldn't be verified.\n\ndetails: {error}\n\nto recover, stop the service, remove this installation's setup artifacts, and run `solstone journal setup` again:{stop_service}{steps}\n\nyour journal itself is untouched. none of these holds your memories."
+    let mut message = strings(
+        cli_locale(),
+        "journal.setup.identity.recover",
+        [
+            ("error", &error.to_string()),
+            ("stop_service", stop_service),
+            ("steps", &steps),
+        ],
     );
     if foreign {
-        message = format!(
-            "this installation couldn't be verified.\n\ndetails: {error}\n\nthe command-line tools or background support on this computer were set up by a different solstone installation, so nothing was changed."
+        message = strings(
+            cli_locale(),
+            "journal.setup.identity.foreign",
+            [("error", &error.to_string())],
         );
     } else if uncertain {
-        message = format!(
-            "this installation couldn't be verified.\n\ndetails: {error}\n\nsetup couldn't tell which installation the command-line tools or background support belong to. leave them in place and include these details in a support request."
+        message = strings(
+            cli_locale(),
+            "journal.setup.identity.uncertain",
+            [("error", &error.to_string())],
         );
     } else if program_folder {
         message = error.to_string();
@@ -497,13 +511,20 @@ fn report_identity_failure<W: Write>(
                 format!("\n    Remove-Item -LiteralPath '{quoted}' -Force{recurse}")
             })
             .collect::<String>();
-        message = format!(
-            "this installation couldn't be verified.\n\ndetails: {error}\n\nto recover, first run `solstone journal service uninstall`. if it fails, stop here and include these details in a support request. if it succeeds, run these commands in PowerShell, then run `solstone journal setup` again:{commands}\n\nyour journal itself is untouched. none of these holds your memories."
+        message = strings(
+            cli_locale(),
+            "journal.setup.identity.windows",
+            [("error", &error.to_string()), ("commands", &commands)],
         );
     }
     if let Some(location_error) = recovery_error {
-        message = format!(
-            "this installation couldn't be verified.\n\ndetails: {error}\n\nsetup recovery locations are unavailable: {location_error}"
+        message = strings(
+            cli_locale(),
+            "journal.setup.identity.locations",
+            [
+                ("error", &error.to_string()),
+                ("location_error", &location_error.to_string()),
+            ],
         );
     }
     if jsonl {

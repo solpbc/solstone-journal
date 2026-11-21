@@ -1,0 +1,33 @@
+{
+  "description": "Journal setup identity foreign.",
+  "context": "Journal setup identity foreign.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3383204a81307176bd1603235f8d9a408296c4b7c8fb7f20d0d1069e86283d11",
+  "max_length": 241,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ],
+  "protected_slots": [
+    {
+      "name": "paragraph",
+      "kind": "whitespace",
+      "value": "\n\n"
+    },
+    {
+      "name": "platform",
+      "kind": "mark-word",
+      "value": "solstone"
+    }
+  ]
+}

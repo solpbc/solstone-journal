@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup doctor blocked.",
+  "context": "Journal setup doctor blocked.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "461d260a535fd5e740d2aff0417f9c055cde6043d843b85fd43b4ceb5b4561ec",
+  "max_length": 41,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

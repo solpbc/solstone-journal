@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup journal aborted.",
+  "context": "Journal setup journal aborted.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "69a0d6528c920b35e63e1b67e7ceda205fa1dab4edbf4480de371c8fbc6c19fd",
+  "max_length": 41,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

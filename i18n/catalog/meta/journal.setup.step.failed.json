@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup step failed.",
+  "context": "Journal setup step failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2e77cbed1b13e61b8636ea2fc7741f923c68dd4bbae653f2f0603e5b21205885",
+  "max_length": 40,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

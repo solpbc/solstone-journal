@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup refusal choose thinking before finishing setup.",
+  "context": "Journal setup refusal choose thinking before finishing setup.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c29086061a2f6b029401ef0d3365679ac7c8df013f8ff0d47ffbd9ce28a079c2",
+  "max_length": 58,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

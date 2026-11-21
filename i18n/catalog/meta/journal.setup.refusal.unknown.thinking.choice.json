@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup refusal unknown thinking choice.",
+  "context": "Journal setup refusal unknown thinking choice.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e6f275e4564ef73b450b13c9aeee805f3095599025f3e1944b6dd71dc626100d",
+  "max_length": 43,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

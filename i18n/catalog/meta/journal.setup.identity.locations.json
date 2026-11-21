@@ -1,0 +1,32 @@
+{
+  "description": "Journal setup identity locations.",
+  "context": "Journal setup identity locations.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    },
+    {
+      "name": "location_error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7cb1f170750140601f63e6b4469292e0c20e229e2386f154d3c150e104d6ea31",
+  "max_length": 167,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ],
+  "protected_slots": [
+    {
+      "name": "paragraph",
+      "kind": "whitespace",
+      "value": "\n\n"
+    }
+  ]
+}

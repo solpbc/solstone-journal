@@ -1,0 +1,23 @@
+{
+  "description": "Journal setup refusal attempt id is required.",
+  "context": "Journal setup refusal attempt id is required.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6aa9249a247f494f6e76f7907251488f8abbf628adc1b129a52a49c1e05a828b",
+  "max_length": 53,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ],
+  "protected_slots": [
+    {
+      "name": "attempt_id_value",
+      "kind": "accepted-input",
+      "value": "attempt_id"
+    }
+  ]
+}

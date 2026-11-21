@@ -1,0 +1,21 @@
+{
+  "description": "Journal setup identity invalid.",
+  "context": "Journal setup identity invalid.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c5edd75ae38557798340c30ad9d9fa73916371c7c476c35dc0f6ed74f307193a",
+  "max_length": 57,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

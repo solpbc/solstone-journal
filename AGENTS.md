@@ -443,7 +443,7 @@ The rules above govern *where* code lives. The rules below govern *how* code beh
 
 Generic software principles (DRY, KISS, YAGNI, single responsibility, small focused commits) apply; see `docs/coding-standards.md` for the full list.
 
-### Journal window strings
+### Journal window and setup strings
 
 Use `i18n/catalog/source/en-US.ftl` for copy in `solstone-core-convey-shell`,
 `solstone-core-backup-web`, `solstone-core-facets-web`,
@@ -457,7 +457,10 @@ This includes Entities window responses from `solstone-core-entities` and
 Home and Map display copy from `solstone-core-location`. The same catalog
 supplies the Describe category names shown in Settings and the live notices
 from `solstone-core-describe`. It also supplies Thinking capability copy and
-Home speech repair guidance from `solstone-core-sol-link`.
+Home speech repair guidance from `solstone-core-sol-link`. Setup uses the same
+catalog for its native screen copy, events and HTTP responses. Read
+`SOLSTONE_LOCALE` in the CLI process and use the request locale in HTTP
+handlers. Keep protocol fields stable and render display fields for the caller.
 Reference messages from workspace markup with `{{journal.window.…}}` markers.
 For localized copy, use `JournalI18n.render` for JavaScript text and
 `JournalI18n.renderHtml` for text inserted into HTML. Keep restricted messages

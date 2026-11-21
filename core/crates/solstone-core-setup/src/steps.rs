@@ -21,6 +21,8 @@ use solstone_core_journal_config_write::{JournalConfigMutation, mutate_journal_c
 use solstone_core_journal_io::{LockOptions, legacy_log_alias::cleanup_legacy_log_aliases};
 
 use crate::args::{ResolvedSetup, SetupArgs, SetupMode, resolve_expanded_path};
+use solstone_core_window_catalog::{cli_locale, strings, text};
+
 use crate::events::{ErrorCode, EventSink, EventType, SkipReason, StepName};
 use crate::manifest::{SetupManifest, can_skip, prior_steps, read_manifest, write_manifest};
 use crate::user_config::{read_user_config, write_user_config};
@@ -459,6 +461,53 @@ pub fn native_already_keeps_journal_probe(context: &SetupContext<'_>) -> Result<
         .all(|path| is_live_app_owned_child_launcher(path)))
 }
 
+/// A setup diagnostic stays in source English in the manifest. The same
+/// result can render its display fields in the invoking app's language.
+#[derive(Debug, Clone, PartialEq)]
+pub enum SetupText {
+    Diagnostic(String),
+    Message(&'static str, Vec<(&'static str, String)>),
+}
+
+impl SetupText {
+    fn message<const N: usize>(id: &'static str, args: [(&'static str, String); N]) -> Self {
+        Self::Message(id, Vec::from(args))
+    }
+
+    fn render(&self, locale: &str) -> String {
+        match self {
+            Self::Diagnostic(value) => value.clone(),
+            Self::Message(id, args) => {
+                let values: Vec<_> = args
+                    .iter()
+                    .map(|(name, value)| {
+                        (*name, solstone_core_window_catalog::Value::String(value))
+                    })
+                    .collect();
+                solstone_core_window_catalog::render(locale, id, &values)
+            }
+        }
+    }
+}
+
+impl From<String> for SetupText {
+    fn from(value: String) -> Self {
+        Self::Diagnostic(value)
+    }
+}
+
+impl From<&str> for SetupText {
+    fn from(value: &str) -> Self {
+        Self::Diagnostic(value.to_owned())
+    }
+}
+
+impl Serialize for SetupText {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.render(solstone_core_window_catalog::ENGLISH))
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum StepStatus {
@@ -471,7 +520,7 @@ pub enum StepStatus {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct StepError {
     pub code: ErrorCode,
-    pub message: String,
+    pub message: SetupText,
     pub details: String,
     pub exit_code: i32,
 }
@@ -479,17 +528,17 @@ pub struct StepError {
 /// Wrapper provisioning warnings intentionally have a smaller payload than failures.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct WrapperWarning {
-    pub message: String,
-    pub fix_hint: String,
+    pub message: SetupText,
+    pub fix_hint: SetupText,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct BrainWarning {
     pub code: ErrorCode,
-    pub message: String,
+    pub message: SetupText,
     pub details: String,
     pub exit_code: i32,
-    pub fix_hint: String,
+    pub fix_hint: SetupText,
 }
 
 /// Python stores failure and warning payloads under the same `error` manifest key.
@@ -853,7 +902,7 @@ pub fn run_setup(context: &mut SetupContext<'_>, steps: &[StepSpec]) -> RunOutco
                                 (context.now)(),
                                 StepError {
                                     code: ErrorCode::SetupUnhandledException,
-                                    message,
+                                    message: message.into(),
                                     details: String::new(),
                                     exit_code: 1,
                                 },
@@ -865,7 +914,7 @@ pub fn run_setup(context: &mut SetupContext<'_>, steps: &[StepSpec]) -> RunOutco
                             (context.now)(),
                             StepError {
                                 code: ErrorCode::SetupUnhandledException,
-                                message,
+                                message: message.into(),
                                 details: String::new(),
                                 exit_code: 1,
                             },
@@ -916,7 +965,7 @@ pub fn run_setup(context: &mut SetupContext<'_>, steps: &[StepSpec]) -> RunOutco
                         (context.now)(),
                         StepError {
                             code: ErrorCode::SetupUnhandledException,
-                            message,
+                            message: message.into(),
                             details: String::new(),
                             exit_code: 1,
                         },
@@ -947,7 +996,7 @@ pub fn run_setup(context: &mut SetupContext<'_>, steps: &[StepSpec]) -> RunOutco
                     (context.now)(),
                     StepError {
                         code: ErrorCode::SetupUnhandledException,
-                        message,
+                        message: message.into(),
                         details: String::new(),
                         exit_code: 1,
                     },
@@ -1175,8 +1224,8 @@ fn narrate_step_result(context: &SetupContext<'_>, index: usize, result: &StepRe
         );
     } else if result.status == StepStatus::Failed {
         let message = match result.error.as_ref() {
-            Some(StepErrorPayload::Failure(error)) => error.message.as_str(),
-            _ => "step failed",
+            Some(StepErrorPayload::Failure(error)) => error.message.render(cli_locale()),
+            _ => text(cli_locale(), "journal.setup.step.failed"),
         };
         narrate_error(
             context,
@@ -1472,15 +1521,16 @@ fn emit_step_result(context: &mut SetupContext<'_>, result: &StepResult, duratio
     match result.status {
         StepStatus::Failed => {
             let error = result.error.as_ref().expect("failed result has an error");
+            let mut fields = serde_json::to_value(error).expect("error serializable");
+            if let StepErrorPayload::Failure(failure) = error {
+                fields["message"] = json!(failure.message.render(cli_locale()));
+            }
             context.emit(
                 EventType::StepFailed,
                 Map::from_iter([
                     ("step".into(), json!(result.name.as_str())),
                     ("duration_ms".into(), json!(duration_ms)),
-                    (
-                        "error".into(),
-                        serde_json::to_value(error).expect("error serializable"),
-                    ),
+                    ("error".into(), fields),
                 ]),
             );
         }
@@ -1496,13 +1546,18 @@ fn emit_step_result(context: &mut SetupContext<'_>, result: &StepResult, duratio
             context.emit(EventType::StepCompleted, fields);
             if result.status == StepStatus::Warning {
                 let (text, fix_hint) = match result.error.as_ref() {
-                    Some(StepErrorPayload::WrapperWarning(warning)) => {
-                        (warning.message.as_str(), warning.fix_hint.as_str())
-                    }
-                    Some(StepErrorPayload::BrainWarning(warning)) => {
-                        (warning.message.as_str(), warning.fix_hint.as_str())
-                    }
-                    _ => ("step warning", ""),
+                    Some(StepErrorPayload::WrapperWarning(warning)) => (
+                        warning.message.render(cli_locale()),
+                        warning.fix_hint.render(cli_locale()),
+                    ),
+                    Some(StepErrorPayload::BrainWarning(warning)) => (
+                        warning.message.render(cli_locale()),
+                        warning.fix_hint.render(cli_locale()),
+                    ),
+                    _ => (
+                        text(cli_locale(), "journal.setup.step.warning"),
+                        String::new(),
+                    ),
                 };
                 context.emit(
                     EventType::StepWarning,
@@ -1553,9 +1608,15 @@ fn step_doctor(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecuti
     let now = (context.now)();
     if output.timed_out {
         let message = if started.elapsed() >= Duration::from_secs(DOCTOR_CEILING_SECONDS) {
-            format!("doctor timed out after {DOCTOR_CEILING_SECONDS}s")
+            SetupText::message(
+                "journal.setup.doctor.timeout",
+                [("seconds", DOCTOR_CEILING_SECONDS.to_string())],
+            )
         } else {
-            format!("doctor reported no progress for {DOCTOR_SILENCE_SECONDS}s")
+            SetupText::message(
+                "journal.setup.doctor.silent",
+                [("seconds", DOCTOR_SILENCE_SECONDS.to_string())],
+            )
         };
         // The progress lines name the check, and any file, doctor stopped in.
         return Ok(StepResult::failed(
@@ -1634,7 +1695,7 @@ fn step_doctor(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecuti
                 now,
                 StepError {
                     code: ErrorCode::DoctorJsonlIncomplete,
-                    message: "doctor JSONL stream ended without doctor.completed".into(),
+                    message: SetupText::message("journal.setup.doctor.incomplete", []),
                     details: output.stderr,
                     exit_code: output.exit_code.max(1),
                 },
@@ -1647,7 +1708,7 @@ fn step_doctor(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecuti
                 now,
                 StepError {
                     code: ErrorCode::DoctorFailed,
-                    message: "doctor completed with status failed".into(),
+                    message: SetupText::message("journal.setup.doctor.failed.status", []),
                     details: output.stderr,
                     exit_code: output.exit_code.max(1),
                 },
@@ -1670,7 +1731,7 @@ fn step_doctor(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecuti
             now,
             StepError {
                 code: ErrorCode::DoctorFailed,
-                message: "doctor blocker failed".into(),
+                message: SetupText::message("journal.setup.doctor.blocked", []),
                 details: tail(&non_empty_output(&output)),
                 exit_code: output.exit_code,
             },
@@ -1683,7 +1744,7 @@ fn step_doctor(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecuti
             now,
             StepError {
                 code: ErrorCode::DoctorJsonlIncomplete,
-                message: "doctor JSON parse failed".into(),
+                message: SetupText::message("journal.setup.doctor.unreadable", []),
                 details: tail(&output.stdout),
                 exit_code: 1,
             },
@@ -1728,9 +1789,10 @@ fn remove_retired_support_state(journal: &Path) -> Result<(), std::io::Error> {
 fn step_journal(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecutionError> {
     if context.journal_path.exists() && !context.journal_path.is_dir() {
         return Err(StepExecutionError::DeadEnd {
-            message: format!(
-                "expected a directory at {}; got a regular file. Re-run with --journal <other-path>.",
-                context.journal_path.display()
+            message: strings(
+                cli_locale(),
+                "journal.setup.journal.path.file",
+                [("path", context.journal_path.to_string_lossy().as_ref())],
             ),
             exit_code: 2,
             step_name: Some(StepName::Journal),
@@ -1769,7 +1831,7 @@ fn step_journal(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
             .map_err(|message| StepExecutionError::Unhandled { message })?;
         if !accepted {
             return Err(StepExecutionError::DeadEnd {
-                message: "setup aborted by user".into(),
+                message: text(cli_locale(), "journal.setup.journal.aborted"),
                 exit_code: 2,
                 step_name: None,
                 error_code: None,
@@ -1986,10 +2048,8 @@ fn step_wrapper(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
                     Err(error) => {
                         result.status = StepStatus::Warning;
                         result.error = Some(StepErrorPayload::WrapperWarning(WrapperWarning {
-                            message: format!(
-                                "could not remove the older version's command-line tools: {error}"
-                            ),
-                            fix_hint: "setup tries again the next time it runs.".into(),
+                            message: SetupText::message("journal.setup.wrapper.retire.failed", [("error", error.to_string())]),
+                            fix_hint: SetupText::message("journal.setup.wrapper.retry", []),
                         }));
                     }
                 }
@@ -2027,8 +2087,8 @@ fn step_wrapper(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
                 );
                 if provision.legacy_journal_kept_for_service {
                     result.error = Some(StepErrorPayload::WrapperWarning(WrapperWarning {
-                        message: "the service still starts through ~/.local/bin/journal".into(),
-                        fix_hint: "setup removes that wrapper after the service starts through ~/.local/bin/solstone.".into(),
+                        message: SetupText::message("journal.setup.wrapper.legacy", []),
+                        fix_hint: SetupText::message("journal.setup.wrapper.legacy.retry", []),
                     }));
                 }
                 Ok(result)
@@ -2039,14 +2099,7 @@ fn step_wrapper(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
                 (context.now)(),
                 StepError {
                     code: ErrorCode::WrapperProvisionFailed,
-                    message: format!(
-                        "could not provision the solstone wrapper at {} ({}: {error})",
-                        context.home_dir.join(".local/bin").display(),
-                        std::any::type_name::<WrapperError>()
-                            .rsplit("::")
-                            .next()
-                            .unwrap_or("WrapperError")
-                    ),
+                    message: SetupText::message("journal.setup.wrapper.provision", [("path", context.home_dir.join(".local/bin").display().to_string()), ("kind", std::any::type_name::<WrapperError>().rsplit("::").next().unwrap_or("WrapperError").to_owned()), ("error", error.to_string())]),
                     details: "fix permissions on ~/.local/bin and re-run `solstone journal setup`, or invoke solstone directly from the runtime".into(),
                     exit_code: 1,
                 },
@@ -2145,7 +2198,7 @@ fn step_service_with_guard(
                 (context.now)(),
                 StepError {
                     code: ErrorCode::LegacySupervisorLockRefused,
-                    message,
+                    message: message.into(),
                     details: String::new(),
                     exit_code: 1,
                 },
@@ -2237,7 +2290,10 @@ fn step_service_with_guard(
             (context.now)(),
             StepError {
                 code: ErrorCode::ServiceUpFailed,
-                message: format!("service up failed (exit {})", up.exit_code),
+                message: SetupText::message(
+                    "journal.setup.service.failed",
+                    [("status", up.exit_code.to_string())],
+                ),
                 details: tail(&up.stderr),
                 exit_code: 1,
             },
@@ -2628,20 +2684,30 @@ fn subprocess_failure(
     let error = if output.timed_out {
         StepError {
             code: ErrorCode::StepSubprocessTimeout,
-            message: format!("{} step timed out after {timeout}s", name.as_str()),
+            message: SetupText::message(
+                "journal.setup.step.timeout",
+                [
+                    ("step", name.as_str().to_owned()),
+                    ("seconds", timeout.to_string()),
+                ],
+            ),
             details: tail(&details),
             exit_code: 1,
         }
     } else {
         StepError {
             code: ErrorCode::StepSubprocessFailed,
-            message: first_line(&output.stderr).unwrap_or_else(|| {
-                format!(
-                    "{} step exited with code {}",
-                    name.as_str(),
-                    output.exit_code
-                )
-            }),
+            message: first_line(&output.stderr)
+                .map(SetupText::from)
+                .unwrap_or_else(|| {
+                    SetupText::message(
+                        "journal.setup.step.exit",
+                        [
+                            ("step", name.as_str().to_owned()),
+                            ("status", output.exit_code.to_string()),
+                        ],
+                    )
+                }),
             details: tail(&details),
             exit_code: output.exit_code,
         }
@@ -2724,30 +2790,30 @@ fn paths_match(configured: &str, journal: &Path, home: &Path, current_dir: &Path
 // Under an installer, rerunning it alone meets this same refusal, so the
 // installer command comes after the setup command, not instead of it.
 fn existing_journal_message(path: &Path, journal: &str, installer_transaction: bool) -> String {
-    let mut lines = vec![
-        format!(
-            "solstone journal setup: cannot proceed in non-interactive mode - {} already contains journal data.",
-            path.display()
-        ),
-        "Setup will not auto-claim an existing journal.".into(),
-        String::new(),
-        "Retry with one of:".into(),
-        format!("  {journal} setup --accept-existing-journal"),
-        format!("  {journal} setup --journal /path/to/new-journal --accept-existing-journal"),
-        String::new(),
-        "Interactive escape:".into(),
-        format!("  {journal} setup"),
-    ];
-    if installer_transaction {
-        lines.push(String::new());
-        lines.push(
-            "After any of these, run the same install.sh command again to finish installing."
-                .into(),
-        );
-    }
-    lines.push(String::new());
-    lines.push(format!("Run {journal} setup --explain for full step list."));
-    lines.join("\n")
+    let id = if installer_transaction {
+        "journal.setup.journal.existing.installer"
+    } else {
+        "journal.setup.journal.existing"
+    };
+    strings(
+        cli_locale(),
+        id,
+        [
+            ("path", &path.display().to_string()),
+            (
+                "accept",
+                &format!("{journal} setup --accept-existing-journal"),
+            ),
+            (
+                "new",
+                &format!(
+                    "{journal} setup --journal /path/to/new-journal --accept-existing-journal"
+                ),
+            ),
+            ("verb", &format!("{journal} setup")),
+            ("explain", &format!("{journal} setup --explain")),
+        ],
+    )
 }
 fn non_empty_journal(path: &Path) -> bool {
     path.is_dir()

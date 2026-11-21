@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup refusal local thinking is not available on your journal s computer.",
+  "context": "Journal setup refusal local thinking is not available on your journal s computer.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c8706ef0e5d8589a35c9c2ee8fa687094913b15fa77b71ea67ca45edaa3515f9",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

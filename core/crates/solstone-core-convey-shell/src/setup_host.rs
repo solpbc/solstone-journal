@@ -7,8 +7,8 @@ use std::sync::mpsc::sync_channel;
 use std::thread;
 
 use solstone_core_sol_link::http::{
-    SetupDownloads, SetupHost, SetupProgressError, SetupRetryError, packaged_speech_retry,
-    read_setup_downloads, read_setup_downloads_with_packaged_speech,
+    SetupDownloads, SetupHost, SetupProgressError, SetupRetryError, localized_setup_downloads,
+    packaged_speech_retry, read_setup_downloads_with_packaged_speech,
 };
 use solstone_core_thinking_copy::{
     DownloadMember, SetupCatalogFacts, current_setup_facts, sum_download_bytes,
@@ -81,6 +81,15 @@ impl SetupHost for ConveySetupHost {
         crate::thinking_install::cancel(journal_root, attempt_id).map(|_| ())
     }
 
+    fn cancel_local_for_locale(
+        &self,
+        journal: &Path,
+        attempt: &str,
+        locale: &str,
+    ) -> Result<(), String> {
+        crate::thinking_install::cancel_for_locale(journal, attempt, locale).map(|_| ())
+    }
+
     fn retry_speech(&self, journal_root: &Path) -> Result<(), SetupRetryError> {
         if self.packaged_speech.is_some() || cfg!(any(target_os = "android", target_os = "ios")) {
             return packaged_speech_retry(
@@ -107,14 +116,26 @@ impl SetupHost for ConveySetupHost {
     }
 
     fn project_downloads(&self, journal_root: &Path) -> Result<SetupDownloads, SetupProgressError> {
+        self.localized_downloads(
+            journal_root,
+            solstone_core_convey_http::window_catalog::ENGLISH,
+        )
+    }
+
+    fn localized_downloads(
+        &self,
+        journal_root: &Path,
+        locale: &str,
+    ) -> Result<SetupDownloads, SetupProgressError> {
         if self.packaged_speech.is_some() || cfg!(any(target_os = "android", target_os = "ios")) {
             read_setup_downloads_with_packaged_speech(
                 journal_root,
                 self.packaged_speech(journal_root)
                     .and_then(|speech| speech.status()),
+                locale,
             )
         } else {
-            read_setup_downloads(journal_root)
+            localized_setup_downloads(journal_root, locale)
         }
     }
 
@@ -243,8 +264,11 @@ impl Drop for AdmitDropGuard {
         if let Some(tx) = self.tx.take() {
             let _ = tx.send(Err(SetupRetryError {
                 code: "speech_admission_pending",
-                message: "speech install is starting",
-                detail: "check speech progress in a moment.".into(),
+                message_id: "journal.setup.speech.starting",
+                detail: crate::window_catalog::text(
+                    crate::window_catalog::ENGLISH,
+                    "journal.setup.speech.check.progress",
+                ),
             }));
         }
     }
@@ -266,7 +290,7 @@ fn retry_speech_with_timeout(
     let observed = solstone_core_local::install::status::read_observed_status(journal, "parakeet")
         .map_err(|error| SetupRetryError {
             code: "status_unreadable",
-            message: "speech install could not start",
+            message_id: "journal.setup.speech.cannot.start",
             detail: error.to_string(),
         })?;
     let lease = match solstone_core_local::install::lease::acquire(journal, "parakeet") {
@@ -276,14 +300,17 @@ fn retry_speech_with_timeout(
             // particular, it can precede replacement of abandoned history.
             return Err(SetupRetryError {
                 code: "speech_admission_pending",
-                message: "speech install is starting",
-                detail: "check speech progress in a moment.".into(),
+                message_id: "journal.setup.speech.starting",
+                detail: crate::window_catalog::text(
+                    crate::window_catalog::ENGLISH,
+                    "journal.setup.speech.check.progress",
+                ),
             });
         }
         Err(error) => {
             return Err(SetupRetryError {
                 code: "lease_unavailable",
-                message: "speech install could not start",
+                message_id: "journal.setup.speech.cannot.start",
                 detail: error.to_string(),
             });
         }
@@ -438,8 +465,11 @@ fn retry_speech_with_timeout(
         Ok(res) => res,
         Err(_) => Err(SetupRetryError {
             code: "speech_admission_pending",
-            message: "speech install is starting",
-            detail: "check speech progress in a moment.".into(),
+            message_id: "journal.setup.speech.starting",
+            detail: crate::window_catalog::text(
+                crate::window_catalog::ENGLISH,
+                "journal.setup.speech.check.progress",
+            ),
         }),
     }
 }
@@ -460,12 +490,12 @@ fn persist_speech_refusal(
     ) {
         Ok(_) => SetupRetryError {
             code,
-            message: "speech install could not start",
+            message_id: "journal.setup.speech.cannot.start",
             detail,
         },
         Err(error) => SetupRetryError {
             code: "status_write_failed",
-            message: "speech install could not start",
+            message_id: "journal.setup.speech.cannot.start",
             detail: error.to_string(),
         },
     }

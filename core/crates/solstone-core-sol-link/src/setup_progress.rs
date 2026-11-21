@@ -10,13 +10,28 @@ use solstone_core_local::install::status::{self, InstallStatus, is_in_flight};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SetupRetryError {
     pub code: &'static str,
-    pub message: &'static str,
+    pub message_id: &'static str,
     pub detail: String,
+}
+
+impl SetupRetryError {
+    pub fn presentation(&self, locale: &str) -> (String, String) {
+        use solstone_core_convey_http::window_catalog::text;
+        let detail = match self.code {
+            "speech_package_unavailable" => packaged_speech_repair_guidance(locale),
+            "speech_admission_pending" => text(locale, "journal.setup.speech.check.progress"),
+            "retry_unavailable" => text(locale, "journal.setup.speech.retry.unavailable"),
+            _ => self.detail.clone(),
+        };
+        (text(locale, self.message_id), detail)
+    }
 }
 
 impl std::fmt::Display for SetupRetryError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}: {}", self.message, self.detail)
+        let (message, detail) =
+            self.presentation(solstone_core_convey_http::window_catalog::ENGLISH);
+        write!(f, "{message}: {detail}")
     }
 }
 
@@ -108,12 +123,12 @@ pub fn packaged_speech_repair_guidance(locale: &str) -> String {
 pub fn packaged_speech_retry(verified: Result<(), String>) -> Result<(), SetupRetryError> {
     verified.map_err(|_| SetupRetryError {
         code: "speech_package_unavailable",
-        message: "speech recognition needs repair",
+        message_id: "journal.setup.refusal.speech.recognition.needs.repair",
         detail: packaged_speech_repair_guidance(solstone_core_convey_http::window_catalog::ENGLISH),
     })
 }
 
-pub fn project_packaged_speech(verified: Result<(), String>) -> SetupDownloadTask {
+fn project_packaged_speech(verified: Result<(), String>, locale: &str) -> SetupDownloadTask {
     match packaged_speech_retry(verified) {
         Ok(()) => SetupDownloadTask {
             state: "complete".into(),
@@ -129,7 +144,7 @@ pub fn project_packaged_speech(verified: Result<(), String>) -> SetupDownloadTas
             bytes_total: Some(0),
             error: Some(SetupDownloadError {
                 code: error.code.into(),
-                detail: error.detail,
+                detail: packaged_speech_repair_guidance(locale),
             }),
         },
     }
@@ -285,6 +300,13 @@ pub fn read_setup_progress_with_downloads(
 /// Setup's speech and thinking download progress. It does not run this
 /// computer's capability checks.
 pub fn read_setup_downloads(journal: &Path) -> Result<SetupDownloads, SetupProgressError> {
+    localized_setup_downloads(journal, solstone_core_convey_http::window_catalog::ENGLISH)
+}
+
+pub fn localized_setup_downloads(
+    journal: &Path,
+    _locale: &str,
+) -> Result<SetupDownloads, SetupProgressError> {
     #[cfg(not(any(target_os = "windows", target_os = "android", target_os = "ios")))]
     let speech_status =
         status::read_observed_status(journal, "parakeet").map_err(|err| SetupProgressError {
@@ -305,6 +327,7 @@ pub fn read_setup_downloads(journal: &Path) -> Result<SetupDownloads, SetupProgr
     let speech = project_packaged_speech(
         solstone_core_local::install::parakeet_readiness::verified_windows_parakeet_package()
             .map(|_| ()),
+        _locale,
     );
 
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
@@ -358,7 +381,7 @@ pub fn read_setup_downloads(journal: &Path) -> Result<SetupDownloads, SetupProgr
     );
 
     #[cfg(any(target_os = "android", target_os = "ios"))]
-    let speech = project_packaged_speech(Err("packaged speech proof unavailable".into()));
+    let speech = project_packaged_speech(Err("packaged speech proof unavailable".into()), _locale);
     read_setup_downloads_with_speech(journal, speech)
 }
 
@@ -367,8 +390,9 @@ pub fn read_setup_downloads(journal: &Path) -> Result<SetupDownloads, SetupProgr
 pub fn read_setup_downloads_with_packaged_speech(
     journal: &Path,
     verification: Result<(), String>,
+    locale: &str,
 ) -> Result<SetupDownloads, SetupProgressError> {
-    read_setup_downloads_with_speech(journal, project_packaged_speech(verification))
+    read_setup_downloads_with_speech(journal, project_packaged_speech(verification, locale))
 }
 
 fn read_setup_downloads_with_speech(

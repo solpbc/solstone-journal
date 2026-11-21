@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup refusal identity proposal conflict.",
+  "context": "Journal setup refusal identity proposal conflict.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0829d0e4d99cc7637e048d0e58751c74d2103da721c40f608a959ad15821c52f",
+  "max_length": 46,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

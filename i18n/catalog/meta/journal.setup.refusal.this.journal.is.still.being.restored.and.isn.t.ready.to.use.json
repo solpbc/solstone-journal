@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup refusal this journal is still being restored and isn t ready to use.",
+  "context": "Journal setup refusal this journal is still being restored and isn t ready to use.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ebf624e8ca7cd0d289de32fd63d942fc42b5e11204d821fcd4f6121bbaece834",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

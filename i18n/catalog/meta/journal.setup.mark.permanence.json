@@ -1,0 +1,16 @@
+{
+  "description": "Copy for the mark section of journal setup.",
+  "context": "Journal setup, copy for the mark section of journal setup.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1f345b9f8ab2b515e4dbd817a244223d89b63fdc174cfc68f019a47bd581fb5b",
+  "max_length": 69,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

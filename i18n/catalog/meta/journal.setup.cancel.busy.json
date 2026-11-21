@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup cancel busy.",
+  "context": "Journal setup cancel busy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0b663ef37203fed0e8aed08c1563c32571f9a71247da98a1837b9a64442a9cb4",
+  "max_length": 50,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Copy for the folder section of journal setup.",
+  "context": "Journal setup, copy for the folder section of journal setup.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7e99e4921a18200f5a4fa4bd60dd2ed4ed699be99c98206193db8a476be1e67d",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

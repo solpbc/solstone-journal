@@ -1867,9 +1867,13 @@ pub fn current_setup_facts() -> SetupCatalogFacts {
 /// Shared copy uses named placeholders; measured download facts live in setup state.
 /// This stays callable before a journal exists or a runtime install plan is selected.
 pub fn setup_copy(facts: &SetupCatalogFacts) -> serde_json::Value {
+    localized_setup_copy(facts, ENGLISH)
+}
+
+pub fn localized_setup_copy(facts: &SetupCatalogFacts, locale: &str) -> serde_json::Value {
     // A phone can be the journal itself; everywhere else it is a computer.
     let on_phone = matches!(facts.platform, "ios" | "android");
-    let choices = lanes(ENGLISH)
+    let choices = lanes(locale)
         .into_iter()
         .map(|mut lane| {
             // Setup actions use spp; the existing Thinking page uses confidential.
@@ -1881,76 +1885,76 @@ pub fn setup_copy(facts: &SetupCatalogFacts) -> serde_json::Value {
         .collect::<Vec<_>>();
     serde_json::json!({
         "schema": "solstone.setup-copy.v1",
-        "heading": "your journal",
+        "heading": text(locale, "journal.setup.heading"),
         "welcome": {
-            "title": "welcome to solstone.",
-            "body": "the solstone app takes in what you share with it, and all of it goes into your journal.",
+            "title": text(locale, "journal.setup.welcome.title"),
+            "body": text(locale, "journal.setup.welcome.body"),
             "how_it_fits": [
-                "welcome to solstone.",
-                "the solstone app takes in what you share with it, and all of it goes into your journal.",
-                "your journal is always private, only yours."
+                text(locale, "journal.setup.welcome.title"),
+                text(locale, "journal.setup.welcome.body"),
+                text(locale, "journal.window.network.brandlock.line")
             ]
         },
         "fits": {
-            "title": "how it fits together",
-            "journal_term": "your journal",
+            "title": text(locale, "journal.setup.fits.title"),
+            "journal_term": text(locale, "journal.setup.heading"),
             "journal": if on_phone {
-                "lives on this phone and keeps everything that goes into it."
+                text(locale, "journal.setup.fits.journal.phone")
             } else {
-                "lives on your journal's computer and keeps everything that goes into it."
+                text(locale, "journal.setup.fits.journal.computer")
             },
-            "app_term": "the solstone app",
-            "app": "runs on each device you choose and takes in what you share with it. all of it goes into your journal.",
-            "thinking_term": "thinking",
-            "thinking": "helps your journal make sense of what it keeps. choose where it happens below, or later."
+            "app_term": text(locale, "journal.setup.fits.app.term"),
+            "app": text(locale, "journal.setup.fits.app"),
+            "thinking_term": text(locale, "journal.setup.fits.thinking.term"),
+            "thinking": text(locale, "journal.setup.fits.thinking")
         },
         "login": {
-            "label": "start your journal when you sign in",
-            "help": "start automatically after you sign in to your journal's computer."
+            "label": text(locale, "journal.setup.login.label"),
+            "help": text(locale, "journal.setup.login.help")
         },
         "folder": {
-            "title": "journal folder",
-            "help": "where your journal is kept on your journal's computer.",
-            "change": "change folder",
-            "continue": "continue"
+            "title": text(locale, "journal.setup.folder.title"),
+            "help": text(locale, "journal.setup.folder.help"),
+            "change": text(locale, "journal.setup.folder.change"),
+            "continue": text(locale, "journal.setup.folder.continue")
         },
         "mark": {
-            "title": "your journal mark",
-            "help": "a unique mark for your journal. a phone or other computer you pair shows it too, so you can check it.",
-            "error": "your journal mark could not be loaded. try again.",
-            "permanence": "continue makes this your journal's mark for good.",
-            "try_another": "try another",
-            "continue": "continue"
+            "title": text(locale, "journal.setup.mark.title"),
+            "help": text(locale, "journal.setup.mark.help"),
+            "error": text(locale, "journal.setup.mark.error"),
+            "permanence": text(locale, "!journal.setup.mark.permanence"),
+            "try_another": text(locale, "journal.setup.mark.try.another"),
+            "continue": text(locale, "journal.setup.folder.continue")
         },
         "thinking": {
-            "title": "thinking",
+            "title": text(locale, "journal.setup.fits.thinking.term"),
             "choices": choices,
-            "default_line": "on your journal's computer · {size}",
-            "size_unknown": "download size unavailable",
-            "choose_later": "choose thinking when you're ready. your journal keeps everything until then.",
-            "change": "change",
-            "later": "decide later",
-            "continue": "continue",
-            "check_unknown": "couldn't check local setup."
+            "default_line": solstone_core_window_catalog::strings(locale, "journal.setup.thinking.default.line", [("size", "{size}")]),
+            "size_unknown": text(locale, "journal.setup.thinking.size.unknown"),
+            "choose_later": text(locale, "journal.setup.thinking.choose.later"),
+            "change": text(locale, "journal.setup.thinking.change"),
+            "later": text(locale, "journal.setup.thinking.later"),
+            "continue": text(locale, "journal.setup.folder.continue"),
+            "check_unknown": text(locale, "journal.setup.thinking.check.unknown")
         },
         "downloads": {
-            "speech": "speech recognition",
-            "thinking": "local thinking",
-            "progress": "downloading…",
-            "cancel": "cancel",
-            "retry": "try again",
-            "error": "download failed. try again.",
-            "idle": "not started",
-            "complete": "ready",
-            "cancelled": "cancelled"
+            "speech": text(locale, "journal.setup.downloads.speech"),
+            "thinking": text(locale, "journal.setup.downloads.thinking"),
+            "progress": text(locale, "journal.setup.downloads.progress"),
+            "cancel": text(locale, "journal.setup.downloads.cancel"),
+            "retry": text(locale, "journal.setup.downloads.retry"),
+            "error": text(locale, "journal.setup.downloads.error"),
+            "idle": text(locale, "journal.setup.downloads.idle"),
+            "complete": text(locale, "journal.setup.downloads.complete"),
+            "cancelled": text(locale, "journal.setup.downloads.cancelled")
         },
         "footer": if on_phone {
-            "your journal is kept on this phone. thinking uses the option you choose."
+            text(locale, "journal.setup.footer.phone")
         } else {
-            "your journal is kept on your journal's computer. thinking uses the option you choose."
+            text(locale, "journal.setup.footer.computer")
         },
         "help": {
-            "text": "stuck, or have a question?",
+            "text": text(locale, "journal.setup.help.text"),
             "link": "support.solstone.app",
             "href": "https://support.solstone.app"
         }

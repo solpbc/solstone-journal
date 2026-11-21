@@ -1,0 +1,16 @@
+{
+  "description": "Copy for the login section of journal setup.",
+  "context": "Journal setup, copy for the login section of journal setup.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "db9483068ffa8675390c0fda39ff012bc7aae70340ae24b54484af871b500849",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

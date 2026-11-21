@@ -1,0 +1,21 @@
+{
+  "description": "Journal setup service failed.",
+  "context": "Journal setup service failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "status",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "96154032f12948c31288adf24de786bea95e8e4ed47ca7545191e4b4a1c5a7e6",
+  "max_length": 56,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

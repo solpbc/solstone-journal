@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup refusal thinking download could not start.",
+  "context": "Journal setup refusal thinking download could not start.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1e3309fcfdee42d5b2a24b107796bc862dd8d8a651d0840f0de7161ae5323a18",
+  "max_length": 53,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

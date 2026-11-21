@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup refusal service unavailable.",
+  "context": "Journal setup refusal service unavailable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3518838dc75eed6a5eecf8c93b464aab46d48832019f8d85a2ea9b040867bad3",
+  "max_length": 40,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

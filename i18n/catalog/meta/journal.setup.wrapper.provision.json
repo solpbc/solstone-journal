@@ -1,0 +1,36 @@
+{
+  "description": "Journal setup wrapper provision.",
+  "context": "Journal setup wrapper provision.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "kind",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "769658c71779278fb17b52ce307eefd00caeac0c9fa67e41b4f501920da3c584",
+  "max_length": 101,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone"
+    }
+  ]
+}

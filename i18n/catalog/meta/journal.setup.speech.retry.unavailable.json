@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup speech retry unavailable.",
+  "context": "Journal setup speech retry unavailable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "88d4e0ebd480568c6e7ff45ececc34c9df5874f6d0831b75d0168b2f5bffe612",
+  "max_length": 50,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

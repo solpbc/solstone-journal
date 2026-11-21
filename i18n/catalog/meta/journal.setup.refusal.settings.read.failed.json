@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup refusal settings read failed.",
+  "context": "Journal setup refusal settings read failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "21e7c5fe7da28daf3e43ae527e519a9774a3a5108310a06ba1ffd7a9d572ff12",
+  "max_length": 40,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

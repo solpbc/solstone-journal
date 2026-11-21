@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup doctor unreadable.",
+  "context": "Journal setup doctor unreadable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1f23b7a36dc8542dc2b0e925b07496125f706e9b88d7577ebf361e9f43a75f2f",
+  "max_length": 44,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Copy for the welcome section of journal setup.",
+  "context": "Journal setup, copy for the welcome section of journal setup.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ae591e81b578a5aa065c80df665593d08a9a88c8cdacb9f2a2db5593e9c96714",
+  "max_length": 50,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ],
+  "protected_slots": [
+    {
+      "name": "platform_name",
+      "kind": "mark-word",
+      "value": "solstone"
+    }
+  ]
+}

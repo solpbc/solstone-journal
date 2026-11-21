@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup cancel failed.",
+  "context": "Journal setup cancel failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b0e4df22efeb78280a52673c3e2c80291569a4c132b89e133ed9730673c8772f",
+  "max_length": 40,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

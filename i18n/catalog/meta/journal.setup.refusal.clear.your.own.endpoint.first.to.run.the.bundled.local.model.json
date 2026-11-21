@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup refusal clear your own endpoint first to run the bundled local model.",
+  "context": "Journal setup refusal clear your own endpoint first to run the bundled local model.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "296740c817aa7b4b92f2f1149969589edabeadd32ec7127ad26fb190f9fa5800",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

@@ -538,7 +538,7 @@ async fn init_reads_defaults_without_writing() {
 
     assert_eq!(response.status(), StatusCode::OK);
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    let expected = crate::http::injected_init_html();
+    let expected = crate::http::injected_init_html("en-US");
     assert_eq!(body.as_ref(), expected.as_bytes());
     let html = std::str::from_utf8(&body).unwrap();
     let bootstrap = html

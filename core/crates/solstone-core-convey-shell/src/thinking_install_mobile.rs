@@ -196,38 +196,43 @@ pub(super) fn start(root: Arc<JournalRoot>, model: &str, automatic: bool) -> Res
     ))
 }
 
-pub(super) fn cancel(journal: &Path, attempt: &str) -> Result<status::InstallStatus, String> {
+pub(super) fn cancel(
+    journal: &Path,
+    attempt: &str,
+    locale: &str,
+) -> Result<status::InstallStatus, String> {
+    use solstone_core_convey_http::window_catalog::text;
     let _admission = super::ADMISSION
         .lock()
-        .map_err(|_| "installer admission unavailable")?;
+        .map_err(|_| text(locale, "journal.setup.cancel.admission"))?;
     let current = status::read_status(journal, "local").map_err(|error| error.to_string())?;
     if current.attempt_id.as_deref() != Some(attempt) {
-        return Err("install attempt changed".into());
+        return Err(text(locale, "journal.setup.cancel.changed"));
     }
     if !status::is_in_flight(&current.install_state) {
         return Ok(current);
     }
     let Some(entry) = entry(journal)? else {
-        return Err("installer owner unavailable".into());
+        return Err(text(locale, "journal.setup.cancel.owner"));
     };
     {
         let slot = entry
             .worker
             .lock()
-            .map_err(|_| "installer owner unavailable")?;
+            .map_err(|_| text(locale, "journal.setup.cancel.owner"))?;
         if let Some(worker) = slot.as_ref() {
             if worker
                 .attempt
                 .lock()
-                .map_err(|_| "installer attempt unavailable")?
+                .map_err(|_| text(locale, "journal.setup.cancel.attempt"))?
                 .as_deref()
                 != Some(attempt)
             {
-                return Err("install attempt changed".into());
+                return Err(text(locale, "journal.setup.cancel.changed"));
             }
             worker.cancelled.store(true, Ordering::Release);
         } else if lease::is_held(journal, "local").map_err(|error| error.to_string())? {
-            return Err("installer owner unavailable".into());
+            return Err(text(locale, "journal.setup.cancel.owner"));
         }
     }
     join(&entry, Instant::now() + JOIN_TIMEOUT)?;

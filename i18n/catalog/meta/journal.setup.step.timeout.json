@@ -1,0 +1,25 @@
+{
+  "description": "Journal setup step timeout.",
+  "context": "Journal setup step timeout.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "step",
+      "type": "string"
+    },
+    {
+      "name": "seconds",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "54189cbe48edd74802a5a7909def459c29dc4c3e9828b5c19447e17714f0c929",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

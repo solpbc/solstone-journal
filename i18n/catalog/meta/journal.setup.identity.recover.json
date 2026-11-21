@@ -1,0 +1,41 @@
+{
+  "description": "Journal setup identity recover.",
+  "context": "Journal setup identity recover.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    },
+    {
+      "name": "stop_service",
+      "type": "string"
+    },
+    {
+      "name": "steps",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e54bf62fe371eafaccd043f90f378da23d338ff0de4688541a2a19fa27299001",
+  "max_length": 316,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ],
+  "protected_slots": [
+    {
+      "name": "paragraph",
+      "kind": "whitespace",
+      "value": "\n\n"
+    },
+    {
+      "name": "setup",
+      "kind": "command",
+      "value": "solstone journal setup"
+    }
+  ]
+}

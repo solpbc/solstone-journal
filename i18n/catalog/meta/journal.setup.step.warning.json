@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup step warning.",
+  "context": "Journal setup step warning.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d75c01c1c56037b27374b7c456941a40a545ca9b599a092f162cb6aa9e21747c",
+  "max_length": 40,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

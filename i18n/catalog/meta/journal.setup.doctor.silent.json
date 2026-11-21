@@ -1,0 +1,21 @@
+{
+  "description": "Journal setup doctor silent.",
+  "context": "Journal setup doctor silent.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "seconds",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "343adc2e06c17cf2c9227044ecb47cb58d45c73af6c48bc91b38e8877e26bd9a",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

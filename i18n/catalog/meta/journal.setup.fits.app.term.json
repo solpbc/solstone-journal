@@ -1,0 +1,23 @@
+{
+  "description": "Copy for the fits section of journal setup.",
+  "context": "Journal setup, copy for the fits section of journal setup.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dab85ff8e67addc5883b9528c59c7671a8210915a1e8ebca432e5ef10e27e776",
+  "max_length": 46,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ],
+  "protected_slots": [
+    {
+      "name": "platform_name",
+      "kind": "mark-word",
+      "value": "solstone"
+    }
+  ]
+}

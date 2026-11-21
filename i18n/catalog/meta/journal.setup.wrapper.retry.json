@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup wrapper retry.",
+  "context": "Journal setup wrapper retry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1bdb5c9115a78c44991eb7957e844523a3993f3970cf4710142e93d9642b180e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

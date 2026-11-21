@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup refusal this journal isn t ready to use.",
+  "context": "Journal setup refusal this journal isn t ready to use.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d0c17c41a64c0426ef3cc56d74eef67fe1a1ac9fa50c144e14693b7c3aeb4455",
+  "max_length": 52,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

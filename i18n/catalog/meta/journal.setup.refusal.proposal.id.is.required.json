@@ -1,0 +1,23 @@
+{
+  "description": "Journal setup refusal proposal id is required.",
+  "context": "Journal setup refusal proposal id is required.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a84c33ee763f7cf1e221d1691b0ebb70227aac006d834e74bf2d0431899b6578",
+  "max_length": 54,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ],
+  "protected_slots": [
+    {
+      "name": "proposal_id_value",
+      "kind": "accepted-input",
+      "value": "proposal_id"
+    }
+  ]
+}

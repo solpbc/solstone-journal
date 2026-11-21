@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup speech check progress.",
+  "context": "Journal setup speech check progress.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d67a0f3550f08c76c1e5abbfa4114ef50545f6c1facc644b5700074aeda559da",
+  "max_length": 54,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

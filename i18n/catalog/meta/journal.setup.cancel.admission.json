@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup cancel admission.",
+  "context": "Journal setup cancel admission.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f9dc7b818fd7c060e9e154c2116e5389271e6ec1b8b74aa3e41b43353117650f",
+  "max_length": 51,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

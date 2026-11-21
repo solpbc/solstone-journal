@@ -66,20 +66,45 @@ pub enum EstablishError {
     ProposalConflict,
     AlreadyLocked,
     State(String),
+    CatalogState {
+        id: &'static str,
+        diagnostic: Option<String>,
+    },
+}
+
+impl EstablishError {
+    pub(crate) fn presentation(&self, locale: &str) -> String {
+        use solstone_core_convey_http::window_catalog::{strings, text};
+        match self {
+            Self::Lock(error) => error.to_string(),
+            Self::Publish(error) => error.to_string(),
+            Self::Ca(error) => error.to_string(),
+            Self::Mark(error) => error.to_string(),
+            Self::NoCandidate => text(locale, "journal.setup.identity.no.candidate"),
+            Self::ProposalConflict => {
+                text(locale, "journal.setup.refusal.identity.proposal.conflict")
+            }
+            Self::AlreadyLocked => text(locale, "journal.setup.refusal.journal.id.already.locked"),
+            Self::State(detail) => strings(
+                locale,
+                "journal.setup.identity.invalid",
+                [("detail", detail)],
+            ),
+            Self::CatalogState {
+                id,
+                diagnostic: Some(value),
+            } => strings(locale, id, [("error", value)]),
+            Self::CatalogState {
+                id,
+                diagnostic: None,
+            } => text(locale, id),
+        }
+    }
 }
 
 impl fmt::Display for EstablishError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Lock(error) => error.fmt(formatter),
-            Self::Publish(error) => error.fmt(formatter),
-            Self::Ca(error) => error.fmt(formatter),
-            Self::Mark(error) => error.fmt(formatter),
-            Self::NoCandidate => formatter.write_str("no staged link identity candidate exists"),
-            Self::ProposalConflict => formatter.write_str("identity proposal conflict"),
-            Self::AlreadyLocked => formatter.write_str("journal id already locked"),
-            Self::State(message) => write!(formatter, "invalid local link state: {message}"),
-        }
+        formatter.write_str(&self.presentation(solstone_core_convey_http::window_catalog::ENGLISH))
     }
 }
 
@@ -90,9 +115,11 @@ impl std::error::Error for EstablishError {
             Self::Publish(error) => Some(error),
             Self::Ca(error) => Some(error),
             Self::Mark(error) => Some(error),
-            Self::NoCandidate | Self::ProposalConflict | Self::AlreadyLocked | Self::State(_) => {
-                None
-            }
+            Self::NoCandidate
+            | Self::ProposalConflict
+            | Self::AlreadyLocked
+            | Self::State(_)
+            | Self::CatalogState { .. } => None,
         }
     }
 }
@@ -356,9 +383,10 @@ pub fn load_committed(journal_root: &Path) -> Result<Option<LinkState>, Establis
     match fs::symlink_metadata(&bundle) {
         Ok(_) => load_bundle(&bundle).map(Some),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(EstablishError::State(format!(
-            "identity directory: {error}"
-        ))),
+        Err(error) => Err(EstablishError::CatalogState {
+            id: "journal.setup.identity.state.identity.directory",
+            diagnostic: Some(error.to_string()),
+        }),
     }
 }
 
@@ -378,22 +406,32 @@ fn load_candidate_for_promotion(candidate: &Path) -> Result<LocalCa, EstablishEr
     match fs::symlink_metadata(candidate) {
         Ok(_) => load_candidate(candidate),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Err(EstablishError::NoCandidate),
-        Err(error) => Err(EstablishError::State(format!(
-            "candidate directory: {error}"
-        ))),
+        Err(error) => Err(EstablishError::CatalogState {
+            id: "journal.setup.identity.state.candidate.directory",
+            diagnostic: Some(error.to_string()),
+        }),
     }
 }
 
 fn load_candidate(candidate: &Path) -> Result<LocalCa, EstablishError> {
     if !candidate.is_dir() {
-        return Err(EstablishError::State(
-            "candidate CA is not a directory".to_owned(),
-        ));
+        return Err(EstablishError::CatalogState {
+            id: "journal.setup.identity.state.candidate.ca.is.not.a.directory",
+            diagnostic: None,
+        });
     }
-    let certificate_pem = fs::read_to_string(candidate.join("cert.pem"))
-        .map_err(|error| EstablishError::State(format!("candidate cert.pem: {error}")))?;
-    let private_key_pem = fs::read_to_string(candidate.join("private.pem"))
-        .map_err(|error| EstablishError::State(format!("candidate private.pem: {error}")))?;
+    let certificate_pem = fs::read_to_string(candidate.join("cert.pem")).map_err(|error| {
+        EstablishError::CatalogState {
+            id: "journal.setup.identity.state.candidate.cert.pem",
+            diagnostic: Some(error.to_string()),
+        }
+    })?;
+    let private_key_pem = fs::read_to_string(candidate.join("private.pem")).map_err(|error| {
+        EstablishError::CatalogState {
+            id: "journal.setup.identity.state.candidate.private.pem",
+            diagnostic: Some(error.to_string()),
+        }
+    })?;
     Ok(load_ca(&certificate_pem, &private_key_pem)?)
 }
 
@@ -419,14 +457,21 @@ fn publish_candidate(candidate: &Path, ca: &LocalCa) -> Result<(), EstablishErro
 
 fn discard_candidate_required(candidate: &Path) -> Result<(), EstablishError> {
     match fs::symlink_metadata(candidate) {
-        Ok(metadata) if metadata.is_dir() => fs::remove_dir_all(candidate)
-            .map_err(|error| EstablishError::State(format!("candidate directory: {error}"))),
-        Ok(_) => fs::remove_file(candidate)
-            .map_err(|error| EstablishError::State(format!("candidate directory: {error}"))),
+        Ok(metadata) if metadata.is_dir() => {
+            fs::remove_dir_all(candidate).map_err(|error| EstablishError::CatalogState {
+                id: "journal.setup.identity.state.candidate.directory",
+                diagnostic: Some(error.to_string()),
+            })
+        }
+        Ok(_) => fs::remove_file(candidate).map_err(|error| EstablishError::CatalogState {
+            id: "journal.setup.identity.state.candidate.directory",
+            diagnostic: Some(error.to_string()),
+        }),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(EstablishError::State(format!(
-            "candidate directory: {error}"
-        ))),
+        Err(error) => Err(EstablishError::CatalogState {
+            id: "journal.setup.identity.state.candidate.directory",
+            diagnostic: Some(error.to_string()),
+        }),
     }
 }
 
@@ -534,38 +579,59 @@ fn write_identity_file(
 
 fn load_bundle(bundle: &Path) -> Result<LinkState, EstablishError> {
     if !bundle.is_dir() {
-        return Err(EstablishError::State(
-            "CA bundle is not a directory".to_owned(),
-        ));
+        return Err(EstablishError::CatalogState {
+            id: "journal.setup.identity.state.ca.bundle.is.not.a.directory",
+            diagnostic: None,
+        });
     }
-    let certificate_pem = fs::read_to_string(bundle.join("cert.pem"))
-        .map_err(|error| EstablishError::State(format!("cert.pem: {error}")))?;
-    let private_key_pem = fs::read_to_string(bundle.join("private.pem"))
-        .map_err(|error| EstablishError::State(format!("private.pem: {error}")))?;
+    let certificate_pem = fs::read_to_string(bundle.join("cert.pem")).map_err(|error| {
+        EstablishError::CatalogState {
+            id: "journal.setup.identity.state.cert.pem",
+            diagnostic: Some(error.to_string()),
+        }
+    })?;
+    let private_key_pem = fs::read_to_string(bundle.join("private.pem")).map_err(|error| {
+        EstablishError::CatalogState {
+            id: "journal.setup.identity.state.private.pem",
+            diagnostic: Some(error.to_string()),
+        }
+    })?;
     let ca = load_ca(&certificate_pem, &private_key_pem)?;
     let state = read_state(&bundle.join("state.json"))?;
     let expected = jid_from_spki(ca.spki_der())?;
     if state.instance_id != expected {
-        return Err(EstablishError::State(
-            "state instance_id does not match the CA public key".to_owned(),
-        ));
+        return Err(EstablishError::CatalogState {
+            id: "journal.setup.identity.state.state.instance.id.does.not.match.the.ca.public.key",
+            diagnostic: None,
+        });
     }
     Ok(state)
 }
 
 fn read_state(path: &Path) -> Result<LinkState, EstablishError> {
-    let contents = fs::read_to_string(path)
-        .map_err(|error| EstablishError::State(format!("state.json: {error}")))?;
-    let value: Value = serde_json::from_str(&contents)
-        .map_err(|error| EstablishError::State(format!("state.json: {error}")))?;
+    let contents = fs::read_to_string(path).map_err(|error| EstablishError::CatalogState {
+        id: "journal.setup.identity.state.state.json",
+        diagnostic: Some(error.to_string()),
+    })?;
+    let value: Value =
+        serde_json::from_str(&contents).map_err(|error| EstablishError::CatalogState {
+            id: "journal.setup.identity.state.state.json",
+            diagnostic: Some(error.to_string()),
+        })?;
     let object = value
         .as_object()
-        .ok_or_else(|| EstablishError::State("state.json must be an object".to_owned()))?;
+        .ok_or_else(|| EstablishError::CatalogState {
+            id: "journal.setup.identity.state.state.json.must.be.an.object",
+            diagnostic: None,
+        })?;
     let instance_id = object
         .get("instance_id")
         .and_then(Value::as_str)
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| EstablishError::State("state.json instance_id is missing".to_owned()))?;
+        .ok_or_else(|| EstablishError::CatalogState {
+            id: "journal.setup.identity.state.state.json.instance.id.is.missing",
+            diagnostic: None,
+        })?;
     let home_label = object
         .get("home_label")
         .and_then(Value::as_str)
@@ -573,7 +639,10 @@ fn read_state(path: &Path) -> Result<LinkState, EstablishError> {
     let locked_at = object
         .get("locked_at")
         .and_then(Value::as_i64)
-        .ok_or_else(|| EstablishError::State("state.json locked_at is missing".to_owned()))?;
+        .ok_or_else(|| EstablishError::CatalogState {
+            id: "journal.setup.identity.state.state.json.locked.at.is.missing",
+            diagnostic: None,
+        })?;
     Ok(LinkState {
         instance_id: instance_id.to_owned(),
         home_label: home_label.to_owned(),

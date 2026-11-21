@@ -16,10 +16,11 @@ use axum::routing::{get, post};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use solstone_core_check::{CheckReport, Severity, build_check_report, gather_host_inputs};
+use solstone_core_convey_http::coalesce::ResponseLocale;
 use solstone_core_convey_http::envelope::{error_envelope, not_found_fallback};
 use solstone_core_convey_http::gate::require_access;
 use solstone_core_convey_http::identity::AccessBasis;
-use solstone_core_convey_http::window_catalog::{ENGLISH, text};
+use solstone_core_convey_http::window_catalog::{ENGLISH, response_locale, text};
 use solstone_core_journal_config::load_mutation_base;
 use solstone_core_journal_config_write::{
     ConfigMutationError, JournalConfigMutation, mutate_journal_config,
@@ -35,7 +36,8 @@ use crate::ledger::{AuthorizedClientsRead, read_authorized_clients};
 use crate::mark::mark_from_jid;
 
 const INIT_HTML: &str = include_str!("../assets/init.html");
-const INIT_LOCAL_ONLY_DETAIL: &str = "setup routes require a localhost connection";
+const INIT_LOCAL_ONLY_DETAIL: &str =
+    "journal.setup.refusal.setup.routes.require.a.localhost.connection";
 const LOCAL_PROVIDER_SELECTION: &str = r#"{"provider":"local","model":"local/qwen3.5-4b"}"#;
 
 fn local_provider_val() -> Value {
@@ -44,15 +46,31 @@ fn local_provider_val() -> Value {
 
 pub use crate::setup_progress::{
     SetupDownloadError, SetupDownloadTask, SetupDownloads, SetupProgress, SetupProgressError,
-    SetupProgressThinking, SetupRetryError, packaged_speech_retry, read_setup_downloads,
-    read_setup_downloads_with_packaged_speech, read_setup_progress,
+    SetupProgressThinking, SetupRetryError, localized_setup_downloads, packaged_speech_retry,
+    read_setup_downloads, read_setup_downloads_with_packaged_speech, read_setup_progress,
 };
 
 pub trait SetupHost: Send + Sync {
     fn start_local(&self, journal_root: &Path) -> Result<(), String>;
     fn cancel_local(&self, journal_root: &Path, attempt_id: &str) -> Result<(), String>;
+    fn cancel_local_for_locale(
+        &self,
+        journal: &Path,
+        attempt: &str,
+        _locale: &str,
+    ) -> Result<(), String> {
+        self.cancel_local(journal, attempt)
+    }
     fn retry_speech(&self, journal_root: &Path) -> Result<(), SetupRetryError>;
     fn project_downloads(&self, journal_root: &Path) -> Result<SetupDownloads, SetupProgressError>;
+    fn localized_downloads(
+        &self,
+        journal_root: &Path,
+        _locale: &str,
+    ) -> Result<SetupDownloads, SetupProgressError> {
+        self.project_downloads(journal_root)
+    }
+
     fn thinking_download_bytes(&self, journal: &Path) -> Option<u64>;
     fn catalog_facts(&self) -> SetupCatalogFacts;
     /// Ask for a fresh thinking check after setup changes the active lane, so
@@ -107,8 +125,8 @@ impl SetupHost for NoopSetupHost {
     fn retry_speech(&self, _journal_root: &Path) -> Result<(), SetupRetryError> {
         Err(SetupRetryError {
             code: "retry_unavailable",
-            message: "retry unavailable",
-            detail: "speech retry is not available.".into(),
+            message_id: "journal.setup.speech.unavailable",
+            detail: text(ENGLISH, "journal.setup.speech.retry.unavailable"),
         })
     }
 
@@ -292,10 +310,12 @@ pub fn init_router_with_host(journal_root: impl AsRef<Path>, host: Arc<dyn Setup
 }
 
 async fn retain_setup_target(
+    locale: Option<Extension<ResponseLocale>>,
     State(state): State<LinkHttpState>,
     request: axum::http::Request<axum::body::Body>,
     next: axum::middleware::Next,
 ) -> Response {
+    let locale = response_locale(locale);
     let path = request.uri().path();
     if (path == "/init/api/recovery"
         || path.starts_with("/init/api/recovery/")
@@ -317,8 +337,11 @@ async fn retain_setup_target(
         }
         Err(_) => error_envelope(
             "restore_pending",
-            solstone_core_journal_io::whole_journal_restore::WHOLE_JOURNAL_RESTORE_NOT_READY,
-            "setup target use was refused",
+            text(
+                locale,
+                "journal.setup.refusal.this.journal.isn.t.ready.to.use",
+            ),
+            text(locale, "journal.setup.refusal.setup.target.use.was.refused"),
             StatusCode::CONFLICT,
         )
         .into_response(),
@@ -345,7 +368,11 @@ pub fn router(journal_root: impl AsRef<Path>) -> Router {
         .fallback(not_found_fallback)
 }
 
-async fn devices(State(state): State<LinkHttpState>) -> Response {
+async fn devices(
+    locale: Option<Extension<ResponseLocale>>,
+    State(state): State<LinkHttpState>,
+) -> Response {
+    let locale = response_locale(locale);
     match read_authorized_clients(
         &state
             .journal_root
@@ -371,22 +398,22 @@ async fn devices(State(state): State<LinkHttpState>) -> Response {
         .into_response(),
         AuthorizedClientsRead::Unreadable => error_envelope(
             "authorization_ledger_unreadable",
-            "Service Unavailable",
-            "authorized-client ledger could not be read",
+            text(locale, "journal.setup.refusal.service.unavailable"),
+            text(locale, "journal.window.network.error.authorization.ledger.unreadable.authorized.client.ledger.could.not"),
             StatusCode::SERVICE_UNAVAILABLE,
         )
         .into_response(),
         AuthorizedClientsRead::Malformed => error_envelope(
             "authorization_ledger_malformed",
-            "Service Unavailable",
-            "authorized-client ledger is invalid",
+            text(locale, "journal.setup.refusal.service.unavailable"),
+            text(locale, "journal.window.network.error.authorization.ledger.malformed.authorized.client.ledger.is.invalid"),
             StatusCode::SERVICE_UNAVAILABLE,
         )
         .into_response(),
         AuthorizedClientsRead::DuplicateCid => error_envelope(
             "authorization_ledger_duplicate_cid",
-            "Service Unavailable",
-            "authorized-client ledger contains a duplicate client identifier",
+            text(locale, "journal.setup.refusal.service.unavailable"),
+            text(locale, "journal.window.network.error.authorization.ledger.duplicate.cid.authorized.client.ledger.contains.a"),
             StatusCode::SERVICE_UNAVAILABLE,
         )
         .into_response(),
@@ -417,20 +444,22 @@ async fn identity(State(state): State<LinkHttpState>) -> Response {
 }
 
 async fn init_state(
+    locale: Option<Extension<ResponseLocale>>,
     Extension(basis): Extension<AccessBasis>,
     State(state): State<LinkHttpState>,
 ) -> Response {
+    let locale = response_locale(locale);
     if !is_local(&basis) {
-        return init_local_only();
+        return init_local_only(locale);
     }
-    if let Some(response) = recovery_projection(&state.journal_root, state.host.as_ref()) {
+    if let Some(response) = recovery_projection(locale, &state.journal_root, state.host.as_ref()) {
         return response;
     }
     let config = match load_mutation_base(&state.journal_root) {
         Ok(base) => base.config,
-        Err(_) => return corrupt_config(),
+        Err(_) => return corrupt_config(locale),
     };
-    match build_setup_state(&state, &config).await {
+    match build_setup_state(&state, &config, locale).await {
         Ok(resp) => Json(resp).into_response(),
         Err(err_resp) => err_resp,
     }
@@ -580,10 +609,11 @@ pub(crate) mod setup_probe_test {
 async fn build_setup_state(
     state: &LinkHttpState,
     config: &Map<String, Value>,
+    locale: &'static str,
 ) -> Result<InitStateResponse, Response> {
     let mark_snapshot = match establish::read_mark_snapshot(&state.journal_root) {
         Ok(snapshot) => snapshot,
-        Err(error) => return Err(establish_error(error)),
+        Err(error) => return Err(establish_error(locale, error)),
     };
     let mark_is_locked = mark_snapshot.state == establish::MarkState::Locked;
     let mark = SetupMarkState {
@@ -602,7 +632,7 @@ async fn build_setup_state(
     let host = state.host.clone();
     let journal = state.journal_root.clone();
     let (downloads, download_bytes) = match tokio::task::spawn_blocking(move || {
-        let downloads = host.project_downloads(&journal)?;
+        let downloads = host.localized_downloads(&journal, locale)?;
         let thinking_bytes = if downloads.thinking.state == "downloading" {
             downloads
                 .thinking
@@ -619,7 +649,7 @@ async fn build_setup_state(
         Ok(Err(err)) => {
             return Err(error_envelope(
                 err.code,
-                "Bad Request",
+                text(locale, "journal.setup.refusal.bad.request"),
                 &err.detail,
                 StatusCode::BAD_REQUEST,
             )
@@ -628,7 +658,7 @@ async fn build_setup_state(
         Err(err) => {
             return Err(error_envelope(
                 "spawn_blocking_failed",
-                "Internal Server Error",
+                text(locale, "journal.setup.refusal.internal.server.error"),
                 err.to_string(),
                 StatusCode::INTERNAL_SERVER_ERROR,
             )
@@ -659,7 +689,7 @@ async fn build_setup_state(
 
     let redirect = "/app/home";
 
-    let copy = solstone_core_thinking_copy::setup_copy(&catalog_facts);
+    let copy = solstone_core_thinking_copy::localized_setup_copy(&catalog_facts, locale);
     let retention_mode = nested_string(config, "retention", "raw_media");
 
     Ok(InitStateResponse {
@@ -675,11 +705,9 @@ async fn build_setup_state(
             retention_mode
         },
         retention_days: nested_value(config, "retention", "raw_media_days").unwrap_or(Value::Null),
-        lanes: lanes(solstone_core_convey_http::window_catalog::ENGLISH),
+        lanes: lanes(locale),
         confidential: ConfidentialResponse {
-            lane_detail: confidential_lane_detail(
-                solstone_core_convey_http::window_catalog::ENGLISH,
-            ),
+            lane_detail: confidential_lane_detail(locale),
         },
         mark,
         thinking,
@@ -692,13 +720,15 @@ async fn build_setup_state(
 }
 
 async fn init_local_capability(
+    locale: Option<Extension<ResponseLocale>>,
     Extension(basis): Extension<AccessBasis>,
     State(state): State<LinkHttpState>,
 ) -> Response {
+    let locale = response_locale(locale);
     if !is_local(&basis) {
-        return init_local_only();
+        return init_local_only(locale);
     }
-    Json(compute_local_capability(&state.journal_root).await).into_response()
+    Json(compute_local_capability_in(&state.journal_root, locale).await).into_response()
 }
 
 /// Answer "can this computer run local thinking" from the same platform, GPU and
@@ -768,9 +798,10 @@ fn local_unavailable_reason(row: &str, locale: &str) -> String {
     thinking_copy_pointer_string(locale, pointer)
 }
 
-pub(crate) fn injected_init_html() -> String {
-    let copy = solstone_core_thinking_copy::setup_copy(
+pub(crate) fn injected_init_html(locale: &str) -> String {
+    let copy = solstone_core_thinking_copy::localized_setup_copy(
         &solstone_core_thinking_copy::current_setup_facts(),
+        locale,
     );
     let serialized = serde_json::to_string(&copy)
         .unwrap_or_default()
@@ -779,19 +810,34 @@ pub(crate) fn injected_init_html() -> String {
     let replacement = format!(
         "<script type=\"application/json\" id=\"setup-copy-bootstrap\">{serialized}</script>"
     );
-    INIT_HTML.replace(TARGET, &replacement)
+    let page = INIT_HTML.replace(TARGET, &replacement);
+    const HEADER_MARKER: &str = "/* setup-locale-header */";
+    if locale == ENGLISH {
+        return page.replace(HEADER_MARKER, "");
+    }
+    let page = page.replace(
+        HEADER_MARKER,
+        "opts.headers = new Headers(opts.headers); opts.headers.set('X-Solstone-Locale', document.documentElement.lang);",
+    );
+    page.replacen(
+        "<html lang=\"en\">",
+        &format!("<html lang=\"{locale}\">"),
+        1,
+    )
 }
 
 async fn init(
+    locale: Option<Extension<ResponseLocale>>,
     Extension(basis): Extension<AccessBasis>,
     State(state): State<LinkHttpState>,
 ) -> Response {
+    let locale = response_locale(locale);
     if !is_local(&basis) {
-        return init_local_only();
+        return init_local_only(locale);
     }
     if recovery_paused(&state.journal_root) {
         return Html(
-            injected_init_html()
+            injected_init_html(locale)
                 .replace("<body>", "<body data-recovery=\"pending\">")
                 .replace(
                     "<section id=\"setup-recovery\" hidden",
@@ -802,7 +848,7 @@ async fn init(
     }
     let config = match load_mutation_base(&state.journal_root) {
         Ok(base) => base.config,
-        Err(_) => return corrupt_config(),
+        Err(_) => return corrupt_config(locale),
     };
     if setup_is_complete(&config) {
         let mut response = StatusCode::FOUND.into_response();
@@ -811,17 +857,19 @@ async fn init(
             .insert(LOCATION, HeaderValue::from_static("/"));
         return response;
     }
-    Html(injected_init_html()).into_response()
+    Html(injected_init_html(locale)).into_response()
 }
 
 async fn init_mark(
+    locale: Option<Extension<ResponseLocale>>,
     Extension(basis): Extension<AccessBasis>,
     State(state): State<LinkHttpState>,
 ) -> Response {
+    let locale = response_locale(locale);
     if !is_local(&basis) {
-        return init_local_only();
+        return init_local_only(locale);
     }
-    if let Some(response) = refuse_recovery_mutation(&state.journal_root) {
+    if let Some(response) = refuse_recovery_mutation(locale, &state.journal_root) {
         return response;
     }
     match establish::ensure_mark_snapshot(&state.journal_root) {
@@ -836,18 +884,20 @@ async fn init_mark(
             proposal_id: snapshot.proposal_id,
         })
         .into_response(),
-        Err(error) => establish_error(error),
+        Err(error) => establish_error(locale, error),
     }
 }
 
 async fn init_mark_regenerate(
+    locale: Option<Extension<ResponseLocale>>,
     Extension(basis): Extension<AccessBasis>,
     State(state): State<LinkHttpState>,
 ) -> Response {
+    let locale = response_locale(locale);
     if !is_local(&basis) {
-        return init_local_only();
+        return init_local_only(locale);
     }
-    if let Some(response) = refuse_recovery_mutation(&state.journal_root) {
+    if let Some(response) = refuse_recovery_mutation(locale, &state.journal_root) {
         return response;
     }
     match establish::regenerate_proposal(&state.journal_root) {
@@ -860,18 +910,18 @@ async fn init_mark_regenerate(
                     proposal_id: Some(instance_id),
                 })
                 .into_response(),
-                Err(error) => establish_error(EstablishError::Mark(error)),
+                Err(error) => establish_error(locale, EstablishError::Mark(error)),
             },
-            Err(error) => establish_error(EstablishError::Ca(error)),
+            Err(error) => establish_error(locale, EstablishError::Ca(error)),
         },
         Err(EstablishError::AlreadyLocked) => error_envelope(
             "invalid_operation_for_state",
-            "Bad Request",
-            "journal id already locked",
+            text(locale, "journal.setup.refusal.bad.request"),
+            text(locale, "journal.setup.refusal.journal.id.already.locked"),
             StatusCode::BAD_REQUEST,
         )
         .into_response(),
-        Err(error) => establish_error(error),
+        Err(error) => establish_error(locale, error),
     }
 }
 
@@ -881,14 +931,16 @@ struct MarkLockRequest {
 }
 
 async fn init_mark_lock(
+    locale: Option<Extension<ResponseLocale>>,
     Extension(basis): Extension<AccessBasis>,
     State(state): State<LinkHttpState>,
     body: Bytes,
 ) -> Response {
+    let locale = response_locale(locale);
     if !is_local(&basis) {
-        return init_local_only();
+        return init_local_only(locale);
     }
-    if let Some(response) = refuse_recovery_mutation(&state.journal_root) {
+    if let Some(response) = refuse_recovery_mutation(locale, &state.journal_root) {
         return response;
     }
     let req: MarkLockRequest = match serde_json::from_slice(&body) {
@@ -896,8 +948,8 @@ async fn init_mark_lock(
         Err(_) => {
             return error_envelope(
                 "invalid_request",
-                "Bad Request",
-                "malformed lock request",
+                text(locale, "journal.setup.refusal.bad.request"),
+                text(locale, "journal.setup.refusal.malformed.lock.request"),
                 StatusCode::BAD_REQUEST,
             )
             .into_response();
@@ -906,8 +958,8 @@ async fn init_mark_lock(
     let Some(proposal_id) = req.proposal_id.filter(|s| !s.trim().is_empty()) else {
         return error_envelope(
             "proposal_required",
-            "Bad Request",
-            "proposal_id is required",
+            text(locale, "journal.setup.refusal.bad.request"),
+            text(locale, "journal.setup.refusal.proposal.id.is.required"),
             StatusCode::BAD_REQUEST,
         )
         .into_response();
@@ -931,12 +983,12 @@ async fn init_mark_lock(
         },
         Err(EstablishError::ProposalConflict) => error_envelope(
             "proposal_conflict",
-            "Conflict",
-            "identity proposal conflict",
+            text(locale, "journal.setup.refusal.conflict"),
+            text(locale, "journal.setup.refusal.identity.proposal.conflict"),
             StatusCode::CONFLICT,
         )
         .into_response(),
-        Err(error) => establish_error(error),
+        Err(error) => establish_error(locale, error),
     }
 }
 
@@ -975,14 +1027,14 @@ fn resolve_local_provider_update(
     if confidential_provisioned {
         return Err((
             "invalid_operation_for_state",
-            "turn off confidential processing first, then switch to the bundled local model.",
+            "journal.window.thinking.status.text.turn.off.confidential.processing.first.then",
             StatusCode::BAD_REQUEST,
         ));
     }
     if endpoint_configured {
         return Err((
             "invalid_operation_for_state",
-            "clear your own endpoint first to run the bundled local model.",
+            "journal.setup.refusal.clear.your.own.endpoint.first.to.run.the.bundled.local.model",
             StatusCode::BAD_REQUEST,
         ));
     }
@@ -991,11 +1043,21 @@ fn resolve_local_provider_update(
 
 type ChoiceError = (&'static str, &'static str, StatusCode);
 
-fn choice_error(error: ChoiceError) -> Response {
+fn setup_status_label(locale: &str, status: StatusCode) -> String {
+    let id = match status {
+        StatusCode::BAD_REQUEST => "journal.setup.refusal.bad.request",
+        StatusCode::CONFLICT => "journal.setup.refusal.conflict",
+        StatusCode::INTERNAL_SERVER_ERROR => "journal.setup.refusal.internal.server.error",
+        _ => return status.canonical_reason().unwrap_or("Error").to_owned(),
+    };
+    text(locale, id)
+}
+
+fn choice_error(locale: &str, error: ChoiceError) -> Response {
     error_envelope(
         error.0,
-        error.2.canonical_reason().unwrap_or("Error"),
-        error.1,
+        setup_status_label(locale, error.2),
+        text(locale, error.1),
         error.2,
     )
     .into_response()
@@ -1011,7 +1073,7 @@ fn transition_thinking_choice(
     if !finalize_config_sections_are_objects(config) {
         return Err((
             "corrupt_config",
-            "your journal settings could not be read",
+            "journal.setup.refusal.your.journal.settings.could.not.be.read",
             StatusCode::INTERNAL_SERVER_ERROR,
         ));
     }
@@ -1026,7 +1088,7 @@ fn transition_thinking_choice(
         if !local_available {
             return Err((
                 "local_unavailable",
-                "local thinking is not available on your journal's computer",
+                "journal.setup.refusal.local.thinking.is.not.available.on.your.journal.s.computer",
                 StatusCode::BAD_REQUEST,
             ));
         }
@@ -1059,14 +1121,14 @@ fn admit_thinking_retry(config: &mut Map<String, Value>) -> Result<bool, ChoiceE
     if !finalize_config_sections_are_objects(config) {
         return Err((
             "corrupt_config",
-            "your journal settings could not be read",
+            "journal.setup.refusal.your.journal.settings.could.not.be.read",
             StatusCode::INTERNAL_SERVER_ERROR,
         ));
     }
     if nested_string(config, "setup", "thinking_choice") != "local" {
         return Err((
             "thinking_choice_changed",
-            "your thinking choice changed; review it before trying again",
+            "journal.setup.refusal.your.thinking.choice.changed.review.it.before.trying.again",
             StatusCode::CONFLICT,
         ));
     }
@@ -1080,7 +1142,7 @@ fn admit_thinking_retry(config: &mut Map<String, Value>) -> Result<bool, ChoiceE
     if setup_is_complete(config) || active.is_some() || selected.is_some() {
         return Err((
             "thinking_choice_changed",
-            "your thinking settings changed; open thinking to choose what to use",
+            "journal.setup.refusal.your.thinking.settings.changed.open.thinking.to.choose.what.to.use",
             StatusCode::CONFLICT,
         ));
     }
@@ -1091,14 +1153,16 @@ fn admit_thinking_retry(config: &mut Map<String, Value>) -> Result<bool, ChoiceE
 }
 
 async fn init_action(
+    locale: Option<Extension<ResponseLocale>>,
     Extension(basis): Extension<AccessBasis>,
     State(state): State<LinkHttpState>,
     body: Bytes,
 ) -> Response {
+    let locale = response_locale(locale);
     if !is_local(&basis) {
-        return init_local_only();
+        return init_local_only(locale);
     }
-    if let Some(response) = refuse_recovery_mutation(&state.journal_root) {
+    if let Some(response) = refuse_recovery_mutation(locale, &state.journal_root) {
         return response;
     }
     let req: SetupActionRequest = match serde_json::from_slice(&body) {
@@ -1106,8 +1170,8 @@ async fn init_action(
         Err(_) => {
             return error_envelope(
                 "invalid_request",
-                "Bad Request",
-                "malformed json request",
+                text(locale, "journal.setup.refusal.bad.request"),
+                text(locale, "journal.setup.refusal.malformed.json.request"),
                 StatusCode::BAD_REQUEST,
             )
             .into_response();
@@ -1116,8 +1180,8 @@ async fn init_action(
     let Some(action) = req.action.as_deref() else {
         return error_envelope(
             "invalid_operation_for_state",
-            "Bad Request",
-            "action is required",
+            text(locale, "journal.setup.refusal.bad.request"),
+            text(locale, "journal.setup.refusal.action.is.required"),
             StatusCode::BAD_REQUEST,
         )
         .into_response();
@@ -1128,8 +1192,8 @@ async fn init_action(
             let Some(proposal_id) = req.proposal_id.filter(|s| !s.trim().is_empty()) else {
                 return error_envelope(
                     "proposal_required",
-                    "Bad Request",
-                    "proposal_id is required",
+                    text(locale, "journal.setup.refusal.bad.request"),
+                    text(locale, "journal.setup.refusal.proposal.id.is.required"),
                     StatusCode::BAD_REQUEST,
                 )
                 .into_response();
@@ -1139,13 +1203,13 @@ async fn init_action(
                 Err(EstablishError::ProposalConflict) => {
                     return error_envelope(
                         "proposal_conflict",
-                        "Conflict",
-                        "identity proposal conflict",
+                        text(locale, "journal.setup.refusal.conflict"),
+                        text(locale, "journal.setup.refusal.identity.proposal.conflict"),
                         StatusCode::CONFLICT,
                     )
                     .into_response();
                 }
-                Err(error) => return establish_error(error),
+                Err(error) => return establish_error(locale, error),
             }
         }
         "regenerate_mark" => match establish::regenerate_proposal(&state.journal_root) {
@@ -1153,20 +1217,20 @@ async fn init_action(
             Err(EstablishError::AlreadyLocked) => {
                 return error_envelope(
                     "invalid_operation_for_state",
-                    "Bad Request",
-                    "journal id already locked",
+                    text(locale, "journal.setup.refusal.bad.request"),
+                    text(locale, "journal.setup.refusal.journal.id.already.locked"),
                     StatusCode::BAD_REQUEST,
                 )
                 .into_response();
             }
-            Err(error) => return establish_error(error),
+            Err(error) => return establish_error(locale, error),
         },
         "save_thinking" => {
             let Some(choice) = req.choice.as_deref() else {
                 return error_envelope(
                     "invalid_config_value",
-                    "Bad Request",
-                    "choice is required",
+                    text(locale, "journal.setup.refusal.bad.request"),
+                    text(locale, "journal.setup.refusal.choice.is.required"),
                     StatusCode::BAD_REQUEST,
                 )
                 .into_response();
@@ -1174,8 +1238,8 @@ async fn init_action(
             if !matches!(choice, "local" | "byo" | "spp" | "later") {
                 return error_envelope(
                     "invalid_config_value",
-                    "Bad Request",
-                    "unknown thinking choice",
+                    text(locale, "journal.setup.refusal.bad.request"),
+                    text(locale, "journal.setup.refusal.unknown.thinking.choice"),
                     StatusCode::BAD_REQUEST,
                 )
                 .into_response();
@@ -1202,9 +1266,9 @@ async fn init_action(
             let (changed, start) = match mutation {
                 Ok(transaction) => match transaction.value {
                     Ok(start) => (transaction.changed, start),
-                    Err(error) => return choice_error(error),
+                    Err(error) => return choice_error(locale, error),
                 },
-                Err(error) => return config_error(error),
+                Err(error) => return config_error(locale, error),
             };
             if start {
                 let journal = state.journal_root.clone();
@@ -1214,7 +1278,10 @@ async fn init_action(
                     Ok(Err(error)) => {
                         return error_envelope(
                             "start_failed",
-                            "thinking download could not start",
+                            text(
+                                locale,
+                                "journal.setup.refusal.thinking.download.could.not.start",
+                            ),
                             &error,
                             StatusCode::SERVICE_UNAVAILABLE,
                         )
@@ -1223,7 +1290,10 @@ async fn init_action(
                     Err(error) => {
                         return error_envelope(
                             "start_failed",
-                            "thinking download could not start",
+                            text(
+                                locale,
+                                "journal.setup.refusal.thinking.download.could.not.start",
+                            ),
                             error.to_string(),
                             StatusCode::SERVICE_UNAVAILABLE,
                         )
@@ -1241,24 +1311,30 @@ async fn init_action(
         "start_thinking_download" => {
             let base = match load_mutation_base(&state.journal_root) {
                 Ok(base) => base.config,
-                Err(_) => return corrupt_config(),
+                Err(_) => return corrupt_config(locale),
             };
             if nested_string(&base, "setup", "thinking_choice") != "local" {
-                return choice_error((
-                    "thinking_choice_required",
-                    "choose local thinking before starting its download",
-                    StatusCode::BAD_REQUEST,
-                ));
+                return choice_error(
+                    locale,
+                    (
+                        "thinking_choice_required",
+                        "journal.setup.refusal.choose.local.thinking.before.starting.its.download",
+                        StatusCode::BAD_REQUEST,
+                    ),
+                );
             }
             if !compute_local_capability(&state.journal_root)
                 .await
                 .admits_local()
             {
-                return choice_error((
-                    "local_unavailable",
-                    "local thinking is not available on your journal's computer",
-                    StatusCode::BAD_REQUEST,
-                ));
+                return choice_error(
+                    locale,
+                    (
+                        "local_unavailable",
+                        "journal.setup.refusal.local.thinking.is.not.available.on.your.journal.s.computer",
+                        StatusCode::BAD_REQUEST,
+                    ),
+                );
             }
             let mutation = mutate_journal_config(
                 &state.journal_root,
@@ -1277,10 +1353,10 @@ async fn init_action(
             match mutation {
                 Ok(transaction) => {
                     if let Err(error) = transaction.value {
-                        return choice_error(error);
+                        return choice_error(locale, error);
                     }
                 }
-                Err(error) => return config_error(error),
+                Err(error) => return config_error(locale, error),
             }
             let journal = state.journal_root.clone();
             let host = state.host.clone();
@@ -1289,7 +1365,10 @@ async fn init_action(
                 Ok(Err(error)) => {
                     return error_envelope(
                         "start_failed",
-                        "thinking download could not start",
+                        text(
+                            locale,
+                            "journal.setup.refusal.thinking.download.could.not.start",
+                        ),
                         &error,
                         StatusCode::SERVICE_UNAVAILABLE,
                     )
@@ -1298,7 +1377,10 @@ async fn init_action(
                 Err(error) => {
                     return error_envelope(
                         "start_failed",
-                        "thinking download could not start",
+                        text(
+                            locale,
+                            "journal.setup.refusal.thinking.download.could.not.start",
+                        ),
                         error.to_string(),
                         StatusCode::SERVICE_UNAVAILABLE,
                     )
@@ -1310,8 +1392,8 @@ async fn init_action(
             let Some(attempt_id) = req.attempt_id.filter(|s| !s.trim().is_empty()) else {
                 return error_envelope(
                     "attempt_required",
-                    "Bad Request",
-                    "attempt_id is required",
+                    text(locale, "journal.setup.refusal.bad.request"),
+                    text(locale, "journal.setup.refusal.attempt.id.is.required"),
                     StatusCode::BAD_REQUEST,
                 )
                 .into_response();
@@ -1319,14 +1401,16 @@ async fn init_action(
             let journal = state.journal_root.clone();
             let host = state.host.clone();
             let attempt = attempt_id.clone();
-            let cancel_res =
-                tokio::task::spawn_blocking(move || host.cancel_local(&journal, &attempt)).await;
+            let cancel_res = tokio::task::spawn_blocking(move || {
+                host.cancel_local_for_locale(&journal, &attempt, locale)
+            })
+            .await;
             match cancel_res {
                 Ok(Ok(())) => {}
                 Ok(Err(err)) => {
                     return error_envelope(
                         "cancel_failed",
-                        "Bad Request",
+                        text(locale, "journal.setup.refusal.bad.request"),
                         &err,
                         StatusCode::BAD_REQUEST,
                     )
@@ -1335,7 +1419,7 @@ async fn init_action(
                 Err(err) => {
                     return error_envelope(
                         "cancel_failed",
-                        "Internal Server Error",
+                        text(locale, "journal.setup.refusal.internal.server.error"),
                         err.to_string(),
                         StatusCode::INTERNAL_SERVER_ERROR,
                     )
@@ -1355,13 +1439,13 @@ async fn init_action(
                         "speech_admission_pending" => StatusCode::SERVICE_UNAVAILABLE,
                         _ => StatusCode::BAD_REQUEST,
                     };
-                    return error_envelope(err.code, err.message, &err.detail, status)
-                        .into_response();
+                    let (message, detail) = err.presentation(locale);
+                    return error_envelope(err.code, message, detail, status).into_response();
                 }
                 Err(err) => {
                     return error_envelope(
                         "retry_failed",
-                        "retry failed",
+                        text(locale, "journal.window.health.visible.text.retry.failed"),
                         err.to_string(),
                         StatusCode::INTERNAL_SERVER_ERROR,
                     )
@@ -1375,8 +1459,8 @@ async fn init_action(
                 if solstone_core_journal_config::parse_zone(&tz).is_none() {
                     return error_envelope(
                         "invalid_config_value",
-                        "Bad Request",
-                        "invalid timezone",
+                        text(locale, "journal.setup.refusal.bad.request"),
+                        text(locale, "journal.setup.refusal.invalid.timezone"),
                         StatusCode::BAD_REQUEST,
                     )
                     .into_response();
@@ -1389,26 +1473,26 @@ async fn init_action(
                 Ok(None) => {
                     return error_envelope(
                         "identity_not_locked",
-                        "Bad Request",
-                        "journal id must be locked before setup can finish",
+                        text(locale, "journal.setup.refusal.bad.request"),
+                        text(locale, "journal.setup.refusal.journal.id.must.be.locked.before.setup.can.finish"),
                         StatusCode::BAD_REQUEST,
                     )
                     .into_response();
                 }
-                Err(error) => return establish_error(error),
+                Err(error) => return establish_error(locale, error),
             }
 
             let base_config = match load_mutation_base(&state.journal_root) {
                 Ok(base) => base.config,
-                Err(_) => return corrupt_config(),
+                Err(_) => return corrupt_config(locale),
             };
             if !setup_is_complete(&base_config) {
                 let saved_choice = nested_string(&base_config, "setup", "thinking_choice");
                 if !matches!(saved_choice.as_str(), "local" | "byo" | "spp" | "later") {
                     return error_envelope(
                         "thinking_choice_required",
-                        "Bad Request",
-                        "thinking choice is required before setup can finish",
+                        text(locale, "journal.setup.refusal.bad.request"),
+                        text(locale, "journal.setup.refusal.thinking.choice.is.required.before.setup.can.finish"),
                         StatusCode::BAD_REQUEST,
                     )
                     .into_response();
@@ -1424,7 +1508,7 @@ async fn init_action(
                             changed: false,
                             value: Err((
                                 "corrupt_config",
-                                "your journal settings could not be read",
+                                "journal.setup.refusal.your.journal.settings.could.not.be.read",
                                 StatusCode::INTERNAL_SERVER_ERROR,
                             )),
                         };
@@ -1441,7 +1525,7 @@ async fn init_action(
                             changed: false,
                             value: Err((
                                 "thinking_choice_required",
-                                "choose thinking before finishing setup",
+                                "journal.setup.refusal.choose.thinking.before.finishing.setup",
                                 StatusCode::BAD_REQUEST,
                             )),
                         };
@@ -1459,10 +1543,10 @@ async fn init_action(
             match mutation {
                 Ok(transaction) => {
                     if let Err(error) = transaction.value {
-                        return choice_error(error);
+                        return choice_error(locale, error);
                     }
                 }
-                Err(error) => return config_error(error),
+                Err(error) => return config_error(locale, error),
             }
             // Finishing setup here is the same step as `/init/finalize`, so it
             // makes the owner's person from their configured name the same way.
@@ -1471,7 +1555,7 @@ async fn init_action(
             {
                 return error_envelope(
                     "owner_identity_failed",
-                    "Internal Server Error",
+                    text(locale, "journal.setup.refusal.internal.server.error"),
                     error,
                     StatusCode::INTERNAL_SERVER_ERROR,
                 )
@@ -1481,8 +1565,8 @@ async fn init_action(
         _ => {
             return error_envelope(
                 "invalid_operation_for_state",
-                "Bad Request",
-                "unknown action",
+                text(locale, "journal.setup.refusal.bad.request"),
+                text(locale, "journal.setup.refusal.unknown.action"),
                 StatusCode::BAD_REQUEST,
             )
             .into_response();
@@ -1491,23 +1575,25 @@ async fn init_action(
 
     let config = match load_mutation_base(&state.journal_root) {
         Ok(base) => base.config,
-        Err(_) => return corrupt_config(),
+        Err(_) => return corrupt_config(locale),
     };
-    match build_setup_state(&state, &config).await {
+    match build_setup_state(&state, &config, locale).await {
         Ok(state_resp) => Json(state_resp).into_response(),
         Err(err_resp) => err_resp,
     }
 }
 
 async fn init_finalize(
+    locale: Option<Extension<ResponseLocale>>,
     Extension(basis): Extension<AccessBasis>,
     State(state): State<LinkHttpState>,
     body: Bytes,
 ) -> Response {
+    let locale = response_locale(locale);
     if !is_local(&basis) {
-        return init_local_only();
+        return init_local_only(locale);
     }
-    if let Some(response) = refuse_recovery_mutation(&state.journal_root) {
+    if let Some(response) = refuse_recovery_mutation(locale, &state.journal_root) {
         return response;
     }
     match establish::load_committed(&state.journal_root) {
@@ -1515,13 +1601,16 @@ async fn init_finalize(
         Ok(None) => {
             return error_envelope(
                 "identity_not_locked",
-                "Bad Request",
-                "journal id must be locked before setup can finish",
+                text(locale, "journal.setup.refusal.bad.request"),
+                text(
+                    locale,
+                    "journal.setup.refusal.journal.id.must.be.locked.before.setup.can.finish",
+                ),
                 StatusCode::BAD_REQUEST,
             )
             .into_response();
         }
-        Err(error) => return establish_error(error),
+        Err(error) => return establish_error(locale, error),
     }
 
     let request = match serde_json::from_slice::<FinalizeRequest>(&body) {
@@ -1529,8 +1618,8 @@ async fn init_finalize(
         Err(_) => {
             return error_envelope(
                 "invalid_request",
-                "Bad Request",
-                "malformed json request",
+                text(locale, "journal.setup.refusal.bad.request"),
+                text(locale, "journal.setup.refusal.malformed.json.request"),
                 StatusCode::BAD_REQUEST,
             )
             .into_response();
@@ -1548,7 +1637,7 @@ async fn init_finalize(
         "local" => "local",
         "byo" => "byo",
         "confidential" => "spp",
-        _ => return invalid_lane(),
+        _ => return invalid_lane(locale),
     };
 
     let retention_mode = request
@@ -1561,8 +1650,11 @@ async fn init_finalize(
     if retention_mode == "days" && !retention_days.is_some_and(|days| days > 0) {
         return error_envelope(
             "invalid_config_value",
-            "Bad Request",
-            "retention_days must be a positive integer",
+            text(locale, "journal.setup.refusal.bad.request"),
+            text(
+                locale,
+                "journal.setup.refusal.retention.days.must.be.a.positive.integer",
+            ),
             StatusCode::BAD_REQUEST,
         )
         .into_response();
@@ -1570,9 +1662,9 @@ async fn init_finalize(
 
     let config = match materialize_config(&state.journal_root) {
         Ok(config) => config,
-        Err(error) => return config_error(error),
+        Err(error) => return config_error(locale, error),
     };
-    if let Some(response) = invalid_finalize_config_sections(&config) {
+    if let Some(response) = invalid_finalize_config_sections(locale, &config) {
         return response;
     }
 
@@ -1595,7 +1687,7 @@ async fn init_finalize(
                     changed: false,
                     value: Err((
                         "corrupt_config",
-                        "your journal settings could not be read",
+                        "journal.setup.refusal.your.journal.settings.could.not.be.read",
                         StatusCode::INTERNAL_SERVER_ERROR,
                     )),
                 };
@@ -1666,9 +1758,9 @@ async fn init_finalize(
     let (wrote_first_completion, should_start_local) = match result {
         Ok(transaction) => match transaction.value {
             Ok(first) => first,
-            Err(error) => return choice_error(error),
+            Err(error) => return choice_error(locale, error),
         },
-        Err(error) => return config_error(error),
+        Err(error) => return config_error(locale, error),
     };
 
     if wrote_first_completion && should_start_local {
@@ -1678,7 +1770,7 @@ async fn init_finalize(
         if let Err(err) = start_res {
             return error_envelope(
                 "start_failed",
-                "Internal Server Error",
+                text(locale, "journal.setup.refusal.internal.server.error"),
                 err.to_string(),
                 StatusCode::INTERNAL_SERVER_ERROR,
             )
@@ -1689,7 +1781,7 @@ async fn init_finalize(
     if let Err(error) = solstone_core_entity::ensure_configured_principal(&state.journal_root) {
         return error_envelope(
             "owner_identity_failed",
-            "Internal Server Error",
+            text(locale, "journal.setup.refusal.internal.server.error"),
             error,
             StatusCode::INTERNAL_SERVER_ERROR,
         )
@@ -1706,32 +1798,36 @@ async fn init_finalize(
     .into_response()
 }
 
-const RECOVERY_STATUS_DETAIL: &str = "this journal is still being restored and isn't ready to use.";
-const RECOVERY_RETRY_DETAIL: &str = "retry continues the same backup restore.";
+const RECOVERY_STATUS_DETAIL: &str =
+    "journal.setup.refusal.this.journal.is.still.being.restored.and.isn.t.ready.to.use";
+const RECOVERY_RETRY_DETAIL: &str = "journal.setup.refusal.retry.continues.the.same.backup.restore";
 const RECOVERY_FINALIZE_DETAIL: &str =
-    "this journal is still being restored and isn't ready to finish setup.";
+    "journal.setup.refusal.this.journal.is.still.being.restored.and.isn.t.ready.to.finish.setup";
 
 fn recovery_paused(journal: &Path) -> bool {
     solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(journal)
 }
 
-fn recovery_projection(journal: &Path, host: &dyn SetupHost) -> Option<Response> {
+fn recovery_projection(locale: &str, journal: &Path, host: &dyn SetupHost) -> Option<Response> {
     use solstone_core_journal_io::whole_journal_restore::WholeJournalRestoreReadiness;
     match solstone_core_journal_io::whole_journal_restore::read_whole_journal_restore(journal) {
         WholeJournalRestoreReadiness::Absent if !recovery_paused(journal) => None,
         WholeJournalRestoreReadiness::Absent => Some(recovery_state_response(
+            locale,
             "waiting",
             None,
             host.recovery_in_progress(journal),
             journal,
         )),
         WholeJournalRestoreReadiness::Pending(record) => Some(recovery_state_response(
+            locale,
             "pending",
             Some(&record),
             host.recovery_in_progress(journal),
             journal,
         )),
         WholeJournalRestoreReadiness::Unavailable => Some(recovery_state_response(
+            locale,
             "unavailable",
             None,
             host.recovery_in_progress(journal),
@@ -1741,6 +1837,7 @@ fn recovery_projection(journal: &Path, host: &dyn SetupHost) -> Option<Response>
 }
 
 fn recovery_state_response(
+    locale: &str,
     state: &'static str,
     record: Option<&solstone_core_journal_io::whole_journal_restore::WholeJournalRestore>,
     active: Option<bool>,
@@ -1751,7 +1848,7 @@ fn recovery_state_response(
         "journal_ready": false,
         "done": false,
         "recovery": state,
-        "detail": RECOVERY_STATUS_DETAIL,
+        "detail": text(locale, RECOVERY_STATUS_DETAIL),
         "in_progress": active,
         "source": record.map(|record| &record.source),
         "snapshot_id": record.map(|record| &record.snapshot_id),
@@ -1763,43 +1860,48 @@ fn recovery_state_response(
     .into_response()
 }
 
-fn refuse_recovery_mutation(journal: &Path) -> Option<Response> {
+fn refuse_recovery_mutation(locale: &str, journal: &Path) -> Option<Response> {
     recovery_paused(journal).then(|| {
         error_envelope(
             "restore_pending",
-            RECOVERY_FINALIZE_DETAIL,
-            "whole-journal restore is pending",
+            text(locale, RECOVERY_FINALIZE_DETAIL),
+            text(
+                locale,
+                "journal.setup.refusal.whole.journal.restore.is.pending",
+            ),
             StatusCode::CONFLICT,
         )
         .into_response()
     })
 }
 
-fn init_not_found(basis: &AccessBasis) -> Response {
+fn init_not_found(locale: &str, basis: &AccessBasis) -> Response {
     error_envelope(
         "not_found",
-        "not found",
+        text(locale, "journal.setup.refusal.not.found"),
         format!("{basis:?}"),
         StatusCode::NOT_FOUND,
     )
     .into_response()
 }
 
-fn recovery_open_or_local(basis: &AccessBasis, journal: &Path) -> Option<Response> {
+fn recovery_open_or_local(locale: &str, basis: &AccessBasis, journal: &Path) -> Option<Response> {
     if !is_local(basis) {
-        return Some(init_local_only());
+        return Some(init_local_only(locale));
     }
     if !recovery_paused(journal) {
-        return Some(init_not_found(basis));
+        return Some(init_not_found(locale, basis));
     }
     None
 }
 
 async fn recovery_status(
+    locale: Option<Extension<ResponseLocale>>,
     Extension(basis): Extension<AccessBasis>,
     State(state): State<LinkHttpState>,
 ) -> Response {
-    if let Some(response) = recovery_open_or_local(&basis, &state.journal_root) {
+    let locale = response_locale(locale);
+    if let Some(response) = recovery_open_or_local(locale, &basis, &state.journal_root) {
         return response;
     }
     use solstone_core_journal_io::whole_journal_restore::WholeJournalRestoreReadiness;
@@ -1808,8 +1910,8 @@ async fn recovery_status(
     ) {
         WholeJournalRestoreReadiness::Pending(record) => Json(json!({
             "recovery": "pending",
-            "detail": RECOVERY_STATUS_DETAIL,
-            "retry_detail": RECOVERY_RETRY_DETAIL,
+            "detail": text(locale, RECOVERY_STATUS_DETAIL),
+            "retry_detail": text(locale, RECOVERY_RETRY_DETAIL),
             "in_progress": state.host.recovery_in_progress(&state.journal_root),
             "snapshot_id": record.snapshot_id,
             "subtree": record.subtree,
@@ -1818,11 +1920,12 @@ async fn recovery_status(
         .into_response(),
         WholeJournalRestoreReadiness::Unavailable => Json(json!({
             "recovery": "unavailable",
-            "detail": RECOVERY_STATUS_DETAIL,
+            "detail": text(locale, RECOVERY_STATUS_DETAIL),
             "in_progress": state.host.recovery_in_progress(&state.journal_root),
         }))
         .into_response(),
         WholeJournalRestoreReadiness::Absent => recovery_state_response(
+            locale,
             "waiting",
             None,
             state.host.recovery_in_progress(&state.journal_root),
@@ -1832,11 +1935,13 @@ async fn recovery_status(
 }
 
 async fn recovery_retry(
+    locale: Option<Extension<ResponseLocale>>,
     Extension(basis): Extension<AccessBasis>,
     State(state): State<LinkHttpState>,
     body: Bytes,
 ) -> Response {
-    if let Some(response) = recovery_open_or_local(&basis, &state.journal_root) {
+    let locale = response_locale(locale);
+    if let Some(response) = recovery_open_or_local(locale, &basis, &state.journal_root) {
         return response;
     }
     use solstone_core_journal_io::whole_journal_restore::WholeJournalRestoreReadiness;
@@ -1848,7 +1953,7 @@ async fn recovery_retry(
     ) {
         return error_envelope(
             "restore_pending",
-            RECOVERY_STATUS_DETAIL,
+            text(locale, RECOVERY_STATUS_DETAIL),
             "whole-journal restore record is unavailable",
             StatusCode::CONFLICT,
         )
@@ -1861,19 +1966,19 @@ async fn recovery_retry(
     match retry {
         Ok(Ok(())) => Json(json!({
             "accepted": true,
-            "detail": RECOVERY_RETRY_DETAIL,
+            "detail": text(locale, RECOVERY_RETRY_DETAIL),
         }))
         .into_response(),
         Ok(Err(error)) => error_envelope(
             "restore_failed",
-            "the restore didn't complete",
+            text(locale, "journal.setup.refusal.the.restore.didn.t.complete"),
             error,
             StatusCode::CONFLICT,
         )
         .into_response(),
         Err(error) => error_envelope(
             "restore_failed",
-            "the restore didn't complete",
+            text(locale, "journal.setup.refusal.the.restore.didn.t.complete"),
             error.to_string(),
             StatusCode::INTERNAL_SERVER_ERROR,
         )
@@ -1884,29 +1989,33 @@ async fn recovery_retry(
 /// Restoring from a backup during setup. Local only, and never once setup has
 /// finished, except to read how a restore already running is going.
 async fn init_restore_api(
+    locale: Option<Extension<ResponseLocale>>,
     Extension(basis): Extension<AccessBasis>,
     State(state): State<LinkHttpState>,
     axum::extract::Path(op): axum::extract::Path<String>,
     body: Bytes,
 ) -> Response {
+    let locale = response_locale(locale);
     if !is_local(&basis) {
-        return init_local_only();
+        return init_local_only(locale);
     }
     let config = match load_mutation_base(&state.journal_root) {
         Ok(base) => base.config,
-        Err(_) => return corrupt_config(),
+        Err(_) => return corrupt_config(locale),
     };
     if setup_is_complete(&config) && !recovery_paused(&state.journal_root) && op != "status" {
-        return init_not_found(&basis);
+        return init_not_found(locale, &basis);
     }
     state.host.init_restore(&state.journal_root, op, body).await
 }
 
 async fn recovery_stop(
+    locale: Option<Extension<ResponseLocale>>,
     Extension(basis): Extension<AccessBasis>,
     State(state): State<LinkHttpState>,
 ) -> Response {
-    if let Some(response) = recovery_open_or_local(&basis, &state.journal_root) {
+    let locale = response_locale(locale);
+    if let Some(response) = recovery_open_or_local(locale, &basis, &state.journal_root) {
         return response;
     }
     let journal = state.journal_root.clone();
@@ -1916,14 +2025,14 @@ async fn recovery_stop(
         Ok(Ok(())) => Json(json!({"stopped": true})).into_response(),
         Ok(Err(error)) => error_envelope(
             "restore_stop_failed",
-            RECOVERY_STATUS_DETAIL,
+            text(locale, RECOVERY_STATUS_DETAIL),
             error,
             StatusCode::CONFLICT,
         )
         .into_response(),
         Err(error) => error_envelope(
             "restore_stop_failed",
-            RECOVERY_STATUS_DETAIL,
+            text(locale, RECOVERY_STATUS_DETAIL),
             error.to_string(),
             StatusCode::INTERNAL_SERVER_ERROR,
         )
@@ -1935,11 +2044,11 @@ fn is_local(basis: &AccessBasis) -> bool {
     require_access(basis) && matches!(basis, AccessBasis::Localhost)
 }
 
-fn init_local_only() -> Response {
+fn init_local_only(locale: &str) -> Response {
     error_envelope(
         "init_local_only",
-        "Forbidden",
-        INIT_LOCAL_ONLY_DETAIL,
+        text(locale, "journal.setup.refusal.forbidden"),
+        text(locale, INIT_LOCAL_ONLY_DETAIL),
         StatusCode::FORBIDDEN,
     )
     .into_response()
@@ -1957,8 +2066,8 @@ fn materialize_config(journal_root: &Path) -> Result<Map<String, Value>, ConfigM
     .map(|transaction| transaction.value)
 }
 
-fn invalid_finalize_config_sections(config: &Map<String, Value>) -> Option<Response> {
-    (!finalize_config_sections_are_objects(config)).then(corrupt_config)
+fn invalid_finalize_config_sections(locale: &str, config: &Map<String, Value>) -> Option<Response> {
+    (!finalize_config_sections_are_objects(config)).then(|| corrupt_config(locale))
 }
 
 fn finalize_config_sections_are_objects(config: &Map<String, Value>) -> bool {
@@ -1996,51 +2105,57 @@ fn setup_is_complete(config: &Map<String, Value>) -> bool {
         .is_some_and(|completed_at| completed_at > 0.0)
 }
 
-fn invalid_lane() -> Response {
+fn invalid_lane(locale: &str) -> Response {
     error_envelope(
         "invalid_request_value",
-        "Bad Request",
-        "lane must be one of: byo, confidential, local",
+        text(locale, "journal.setup.refusal.bad.request"),
+        text(
+            locale,
+            "journal.setup.refusal.lane.must.be.one.of.byo.confidential.local",
+        ),
         StatusCode::BAD_REQUEST,
     )
     .into_response()
 }
 
-fn config_error(error: ConfigMutationError) -> Response {
+fn config_error(locale: &str, error: ConfigMutationError) -> Response {
     match error {
         ConfigMutationError::Lock(_) => error_envelope(
             "config_busy",
-            "your settings are busy. try again.",
-            "settings lock unavailable",
+            text(locale, "journal.window.thinking.thinking.response.error.or.detail.your.settings.are.busy.try.again"),
+            text(locale, "journal.setup.refusal.settings.lock.unavailable"),
             StatusCode::SERVICE_UNAVAILABLE,
         )
         .into_response(),
-        ConfigMutationError::Load(_) => corrupt_config(),
+        ConfigMutationError::Load(_) => corrupt_config(locale),
         ConfigMutationError::Write(_) => error_envelope(
             "config_write_failed",
-            "your settings couldn't be saved.",
-            "settings write failed",
+            text(locale, "journal.window.shell.pin.error.save"),
+            text(locale, "journal.setup.refusal.settings.write.failed"),
             StatusCode::INTERNAL_SERVER_ERROR,
         )
         .into_response(),
     }
 }
 
-fn corrupt_config() -> Response {
+fn corrupt_config(locale: &str) -> Response {
     error_envelope(
         "corrupt_config",
-        "your settings couldn't be read.",
-        "settings read failed",
+        text(locale, "journal.window.shell.settings.read.failed"),
+        text(locale, "journal.setup.refusal.settings.read.failed"),
         StatusCode::INTERNAL_SERVER_ERROR,
     )
     .into_response()
 }
 
-fn establish_error(error: EstablishError) -> Response {
+fn establish_error(locale: &str, error: EstablishError) -> Response {
     error_envelope(
         "link_identity_error",
-        "your journal's identity couldn't be set up.".to_string(),
-        error.to_string(),
+        text(
+            locale,
+            "journal.setup.refusal.your.journal.s.identity.couldn.t.be.set.up",
+        ),
+        error.presentation(locale),
         StatusCode::INTERNAL_SERVER_ERROR,
     )
     .into_response()

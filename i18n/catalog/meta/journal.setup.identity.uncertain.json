@@ -1,0 +1,28 @@
+{
+  "description": "Journal setup identity uncertain.",
+  "context": "Journal setup identity uncertain.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "083dec8bf7825782fa225b0aec6a3b45603aa429b73336f2278067d39b3939be",
+  "max_length": 268,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ],
+  "protected_slots": [
+    {
+      "name": "paragraph",
+      "kind": "whitespace",
+      "value": "\n\n"
+    }
+  ]
+}

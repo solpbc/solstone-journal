@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup drive unsupported.",
+  "context": "Journal setup drive unsupported.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "231d0343429b1b0809819612f4a42df73536288b6c7f4d2955885c703721c100",
+  "max_length": 163,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

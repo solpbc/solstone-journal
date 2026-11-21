@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup refusal retention days must be a positive integer.",
+  "context": "Journal setup refusal retention days must be a positive integer.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "41b2c60989c11bd77337eb781ce6ac2ecbb18d4e46f6e8830d48570cf6a674c3",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

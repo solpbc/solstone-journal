@@ -19960,3 +19960,271 @@ journal.window.import.handoff.health.expiry = review this export within an hour,
 journal.window.import.handoff.date = choose a date, or leave it blank to let your journal choose.
 journal.window.import.handoff.notebook = notebook name (optional)
 journal.window.import.handoff.health.unavailable = couldn't open this export. choose it again to review it.
+
+journal.setup.downloads.cancel = cancel
+
+journal.setup.downloads.cancelled = cancelled
+
+journal.setup.downloads.complete = ready
+
+journal.setup.downloads.error = download failed. try again.
+
+journal.setup.downloads.idle = not started
+
+journal.setup.downloads.progress = downloading…
+
+journal.setup.downloads.retry = try again
+
+journal.setup.downloads.speech = speech recognition
+
+journal.setup.downloads.thinking = local thinking
+
+journal.setup.fits.app = runs on each device you choose and takes in what you share with it. all of it goes into your journal.
+
+journal.setup.fits.app.term = the { $platform_name } app
+
+journal.setup.fits.journal.computer = lives on your journal's computer and keeps everything that goes into it.
+
+journal.setup.fits.journal.phone = lives on this phone and keeps everything that goes into it.
+
+journal.setup.fits.thinking = helps your journal make sense of what it keeps. choose where it happens below, or later.
+
+journal.setup.fits.thinking.term = thinking
+
+journal.setup.fits.title = how it fits together
+
+journal.setup.folder.change = change folder
+
+journal.setup.folder.continue = continue
+
+journal.setup.folder.help = where your journal is kept on your journal's computer.
+
+journal.setup.folder.title = journal folder
+
+journal.setup.footer.computer = your journal is kept on your journal's computer. thinking uses the option you choose.
+
+journal.setup.footer.phone = your journal is kept on this phone. thinking uses the option you choose.
+
+journal.setup.heading = your journal
+
+journal.setup.help.text = stuck, or have a question?
+
+journal.setup.login.help = start automatically after you sign in to your journal's computer.
+
+journal.setup.login.label = start your journal when you sign in
+
+journal.setup.mark.error = your journal mark could not be loaded. try again.
+
+journal.setup.mark.help = a unique mark for your journal. a phone or other computer you pair shows it too, so you can check it.
+
+journal.setup.mark.permanence = continue makes this your journal's mark for good.
+
+journal.setup.mark.title = your journal mark
+
+journal.setup.mark.try.another = try another
+
+journal.setup.thinking.change = change
+
+journal.setup.thinking.check.unknown = couldn't check local setup.
+
+journal.setup.thinking.choose.later = choose thinking when you're ready. your journal keeps everything until then.
+
+journal.setup.thinking.default.line = on your journal's computer · { $size }
+
+journal.setup.thinking.later = decide later
+
+journal.setup.thinking.size.unknown = download size unavailable
+
+journal.setup.welcome.body = the { $platform_name } app takes in what you share with it, and all of it goes into your journal.
+
+journal.setup.welcome.title = welcome to { $platform_name }.
+
+journal.setup.refusal.action.is.required = action is required
+
+journal.setup.refusal.attempt.id.is.required = { $attempt_id_value } is required
+
+journal.setup.refusal.bad.request = Bad Request
+
+journal.setup.refusal.choice.is.required = choice is required
+
+journal.setup.refusal.choose.local.thinking.before.starting.its.download = choose local thinking before starting its download
+
+journal.setup.refusal.choose.thinking.before.finishing.setup = choose thinking before finishing setup
+
+journal.setup.refusal.clear.your.own.endpoint.first.to.run.the.bundled.local.model = clear your own endpoint first to run the bundled local model.
+
+journal.setup.refusal.conflict = Conflict
+
+journal.setup.refusal.forbidden = Forbidden
+
+journal.setup.refusal.identity.proposal.conflict = identity proposal conflict
+
+journal.setup.refusal.internal.server.error = Internal Server Error
+
+journal.setup.refusal.invalid.timezone = invalid timezone
+
+journal.setup.refusal.journal.id.already.locked = journal id already locked
+
+journal.setup.refusal.journal.id.must.be.locked.before.setup.can.finish = journal id must be locked before setup can finish
+
+journal.setup.refusal.lane.must.be.one.of.byo.confidential.local = lane must be one of: { $byo_value }, confidential, local
+
+journal.setup.refusal.local.thinking.is.not.available.on.your.journal.s.computer = local thinking is not available on your journal's computer
+
+journal.setup.refusal.malformed.json.request = malformed json request
+
+journal.setup.refusal.malformed.lock.request = malformed lock request
+
+journal.setup.refusal.not.found = not found
+
+journal.setup.refusal.proposal.id.is.required = { $proposal_id_value } is required
+
+journal.setup.refusal.retention.days.must.be.a.positive.integer = retention_days must be a positive integer
+
+journal.setup.refusal.retry.continues.the.same.backup.restore = retry continues the same backup restore.
+
+journal.setup.refusal.service.unavailable = Service Unavailable
+
+journal.setup.refusal.settings.lock.unavailable = settings lock unavailable
+
+journal.setup.refusal.settings.read.failed = settings read failed
+
+journal.setup.refusal.settings.write.failed = settings write failed
+
+journal.setup.refusal.setup.routes.require.a.localhost.connection = setup routes require a localhost connection
+
+journal.setup.refusal.setup.target.use.was.refused = setup target use was refused
+
+journal.setup.refusal.speech.recognition.needs.repair = speech recognition needs repair
+
+journal.setup.refusal.the.restore.didn.t.complete = the restore didn't complete
+
+journal.setup.refusal.thinking.choice.is.required.before.setup.can.finish = thinking choice is required before setup can finish
+
+journal.setup.refusal.thinking.download.could.not.start = thinking download could not start
+
+journal.setup.refusal.this.journal.is.still.being.restored.and.isn.t.ready.to.finish.setup = this journal is still being restored and isn't ready to finish setup.
+
+journal.setup.refusal.this.journal.is.still.being.restored.and.isn.t.ready.to.use = this journal is still being restored and isn't ready to use.
+
+journal.setup.refusal.this.journal.isn.t.ready.to.use = this journal isn't ready to use.
+
+journal.setup.refusal.unknown.action = unknown action
+
+journal.setup.refusal.unknown.thinking.choice = unknown thinking choice
+
+journal.setup.refusal.whole.journal.restore.is.pending = whole-journal restore is pending
+
+journal.setup.refusal.your.journal.s.identity.couldn.t.be.set.up = your journal's identity couldn't be set up.
+
+journal.setup.refusal.your.journal.settings.could.not.be.read = your journal settings could not be read
+
+journal.setup.refusal.your.thinking.choice.changed.review.it.before.trying.again = your thinking choice changed; review it before trying again
+
+journal.setup.refusal.your.thinking.settings.changed.open.thinking.to.choose.what.to.use = your thinking settings changed; open thinking to choose what to use
+
+journal.setup.drive.unsupported = your journal can't run on this drive because the drive can't save files the way your journal needs. use a mac-formatted drive for your journal.
+
+journal.setup.journal.aborted = setup aborted by user
+
+journal.setup.journal.path.file = expected a directory at { $path }; got a regular file. Re-run with { $option }.
+
+journal.setup.speech.cannot.start = speech install could not start
+
+journal.setup.speech.check.progress = check speech progress in a moment.
+
+journal.setup.speech.retry.unavailable = speech retry is not available.
+
+journal.setup.speech.starting = speech install is starting
+
+journal.setup.speech.unavailable = retry unavailable
+
+journal.setup.doctor.blocked = doctor blocker failed
+
+journal.setup.doctor.failed.status = doctor completed with status { $status }
+
+journal.setup.doctor.incomplete = doctor JSONL stream ended without { $event }
+
+journal.setup.doctor.silent = doctor reported no progress for { $seconds }s
+
+journal.setup.doctor.timeout = doctor timed out after { $seconds }s
+
+journal.setup.doctor.unreadable = doctor JSON parse failed
+
+journal.setup.service.failed = service up failed (exit { $status })
+
+journal.setup.step.exit = { $step } step exited with code { $status }
+
+journal.setup.step.failed = step failed
+
+journal.setup.step.timeout = { $step } step timed out after { $seconds }s
+
+journal.setup.step.warning = step warning
+
+journal.setup.wrapper.legacy = the service still starts through { $path }
+
+journal.setup.wrapper.legacy.retry = setup removes that wrapper after the service starts through { $path }.
+
+journal.setup.wrapper.provision = could not provision the { $command } wrapper at { $path } ({ $kind }: { $error })
+
+journal.setup.wrapper.retire.failed = could not remove the older version's command-line tools: { $error }
+
+journal.setup.wrapper.retry = setup tries again the next time it runs.
+
+journal.setup.identity.foreign = this installation couldn't be verified.{ $paragraph }details: { $error }{ $paragraph }the command-line tools or background support on this computer were set up by a different { $platform } installation, so nothing was changed.
+
+journal.setup.identity.locations = this installation couldn't be verified.{ $paragraph }details: { $error }{ $paragraph }setup recovery locations are unavailable: { $location_error }
+
+journal.setup.identity.recover = this installation couldn't be verified.{ $paragraph }details: { $error }{ $paragraph }to recover, stop the service, remove this installation's setup artifacts, and run `{ $setup }` again:{ $stop_service }{ $steps }{ $paragraph }your journal itself is untouched. none of these holds your memories.
+
+journal.setup.identity.uncertain = this installation couldn't be verified.{ $paragraph }details: { $error }{ $paragraph }setup couldn't tell which installation the command-line tools or background support belong to. leave them in place and include these details in a support request.
+
+journal.setup.identity.windows = this installation couldn't be verified.{ $paragraph }details: { $error }{ $paragraph }to recover, first run `{ $uninstall }`. if it fails, stop here and include these details in a support request. if it succeeds, run these commands in { $shell }, then run `{ $setup }` again:{ $commands }{ $paragraph }your journal itself is untouched. none of these holds your memories.
+
+journal.setup.journal.existing = { $setup }: cannot proceed in non-interactive mode - { $path } already contains journal data.{ $line }Setup will not auto-claim an existing journal.{ $paragraph }Retry with one of:{ $indent }{ $accept }{ $indent }{ $new }{ $paragraph }Interactive escape:{ $indent }{ $verb }{ $paragraph }Run { $explain } for full step list.
+
+journal.setup.journal.existing.installer = { $setup }: cannot proceed in non-interactive mode - { $path } already contains journal data.{ $line }Setup will not auto-claim an existing journal.{ $paragraph }Retry with one of:{ $indent }{ $accept }{ $indent }{ $new }{ $paragraph }Interactive escape:{ $indent }{ $verb }{ $paragraph }After any of these, run the same { $installer } command again to finish installing.{ $paragraph }Run { $explain } for full step list.
+
+journal.setup.cancel.admission = installer admission unavailable
+
+journal.setup.cancel.attempt = installer attempt unavailable
+
+journal.setup.cancel.busy = installer still owns its lease
+
+journal.setup.cancel.changed = install attempt changed
+
+journal.setup.cancel.failed = cancel failed
+
+journal.setup.cancel.identity = installer identity is unavailable
+
+journal.setup.cancel.owner = installer owner unavailable
+
+journal.setup.identity.invalid = invalid local link state: { $detail }
+
+journal.setup.identity.no.candidate = no staged link identity candidate exists
+
+journal.setup.identity.state.ca.bundle.is.not.a.directory = invalid local link state: CA bundle is not a directory
+
+journal.setup.identity.state.candidate.ca.is.not.a.directory = invalid local link state: candidate CA is not a directory
+
+journal.setup.identity.state.candidate.cert.pem = invalid local link state: { $candidate_cert }: { $error }
+
+journal.setup.identity.state.candidate.directory = invalid local link state: candidate directory: { $error }
+
+journal.setup.identity.state.candidate.private.pem = invalid local link state: { $candidate_key }: { $error }
+
+journal.setup.identity.state.cert.pem = invalid local link state: { $cert_file }: { $error }
+
+journal.setup.identity.state.identity.directory = invalid local link state: identity directory: { $error }
+
+journal.setup.identity.state.private.pem = invalid local link state: { $key_file }: { $error }
+
+journal.setup.identity.state.state.instance.id.does.not.match.the.ca.public.key = invalid local link state: state { $identity_key } does not match the CA public key
+
+journal.setup.identity.state.state.json = invalid local link state: { $state_file }: { $error }
+
+journal.setup.identity.state.state.json.instance.id.is.missing = invalid local link state: { $state_file } { $identity_key } is missing
+
+journal.setup.identity.state.state.json.locked.at.is.missing = invalid local link state: { $state_file } { $locked_key } is missing
+
+journal.setup.identity.state.state.json.must.be.an.object = invalid local link state: { $state_file } must be an object

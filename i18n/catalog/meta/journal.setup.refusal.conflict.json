@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup refusal conflict.",
+  "context": "Journal setup refusal conflict.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7d4652c87a432358752a736ad8e04ae3b760e190def181ef39562740727fac90",
+  "max_length": 40,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal setup doctor failed status.",
+  "context": "Journal setup doctor failed status.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "12d17a4cfca4f2521bf8fbbd18c7e30fc843471fe2596292f88200825e2c373e",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ],
+  "protected_slots": [
+    {
+      "name": "status",
+      "kind": "accepted-input",
+      "value": "failed"
+    }
+  ]
+}

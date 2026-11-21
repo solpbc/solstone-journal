@@ -1,0 +1,16 @@
+{
+  "description": "Copy for the thinking section of journal setup.",
+  "context": "Journal setup, copy for the thinking section of journal setup.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0fb848943d1eb9e0aa968f12e19b76b576e546141a72ba95003a3941e4e0dabe",
+  "max_length": 47,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

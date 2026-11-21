@@ -1,0 +1,21 @@
+{
+  "description": "Journal setup identity state identity directory.",
+  "context": "Journal setup identity state identity directory.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0d833de1793e6ad532bf10d06b3e802155362d707947c57cb01e0343ba2587b9",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

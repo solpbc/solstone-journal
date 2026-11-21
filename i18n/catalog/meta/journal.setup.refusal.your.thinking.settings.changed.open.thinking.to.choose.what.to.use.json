@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup refusal your thinking settings changed open thinking to choose what to use.",
+  "context": "Journal setup refusal your thinking settings changed open thinking to choose what to use.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "63737742ca6cfa6a0aba04f2d64f695cc372a2e40328debcaaa627824335c823",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

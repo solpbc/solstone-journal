@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup refusal retry continues the same backup restore.",
+  "context": "Journal setup refusal retry continues the same backup restore.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d56889d9dcbabf677a6a34a5af21c5e3be7f95315ee994a0b62569a24cb30ddd",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal setup doctor incomplete.",
+  "context": "Journal setup doctor incomplete.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5d10380f2bde2114d690b58d505474397556bb8a84a983b1ab27cad588e1c1ca",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ],
+  "protected_slots": [
+    {
+      "name": "event",
+      "kind": "accepted-input",
+      "value": "doctor.completed"
+    }
+  ]
+}

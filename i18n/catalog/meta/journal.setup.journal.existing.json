@@ -1,0 +1,59 @@
+{
+  "description": "Journal setup journal existing.",
+  "context": "Journal setup journal existing. The arguments accept, new, verb and explain each contain a complete copyable command, including the executable path.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "accept",
+      "type": "string"
+    },
+    {
+      "name": "new",
+      "type": "string"
+    },
+    {
+      "name": "verb",
+      "type": "string"
+    },
+    {
+      "name": "explain",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "03110c744e0acf9c15ed15f8ae8a147a3f125117f815d4c862f7529ce67bf76d",
+  "max_length": 396,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ],
+  "protected_slots": [
+    {
+      "name": "setup",
+      "kind": "command",
+      "value": "solstone journal setup"
+    },
+    {
+      "name": "line",
+      "kind": "whitespace",
+      "value": "\n"
+    },
+    {
+      "name": "paragraph",
+      "kind": "whitespace",
+      "value": "\n\n"
+    },
+    {
+      "name": "indent",
+      "kind": "whitespace",
+      "value": "\n  "
+    }
+  ]
+}

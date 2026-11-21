@@ -376,7 +376,7 @@
     }
 
     async function apiCall(endpoint, options = {}) {
-      const opts = { ...options, noAuthRedirect: true };
+      const opts = { ...options, noAuthRedirect: true };/* setup-locale-header */
       return await window.apiJson(endpoint, opts);
     }
 

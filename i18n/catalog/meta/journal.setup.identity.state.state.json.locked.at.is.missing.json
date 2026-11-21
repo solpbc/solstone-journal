@@ -1,0 +1,28 @@
+{
+  "description": "Journal setup identity state state json locked at is missing.",
+  "context": "Journal setup identity state state json locked at is missing.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f68aca32d04af1cdc314ecfd3c256e8b547c620ed0f2ac14cf9051f5a4583822",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ],
+  "protected_slots": [
+    {
+      "name": "state_file",
+      "kind": "accepted-input",
+      "value": "state.json"
+    },
+    {
+      "name": "locked_key",
+      "kind": "accepted-input",
+      "value": "locked_at"
+    }
+  ]
+}

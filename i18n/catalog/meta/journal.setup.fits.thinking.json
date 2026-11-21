@@ -1,0 +1,16 @@
+{
+  "description": "Copy for the fits section of journal setup.",
+  "context": "Journal setup, copy for the fits section of journal setup.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2041c81df3b64aa7b91bb7fdba8499580e50bd3fdecb4a8f10196c8eecc26fde",
+  "max_length": 108,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

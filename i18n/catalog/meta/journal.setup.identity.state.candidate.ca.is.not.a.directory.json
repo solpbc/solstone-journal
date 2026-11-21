@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup identity state candidate ca is not a directory.",
+  "context": "Journal setup identity state candidate ca is not a directory.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a9689ffe14d2f04f2dd1c3d1aef31d29d1a7a905ea386a56a2563f4c584f8b92",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

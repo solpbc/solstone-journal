@@ -1,0 +1,47 @@
+{
+  "description": "Journal setup identity windows.",
+  "context": "Journal setup identity windows.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    },
+    {
+      "name": "commands",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a9b1190e2acf600ada13cd283f12f2e5fee14a027309114535223cea46427484",
+  "max_length": 390,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ],
+  "protected_slots": [
+    {
+      "name": "paragraph",
+      "kind": "whitespace",
+      "value": "\n\n"
+    },
+    {
+      "name": "uninstall",
+      "kind": "command",
+      "value": "solstone journal service uninstall"
+    },
+    {
+      "name": "setup",
+      "kind": "command",
+      "value": "solstone journal setup"
+    },
+    {
+      "name": "shell",
+      "kind": "mark-word",
+      "value": "PowerShell"
+    }
+  ]
+}

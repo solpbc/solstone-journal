@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup refusal speech recognition needs repair.",
+  "context": "Journal setup refusal speech recognition needs repair.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a06b33f68e81b530fcad5c679dec299873f4438e02b0555401536613d4fc266f",
+  "max_length": 51,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}

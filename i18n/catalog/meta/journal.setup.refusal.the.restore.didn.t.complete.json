@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup refusal the restore didn t complete.",
+  "context": "Journal setup refusal the restore didn t complete.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7af7148ba56158c69a57be530851c5b794e2a78e83fd42dd5ec1b89805970c65",
+  "max_length": 47,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-setup"
+  ]
+}
