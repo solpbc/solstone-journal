@@ -1,0 +1,16 @@
+{
+  "description": "Sort option on the journal's entities list when it shows every type: the list's own order, by type and then most recent activity. The default.",
+  "context": "Journal window, entities view. Sort option for the entity list.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4b1bc122cff5c5f2460c372cf729448ba8e88b14bf6d847613997c86f2314338",
+  "max_length": 30,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

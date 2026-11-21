@@ -24986,6 +24986,18 @@
       "selector": null
     },
     {
+      "id": "journal.window.entities.accessible.name.sort.entities",
+      "resource": "m6a6f75726e616c2e77696e646f772e656e7469746965732e61636365737369626c652e6e616d652e736f72742e656e746974696573",
+      "namespace": "journal.window.entities.accessible.name.sort",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.entities.action.hide.undo.failed.many",
       "resource": "m6a6f75726e616c2e77696e646f772e656e7469746965732e616374696f6e2e686964652e756e646f2e6661696c65642e6d616e79",
       "namespace": "journal.window.entities.action.hide.undo.failed",
@@ -25156,7 +25168,7 @@
       "resource": "m6a6f75726e616c2e77696e646f772e656e7469746965732e636f6c756d6e2e68656164696e672e74797065",
       "namespace": "journal.window.entities.column.heading",
       "owner": "journal",
-      "tombstone": false,
+      "tombstone": true,
       "replacement": null,
       "format_intent": "text",
       "arguments": [],
@@ -32986,6 +32998,42 @@
         "enum_values": [],
         "enum_default": null
       }
+    },
+    {
+      "id": "journal.window.entities.list.sort.name",
+      "resource": "m6a6f75726e616c2e77696e646f772e656e7469746965732e6c6973742e736f72742e6e616d65",
+      "namespace": "journal.window.entities.list.sort",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.entities.list.sort.recent",
+      "resource": "m6a6f75726e616c2e77696e646f772e656e7469746965732e6c6973742e736f72742e726563656e74",
+      "namespace": "journal.window.entities.list.sort",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.entities.list.sort.type",
+      "resource": "m6a6f75726e616c2e77696e646f772e656e7469746965732e6c6973742e736f72742e74797065",
+      "namespace": "journal.window.entities.list.sort",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
     },
     {
       "id": "journal.window.entities.merge.confirm.selection",

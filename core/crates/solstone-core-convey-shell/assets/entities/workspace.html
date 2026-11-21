@@ -553,6 +553,21 @@
   color: var(--ink-faint);
 }
 
+.observation-facet {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  color: var(--ink-soft);
+}
+
+/* Prose on an entity's page reads at a comfortable measure. */
+.entity-detail-view .observation-content,
+.entity-detail-view .entity-desc-display,
+.entity-detail-view .entity-detail-aka,
+.entity-detail-view .facet-rel-description {
+  max-width: 70ch;
+}
+
 .observations-empty {
   color: var(--ink-faint);
   font-style: italic;
@@ -630,11 +645,11 @@
   cursor: pointer;
   display: inline-flex;
   font: inherit;
-  height: 1.25rem;
+  height: 1.5rem;
   justify-content: center;
   line-height: 1;
   padding: 0;
-  width: 1.25rem;
+  width: 1.5rem;
 }
 
 .entity-observation-range-chip button:hover {
@@ -665,6 +680,7 @@
   cursor: pointer;
   font: inherit;
   font-weight: 600;
+  min-height: 24px;
   padding: 0;
 }
 
@@ -681,6 +697,8 @@
 
 /* Buttons */
 .btn {
+  min-height: 24px;
+  min-width: 24px;
   padding: 0.5em 1em;
   border: none;
   border-radius: 6px;
@@ -823,13 +841,6 @@
   color: var(--ink-faint);
 }
 
-.entity-type {
-  font-size: 13px;
-  width: 120px;
-  font-weight: 500;
-  color: var(--ink-faint);
-}
-
 .entity-name {
   font-weight: 500;
 }
@@ -940,11 +951,11 @@ tr:hover .entity-delete-btn {
 .ent-hidden-list { border-top: 1px solid var(--hairline-2); background: var(--cream-bright); }
 .ent-hidden-list h4 { margin: 0; padding: 1em 1.5em .25em; font-size: .95em; font-weight: 600; color: var(--ink); }
 .ent-hidden-list .entities-table tr:hover { background: transparent; }
-.ent-hidden-row .entity-name, .ent-hidden-row .entity-type { color: var(--ink-soft); }
+.ent-hidden-row .entity-name { color: var(--ink-soft); }
 .ent-hidden-row .entity-desc { display: flex; align-items: center; justify-content: space-between; gap: 1em; flex-wrap: wrap; }
 .ent-hidden-last { color: var(--ink-soft); font-size: .9em; }
 .ent-unhide-btn { min-height: 2.25rem; }
-@media (max-width: 480px) { .ent-unhide-btn { min-height: 44px; } .ent-hidden-row td:first-child, .ent-hidden-row .entity-type { display: none; } .ent-hidden-list .entities-table { table-layout: fixed; } .ent-hidden-row td { padding-left: .75em; padding-right: .75em; } .ent-hidden-last { white-space: normal; } .ent-hidden-row .journal-row-badge, .ent-hidden-row .mention-count-badge { display: inline-block; } }
+@media (max-width: 480px) { .ent-unhide-btn { min-height: 44px; } .ent-hidden-row td:first-child { display: none; } .ent-hidden-list .entities-table { table-layout: fixed; } .ent-hidden-row td { padding-left: .75em; padding-right: .75em; } .ent-hidden-last { white-space: normal; } .ent-hidden-row .journal-row-badge, .ent-hidden-row .mention-count-badge { display: inline-block; } }
 
 /* Section headers */
 .entities-section {
@@ -1270,6 +1281,11 @@ tr:hover .entity-delete-btn {
   background: none;
   border: none;
   padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  min-height: 24px;
 }
 
 .close:hover {
@@ -1794,12 +1810,6 @@ tr:hover .entity-delete-btn {
     -webkit-overflow-scrolling: touch;
   }
 
-  /* Relax fixed type column width */
-  .entity-type {
-    width: auto;
-    min-width: 80px;
-  }
-
   /* Section headers: wrap search input below title */
   .entities-section h3 {
     flex-wrap: wrap;
@@ -1961,6 +1971,8 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
 .journal-browse-main { min-width: 0; container-type: inline-size; }
 .journal-list-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5em 1em; margin-bottom: 0.5em; }
 .journal-list-head .entity-search-input { flex: 1 1 14rem; min-width: 0; max-width: 24rem; margin: 0; }
+.journal-sort-select { min-height: 2.25rem; padding: 0 0.5em; border: 1px solid var(--hairline-2); border-radius: var(--radius-sm, 6px); background: var(--paper); color: var(--ink); font: inherit; font-size: 0.9em; cursor: pointer; }
+.journal-sort-select:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .journal-list-range { color: var(--ink-soft); font-size: 0.9em; font-variant-numeric: tabular-nums; }
 .journal-list-pager { display: inline-flex; gap: 0.25em; margin-left: auto; }
 .journal-list-pager button, .journal-tidy-pager button { min-width: 2.25rem; min-height: 2.25rem; border: 1px solid var(--hairline-2); border-radius: var(--radius-sm, 6px); background: var(--paper); color: var(--ink); cursor: pointer; }
@@ -1969,7 +1981,7 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
 .journal-row { display: grid; grid-template-columns: auto minmax(0, 1fr) 5rem 6rem 13rem; gap: 0.75em; align-items: center; padding: 0.45em 0.6em; border-bottom: 1px solid var(--hairline); cursor: pointer; }
 .journal-row:hover { background: var(--cream); }
 .journal-row:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
-.journal-row-tick { display: flex; align-items: center; }
+.journal-row-tick { display: flex; align-items: center; justify-content: center; min-height: 24px; }
 .journal-row-tick input { width: 1.1rem; height: 1.1rem; margin: 0; }
 .journal-row-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
 .journal-row-badge { margin-left: 0.5em; padding: 0 0.4em; border-radius: 999px; font-size: 0.75em; background: var(--cream-bright); color: var(--ink-soft); }
@@ -2057,6 +2069,7 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
 .entity-faces-line { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5em; margin: 0.9em 0 0; color: var(--ink); }
 .entity-faces-error { color: var(--danger); }
 .entity-faces-line a { color: var(--orange-text-aa); text-decoration: underline; }
+.entity-face-day { color: var(--orange-text-aa); text-decoration: underline; }
 .entity-photo-thumb { display: inline-block; width: 1.5rem; height: 1.5rem; margin-right: 0.5em; border-radius: 50%; object-fit: cover; vertical-align: middle; background: var(--cream); }
 .entity-photo-thumb-lg { width: 3rem; height: 3rem; margin-right: 0.25em; }
 .entity-photo-hint { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5em 0.75em; margin-top: 0.75em; font-size: 0.9em; }
@@ -2085,15 +2098,25 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
 .trash-all { display: inline-flex; align-items: center; gap: .5em; cursor: pointer; }
 .trash-bar-actions { margin-left: auto; display: flex; gap: .5em; }
 .journal-row--picked, .journal-row--picked:hover { background: var(--orange-wash); }
-.journal-row-tick { min-width: 1.1rem; }
+.journal-row-tick { min-width: 24px; }
 .journal-row-note { order: 2; grid-column: 2 / -1; color: var(--ink-soft); font-size: .85em; white-space: normal; }
 .trash-set-list { list-style: none; margin: 0 0 12px; padding: 0; font-size: 14px; }
 .trash-set-list li + li { margin-top: 2px; }
 .trash-set-more { color: var(--ink-soft); }
 @media (max-width: 480px) {
-  .journal-row-tick { min-width: 20px; }
+  .journal-row-tick { min-width: var(--touch-min); min-height: var(--touch-min); }
+  .journal-sort-select { min-height: var(--touch-min); }
   .trash-bar-actions button, .ent-select-btn { min-height: 44px; }
   .journal-row-tick input, .trash-all input { width: 20px; height: 20px; }
+  .btn, .close, .entity-observation-show-all { min-height: var(--touch-min); }
+  .close { min-width: var(--touch-min); }
+  /* The clear stays a small mark in its chip; its press area reaches past it. */
+  .entity-observation-range-chip button {
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+    margin: calc((1.5rem - var(--touch-min)) / 2);
+    margin-inline-start: 0;
+  }
 }
 
 #entityDeleteModal { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; padding: 24px; margin: 0; width: auto; height: auto; background: color-mix(in srgb, var(--surface-dark) 55%, transparent); z-index: 1100; }
@@ -2160,6 +2183,10 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
         <div id="journal-list-panel">
           <div class="journal-list-head">
             <input type="text" id="journal-entity-card-search" class="entity-search-input" aria-label="{{journal.window.entities.accessible.name.search.entities}}">
+            <select id="journal-entity-sort" class="journal-sort-select" aria-label="{{journal.window.entities.accessible.name.sort.entities}}">
+              <option value="" id="journal-entity-sort-default">{{journal.window.entities.list.sort.recent}}</option>
+              <option value="name">{{journal.window.entities.list.sort.name}}</option>
+            </select>
             <span id="journal-card-search-count" class="journal-list-range"></span>
             <span class="journal-list-pager" id="journal-list-pager"></span>
             <button type="button" class="btn btn-secondary btn-sm ent-select-btn" id="journal-select-btn" hidden></button>
@@ -2213,6 +2240,11 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
     <div class="entity-detail-section">
       <h4>{{journal.window.entities.visible.text.connections}}</h4>
       <div id="journal-detail-connections"></div>
+    </div>
+
+    <div class="entity-detail-section" id="journal-detail-moments-section" hidden>
+      <h4 id="journal-detail-moments-heading"></h4>
+      <div id="journal-detail-moments"></div>
     </div>
 
     <div class="entity-detail-section" id="journal-detail-trust-section">
@@ -2311,7 +2343,6 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
           <thead>
             <tr>
               <th></th>
-              <th class="entity-type">{{journal.window.entities.column.heading.type}}</th>
               <th class="entity-name">{{journal.window.entities.column.heading.name}}</th>
               <th class="entity-desc">{{journal.window.entities.column.heading.description}}</th>
             </tr>
@@ -2820,6 +2851,8 @@ let journalSummaryRequest = 0;
 let journalEntityPage = 0;
 let journalEntityType = '';
 let journalEntitySearch = '';
+// '' keeps the list's own order (type, then recent activity); 'name' sorts by name.
+let journalEntitySort = '';
 const JOURNAL_ENTITY_PAGE_SIZE = 50;
 // The folder column: '' is all, a type bucket, 'hidden', or one of the two
 // tidy-up groups ('ids', 'duplicates').
@@ -3109,6 +3142,21 @@ function observationSourceDay(obs) {
   return typeof day === 'string' && /^\d{8}$/.test(day) ? day : null;
 }
 
+// A recording's key: its start clock and length, maybe a suffix.
+const RECORDING_KEY = /^\d{6}_\d+(?:_[A-Za-z0-9-]+)*$/;
+
+/// Where a day opens: the transcripts page for that day. Given one recording
+/// on it (`{stream, segment}`), the page opens at that recording, the address
+/// the transcripts page reads (`?stream=S#SEGMENT`). `_default` is the stream
+/// of a recording made into the day itself.
+function transcriptsHref(day, recording = null) {
+  const base = `/app/transcripts/${encodeURIComponent(day)}`;
+  const stream = String(recording?.stream || '');
+  const segment = String(recording?.segment || '');
+  if (!stream || stream.includes('/') || !RECORDING_KEY.test(segment)) return base;
+  return `${base}?stream=${encodeURIComponent(stream)}#${segment}`;
+}
+
 function activeObservationGridDays(data) {
   return Object.entries(data?.days || {})
     .filter(([, value]) => Number(value) > 0)
@@ -3334,7 +3382,9 @@ function observationsForDetailState() {
   return observations;
 }
 
-function renderObservationItem(obs) {
+/// One moment. With `facet`, the facet it was noted in leads its line, as on
+/// the journal-wide page, where moments from every facet sit together.
+function renderObservationItem(obs, { facet = false } = {}) {
   const row = obs && typeof obs === 'object' ? obs : {};
   const item = document.createElement('div');
   item.className = 'observation-item';
@@ -3345,10 +3395,25 @@ function renderObservationItem(obs) {
 
   const meta = document.createElement('div');
   meta.className = 'observation-meta';
+  if (facet && row.facet) {
+    const where = document.createElement('span');
+    where.className = 'observation-facet';
+    where.dataset.facet = row.facet;
+    const dot = document.createElement('span');
+    dot.className = 'entity-facet-dot';
+    dot.setAttribute('aria-hidden', 'true');
+    dot.style.backgroundColor = row.facet_color || 'var(--ink-faint)';
+    where.append(dot, document.createTextNode(row.facet_title || row.facet));
+    meta.appendChild(where);
+  }
   if (row.source_day) {
+    if (meta.childNodes.length > 0) {
+      meta.appendChild(document.createTextNode(' · '));
+    }
     if (/^\d{8}$/.test(row.source_day)) {
+      // A moment keeps the day it came up, not the recording: the day opens.
       const dayLink = document.createElement('a');
-      dayLink.href = `/app/thinking/#runs/${row.source_day}`;
+      dayLink.href = transcriptsHref(row.source_day);
       dayLink.title = ENT_COPY.ENT_OBS_SOURCE_LINK_TITLE || '';
       dayLink.textContent = formatDateShort(row.source_day);
       meta.appendChild(dayLink);
@@ -3459,6 +3524,133 @@ function renderDetailObservationsForState() {
   }
 
   renderObservationList(entity, rows, options);
+}
+
+// The journal-wide page: an entity's moments from every facet it is in,
+// newest day first, a page at a time.
+const JOURNAL_MOMENTS_PAGE_SIZE = 50;
+let journalMoments = { token: 0, items: [], total: 0, loading: false };
+
+function journalMomentKey(row) {
+  return `${row?.facet}\u0000${row?.id}`;
+}
+
+function placeMomentsZoneNote(headingId, rows) {
+  const heading = document.getElementById(headingId);
+  if (!heading) return;
+  if (rows.some((row) => row?.observed_at)) {
+    window.JournalClock?.placeNote?.(heading, { inside: false });
+    return;
+  }
+  const sibling = heading.nextElementSibling;
+  if (sibling?.hasAttribute('data-zone-note')) sibling.remove();
+}
+
+function loadJournalMoments(entity, token, { more = false } = {}) {
+  const section = document.getElementById('journal-detail-moments-section');
+  const container = document.getElementById('journal-detail-moments');
+  if (!section || !container || !entity?.id) return Promise.resolve();
+  if (!more) {
+    journalMoments = { token, items: [], total: 0, loading: false };
+    document.getElementById('journal-detail-moments-heading').textContent = ENT_COPY.ENT_OBS_HEADING || '';
+    // A hidden entity's facets open nothing, and its moments stay with them.
+    section.hidden = entity.blocked === true;
+    if (section.hidden) {
+      container.replaceChildren();
+      return Promise.resolve();
+    }
+    container.innerHTML = `<span class="observations-empty">${window.JournalI18n.renderHtml('journal.window.entities.visible.text.loading')}</span>`;
+  }
+  if (journalMoments.loading) return Promise.resolve();
+  const state = journalMoments;
+  state.loading = true;
+  const offset = state.items.length;
+  const url = `/app/entities/api/journal/entity/${encodeURIComponent(entity.id)}/observations?offset=${offset}&limit=${JOURNAL_MOMENTS_PAGE_SIZE}`;
+  const current = () => journalMoments === state && detailObservationTokenCurrent(token);
+  return apiJson(url).then((page) => {
+    if (!current()) return;
+    state.loading = false;
+    const seen = new Set(state.items.map(journalMomentKey));
+    let added = 0;
+    for (const row of Array.isArray(page?.items) ? page.items : []) {
+      const key = journalMomentKey(row);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      state.items.push(row);
+      added += 1;
+    }
+    // A page that brings nothing new ends the list, whatever its total says.
+    state.total = added ? Math.max(Number(page?.total) || 0, state.items.length) : state.items.length;
+    renderJournalMoments(entity, token);
+  }, (error) => {
+    if (!current()) return;
+    state.loading = false;
+    console.error('Error loading moments:', error);
+    renderJournalMomentsFailed(entity, token, more);
+  });
+}
+
+function journalMomentsMore(entity, token) {
+  const container = document.getElementById('journal-detail-moments');
+  const shown = journalMoments.items.length;
+  const button = container?.querySelector('.entity-observation-show-all');
+  if (button) button.disabled = true;
+  // Focus goes on to the first moment the page adds.
+  holdFocus(true, loadJournalMoments(entity, token, { more: true }), () => (
+    container?.querySelectorAll('.observation-item')[shown]
+      || container?.querySelector('.entity-observation-show-all')
+  ));
+}
+
+function renderJournalMoments(entity, token) {
+  const container = document.getElementById('journal-detail-moments');
+  if (!container) return;
+  const { items, total } = journalMoments;
+  placeMomentsZoneNote('journal-detail-moments-heading', items);
+  if (!items.length) {
+    container.innerHTML = '<span class="observations-empty"></span>';
+    container.querySelector('.observations-empty').textContent = entityWindowText('journal.window.entities.observation.none.with.entity', { entity_name: entity.name });
+    return;
+  }
+  container.replaceChildren();
+  const list = document.createElement('div');
+  list.className = 'observations-list';
+  items.forEach((row) => list.appendChild(renderObservationItem(row, { facet: true })));
+  container.appendChild(list);
+  if (items.length < total) {
+    const footer = document.createElement('div');
+    footer.className = 'entity-observation-footer';
+    const more = document.createElement('button');
+    more.type = 'button';
+    more.className = 'entity-observation-show-all';
+    more.textContent = window.JournalI18n.render('journal.window.entities.connections.evidence.show.more', [...entityCountArgs('shown', items.length, groupedCount(items.length)), ...entityCountArgs('total', total, groupedCount(total))]);
+    more.onclick = () => journalMomentsMore(entity, token);
+    footer.appendChild(more);
+    container.appendChild(footer);
+  }
+}
+
+function renderJournalMomentsFailed(entity, token, more) {
+  const container = document.getElementById('journal-detail-moments');
+  if (!container) return;
+  if (!more) {
+    container.innerHTML = window.SurfaceState.error({
+      heading: ENT_COPY.ENT_OBS_LOAD_FAILED,
+      desc: '',
+      retry: true,
+      reportable: false,
+      headingLevel: 'h3',
+    });
+    const retry = container.querySelector('.surface-state-retry');
+    if (retry) retry.onclick = () => loadJournalMoments(entity, token);
+    return;
+  }
+  // The moments already shown stay; the next page can be asked for again.
+  const button = container.querySelector('.entity-observation-show-all');
+  if (button) {
+    button.disabled = false;
+    button.textContent = ENT_COPY.ENT_OBS_LOAD_FAILED || '';
+  }
 }
 
 const ENTITY_CONN_PAGE_SIZE = 8;
@@ -3947,6 +4139,18 @@ function renderEvidencePane(pane, entityId, peerId, history, referenceDay, showV
   renderEvidenceActions(pane, entityId, peerId, referenceDay, showViewLink);
 }
 
+/// The recording a piece of evidence came from, when its anchor names one on
+/// the evidence's own day: `DAY/STREAM/SEGMENT`, or `DAY/SEGMENT` for a
+/// recording made into the day itself. Anything else (an activity, a
+/// calendar note) names no recording.
+function evidenceRecording(row) {
+  const parts = String(row?.anchor || '').split('/');
+  if (parts[0] !== row?.day) return null;
+  if (parts.length === 3) return { stream: parts[1], segment: parts[2] };
+  if (parts.length === 2) return { stream: '_default', segment: parts[1] };
+  return null;
+}
+
 function appendEvidenceRows(list, rows, referenceDay) {
   rows.forEach(row => {
     const item = document.createElement('div');
@@ -3955,7 +4159,7 @@ function appendEvidenceRows(list, rows, referenceDay) {
     if (/^\d{8}$/.test(row.day || '')) {
       const date = document.createElement('a');
       date.className = 'entity-conn-evidence-date';
-      date.href = `/app/thinking/#runs/${row.day}`;
+      date.href = transcriptsHref(row.day, evidenceRecording(row));
       date.textContent = formatEntityConnDay(row.day, referenceDay);
       item.appendChild(date);
     } else {
@@ -4555,6 +4759,10 @@ function showJournalDetailView(entityId) {
   document.getElementById('journal-detail-indicators').innerHTML = '';
   document.getElementById('journal-detail-facets').innerHTML = `<span class="observations-empty">${window.JournalI18n.renderHtml('journal.window.entities.visible.text.loading')}</span>`;
   document.getElementById('journal-detail-connections').innerHTML = `<span class="observations-empty">${window.JournalI18n.renderHtml('journal.window.entities.visible.text.loading')}</span>`;
+  // The last entity's moments go; this one's come with its record.
+  journalMoments = { token: openToken, items: [], total: 0, loading: false };
+  document.getElementById('journal-detail-moments-section').hidden = true;
+  document.getElementById('journal-detail-moments').replaceChildren();
   renderEntityDeleteAction(null);
   resetJournalTrustSurface();
   resetFacesPanel();
@@ -4804,6 +5012,7 @@ function renderJournalDetailView(entity) {
   openFacesPanel(entity);
   loadVoiceSamples(entity);
   renderConnectionsSection(entity.id, 'journal-detail-connections', isPrincipal);
+  loadJournalMoments(entity, detailObservationState.token);
   renderJournalTrustControls(entity);
   loadJournalTrustDetails(entity.id);
 
@@ -6552,6 +6761,7 @@ async function fetchJournalSummary({allowTypeReset = true} = {}) {
   if (journalEntityType) params.set('type', journalEntityType);
   if (journalEntitySearch) params.set('q', journalEntitySearch);
   params.set('hidden', journalFolder === 'hidden' ? 'only' : 'exclude');
+  if (journalEntitySort) params.set('sort', journalEntitySort);
   try {
     return await apiJson(`/app/entities/api/journal/summary?${params.toString()}`);
   } catch (err) {
@@ -6647,6 +6857,19 @@ async function initEntities() {
         if (!writeJournalListState({replace: true})) return;
         loadJournalEntities({silent: true, queryChanged: true});
       }, 220);
+    });
+  }
+
+  // A sort is an entry of its own, as a folder is, so back restores the order.
+  const journalSort = document.getElementById('journal-entity-sort');
+  if (journalSort) {
+    journalSort.addEventListener('change', function() {
+      const sort = this.value === 'name' ? 'name' : '';
+      if (sort === journalEntitySort) return;
+      journalEntitySort = sort;
+      journalEntityPage = 0;
+      if (!writeJournalListState()) return;
+      holdFocus(true, loadJournalEntities({silent: true, queryChanged: true}), () => document.getElementById('journal-entity-sort'));
     });
   }
 
@@ -6836,17 +7059,18 @@ function groupedCount(value) {
 }
 
 function journalListStateKey() {
-  return `${journalEntitySearch}\u0000${journalFolder}\u0000${journalEntityPage}`;
+  return `${journalEntitySearch}\u0000${journalFolder}\u0000${journalEntityPage}\u0000${journalEntitySort}`;
 }
 
 /// The URL query is the source of truth for the list state, so browser history
-/// restores the search term, the type bucket and the page together.
+/// restores the search term, the type bucket, the sort and the page together.
 function readJournalListState() {
   const params = new URLSearchParams(location.search);
   journalFolder = (params.get('folder') || params.get('type') || '').trim().toLowerCase();
   const isGroup = journalFolder === 'ids' || journalFolder === 'duplicates';
   journalEntityType = journalFolder === 'hidden' || isGroup ? '' : journalFolder;
   journalEntitySearch = isGroup ? '' : (params.get('q') || '').trim();
+  journalEntitySort = params.get('sort') === 'name' ? 'name' : '';
   const page = Number.parseInt(params.get('page') || '', 10);
   journalEntityPage = Number.isFinite(page) && page > 1 ? page - 1 : 0;
 }
@@ -6856,6 +7080,7 @@ function writeJournalListState({replace = false} = {}) {
   if (journalEntitySearch) params.set('q', journalEntitySearch); else params.delete('q');
   params.delete('type');
   if (journalFolder) params.set('folder', journalFolder); else params.delete('folder');
+  if (journalEntitySort) params.set('sort', journalEntitySort); else params.delete('sort');
   if (journalEntityPage > 0) params.set('page', String(journalEntityPage + 1)); else params.delete('page');
   const query = params.toString();
   const url = `${ENTITIES_PATH}${query ? `?${query}` : ''}${location.hash}`;
@@ -6920,6 +7145,14 @@ function renderJournalEntities() {
       searchInput.value = journalEntitySearch;
     }
     searchInput.placeholder = window.JournalI18n.render('journal.window.entities.search.placeholder.entity.count', [...entityCountArgs('total', journalFolderCount(journalFolder))]);
+  }
+  const sortSelect = document.getElementById('journal-entity-sort');
+  if (sortSelect) sortSelect.value = journalEntitySort;
+  // The list's own order is by type, then most recent; inside one type's
+  // folder that is simply the most recent first.
+  const sortDefault = document.getElementById('journal-entity-sort-default');
+  if (sortDefault) {
+    sortDefault.textContent = window.JournalI18n.render(journalEntityType ? 'journal.window.entities.list.sort.recent' : 'journal.window.entities.list.sort.type');
   }
   container.replaceChildren();
   container.classList.toggle('journal-rows-plain', !entityPick.on);
@@ -7407,12 +7640,6 @@ function createDetectedRow(entity) {
   starCell.appendChild(starBtn);
   row.appendChild(starCell);
 
-  // Type
-  const typeCell = document.createElement('td');
-  typeCell.className = 'entity-type';
-  typeCell.textContent = entity.type;
-  row.appendChild(typeCell);
-
   // Name
   const nameCell = document.createElement('td');
   nameCell.className = 'entity-name';
@@ -7484,11 +7711,6 @@ function createHiddenRow(entry) {
   const row = document.createElement('tr');
   row.className = 'ent-hidden-row';
   row.appendChild(document.createElement('td'));
-
-  const typeCell = document.createElement('td');
-  typeCell.className = 'entity-type';
-  typeCell.textContent = entry.type || '';
-  row.appendChild(typeCell);
 
   const nameCell = document.createElement('td');
   nameCell.className = 'entity-name';
@@ -8852,17 +9074,37 @@ function facesDayText(day) {
   return date.toLocaleDateString('en-US', options).toLowerCase();
 }
 
-/// Where a face came from, in the owner's words: the day, and whether the
-/// face sat by the person's name or in their own video tile.
+/// The recording a face was taken from, as the transcripts page addresses it.
+function faceRecording(face) {
+  const key = face?.key;
+  if (!key || key.day !== face.day) return null;
+  return {
+    stream: key.stream_layout === 'direct' ? '_default' : key.stream,
+    segment: key.segment_key,
+  };
+}
+
+/// Where a face came from, in the owner's words: the day, which opens the
+/// meeting it was taken from, and whether the face sat by the person's name
+/// or in their own video tile.
 function facesProvenance(face) {
   const where = face.source === 'anchored'
     ? ENT_COPY.ENT_FACES_SOURCE_ANCHORED
     : ENT_COPY.ENT_FACES_SOURCE_BOX;
   const day = facesDayText(face.day);
   const parts = [];
-  if (day) parts.push(facesCopy('ENT_FACES_FROM_DAY', {day}));
-  if (where) parts.push(where);
-  return parts.join(' · ');
+  if (day) {
+    const link = document.createElement('a');
+    link.className = 'entity-face-day';
+    link.href = transcriptsHref(face.day, faceRecording(face));
+    link.textContent = facesCopy('ENT_FACES_FROM_DAY', {day});
+    parts.push(link);
+  }
+  if (where) {
+    if (parts.length) parts.push(document.createTextNode(' · '));
+    parts.push(document.createTextNode(where));
+  }
+  return parts;
 }
 
 function facesButton(label, onClick, {primary = false, action = ''} = {}) {
@@ -8940,7 +9182,7 @@ function facesCaption(face, suggested) {
   }
   const where = document.createElement('span');
   where.className = 'entity-face-where';
-  where.textContent = facesProvenance(face);
+  where.append(...facesProvenance(face));
   caption.append(where);
   return caption;
 }

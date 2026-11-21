@@ -147,6 +147,8 @@ module.exports = async function facesCases(manifestDir) {
     journalContext(context);
     const copyHelpers = workspace.slice(workspace.indexOf('function entityWindowArgs('), workspace.indexOf('// Every entities refusal'));
     vm.runInContext(copyHelpers, context);
+    const linkHelpers = workspace.slice(workspace.indexOf("// A recording's key"), workspace.indexOf('function activeObservationGridDays('));
+    vm.runInContext(linkHelpers, context);
     vm.runInContext(`${block}\nthis.api = {openFacesPanel, resetFacesPanel, facesPanel, entityPhotoThumb, facesMergeReason, renderFacetPhotoHint};`, context, {filename: 'entities-faces.js'});
     return {context, section, list, calls, api: context.api, doc};
   }
@@ -269,6 +271,24 @@ module.exports = async function facesCases(manifestDir) {
     await line.children.find((node) => node.dataset.facesAction === 'retry').click();
     await settle();
     check(m.section.dataset.facesState === 'possible' && reads === 2, 'and try again reads it again');
+  }
+
+  // A face's day opens the meeting it came from: its day in transcripts, at
+  // its recording when the face names one on that day, else the day alone.
+  {
+    const named = face(1, {key: {day: '20261103', stream: 'desk', stream_layout: 'named', segment_key: '090001_300', frame_id: 1, face_idx: 0}});
+    const direct = face(2, {key: {day: '20261103', stream: 'desk', stream_layout: 'direct', segment_key: '090002_300', frame_id: 2, face_idx: 0}});
+    const bare = face(3);
+    const panel = {state: 'possible', faces: [named, direct, bare], default: null, looks: 3, last_action: null};
+    const m = mount(() => panel);
+    m.api.openFacesPanel({id: 'ada', name: 'Ada', photo_state: 'possible'});
+    await settle();
+    const days = m.section.all((node) => node.tagName === 'A' && node.className === 'entity-face-day');
+    check(days.length === 3, 'every face with a day links it');
+    check(days[0].href === '/app/transcripts/20261103?stream=desk#090001_300', 'a face from a named stream opens its recording');
+    check(days[1].href === '/app/transcripts/20261103?stream=_default#090002_300', 'a face recorded into the day itself opens its recording');
+    check(days[2].href === '/app/transcripts/20261103', 'a face that names no recording opens its day');
+    check(days.every((node) => node.textContent && !node.textContent.includes('20261103')), 'the link names its day as a date');
   }
 
   // Lists: only a chosen photo reaches a row; a row without one is unchanged.

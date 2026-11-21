@@ -1,0 +1,16 @@
+{
+  "description": "Sort option on the journal's entities list: alphabetical by name.",
+  "context": "Journal window, entities view. Sort option for the entity list.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e6b7ec6331937a23df0760d366de099986c8d6febd1f06fa6f0ca8a65b3c0892",
+  "max_length": 30,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

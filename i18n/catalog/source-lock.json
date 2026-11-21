@@ -9606,6 +9606,13 @@
       "locales": []
     },
     {
+      "id": "journal.window.entities.accessible.name.sort.entities",
+      "source": "8c4fc75fdeceebddb3b9f398e6e3b3a66b22f82d3a743cba6f913dfc1ea03e62",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.entities.aliases.other.names",
       "source": "5a420bc163ba5bfad3efd5f91499921552ab30675561c37041ba42499c0b2eec",
       "contract": "819dc07eaae364035748596d8c77ed731d149818f7c76482e2890d1a50b7ce41",
@@ -9678,13 +9685,6 @@
     {
       "id": "journal.window.entities.column.heading.name",
       "source": "b7c2820b0db62f6f00d8b38e58ec128c51962216efaec4eb7e9be0ece4a95a50",
-      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
-      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
-    },
-    {
-      "id": "journal.window.entities.column.heading.type",
-      "source": "204590a3f88d66708e85f4cd3d9b407448d369f1d42544052047612990333b5d",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
       "locales": []
@@ -12150,6 +12150,27 @@
       "id": "journal.window.entities.list.selected.count",
       "source": "021f5b92741f32be597bd032de2e4dadb1fccf7baf5994d0897758386b29e9b3",
       "contract": "23a4ae766ea1ce9dc8f96a800fdd8bc1050fd67d2de5f9afe10818be3dc0b76d",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.entities.list.sort.name",
+      "source": "e6b7ec6331937a23df0760d366de099986c8d6febd1f06fa6f0ca8a65b3c0892",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.entities.list.sort.recent",
+      "source": "e8ead3b2bad9d13be91b31b4565f52003e4374138f89364e1ec2a02b0125653f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.entities.list.sort.type",
+      "source": "4b1bc122cff5c5f2460c372cf729448ba8e88b14bf6d847613997c86f2314338",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
       "locales": []
     },

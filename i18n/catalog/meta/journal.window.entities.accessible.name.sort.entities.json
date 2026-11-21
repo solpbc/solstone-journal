@@ -1,0 +1,16 @@
+{
+  "description": "Accessible name of the sort control on the journal's entities list.",
+  "context": "Journal window, entities view. Accessible name of the list's sort control.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8c4fc75fdeceebddb3b9f398e6e3b3a66b22f82d3a743cba6f913dfc1ea03e62",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

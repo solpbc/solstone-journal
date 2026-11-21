@@ -26,6 +26,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - recordings from your Plaud sync, and files from a phone journal's audio folder, no longer appear in import history or in the import list an agent can read, so history shows what you chose to import. you can still delete them from transcripts. Oura's syncs still appear in import history for now.
 - on the android and iphone development journals, the audio folder's controls moved from the import page to settings, under sync. the import page's Plaud row and its sync now are gone too; Plaud syncs every hour once you turn it on in settings.
+- an entity's all-facets page now shows its moments from every facet it's in, newest first, each with the facet it came from. a moment's day and a connection's day now open that day in transcripts instead of the thinking page, and the day a face came from now opens it too. a connection's day or a face's day opens at its recording where there is one. you can sort the entities list by name, and the sort stays when you go back or reload. the detected entities table no longer has a type column, and the small buttons on entities pages are easier to press.
 
 ### Fixed
 
