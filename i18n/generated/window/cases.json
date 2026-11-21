@@ -21728,7 +21728,7 @@
         "recorded_at": "sample"
       },
       "locale": "en-US",
-      "logical_expected": "backup attempt failed ⁨sample⁩ ago",
+      "logical_expected": "backup attempt failed · ⁨sample⁩",
       "message_id": "journal.window.backup.age.backup.failed.clock",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.backup.age.backup.failed.clock\", [[\"recorded_at\", \"sample\"]])",
@@ -22030,7 +22030,7 @@
         "recorded_at": "sample"
       },
       "locale": "en-US",
-      "logical_expected": "spot-check failed ⁨sample⁩ ago",
+      "logical_expected": "spot-check failed · ⁨sample⁩",
       "message_id": "journal.window.backup.age.check.failed.clock",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.backup.age.check.failed.clock\", [[\"recorded_at\", \"sample\"]])",
@@ -22332,7 +22332,7 @@
         "recorded_at": "sample"
       },
       "locale": "en-US",
-      "logical_expected": "spot-check couldn't run ⁨sample⁩ ago",
+      "logical_expected": "spot-check couldn't run · ⁨sample⁩",
       "message_id": "journal.window.backup.age.check.skipped.clock",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.backup.age.check.skipped.clock\", [[\"recorded_at\", \"sample\"]])",
@@ -22634,7 +22634,7 @@
         "recorded_at": "sample"
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ ago",
+      "logical_expected": "⁨sample⁩",
       "message_id": "journal.window.backup.age.elapsed.clock",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.backup.age.elapsed.clock\", [[\"recorded_at\", \"sample\"]])",
@@ -37628,7 +37628,7 @@
         "date": "sample"
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ · Apple Health and Oura and Strava",
+      "logical_expected": "⁨sample⁩ · Apple Health, Oura and Strava",
       "message_id": "journal.window.body.grid.source.all",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.body.grid.source.all\", [[\"date\", \"sample\"]])",
@@ -38796,7 +38796,7 @@
         "total_quantity": 1
       },
       "locale": "en-US",
-      "logical_expected": "still running: ⁨sample⁩ of ⁨sample⁩ days done.",
+      "logical_expected": "still running: ⁨sample⁩ of ⁨sample⁩ day done.",
       "message_id": "journal.window.body.import.progress.running.days",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.body.import.progress.running.days\", [[\"done_days\", \"sample\"], [\"done_quantity\", 0], [\"total_days\", \"sample\"], [\"total_quantity\", 1]])",
@@ -39038,7 +39038,7 @@
         "total_quantity": 1
       },
       "locale": "en-US",
-      "logical_expected": "stopped partway: ⁨sample⁩ of ⁨sample⁩ days done.",
+      "logical_expected": "stopped partway: ⁨sample⁩ of ⁨sample⁩ day done.",
       "message_id": "journal.window.body.import.progress.stopped.days",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.body.import.progress.stopped.days\", [[\"done_days\", \"sample\"], [\"done_quantity\", 0], [\"total_days\", \"sample\"], [\"total_quantity\", 1]])",
@@ -58356,7 +58356,7 @@
         "total_quantity": 1
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ of ⁨sample⁩ entities",
+      "logical_expected": "⁨sample⁩ of ⁨sample⁩ entity",
       "message_id": "journal.window.entities.list.results.count",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.entities.list.results.count\", [[\"matched\", \"sample\"], [\"matched_quantity\", 0], [\"total\", \"sample\"], [\"total_quantity\", 1]])",
@@ -58848,7 +58848,7 @@
         "total_quantity": 1
       },
       "locale": "en-US",
-      "logical_expected": "kept ⁨sample⁩ of ⁨sample⁩ pairs separate. ⁨sample⁩ are still listed.",
+      "logical_expected": "kept ⁨sample⁩ of ⁨sample⁩ pair separate. ⁨sample⁩ are still listed.",
       "message_id": "journal.window.entities.merge.keep.partial",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.entities.merge.keep.partial\", [[\"failed\", \"sample\"], [\"failed_quantity\", 0], [\"processed\", \"sample\"], [\"processed_quantity\", 0], [\"total\", \"sample\"], [\"total_quantity\", 1]])",
@@ -59208,7 +59208,7 @@
         "total_quantity": 1
       },
       "locale": "en-US",
-      "logical_expected": "merged ⁨sample⁩ of ⁨sample⁩ pairs. ⁨sample⁩ couldn't be merged.",
+      "logical_expected": "merged ⁨sample⁩ of ⁨sample⁩ pair. ⁨sample⁩ couldn't be merged.",
       "message_id": "journal.window.entities.merge.merge.partial",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.entities.merge.merge.partial\", [[\"failed\", \"sample\"], [\"failed_quantity\", 0], [\"processed\", \"sample\"], [\"processed_quantity\", 0], [\"total\", \"sample\"], [\"total_quantity\", 1]])",
@@ -60502,7 +60502,7 @@
         "visible_quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "showing the ⁨sample⁩ most recent of ⁨sample⁩ moments",
+      "logical_expected": "showing the ⁨sample⁩ most recent of ⁨sample⁩ moment",
       "message_id": "journal.window.entities.observation.disclosure",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.entities.observation.disclosure\", [[\"total\", \"sample\"], [\"total_quantity\", 1], [\"visible\", \"sample\"], [\"visible_quantity\", 0]])",
@@ -78730,7 +78730,7 @@
         "labels_quantity": 1
       },
       "locale": "en-US",
-      "logical_expected": "speaker labels updated: ⁨sample⁩ labels, ⁨sample⁩ corrections",
+      "logical_expected": "speaker labels updated: ⁨sample⁩ label, ⁨sample⁩ corrections",
       "message_id": "journal.window.facets.curation.preview.speaker.segments",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.facets.curation.preview.speaker.segments\", [[\"corrections\", \"sample\"], [\"corrections_quantity\", 0], [\"labels\", \"sample\"], [\"labels_quantity\", 1]])",
@@ -78786,7 +78786,7 @@
         "labels_quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "speaker labels updated: ⁨sample⁩ labels, ⁨sample⁩ corrections",
+      "logical_expected": "speaker labels updated: ⁨sample⁩ labels, ⁨sample⁩ correction",
       "message_id": "journal.window.facets.curation.preview.speaker.segments",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.facets.curation.preview.speaker.segments\", [[\"corrections\", \"sample\"], [\"corrections_quantity\", 1], [\"labels\", \"sample\"], [\"labels_quantity\", 0]])",
@@ -91404,7 +91404,7 @@
         "recordings": "sample"
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ recordings and ⁨sample⁩ daily outputs left",
+      "logical_expected": "⁨sample⁩ recording and ⁨sample⁩ daily outputs left",
       "message_id": "journal.window.health.history.counts",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.health.history.counts\", [[\"output_quantity\", 0], [\"outputs\", \"sample\"], [\"recording_quantity\", 1], [\"recordings\", \"sample\"]])",
@@ -91460,7 +91460,7 @@
         "recordings": "sample"
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ recordings and ⁨sample⁩ daily outputs left",
+      "logical_expected": "⁨sample⁩ recordings and ⁨sample⁩ daily output left",
       "message_id": "journal.window.health.history.counts",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.health.history.counts\", [[\"output_quantity\", 1], [\"outputs\", \"sample\"], [\"recording_quantity\", 0], [\"recordings\", \"sample\"]])",
@@ -92512,7 +92512,7 @@
         "service": "sample"
       },
       "locale": "en-US",
-      "logical_expected": "── ⁨sample⁩ ── (⁨sample⁩ lines, ★ ⁨sample⁩ errors)",
+      "logical_expected": "── ⁨sample⁩ ── (⁨sample⁩ line, ★ ⁨sample⁩ errors)",
       "message_id": "journal.window.health.logs.service.collapsed",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.health.logs.service.collapsed\", [[\"error_quantity\", 0], [\"errors\", \"sample\"], [\"line_quantity\", 1], [\"lines\", \"sample\"], [\"service\", \"sample\"]])",
@@ -92574,7 +92574,7 @@
         "service": "sample"
       },
       "locale": "en-US",
-      "logical_expected": "── ⁨sample⁩ ── (⁨sample⁩ lines, ★ ⁨sample⁩ errors)",
+      "logical_expected": "── ⁨sample⁩ ── (⁨sample⁩ lines, ★ ⁨sample⁩ error)",
       "message_id": "journal.window.health.logs.service.collapsed",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.health.logs.service.collapsed\", [[\"error_quantity\", 1], [\"errors\", \"sample\"], [\"line_quantity\", 0], [\"lines\", \"sample\"], [\"service\", \"sample\"]])",
@@ -94204,7 +94204,7 @@
         "updated_quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "last search check ⁨sample⁩ hours ago: ⁨sample⁩ updated, ⁨sample⁩ removed",
+      "logical_expected": "last search check ⁨sample⁩ hour ago: ⁨sample⁩ updated, ⁨sample⁩ removed",
       "message_id": "journal.window.health.search.last.check.elapsed",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.health.search.last.check.elapsed\", [[\"hour_quantity\", 1], [\"hours\", \"sample\"], [\"removed\", \"sample\"], [\"removed_quantity\", 0], [\"updated\", \"sample\"], [\"updated_quantity\", 0]])",
@@ -102338,7 +102338,7 @@
         "recordings_ready_quantity": 1
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩: ⁨sample⁩ recordings ready, ⁨sample⁩ left; ⁨sample⁩ daily outputs ready, ⁨sample⁩ left.",
+      "logical_expected": "⁨sample⁩: ⁨sample⁩ recording ready, ⁨sample⁩ left; ⁨sample⁩ daily outputs ready, ⁨sample⁩ left.",
       "message_id": "journal.window.health.work.band.progress",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.health.work.band.progress\", [[\"band\", \"sample\"], [\"outputs_left\", \"sample\"], [\"outputs_left_quantity\", 0], [\"outputs_ready\", \"sample\"], [\"outputs_ready_quantity\", 0], [\"recordings_left\", \"sample\"], [\"recordings_left_quantity\", 0], [\"recordings_ready\", \"sample\"], [\"recordings_ready_quantity\", 1]])",
@@ -102510,7 +102510,7 @@
         "recordings_ready_quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩: ⁨sample⁩ recordings ready, ⁨sample⁩ left; ⁨sample⁩ daily outputs ready, ⁨sample⁩ left.",
+      "logical_expected": "⁨sample⁩: ⁨sample⁩ recordings ready, ⁨sample⁩ left; ⁨sample⁩ daily output ready, ⁨sample⁩ left.",
       "message_id": "journal.window.health.work.band.progress",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.health.work.band.progress\", [[\"band\", \"sample\"], [\"outputs_left\", \"sample\"], [\"outputs_left_quantity\", 0], [\"outputs_ready\", \"sample\"], [\"outputs_ready_quantity\", 1], [\"recordings_left\", \"sample\"], [\"recordings_left_quantity\", 0], [\"recordings_ready\", \"sample\"], [\"recordings_ready_quantity\", 0]])",
@@ -102780,7 +102780,7 @@
         "recordings_ready_quantity": 1
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩: ⁨sample⁩ recordings ready, ⁨sample⁩ left; ⁨sample⁩ daily outputs ready, ⁨sample⁩ left; ⁨sample⁩.",
+      "logical_expected": "⁨sample⁩: ⁨sample⁩ recording ready, ⁨sample⁩ left; ⁨sample⁩ daily outputs ready, ⁨sample⁩ left; ⁨sample⁩.",
       "message_id": "journal.window.health.work.band.progress.details",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.health.work.band.progress.details\", [[\"band\", \"sample\"], [\"details\", \"sample\"], [\"outputs_left\", \"sample\"], [\"outputs_left_quantity\", 0], [\"outputs_ready\", \"sample\"], [\"outputs_ready_quantity\", 0], [\"recordings_left\", \"sample\"], [\"recordings_left_quantity\", 0], [\"recordings_ready\", \"sample\"], [\"recordings_ready_quantity\", 1]])",
@@ -102964,7 +102964,7 @@
         "recordings_ready_quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩: ⁨sample⁩ recordings ready, ⁨sample⁩ left; ⁨sample⁩ daily outputs ready, ⁨sample⁩ left; ⁨sample⁩.",
+      "logical_expected": "⁨sample⁩: ⁨sample⁩ recordings ready, ⁨sample⁩ left; ⁨sample⁩ daily output ready, ⁨sample⁩ left; ⁨sample⁩.",
       "message_id": "journal.window.health.work.band.progress.details",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.health.work.band.progress.details\", [[\"band\", \"sample\"], [\"details\", \"sample\"], [\"outputs_left\", \"sample\"], [\"outputs_left_quantity\", 0], [\"outputs_ready\", \"sample\"], [\"outputs_ready_quantity\", 1], [\"recordings_left\", \"sample\"], [\"recordings_left_quantity\", 0], [\"recordings_ready\", \"sample\"], [\"recordings_ready_quantity\", 0]])",
@@ -103544,7 +103544,7 @@
         "total": "sample"
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ of ⁨sample⁩ days checked (⁨sample⁩). the inspection covers the whole journal.",
+      "logical_expected": "⁨sample⁩ of ⁨sample⁩ day checked (⁨sample⁩). the inspection covers the whole journal.",
       "message_id": "journal.window.health.work.inspection.complete",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.health.work.inspection.complete\", [[\"checked\", \"sample\"], [\"checked_quantity\", 0], [\"quantity\", 1], [\"range\", \"sample\"], [\"total\", \"sample\"]])",
@@ -103730,7 +103730,7 @@
         "total": "sample"
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ of ⁨sample⁩ days checked (⁨sample⁩). the inspection is incomplete.",
+      "logical_expected": "⁨sample⁩ of ⁨sample⁩ day checked (⁨sample⁩). the inspection is incomplete.",
       "message_id": "journal.window.health.work.inspection.incomplete",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.health.work.inspection.incomplete\", [[\"checked\", \"sample\"], [\"checked_quantity\", 0], [\"quantity\", 1], [\"range\", \"sample\"], [\"total\", \"sample\"]])",
@@ -103928,7 +103928,7 @@
         "total": "sample"
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ of ⁨sample⁩ days checked (⁨sample⁩). last known progress, checked ⁨sample⁩.",
+      "logical_expected": "⁨sample⁩ of ⁨sample⁩ day checked (⁨sample⁩). last known progress, checked ⁨sample⁩.",
       "message_id": "journal.window.health.work.inspection.stale",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.health.work.inspection.stale\", [[\"checked\", \"sample\"], [\"checked_at\", \"sample\"], [\"checked_quantity\", 0], [\"quantity\", 1], [\"range\", \"sample\"], [\"total\", \"sample\"]])",
@@ -107162,7 +107162,7 @@
         "device": "sample"
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ hasn't added to your journal in just now.",
+      "logical_expected": "⁨sample⁩ last added to your journal just now.",
       "message_id": "journal.window.home.health.quiet.elapsed.just.now",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.home.health.quiet.elapsed.just.now\", [[\"device\", \"sample\"]])",
@@ -154238,7 +154238,7 @@
         "size": "sample"
       },
       "locale": "en-US",
-      "logical_expected": "map of around ⁨sample⁩: ⁨sample⁩ shaded areas, each ⁨sample⁩ across. the same areas are listed under areas this month.",
+      "logical_expected": "map of the area around ⁨sample⁩: ⁨sample⁩ shaded areas, each ⁨sample⁩ across. the same areas are listed under areas this month.",
       "message_id": "journal.window.map.month.map.area.summary.home",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.map.month.map.area.summary.home\", [[\"area\", \"sample\"], [\"shaded_areas\", \"sample\"], [\"shaded_quantity\", 0], [\"size\", \"sample\"]])",
@@ -154510,7 +154510,7 @@
         "size": "sample"
       },
       "locale": "en-US",
-      "logical_expected": "map of around ⁨sample⁩: ⁨sample⁩ shaded areas, each ⁨sample⁩ across, holding the ⁨sample⁩ areas listed under areas this month.",
+      "logical_expected": "map of the area around ⁨sample⁩: ⁨sample⁩ shaded areas, each ⁨sample⁩ across, holding the ⁨sample⁩ areas listed under areas this month.",
       "message_id": "journal.window.map.month.map.group.summary.home",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.map.month.map.group.summary.home\", [[\"area\", \"sample\"], [\"area_quantity\", 0], [\"areas\", \"sample\"], [\"shaded_areas\", \"sample\"], [\"shaded_quantity\", 0], [\"size\", \"sample\"]])",
@@ -154578,7 +154578,7 @@
         "size": "sample"
       },
       "locale": "en-US",
-      "logical_expected": "map of around ⁨sample⁩: ⁨sample⁩ shaded area, each ⁨sample⁩ across, holding the ⁨sample⁩ areas listed under areas this month.",
+      "logical_expected": "map of the area around ⁨sample⁩: ⁨sample⁩ shaded area, ⁨sample⁩ across, holding the ⁨sample⁩ areas listed under areas this month.",
       "message_id": "journal.window.map.month.map.group.summary.home",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.map.month.map.group.summary.home\", [[\"area\", \"sample\"], [\"area_quantity\", 0], [\"areas\", \"sample\"], [\"shaded_areas\", \"sample\"], [\"shaded_quantity\", 1], [\"size\", \"sample\"]])",
@@ -154646,7 +154646,7 @@
         "size": "sample"
       },
       "locale": "en-US",
-      "logical_expected": "map of around ⁨sample⁩: ⁨sample⁩ shaded areas, each ⁨sample⁩ across, holding the ⁨sample⁩ area listed under areas this month.",
+      "logical_expected": "map of the area around ⁨sample⁩: ⁨sample⁩ shaded areas, each ⁨sample⁩ across, holding the ⁨sample⁩ area listed under areas this month.",
       "message_id": "journal.window.map.month.map.group.summary.home",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.map.month.map.group.summary.home\", [[\"area\", \"sample\"], [\"area_quantity\", 1], [\"areas\", \"sample\"], [\"shaded_areas\", \"sample\"], [\"shaded_quantity\", 0], [\"size\", \"sample\"]])",
@@ -168772,7 +168772,7 @@
         "shown_quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "showing the top ⁨sample⁩ of ⁨sample⁩ matches for this day.",
+      "logical_expected": "showing the top ⁨sample⁩ of ⁨sample⁩ match for this day.",
       "message_id": "journal.window.search.count.results.shown.for.day",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.search.count.results.shown.for.day\", [[\"match_count\", \"sample\"], [\"match_quantity\", 1], [\"shown_count\", \"sample\"], [\"shown_quantity\", 0]])",
@@ -184902,7 +184902,7 @@
         "quantity": 1
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ operational-log file(s) and ⁨sample⁩ cache dir(s) (⁨sample⁩ B) would be deleted.",
+      "logical_expected": "⁨sample⁩ operational-log file and ⁨sample⁩ cache dir(s) (⁨sample⁩ B) would be deleted.",
       "message_id": "journal.window.settings.logs.preview.file.and.directory.count",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.settings.logs.preview.file.and.directory.count\", [[\"bytes\", \"sample\"], [\"directories\", \"sample\"], [\"directory_quantity\", 0], [\"files\", \"sample\"], [\"quantity\", 1]])",
@@ -184964,7 +184964,7 @@
         "quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ operational-log file(s) and ⁨sample⁩ cache dir(s) (⁨sample⁩ B) would be deleted.",
+      "logical_expected": "⁨sample⁩ operational-log file(s) and ⁨sample⁩ cache dir (⁨sample⁩ B) would be deleted.",
       "message_id": "journal.window.settings.logs.preview.file.and.directory.count",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.settings.logs.preview.file.and.directory.count\", [[\"bytes\", \"sample\"], [\"directories\", \"sample\"], [\"directory_quantity\", 1], [\"files\", \"sample\"], [\"quantity\", 0]])",
@@ -185138,7 +185138,7 @@
         "quantity": 1
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ operational-log file(s) and ⁨sample⁩ cache dir(s) (⁨sample⁩ B) deleted.",
+      "logical_expected": "⁨sample⁩ operational-log file and ⁨sample⁩ cache dir(s) (⁨sample⁩ B) deleted.",
       "message_id": "journal.window.settings.logs.result.file.and.directory.count",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.settings.logs.result.file.and.directory.count\", [[\"bytes\", \"sample\"], [\"directories\", \"sample\"], [\"directory_quantity\", 0], [\"files\", \"sample\"], [\"quantity\", 1]])",
@@ -185200,7 +185200,7 @@
         "quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ operational-log file(s) and ⁨sample⁩ cache dir(s) (⁨sample⁩ B) deleted.",
+      "logical_expected": "⁨sample⁩ operational-log file(s) and ⁨sample⁩ cache dir (⁨sample⁩ B) deleted.",
       "message_id": "journal.window.settings.logs.result.file.and.directory.count",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.settings.logs.result.file.and.directory.count\", [[\"bytes\", \"sample\"], [\"directories\", \"sample\"], [\"directory_quantity\", 1], [\"files\", \"sample\"], [\"quantity\", 0]])",
@@ -209090,7 +209090,7 @@
         "quantity": 1
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ longer statements so far, needs ⁨sample⁩",
+      "logical_expected": "⁨sample⁩ longer statement so far, needs ⁨sample⁩",
       "message_id": "journal.window.shared.gate.drawer.statements.observed.and.required.count",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.shared.gate.drawer.statements.observed.and.required.count\", [[\"minimum\", \"sample\"], [\"minimum_quantity\", 0], [\"observed\", \"sample\"], [\"quantity\", 1]])",
@@ -223870,7 +223870,7 @@
         "total_quantity": 1
       },
       "locale": "en-US",
-      "logical_expected": "updating past conversations: ⁨sample⁩ of ⁨sample⁩ recordings",
+      "logical_expected": "updating past conversations: ⁨sample⁩ of ⁨sample⁩ recording",
       "message_id": "journal.window.speakers.owner.relabel.progress",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.relabel.progress\", [[\"completed\", \"sample\"], [\"completed_quantity\", 0], [\"total\", \"sample\"], [\"total_quantity\", 1]])",
@@ -224038,7 +224038,7 @@
         "total_quantity": 1
       },
       "locale": "en-US",
-      "logical_expected": "returning past conversations to unnamed voices: ⁨sample⁩ of ⁨sample⁩ recordings",
+      "logical_expected": "returning past conversations to unnamed voices: ⁨sample⁩ of ⁨sample⁩ recording",
       "message_id": "journal.window.speakers.owner.relabel.undo.progress",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.relabel.undo.progress\", [[\"completed\", \"sample\"], [\"completed_quantity\", 0], [\"total\", \"sample\"], [\"total_quantity\", 1]])",
@@ -224382,7 +224382,7 @@
         "statements_quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ of ⁨sample⁩ longer statements taught",
+      "logical_expected": "⁨sample⁩ of ⁨sample⁩ longer statement taught",
       "message_id": "journal.window.speakers.owner.teaching.exhausted.progress",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.teaching.exhausted.progress\", [[\"required\", \"sample\"], [\"required_quantity\", 1], [\"statements\", \"sample\"], [\"statements_quantity\", 0]])",
@@ -224550,7 +224550,7 @@
         "statements_quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ of ⁨sample⁩ longer statements",
+      "logical_expected": "⁨sample⁩ of ⁨sample⁩ longer statement",
       "message_id": "journal.window.speakers.owner.teaching.progress",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.teaching.progress\", [[\"required\", \"sample\"], [\"required_quantity\", 1], [\"statements\", \"sample\"], [\"statements_quantity\", 0]])",
@@ -229098,7 +229098,7 @@
         "statements_quantity": 1
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ statements across ⁨sample⁩ conversations, all in your journal. you can undo this.",
+      "logical_expected": "⁨sample⁩ statement across ⁨sample⁩ conversations, all in your journal. you can undo this.",
       "message_id": "journal.window.speakers.who.preview.fact.count",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.speakers.who.preview.fact.count\", [[\"conversations\", \"sample\"], [\"conversations_quantity\", 0], [\"statements\", \"sample\"], [\"statements_quantity\", 1]])",
@@ -229154,7 +229154,7 @@
         "statements_quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ statements across ⁨sample⁩ conversations, all in your journal. you can undo this.",
+      "logical_expected": "⁨sample⁩ statements across ⁨sample⁩ conversation, all in your journal. you can undo this.",
       "message_id": "journal.window.speakers.who.preview.fact.count",
       "own_reader": "fluent-js",
       "own_reader_call": "render(\"en-US\", \"journal.window.speakers.who.preview.fact.count\", [[\"conversations\", \"sample\"], [\"conversations_quantity\", 1], [\"statements\", \"sample\"], [\"statements_quantity\", 0]])",
@@ -302538,13 +302538,13 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "backup attempt failed ⁨sample⁩ ago",
+      "expected": "backup attempt failed · ⁨sample⁩",
       "folder": null,
       "inputs": {
         "recorded_at": "sample"
       },
       "locale": "en-US",
-      "logical_expected": "backup attempt failed ⁨sample⁩ ago",
+      "logical_expected": "backup attempt failed · ⁨sample⁩",
       "message_id": "journal.window.backup.age.backup.failed.clock",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.backup.age.backup.failed.clock\", &[(\"recorded_at\", Value::String(\"sample\"))])",
@@ -302840,13 +302840,13 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "spot-check failed ⁨sample⁩ ago",
+      "expected": "spot-check failed · ⁨sample⁩",
       "folder": null,
       "inputs": {
         "recorded_at": "sample"
       },
       "locale": "en-US",
-      "logical_expected": "spot-check failed ⁨sample⁩ ago",
+      "logical_expected": "spot-check failed · ⁨sample⁩",
       "message_id": "journal.window.backup.age.check.failed.clock",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.backup.age.check.failed.clock\", &[(\"recorded_at\", Value::String(\"sample\"))])",
@@ -303142,13 +303142,13 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "spot-check couldn't run ⁨sample⁩ ago",
+      "expected": "spot-check couldn't run · ⁨sample⁩",
       "folder": null,
       "inputs": {
         "recorded_at": "sample"
       },
       "locale": "en-US",
-      "logical_expected": "spot-check couldn't run ⁨sample⁩ ago",
+      "logical_expected": "spot-check couldn't run · ⁨sample⁩",
       "message_id": "journal.window.backup.age.check.skipped.clock",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.backup.age.check.skipped.clock\", &[(\"recorded_at\", Value::String(\"sample\"))])",
@@ -303444,13 +303444,13 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "⁨sample⁩ ago",
+      "expected": "sample",
       "folder": null,
       "inputs": {
         "recorded_at": "sample"
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ ago",
+      "logical_expected": "sample",
       "message_id": "journal.window.backup.age.elapsed.clock",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.backup.age.elapsed.clock\", &[(\"recorded_at\", Value::String(\"sample\"))])",
@@ -318438,13 +318438,13 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "⁨sample⁩ · Apple Health and Oura and Strava",
+      "expected": "⁨sample⁩ · Apple Health, Oura and Strava",
       "folder": null,
       "inputs": {
         "date": "sample"
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ · Apple Health and Oura and Strava",
+      "logical_expected": "⁨sample⁩ · Apple Health, Oura and Strava",
       "message_id": "journal.window.body.grid.source.all",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.body.grid.source.all\", &[(\"date\", Value::String(\"sample\"))])",
@@ -319603,7 +319603,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "still running: ⁨sample⁩ of ⁨sample⁩ days done.",
+      "expected": "still running: ⁨sample⁩ of ⁨sample⁩ day done.",
       "folder": null,
       "inputs": {
         "done_days": "sample",
@@ -319612,7 +319612,7 @@
         "total_quantity": 1
       },
       "locale": "en-US",
-      "logical_expected": "still running: ⁨sample⁩ of ⁨sample⁩ days done.",
+      "logical_expected": "still running: ⁨sample⁩ of ⁨sample⁩ day done.",
       "message_id": "journal.window.body.import.progress.running.days",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.body.import.progress.running.days\", &[(\"done_days\", Value::String(\"sample\")), (\"done_quantity\", Value::Cardinal(0)), (\"total_days\", Value::String(\"sample\")), (\"total_quantity\", Value::Cardinal(1))])",
@@ -319845,7 +319845,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "stopped partway: ⁨sample⁩ of ⁨sample⁩ days done.",
+      "expected": "stopped partway: ⁨sample⁩ of ⁨sample⁩ day done.",
       "folder": null,
       "inputs": {
         "done_days": "sample",
@@ -319854,7 +319854,7 @@
         "total_quantity": 1
       },
       "locale": "en-US",
-      "logical_expected": "stopped partway: ⁨sample⁩ of ⁨sample⁩ days done.",
+      "logical_expected": "stopped partway: ⁨sample⁩ of ⁨sample⁩ day done.",
       "message_id": "journal.window.body.import.progress.stopped.days",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.body.import.progress.stopped.days\", &[(\"done_days\", Value::String(\"sample\")), (\"done_quantity\", Value::Cardinal(0)), (\"total_days\", Value::String(\"sample\")), (\"total_quantity\", Value::Cardinal(1))])",
@@ -339107,7 +339107,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "⁨sample⁩ of ⁨sample⁩ entities",
+      "expected": "⁨sample⁩ of ⁨⁨sample⁩ entities⁩",
       "folder": null,
       "inputs": {
         "matched": "sample",
@@ -339116,7 +339116,7 @@
         "total_quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ of ⁨sample⁩ entities",
+      "logical_expected": "⁨sample⁩ of ⁨⁨sample⁩ entities⁩",
       "message_id": "journal.window.entities.list.results.count",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.entities.list.results.count\", &[(\"matched\", Value::String(\"sample\")), (\"matched_quantity\", Value::Cardinal(0)), (\"total\", Value::String(\"sample\")), (\"total_quantity\", Value::Cardinal(0))])",
@@ -339163,7 +339163,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "⁨sample⁩ of ⁨sample⁩ entities",
+      "expected": "⁨sample⁩ of ⁨⁨sample⁩ entity⁩",
       "folder": null,
       "inputs": {
         "matched": "sample",
@@ -339172,7 +339172,7 @@
         "total_quantity": 1
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ of ⁨sample⁩ entities",
+      "logical_expected": "⁨sample⁩ of ⁨⁨sample⁩ entity⁩",
       "message_id": "journal.window.entities.list.results.count",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.entities.list.results.count\", &[(\"matched\", Value::String(\"sample\")), (\"matched_quantity\", Value::Cardinal(0)), (\"total\", Value::String(\"sample\")), (\"total_quantity\", Value::Cardinal(1))])",
@@ -339219,7 +339219,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "⁨sample⁩ of ⁨sample⁩ entities",
+      "expected": "⁨sample⁩ of ⁨⁨sample⁩ entities⁩",
       "folder": null,
       "inputs": {
         "matched": "sample",
@@ -339228,7 +339228,7 @@
         "total_quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ of ⁨sample⁩ entities",
+      "logical_expected": "⁨sample⁩ of ⁨⁨sample⁩ entities⁩",
       "message_id": "journal.window.entities.list.results.count",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.entities.list.results.count\", &[(\"matched\", Value::String(\"sample\")), (\"matched_quantity\", Value::Cardinal(1)), (\"total\", Value::String(\"sample\")), (\"total_quantity\", Value::Cardinal(0))])",
@@ -339585,7 +339585,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "kept ⁨sample⁩ of ⁨sample⁩ pairs separate. ⁨sample⁩ are still listed.",
+      "expected": "kept ⁨sample⁩ of ⁨⁨sample⁩ pairs⁩ separate. ⁨sample⁩ are still listed.",
       "folder": null,
       "inputs": {
         "failed": "sample",
@@ -339596,7 +339596,7 @@
         "total_quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "kept ⁨sample⁩ of ⁨sample⁩ pairs separate. ⁨sample⁩ are still listed.",
+      "logical_expected": "kept ⁨sample⁩ of ⁨⁨sample⁩ pairs⁩ separate. ⁨sample⁩ are still listed.",
       "message_id": "journal.window.entities.merge.keep.partial",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.entities.merge.keep.partial\", &[(\"failed\", Value::String(\"sample\")), (\"failed_quantity\", Value::Cardinal(0)), (\"processed\", Value::String(\"sample\")), (\"processed_quantity\", Value::Cardinal(0)), (\"total\", Value::String(\"sample\")), (\"total_quantity\", Value::Cardinal(0))])",
@@ -339653,7 +339653,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "kept ⁨sample⁩ of ⁨sample⁩ pairs separate. ⁨sample⁩ are still listed.",
+      "expected": "kept ⁨sample⁩ of ⁨⁨sample⁩ pair⁩ separate. ⁨sample⁩ are still listed.",
       "folder": null,
       "inputs": {
         "failed": "sample",
@@ -339664,7 +339664,7 @@
         "total_quantity": 1
       },
       "locale": "en-US",
-      "logical_expected": "kept ⁨sample⁩ of ⁨sample⁩ pairs separate. ⁨sample⁩ are still listed.",
+      "logical_expected": "kept ⁨sample⁩ of ⁨⁨sample⁩ pair⁩ separate. ⁨sample⁩ are still listed.",
       "message_id": "journal.window.entities.merge.keep.partial",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.entities.merge.keep.partial\", &[(\"failed\", Value::String(\"sample\")), (\"failed_quantity\", Value::Cardinal(0)), (\"processed\", Value::String(\"sample\")), (\"processed_quantity\", Value::Cardinal(0)), (\"total\", Value::String(\"sample\")), (\"total_quantity\", Value::Cardinal(1))])",
@@ -339721,7 +339721,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "kept ⁨sample⁩ of ⁨sample⁩ pairs separate. ⁨sample⁩ are still listed.",
+      "expected": "kept ⁨sample⁩ of ⁨⁨sample⁩ pairs⁩ separate. ⁨sample⁩ are still listed.",
       "folder": null,
       "inputs": {
         "failed": "sample",
@@ -339732,7 +339732,7 @@
         "total_quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "kept ⁨sample⁩ of ⁨sample⁩ pairs separate. ⁨sample⁩ are still listed.",
+      "logical_expected": "kept ⁨sample⁩ of ⁨⁨sample⁩ pairs⁩ separate. ⁨sample⁩ are still listed.",
       "message_id": "journal.window.entities.merge.keep.partial",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.entities.merge.keep.partial\", &[(\"failed\", Value::String(\"sample\")), (\"failed_quantity\", Value::Cardinal(0)), (\"processed\", Value::String(\"sample\")), (\"processed_quantity\", Value::Cardinal(1)), (\"total\", Value::String(\"sample\")), (\"total_quantity\", Value::Cardinal(0))])",
@@ -339789,7 +339789,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "kept ⁨sample⁩ of ⁨sample⁩ pairs separate. 1 is still listed.",
+      "expected": "kept ⁨sample⁩ of ⁨⁨sample⁩ pairs⁩ separate. 1 is still listed.",
       "folder": null,
       "inputs": {
         "failed": "sample",
@@ -339800,7 +339800,7 @@
         "total_quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "kept ⁨sample⁩ of ⁨sample⁩ pairs separate. 1 is still listed.",
+      "logical_expected": "kept ⁨sample⁩ of ⁨⁨sample⁩ pairs⁩ separate. 1 is still listed.",
       "message_id": "journal.window.entities.merge.keep.partial",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.entities.merge.keep.partial\", &[(\"failed\", Value::String(\"sample\")), (\"failed_quantity\", Value::Cardinal(1)), (\"processed\", Value::String(\"sample\")), (\"processed_quantity\", Value::Cardinal(0)), (\"total\", Value::String(\"sample\")), (\"total_quantity\", Value::Cardinal(0))])",
@@ -339945,7 +339945,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "merged ⁨sample⁩ of ⁨sample⁩ pairs. ⁨sample⁩ couldn't be merged.",
+      "expected": "merged ⁨sample⁩ of ⁨⁨sample⁩ pairs⁩. ⁨sample⁩ couldn't be merged.",
       "folder": null,
       "inputs": {
         "failed": "sample",
@@ -339956,7 +339956,7 @@
         "total_quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "merged ⁨sample⁩ of ⁨sample⁩ pairs. ⁨sample⁩ couldn't be merged.",
+      "logical_expected": "merged ⁨sample⁩ of ⁨⁨sample⁩ pairs⁩. ⁨sample⁩ couldn't be merged.",
       "message_id": "journal.window.entities.merge.merge.partial",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.entities.merge.merge.partial\", &[(\"failed\", Value::String(\"sample\")), (\"failed_quantity\", Value::Cardinal(0)), (\"processed\", Value::String(\"sample\")), (\"processed_quantity\", Value::Cardinal(0)), (\"total\", Value::String(\"sample\")), (\"total_quantity\", Value::Cardinal(0))])",
@@ -340013,7 +340013,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "merged ⁨sample⁩ of ⁨sample⁩ pairs. ⁨sample⁩ couldn't be merged.",
+      "expected": "merged ⁨sample⁩ of ⁨⁨sample⁩ pair⁩. ⁨sample⁩ couldn't be merged.",
       "folder": null,
       "inputs": {
         "failed": "sample",
@@ -340024,7 +340024,7 @@
         "total_quantity": 1
       },
       "locale": "en-US",
-      "logical_expected": "merged ⁨sample⁩ of ⁨sample⁩ pairs. ⁨sample⁩ couldn't be merged.",
+      "logical_expected": "merged ⁨sample⁩ of ⁨⁨sample⁩ pair⁩. ⁨sample⁩ couldn't be merged.",
       "message_id": "journal.window.entities.merge.merge.partial",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.entities.merge.merge.partial\", &[(\"failed\", Value::String(\"sample\")), (\"failed_quantity\", Value::Cardinal(0)), (\"processed\", Value::String(\"sample\")), (\"processed_quantity\", Value::Cardinal(0)), (\"total\", Value::String(\"sample\")), (\"total_quantity\", Value::Cardinal(1))])",
@@ -340081,7 +340081,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "merged ⁨sample⁩ of ⁨sample⁩ pairs. ⁨sample⁩ couldn't be merged.",
+      "expected": "merged ⁨sample⁩ of ⁨⁨sample⁩ pairs⁩. ⁨sample⁩ couldn't be merged.",
       "folder": null,
       "inputs": {
         "failed": "sample",
@@ -340092,7 +340092,7 @@
         "total_quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "merged ⁨sample⁩ of ⁨sample⁩ pairs. ⁨sample⁩ couldn't be merged.",
+      "logical_expected": "merged ⁨sample⁩ of ⁨⁨sample⁩ pairs⁩. ⁨sample⁩ couldn't be merged.",
       "message_id": "journal.window.entities.merge.merge.partial",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.entities.merge.merge.partial\", &[(\"failed\", Value::String(\"sample\")), (\"failed_quantity\", Value::Cardinal(0)), (\"processed\", Value::String(\"sample\")), (\"processed_quantity\", Value::Cardinal(1)), (\"total\", Value::String(\"sample\")), (\"total_quantity\", Value::Cardinal(0))])",
@@ -340149,7 +340149,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "merged ⁨sample⁩ of ⁨sample⁩ pairs. 1 couldn't be merged.",
+      "expected": "merged ⁨sample⁩ of ⁨⁨sample⁩ pairs⁩. 1 couldn't be merged.",
       "folder": null,
       "inputs": {
         "failed": "sample",
@@ -340160,7 +340160,7 @@
         "total_quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "merged ⁨sample⁩ of ⁨sample⁩ pairs. 1 couldn't be merged.",
+      "logical_expected": "merged ⁨sample⁩ of ⁨⁨sample⁩ pairs⁩. 1 couldn't be merged.",
       "message_id": "journal.window.entities.merge.merge.partial",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.entities.merge.merge.partial\", &[(\"failed\", Value::String(\"sample\")), (\"failed_quantity\", Value::Cardinal(1)), (\"processed\", Value::String(\"sample\")), (\"processed_quantity\", Value::Cardinal(0)), (\"total\", Value::String(\"sample\")), (\"total_quantity\", Value::Cardinal(0))])",
@@ -341197,7 +341197,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "showing the ⁨sample⁩ most recent of ⁨sample⁩ moments",
+      "expected": "showing the ⁨sample⁩ most recent of ⁨⁨sample⁩ moments⁩",
       "folder": null,
       "inputs": {
         "total": "sample",
@@ -341206,7 +341206,7 @@
         "visible_quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "showing the ⁨sample⁩ most recent of ⁨sample⁩ moments",
+      "logical_expected": "showing the ⁨sample⁩ most recent of ⁨⁨sample⁩ moments⁩",
       "message_id": "journal.window.entities.observation.disclosure",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.entities.observation.disclosure\", &[(\"total\", Value::String(\"sample\")), (\"total_quantity\", Value::Cardinal(0)), (\"visible\", Value::String(\"sample\")), (\"visible_quantity\", Value::Cardinal(0))])",
@@ -341253,7 +341253,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "showing the ⁨sample⁩ most recent of ⁨sample⁩ moments",
+      "expected": "showing the ⁨sample⁩ most recent of ⁨⁨sample⁩ moments⁩",
       "folder": null,
       "inputs": {
         "total": "sample",
@@ -341262,7 +341262,7 @@
         "visible_quantity": 1
       },
       "locale": "en-US",
-      "logical_expected": "showing the ⁨sample⁩ most recent of ⁨sample⁩ moments",
+      "logical_expected": "showing the ⁨sample⁩ most recent of ⁨⁨sample⁩ moments⁩",
       "message_id": "journal.window.entities.observation.disclosure",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.entities.observation.disclosure\", &[(\"total\", Value::String(\"sample\")), (\"total_quantity\", Value::Cardinal(0)), (\"visible\", Value::String(\"sample\")), (\"visible_quantity\", Value::Cardinal(1))])",
@@ -341309,7 +341309,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "showing the ⁨sample⁩ most recent of ⁨sample⁩ moments",
+      "expected": "showing the ⁨sample⁩ most recent of ⁨⁨sample⁩ moment⁩",
       "folder": null,
       "inputs": {
         "total": "sample",
@@ -341318,7 +341318,7 @@
         "visible_quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "showing the ⁨sample⁩ most recent of ⁨sample⁩ moments",
+      "logical_expected": "showing the ⁨sample⁩ most recent of ⁨⁨sample⁩ moment⁩",
       "message_id": "journal.window.entities.observation.disclosure",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.entities.observation.disclosure\", &[(\"total\", Value::String(\"sample\")), (\"total_quantity\", Value::Cardinal(1)), (\"visible\", Value::String(\"sample\")), (\"visible_quantity\", Value::Cardinal(0))])",
@@ -359537,7 +359537,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "speaker labels updated: ⁨sample⁩ labels, ⁨⁨sample⁩ corrections⁩",
+      "expected": "speaker labels updated: ⁨sample⁩ label, ⁨⁨sample⁩ corrections⁩",
       "folder": null,
       "inputs": {
         "corrections": "sample",
@@ -359546,7 +359546,7 @@
         "labels_quantity": 1
       },
       "locale": "en-US",
-      "logical_expected": "speaker labels updated: ⁨sample⁩ labels, ⁨⁨sample⁩ corrections⁩",
+      "logical_expected": "speaker labels updated: ⁨sample⁩ label, ⁨⁨sample⁩ corrections⁩",
       "message_id": "journal.window.facets.curation.preview.speaker.segments",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.facets.curation.preview.speaker.segments\", &[(\"corrections\", Value::String(\"sample\")), (\"corrections_quantity\", Value::Cardinal(0)), (\"labels\", Value::String(\"sample\")), (\"labels_quantity\", Value::Cardinal(1))])",
@@ -359593,7 +359593,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "speaker labels updated: ⁨sample⁩ labels, ⁨⁨sample⁩ corrections⁩",
+      "expected": "speaker labels updated: ⁨sample⁩ labels, ⁨⁨sample⁩ correction⁩",
       "folder": null,
       "inputs": {
         "corrections": "sample",
@@ -359602,7 +359602,7 @@
         "labels_quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "speaker labels updated: ⁨sample⁩ labels, ⁨⁨sample⁩ corrections⁩",
+      "logical_expected": "speaker labels updated: ⁨sample⁩ labels, ⁨⁨sample⁩ correction⁩",
       "message_id": "journal.window.facets.curation.preview.speaker.segments",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.facets.curation.preview.speaker.segments\", &[(\"corrections\", Value::String(\"sample\")), (\"corrections_quantity\", Value::Cardinal(1)), (\"labels\", Value::String(\"sample\")), (\"labels_quantity\", Value::Cardinal(0))])",
@@ -372211,7 +372211,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "⁨sample⁩ recordings and ⁨⁨sample⁩ daily outputs left⁩",
+      "expected": "⁨sample⁩ recording and ⁨⁨sample⁩ daily outputs left⁩",
       "folder": null,
       "inputs": {
         "output_quantity": 0,
@@ -372220,7 +372220,7 @@
         "recordings": "sample"
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ recordings and ⁨⁨sample⁩ daily outputs left⁩",
+      "logical_expected": "⁨sample⁩ recording and ⁨⁨sample⁩ daily outputs left⁩",
       "message_id": "journal.window.health.history.counts",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.health.history.counts\", &[(\"output_quantity\", Value::Cardinal(0)), (\"outputs\", Value::String(\"sample\")), (\"recording_quantity\", Value::Cardinal(1)), (\"recordings\", Value::String(\"sample\"))])",
@@ -372267,7 +372267,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "⁨sample⁩ recordings and ⁨⁨sample⁩ daily outputs left⁩",
+      "expected": "⁨sample⁩ recordings and ⁨⁨sample⁩ daily output left⁩",
       "folder": null,
       "inputs": {
         "output_quantity": 1,
@@ -372276,7 +372276,7 @@
         "recordings": "sample"
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ recordings and ⁨⁨sample⁩ daily outputs left⁩",
+      "logical_expected": "⁨sample⁩ recordings and ⁨⁨sample⁩ daily output left⁩",
       "message_id": "journal.window.health.history.counts",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.health.history.counts\", &[(\"output_quantity\", Value::Cardinal(1)), (\"outputs\", Value::String(\"sample\")), (\"recording_quantity\", Value::Cardinal(0)), (\"recordings\", Value::String(\"sample\"))])",
@@ -373318,7 +373318,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "── ⁨sample⁩ ── (⁨sample⁩ lines, ★ ⁨⁨sample⁩ errors⁩)",
+      "expected": "── ⁨sample⁩ ── (⁨sample⁩ line, ★ ⁨⁨sample⁩ errors⁩)",
       "folder": null,
       "inputs": {
         "error_quantity": 0,
@@ -373328,7 +373328,7 @@
         "service": "sample"
       },
       "locale": "en-US",
-      "logical_expected": "── ⁨sample⁩ ── (⁨sample⁩ lines, ★ ⁨⁨sample⁩ errors⁩)",
+      "logical_expected": "── ⁨sample⁩ ── (⁨sample⁩ line, ★ ⁨⁨sample⁩ errors⁩)",
       "message_id": "journal.window.health.logs.service.collapsed",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.health.logs.service.collapsed\", &[(\"error_quantity\", Value::Cardinal(0)), (\"errors\", Value::String(\"sample\")), (\"line_quantity\", Value::Cardinal(1)), (\"lines\", Value::String(\"sample\")), (\"service\", Value::String(\"sample\"))])",
@@ -373380,7 +373380,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "── ⁨sample⁩ ── (⁨sample⁩ lines, ★ ⁨⁨sample⁩ errors⁩)",
+      "expected": "── ⁨sample⁩ ── (⁨sample⁩ lines, ★ ⁨⁨sample⁩ error⁩)",
       "folder": null,
       "inputs": {
         "error_quantity": 1,
@@ -373390,7 +373390,7 @@
         "service": "sample"
       },
       "locale": "en-US",
-      "logical_expected": "── ⁨sample⁩ ── (⁨sample⁩ lines, ★ ⁨⁨sample⁩ errors⁩)",
+      "logical_expected": "── ⁨sample⁩ ── (⁨sample⁩ lines, ★ ⁨⁨sample⁩ error⁩)",
       "message_id": "journal.window.health.logs.service.collapsed",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.health.logs.service.collapsed\", &[(\"error_quantity\", Value::Cardinal(1)), (\"errors\", Value::String(\"sample\")), (\"line_quantity\", Value::Cardinal(0)), (\"lines\", Value::String(\"sample\")), (\"service\", Value::String(\"sample\"))])",
@@ -375009,7 +375009,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "last search check ⁨sample⁩ hours ago: ⁨⁨sample⁩ updated⁩, ⁨⁨sample⁩ removed⁩",
+      "expected": "last search check ⁨sample⁩ hour ago: ⁨⁨sample⁩ updated⁩, ⁨⁨sample⁩ removed⁩",
       "folder": null,
       "inputs": {
         "hour_quantity": 1,
@@ -375020,7 +375020,7 @@
         "updated_quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "last search check ⁨sample⁩ hours ago: ⁨⁨sample⁩ updated⁩, ⁨⁨sample⁩ removed⁩",
+      "logical_expected": "last search check ⁨sample⁩ hour ago: ⁨⁨sample⁩ updated⁩, ⁨⁨sample⁩ removed⁩",
       "message_id": "journal.window.health.search.last.check.elapsed",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.health.search.last.check.elapsed\", &[(\"hour_quantity\", Value::Cardinal(1)), (\"hours\", Value::String(\"sample\")), (\"removed\", Value::String(\"sample\")), (\"removed_quantity\", Value::Cardinal(0)), (\"updated\", Value::String(\"sample\")), (\"updated_quantity\", Value::Cardinal(0))])",
@@ -383140,7 +383140,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "⁨sample⁩: ⁨sample⁩ recordings ready, ⁨⁨sample⁩ left⁩; ⁨⁨sample⁩ daily outputs ready⁩, ⁨⁨sample⁩ left⁩.",
+      "expected": "⁨sample⁩: ⁨sample⁩ recording ready, ⁨⁨sample⁩ left⁩; ⁨⁨sample⁩ daily outputs ready⁩, ⁨⁨sample⁩ left⁩.",
       "folder": null,
       "inputs": {
         "band": "sample",
@@ -383154,7 +383154,7 @@
         "recordings_ready_quantity": 1
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩: ⁨sample⁩ recordings ready, ⁨⁨sample⁩ left⁩; ⁨⁨sample⁩ daily outputs ready⁩, ⁨⁨sample⁩ left⁩.",
+      "logical_expected": "⁨sample⁩: ⁨sample⁩ recording ready, ⁨⁨sample⁩ left⁩; ⁨⁨sample⁩ daily outputs ready⁩, ⁨⁨sample⁩ left⁩.",
       "message_id": "journal.window.health.work.band.progress",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.health.work.band.progress\", &[(\"band\", Value::String(\"sample\")), (\"outputs_left\", Value::String(\"sample\")), (\"outputs_left_quantity\", Value::Cardinal(0)), (\"outputs_ready\", Value::String(\"sample\")), (\"outputs_ready_quantity\", Value::Cardinal(0)), (\"recordings_left\", Value::String(\"sample\")), (\"recordings_left_quantity\", Value::Cardinal(0)), (\"recordings_ready\", Value::String(\"sample\")), (\"recordings_ready_quantity\", Value::Cardinal(1))])",
@@ -383312,7 +383312,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "⁨sample⁩: ⁨sample⁩ recordings ready, ⁨⁨sample⁩ left⁩; ⁨⁨sample⁩ daily outputs ready⁩, ⁨⁨sample⁩ left⁩.",
+      "expected": "⁨sample⁩: ⁨sample⁩ recordings ready, ⁨⁨sample⁩ left⁩; ⁨⁨sample⁩ daily output ready⁩, ⁨⁨sample⁩ left⁩.",
       "folder": null,
       "inputs": {
         "band": "sample",
@@ -383326,7 +383326,7 @@
         "recordings_ready_quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩: ⁨sample⁩ recordings ready, ⁨⁨sample⁩ left⁩; ⁨⁨sample⁩ daily outputs ready⁩, ⁨⁨sample⁩ left⁩.",
+      "logical_expected": "⁨sample⁩: ⁨sample⁩ recordings ready, ⁨⁨sample⁩ left⁩; ⁨⁨sample⁩ daily output ready⁩, ⁨⁨sample⁩ left⁩.",
       "message_id": "journal.window.health.work.band.progress",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.health.work.band.progress\", &[(\"band\", Value::String(\"sample\")), (\"outputs_left\", Value::String(\"sample\")), (\"outputs_left_quantity\", Value::Cardinal(0)), (\"outputs_ready\", Value::String(\"sample\")), (\"outputs_ready_quantity\", Value::Cardinal(1)), (\"recordings_left\", Value::String(\"sample\")), (\"recordings_left_quantity\", Value::Cardinal(0)), (\"recordings_ready\", Value::String(\"sample\")), (\"recordings_ready_quantity\", Value::Cardinal(0))])",
@@ -383581,7 +383581,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "⁨sample⁩: ⁨sample⁩ recordings ready, ⁨⁨sample⁩ left⁩; ⁨⁨sample⁩ daily outputs ready⁩, ⁨⁨sample⁩ left⁩; ⁨sample⁩.",
+      "expected": "⁨sample⁩: ⁨sample⁩ recording ready, ⁨⁨sample⁩ left⁩; ⁨⁨sample⁩ daily outputs ready⁩, ⁨⁨sample⁩ left⁩; ⁨sample⁩.",
       "folder": null,
       "inputs": {
         "band": "sample",
@@ -383596,7 +383596,7 @@
         "recordings_ready_quantity": 1
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩: ⁨sample⁩ recordings ready, ⁨⁨sample⁩ left⁩; ⁨⁨sample⁩ daily outputs ready⁩, ⁨⁨sample⁩ left⁩; ⁨sample⁩.",
+      "logical_expected": "⁨sample⁩: ⁨sample⁩ recording ready, ⁨⁨sample⁩ left⁩; ⁨⁨sample⁩ daily outputs ready⁩, ⁨⁨sample⁩ left⁩; ⁨sample⁩.",
       "message_id": "journal.window.health.work.band.progress.details",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.health.work.band.progress.details\", &[(\"band\", Value::String(\"sample\")), (\"details\", Value::String(\"sample\")), (\"outputs_left\", Value::String(\"sample\")), (\"outputs_left_quantity\", Value::Cardinal(0)), (\"outputs_ready\", Value::String(\"sample\")), (\"outputs_ready_quantity\", Value::Cardinal(0)), (\"recordings_left\", Value::String(\"sample\")), (\"recordings_left_quantity\", Value::Cardinal(0)), (\"recordings_ready\", Value::String(\"sample\")), (\"recordings_ready_quantity\", Value::Cardinal(1))])",
@@ -383765,7 +383765,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "⁨sample⁩: ⁨sample⁩ recordings ready, ⁨⁨sample⁩ left⁩; ⁨⁨sample⁩ daily outputs ready⁩, ⁨⁨sample⁩ left⁩; ⁨sample⁩.",
+      "expected": "⁨sample⁩: ⁨sample⁩ recordings ready, ⁨⁨sample⁩ left⁩; ⁨⁨sample⁩ daily output ready⁩, ⁨⁨sample⁩ left⁩; ⁨sample⁩.",
       "folder": null,
       "inputs": {
         "band": "sample",
@@ -383780,7 +383780,7 @@
         "recordings_ready_quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩: ⁨sample⁩ recordings ready, ⁨⁨sample⁩ left⁩; ⁨⁨sample⁩ daily outputs ready⁩, ⁨⁨sample⁩ left⁩; ⁨sample⁩.",
+      "logical_expected": "⁨sample⁩: ⁨sample⁩ recordings ready, ⁨⁨sample⁩ left⁩; ⁨⁨sample⁩ daily output ready⁩, ⁨⁨sample⁩ left⁩; ⁨sample⁩.",
       "message_id": "journal.window.health.work.band.progress.details",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.health.work.band.progress.details\", &[(\"band\", Value::String(\"sample\")), (\"details\", Value::String(\"sample\")), (\"outputs_left\", Value::String(\"sample\")), (\"outputs_left_quantity\", Value::Cardinal(0)), (\"outputs_ready\", Value::String(\"sample\")), (\"outputs_ready_quantity\", Value::Cardinal(1)), (\"recordings_left\", Value::String(\"sample\")), (\"recordings_left_quantity\", Value::Cardinal(0)), (\"recordings_ready\", Value::String(\"sample\")), (\"recordings_ready_quantity\", Value::Cardinal(0))])",
@@ -384350,7 +384350,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "⁨sample⁩ of ⁨sample⁩ days checked (⁨sample⁩). the inspection covers the whole journal.",
+      "expected": "⁨sample⁩ of ⁨sample⁩ day checked (⁨sample⁩). the inspection covers the whole journal.",
       "folder": null,
       "inputs": {
         "checked": "sample",
@@ -384360,7 +384360,7 @@
         "total": "sample"
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ of ⁨sample⁩ days checked (⁨sample⁩). the inspection covers the whole journal.",
+      "logical_expected": "⁨sample⁩ of ⁨sample⁩ day checked (⁨sample⁩). the inspection covers the whole journal.",
       "message_id": "journal.window.health.work.inspection.complete",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.health.work.inspection.complete\", &[(\"checked\", Value::String(\"sample\")), (\"checked_quantity\", Value::Cardinal(0)), (\"quantity\", Value::Cardinal(1)), (\"range\", Value::String(\"sample\")), (\"total\", Value::String(\"sample\"))])",
@@ -384536,7 +384536,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "⁨sample⁩ of ⁨sample⁩ days checked (⁨sample⁩). the inspection is incomplete.",
+      "expected": "⁨sample⁩ of ⁨sample⁩ day checked (⁨sample⁩). the inspection is incomplete.",
       "folder": null,
       "inputs": {
         "checked": "sample",
@@ -384546,7 +384546,7 @@
         "total": "sample"
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ of ⁨sample⁩ days checked (⁨sample⁩). the inspection is incomplete.",
+      "logical_expected": "⁨sample⁩ of ⁨sample⁩ day checked (⁨sample⁩). the inspection is incomplete.",
       "message_id": "journal.window.health.work.inspection.incomplete",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.health.work.inspection.incomplete\", &[(\"checked\", Value::String(\"sample\")), (\"checked_quantity\", Value::Cardinal(0)), (\"quantity\", Value::Cardinal(1)), (\"range\", Value::String(\"sample\")), (\"total\", Value::String(\"sample\"))])",
@@ -384733,7 +384733,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "⁨sample⁩ of ⁨sample⁩ days checked (⁨sample⁩). last known progress, checked ⁨sample⁩.",
+      "expected": "⁨sample⁩ of ⁨sample⁩ day checked (⁨sample⁩). last known progress, checked ⁨sample⁩.",
       "folder": null,
       "inputs": {
         "checked": "sample",
@@ -384744,7 +384744,7 @@
         "total": "sample"
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ of ⁨sample⁩ days checked (⁨sample⁩). last known progress, checked ⁨sample⁩.",
+      "logical_expected": "⁨sample⁩ of ⁨sample⁩ day checked (⁨sample⁩). last known progress, checked ⁨sample⁩.",
       "message_id": "journal.window.health.work.inspection.stale",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.health.work.inspection.stale\", &[(\"checked\", Value::String(\"sample\")), (\"checked_at\", Value::String(\"sample\")), (\"checked_quantity\", Value::Cardinal(0)), (\"quantity\", Value::Cardinal(1)), (\"range\", Value::String(\"sample\")), (\"total\", Value::String(\"sample\"))])",
@@ -387972,13 +387972,13 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "⁨sample⁩ hasn't added to your journal in just now.",
+      "expected": "⁨sample⁩ last added to your journal just now.",
       "folder": null,
       "inputs": {
         "device": "sample"
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ hasn't added to your journal in just now.",
+      "logical_expected": "⁨sample⁩ last added to your journal just now.",
       "message_id": "journal.window.home.health.quiet.elapsed.just.now",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.home.health.quiet.elapsed.just.now\", &[(\"device\", Value::String(\"sample\"))])",
@@ -435045,7 +435045,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "map of around ⁨sample⁩: ⁨sample⁩ shaded areas, each ⁨sample⁩ across. the same areas are listed under areas this month.",
+      "expected": "map of the area around ⁨sample⁩: ⁨sample⁩ shaded areas, each ⁨sample⁩ across. the same areas are listed under areas this month.",
       "folder": null,
       "inputs": {
         "area": "sample",
@@ -435054,7 +435054,7 @@
         "size": "sample"
       },
       "locale": "en-US",
-      "logical_expected": "map of around ⁨sample⁩: ⁨sample⁩ shaded areas, each ⁨sample⁩ across. the same areas are listed under areas this month.",
+      "logical_expected": "map of the area around ⁨sample⁩: ⁨sample⁩ shaded areas, each ⁨sample⁩ across. the same areas are listed under areas this month.",
       "message_id": "journal.window.map.month.map.area.summary.home",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.map.month.map.area.summary.home\", &[(\"area\", Value::String(\"sample\")), (\"shaded_areas\", Value::String(\"sample\")), (\"shaded_quantity\", Value::Cardinal(0)), (\"size\", Value::String(\"sample\"))])",
@@ -435315,7 +435315,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "map of around ⁨sample⁩: ⁨sample⁩ shaded areas, each ⁨sample⁩ across, holding the ⁨sample⁩ areas listed under areas this month.",
+      "expected": "map of the area around ⁨sample⁩: ⁨sample⁩ shaded areas, each ⁨sample⁩ across, holding the ⁨sample⁩ areas listed under areas this month.",
       "folder": null,
       "inputs": {
         "area": "sample",
@@ -435326,7 +435326,7 @@
         "size": "sample"
       },
       "locale": "en-US",
-      "logical_expected": "map of around ⁨sample⁩: ⁨sample⁩ shaded areas, each ⁨sample⁩ across, holding the ⁨sample⁩ areas listed under areas this month.",
+      "logical_expected": "map of the area around ⁨sample⁩: ⁨sample⁩ shaded areas, each ⁨sample⁩ across, holding the ⁨sample⁩ areas listed under areas this month.",
       "message_id": "journal.window.map.month.map.group.summary.home",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.map.month.map.group.summary.home\", &[(\"area\", Value::String(\"sample\")), (\"area_quantity\", Value::Cardinal(0)), (\"areas\", Value::String(\"sample\")), (\"shaded_areas\", Value::String(\"sample\")), (\"shaded_quantity\", Value::Cardinal(0)), (\"size\", Value::String(\"sample\"))])",
@@ -435383,7 +435383,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "map of around ⁨sample⁩: ⁨sample⁩ shaded area, each ⁨sample⁩ across, holding the ⁨sample⁩ areas listed under areas this month.",
+      "expected": "map of the area around ⁨sample⁩: ⁨sample⁩ shaded area, ⁨sample⁩ across, holding the ⁨sample⁩ areas listed under areas this month.",
       "folder": null,
       "inputs": {
         "area": "sample",
@@ -435394,7 +435394,7 @@
         "size": "sample"
       },
       "locale": "en-US",
-      "logical_expected": "map of around ⁨sample⁩: ⁨sample⁩ shaded area, each ⁨sample⁩ across, holding the ⁨sample⁩ areas listed under areas this month.",
+      "logical_expected": "map of the area around ⁨sample⁩: ⁨sample⁩ shaded area, ⁨sample⁩ across, holding the ⁨sample⁩ areas listed under areas this month.",
       "message_id": "journal.window.map.month.map.group.summary.home",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.map.month.map.group.summary.home\", &[(\"area\", Value::String(\"sample\")), (\"area_quantity\", Value::Cardinal(0)), (\"areas\", Value::String(\"sample\")), (\"shaded_areas\", Value::String(\"sample\")), (\"shaded_quantity\", Value::Cardinal(1)), (\"size\", Value::String(\"sample\"))])",
@@ -435451,7 +435451,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "map of around ⁨sample⁩: ⁨sample⁩ shaded areas, each ⁨sample⁩ across, holding the ⁨sample⁩ area listed under areas this month.",
+      "expected": "map of the area around ⁨sample⁩: ⁨sample⁩ shaded areas, each ⁨sample⁩ across, holding the ⁨sample⁩ area listed under areas this month.",
       "folder": null,
       "inputs": {
         "area": "sample",
@@ -435462,7 +435462,7 @@
         "size": "sample"
       },
       "locale": "en-US",
-      "logical_expected": "map of around ⁨sample⁩: ⁨sample⁩ shaded areas, each ⁨sample⁩ across, holding the ⁨sample⁩ area listed under areas this month.",
+      "logical_expected": "map of the area around ⁨sample⁩: ⁨sample⁩ shaded areas, each ⁨sample⁩ across, holding the ⁨sample⁩ area listed under areas this month.",
       "message_id": "journal.window.map.month.map.group.summary.home",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.map.month.map.group.summary.home\", &[(\"area\", Value::String(\"sample\")), (\"area_quantity\", Value::Cardinal(1)), (\"areas\", Value::String(\"sample\")), (\"shaded_areas\", Value::String(\"sample\")), (\"shaded_quantity\", Value::Cardinal(0)), (\"size\", Value::String(\"sample\"))])",
@@ -449579,7 +449579,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "showing the top ⁨sample⁩ of ⁨sample⁩ matches for this day.",
+      "expected": "showing the top ⁨sample⁩ of ⁨sample⁩ match for this day.",
       "folder": null,
       "inputs": {
         "match_count": "sample",
@@ -449588,7 +449588,7 @@
         "shown_quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "showing the top ⁨sample⁩ of ⁨sample⁩ matches for this day.",
+      "logical_expected": "showing the top ⁨sample⁩ of ⁨sample⁩ match for this day.",
       "message_id": "journal.window.search.count.results.shown.for.day",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.search.count.results.shown.for.day\", &[(\"match_count\", Value::String(\"sample\")), (\"match_quantity\", Value::Cardinal(1)), (\"shown_count\", Value::String(\"sample\")), (\"shown_quantity\", Value::Cardinal(0))])",
@@ -465708,7 +465708,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "⁨sample⁩ operational-log file(s) and ⁨⁨sample⁩ cache dir(s)⁩ (⁨sample⁩ B) would be deleted.",
+      "expected": "⁨sample⁩ operational-log file and ⁨⁨sample⁩ cache dir(s)⁩ (⁨sample⁩ B) would be deleted.",
       "folder": null,
       "inputs": {
         "bytes": "sample",
@@ -465718,7 +465718,7 @@
         "quantity": 1
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ operational-log file(s) and ⁨⁨sample⁩ cache dir(s)⁩ (⁨sample⁩ B) would be deleted.",
+      "logical_expected": "⁨sample⁩ operational-log file and ⁨⁨sample⁩ cache dir(s)⁩ (⁨sample⁩ B) would be deleted.",
       "message_id": "journal.window.settings.logs.preview.file.and.directory.count",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.settings.logs.preview.file.and.directory.count\", &[(\"bytes\", Value::String(\"sample\")), (\"directories\", Value::String(\"sample\")), (\"directory_quantity\", Value::Cardinal(0)), (\"files\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(1))])",
@@ -465770,7 +465770,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "⁨sample⁩ operational-log file(s) and ⁨⁨sample⁩ cache dir(s)⁩ (⁨sample⁩ B) would be deleted.",
+      "expected": "⁨sample⁩ operational-log file(s) and ⁨⁨sample⁩ cache dir⁩ (⁨sample⁩ B) would be deleted.",
       "folder": null,
       "inputs": {
         "bytes": "sample",
@@ -465780,7 +465780,7 @@
         "quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ operational-log file(s) and ⁨⁨sample⁩ cache dir(s)⁩ (⁨sample⁩ B) would be deleted.",
+      "logical_expected": "⁨sample⁩ operational-log file(s) and ⁨⁨sample⁩ cache dir⁩ (⁨sample⁩ B) would be deleted.",
       "message_id": "journal.window.settings.logs.preview.file.and.directory.count",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.settings.logs.preview.file.and.directory.count\", &[(\"bytes\", Value::String(\"sample\")), (\"directories\", Value::String(\"sample\")), (\"directory_quantity\", Value::Cardinal(1)), (\"files\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0))])",
@@ -465944,7 +465944,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "⁨sample⁩ operational-log file(s) and ⁨⁨sample⁩ cache dir(s)⁩ (⁨sample⁩ B) deleted.",
+      "expected": "⁨sample⁩ operational-log file and ⁨⁨sample⁩ cache dir(s)⁩ (⁨sample⁩ B) deleted.",
       "folder": null,
       "inputs": {
         "bytes": "sample",
@@ -465954,7 +465954,7 @@
         "quantity": 1
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ operational-log file(s) and ⁨⁨sample⁩ cache dir(s)⁩ (⁨sample⁩ B) deleted.",
+      "logical_expected": "⁨sample⁩ operational-log file and ⁨⁨sample⁩ cache dir(s)⁩ (⁨sample⁩ B) deleted.",
       "message_id": "journal.window.settings.logs.result.file.and.directory.count",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.settings.logs.result.file.and.directory.count\", &[(\"bytes\", Value::String(\"sample\")), (\"directories\", Value::String(\"sample\")), (\"directory_quantity\", Value::Cardinal(0)), (\"files\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(1))])",
@@ -466006,7 +466006,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "⁨sample⁩ operational-log file(s) and ⁨⁨sample⁩ cache dir(s)⁩ (⁨sample⁩ B) deleted.",
+      "expected": "⁨sample⁩ operational-log file(s) and ⁨⁨sample⁩ cache dir⁩ (⁨sample⁩ B) deleted.",
       "folder": null,
       "inputs": {
         "bytes": "sample",
@@ -466016,7 +466016,7 @@
         "quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ operational-log file(s) and ⁨⁨sample⁩ cache dir(s)⁩ (⁨sample⁩ B) deleted.",
+      "logical_expected": "⁨sample⁩ operational-log file(s) and ⁨⁨sample⁩ cache dir⁩ (⁨sample⁩ B) deleted.",
       "message_id": "journal.window.settings.logs.result.file.and.directory.count",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.settings.logs.result.file.and.directory.count\", &[(\"bytes\", Value::String(\"sample\")), (\"directories\", Value::String(\"sample\")), (\"directory_quantity\", Value::Cardinal(1)), (\"files\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0))])",
@@ -489897,7 +489897,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "⁨sample⁩ longer statements so far, needs ⁨sample⁩",
+      "expected": "⁨sample⁩ longer statement so far, needs ⁨sample⁩",
       "folder": null,
       "inputs": {
         "minimum": "sample",
@@ -489906,7 +489906,7 @@
         "quantity": 1
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ longer statements so far, needs ⁨sample⁩",
+      "logical_expected": "⁨sample⁩ longer statement so far, needs ⁨sample⁩",
       "message_id": "journal.window.shared.gate.drawer.statements.observed.and.required.count",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.shared.gate.drawer.statements.observed.and.required.count\", &[(\"minimum\", Value::String(\"sample\")), (\"minimum_quantity\", Value::Cardinal(0)), (\"observed\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(1))])",
@@ -504621,7 +504621,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "updating past conversations: ⁨sample⁩ of ⁨sample⁩ recordings",
+      "expected": "updating past conversations: ⁨sample⁩ of ⁨⁨sample⁩ recordings⁩",
       "folder": null,
       "inputs": {
         "completed": "sample",
@@ -504630,7 +504630,7 @@
         "total_quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "updating past conversations: ⁨sample⁩ of ⁨sample⁩ recordings",
+      "logical_expected": "updating past conversations: ⁨sample⁩ of ⁨⁨sample⁩ recordings⁩",
       "message_id": "journal.window.speakers.owner.relabel.progress",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.relabel.progress\", &[(\"completed\", Value::String(\"sample\")), (\"completed_quantity\", Value::Cardinal(0)), (\"total\", Value::String(\"sample\")), (\"total_quantity\", Value::Cardinal(0))])",
@@ -504677,7 +504677,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "updating past conversations: ⁨sample⁩ of ⁨sample⁩ recordings",
+      "expected": "updating past conversations: ⁨sample⁩ of ⁨⁨sample⁩ recording⁩",
       "folder": null,
       "inputs": {
         "completed": "sample",
@@ -504686,7 +504686,7 @@
         "total_quantity": 1
       },
       "locale": "en-US",
-      "logical_expected": "updating past conversations: ⁨sample⁩ of ⁨sample⁩ recordings",
+      "logical_expected": "updating past conversations: ⁨sample⁩ of ⁨⁨sample⁩ recording⁩",
       "message_id": "journal.window.speakers.owner.relabel.progress",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.relabel.progress\", &[(\"completed\", Value::String(\"sample\")), (\"completed_quantity\", Value::Cardinal(0)), (\"total\", Value::String(\"sample\")), (\"total_quantity\", Value::Cardinal(1))])",
@@ -504733,7 +504733,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "updating past conversations: ⁨sample⁩ of ⁨sample⁩ recordings",
+      "expected": "updating past conversations: ⁨sample⁩ of ⁨⁨sample⁩ recordings⁩",
       "folder": null,
       "inputs": {
         "completed": "sample",
@@ -504742,7 +504742,7 @@
         "total_quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "updating past conversations: ⁨sample⁩ of ⁨sample⁩ recordings",
+      "logical_expected": "updating past conversations: ⁨sample⁩ of ⁨⁨sample⁩ recordings⁩",
       "message_id": "journal.window.speakers.owner.relabel.progress",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.relabel.progress\", &[(\"completed\", Value::String(\"sample\")), (\"completed_quantity\", Value::Cardinal(1)), (\"total\", Value::String(\"sample\")), (\"total_quantity\", Value::Cardinal(0))])",
@@ -504789,7 +504789,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "returning past conversations to unnamed voices: ⁨sample⁩ of ⁨sample⁩ recordings",
+      "expected": "returning past conversations to unnamed voices: ⁨sample⁩ of ⁨⁨sample⁩ recordings⁩",
       "folder": null,
       "inputs": {
         "completed": "sample",
@@ -504798,7 +504798,7 @@
         "total_quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "returning past conversations to unnamed voices: ⁨sample⁩ of ⁨sample⁩ recordings",
+      "logical_expected": "returning past conversations to unnamed voices: ⁨sample⁩ of ⁨⁨sample⁩ recordings⁩",
       "message_id": "journal.window.speakers.owner.relabel.undo.progress",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.relabel.undo.progress\", &[(\"completed\", Value::String(\"sample\")), (\"completed_quantity\", Value::Cardinal(0)), (\"total\", Value::String(\"sample\")), (\"total_quantity\", Value::Cardinal(0))])",
@@ -504845,7 +504845,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "returning past conversations to unnamed voices: ⁨sample⁩ of ⁨sample⁩ recordings",
+      "expected": "returning past conversations to unnamed voices: ⁨sample⁩ of ⁨⁨sample⁩ recording⁩",
       "folder": null,
       "inputs": {
         "completed": "sample",
@@ -504854,7 +504854,7 @@
         "total_quantity": 1
       },
       "locale": "en-US",
-      "logical_expected": "returning past conversations to unnamed voices: ⁨sample⁩ of ⁨sample⁩ recordings",
+      "logical_expected": "returning past conversations to unnamed voices: ⁨sample⁩ of ⁨⁨sample⁩ recording⁩",
       "message_id": "journal.window.speakers.owner.relabel.undo.progress",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.relabel.undo.progress\", &[(\"completed\", Value::String(\"sample\")), (\"completed_quantity\", Value::Cardinal(0)), (\"total\", Value::String(\"sample\")), (\"total_quantity\", Value::Cardinal(1))])",
@@ -504901,7 +504901,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "returning past conversations to unnamed voices: ⁨sample⁩ of ⁨sample⁩ recordings",
+      "expected": "returning past conversations to unnamed voices: ⁨sample⁩ of ⁨⁨sample⁩ recordings⁩",
       "folder": null,
       "inputs": {
         "completed": "sample",
@@ -504910,7 +504910,7 @@
         "total_quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "returning past conversations to unnamed voices: ⁨sample⁩ of ⁨sample⁩ recordings",
+      "logical_expected": "returning past conversations to unnamed voices: ⁨sample⁩ of ⁨⁨sample⁩ recordings⁩",
       "message_id": "journal.window.speakers.owner.relabel.undo.progress",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.relabel.undo.progress\", &[(\"completed\", Value::String(\"sample\")), (\"completed_quantity\", Value::Cardinal(1)), (\"total\", Value::String(\"sample\")), (\"total_quantity\", Value::Cardinal(0))])",
@@ -505077,7 +505077,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "⁨sample⁩ of ⁨sample⁩ longer statements taught",
+      "expected": "⁨sample⁩ of ⁨⁨sample⁩ longer statements⁩ taught",
       "folder": null,
       "inputs": {
         "required": "sample",
@@ -505086,7 +505086,7 @@
         "statements_quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ of ⁨sample⁩ longer statements taught",
+      "logical_expected": "⁨sample⁩ of ⁨⁨sample⁩ longer statements⁩ taught",
       "message_id": "journal.window.speakers.owner.teaching.exhausted.progress",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.teaching.exhausted.progress\", &[(\"required\", Value::String(\"sample\")), (\"required_quantity\", Value::Cardinal(0)), (\"statements\", Value::String(\"sample\")), (\"statements_quantity\", Value::Cardinal(0))])",
@@ -505133,7 +505133,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "⁨sample⁩ of ⁨sample⁩ longer statements taught",
+      "expected": "⁨sample⁩ of ⁨⁨sample⁩ longer statements⁩ taught",
       "folder": null,
       "inputs": {
         "required": "sample",
@@ -505142,7 +505142,7 @@
         "statements_quantity": 1
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ of ⁨sample⁩ longer statements taught",
+      "logical_expected": "⁨sample⁩ of ⁨⁨sample⁩ longer statements⁩ taught",
       "message_id": "journal.window.speakers.owner.teaching.exhausted.progress",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.teaching.exhausted.progress\", &[(\"required\", Value::String(\"sample\")), (\"required_quantity\", Value::Cardinal(0)), (\"statements\", Value::String(\"sample\")), (\"statements_quantity\", Value::Cardinal(1))])",
@@ -505189,7 +505189,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "⁨sample⁩ of ⁨sample⁩ longer statements taught",
+      "expected": "⁨sample⁩ of ⁨⁨sample⁩ longer statement⁩ taught",
       "folder": null,
       "inputs": {
         "required": "sample",
@@ -505198,7 +505198,7 @@
         "statements_quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ of ⁨sample⁩ longer statements taught",
+      "logical_expected": "⁨sample⁩ of ⁨⁨sample⁩ longer statement⁩ taught",
       "message_id": "journal.window.speakers.owner.teaching.exhausted.progress",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.teaching.exhausted.progress\", &[(\"required\", Value::String(\"sample\")), (\"required_quantity\", Value::Cardinal(1)), (\"statements\", Value::String(\"sample\")), (\"statements_quantity\", Value::Cardinal(0))])",
@@ -505245,7 +505245,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "⁨sample⁩ of ⁨sample⁩ longer statements",
+      "expected": "⁨sample⁩ of ⁨⁨sample⁩ longer statements⁩",
       "folder": null,
       "inputs": {
         "required": "sample",
@@ -505254,7 +505254,7 @@
         "statements_quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ of ⁨sample⁩ longer statements",
+      "logical_expected": "⁨sample⁩ of ⁨⁨sample⁩ longer statements⁩",
       "message_id": "journal.window.speakers.owner.teaching.progress",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.teaching.progress\", &[(\"required\", Value::String(\"sample\")), (\"required_quantity\", Value::Cardinal(0)), (\"statements\", Value::String(\"sample\")), (\"statements_quantity\", Value::Cardinal(0))])",
@@ -505301,7 +505301,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "⁨sample⁩ of ⁨sample⁩ longer statements",
+      "expected": "⁨sample⁩ of ⁨⁨sample⁩ longer statements⁩",
       "folder": null,
       "inputs": {
         "required": "sample",
@@ -505310,7 +505310,7 @@
         "statements_quantity": 1
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ of ⁨sample⁩ longer statements",
+      "logical_expected": "⁨sample⁩ of ⁨⁨sample⁩ longer statements⁩",
       "message_id": "journal.window.speakers.owner.teaching.progress",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.teaching.progress\", &[(\"required\", Value::String(\"sample\")), (\"required_quantity\", Value::Cardinal(0)), (\"statements\", Value::String(\"sample\")), (\"statements_quantity\", Value::Cardinal(1))])",
@@ -505357,7 +505357,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "⁨sample⁩ of ⁨sample⁩ longer statements",
+      "expected": "⁨sample⁩ of ⁨⁨sample⁩ longer statement⁩",
       "folder": null,
       "inputs": {
         "required": "sample",
@@ -505366,7 +505366,7 @@
         "statements_quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ of ⁨sample⁩ longer statements",
+      "logical_expected": "⁨sample⁩ of ⁨⁨sample⁩ longer statement⁩",
       "message_id": "journal.window.speakers.owner.teaching.progress",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.speakers.owner.teaching.progress\", &[(\"required\", Value::String(\"sample\")), (\"required_quantity\", Value::Cardinal(1)), (\"statements\", Value::String(\"sample\")), (\"statements_quantity\", Value::Cardinal(0))])",
@@ -509849,7 +509849,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "⁨sample⁩ statements across ⁨sample⁩ conversations, all in your journal. you can undo this.",
+      "expected": "⁨sample⁩ statements across ⁨⁨sample⁩ conversations⁩, all in your journal. you can undo this.",
       "folder": null,
       "inputs": {
         "conversations": "sample",
@@ -509858,7 +509858,7 @@
         "statements_quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ statements across ⁨sample⁩ conversations, all in your journal. you can undo this.",
+      "logical_expected": "⁨sample⁩ statements across ⁨⁨sample⁩ conversations⁩, all in your journal. you can undo this.",
       "message_id": "journal.window.speakers.who.preview.fact.count",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.speakers.who.preview.fact.count\", &[(\"conversations\", Value::String(\"sample\")), (\"conversations_quantity\", Value::Cardinal(0)), (\"statements\", Value::String(\"sample\")), (\"statements_quantity\", Value::Cardinal(0))])",
@@ -509905,7 +509905,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "⁨sample⁩ statements across ⁨sample⁩ conversations, all in your journal. you can undo this.",
+      "expected": "⁨sample⁩ statement across ⁨⁨sample⁩ conversations⁩, all in your journal. you can undo this.",
       "folder": null,
       "inputs": {
         "conversations": "sample",
@@ -509914,7 +509914,7 @@
         "statements_quantity": 1
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ statements across ⁨sample⁩ conversations, all in your journal. you can undo this.",
+      "logical_expected": "⁨sample⁩ statement across ⁨⁨sample⁩ conversations⁩, all in your journal. you can undo this.",
       "message_id": "journal.window.speakers.who.preview.fact.count",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.speakers.who.preview.fact.count\", &[(\"conversations\", Value::String(\"sample\")), (\"conversations_quantity\", Value::Cardinal(0)), (\"statements\", Value::String(\"sample\")), (\"statements_quantity\", Value::Cardinal(1))])",
@@ -509961,7 +509961,7 @@
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "⁨sample⁩ statements across ⁨sample⁩ conversations, all in your journal. you can undo this.",
+      "expected": "⁨sample⁩ statements across ⁨⁨sample⁩ conversation⁩, all in your journal. you can undo this.",
       "folder": null,
       "inputs": {
         "conversations": "sample",
@@ -509970,7 +509970,7 @@
         "statements_quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ statements across ⁨sample⁩ conversations, all in your journal. you can undo this.",
+      "logical_expected": "⁨sample⁩ statements across ⁨⁨sample⁩ conversation⁩, all in your journal. you can undo this.",
       "message_id": "journal.window.speakers.who.preview.fact.count",
       "own_reader": "rust-api",
       "own_reader_call": "render(\"en-US\", \"journal.window.speakers.who.preview.fact.count\", &[(\"conversations\", Value::String(\"sample\")), (\"conversations_quantity\", Value::Cardinal(1)), (\"statements\", Value::String(\"sample\")), (\"statements_quantity\", Value::Cardinal(0))])",

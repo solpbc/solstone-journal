@@ -29,7 +29,7 @@
     }
   ],
   "format_intent": "cardinal",
-  "source_revision": "c0c3248e9c60402ab544efabe4641b247467eb6e8a322ae1cfb096a0def919e2",
+  "source_revision": "51f40ef4f5947c5ed410aa1f07090c4fec8107a9c456740df0256fc17d9700a8",
   "max_length": 1000,
   "risk": "routine",
   "auto_merge": true,

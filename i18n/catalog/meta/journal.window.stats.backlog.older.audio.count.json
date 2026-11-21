@@ -16,7 +16,7 @@
     }
   ],
   "format_intent": "cardinal",
-  "source_revision": "f4cda179a9ab58ee57526779ba57074306915e75c9bba3fd78a3334a87f84267",
+  "source_revision": "e02bad50fbb0c2f02dbcd2723bc285f53c41e0be51bf03ada3569c81c234bad4",
   "max_length": 1000,
   "risk": "routine",
   "auto_merge": true,

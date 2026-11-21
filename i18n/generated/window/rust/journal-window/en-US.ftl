@@ -1438,7 +1438,7 @@ m6a6f75726e616c2e77696e646f772e6167656e74732e77696e646f772e73746174652e746578742
 
 m6a6f75726e616c2e77696e646f772e6167656e74732e77696e646f772e73746174652e746578742e796f75722e736572766572 = your server
 
-m6a6f75726e616c2e77696e646f772e6261636b75702e6167652e6261636b75702e6661696c65642e636c6f636b = backup attempt failed { $recorded_at } ago
+m6a6f75726e616c2e77696e646f772e6261636b75702e6167652e6261636b75702e6661696c65642e636c6f636b = backup attempt failed · { $recorded_at }
 
 m6a6f75726e616c2e77696e646f772e6261636b75702e6167652e6261636b75702e6661696c65642e646179 = { $i18nCategory ->
     [one] backup attempt failed { $count } day ago
@@ -1470,7 +1470,7 @@ m6a6f75726e616c2e77696e646f772e6261636b75702e6167652e6261636b75702e6661696c65642
    *[other] backup attempt failed { $count } weeks ago
 }
 
-m6a6f75726e616c2e77696e646f772e6261636b75702e6167652e636865636b2e6661696c65642e636c6f636b = spot-check failed { $recorded_at } ago
+m6a6f75726e616c2e77696e646f772e6261636b75702e6167652e636865636b2e6661696c65642e636c6f636b = spot-check failed · { $recorded_at }
 
 m6a6f75726e616c2e77696e646f772e6261636b75702e6167652e636865636b2e6661696c65642e646179 = { $i18nCategory ->
     [one] spot-check failed { $count } day ago
@@ -1502,7 +1502,7 @@ m6a6f75726e616c2e77696e646f772e6261636b75702e6167652e636865636b2e6661696c65642e7
    *[other] spot-check failed { $count } weeks ago
 }
 
-m6a6f75726e616c2e77696e646f772e6261636b75702e6167652e636865636b2e736b69707065642e636c6f636b = spot-check couldn't run { $recorded_at } ago
+m6a6f75726e616c2e77696e646f772e6261636b75702e6167652e636865636b2e736b69707065642e636c6f636b = spot-check couldn't run · { $recorded_at }
 
 m6a6f75726e616c2e77696e646f772e6261636b75702e6167652e636865636b2e736b69707065642e646179 = { $i18nCategory ->
     [one] spot-check couldn't run { $count } day ago
@@ -1534,7 +1534,7 @@ m6a6f75726e616c2e77696e646f772e6261636b75702e6167652e636865636b2e736b69707065642
    *[other] spot-check couldn't run { $count } weeks ago
 }
 
-m6a6f75726e616c2e77696e646f772e6261636b75702e6167652e656c61707365642e636c6f636b = { $recorded_at } ago
+m6a6f75726e616c2e77696e646f772e6261636b75702e6167652e656c61707365642e636c6f636b = { $recorded_at }
 
 m6a6f75726e616c2e77696e646f772e6261636b75702e6167652e656c61707365642e646179 = { $i18nCategory ->
     [one] { $count } day ago
@@ -2153,7 +2153,7 @@ m6a6f75726e616c2e77696e646f772e6261636b75702e6c696e6b2e6c6162656c2e6261636b75702
 m6a6f75726e616c2e77696e646f772e6261636b75702e6f66666c6f61642e63617061636974792e737567676573746564 = suggested: { $suggested_size }
 
 m6a6f75726e616c2e77696e646f772e6261636b75702e6f66666c6f61642e646179732e73686f772e616c6c = { $i18nCategory ->
-    [one] show all { $days } days
+    [one] show { $days } day
    *[other] show all { $days } days
 }
 
@@ -2609,7 +2609,7 @@ m6a6f75726e616c2e77696e646f772e6261636b75702e7374617475732e77696e646f772e6578706
 m6a6f75726e616c2e77696e646f772e6261636b75702e73746f726167652e757365722e6261636b656e64 = your own storage · { $storage_backend }
 
 m6a6f75726e616c2e77696e646f772e6261636b75702e766572696669636174696f6e2e70617274732e636865636b6564 = { $i18nCategory ->
-    [one] checked 1 of { $parts } parts of your backup.
+    [one] checked 1 of { $parts } part of your backup.
    *[other] checked 1 of { $parts } parts of your backup.
 }
 
@@ -2714,7 +2714,7 @@ m6a6f75726e616c2e77696e646f772e626f64792e6572726f722e77696e646f772e626f756e6473 
 m6a6f75726e616c2e77696e646f772e626f64792e6572726f722e77696e646f772e6f72646572 = Window end must be after window start.
 
 m6a6f75726e616c2e77696e646f772e626f64792e6572726f722e77696e646f772e7370616e = { $i18nCategory ->
-    [one] Window span must be { $maximum_days } days or less.
+    [one] Window span must be { $maximum_days } day or less.
    *[other] Window span must be { $maximum_days } days or less.
 }
 
@@ -2732,7 +2732,7 @@ m6a6f75726e616c2e77696e646f772e626f64792e677269642e68656c642e6d6f6e7468 = { $dat
 
 m6a6f75726e616c2e77696e646f772e626f64792e677269642e68696464656e = { $date }{ " " }· you hid this day
 
-m6a6f75726e616c2e77696e646f772e626f64792e677269642e736f757263652e616c6c = { $date } · { "Apple Health" } and { "Oura" } and { "Strava" }
+m6a6f75726e616c2e77696e646f772e626f64792e677269642e736f757263652e616c6c = { $date } · { "Apple Health" }, { "Oura" } and { "Strava" }
 
 m6a6f75726e616c2e77696e646f772e626f64792e677269642e736f757263652e6170706c65 = { $date } · { "Apple Health" }
 
@@ -2798,8 +2798,8 @@ m6a6f75726e616c2e77696e646f772e626f64792e696d706f72742e6f6c642e6d6f6e7468 = an e
 
 m6a6f75726e616c2e77696e646f772e626f64792e696d706f72742e70726f67726573732e72756e6e696e672e64617973 = { $i18nCategory ->
     [one] { $i18nCategory-done_quantity ->
-        [one] still running: { $done_days } of { $total_days } days done.
-       *[other] still running: { $done_days } of { $total_days } days done.
+        [one] still running: { $done_days } of { $total_days } day done.
+       *[other] still running: { $done_days } of { $total_days } day done.
     }
    *[other] { $i18nCategory-done_quantity ->
         [one] still running: { $done_days } of { $total_days } days done.
@@ -2816,8 +2816,8 @@ m6a6f75726e616c2e77696e646f772e626f64792e696d706f72742e70726f67726573732e72756e6
 
 m6a6f75726e616c2e77696e646f772e626f64792e696d706f72742e70726f67726573732e73746f707065642e64617973 = { $i18nCategory ->
     [one] { $i18nCategory-done_quantity ->
-        [one] stopped partway: { $done_days } of { $total_days } days done.
-       *[other] stopped partway: { $done_days } of { $total_days } days done.
+        [one] stopped partway: { $done_days } of { $total_days } day done.
+       *[other] stopped partway: { $done_days } of { $total_days } day done.
     }
    *[other] { $i18nCategory-done_quantity ->
         [one] stopped partway: { $done_days } of { $total_days } days done.
@@ -2833,12 +2833,12 @@ m6a6f75726e616c2e77696e646f772e626f64792e696d706f72742e70726f67726573732e73746f7
 }
 
 m6a6f75726e616c2e77696e646f772e626f64792e696d706f72742e7370616e2e636f756e7465642e64617973 = { $i18nCategory ->
-    [one] { $first } to { $last }, { $count } days
+    [one] { $first } to { $last }, { $count } day
    *[other] { $first } to { $last }, { $count } days
 }
 
 m6a6f75726e616c2e77696e646f772e626f64792e696d706f72742e7370616e2e636f756e7465642e6d6f6e746873 = { $i18nCategory ->
-    [one] { $first } to { $last } ({ $count } months)
+    [one] { $first } to { $last } ({ $count } month)
    *[other] { $first } to { $last } ({ $count } months)
 }
 
@@ -3726,7 +3726,7 @@ m6a6f75726e616c2e77696e646f772e656e7469746965732e64656c6574652e636f756c646e2e742
 m6a6f75726e616c2e77696e646f772e656e7469746965732e64656c6574652e64657461696c2e616374696f6e2e68656c70 = { $action_start }delete{ $action_end } { $description_start }moves it to the trash, where you can recover it until it's erased.{ $description_end }
 
 m6a6f75726e616c2e77696e646f772e656e7469746965732e64656c6574652e6572617365642e66726f6d2e796f75722e6a6f75726e616c = { $i18nCategory ->
-    [one] erased { $total } entities from your journal
+    [one] erased { $total } entity from your journal
    *[other] erased { $total } entities from your journal
 }
 
@@ -3790,7 +3790,7 @@ m6a6f75726e616c2e77696e646f772e656e7469746965732e64656c6574652e6d6f7665642e6f662
 }
 
 m6a6f75726e616c2e77696e646f772e656e7469746965732e64656c6574652e6d6f7665642e746f2e7468652e7472617368 = { $i18nCategory ->
-    [one] moved { $total } entities to the trash
+    [one] moved { $total } entity to the trash
    *[other] moved { $total } entities to the trash
 }
 
@@ -3819,7 +3819,7 @@ m6a6f75726e616c2e77696e646f772e656e7469746965732e64656c6574652e7061727469616c2e6
 m6a6f75726e616c2e77696e646f772e656e7469746965732e64656c6574652e7069636b2e6c6162656c2e73656c6563742e6e616d65 = select { $entity_name }
 
 m6a6f75726e616c2e77696e646f772e656e7469746965732e64656c6574652e7265636f76657265642e636f756e74 = { $i18nCategory ->
-    [one] { $total } entities recovered
+    [one] { $total } entity recovered
    *[other] { $total } entities recovered
 }
 
@@ -3881,7 +3881,7 @@ m6a6f75726e616c2e77696e646f772e656e7469746965732e64657465637465642e686964652e646
 m6a6f75726e616c2e77696e646f772e656e7469746965732e64657465637465642e686964652e6661696c6564 = couldn't hide { $entity_name }. nothing changed.
 
 m6a6f75726e616c2e77696e646f772e656e7469746965732e64657465637465642e706167652e72616e6765 = { $i18nCategory ->
-    [one] showing { $first }–{ $last } of { $total } detected entities
+    [one] showing { $first }–{ $last } of { $total } detected entity
    *[other] showing { $first }–{ $last } of { $total } detected entities
 }
 
@@ -4191,13 +4191,13 @@ m6a6f75726e616c2e77696e646f772e656e7469746965732e6c6973742e706167652e72616e6765 
 
 m6a6f75726e616c2e77696e646f772e656e7469746965732e6c6973742e726573756c74732e636f756e74 = { $i18nCategory ->
     [one] { $matched } of { $i18nCategory-total_quantity ->
-        [one] { $total }
-       *[other] { $total }
-    } entities
+        [one] { $total } entity
+       *[other] { $total } entities
+    }
    *[other] { $matched } of { $i18nCategory-total_quantity ->
-        [one] { $total }
-       *[other] { $total }
-    } entities
+        [one] { $total } entity
+       *[other] { $total } entities
+    }
 }
 
 m6a6f75726e616c2e77696e646f772e656e7469746965732e6c6973742e73656c6563742e616c6c2e636f756e74 = { $i18nCategory ->
@@ -4231,16 +4231,16 @@ m6a6f75726e616c2e77696e646f772e656e7469746965732e6d657267652e6b6565702e706172746
         [one] { $processed }
        *[other] { $processed }
     } of { $i18nCategory-total_quantity ->
-        [one] { $total }
-       *[other] { $total }
-    } pairs separate. 1 is still listed.
+        [one] { $total } pair
+       *[other] { $total } pairs
+    } separate. 1 is still listed.
    *[other] kept { $i18nCategory-processed_quantity ->
         [one] { $processed }
        *[other] { $processed }
     } of { $i18nCategory-total_quantity ->
-        [one] { $total }
-       *[other] { $total }
-    } pairs separate. { $failed } are still listed.
+        [one] { $total } pair
+       *[other] { $total } pairs
+    } separate. { $failed } are still listed.
 }
 
 m6a6f75726e616c2e77696e646f772e656e7469746965732e6d657267652e6b6565702e73656c656374696f6e = { $i18nCategory ->
@@ -4258,16 +4258,16 @@ m6a6f75726e616c2e77696e646f772e656e7469746965732e6d657267652e6d657267652e7061727
         [one] { $processed }
        *[other] { $processed }
     } of { $i18nCategory-total_quantity ->
-        [one] { $total }
-       *[other] { $total }
-    } pairs. 1 couldn't be merged.
+        [one] { $total } pair
+       *[other] { $total } pairs
+    }. 1 couldn't be merged.
    *[other] merged { $i18nCategory-processed_quantity ->
         [one] { $processed }
        *[other] { $processed }
     } of { $i18nCategory-total_quantity ->
-        [one] { $total }
-       *[other] { $total }
-    } pairs. { $failed } couldn't be merged.
+        [one] { $total } pair
+       *[other] { $total } pairs
+    }. { $failed } couldn't be merged.
 }
 
 m6a6f75726e616c2e77696e646f772e656e7469746965732e6d657267652e706169722e636f6e6669726d2e61726961 = { $i18nCategory ->
@@ -4347,13 +4347,13 @@ m6a6f75726e616c2e77696e646f772e656e7469746965732e6f62736572766174696f6e2e636f766
 
 m6a6f75726e616c2e77696e646f772e656e7469746965732e6f62736572766174696f6e2e646973636c6f73757265 = { $i18nCategory ->
     [one] showing the { $visible } most recent of { $i18nCategory-total_quantity ->
-        [one] { $total }
-       *[other] { $total }
-    } moments
+        [one] { $total } moment
+       *[other] { $total } moments
+    }
    *[other] showing the { $visible } most recent of { $i18nCategory-total_quantity ->
-        [one] { $total }
-       *[other] { $total }
-    } moments
+        [one] { $total } moment
+       *[other] { $total } moments
+    }
 }
 
 m6a6f75726e616c2e77696e646f772e656e7469746965732e6f62736572766174696f6e2e677269642e636f756e74 = { $i18nCategory ->
@@ -4368,7 +4368,7 @@ m6a6f75726e616c2e77696e646f772e656e7469746965732e6f62736572766174696f6e2e6e6f6e6
 m6a6f75726e616c2e77696e646f772e656e7469746965732e6f62736572766174696f6e2e72616e6765 = { $start_day } – { $end_day }
 
 m6a6f75726e616c2e77696e646f772e656e7469746965732e6f62736572766174696f6e2e73686f772e616c6c = { $i18nCategory ->
-    [one] show all { $observations } observation
+    [one] show { $observations } observation
    *[other] show all { $observations } observations
 }
 
@@ -4729,7 +4729,7 @@ m6a6f75726e616c2e77696e646f772e656e7469746965732e7365617263682e66696e64696e672e7
 m6a6f75726e616c2e77696e646f772e656e7469746965732e7365617263682e6e6f6e652e6d61746368 = no entities match "{ $query }".
 
 m6a6f75726e616c2e77696e646f772e656e7469746965732e7365617263682e706c616365686f6c6465722e656e746974792e636f756e74 = { $i18nCategory ->
-    [one] search { $total } entities
+    [one] search { $total } entity
    *[other] search { $total } entities
 }
 
@@ -5166,7 +5166,7 @@ m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e65766964656e6
 }
 
 m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e65766964656e63652e73686f772e616c6c2e636f756e74 = { $i18nCategory ->
-    [one] show all { $count } segments
+    [one] show { $count } segment
    *[other] show all { $count } segments
 }
 
@@ -5483,7 +5483,7 @@ m6a6f75726e616c2e77696e646f772e6661636574732e61776172656e6573732e726573706f6e736
 m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e616d626967756974792e63686f6f73652e6e616d65 = choose { $candidate_name }
 
 m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e616d626967756974792e6d656d6265722e6f6363757272656e636573 = { $i18nCategory ->
-    [one] { $count } occurrences
+    [one] { $count } occurrence
    *[other] { $count } occurrences
 }
 
@@ -5569,12 +5569,12 @@ m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e707265766965772e7
 }
 
 m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e707265766965772e737065616b65722e7365676d656e7473 = { $i18nCategory ->
-    [one] speaker labels updated: { $labels } labels, { $i18nCategory-corrections_quantity ->
-        [one] { $corrections } corrections
+    [one] speaker labels updated: { $labels } label, { $i18nCategory-corrections_quantity ->
+        [one] { $corrections } correction
        *[other] { $corrections } corrections
     }
    *[other] speaker labels updated: { $labels } labels, { $i18nCategory-corrections_quantity ->
-        [one] { $corrections } corrections
+        [one] { $corrections } correction
        *[other] { $corrections } corrections
     }
 }
@@ -5749,7 +5749,7 @@ m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e726573706f6e73652
 m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e726573706f6e73652e737065616b65722e627573792e64657461696c = speaker suggestions are busy; try again
 
 m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e7265766965772e746f74616c = { $i18nCategory ->
-    [one] { $count } suggestions to review. choose a group to begin.
+    [one] { $count } suggestion to review. choose a group to begin.
    *[other] { $count } suggestions to review. choose a group to begin.
 }
 
@@ -6346,7 +6346,7 @@ m6a6f75726e616c2e77696e646f772e6865616c74682e676c616e63652e646576696365732e636f7
 m6a6f75726e616c2e77696e646f772e6865616c74682e676c616e63652e646576696365732e656d7074792e6e6f2e646576696365732e6172652e7061697265642e796574 = no devices are paired yet.
 
 m6a6f75726e616c2e77696e646f772e6865616c74682e676c616e63652e646576696365732e6661696c696e67 = { $i18nCategory ->
-    [one] your journal couldn't accept uploads from { $count } devices: { $devices }.
+    [one] your journal couldn't accept uploads from { $count } device: { $devices }.
    *[other] your journal couldn't accept uploads from { $count } devices: { $devices }.
 }
 
@@ -6357,7 +6357,7 @@ m6a6f75726e616c2e77696e646f772e6865616c74682e676c616e63652e646576696365732e70616
 m6a6f75726e616c2e77696e646f772e6865616c74682e676c616e63652e646576696365732e7365652e7365652e796f75722e646576696365732e696e2e6e6574776f726b = see your devices in network →
 
 m6a6f75726e616c2e77696e646f772e6865616c74682e676c616e63652e646576696365732e73696c656e74 = { $i18nCategory ->
-    [one] { $count } devices haven't added to your journal recently: { $devices }.
+    [one] { $count } device hasn't added to your journal recently: { $devices }.
    *[other] { $count } devices haven't added to your journal recently: { $devices }.
 }
 
@@ -6384,7 +6384,7 @@ m6a6f75726e616c2e77696e646f772e6865616c74682e676c616e63652e6f6273657276652e756e6
 m6a6f75726e616c2e77696e646f772e6865616c74682e676c616e63652e736572766963652e617474656e74696f6e = 1 service needs attention: { $services }.
 
 m6a6f75726e616c2e77696e646f772e6865616c74682e676c616e63652e73657276696365732e617474656e74696f6e = { $i18nCategory ->
-    [one] { $count } services need attention: { $services }.
+    [one] { $count } service needs attention: { $services }.
    *[other] { $count } services need attention: { $services }.
 }
 
@@ -6403,18 +6403,18 @@ m6a6f75726e616c2e77696e646f772e6865616c74682e686973746f72792e6361756768742e75702
 m6a6f75726e616c2e77696e646f772e6865616c74682e686973746f72792e636f73742e636f6e73656e74 = finishing { $recordings } older recordings, { $day_outputs } daily outputs and { $activities } activities uses your chosen model and may add charges from your provider. today's work goes first.
 
 m6a6f75726e616c2e77696e646f772e6865616c74682e686973746f72792e636f756e7473 = { $i18nCategory ->
-    [one] { $recordings } recordings and { $i18nCategory-output_quantity ->
-        [one] { $outputs } daily outputs left
+    [one] { $recordings } recording and { $i18nCategory-output_quantity ->
+        [one] { $outputs } daily output left
        *[other] { $outputs } daily outputs left
     }
    *[other] { $recordings } recordings and { $i18nCategory-output_quantity ->
-        [one] { $outputs } daily outputs left
+        [one] { $outputs } daily output left
        *[other] { $outputs } daily outputs left
     }
 }
 
 m6a6f75726e616c2e77696e646f772e6865616c74682e686973746f72792e68656c642e636f756e74 = { $i18nCategory ->
-    [one] { $count } items set aside
+    [one] { $count } item set aside
    *[other] { $count } items set aside
 }
 
@@ -6425,7 +6425,7 @@ m6a6f75726e616c2e77696e646f772e6865616c74682e686973746f72792e73756d6d6172792e637
 m6a6f75726e616c2e77696e646f772e6865616c74682e686973746f72792e73756d6d6172792e7374616c65 = last checked: { $metrics }. through { $through_day }; today and yesterday are separate.
 
 m6a6f75726e616c2e77696e646f772e6865616c74682e686973746f72792e756e7265616461626c652e636f756e74 = { $i18nCategory ->
-    [one] { $count } days could not be checked
+    [one] { $count } day could not be checked
    *[other] { $count } days could not be checked
 }
 
@@ -6483,12 +6483,12 @@ m6a6f75726e616c2e77696e646f772e6865616c74682e6c6f67732e6c6f672e66696c652e6e6f742
 m6a6f75726e616c2e77696e646f772e6865616c74682e6c6f67732e6d697373696e672e706174682e706172616d65746572 = Missing { "path" } parameter
 
 m6a6f75726e616c2e77696e646f772e6865616c74682e6c6f67732e736572766963652e636f6c6c6170736564 = { $i18nCategory ->
-    [one] ── { $service } ── ({ $lines } lines, ★ { $i18nCategory-error_quantity ->
-        [one] { $errors } errors
+    [one] ── { $service } ── ({ $lines } line, ★ { $i18nCategory-error_quantity ->
+        [one] { $errors } error
        *[other] { $errors } errors
     })
    *[other] ── { $service } ── ({ $lines } lines, ★ { $i18nCategory-error_quantity ->
-        [one] { $errors } errors
+        [one] { $errors } error
        *[other] { $errors } errors
     })
 }
@@ -6585,7 +6585,7 @@ m6a6f75726e616c2e77696e646f772e6865616c74682e7363686564756c652e73756d6d6172792e6
 }
 
 m6a6f75726e616c2e77696e646f772e6865616c74682e7365617263682e6c6173742e636865636b2e656c6170736564 = { $i18nCategory ->
-    [one] last search check { $hours } hours ago: { $i18nCategory-updated_quantity ->
+    [one] last search check { $hours } hour ago: { $i18nCategory-updated_quantity ->
         [one] { $updated } updated
        *[other] { $updated } updated
     }, { $i18nCategory-removed_quantity ->
@@ -6613,12 +6613,12 @@ m6a6f75726e616c2e77696e646f772e6865616c74682e7365617263682e6c6173742e636865636b2
 }
 
 m6a6f75726e616c2e77696e646f772e6865616c74682e7365617263682e717565756564 = { $i18nCategory ->
-    [one] { $count } updates queued
+    [one] { $count } update queued
    *[other] { $count } updates queued
 }
 
 m6a6f75726e616c2e77696e646f772e6865616c74682e7365617263682e72656d6f76616c73 = { $i18nCategory ->
-    [one] { $count } removals still waiting
+    [one] { $count } removal still waiting
    *[other] { $count } removals still waiting
 }
 
@@ -6844,7 +6844,7 @@ m6a6f75726e616c2e77696e646f772e6865616c74682e7468696e6b696e672e726563656e742e657
 }
 
 m6a6f75726e616c2e77696e646f772e6865616c74682e7468696e6b696e672e746f6b656e732e746f646179 = { $i18nCategory ->
-    [one] { $count } tokens used today
+    [one] { $count } token used today
    *[other] { $count } tokens used today
 }
 
@@ -7133,12 +7133,12 @@ m6a6f75726e616c2e77696e646f772e6865616c74682e77696e646f772e6578706c616e6174696f6
 m6a6f75726e616c2e77696e646f772e6865616c74682e77696e646f772e6578706c616e6174696f6e2e796f75722e72657175657374732e616e642e796573746572646179 = your requests and yesterday
 
 m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e62616e642e61637469766974696573 = { $i18nCategory ->
-    [one] { $count } activities left
+    [one] { $count } activity left
    *[other] { $count } activities left
 }
 
 m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e62616e642e6f776e65722e7265717565737473 = { $i18nCategory ->
-    [one] { $count } requests to redo a day
+    [one] { $count } request to redo a day
    *[other] { $count } requests to redo a day
 }
 
@@ -7148,11 +7148,11 @@ m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e62616e642e7065726d6973736
 }
 
 m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e62616e642e70726f6772657373 = { $i18nCategory ->
-    [one] { $band }: { $recordings_ready } recordings ready, { $i18nCategory-recordings_left_quantity ->
+    [one] { $band }: { $recordings_ready } recording ready, { $i18nCategory-recordings_left_quantity ->
         [one] { $recordings_left } left
        *[other] { $recordings_left } left
     }; { $i18nCategory-outputs_ready_quantity ->
-        [one] { $outputs_ready } daily outputs ready
+        [one] { $outputs_ready } daily output ready
        *[other] { $outputs_ready } daily outputs ready
     }, { $i18nCategory-outputs_left_quantity ->
         [one] { $outputs_left } left
@@ -7162,7 +7162,7 @@ m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e62616e642e70726f677265737
         [one] { $recordings_left } left
        *[other] { $recordings_left } left
     }; { $i18nCategory-outputs_ready_quantity ->
-        [one] { $outputs_ready } daily outputs ready
+        [one] { $outputs_ready } daily output ready
        *[other] { $outputs_ready } daily outputs ready
     }, { $i18nCategory-outputs_left_quantity ->
         [one] { $outputs_left } left
@@ -7171,11 +7171,11 @@ m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e62616e642e70726f677265737
 }
 
 m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e62616e642e70726f67726573732e64657461696c73 = { $i18nCategory ->
-    [one] { $band }: { $recordings_ready } recordings ready, { $i18nCategory-recordings_left_quantity ->
+    [one] { $band }: { $recordings_ready } recording ready, { $i18nCategory-recordings_left_quantity ->
         [one] { $recordings_left } left
        *[other] { $recordings_left } left
     }; { $i18nCategory-outputs_ready_quantity ->
-        [one] { $outputs_ready } daily outputs ready
+        [one] { $outputs_ready } daily output ready
        *[other] { $outputs_ready } daily outputs ready
     }, { $i18nCategory-outputs_left_quantity ->
         [one] { $outputs_left } left
@@ -7185,7 +7185,7 @@ m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e62616e642e70726f677265737
         [one] { $recordings_left } left
        *[other] { $recordings_left } left
     }; { $i18nCategory-outputs_ready_quantity ->
-        [one] { $outputs_ready } daily outputs ready
+        [one] { $outputs_ready } daily output ready
        *[other] { $outputs_ready } daily outputs ready
     }, { $i18nCategory-outputs_left_quantity ->
         [one] { $outputs_left } left
@@ -7203,7 +7203,7 @@ m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e686f6c642e70616765 = page
 m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e686f6c642e726561736f6e = { $item }: { $reason }
 
 m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e686f6c642e726561736f6e2e636f756e74 = { $i18nCategory ->
-    [one] { $item } · { $count } items: { $reason }
+    [one] { $item } · { $count } item: { $reason }
    *[other] { $item } · { $count } items: { $reason }
 }
 
@@ -7225,7 +7225,7 @@ m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e696e7370656374696f6e2e636
     [one] { $i18nCategory-checked_quantity ->
         [one] { $checked }
        *[other] { $checked }
-    } of { $total } days checked ({ $range }). the inspection covers the whole journal.
+    } of { $total } day checked ({ $range }). the inspection covers the whole journal.
    *[other] { $i18nCategory-checked_quantity ->
         [one] { $checked }
        *[other] { $checked }
@@ -7236,7 +7236,7 @@ m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e696e7370656374696f6e2e696
     [one] { $i18nCategory-checked_quantity ->
         [one] { $checked }
        *[other] { $checked }
-    } of { $total } days checked ({ $range }). the inspection is incomplete.
+    } of { $total } day checked ({ $range }). the inspection is incomplete.
    *[other] { $i18nCategory-checked_quantity ->
         [one] { $checked }
        *[other] { $checked }
@@ -7247,7 +7247,7 @@ m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e696e7370656374696f6e2e737
     [one] { $i18nCategory-checked_quantity ->
         [one] { $checked }
        *[other] { $checked }
-    } of { $total } days checked ({ $range }). last known progress, checked { $checked_at }.
+    } of { $total } day checked ({ $range }). last known progress, checked { $checked_at }.
    *[other] { $i18nCategory-checked_quantity ->
         [one] { $checked }
        *[other] { $checked }
@@ -7531,7 +7531,7 @@ m6a6f75726e616c2e77696e646f772e686f6d652e6865616c74682e6e6f2e656c696769626c652e6
 m6a6f75726e616c2e77696e646f772e686f6d652e6865616c74682e6e6f742e7965742e6163746976652e686561646c696e65 = the solstone app is adding to your journal.
 
 m6a6f75726e616c2e77696e646f772e686f6d652e6865616c74682e71756965742e64657669636573 = { $i18nCategory ->
-    [one] { $count } devices haven't added to your journal recently: { $devices }.
+    [one] { $count } device hasn't added to your journal recently: { $devices }.
    *[other] { $count } devices haven't added to your journal recently: { $devices }.
 }
 
@@ -7545,7 +7545,7 @@ m6a6f75726e616c2e77696e646f772e686f6d652e6865616c74682e71756965742e656c617073656
    *[other] { $device } hasn't added to your journal in { $count } hours.
 }
 
-m6a6f75726e616c2e77696e646f772e686f6d652e6865616c74682e71756965742e656c61707365642e6a7573742e6e6f77 = { $device } hasn't added to your journal in just now.
+m6a6f75726e616c2e77696e646f772e686f6d652e6865616c74682e71756965742e656c61707365642e6a7573742e6e6f77 = { $device } last added to your journal just now.
 
 m6a6f75726e616c2e77696e646f772e686f6d652e6865616c74682e71756965742e656c61707365642e6d696e757465 = { $i18nCategory ->
     [one] { $device } hasn't added to your journal in { $count } minute.
@@ -7627,17 +7627,17 @@ m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e757064617465642e746
 m6a6f75726e616c2e77696e646f772e686f6d652e6e656564732e6465766963652e6f6e65 = { $name }{ " " }isn't reaching your journal.
 
 m6a6f75726e616c2e77696e646f772e686f6d652e6e656564732e646576696365732e6e616d6564 = { $i18nCategory ->
-    [one] { $count } devices aren't reaching your journal: { $names }.
+    [one] { $count } device isn't reaching your journal: { $names }.
    *[other] { $count } devices aren't reaching your journal: { $names }.
 }
 
 m6a6f75726e616c2e77696e646f772e686f6d652e6e656564732e646576696365732e756e6e616d6564 = { $i18nCategory ->
-    [one] { $count } devices aren't reaching your journal.
+    [one] { $count } device isn't reaching your journal.
    *[other] { $count } devices aren't reaching your journal.
 }
 
 m6a6f75726e616c2e77696e646f772e686f6d652e6e656564732e646576696365732e756e6e616d65642e636f756e74 = { $i18nCategory ->
-    [one] { $count } unnamed devices
+    [one] { $count } unnamed device
    *[other] { $count } unnamed devices
 }
 
@@ -8079,7 +8079,7 @@ m6a6f75726e616c2e77696e646f772e686f6d652e746f6461792e61637469766974792e636f756e7
 }
 
 m6a6f75726e616c2e77696e646f772e686f6d652e746f6461792e61637469766974792e707265766965772e636f756e74 = { $i18nCategory ->
-    [one] { $preview_count } of { $activity_count } activities
+    [one] { $preview_count } of { $activity_count } activity
    *[other] { $preview_count } of { $activity_count } activities
 }
 
@@ -8690,24 +8690,24 @@ m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e747970652e6e6f7465 
 m6a6f75726e616c2e77696e646f772e696d706f72742e636f6e74656e742e747970652e706466 = pdf
 
 m6a6f75726e616c2e77696e646f772e696d706f72742e64657461696c2e636f6e74656e742e617474656e64656573 = { $i18nCategory ->
-    [one] { $count } attendees
+    [one] { $count } attendee
    *[other] { $count } attendees
 }
 
 m6a6f75726e616c2e77696e646f772e696d706f72742e64657461696c2e636f6e74656e742e6475726174696f6e2e6d696e75746573 = { $minutes } min
 
 m6a6f75726e616c2e77696e646f772e696d706f72742e64657461696c2e636f6e74656e742e686967686c6967687473 = { $i18nCategory ->
-    [one] { $count } highlights
+    [one] { $count } highlight
    *[other] { $count } highlights
 }
 
 m6a6f75726e616c2e77696e646f772e696d706f72742e64657461696c2e636f6e74656e742e6d65737361676573 = { $i18nCategory ->
-    [one] { $count } messages
+    [one] { $count } message
    *[other] { $count } messages
 }
 
 m6a6f75726e616c2e77696e646f772e696d706f72742e64657461696c2e636f6e74656e742e73756d6d6172792e636f756e74 = { $i18nCategory ->
-    [one] { $source_name }, { $count } items
+    [one] { $source_name }, { $count } item
    *[other] { $source_name }, { $count } items
 }
 
@@ -8790,7 +8790,7 @@ m6a6f75726e616c2e77696e646f772e696d706f72742e64657461696c2e6d657267652e6572726f7
 }
 
 m6a6f75726e616c2e77696e646f772e696d706f72742e64657461696c2e6d657267652e6c696e6b732e6c6566742e6f7574 = { $i18nCategory ->
-    [one] { $count } entity links left out
+    [one] { $count } entity link left out
    *[other] { $count } entity links left out
 }
 
@@ -9063,7 +9063,7 @@ m6a6f75726e616c2e77696e646f772e696d706f72742e68616e646f66662e73656e64696e67 = se
 m6a6f75726e616c2e77696e646f772e696d706f72742e68616e646f66662e77616974696e67 = waiting to send { $name }
 
 m6a6f75726e616c2e77696e646f772e696d706f72742e686973746f72792e617263686976652e6c6566742e6f7574 = { $i18nCategory ->
-    [one] { $count } members left out
+    [one] { $count } member left out
    *[other] { $count } members left out
 }
 
@@ -9073,7 +9073,7 @@ m6a6f75726e616c2e77696e646f772e696d706f72742e686973746f72792e617263686976652e707
 }
 
 m6a6f75726e616c2e77696e646f772e696d706f72742e686973746f72792e617263686976652e72656a6563746564 = { $i18nCategory ->
-    [one] { $count } parts rejected
+    [one] { $count } part rejected
    *[other] { $count } parts rejected
 }
 
@@ -9083,7 +9083,7 @@ m6a6f75726e616c2e77696e646f772e696d706f72742e686973746f72792e617263686976652e726
 }
 
 m6a6f75726e616c2e77696e646f772e696d706f72742e686973746f72792e617263686976652e7361766564 = { $i18nCategory ->
-    [one] { $count } parts saved
+    [one] { $count } part saved
    *[other] { $count } parts saved
 }
 
@@ -9378,7 +9378,7 @@ m6a6f75726e616c2e77696e646f772e696d706f72742e707265766965772e617263686976652e6c6
 }
 
 m6a6f75726e616c2e77696e646f772e696d706f72742e707265766965772e617263686976652e7265636f7264696e672e6279746573 = { $i18nCategory ->
-    [one] { $count } recording bytes
+    [one] { $count } recording byte
    *[other] { $count } recording bytes
 }
 
@@ -9441,12 +9441,12 @@ m6a6f75726e616c2e77696e646f772e696d706f72742e70726f67726573732e636f6d706c6574656
 m6a6f75726e616c2e77696e646f772e696d706f72742e70726f67726573732e636f6d706c657465642e74696d65 = took { $elapsed_time }
 
 m6a6f75726e616c2e77696e646f772e696d706f72742e70726f67726573732e636f756e742e656e746974696573 = { $i18nCategory ->
-    [one] { $count } entities
+    [one] { $count } entity
    *[other] { $count } entities
 }
 
 m6a6f75726e616c2e77696e646f772e696d706f72742e70726f67726573732e636f756e742e656e7469746965732e666f756e64 = { $i18nCategory ->
-    [one] { $count } entities found
+    [one] { $count } entity found
    *[other] { $count } entities found
 }
 
@@ -9460,7 +9460,7 @@ m6a6f75726e616c2e77696e646f772e696d706f72742e70726f67726573732e646174652e656e64 
 m6a6f75726e616c2e77696e646f772e696d706f72742e70726f67726573732e646174652e7374617274 = from { $first_date }
 
 m6a6f75726e616c2e77696e646f772e696d706f72742e70726f67726573732e6974656d732e726174696f = { $i18nCategory ->
-    [one] { $processed }/{ $total } items
+    [one] { $processed }/{ $total } item
    *[other] { $processed }/{ $total } items
 }
 
@@ -9540,7 +9540,7 @@ m6a6f75726e616c2e77696e646f772e696d706f72742e72656d6f76616c2e726563656970742e657
 m6a6f75726e616c2e77696e646f772e696d706f72742e72656d6f76616c2e726563656970742e6572617365642e696d706f7274 = import erased from your journal
 
 m6a6f75726e616c2e77696e646f772e696d706f72742e72656d6f76616c2e726563656970742e6572617365642e696d706f727473 = { $i18nCategory ->
-    [one] erased { $import_count } imports from your journal
+    [one] erased { $import_count } import from your journal
    *[other] erased { $import_count } imports from your journal
 }
 
@@ -9559,7 +9559,7 @@ m6a6f75726e616c2e77696e646f772e696d706f72742e72656d6f76616c2e726563656970742e6d6
 }
 
 m6a6f75726e616c2e77696e646f772e696d706f72742e72656d6f76616c2e726563656970742e6d6f7665642e696d706f727473 = { $i18nCategory ->
-    [one] moved { $import_count } imports to the trash
+    [one] moved { $import_count } import to the trash
    *[other] moved { $import_count } imports to the trash
 }
 
@@ -9629,7 +9629,7 @@ m6a6f75726e616c2e77696e646f772e696d706f72742e72656d6f76616c2e726563656970742e706
 m6a6f75726e616c2e77696e646f772e696d706f72742e72656d6f76616c2e726563656970742e7265636f76657265642e696d706f7274 = import recovered
 
 m6a6f75726e616c2e77696e646f772e696d706f72742e72656d6f76616c2e726563656970742e7265636f76657265642e696d706f727473 = { $i18nCategory ->
-    [one] { $import_count } imports recovered
+    [one] { $import_count } import recovered
    *[other] { $import_count } imports recovered
 }
 
@@ -10718,7 +10718,7 @@ m6a6f75726e616c2e77696e646f772e6d61702e656e7472792e737461792e6d617267696e2e6e656
 m6a6f75726e616c2e77696e646f772e6d61702e656e7472792e737461792e6d617267696e2e6e6561722e706c6163652e63617465676f7279 = { $place } ({ $category }) is { $distance_meters } m away; these readings, with their margins, all fall within { $margin_meters } m of their centre.
 
 m6a6f75726e616c2e77696e646f772e6d61702e656e7472792e737461792e707265636973652e726561736f6e = { $i18nCategory ->
-    [one] your journal worked this stay out from { $count } precise readings that stayed within 100 m of the first of them for at least five minutes. its times are the first and last of them.
+    [one] { $count } precise reading is listed for this stay.
    *[other] your journal worked this stay out from { $count } precise readings that stayed within 100 m of the first of them for at least five minutes. its times are the first and last of them.
 }
 
@@ -10735,7 +10735,7 @@ m6a6f75726e616c2e77696e646f772e6d61702e656e7472792e74696d652e6d697373696e672e617
 m6a6f75726e616c2e77696e646f772e6d61702e656e7472792e74696d652e6d697373696e672e646570617274757265 = no departure reported
 
 m6a6f75726e616c2e77696e646f772e6d61702e656e7472792e7472616e736372697074732e7365676d656e7473 = { $i18nCategory ->
-    [one] open in transcripts: { $count } segments
+    [one] open in transcripts: { $count } segment
    *[other] open in transcripts: { $count } segments
 }
 
@@ -10803,7 +10803,7 @@ m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e617265612e646179732e696e2e6d6
 m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e617265612e646179732e726174696f = { $days_with_stops } of { $days_in_month }
 
 m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e617265612e646179732e73686f772e616c6c = { $i18nCategory ->
-    [one] show all { $count } days
+    [one] show { $count } day
    *[other] show all { $count } days
 }
 
@@ -10913,7 +10913,7 @@ m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e61726561732e6f7574736964652e7
 }
 
 m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e61726561732e73686f772e616c6c = { $i18nCategory ->
-    [one] show all { $count } areas
+    [one] show { $count } area
    *[other] show all { $count } areas
 }
 
@@ -10922,7 +10922,7 @@ m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e63686f6963652e74726970 = on t
 m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e6461792e6c6f636174696f6e2e6e6f6e65 = your journal has no location from{ " " }{ $date }. location may have been paused or off, or the phone may not have reached your journal. your journal can't tell which.
 
 m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e6461792e737461792e72656164696e6773 = { $i18nCategory ->
-    [one] a stay your journal worked out from { $count } of your phone's readings
+    [one] { $count } reading from your phone is listed for this stay
    *[other] a stay your journal worked out from { $count } of your phone's readings
 }
 
@@ -10955,8 +10955,8 @@ m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e6d61702e617265612e73756d6d617
 }
 
 m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e6d61702e617265612e73756d6d6172792e686f6d65 = { $i18nCategory ->
-    [one] map of around { $area }: { $shaded_areas } shaded area, each { $size } across. the same areas are listed under areas this month.
-   *[other] map of around { $area }: { $shaded_areas } shaded areas, each { $size } across. the same areas are listed under areas this month.
+    [one] map of the area around { $area }: { $shaded_areas } shaded area, { $size } across. the same area is listed under areas this month.
+   *[other] map of the area around { $area }: { $shaded_areas } shaded areas, each { $size } across. the same areas are listed under areas this month.
 }
 
 m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e6d61702e67726f75702e73756d6d617279 = { $i18nCategory ->
@@ -10972,12 +10972,12 @@ m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e6d61702e67726f75702e73756d6d6
 
 m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e6d61702e67726f75702e73756d6d6172792e686f6d65 = { $i18nCategory ->
     [one] { $i18nCategory-area_quantity ->
-        [one] map of around { $area }: { $shaded_areas } shaded area, each { $size } across, holding the { $areas } area listed under areas this month.
-       *[other] map of around { $area }: { $shaded_areas } shaded area, each { $size } across, holding the { $areas } areas listed under areas this month.
+        [one] map of the area around { $area }: { $shaded_areas } shaded area, { $size } across, holding the { $areas } area listed under areas this month.
+       *[other] map of the area around { $area }: { $shaded_areas } shaded area, { $size } across, holding the { $areas } areas listed under areas this month.
     }
    *[other] { $i18nCategory-area_quantity ->
-        [one] map of around { $area }: { $shaded_areas } shaded areas, each { $size } across, holding the { $areas } area listed under areas this month.
-       *[other] map of around { $area }: { $shaded_areas } shaded areas, each { $size } across, holding the { $areas } areas listed under areas this month.
+        [one] map of the area around { $area }: { $shaded_areas } shaded areas, each { $size } across, holding the { $areas } area listed under areas this month.
+       *[other] map of the area around { $area }: { $shaded_areas } shaded areas, each { $size } across, holding the { $areas } areas listed under areas this month.
     }
 }
 
@@ -10989,12 +10989,12 @@ m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e72656164696e67732e756e6472617
 }
 
 m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e63616c656e646172 = { $i18nCategory ->
-    [one] { $days_with_stops } of { $days_in_month } days have stops
+    [one] { $days_with_stops } of { $days_in_month } days has stops
    *[other] { $days_with_stops } of { $days_in_month } days have stops
 }
 
 m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e6365 = { $i18nCategory ->
-    [one] { $days_with_stops } of { $days_in_month } days have stops.
+    [one] { $days_with_stops } of { $days_in_month } days has stops.
    *[other] { $days_with_stops } of { $days_in_month } days have stops.
 }
 
@@ -12023,8 +12023,8 @@ m6a6f75726e616c2e77696e646f772e7365617263682e636f756e742e726573756c74732e6163726
 
 m6a6f75726e616c2e77696e646f772e7365617263682e636f756e742e726573756c74732e73686f776e2e666f722e646179 = { $i18nCategory ->
     [one] { $i18nCategory-shown_quantity ->
-        [one] showing the top { $shown_count } of { $match_count } matches for this day.
-       *[other] showing the top { $shown_count } of { $match_count } matches for this day.
+        [one] showing the top { $shown_count } of { $match_count } match for this day.
+       *[other] showing the top { $shown_count } of { $match_count } match for this day.
     }
    *[other] { $i18nCategory-shown_quantity ->
         [one] showing the top { $shown_count } of { $match_count } matches for this day.
@@ -13084,12 +13084,12 @@ m6a6f75726e616c2e77696e646f772e73657474696e67732e6c6f63616c2e6163636573732e626f6
 m6a6f75726e616c2e77696e646f772e73657474696e67732e6c6f63616c2e6163636573732e6f70656e2e61646472657373 = open: anyone using this computer, and any program running on it, can open your journal at{ " " }{ $journal_address }.
 
 m6a6f75726e616c2e77696e646f772e73657474696e67732e6c6f67732e6469726563746f72792e636f756e74 = { $i18nCategory ->
-    [one] { $count } cache dir(s)
+    [one] { $count } cache dir
    *[other] { $count } cache dir(s)
 }
 
 m6a6f75726e616c2e77696e646f772e73657474696e67732e6c6f67732e66696c652e636f756e74 = { $i18nCategory ->
-    [one] { $count } file(s)
+    [one] { $count } file
    *[other] { $count } file(s)
 }
 
@@ -13098,34 +13098,34 @@ m6a6f75726e616c2e77696e646f772e73657474696e67732e6c6f67732e6e6f2e64656c6574696f6
 m6a6f75726e616c2e77696e646f772e73657474696e67732e6c6f67732e70726576696577 = preview
 
 m6a6f75726e616c2e77696e646f772e73657474696e67732e6c6f67732e707265766965772e66696c652e616e642e6469726563746f72792e636f756e74 = { $i18nCategory ->
-    [one] { $files } operational-log file(s) and { $i18nCategory-directory_quantity ->
-        [one] { $directories } cache dir(s)
+    [one] { $files } operational-log file and { $i18nCategory-directory_quantity ->
+        [one] { $directories } cache dir
        *[other] { $directories } cache dir(s)
     } ({ $bytes } B) would be deleted.
    *[other] { $files } operational-log file(s) and { $i18nCategory-directory_quantity ->
-        [one] { $directories } cache dir(s)
+        [one] { $directories } cache dir
        *[other] { $directories } cache dir(s)
     } ({ $bytes } B) would be deleted.
 }
 
 m6a6f75726e616c2e77696e646f772e73657474696e67732e6c6f67732e707265766965772e726574656e74696f6e2e636f6d7061637465642e636f756e74 = { $i18nCategory ->
-    [one] { $lines } retention-log line(s) would be compacted ({ $bytes } B).
+    [one] { $lines } retention-log line would be compacted ({ $bytes } B).
    *[other] { $lines } retention-log line(s) would be compacted ({ $bytes } B).
 }
 
 m6a6f75726e616c2e77696e646f772e73657474696e67732e6c6f67732e726573756c742e66696c652e616e642e6469726563746f72792e636f756e74 = { $i18nCategory ->
-    [one] { $files } operational-log file(s) and { $i18nCategory-directory_quantity ->
-        [one] { $directories } cache dir(s)
+    [one] { $files } operational-log file and { $i18nCategory-directory_quantity ->
+        [one] { $directories } cache dir
        *[other] { $directories } cache dir(s)
     } ({ $bytes } B) deleted.
    *[other] { $files } operational-log file(s) and { $i18nCategory-directory_quantity ->
-        [one] { $directories } cache dir(s)
+        [one] { $directories } cache dir
        *[other] { $directories } cache dir(s)
     } ({ $bytes } B) deleted.
 }
 
 m6a6f75726e616c2e77696e646f772e73657474696e67732e6c6f67732e726573756c742e726574656e74696f6e2e636f6d7061637465642e636f756e74 = { $i18nCategory ->
-    [one] { $lines } retention-log line(s) compacted ({ $bytes } B).
+    [one] { $lines } retention-log line compacted ({ $bytes } B).
    *[other] { $lines } retention-log line(s) compacted ({ $bytes } B).
 }
 
@@ -14749,57 +14749,57 @@ m6a6f75726e616c2e77696e646f772e73657474696e67732e72656d6f76616c2e686973746f72792
 m6a6f75726e616c2e77696e646f772e73657474696e67732e72656d6f76616c2e686973746f72792e6576656e742e74726173686564_v636c692d626f7468 = moved to the trash from the command line, erasing what was in the way, except notes in facets no longer in your journal
 
 m6a6f75726e616c2e77696e646f772e73657474696e67732e72656d6f76616c2e686973746f72792e67726f75702e6261636b75702e636f756e74 = { $i18nCategory ->
-    [one] { $count } backup copies
+    [one] { $count } backup copy
    *[other] { $count } backup copies
 }
 
 m6a6f75726e616c2e77696e646f772e73657474696e67732e72656d6f76616c2e686973746f72792e67726f75702e64657465637465642e656e7469746965732e636f756e74 = { $i18nCategory ->
-    [one] { $count } detected entities
+    [one] { $count } detected entity
    *[other] { $count } detected entities
 }
 
 m6a6f75726e616c2e77696e646f772e73657474696e67732e72656d6f76616c2e686973746f72792e67726f75702e656e746974792e636f756e74 = { $i18nCategory ->
-    [one] { $count } entities
+    [one] { $count } entity
    *[other] { $count } entities
 }
 
 m6a6f75726e616c2e77696e646f772e73657474696e67732e72656d6f76616c2e686973746f72792e67726f75702e66616365742e636f756e74 = { $i18nCategory ->
-    [one] { $count } facets
+    [one] { $count } facet
    *[other] { $count } facets
 }
 
 m6a6f75726e616c2e77696e646f772e73657474696e67732e72656d6f76616c2e686973746f72792e67726f75702e66616365742e66696c652e636f756e74 = { $i18nCategory ->
-    [one] { $count } files from a facet merge
+    [one] { $count } file from a facet merge
    *[other] { $count } files from a facet merge
 }
 
 m6a6f75726e616c2e77696e646f772e73657474696e67732e72656d6f76616c2e686973746f72792e67726f75702e696d706f72742e636f756e74 = { $i18nCategory ->
-    [one] { $count } imports
+    [one] { $count } import
    *[other] { $count } imports
 }
 
 m6a6f75726e616c2e77696e646f772e73657474696e67732e72656d6f76616c2e686973746f72792e67726f75702e6d656d6f72792e636f756e74 = { $i18nCategory ->
-    [one] { $count } memories agents saved
+    [one] { $count } memory agents saved
    *[other] { $count } memories agents saved
 }
 
 m6a6f75726e616c2e77696e646f772e73657474696e67732e72656d6f76616c2e686973746f72792e67726f75702e6d697865642e636f756e74 = { $i18nCategory ->
-    [one] { $count } things
+    [one] { $count } thing
    *[other] { $count } things
 }
 
 m6a6f75726e616c2e77696e646f772e73657474696e67732e72656d6f76616c2e686973746f72792e67726f75702e6f726967696e616c2e636f756e74 = { $i18nCategory ->
-    [one] { $count } originals
+    [one] { $count } original
    *[other] { $count } originals
 }
 
 m6a6f75726e616c2e77696e646f772e73657474696e67732e72656d6f76616c2e686973746f72792e67726f75702e6f726967696e616c732e636f756e74 = { $i18nCategory ->
-    [one] original media from { $count } segments
+    [one] original media from { $count } segment
    *[other] original media from { $count } segments
 }
 
 m6a6f75726e616c2e77696e646f772e73657474696e67732e72656d6f76616c2e686973746f72792e67726f75702e7365676d656e742e636f756e74 = { $i18nCategory ->
-    [one] { $count } segments
+    [one] { $count } segment
    *[other] { $count } segments
 }
 
@@ -14809,12 +14809,12 @@ m6a6f75726e616c2e77696e646f772e73657474696e67732e72656d6f76616c2e686973746f72792
 }
 
 m6a6f75726e616c2e77696e646f772e73657474696e67732e72656d6f76616c2e686973746f72792e67726f75702e756e6b6e6f776e2e636f756e74 = { $i18nCategory ->
-    [one] { $count } other things
+    [one] { $count } other thing
    *[other] { $count } other things
 }
 
 m6a6f75726e616c2e77696e646f772e73657474696e67732e72656d6f76616c2e686973746f72792e67726f75702e776f726b6f75742e636f756e74 = { $i18nCategory ->
-    [one] { $count } workouts
+    [one] { $count } workout
    *[other] { $count } workouts
 }
 
@@ -14929,7 +14929,7 @@ m6a6f75726e616c2e77696e646f772e73657474696e67732e726574656e74696f6e2e65786563757
 m6a6f75726e616c2e77696e646f772e73657474696e67732e726574656e74696f6e2e6578656375746f722e74696d656f7574 = the retention tool did not finish within 60s.
 
 m6a6f75726e616c2e77696e646f772e73657474696e67732e726574656e74696f6e2e6c6f67732e6b6565702e64617973 = { $i18nCategory ->
-    [one] currently: keep operational logs { $days } days
+    [one] currently: keep operational logs { $days } day
    *[other] currently: keep operational logs { $days } days
 }
 
@@ -15485,7 +15485,7 @@ m6a6f75726e616c2e77696e646f772e73657474696e67732e74726173682e726563656970742e657
 }
 
 m6a6f75726e616c2e77696e646f772e73657474696e67732e74726173682e726563656970742e676f6e652e6164646974696f6e616c = { $i18nCategory ->
-    [one] { $gone } more are no longer in the trash.
+    [one] { $gone } more is no longer in the trash.
    *[other] { $gone } more are no longer in the trash.
 }
 
@@ -15554,7 +15554,7 @@ m6a6f75726e616c2e77696e646f772e73657474696e67732e74726173682e7265636f7665722e776
 m6a6f75726e616c2e77696e646f772e73657474696e67732e74726173682e7265667573616c2e6661636574732e6e616d6564 = recover { $facet_name } from the trash first, then this.
 
 m6a6f75726e616c2e77696e646f772e73657474696e67732e74726173682e7265667573616c2e6661636574732e6e616d65642e6d756c7469706c652e6f7468657273 = { $i18nCategory ->
-    [one] recover { $facet_name } and { $other_facets } others from the trash first, then this.
+    [one] recover { $facet_name } and { $other_facets } other from the trash first, then this.
    *[other] recover { $facet_name } and { $other_facets } others from the trash first, then this.
 }
 
@@ -15568,7 +15568,7 @@ m6a6f75726e616c2e77696e646f772e73657474696e67732e74726173682e7265667573616c2e696
 m6a6f75726e616c2e77696e646f772e73657474696e67732e74726173682e7265667573616c2e70656f706c652e6e616d6564 = recover { $person_name } from the trash first, then this.
 
 m6a6f75726e616c2e77696e646f772e73657474696e67732e74726173682e7265667573616c2e70656f706c652e6e616d65642e6d756c7469706c652e6f7468657273 = { $i18nCategory ->
-    [one] recover { $person_name } and { $other_people } others from the trash first, then this.
+    [one] recover { $person_name } and { $other_people } other from the trash first, then this.
    *[other] recover { $person_name } and { $other_people } others from the trash first, then this.
 }
 
@@ -15604,12 +15604,12 @@ m6a6f75726e616c2e77696e646f772e73657474696e67732e74726173682e726f772e73747265746
 m6a6f75726e616c2e77696e646f772e73657474696e67732e74726173682e726f772e737472657463682e68656c642e696d706f72742e6c6162656c = it holds { $import_label } too, and the file it kept.
 
 m6a6f75726e616c2e77696e646f772e73657474696e67732e74726173682e726f772e737472657463682e68656c642e696d706f727473 = { $i18nCategory ->
-    [one] it holds { $imports } imports too, and the files they kept.
+    [one] it holds { $imports } import too, and the files it kept.
    *[other] it holds { $imports } imports too, and the files they kept.
 }
 
 m6a6f75726e616c2e77696e646f772e73657474696e67732e74726173682e726f772e737472657463682e68656c642e696d706f7274732e6e6f6e652e6b657074 = { $i18nCategory ->
-    [one] it holds { $imports } imports too.
+    [one] it holds { $imports } import too.
    *[other] it holds { $imports } imports too.
 }
 
@@ -16113,7 +16113,7 @@ m6a6f75726e616c2e77696e646f772e7368617265642e636f6e736f6c652e6c696e6b2e756e72656
 }
 
 m6a6f75726e616c2e77696e646f772e7368617265642e636f6e736f6c652e736e617073686f742e6d6573736167652e636f756e74 = { $i18nCategory ->
-    [one] snapshot of { $count } system messages
+    [one] snapshot of { $count } system message
    *[other] snapshot of { $count } system messages
 }
 
@@ -16340,7 +16340,7 @@ m6a6f75726e616c2e77696e646f772e7368617265642e676174652e6472617765722e73746174656
 m6a6f75726e616c2e77696e646f772e7368617265642e676174652e6472617765722e73746174656d656e742e6d656469616e2e756e617661696c61626c652e72657175697265642e7365636f6e6473 = median statement length n/a, needs { $minimum }s
 
 m6a6f75726e616c2e77696e646f772e7368617265642e676174652e6472617765722e73746174656d656e74732e6f627365727665642e616e642e72657175697265642e636f756e74 = { $i18nCategory ->
-    [one] { $observed } longer statements so far, needs { $i18nCategory-minimum_quantity ->
+    [one] { $observed } longer statement so far, needs { $i18nCategory-minimum_quantity ->
         [one] { $minimum }
        *[other] { $minimum }
     }
@@ -16351,7 +16351,7 @@ m6a6f75726e616c2e77696e646f772e7368617265642e676174652e6472617765722e73746174656
 }
 
 m6a6f75726e616c2e77696e646f772e7368617265642e676174652e6472617765722e73746174656d656e74732e6f627365727665642e636f756e74 = { $i18nCategory ->
-    [one] { $observed } longer statements so far
+    [one] { $observed } longer statement so far
    *[other] { $observed } longer statements so far
 }
 
@@ -16484,7 +16484,7 @@ m6a6f75726e616c2e77696e646f772e7368617265642e7374617475732e70616e652e63617074757
 m6a6f75726e616c2e77696e646f772e7368617265642e7374617475732e70616e652e636170747572652e6c6173742e726561636865642e646179 = what it adds hasn't reached your journal since { $since_day }.
 
 m6a6f75726e616c2e77696e646f772e7368617265642e7374617475732e70616e652e636170747572652e6d6f72652e6e6565642e617474656e74696f6e = { $i18nCategory ->
-    [one] and { $count } more need attention
+    [one] and { $count } more needs attention
    *[other] and { $count } more need attention
 }
 
@@ -17289,7 +17289,7 @@ m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e756e6c61626
 }
 
 m6a6f75726e616c2e77696e646f772e737065616b6572732e646973636f766572792e756e757365642e73616d706c6573 = { $i18nCategory ->
-    [one] some voice samples could not be used ({ $samples })
+    [one] a voice sample could not be used ({ $samples })
    *[other] some voice samples could not be used ({ $samples })
 }
 
@@ -17369,7 +17369,7 @@ m6a6f75726e616c2e77696e646f772e737065616b6572732e6b6e6f776e2e706c616365686f6c646
 m6a6f75726e616c2e77696e646f772e737065616b6572732e6b6e6f776e2e7365617263682e656d707479 = no known voice matches "{ $query }"
 
 m6a6f75726e616c2e77696e646f772e737065616b6572732e6b6e6f776e2e73686f772e616c6c2e636f756e74 = { $i18nCategory ->
-    [one] show all { $count } voices
+    [one] show { $count } voice
    *[other] show all { $count } voices
 }
 
@@ -17382,35 +17382,35 @@ m6a6f75726e616c2e77696e646f772e737065616b6572732e6f7074696f6e2e6c6162656c2e636f7
 m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e636f6f6c646f776e2e756e74696c2e646179 = that voice won't be offered again. your journal looks for your voice again after { $retry_day }, or you can teach it now.
 
 m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e7265636f7264696e67732e617564696f2e636f756e74 = { $i18nCategory ->
-    [one] { $recordings } recordings with audio so far
+    [one] { $recordings } recording with audio so far
    *[other] { $recordings } recordings with audio so far
 }
 
 m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e72656c6162656c2e696e636f6d706c657465 = { $i18nCategory ->
-    [one] past conversations are updated, except { $count } recordings that couldn't be updated.
+    [one] past conversations are updated, except { $count } recording that couldn't be updated.
    *[other] past conversations are updated, except { $count } recordings that couldn't be updated.
 }
 
 m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e72656c6162656c2e70726f6772657373 = { $i18nCategory ->
     [one] updating past conversations: { $completed } of { $i18nCategory-total_quantity ->
-        [one] { $total }
-       *[other] { $total }
-    } recordings
+        [one] { $total } recording
+       *[other] { $total } recordings
+    }
    *[other] updating past conversations: { $completed } of { $i18nCategory-total_quantity ->
-        [one] { $total }
-       *[other] { $total }
-    } recordings
+        [one] { $total } recording
+       *[other] { $total } recordings
+    }
 }
 
 m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e72656c6162656c2e756e646f2e70726f6772657373 = { $i18nCategory ->
     [one] returning past conversations to unnamed voices: { $completed } of { $i18nCategory-total_quantity ->
-        [one] { $total }
-       *[other] { $total }
-    } recordings
+        [one] { $total } recording
+       *[other] { $total } recordings
+    }
    *[other] returning past conversations to unnamed voices: { $completed } of { $i18nCategory-total_quantity ->
-        [one] { $total }
-       *[other] { $total }
-    } recordings
+        [one] { $total } recording
+       *[other] { $total } recordings
+    }
 }
 
 m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e72657665616c2e65766964656e63652e74696572 = { $evidence_tier } evidence
@@ -17424,28 +17424,28 @@ m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e7374617475732e65727
 
 m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e7465616368696e672e6578686175737465642e70726f6772657373 = { $i18nCategory ->
     [one] { $statements } of { $i18nCategory-required_quantity ->
-        [one] { $required }
-       *[other] { $required }
-    } longer statements taught
+        [one] { $required } longer statement
+       *[other] { $required } longer statements
+    } taught
    *[other] { $statements } of { $i18nCategory-required_quantity ->
-        [one] { $required }
-       *[other] { $required }
-    } longer statements taught
+        [one] { $required } longer statement
+       *[other] { $required } longer statements
+    } taught
 }
 
 m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e7465616368696e672e70726f6772657373 = { $i18nCategory ->
     [one] { $statements } of { $i18nCategory-required_quantity ->
-        [one] { $required }
-       *[other] { $required }
-    } longer statements
+        [one] { $required } longer statement
+       *[other] { $required } longer statements
+    }
    *[other] { $statements } of { $i18nCategory-required_quantity ->
-        [one] { $required }
-       *[other] { $required }
-    } longer statements
+        [one] { $required } longer statement
+       *[other] { $required } longer statements
+    }
 }
 
 m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e7465616368696e672e73746174656d656e7473 = { $i18nCategory ->
-    [one] { $statements } statements taught
+    [one] { $statements } statement taught
    *[other] { $statements } statements taught
 }
 
@@ -17523,7 +17523,7 @@ m6a6f75726e616c2e77696e646f772e737065616b6572732e6f776e65722e77726974652e6f776e6
 m6a6f75726e616c2e77696e646f772e737065616b6572732e7175616c6974792e6275636b6574732e656d707479 = none right now: { $empty_categories }
 
 m6a6f75726e616c2e77696e646f772e737065616b6572732e7175616c6974792e70726f67726573732e73746174656d656e7473 = { $i18nCategory ->
-    [one] { $count } longer statements
+    [one] { $count } longer statement
    *[other] { $count } longer statements
 }
 
@@ -17533,12 +17533,12 @@ m6a6f75726e616c2e77696e646f772e737065616b6572732e7175616c6974792e73746174656d656
 }
 
 m6a6f75726e616c2e77696e646f772e737065616b6572732e7175616c6974792e7465616368696e672e636f756e74 = { $i18nCategory ->
-    [one] { $count } teaching changes
+    [one] { $count } teaching change
    *[other] { $count } teaching changes
 }
 
 m6a6f75726e616c2e77696e646f772e737065616b6572732e7175616c6974792e77696e646f772e64617973 = { $i18nCategory ->
-    [one] speaker labels, last { $days } days
+    [one] speaker labels, last { $days } day
    *[other] speaker labels, last { $days } days
 }
 
@@ -17558,7 +17558,7 @@ m6a6f75726e616c2e77696e646f772e737065616b6572732e7365676d656e742e617474726962757
 }
 
 m6a6f75726e616c2e77696e646f772e737065616b6572732e7365676d656e742e6d656574696e672e6d61746368696e672e70726f6d7074 = { $i18nCategory ->
-    [one] this meeting has { $count } named speakers, but their voices can't be matched yet. assigning even a few sentences will improve voice matching for future meetings.
+    [one] this meeting has { $count } named speaker, but their voice can't be matched yet. assigning even a few sentences will improve voice matching for future meetings.
    *[other] this meeting has { $count } named speakers, but their voices can't be matched yet. assigning even a few sentences will improve voice matching for future meetings.
 }
 
@@ -17757,14 +17757,14 @@ m6a6f75726e616c2e77696e646f772e737065616b6572732e77686f2e6b6565702e7365706172617
 m6a6f75726e616c2e77696e646f772e737065616b6572732e77686f2e6b6565702e73657061726174652e726561736f6e = { $person_name } is already in your journal. if this is someone else, they will stay separate and never be mixed.
 
 m6a6f75726e616c2e77696e646f772e737065616b6572732e77686f2e707265766965772e666163742e636f756e74 = { $i18nCategory ->
-    [one] { $statements } statements across { $i18nCategory-conversations_quantity ->
-        [one] { $conversations }
-       *[other] { $conversations }
-    } conversations, all in your journal. you can undo this.
+    [one] { $statements } statement across { $i18nCategory-conversations_quantity ->
+        [one] { $conversations } conversation
+       *[other] { $conversations } conversations
+    }, all in your journal. you can undo this.
    *[other] { $statements } statements across { $i18nCategory-conversations_quantity ->
-        [one] { $conversations }
-       *[other] { $conversations }
-    } conversations, all in your journal. you can undo this.
+        [one] { $conversations } conversation
+       *[other] { $conversations } conversations
+    }, all in your journal. you can undo this.
 }
 
 m6a6f75726e616c2e77696e646f772e737065616b6572732e77686f2e7365617263682e6e6f2e706572736f6e = no one in your journal matches "{ $query }"
@@ -17861,7 +17861,7 @@ m6a6f75726e616c2e77696e646f772e73746174732e6261636b6c6f672e6361756768742e7570 = 
 m6a6f75726e616c2e77696e646f772e73746174732e6261636b6c6f672e64657461696c73 = processing details
 
 m6a6f75726e616c2e77696e646f772e73746174732e6261636b6c6f672e6f6c6465722e617564696f2e636f756e74 = { $i18nCategory ->
-    [one] { $count } older audio segments from before the last 30 days are still waiting to be transcribed.
+    [one] { $count } older audio segment from before the last 30 days is still waiting to be transcribed.
    *[other] { $count } older audio segments from before the last 30 days are still waiting to be transcribed.
 }
 
@@ -17880,7 +17880,7 @@ m6a6f75726e616c2e77696e646f772e73746174732e6261636b6c6f672e726561736f6e2e756e617
 m6a6f75726e616c2e77696e646f772e73746174732e6261636b6c6f672e7265646f2e636f6e6669726d = redo this whole day from scratch? this repeats completed processing, so it'll take longer.
 
 m6a6f75726e616c2e77696e646f772e73746174732e6261636b6c6f672e72656d61696e696e672e636f756e74 = { $i18nCategory ->
-    [one] { $count } steps left
+    [one] { $count } step left
    *[other] { $count } steps left
 }
 
@@ -17895,7 +17895,7 @@ m6a6f75726e616c2e77696e646f772e73746174732e6261636b6c6f672e737475636b2e646573637
 m6a6f75726e616c2e77696e646f772e73746174732e6261636b6c6f672e737475636b2e68656164696e67 = days that need a hand
 
 m6a6f75726e616c2e77696e646f772e73746174732e6261636b6c6f672e756e66696e69736865642e6d756c7469706c652e64617973 = { $i18nCategory ->
-    [one] { $count } activities couldn't finish processing. oldest: { $oldest_day } →
+    [one] { $count } activity couldn't finish processing. oldest: { $oldest_day } →
    *[other] { $count } activities couldn't finish processing. oldest: { $oldest_day } →
 }
 
@@ -18085,14 +18085,14 @@ m6a6f75726e616c2e77696e646f772e73746174732e746f6b656e732e726571756573742e636f756
 }
 
 m6a6f75726e616c2e77696e646f772e73746174732e746f6b656e732e726f6c6c75702e636f756e74 = { $i18nCategory ->
-    [one] { $day }: { $count } tokens
+    [one] { $day }: { $count } token
    *[other] { $day }: { $count } tokens
 }
 
 m6a6f75726e616c2e77696e646f772e73746174732e746f6b656e732e7368617265 = { $percent }% of the day's tokens
 
 m6a6f75726e616c2e77696e646f772e73746174732e746f6b656e732e746f6b656e2e636f756e74 = { $i18nCategory ->
-    [one] { $count } tokens
+    [one] { $count } token
    *[other] { $count } tokens
 }
 
@@ -19118,7 +19118,7 @@ m6a6f75726e616c2e77696e646f772e7468696e6b696e672e706163652e756e66696e69736865642
 m6a6f75726e616c2e77696e646f772e7468696e6b696e672e70726f76696465722e6c6f63616c = Local
 
 m6a6f75726e616c2e77696e646f772e7468696e6b696e672e72756e732e616c6c2e636f6d706c65746564 = { $i18nCategory ->
-    [one] all { $runs_count } run on this day completed.
+    [one] { $runs_count } run on this day completed.
    *[other] all { $runs_count } runs on this day completed.
 }
 
@@ -19142,7 +19142,7 @@ m6a6f75726e616c2e77696e646f772e7468696e6b696e672e72756e732e6461792e6e6f6e652e696
 }
 
 m6a6f75726e616c2e77696e646f772e7468696e6b696e672e72756e732e66616365742e616c6c2e636f6d706c65746564 = { $i18nCategory ->
-    [one] all { $runs_count } run in { $facet_name } on this day completed.
+    [one] { $runs_count } run in { $facet_name } on this day completed.
    *[other] all { $runs_count } runs in { $facet_name } on this day completed.
 }
 
@@ -19809,7 +19809,7 @@ m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6177616974696e672e7468696
 m6a6f75726e616c2e77696e646f772e7472616e736372697074732e626f64792e636f6e74657874 = body context
 
 m6a6f75726e616c2e77696e646f772e7472616e736372697074732e626f64792e656e74726965732e68656c64 = { $i18nCategory ->
-    [one] { $entries } entries present
+    [one] { $entries } entry present
    *[other] { $entries } entries present
 }
 
@@ -19829,7 +19829,7 @@ m6a6f75726e616c2e77696e646f772e7472616e736372697074732e626f64792e686f75722e77697
 m6a6f75726e616c2e77696e646f772e7472616e736372697074732e626f64792e686f75722e776974686f75742e64617461 = { $hour } · no body data
 
 m6a6f75726e616c2e77696e646f772e7472616e736372697074732e626f64792e686f7572732e72656d61696e696e67 = { $i18nCategory ->
-    [one] and { $hours } more hours
+    [one] and { $hours } more hour
    *[other] and { $hours } more hours
 }
 
@@ -20138,7 +20138,7 @@ m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6461792e6c6f61642e7265747
 m6a6f75726e616c2e77696e646f772e7472616e736372697074732e646973636c6f737572652e6c6162656c2e726563656e742e7261772e7369676e616c2e726f7773 = recent raw signal rows
 
 m6a6f75726e616c2e77696e646f772e7472616e736372697074732e656e74726965732e7175616e74697479 = { $i18nCategory ->
-    [one] transcript entries, { $items } items
+    [one] transcript entries, { $items } item
    *[other] transcript entries, { $items } items
 }
 
@@ -20483,7 +20483,7 @@ m6a6f75726e616c2e77696e646f772e7472616e736372697074732e7365676d656e742e72616e676
 }
 
 m6a6f75726e616c2e77696e646f772e7472616e736372697074732e7369676e616c732e63616c656e6461722e68696464656e2e636f756e74 = { $i18nCategory ->
-    [one] { $count } more deduped calendar events hidden in this compact view
+    [one] { $count } more deduped calendar event hidden in this compact view
    *[other] { $count } more deduped calendar events hidden in this compact view
 }
 
@@ -20883,17 +20883,17 @@ m6a6f75726e616c2e77696e646f772e7472616e736372697074732e74726173682e7265636569707
 m6a6f75726e616c2e77696e646f772e7472616e736372697074732e74726173682e726563656970742e7365676d656e74732e65726173652e64617465 = they erase { $erase_date } unless you recover them.
 
 m6a6f75726e616c2e77696e646f772e7472616e736372697074732e74726173682e726563656970742e7365676d656e74732e657261736564 = { $i18nCategory ->
-    [one] erased { $segments } segments from your journal
+    [one] erased { $segments } segment from your journal
    *[other] erased { $segments } segments from your journal
 }
 
 m6a6f75726e616c2e77696e646f772e7472616e736372697074732e74726173682e726563656970742e7365676d656e74732e6d6f766564 = { $i18nCategory ->
-    [one] moved { $segments } segments to the trash
+    [one] moved { $segments } segment to the trash
    *[other] moved { $segments } segments to the trash
 }
 
 m6a6f75726e616c2e77696e646f772e7472616e736372697074732e74726173682e726563656970742e7365676d656e74732e7265636f7665726564 = { $i18nCategory ->
-    [one] { $segments } segments recovered
+    [one] { $segments } segment recovered
    *[other] { $segments } segments recovered
 }
 

@@ -306,7 +306,7 @@ journal.window.agents.suggestions.waiting.count = { $quantity ->
        *[other] { $count } suggestions from { $agent_name } are waiting
     }
 
-journal.window.backup.age.backup.failed.clock = backup attempt failed { $recorded_at } ago
+journal.window.backup.age.backup.failed.clock = backup attempt failed · { $recorded_at }
 
 journal.window.backup.age.backup.failed.day = { $quantity ->
         [one] backup attempt failed { $count } day ago
@@ -338,7 +338,7 @@ journal.window.backup.age.backup.failed.week = { $quantity ->
        *[other] backup attempt failed { $count } weeks ago
     }
 
-journal.window.backup.age.check.failed.clock = spot-check failed { $recorded_at } ago
+journal.window.backup.age.check.failed.clock = spot-check failed · { $recorded_at }
 
 journal.window.backup.age.check.failed.day = { $quantity ->
         [one] spot-check failed { $count } day ago
@@ -370,7 +370,7 @@ journal.window.backup.age.check.failed.week = { $quantity ->
        *[other] spot-check failed { $count } weeks ago
     }
 
-journal.window.backup.age.check.skipped.clock = spot-check couldn't run { $recorded_at } ago
+journal.window.backup.age.check.skipped.clock = spot-check couldn't run · { $recorded_at }
 
 journal.window.backup.age.check.skipped.day = { $quantity ->
         [one] spot-check couldn't run { $count } day ago
@@ -402,7 +402,7 @@ journal.window.backup.age.check.skipped.week = { $quantity ->
        *[other] spot-check couldn't run { $count } weeks ago
     }
 
-journal.window.backup.age.elapsed.clock = { $recorded_at } ago
+journal.window.backup.age.elapsed.clock = { $recorded_at }
 
 journal.window.backup.age.elapsed.day = { $quantity ->
         [one] { $count } day ago
@@ -461,7 +461,7 @@ journal.window.backup.erasure.running.count = { $things_quantity ->
 journal.window.backup.offload.capacity.suggested = suggested: { $suggested_size }
 
 journal.window.backup.offload.days.show.all = { $days_quantity ->
-        [one] show all { $days } days
+        [one] show { $days } day
        *[other] show all { $days } days
     }
 
@@ -666,7 +666,7 @@ journal.window.backup.status.paused.on.date = you paused backup on { $paused_at 
 journal.window.backup.storage.user.backend = your own storage · { $storage_backend }
 
 journal.window.backup.verification.parts.checked = { $parts_quantity ->
-        [one] checked 1 of { $parts } parts of your backup.
+        [one] checked 1 of { $parts } part of your backup.
        *[other] checked 1 of { $parts } parts of your backup.
     }
 
@@ -705,7 +705,7 @@ journal.window.body.empty.workouts.import = nothing here yet. bring in your work
 journal.window.body.empty.workouts.import.resources = if your journal runs on a computer, you can also bring in an Apple Health export on the import page or Oura data from that computer's command line. { $docs_link_start }read about body imports{ $docs_link_end }.
 
 journal.window.body.error.window.span = { $quantity ->
-    [one] Window span must be { $maximum_days } days or less.
+    [one] Window span must be { $maximum_days } day or less.
    *[other] Window span must be { $maximum_days } days or less.
 }
 
@@ -713,7 +713,7 @@ journal.window.body.experience.continuing.generic = experience continuing
 
 journal.window.body.experience.continuing.named = { $experience_kind } continuing
 
-journal.window.body.grid.source.all = { $date } · { $slot1 } and { $slot2 } and { $slot3 }
+journal.window.body.grid.source.all = { $date } · { $slot1 }, { $slot2 } and { $slot3 }
 
 journal.window.body.grid.source.apple = { $date } · { $slot1 }
 
@@ -735,8 +735,8 @@ journal.window.body.hide.previous.day.carryover = the rest of a night or workout
 
 journal.window.body.import.progress.running.days = { $total_quantity ->
     [one] { $done_quantity ->
-        [one] still running: { $done_days } of { $total_days } days done.
-       *[other] still running: { $done_days } of { $total_days } days done.
+        [one] still running: { $done_days } of { $total_days } day done.
+       *[other] still running: { $done_days } of { $total_days } day done.
     }
    *[other] { $done_quantity ->
         [one] still running: { $done_days } of { $total_days } days done.
@@ -753,8 +753,8 @@ journal.window.body.import.progress.running.entries = { $quantity ->
 
 journal.window.body.import.progress.stopped.days = { $total_quantity ->
     [one] { $done_quantity ->
-        [one] stopped partway: { $done_days } of { $total_days } days done.
-       *[other] stopped partway: { $done_days } of { $total_days } days done.
+        [one] stopped partway: { $done_days } of { $total_days } day done.
+       *[other] stopped partway: { $done_days } of { $total_days } day done.
     }
    *[other] { $done_quantity ->
         [one] stopped partway: { $done_days } of { $total_days } days done.
@@ -770,12 +770,12 @@ journal.window.body.import.progress.stopped.entries = { $quantity ->
 }
 
 journal.window.body.import.span.counted.days = { $quantity ->
-    [one] { $first } to { $last }, { $count } days
+    [one] { $first } to { $last }, { $count } day
    *[other] { $first } to { $last }, { $count } days
 }
 
 journal.window.body.import.span.counted.months = { $quantity ->
-    [one] { $first } to { $last } ({ $count } months)
+    [one] { $first } to { $last } ({ $count } month)
    *[other] { $first } to { $last } ({ $count } months)
 }
 
@@ -1044,7 +1044,7 @@ journal.window.entities.delete.couldn.t.recover.that = couldn't recover that ent
 journal.window.entities.delete.detail.action.help = { $action_start }delete{ $action_end } { $description_start }moves it to the trash, where you can recover it until it's erased.{ $description_end }
 
 journal.window.entities.delete.erased.from.your.journal = { $total_quantity ->
-        [one] erased { $total } entities from your journal
+        [one] erased { $total } entity from your journal
        *[other] erased { $total } entities from your journal
     }
 
@@ -1108,7 +1108,7 @@ journal.window.entities.delete.moved.of.to.the = { $processed_quantity ->
     }
 
 journal.window.entities.delete.moved.to.the.trash = { $total_quantity ->
-        [one] moved { $total } entities to the trash
+        [one] moved { $total } entity to the trash
        *[other] moved { $total } entities to the trash
     }
 
@@ -1137,7 +1137,7 @@ journal.window.entities.delete.partial.items.not.recovered = { $remaining_quanti
 journal.window.entities.delete.pick.label.select.name = select { $entity_name }
 
 journal.window.entities.delete.recovered.count = { $total_quantity ->
-        [one] { $total } entities recovered
+        [one] { $total } entity recovered
        *[other] { $total } entities recovered
     }
 
@@ -1199,7 +1199,7 @@ journal.window.entities.detected.hide.done = { $entity_name } is hidden in { $fa
 journal.window.entities.detected.hide.failed = couldn't hide { $entity_name }. nothing changed.
 
 journal.window.entities.detected.page.range = { $total_quantity ->
-        [one] showing { $first }–{ $last } of { $total } detected entities
+        [one] showing { $first }–{ $last } of { $total } detected entity
        *[other] showing { $first }–{ $last } of { $total } detected entities
     }
 
@@ -1377,13 +1377,13 @@ journal.window.entities.list.page.range = { $first }–{ $last } of { $total }
 
 journal.window.entities.list.results.count = { $matched_quantity ->
         [one] { $matched } of { $total_quantity ->
-        [one] { $total }
-       *[other] { $total }
-    } entities
+        [one] { $total } entity
+       *[other] { $total } entities
+    }
        *[other] { $matched } of { $total_quantity ->
-        [one] { $total }
-       *[other] { $total }
-    } entities
+        [one] { $total } entity
+       *[other] { $total } entities
+    }
     }
 
 journal.window.entities.list.select.all.count = { $total_quantity ->
@@ -1417,16 +1417,16 @@ journal.window.entities.merge.keep.partial = { $failed_quantity ->
         [one] { $processed }
        *[other] { $processed }
     } of { $total_quantity ->
-        [one] { $total }
-       *[other] { $total }
-    } pairs separate. 1 is still listed.
+        [one] { $total } pair
+       *[other] { $total } pairs
+    } separate. 1 is still listed.
        *[other] kept { $processed_quantity ->
         [one] { $processed }
        *[other] { $processed }
     } of { $total_quantity ->
-        [one] { $total }
-       *[other] { $total }
-    } pairs separate. { $failed } are still listed.
+        [one] { $total } pair
+       *[other] { $total } pairs
+    } separate. { $failed } are still listed.
     }
 
 journal.window.entities.merge.keep.selection = { $selected_quantity ->
@@ -1444,16 +1444,16 @@ journal.window.entities.merge.merge.partial = { $failed_quantity ->
         [one] { $processed }
        *[other] { $processed }
     } of { $total_quantity ->
-        [one] { $total }
-       *[other] { $total }
-    } pairs. 1 couldn't be merged.
+        [one] { $total } pair
+       *[other] { $total } pairs
+    }. 1 couldn't be merged.
        *[other] merged { $processed_quantity ->
         [one] { $processed }
        *[other] { $processed }
     } of { $total_quantity ->
-        [one] { $total }
-       *[other] { $total }
-    } pairs. { $failed } couldn't be merged.
+        [one] { $total } pair
+       *[other] { $total } pairs
+    }. { $failed } couldn't be merged.
     }
 
 journal.window.entities.merge.pair.confirm.aria = { $pairs_quantity ->
@@ -1507,13 +1507,13 @@ journal.window.entities.observation.coverage = { $observations_quantity ->
 
 journal.window.entities.observation.disclosure = { $visible_quantity ->
         [one] showing the { $visible } most recent of { $total_quantity ->
-        [one] { $total }
-       *[other] { $total }
-    } moments
+        [one] { $total } moment
+       *[other] { $total } moments
+    }
        *[other] showing the { $visible } most recent of { $total_quantity ->
-        [one] { $total }
-       *[other] { $total }
-    } moments
+        [one] { $total } moment
+       *[other] { $total } moments
+    }
     }
 
 journal.window.entities.observation.grid.count = { $quantity ->
@@ -1528,7 +1528,7 @@ journal.window.entities.observation.none.with.entity = nothing with { $entity_na
 journal.window.entities.observation.range = { $start_day } – { $end_day }
 
 journal.window.entities.observation.show.all = { $observations_quantity ->
-        [one] show all { $observations } observation
+        [one] show { $observations } observation
        *[other] show all { $observations } observations
     }
 
@@ -1583,7 +1583,7 @@ journal.window.entities.search.finding.type.and.names = finding { $entity_type }
 journal.window.entities.search.none.match = no entities match "{ $query }".
 
 journal.window.entities.search.placeholder.entity.count = { $total_quantity ->
-        [one] search { $total } entities
+        [one] search { $total } entity
        *[other] search { $total } entities
     }
 
@@ -1702,7 +1702,7 @@ journal.window.facets.activities.evidence.segments.unknown = { $quantity ->
     }
 
 journal.window.facets.activities.evidence.show.all.count = { $quantity ->
-        [one] show all { $count } segments
+        [one] show { $count } segment
        *[other] show all { $count } segments
     }
 
@@ -1789,7 +1789,7 @@ journal.window.facets.awareness.response.detail.unreadable.settings = your setti
 journal.window.facets.curation.ambiguity.choose.name = choose { $candidate_name }
 
 journal.window.facets.curation.ambiguity.member.occurrences = { $quantity ->
-        [one] { $count } occurrences
+        [one] { $count } occurrence
        *[other] { $count } occurrences
     }
 
@@ -1861,12 +1861,12 @@ journal.window.facets.curation.preview.speaker.labels.count = { $quantity ->
     }
 
 journal.window.facets.curation.preview.speaker.segments = { $labels_quantity ->
-        [one] speaker labels updated: { $labels } labels, { $corrections_quantity ->
-            [one] { $corrections } corrections
+        [one] speaker labels updated: { $labels } label, { $corrections_quantity ->
+            [one] { $corrections } correction
            *[other] { $corrections } corrections
         }
        *[other] speaker labels updated: { $labels } labels, { $corrections_quantity ->
-            [one] { $corrections } corrections
+            [one] { $corrections } correction
            *[other] { $corrections } corrections
         }
     }
@@ -1889,7 +1889,7 @@ journal.window.facets.curation.response.detail.unknown.group = unknown curation 
 journal.window.facets.curation.response.detail.unreadable.settings = your settings file at { $settings_path } couldn't be read. your settings were not changed. repair the file or restore { $slot3 } from a backup, then try again.
 
 journal.window.facets.curation.review.total = { $quantity ->
-        [one] { $count } suggestions to review. choose a group to begin.
+        [one] { $count } suggestion to review. choose a group to begin.
        *[other] { $count } suggestions to review. choose a group to begin.
     }
 
@@ -2148,19 +2148,19 @@ journal.window.health.glance.devices.count.many = { $quantity ->
     }
 
 journal.window.health.glance.devices.failing = { $quantity ->
-        [one] your journal couldn't accept uploads from { $count } devices: { $devices }.
+        [one] your journal couldn't accept uploads from { $count } device: { $devices }.
        *[other] your journal couldn't accept uploads from { $count } devices: { $devices }.
     }
 
 journal.window.health.glance.devices.silent = { $quantity ->
-        [one] { $count } devices haven't added to your journal recently: { $devices }.
+        [one] { $count } device hasn't added to your journal recently: { $devices }.
        *[other] { $count } devices haven't added to your journal recently: { $devices }.
     }
 
 journal.window.health.glance.service.attention = 1 service needs attention: { $services }.
 
 journal.window.health.glance.services.attention = { $quantity ->
-        [one] { $count } services need attention: { $services }.
+        [one] { $count } service needs attention: { $services }.
        *[other] { $count } services need attention: { $services }.
     }
 
@@ -2169,18 +2169,18 @@ journal.window.health.history.caught.up.since = history caught up back to { $day
 journal.window.health.history.cost.consent = finishing { $recordings } older recordings, { $day_outputs } daily outputs and { $activities } activities uses your chosen model and may add charges from your provider. today's work goes first.
 
 journal.window.health.history.counts = { $recording_quantity ->
-        [one] { $recordings } recordings and { $output_quantity ->
-            [one] { $outputs } daily outputs left
+        [one] { $recordings } recording and { $output_quantity ->
+            [one] { $outputs } daily output left
            *[other] { $outputs } daily outputs left
         }
        *[other] { $recordings } recordings and { $output_quantity ->
-            [one] { $outputs } daily outputs left
+            [one] { $outputs } daily output left
            *[other] { $outputs } daily outputs left
         }
     }
 
 journal.window.health.history.held.count = { $quantity ->
-        [one] { $count } items set aside
+        [one] { $count } item set aside
        *[other] { $count } items set aside
     }
 
@@ -2191,7 +2191,7 @@ journal.window.health.history.summary.current = { $metrics }. through { $through
 journal.window.health.history.summary.stale = last checked: { $metrics }. through { $through_day }; today and yesterday are separate.
 
 journal.window.health.history.unreadable.count = { $quantity ->
-        [one] { $count } days could not be checked
+        [one] { $count } day could not be checked
        *[other] { $count } days could not be checked
     }
 
@@ -2211,12 +2211,12 @@ journal.window.health.logs.lines.count = { $quantity ->
     }
 
 journal.window.health.logs.service.collapsed = { $line_quantity ->
-        [one] ── { $service } ── ({ $lines } lines, ★ { $error_quantity ->
-            [one] { $errors } errors
+        [one] ── { $service } ── ({ $lines } line, ★ { $error_quantity ->
+            [one] { $errors } error
            *[other] { $errors } errors
         })
        *[other] ── { $service } ── ({ $lines } lines, ★ { $error_quantity ->
-            [one] { $errors } errors
+            [one] { $errors } error
            *[other] { $errors } errors
         })
     }
@@ -2253,7 +2253,7 @@ journal.window.health.schedule.summary.next = { $quantity ->
     }
 
 journal.window.health.search.last.check.elapsed = { $hour_quantity ->
-        [one] last search check { $hours } hours ago: { $updated_quantity ->
+        [one] last search check { $hours } hour ago: { $updated_quantity ->
             [one] { $updated } updated
            *[other] { $updated } updated
         }, { $removed_quantity ->
@@ -2281,12 +2281,12 @@ journal.window.health.search.last.check.recent = { $updated_quantity ->
     }
 
 journal.window.health.search.queued = { $quantity ->
-        [one] { $count } updates queued
+        [one] { $count } update queued
        *[other] { $count } updates queued
     }
 
 journal.window.health.search.removals = { $quantity ->
-        [one] { $count } removals still waiting
+        [one] { $count } removal still waiting
        *[other] { $count } removals still waiting
     }
 
@@ -2312,7 +2312,7 @@ journal.window.health.thinking.recent.errors = { $quantity ->
     }
 
 journal.window.health.thinking.tokens.today = { $quantity ->
-        [one] { $count } tokens used today
+        [one] { $count } token used today
        *[other] { $count } tokens used today
     }
 
@@ -2383,12 +2383,12 @@ journal.window.health.vitals.thinking.running = { $quantity ->
     }
 
 journal.window.health.work.band.activities = { $quantity ->
-        [one] { $count } activities left
+        [one] { $count } activity left
        *[other] { $count } activities left
     }
 
 journal.window.health.work.band.owner.requests = { $quantity ->
-        [one] { $count } requests to redo a day
+        [one] { $count } request to redo a day
        *[other] { $count } requests to redo a day
     }
 
@@ -2398,11 +2398,11 @@ journal.window.health.work.band.permission = { $quantity ->
     }
 
 journal.window.health.work.band.progress = { $recordings_ready_quantity ->
-        [one] { $band }: { $recordings_ready } recordings ready, { $recordings_left_quantity ->
+        [one] { $band }: { $recordings_ready } recording ready, { $recordings_left_quantity ->
             [one] { $recordings_left } left
            *[other] { $recordings_left } left
         }; { $outputs_ready_quantity ->
-            [one] { $outputs_ready } daily outputs ready
+            [one] { $outputs_ready } daily output ready
            *[other] { $outputs_ready } daily outputs ready
         }, { $outputs_left_quantity ->
             [one] { $outputs_left } left
@@ -2412,7 +2412,7 @@ journal.window.health.work.band.progress = { $recordings_ready_quantity ->
             [one] { $recordings_left } left
            *[other] { $recordings_left } left
         }; { $outputs_ready_quantity ->
-            [one] { $outputs_ready } daily outputs ready
+            [one] { $outputs_ready } daily output ready
            *[other] { $outputs_ready } daily outputs ready
         }, { $outputs_left_quantity ->
             [one] { $outputs_left } left
@@ -2421,11 +2421,11 @@ journal.window.health.work.band.progress = { $recordings_ready_quantity ->
     }
 
 journal.window.health.work.band.progress.details = { $recordings_ready_quantity ->
-        [one] { $band }: { $recordings_ready } recordings ready, { $recordings_left_quantity ->
+        [one] { $band }: { $recordings_ready } recording ready, { $recordings_left_quantity ->
             [one] { $recordings_left } left
            *[other] { $recordings_left } left
         }; { $outputs_ready_quantity ->
-            [one] { $outputs_ready } daily outputs ready
+            [one] { $outputs_ready } daily output ready
            *[other] { $outputs_ready } daily outputs ready
         }, { $outputs_left_quantity ->
             [one] { $outputs_left } left
@@ -2435,7 +2435,7 @@ journal.window.health.work.band.progress.details = { $recordings_ready_quantity 
             [one] { $recordings_left } left
            *[other] { $recordings_left } left
         }; { $outputs_ready_quantity ->
-            [one] { $outputs_ready } daily outputs ready
+            [one] { $outputs_ready } daily output ready
            *[other] { $outputs_ready } daily outputs ready
         }, { $outputs_left_quantity ->
             [one] { $outputs_left } left
@@ -2453,7 +2453,7 @@ journal.window.health.work.hold.page = page { $page } of { $pages }
 journal.window.health.work.hold.reason = { $item }: { $reason }
 
 journal.window.health.work.hold.reason.count = { $quantity ->
-        [one] { $item } · { $count } items: { $reason }
+        [one] { $item } · { $count } item: { $reason }
        *[other] { $item } · { $count } items: { $reason }
     }
 
@@ -2475,7 +2475,7 @@ journal.window.health.work.inspection.complete = { $quantity ->
         [one] { $checked_quantity ->
             [one] { $checked }
            *[other] { $checked }
-        } of { $total } days checked ({ $range }). the inspection covers the whole journal.
+        } of { $total } day checked ({ $range }). the inspection covers the whole journal.
        *[other] { $checked_quantity ->
             [one] { $checked }
            *[other] { $checked }
@@ -2486,7 +2486,7 @@ journal.window.health.work.inspection.incomplete = { $quantity ->
         [one] { $checked_quantity ->
             [one] { $checked }
            *[other] { $checked }
-        } of { $total } days checked ({ $range }). the inspection is incomplete.
+        } of { $total } day checked ({ $range }). the inspection is incomplete.
        *[other] { $checked_quantity ->
             [one] { $checked }
            *[other] { $checked }
@@ -2497,7 +2497,7 @@ journal.window.health.work.inspection.stale = { $quantity ->
         [one] { $checked_quantity ->
             [one] { $checked }
            *[other] { $checked }
-        } of { $total } days checked ({ $range }). last known progress, checked { $checked_at }.
+        } of { $total } day checked ({ $range }). last known progress, checked { $checked_at }.
        *[other] { $checked_quantity ->
             [one] { $checked }
            *[other] { $checked }
@@ -2666,7 +2666,7 @@ journal.window.home.health.device.age = { $device } ({ $age })
 journal.window.home.health.device.sources = { $device } ({ $sources })
 
 journal.window.home.health.quiet.devices = { $quantity ->
-        [one] { $count } devices haven't added to your journal recently: { $devices }.
+        [one] { $count } device hasn't added to your journal recently: { $devices }.
        *[other] { $count } devices haven't added to your journal recently: { $devices }.
     }
 
@@ -2680,7 +2680,7 @@ journal.window.home.health.quiet.elapsed.hour = { $quantity ->
        *[other] { $device } hasn't added to your journal in { $count } hours.
     }
 
-journal.window.home.health.quiet.elapsed.just.now = { $device } hasn't added to your journal in just now.
+journal.window.home.health.quiet.elapsed.just.now = { $device } last added to your journal just now.
 
 journal.window.home.health.quiet.elapsed.minute = { $quantity ->
         [one] { $device } hasn't added to your journal in { $count } minute.
@@ -2734,17 +2734,17 @@ journal.window.home.narrative.coverage.started = processing window starts at { $
 journal.window.home.narrative.updated.timestamp = updated at { $updated_at }
 
 journal.window.home.needs.devices.named = { $quantity ->
-        [one] { $count } devices aren't reaching your journal: { $names }.
+        [one] { $count } device isn't reaching your journal: { $names }.
        *[other] { $count } devices aren't reaching your journal: { $names }.
     }
 
 journal.window.home.needs.devices.unnamed = { $quantity ->
-        [one] { $count } devices aren't reaching your journal.
+        [one] { $count } device isn't reaching your journal.
        *[other] { $count } devices aren't reaching your journal.
     }
 
 journal.window.home.needs.devices.unnamed.count = { $quantity ->
-        [one] { $count } unnamed devices
+        [one] { $count } unnamed device
        *[other] { $count } unnamed devices
     }
 
@@ -3022,7 +3022,7 @@ journal.window.home.today.activity.count = { $quantity ->
     }
 
 journal.window.home.today.activity.preview.count = { $quantity ->
-        [one] { $preview_count } of { $activity_count } activities
+        [one] { $preview_count } of { $activity_count } activity
        *[other] { $preview_count } of { $activity_count } activities
     }
 
@@ -3143,24 +3143,24 @@ journal.window.import.consent.removal.multiple.move = { $quantity ->
 journal.window.import.consent.removal.storage.total = total size: { $storage }
 
 journal.window.import.detail.content.attendees = { $quantity ->
-    [one] { $count } attendees
+    [one] { $count } attendee
    *[other] { $count } attendees
 }
 
 journal.window.import.detail.content.duration.minutes = { $minutes } min
 
 journal.window.import.detail.content.highlights = { $quantity ->
-    [one] { $count } highlights
+    [one] { $count } highlight
    *[other] { $count } highlights
 }
 
 journal.window.import.detail.content.messages = { $quantity ->
-    [one] { $count } messages
+    [one] { $count } message
    *[other] { $count } messages
 }
 
 journal.window.import.detail.content.summary.count = { $quantity ->
-    [one] { $source_name }, { $count } items
+    [one] { $source_name }, { $count } item
    *[other] { $source_name }, { $count } items
 }
 
@@ -3243,7 +3243,7 @@ journal.window.import.detail.merge.errored = { $quantity ->
 }
 
 journal.window.import.detail.merge.links.left.out = { $quantity ->
-    [one] { $count } entity links left out
+    [one] { $count } entity link left out
    *[other] { $count } entity links left out
 }
 
@@ -3304,7 +3304,7 @@ journal.window.import.folder.schedule.conflicts = custom schedules stay unchange
 journal.window.import.guide.step.number = step { $step_number }
 
 journal.window.import.history.archive.left.out = { $quantity ->
-    [one] { $count } members left out
+    [one] { $count } member left out
    *[other] { $count } members left out
 }
 
@@ -3314,7 +3314,7 @@ journal.window.import.history.archive.processing = { $quantity ->
 }
 
 journal.window.import.history.archive.rejected = { $quantity ->
-    [one] { $count } parts rejected
+    [one] { $count } part rejected
    *[other] { $count } parts rejected
 }
 
@@ -3324,7 +3324,7 @@ journal.window.import.history.archive.remaining = { $quantity ->
 }
 
 journal.window.import.history.archive.saved = { $quantity ->
-    [one] { $count } parts saved
+    [one] { $count } part saved
    *[other] { $count } parts saved
 }
 
@@ -3413,7 +3413,7 @@ journal.window.import.preview.archive.left.out = { $quantity ->
 }
 
 journal.window.import.preview.archive.recording.bytes = { $quantity ->
-    [one] { $count } recording bytes
+    [one] { $count } recording byte
    *[other] { $count } recording bytes
 }
 
@@ -3476,12 +3476,12 @@ journal.window.import.progress.completed.pages = { $quantity ->
 journal.window.import.progress.completed.time = took { $elapsed_time }
 
 journal.window.import.progress.count.entities = { $quantity ->
-    [one] { $count } entities
+    [one] { $count } entity
    *[other] { $count } entities
 }
 
 journal.window.import.progress.count.entities.found = { $quantity ->
-    [one] { $count } entities found
+    [one] { $count } entity found
    *[other] { $count } entities found
 }
 
@@ -3495,7 +3495,7 @@ journal.window.import.progress.date.end = to { $last_date }
 journal.window.import.progress.date.start = from { $first_date }
 
 journal.window.import.progress.items.ratio = { $total_quantity ->
-    [one] { $processed }/{ $total } items
+    [one] { $processed }/{ $total } item
    *[other] { $processed }/{ $total } items
 }
 
@@ -3575,7 +3575,7 @@ journal.window.import.removal.receipt.erase.date.one = erases { $scheduled_erase
 journal.window.import.removal.receipt.erased.import = import erased from your journal
 
 journal.window.import.removal.receipt.erased.imports = { $quantity ->
-    [one] erased { $import_count } imports from your journal
+    [one] erased { $import_count } import from your journal
    *[other] erased { $import_count } imports from your journal
 }
 
@@ -3594,7 +3594,7 @@ journal.window.import.removal.receipt.marked = { $quantity ->
 }
 
 journal.window.import.removal.receipt.moved.imports = { $quantity ->
-    [one] moved { $import_count } imports to the trash
+    [one] moved { $import_count } import to the trash
    *[other] moved { $import_count } imports to the trash
 }
 
@@ -3664,7 +3664,7 @@ journal.window.import.removal.receipt.partial.recover = { $quantity ->
 journal.window.import.removal.receipt.recovered.import = import recovered
 
 journal.window.import.removal.receipt.recovered.imports = { $quantity ->
-    [one] { $import_count } imports recovered
+    [one] { $import_count } import recovered
    *[other] { $import_count } imports recovered
 }
 
@@ -3977,7 +3977,7 @@ journal.window.map.entry.stay.margin.near.place = { $place } is { $distance_mete
 journal.window.map.entry.stay.margin.near.place.category = { $place } ({ $category }) is { $distance_meters } m away; these readings, with their margins, all fall within { $margin_meters } m of their centre.
 
 journal.window.map.entry.stay.precise.reason = { $quantity ->
-    [one] your journal worked this stay out from { $count } precise readings that stayed within 100 m of the first of them for at least five minutes. its times are the first and last of them.
+    [one] { $count } precise reading is listed for this stay.
    *[other] your journal worked this stay out from { $count } precise readings that stayed within 100 m of the first of them for at least five minutes. its times are the first and last of them.
 }
 
@@ -3986,7 +3986,7 @@ journal.window.map.entry.stay.recorded.device = a stay your journal worked out f
 journal.window.map.entry.stay.within = these readings, with their margins, all fall inside { $area }.
 
 journal.window.map.entry.transcripts.segments = { $quantity ->
-    [one] open in transcripts: { $count } segments
+    [one] open in transcripts: { $count } segment
    *[other] open in transcripts: { $count } segments
 }
 
@@ -4010,7 +4010,7 @@ journal.window.map.month.area.days.in.month = { $quantity ->
 journal.window.map.month.area.days.ratio = { $days_with_stops } of { $days_in_month }
 
 journal.window.map.month.area.days.show.all = { $quantity ->
-    [one] show all { $count } days
+    [one] show { $count } day
    *[other] show all { $count } days
 }
 
@@ -4105,12 +4105,12 @@ journal.window.map.month.areas.outside.show.all = { $quantity ->
 }
 
 journal.window.map.month.areas.show.all = { $quantity ->
-    [one] show all { $count } areas
+    [one] show { $count } area
    *[other] show all { $count } areas
 }
 
 journal.window.map.month.day.stay.readings = { $quantity ->
-    [one] a stay your journal worked out from { $count } of your phone's readings
+    [one] { $count } reading from your phone is listed for this stay
    *[other] a stay your journal worked out from { $count } of your phone's readings
 }
 
@@ -4127,8 +4127,8 @@ journal.window.map.month.map.area.summary = { $shaded_quantity ->
 }
 
 journal.window.map.month.map.area.summary.home = { $shaded_quantity ->
-    [one] map of around { $area }: { $shaded_areas } shaded area, each { $size } across. the same areas are listed under areas this month.
-   *[other] map of around { $area }: { $shaded_areas } shaded areas, each { $size } across. the same areas are listed under areas this month.
+    [one] map of the area around { $area }: { $shaded_areas } shaded area, { $size } across. the same area is listed under areas this month.
+   *[other] map of the area around { $area }: { $shaded_areas } shaded areas, each { $size } across. the same areas are listed under areas this month.
 }
 
 journal.window.map.month.map.group.summary = { $shaded_quantity ->
@@ -4144,12 +4144,12 @@ journal.window.map.month.map.group.summary = { $shaded_quantity ->
 
 journal.window.map.month.map.group.summary.home = { $shaded_quantity ->
     [one] { $area_quantity ->
-        [one] map of around { $area }: { $shaded_areas } shaded area, each { $size } across, holding the { $areas } area listed under areas this month.
-       *[other] map of around { $area }: { $shaded_areas } shaded area, each { $size } across, holding the { $areas } areas listed under areas this month.
+        [one] map of the area around { $area }: { $shaded_areas } shaded area, { $size } across, holding the { $areas } area listed under areas this month.
+       *[other] map of the area around { $area }: { $shaded_areas } shaded area, { $size } across, holding the { $areas } areas listed under areas this month.
     }
    *[other] { $area_quantity ->
-        [one] map of around { $area }: { $shaded_areas } shaded areas, each { $size } across, holding the { $areas } area listed under areas this month.
-       *[other] map of around { $area }: { $shaded_areas } shaded areas, each { $size } across, holding the { $areas } areas listed under areas this month.
+        [one] map of the area around { $area }: { $shaded_areas } shaded areas, each { $size } across, holding the { $areas } area listed under areas this month.
+       *[other] map of the area around { $area }: { $shaded_areas } shaded areas, each { $size } across, holding the { $areas } areas listed under areas this month.
     }
 }
 
@@ -4159,12 +4159,12 @@ journal.window.map.month.readings.undrawn = { $quantity ->
 }
 
 journal.window.map.month.stops.calendar = { $stops_quantity ->
-    [one] { $days_with_stops } of { $days_in_month } days have stops
+    [one] { $days_with_stops } of { $days_in_month } days has stops
    *[other] { $days_with_stops } of { $days_in_month } days have stops
 }
 
 journal.window.map.month.stops.glance = { $stops_quantity ->
-    [one] { $days_with_stops } of { $days_in_month } days have stops.
+    [one] { $days_with_stops } of { $days_in_month } days has stops.
    *[other] { $days_with_stops } of { $days_in_month } days have stops.
 }
 
@@ -4367,8 +4367,8 @@ journal.window.search.count.results.across.days = { $match_quantity ->
 
 journal.window.search.count.results.shown.for.day = { $match_quantity ->
     [one] { $shown_quantity ->
-        [one] showing the top { $shown_count } of { $match_count } matches for this day.
-       *[other] showing the top { $shown_count } of { $match_count } matches for this day.
+        [one] showing the top { $shown_count } of { $match_count } match for this day.
+       *[other] showing the top { $shown_count } of { $match_count } match for this day.
     }
    *[other] { $shown_quantity ->
         [one] showing the top { $shown_count } of { $match_count } matches for this day.
@@ -4448,44 +4448,44 @@ journal.window.settings.local.access.bookmark.address = a bookmark to{ $slot1 }{
 journal.window.settings.local.access.open.address = open: anyone using this computer, and any program running on it, can open your journal at{ $slot1 }{ $journal_address }.
 
 journal.window.settings.logs.directory.count = { $quantity ->
-      [one] { $count } cache dir(s)
+      [one] { $count } cache dir
      *[other] { $count } cache dir(s)
     }
 
 journal.window.settings.logs.file.count = { $quantity ->
-      [one] { $count } file(s)
+      [one] { $count } file
      *[other] { $count } file(s)
     }
 
 journal.window.settings.logs.preview.file.and.directory.count = { $quantity ->
-      [one] { $files } operational-log file(s) and { $directory_quantity ->
-      [one] { $directories } cache dir(s)
+      [one] { $files } operational-log file and { $directory_quantity ->
+      [one] { $directories } cache dir
      *[other] { $directories } cache dir(s)
     } ({ $bytes } B) would be deleted.
      *[other] { $files } operational-log file(s) and { $directory_quantity ->
-      [one] { $directories } cache dir(s)
+      [one] { $directories } cache dir
      *[other] { $directories } cache dir(s)
     } ({ $bytes } B) would be deleted.
     }
 
 journal.window.settings.logs.preview.retention.compacted.count = { $quantity ->
-      [one] { $lines } retention-log line(s) would be compacted ({ $bytes } B).
+      [one] { $lines } retention-log line would be compacted ({ $bytes } B).
      *[other] { $lines } retention-log line(s) would be compacted ({ $bytes } B).
     }
 
 journal.window.settings.logs.result.file.and.directory.count = { $quantity ->
-      [one] { $files } operational-log file(s) and { $directory_quantity ->
-      [one] { $directories } cache dir(s)
+      [one] { $files } operational-log file and { $directory_quantity ->
+      [one] { $directories } cache dir
      *[other] { $directories } cache dir(s)
     } ({ $bytes } B) deleted.
      *[other] { $files } operational-log file(s) and { $directory_quantity ->
-      [one] { $directories } cache dir(s)
+      [one] { $directories } cache dir
      *[other] { $directories } cache dir(s)
     } ({ $bytes } B) deleted.
     }
 
 journal.window.settings.logs.result.retention.compacted.count = { $quantity ->
-      [one] { $lines } retention-log line(s) compacted ({ $bytes } B).
+      [one] { $lines } retention-log line compacted ({ $bytes } B).
      *[other] { $lines } retention-log line(s) compacted ({ $bytes } B).
     }
 
@@ -5313,57 +5313,57 @@ journal.window.settings.removal.history.event.trashed = { $presentation ->
     }
 
 journal.window.settings.removal.history.group.backup.count = { $quantity ->
-        [one] { $count } backup copies
+        [one] { $count } backup copy
        *[other] { $count } backup copies
     }
 
 journal.window.settings.removal.history.group.detected.entities.count = { $quantity ->
-        [one] { $count } detected entities
+        [one] { $count } detected entity
        *[other] { $count } detected entities
     }
 
 journal.window.settings.removal.history.group.entity.count = { $quantity ->
-        [one] { $count } entities
+        [one] { $count } entity
        *[other] { $count } entities
     }
 
 journal.window.settings.removal.history.group.facet.count = { $quantity ->
-        [one] { $count } facets
+        [one] { $count } facet
        *[other] { $count } facets
     }
 
 journal.window.settings.removal.history.group.facet.file.count = { $quantity ->
-        [one] { $count } files from a facet merge
+        [one] { $count } file from a facet merge
        *[other] { $count } files from a facet merge
     }
 
 journal.window.settings.removal.history.group.import.count = { $quantity ->
-        [one] { $count } imports
+        [one] { $count } import
        *[other] { $count } imports
     }
 
 journal.window.settings.removal.history.group.memory.count = { $quantity ->
-        [one] { $count } memories agents saved
+        [one] { $count } memory agents saved
        *[other] { $count } memories agents saved
     }
 
 journal.window.settings.removal.history.group.mixed.count = { $quantity ->
-        [one] { $count } things
+        [one] { $count } thing
        *[other] { $count } things
     }
 
 journal.window.settings.removal.history.group.original.count = { $quantity ->
-        [one] { $count } originals
+        [one] { $count } original
        *[other] { $count } originals
     }
 
 journal.window.settings.removal.history.group.originals.count = { $quantity ->
-        [one] original media from { $count } segments
+        [one] original media from { $count } segment
        *[other] original media from { $count } segments
     }
 
 journal.window.settings.removal.history.group.segment.count = { $quantity ->
-        [one] { $count } segments
+        [one] { $count } segment
        *[other] { $count } segments
     }
 
@@ -5373,12 +5373,12 @@ journal.window.settings.removal.history.group.speakers.count = { $quantity ->
     }
 
 journal.window.settings.removal.history.group.unknown.count = { $quantity ->
-        [one] { $count } other things
+        [one] { $count } other thing
        *[other] { $count } other things
     }
 
 journal.window.settings.removal.history.group.workout.count = { $quantity ->
-        [one] { $count } workouts
+        [one] { $count } workout
        *[other] { $count } workouts
     }
 
@@ -5387,7 +5387,7 @@ journal.window.settings.removal.history.imported.day = imported { $imported_day 
 journal.window.settings.removal.history.visible.count = showing the newest { $shown } of { $total }.
 
 journal.window.settings.retention.logs.keep.days = { $quantity ->
-        [one] currently: keep operational logs { $days } days
+        [one] currently: keep operational logs { $days } day
        *[other] currently: keep operational logs { $days } days
     }
 
@@ -5649,7 +5649,7 @@ journal.window.settings.trash.receipt.erased.partial.one.left = { $quantity ->
     }
 
 journal.window.settings.trash.receipt.gone.additional = { $quantity ->
-        [one] { $gone } more are no longer in the trash.
+        [one] { $gone } more is no longer in the trash.
        *[other] { $gone } more are no longer in the trash.
     }
 
@@ -5718,7 +5718,7 @@ journal.window.settings.trash.recover.workout.count = { $quantity ->
 journal.window.settings.trash.refusal.facets.named = recover { $facet_name } from the trash first, then this.
 
 journal.window.settings.trash.refusal.facets.named.multiple.others = { $quantity ->
-        [one] recover { $facet_name } and { $other_facets } others from the trash first, then this.
+        [one] recover { $facet_name } and { $other_facets } other from the trash first, then this.
        *[other] recover { $facet_name } and { $other_facets } others from the trash first, then this.
     }
 
@@ -5732,7 +5732,7 @@ journal.window.settings.trash.refusal.imports.count = { $quantity ->
 journal.window.settings.trash.refusal.people.named = recover { $person_name } from the trash first, then this.
 
 journal.window.settings.trash.refusal.people.named.multiple.others = { $quantity ->
-        [one] recover { $person_name } and { $other_people } others from the trash first, then this.
+        [one] recover { $person_name } and { $other_people } other from the trash first, then this.
        *[other] recover { $person_name } and { $other_people } others from the trash first, then this.
     }
 
@@ -5768,12 +5768,12 @@ journal.window.settings.trash.row.stretch.blocked.by.import = part of it comes f
 journal.window.settings.trash.row.stretch.held.import.label = it holds { $import_label } too, and the file it kept.
 
 journal.window.settings.trash.row.stretch.held.imports = { $quantity ->
-        [one] it holds { $imports } imports too, and the files they kept.
+        [one] it holds { $imports } import too, and the files it kept.
        *[other] it holds { $imports } imports too, and the files they kept.
     }
 
 journal.window.settings.trash.row.stretch.held.imports.none.kept = { $quantity ->
-        [one] it holds { $imports } imports too.
+        [one] it holds { $imports } import too.
        *[other] it holds { $imports } imports too.
     }
 
@@ -5797,7 +5797,7 @@ journal.window.shared.console.link.unread.count = { $quantity ->
     }
 
 journal.window.shared.console.snapshot.message.count = { $quantity ->
-        [one] snapshot of { $count } system messages
+        [one] snapshot of { $count } system message
        *[other] snapshot of { $count } system messages
     }
 
@@ -5880,7 +5880,7 @@ journal.window.shared.gate.drawer.statement.median.unavailable = median statemen
 journal.window.shared.gate.drawer.statement.median.unavailable.required.seconds = median statement length n/a, needs { $minimum }s
 
 journal.window.shared.gate.drawer.statements.observed.and.required.count = { $quantity ->
-        [one] { $observed } longer statements so far, needs { $minimum_quantity ->
+        [one] { $observed } longer statement so far, needs { $minimum_quantity ->
         [one] { $minimum }
        *[other] { $minimum }
     }
@@ -5891,7 +5891,7 @@ journal.window.shared.gate.drawer.statements.observed.and.required.count = { $qu
     }
 
 journal.window.shared.gate.drawer.statements.observed.count = { $quantity ->
-        [one] { $observed } longer statements so far
+        [one] { $observed } longer statement so far
        *[other] { $observed } longer statements so far
     }
 
@@ -5934,7 +5934,7 @@ journal.window.shared.status.pane.capture.device.attention = { $device } needs a
 journal.window.shared.status.pane.capture.last.reached.day = what it adds hasn't reached your journal since { $since_day }.
 
 journal.window.shared.status.pane.capture.more.need.attention = { $quantity ->
-        [one] and { $count } more need attention
+        [one] and { $count } more needs attention
        *[other] and { $count } more need attention
     }
 
@@ -12957,7 +12957,7 @@ journal.window.speakers.discovery.unlabeled.count = { $count_quantity ->
     }
 
 journal.window.speakers.discovery.unused.samples = { $samples_quantity ->
-        [one] some voice samples could not be used ({ $samples })
+        [one] a voice sample could not be used ({ $samples })
        *[other] some voice samples could not be used ({ $samples })
     }
 
@@ -13037,7 +13037,7 @@ journal.window.speakers.known.placeholder.count = { $count_quantity ->
 journal.window.speakers.known.search.empty = no known voice matches "{ $query }"
 
 journal.window.speakers.known.show.all.count = { $count_quantity ->
-        [one] show all { $count } voices
+        [one] show { $count } voice
        *[other] show all { $count } voices
     }
 
@@ -13050,35 +13050,35 @@ journal.window.speakers.option.label.correct = correct…
 journal.window.speakers.owner.cooldown.until.day = that voice won't be offered again. your journal looks for your voice again after { $retry_day }, or you can teach it now.
 
 journal.window.speakers.owner.recordings.audio.count = { $recordings_quantity ->
-        [one] { $recordings } recordings with audio so far
+        [one] { $recordings } recording with audio so far
        *[other] { $recordings } recordings with audio so far
     }
 
 journal.window.speakers.owner.relabel.incomplete = { $count_quantity ->
-        [one] past conversations are updated, except { $count } recordings that couldn't be updated.
+        [one] past conversations are updated, except { $count } recording that couldn't be updated.
        *[other] past conversations are updated, except { $count } recordings that couldn't be updated.
     }
 
 journal.window.speakers.owner.relabel.progress = { $completed_quantity ->
         [one] updating past conversations: { $completed } of { $total_quantity ->
-        [one] { $total }
-       *[other] { $total }
-    } recordings
+        [one] { $total } recording
+       *[other] { $total } recordings
+    }
        *[other] updating past conversations: { $completed } of { $total_quantity ->
-        [one] { $total }
-       *[other] { $total }
-    } recordings
+        [one] { $total } recording
+       *[other] { $total } recordings
+    }
     }
 
 journal.window.speakers.owner.relabel.undo.progress = { $completed_quantity ->
         [one] returning past conversations to unnamed voices: { $completed } of { $total_quantity ->
-        [one] { $total }
-       *[other] { $total }
-    } recordings
+        [one] { $total } recording
+       *[other] { $total } recordings
+    }
        *[other] returning past conversations to unnamed voices: { $completed } of { $total_quantity ->
-        [one] { $total }
-       *[other] { $total }
-    } recordings
+        [one] { $total } recording
+       *[other] { $total } recordings
+    }
     }
 
 journal.window.speakers.owner.reveal.evidence.tier = { $evidence_tier } evidence
@@ -13092,28 +13092,28 @@ journal.window.speakers.owner.status.error = couldn't load owner status: { $deta
 
 journal.window.speakers.owner.teaching.exhausted.progress = { $statements_quantity ->
         [one] { $statements } of { $required_quantity ->
-        [one] { $required }
-       *[other] { $required }
-    } longer statements taught
+        [one] { $required } longer statement
+       *[other] { $required } longer statements
+    } taught
        *[other] { $statements } of { $required_quantity ->
-        [one] { $required }
-       *[other] { $required }
-    } longer statements taught
+        [one] { $required } longer statement
+       *[other] { $required } longer statements
+    } taught
     }
 
 journal.window.speakers.owner.teaching.progress = { $statements_quantity ->
         [one] { $statements } of { $required_quantity ->
-        [one] { $required }
-       *[other] { $required }
-    } longer statements
+        [one] { $required } longer statement
+       *[other] { $required } longer statements
+    }
        *[other] { $statements } of { $required_quantity ->
-        [one] { $required }
-       *[other] { $required }
-    } longer statements
+        [one] { $required } longer statement
+       *[other] { $required } longer statements
+    }
     }
 
 journal.window.speakers.owner.teaching.statements = { $statements_quantity ->
-        [one] { $statements } statements taught
+        [one] { $statements } statement taught
        *[other] { $statements } statements taught
     }
 
@@ -13191,7 +13191,7 @@ journal.window.speakers.owner.write.owner.voice.response.there.s.no.saved.voice.
 journal.window.speakers.quality.buckets.empty = none right now: { $empty_categories }
 
 journal.window.speakers.quality.progress.statements = { $count_quantity ->
-        [one] { $count } longer statements
+        [one] { $count } longer statement
        *[other] { $count } longer statements
     }
 
@@ -13201,12 +13201,12 @@ journal.window.speakers.quality.statement.denominator = { $count_quantity ->
     }
 
 journal.window.speakers.quality.teaching.count = { $count_quantity ->
-        [one] { $count } teaching changes
+        [one] { $count } teaching change
        *[other] { $count } teaching changes
     }
 
 journal.window.speakers.quality.window.days = { $days_quantity ->
-        [one] speaker labels, last { $days } days
+        [one] speaker labels, last { $days } day
        *[other] speaker labels, last { $days } days
     }
 
@@ -13226,7 +13226,7 @@ journal.window.speakers.segment.attributed.total = { $attributed_quantity ->
     }
 
 journal.window.speakers.segment.meeting.matching.prompt = { $count_quantity ->
-        [one] this meeting has { $count } named speakers, but their voices can't be matched yet. assigning even a few sentences will improve voice matching for future meetings.
+        [one] this meeting has { $count } named speaker, but their voice can't be matched yet. assigning even a few sentences will improve voice matching for future meetings.
        *[other] this meeting has { $count } named speakers, but their voices can't be matched yet. assigning even a few sentences will improve voice matching for future meetings.
     }
 
@@ -13425,14 +13425,14 @@ journal.window.speakers.who.keep.separate.heading = different from { $person_nam
 journal.window.speakers.who.keep.separate.reason = { $person_name } is already in your journal. if this is someone else, they will stay separate and never be mixed.
 
 journal.window.speakers.who.preview.fact.count = { $statements_quantity ->
-        [one] { $statements } statements across { $conversations_quantity ->
-        [one] { $conversations }
-       *[other] { $conversations }
-    } conversations, all in your journal. you can undo this.
+        [one] { $statements } statement across { $conversations_quantity ->
+        [one] { $conversations } conversation
+       *[other] { $conversations } conversations
+    }, all in your journal. you can undo this.
        *[other] { $statements } statements across { $conversations_quantity ->
-        [one] { $conversations }
-       *[other] { $conversations }
-    } conversations, all in your journal. you can undo this.
+        [one] { $conversations } conversation
+       *[other] { $conversations } conversations
+    }, all in your journal. you can undo this.
     }
 
 journal.window.speakers.who.search.no.person = no one in your journal matches "{ $query }"
@@ -13507,17 +13507,17 @@ journal.window.speakers.window.state.text.you.corrected = you corrected
 journal.window.speakers.window.state.text.you.identified = you identified
 
 journal.window.stats.backlog.older.audio.count = { $quantity ->
-        [one] { $count } older audio segments from before the last 30 days are still waiting to be transcribed.
+        [one] { $count } older audio segment from before the last 30 days is still waiting to be transcribed.
        *[other] { $count } older audio segments from before the last 30 days are still waiting to be transcribed.
     }
 
 journal.window.stats.backlog.remaining.count = { $quantity ->
-        [one] { $count } steps left
+        [one] { $count } step left
        *[other] { $count } steps left
     }
 
 journal.window.stats.backlog.unfinished.multiple.days = { $quantity ->
-        [one] { $count } activities couldn't finish processing. oldest: { $oldest_day } →
+        [one] { $count } activity couldn't finish processing. oldest: { $oldest_day } →
        *[other] { $count } activities couldn't finish processing. oldest: { $oldest_day } →
     }
 
@@ -13579,12 +13579,12 @@ journal.window.stats.tokens.request.count = { $quantity ->
     }
 
 journal.window.stats.tokens.rollup.count = { $quantity ->
-        [one] { $day }: { $count } tokens
+        [one] { $day }: { $count } token
        *[other] { $day }: { $count } tokens
     }
 
 journal.window.stats.tokens.token.count = { $quantity ->
-        [one] { $count } tokens
+        [one] { $count } token
        *[other] { $count } tokens
     }
 
@@ -14552,7 +14552,7 @@ journal.window.thinking.pace.unfinished.share = { $share } of what your journal 
 journal.window.thinking.provider.local = Local
 
 journal.window.thinking.runs.all.completed = { $runs_quantity ->
-        [one] all { $runs_count } run on this day completed.
+        [one] { $runs_count } run on this day completed.
        *[other] all { $runs_count } runs on this day completed.
     }
 
@@ -14576,7 +14576,7 @@ journal.window.thinking.runs.day.none.in.facet = { $runs_quantity ->
     }
 
 journal.window.thinking.runs.facet.all.completed = { $runs_quantity ->
-        [one] all { $runs_count } run in { $facet_name } on this day completed.
+        [one] { $runs_count } run in { $facet_name } on this day completed.
        *[other] all { $runs_count } runs in { $facet_name } on this day completed.
     }
 
@@ -15209,7 +15209,7 @@ journal.window.transcripts.analysis.pending.other = { $modality } observed · an
 journal.window.transcripts.analysis.pending.screen = screen observed · analysis pending
 
 journal.window.transcripts.body.entries.held = { $entries_quantity ->
-        [one] { $entries } entries present
+        [one] { $entries } entry present
        *[other] { $entries } entries present
     }
 
@@ -15223,7 +15223,7 @@ journal.window.transcripts.body.hour.with.data = { $hour } · { $summary }
 journal.window.transcripts.body.hour.without.data = { $hour } · no body data
 
 journal.window.transcripts.body.hours.remaining = { $hours_quantity ->
-        [one] and { $hours } more hours
+        [one] and { $hours } more hour
        *[other] and { $hours } more hours
     }
 
@@ -15330,7 +15330,7 @@ journal.window.transcripts.consent.trash.selection.move.title = { $segments_quan
     }
 
 journal.window.transcripts.entries.quantity = { $items_quantity ->
-        [one] transcript entries, { $items } items
+        [one] transcript entries, { $items } item
        *[other] transcript entries, { $items } items
     }
 
@@ -15393,7 +15393,7 @@ journal.window.transcripts.segment.range.entries = { $entries_quantity ->
     }
 
 journal.window.transcripts.signals.calendar.hidden.count = { $quantity ->
-    [one] { $count } more deduped calendar events hidden in this compact view
+    [one] { $count } more deduped calendar event hidden in this compact view
    *[other] { $count } more deduped calendar events hidden in this compact view
 }
 
@@ -15515,17 +15515,17 @@ journal.window.transcripts.trash.receipt.segment.recovery.failed = couldn't reco
 journal.window.transcripts.trash.receipt.segments.erase.date = they erase { $erase_date } unless you recover them.
 
 journal.window.transcripts.trash.receipt.segments.erased = { $segments_quantity ->
-        [one] erased { $segments } segments from your journal
+        [one] erased { $segments } segment from your journal
        *[other] erased { $segments } segments from your journal
     }
 
 journal.window.transcripts.trash.receipt.segments.moved = { $segments_quantity ->
-        [one] moved { $segments } segments to the trash
+        [one] moved { $segments } segment to the trash
        *[other] moved { $segments } segments to the trash
     }
 
 journal.window.transcripts.trash.receipt.segments.recovered = { $segments_quantity ->
-        [one] { $segments } segments recovered
+        [one] { $segments } segment recovered
        *[other] { $segments } segments recovered
     }
 
