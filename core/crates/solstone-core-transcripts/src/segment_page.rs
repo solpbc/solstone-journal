@@ -1539,7 +1539,7 @@ mod tests {
 
     #[test]
     fn untimed_flag_persists_across_continuation_pages() {
-        let root = tempfile::TempDir::new_in("/var/tmp").unwrap();
+        let root = tempfile::tempdir().unwrap();
         let segment = root
             .path()
             .join("chronicle/20260914/import.text/090000_300");
