@@ -750,14 +750,17 @@ async fn journal_links_from_fixture_tools_open_their_places() {
         declaration["id"] = json!(format!("a0000000-0000-4000-8000-{:012}", index + 1));
         write_json(path, &declaration);
     }
-    // A page quote points at an actual activity in this published fixture.
+    // The saved quote points to the first spoken line of the activity.
+    let quote =
+        "Okay Juliet, I have got the repo set up. Private GitHub, encrypted with our shared key.";
     write_json(
         &root.join("reflections/weekly/20260301.json"),
         &json!({
             "version":1, "week":{"start":"20260301", "end":"20260307"},
             "days": (1..=7).map(|day| json!({"day":format!("202603{day:02}"), "state":"nothing_shared"})).collect::<Vec<_>>(),
-            "memories":[], "said":[{"id":"s1", "key":"s1", "day":"20260305", "quote":"a fixture quote",
-                "source":{"kind":"activity", "uri":"sol://facets/verona/activities/20260305#engineering_220000_300"}}],
+            "memories":[], "said":[{"id":"s1", "key":"s1", "day":"20260305", "quote":quote,
+                "source":{"kind":"activity", "uri":"sol://facets/verona/activities/20260305#engineering_220000_300",
+                    "speech_file":"20260305/default/220000_300/audio.jsonl","sentence_id":1}}],
         }),
     );
     PermissionStore::open(root)
@@ -771,6 +774,17 @@ async fn journal_links_from_fixture_tools_open_their_places() {
         run_mcp_probe(root, "bearer:link-fixture", tool, &args)
             .unwrap_or_else(|error| panic!("{tool} {args}: {error:?}"))
     };
+    let week_args = json!({"week":"20260301"});
+    assert!(
+        probe("get_week", week_args.clone())["said"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    write_json(
+        &root.join("chronicle/20260305/default/220000_300/talents/speaker_labels.json"),
+        &json!({"labels":[{"sentence_id":1,"speaker":"romeo_montague","method":"user_confirmed"}]}),
+    );
     let activities = probe("list_activities", json!({"day":"20260305", "limit":100}));
     let transcripts = probe("list_transcripts", json!({"day":"20260304"}));
     let first = &transcripts["transcripts"][0];
@@ -799,7 +813,7 @@ async fn journal_links_from_fixture_tools_open_their_places() {
                 json!({"query":"prototype", "day":"20260305", "limit":100}),
             ),
         ),
-        ("get_week", probe("get_week", json!({"week":"20260301"}))),
+        ("get_week", probe("get_week", week_args)),
     ];
     let week = &calls
         .iter()
