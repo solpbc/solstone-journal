@@ -4470,8 +4470,8 @@ pub enum MessageId {
     m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e72656164696e67732e756e647261776e,
     m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e63616c656e646172,
     m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e6365,
-    m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e686f6d65,
-    m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e7472697073,
+    m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e686f6d652e64617973,
+    m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e74726970732e64617973,
     m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e756e647261776e2e68696464656e,
     m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e756e647261776e2e77696465,
     m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73747269702e66616465642e626172,
@@ -12726,8 +12726,8 @@ pub fn render_dotted_with_options(locale: &str, dotted_id: &str, args: &[(&str, 
         ("journal.window.map.month.readings.undrawn", MessageId::m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e72656164696e67732e756e647261776e),
         ("journal.window.map.month.stops.calendar", MessageId::m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e63616c656e646172),
         ("journal.window.map.month.stops.glance", MessageId::m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e6365),
-        ("journal.window.map.month.stops.glance.home", MessageId::m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e686f6d65),
-        ("journal.window.map.month.stops.glance.trips", MessageId::m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e7472697073),
+        ("journal.window.map.month.stops.glance.home.days", MessageId::m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e686f6d652e64617973),
+        ("journal.window.map.month.stops.glance.trips.days", MessageId::m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e74726970732e64617973),
         ("journal.window.map.month.stops.undrawn.hidden", MessageId::m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e756e647261776e2e68696464656e),
         ("journal.window.map.month.stops.undrawn.wide", MessageId::m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e756e647261776e2e77696465),
         ("journal.window.map.month.strip.faded.bar", MessageId::m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73747269702e66616465642e626172),
@@ -21010,8 +21010,8 @@ static MESSAGES: &[(&str, Prepare)] = &[
     ("m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e72656164696e67732e756e647261776e", prepare_m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e72656164696e67732e756e647261776e),
     ("m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e63616c656e646172", prepare_m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e63616c656e646172),
     ("m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e6365", prepare_m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e6365),
-    ("m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e686f6d65", prepare_m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e686f6d65),
-    ("m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e7472697073", prepare_m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e7472697073),
+    ("m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e686f6d652e64617973", prepare_m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e686f6d652e64617973),
+    ("m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e74726970732e64617973", prepare_m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e74726970732e64617973),
     ("m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e756e647261776e2e68696464656e", prepare_m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e756e647261776e2e68696464656e),
     ("m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e756e647261776e2e77696465", prepare_m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e756e647261776e2e77696465),
     ("m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73747269702e66616465642e626172", no_arguments),
@@ -51217,8 +51217,8 @@ fn prepare_m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c61
     Ok((_resource_key, f_args))
 }
 
-fn prepare_m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e686f6d65(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
-    const DECLARED: &[&str] = &["days_with_stops", "days_in_month", "home_days", "home_area"];
+fn prepare_m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e686f6d652e64617973(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["days_with_stops", "days_in_month", "home_days", "home_area", "stops_quantity"];
     for (name, _) in args {
         if !DECLARED.contains(name) {
             return Err(RenderError::UnknownArgument((*name).to_string()));
@@ -51250,11 +51250,19 @@ fn prepare_m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c61
         _ => return Err(RenderError::InvalidArgumentType("home_area".to_string())),
     };
     f_args.set("home_area", FluentValue::from(v3.clone()));
+    let val_v4 = args.iter().find(|(n, _)| *n == "stops_quantity").ok_or_else(|| RenderError::MissingArgument("stops_quantity".to_string()))?.1.clone();
+    let v4 = match val_v4 {
+        Value::Cardinal(c) => c,
+        _ => return Err(RenderError::InvalidArgumentType("stops_quantity".to_string())),
+    };
+    if v4 < -2147483648_i64 || v4 > 2147483647_i64 { return Err(RenderError::OutOfRange("stops_quantity".to_string())); }
+    f_args.set("stops_quantity", FluentValue::from(v4));
+    f_args.set("i18nCategory", plural_category(_cardinal_rule, v4));
     Ok((_resource_key, f_args))
 }
 
-fn prepare_m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e7472697073(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
-    const DECLARED: &[&str] = &["trip_quantity", "days_with_stops", "days_in_month", "home_days", "home_area", "trips"];
+fn prepare_m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e74726970732e64617973(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["trip_quantity", "days_with_stops", "days_in_month", "home_days", "home_area", "trips", "stops_quantity"];
     for (name, _) in args {
         if !DECLARED.contains(name) {
             return Err(RenderError::UnknownArgument((*name).to_string()));
@@ -51299,7 +51307,15 @@ fn prepare_m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c61
         _ => return Err(RenderError::InvalidArgumentType("trips".to_string())),
     };
     f_args.set("trips", FluentValue::from(v5.clone()));
+    let val_v6 = args.iter().find(|(n, _)| *n == "stops_quantity").ok_or_else(|| RenderError::MissingArgument("stops_quantity".to_string()))?.1.clone();
+    let v6 = match val_v6 {
+        Value::Cardinal(c) => c,
+        _ => return Err(RenderError::InvalidArgumentType("stops_quantity".to_string())),
+    };
+    if v6 < -2147483648_i64 || v6 > 2147483647_i64 { return Err(RenderError::OutOfRange("stops_quantity".to_string())); }
+    f_args.set("stops_quantity", FluentValue::from(v6));
     f_args.set("i18nCategory", plural_category(_cardinal_rule, v0));
+    f_args.set("i18nCategory-stops_quantity", plural_category(_cardinal_rule, v6));
     Ok((_resource_key, f_args))
 }
 

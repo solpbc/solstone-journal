@@ -1,15 +1,10 @@
 {
-  "description": "Share of the month with stops, with the main area and distant trips.",
-  "context": "Journal window. Share of the month with stops, with the main area and distant trips.",
+  "description": "Share of the month with stops when all stopped days are in the main area.",
+  "context": "Journal window. Share of the month with stops when all stopped days are in the main area.",
   "bundles": [
     "journal-window"
   ],
   "arguments": [
-    {
-      "name": "trip_quantity",
-      "type": "cardinal",
-      "numeric_style": "ungrouped"
-    },
     {
       "name": "days_with_stops",
       "type": "string"
@@ -27,12 +22,13 @@
       "type": "string"
     },
     {
-      "name": "trips",
-      "type": "string"
+      "name": "stops_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
     }
   ],
   "format_intent": "cardinal",
-  "source_revision": "7bf3905d7d280a789c11289bebec42eb3c2fd5122a9206a73c6c8b525fc1abba",
+  "source_revision": "16c9c2bc9433dcf52ff23d159c66dd61f844ffbe0c2c3636fd22d2a75d4d244e",
   "max_length": 1000,
   "risk": "routine",
   "auto_merge": true,
@@ -40,7 +36,7 @@
     "journal-window"
   ],
   "selector": {
-    "name": "trip_quantity",
+    "name": "stops_quantity",
     "type": "cardinal"
   }
 }

@@ -2743,19 +2743,17 @@ button.map-month-row:hover { background: var(--cream); }
         }
       } else {
         const stopsDaysCount = m.days.filter((d) => d.state === "stops").length;
-        const dates = [['days_with_stops', String(stopsDaysCount)], ['days_in_month', String(m.m)]];
+        const dates = [...quantityArgs(stopsDaysCount, 'days_with_stops', 'stops_quantity'), ['days_in_month', String(m.m)]];
         let glanceText;
         if (m.anchorId) {
           const trips = m.choices.filter((c) => c.trip).length;
           const home = m.choices[0];
           const daysInArea = [...dates, ['home_days', String(home.days.length)], ['home_area', String(home.placeName)]];
           glanceText = trips
-            ? window.JournalI18n.render('journal.window.map.month.stops.glance.trips', [...daysInArea, ...quantityArgs(trips, 'trips', 'trip_quantity')])
-            : window.JournalI18n.render('journal.window.map.month.stops.glance.home', daysInArea);
+            ? window.JournalI18n.render('journal.window.map.month.stops.glance.trips.days', [...daysInArea, ...quantityArgs(trips, 'trips', 'trip_quantity')])
+            : window.JournalI18n.render('journal.window.map.month.stops.glance.home.days', daysInArea);
         } else {
-          glanceText = window.JournalI18n.render('journal.window.map.month.stops.glance', [
-            ...quantityArgs(stopsDaysCount, 'days_with_stops', 'stops_quantity'), ['days_in_month', String(m.m)],
-          ]);
+          glanceText = window.JournalI18n.render('journal.window.map.month.stops.glance', dates);
         }
         if (m.noLocation) {
           glanceText += ' ' + window.JournalI18n.render('journal.window.map.month.location.gaps', quantityArgs(m.noLocation));

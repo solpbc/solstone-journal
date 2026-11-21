@@ -95440,8 +95440,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e686f6d65",
       "namespace": "journal.window.map.month.stops.glance",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.map.month.stops.glance.home.days",
       "format_intent": "text",
       "arguments": [
         {
@@ -95477,9 +95477,122 @@
       "selector": null
     },
     {
+      "id": "journal.window.map.month.stops.glance.home.days",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e686f6d652e64617973",
+      "namespace": "journal.window.map.month.stops.glance.home",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "days_with_stops",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "days_in_month",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "home_days",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "home_area",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "stops_quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "stops_quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
       "id": "journal.window.map.month.stops.glance.trips",
       "resource": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e7472697073",
       "namespace": "journal.window.map.month.stops.glance",
+      "owner": "journal",
+      "tombstone": true,
+      "replacement": "journal.window.map.month.stops.glance.trips.days",
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "trip_quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "days_with_stops",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "days_in_month",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "home_days",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "home_area",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "trips",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "trip_quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.map.month.stops.glance.trips.days",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e74726970732e64617973",
+      "namespace": "journal.window.map.month.stops.glance.trips",
       "owner": "journal",
       "tombstone": false,
       "replacement": null,
@@ -95524,6 +95637,13 @@
           "name": "trips",
           "type": "string",
           "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "stops_quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
           "min": null,
           "max": null
         }

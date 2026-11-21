@@ -4168,11 +4168,20 @@ journal.window.map.month.stops.glance = { $stops_quantity ->
    *[other] { $days_with_stops } of { $days_in_month } days have stops.
 }
 
-journal.window.map.month.stops.glance.home = { $days_with_stops } of { $days_in_month } days have stops: { $home_days } around { $home_area }.
+journal.window.map.month.stops.glance.home.days = { $stops_quantity ->
+    [one] { $days_with_stops } of { $days_in_month } days has stops: { $home_days } around { $home_area }.
+   *[other] { $days_with_stops } of { $days_in_month } days have stops: { $home_days } around { $home_area }.
+}
 
-journal.window.map.month.stops.glance.trips = { $trip_quantity ->
-    [one] { $days_with_stops } of { $days_in_month } days have stops: { $home_days } around { $home_area }, and { $trips } trip more than 50 km away.
-   *[other] { $days_with_stops } of { $days_in_month } days have stops: { $home_days } around { $home_area }, and { $trips } trips more than 50 km away.
+journal.window.map.month.stops.glance.trips.days = { $trip_quantity ->
+    [one] { $days_with_stops } of { $days_in_month } days { $stops_quantity ->
+        [one] has
+       *[other] have
+    } stops: { $home_days } around { $home_area }, and { $trips } trip more than 50 km away.
+   *[other] { $days_with_stops } of { $days_in_month } days { $stops_quantity ->
+        [one] has
+       *[other] have
+    } stops: { $home_days } around { $home_area }, and { $trips } trips more than 50 km away.
 }
 
 journal.window.map.month.stops.undrawn.hidden = { $quantity ->

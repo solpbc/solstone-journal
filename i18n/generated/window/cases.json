@@ -154851,19 +154851,24 @@
             "name": "home_area",
             "type": "string",
             "value": "sample"
+          },
+          {
+            "name": "stops_quantity",
+            "type": "cardinal",
+            "value": 0
           }
         ],
         "bundle": "journal-window",
         "entry": "render(locale, dotted_id, named_args)",
         "enum_argument": null,
         "format_passes": 1,
-        "gettext_lookup_key": "journal.window.map.month.stops.glance.home\u0004m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e686f6d65",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e686f6d65_plural",
-        "gettext_unsigned_quantity": null,
+        "gettext_lookup_key": "journal.window.map.month.stops.glance.home.days\u0004m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e686f6d652e64617973",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e686f6d652e64617973_plural",
+        "gettext_unsigned_quantity": 0,
         "locale": "en-US",
-        "message_id": "journal.window.map.month.stops.glance.home",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e686f6d65",
-        "signed_quantity": null
+        "message_id": "journal.window.map.month.stops.glance.home.days",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e686f6d652e64617973",
+        "signed_quantity": 0
       },
       "cardinal": "en",
       "expectation_kind": "native-reader-required",
@@ -154873,15 +154878,16 @@
         "days_in_month": "sample",
         "days_with_stops": "sample",
         "home_area": "sample",
-        "home_days": "sample"
+        "home_days": "sample",
+        "stops_quantity": 0
       },
       "locale": "en-US",
       "logical_expected": "⁨sample⁩ of ⁨sample⁩ days have stops: ⁨sample⁩ around ⁨sample⁩.",
-      "message_id": "journal.window.map.month.stops.glance.home",
+      "message_id": "journal.window.map.month.stops.glance.home.days",
       "own_reader": "fluent-js",
-      "own_reader_call": "render(\"en-US\", \"journal.window.map.month.stops.glance.home\", [[\"days_in_month\", \"sample\"], [\"days_with_stops\", \"sample\"], [\"home_area\", \"sample\"], [\"home_days\", \"sample\"]])",
+      "own_reader_call": "render(\"en-US\", \"journal.window.map.month.stops.glance.home.days\", [[\"days_in_month\", \"sample\"], [\"days_with_stops\", \"sample\"], [\"home_area\", \"sample\"], [\"home_days\", \"sample\"], [\"stops_quantity\", 0]])",
       "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e686f6d65",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e686f6d652e64617973",
       "target": "classic"
     },
     {
@@ -154917,18 +154923,23 @@
             "name": "trips",
             "type": "string",
             "value": "sample"
+          },
+          {
+            "name": "stops_quantity",
+            "type": "cardinal",
+            "value": 0
           }
         ],
         "bundle": "journal-window",
         "entry": "render(locale, dotted_id, named_args)",
         "enum_argument": null,
         "format_passes": 1,
-        "gettext_lookup_key": "journal.window.map.month.stops.glance.trips\u0004m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e7472697073",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e7472697073_plural",
+        "gettext_lookup_key": "journal.window.map.month.stops.glance.trips.days\u0004m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e74726970732e64617973",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e74726970732e64617973_plural",
         "gettext_unsigned_quantity": 0,
         "locale": "en-US",
-        "message_id": "journal.window.map.month.stops.glance.trips",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e7472697073",
+        "message_id": "journal.window.map.month.stops.glance.trips.days",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e74726970732e64617973",
         "signed_quantity": 0
       },
       "cardinal": "en",
@@ -154940,16 +154951,165 @@
         "days_with_stops": "sample",
         "home_area": "sample",
         "home_days": "sample",
+        "stops_quantity": 0,
         "trip_quantity": 0,
         "trips": "sample"
       },
       "locale": "en-US",
       "logical_expected": "⁨sample⁩ of ⁨sample⁩ days have stops: ⁨sample⁩ around ⁨sample⁩, and ⁨sample⁩ trips more than 50 km away.",
-      "message_id": "journal.window.map.month.stops.glance.trips",
+      "message_id": "journal.window.map.month.stops.glance.trips.days",
       "own_reader": "fluent-js",
-      "own_reader_call": "render(\"en-US\", \"journal.window.map.month.stops.glance.trips\", [[\"days_in_month\", \"sample\"], [\"days_with_stops\", \"sample\"], [\"home_area\", \"sample\"], [\"home_days\", \"sample\"], [\"trip_quantity\", 0], [\"trips\", \"sample\"]])",
+      "own_reader_call": "render(\"en-US\", \"journal.window.map.month.stops.glance.trips.days\", [[\"days_in_month\", \"sample\"], [\"days_with_stops\", \"sample\"], [\"home_area\", \"sample\"], [\"home_days\", \"sample\"], [\"stops_quantity\", 0], [\"trip_quantity\", 0], [\"trips\", \"sample\"]])",
       "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e7472697073",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e74726970732e64617973",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "trip_quantity",
+            "type": "cardinal",
+            "value": 1
+          },
+          {
+            "name": "days_with_stops",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "days_in_month",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "home_days",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "home_area",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "trips",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "stops_quantity",
+            "type": "cardinal",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.map.month.stops.glance.trips.days\u0004m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e74726970732e64617973",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e74726970732e64617973_plural",
+        "gettext_unsigned_quantity": 1,
+        "locale": "en-US",
+        "message_id": "journal.window.map.month.stops.glance.trips.days",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e74726970732e64617973",
+        "signed_quantity": 1
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "days_in_month": "sample",
+        "days_with_stops": "sample",
+        "home_area": "sample",
+        "home_days": "sample",
+        "stops_quantity": 0,
+        "trip_quantity": 1,
+        "trips": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ of ⁨sample⁩ days have stops: ⁨sample⁩ around ⁨sample⁩, and ⁨sample⁩ trip more than 50 km away.",
+      "message_id": "journal.window.map.month.stops.glance.trips.days",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.map.month.stops.glance.trips.days\", [[\"days_in_month\", \"sample\"], [\"days_with_stops\", \"sample\"], [\"home_area\", \"sample\"], [\"home_days\", \"sample\"], [\"stops_quantity\", 0], [\"trip_quantity\", 1], [\"trips\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e74726970732e64617973",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "trip_quantity",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "days_with_stops",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "days_in_month",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "home_days",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "home_area",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "trips",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "stops_quantity",
+            "type": "cardinal",
+            "value": 1
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.map.month.stops.glance.trips.days\u0004m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e74726970732e64617973",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e74726970732e64617973_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.map.month.stops.glance.trips.days",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e74726970732e64617973",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "days_in_month": "sample",
+        "days_with_stops": "sample",
+        "home_area": "sample",
+        "home_days": "sample",
+        "stops_quantity": 1,
+        "trip_quantity": 0,
+        "trips": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ of ⁨sample⁩ days has stops: ⁨sample⁩ around ⁨sample⁩, and ⁨sample⁩ trips more than 50 km away.",
+      "message_id": "journal.window.map.month.stops.glance.trips.days",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.map.month.stops.glance.trips.days\", [[\"days_in_month\", \"sample\"], [\"days_with_stops\", \"sample\"], [\"home_area\", \"sample\"], [\"home_days\", \"sample\"], [\"stops_quantity\", 1], [\"trip_quantity\", 0], [\"trips\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e74726970732e64617973",
       "target": "classic"
     },
     {
@@ -435667,19 +435827,24 @@
             "name": "home_area",
             "type": "string",
             "value": "sample"
+          },
+          {
+            "name": "stops_quantity",
+            "type": "cardinal",
+            "value": 0
           }
         ],
         "bundle": "journal-window",
         "entry": "render(locale, MessageId, named_args)",
         "enum_argument": null,
         "format_passes": 1,
-        "gettext_lookup_key": "journal.window.map.month.stops.glance.home\u0004m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e686f6d65",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e686f6d65_plural",
-        "gettext_unsigned_quantity": null,
+        "gettext_lookup_key": "journal.window.map.month.stops.glance.home.days\u0004m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e686f6d652e64617973",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e686f6d652e64617973_plural",
+        "gettext_unsigned_quantity": 0,
         "locale": "en-US",
-        "message_id": "journal.window.map.month.stops.glance.home",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e686f6d65",
-        "signed_quantity": null
+        "message_id": "journal.window.map.month.stops.glance.home.days",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e686f6d652e64617973",
+        "signed_quantity": 0
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
@@ -435689,15 +435854,16 @@
         "days_in_month": "sample",
         "days_with_stops": "sample",
         "home_area": "sample",
-        "home_days": "sample"
+        "home_days": "sample",
+        "stops_quantity": 0
       },
       "locale": "en-US",
       "logical_expected": "⁨sample⁩ of ⁨sample⁩ days have stops: ⁨sample⁩ around ⁨sample⁩.",
-      "message_id": "journal.window.map.month.stops.glance.home",
+      "message_id": "journal.window.map.month.stops.glance.home.days",
       "own_reader": "rust-api",
-      "own_reader_call": "render(\"en-US\", \"journal.window.map.month.stops.glance.home\", &[(\"days_in_month\", Value::String(\"sample\")), (\"days_with_stops\", Value::String(\"sample\")), (\"home_area\", Value::String(\"sample\")), (\"home_days\", Value::String(\"sample\"))])",
+      "own_reader_call": "render(\"en-US\", \"journal.window.map.month.stops.glance.home.days\", &[(\"days_in_month\", Value::String(\"sample\")), (\"days_with_stops\", Value::String(\"sample\")), (\"home_area\", Value::String(\"sample\")), (\"home_days\", Value::String(\"sample\")), (\"stops_quantity\", Value::Cardinal(0))])",
       "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e686f6d65",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e686f6d652e64617973",
       "target": "rust"
     },
     {
@@ -435733,39 +435899,193 @@
             "name": "trips",
             "type": "string",
             "value": "sample"
+          },
+          {
+            "name": "stops_quantity",
+            "type": "cardinal",
+            "value": 0
           }
         ],
         "bundle": "journal-window",
         "entry": "render(locale, MessageId, named_args)",
         "enum_argument": null,
         "format_passes": 1,
-        "gettext_lookup_key": "journal.window.map.month.stops.glance.trips\u0004m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e7472697073",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e7472697073_plural",
+        "gettext_lookup_key": "journal.window.map.month.stops.glance.trips.days\u0004m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e74726970732e64617973",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e74726970732e64617973_plural",
         "gettext_unsigned_quantity": 0,
         "locale": "en-US",
-        "message_id": "journal.window.map.month.stops.glance.trips",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e7472697073",
+        "message_id": "journal.window.map.month.stops.glance.trips.days",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e74726970732e64617973",
         "signed_quantity": 0
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "⁨sample⁩ of ⁨sample⁩ days have stops: ⁨sample⁩ around ⁨sample⁩, and ⁨sample⁩ trips more than 50 km away.",
+      "expected": "⁨sample⁩ of ⁨sample⁩ days ⁨have⁩ stops: ⁨sample⁩ around ⁨sample⁩, and ⁨sample⁩ trips more than 50 km away.",
       "folder": null,
       "inputs": {
         "days_in_month": "sample",
         "days_with_stops": "sample",
         "home_area": "sample",
         "home_days": "sample",
+        "stops_quantity": 0,
         "trip_quantity": 0,
         "trips": "sample"
       },
       "locale": "en-US",
-      "logical_expected": "⁨sample⁩ of ⁨sample⁩ days have stops: ⁨sample⁩ around ⁨sample⁩, and ⁨sample⁩ trips more than 50 km away.",
-      "message_id": "journal.window.map.month.stops.glance.trips",
+      "logical_expected": "⁨sample⁩ of ⁨sample⁩ days ⁨have⁩ stops: ⁨sample⁩ around ⁨sample⁩, and ⁨sample⁩ trips more than 50 km away.",
+      "message_id": "journal.window.map.month.stops.glance.trips.days",
       "own_reader": "rust-api",
-      "own_reader_call": "render(\"en-US\", \"journal.window.map.month.stops.glance.trips\", &[(\"days_in_month\", Value::String(\"sample\")), (\"days_with_stops\", Value::String(\"sample\")), (\"home_area\", Value::String(\"sample\")), (\"home_days\", Value::String(\"sample\")), (\"trip_quantity\", Value::Cardinal(0)), (\"trips\", Value::String(\"sample\"))])",
+      "own_reader_call": "render(\"en-US\", \"journal.window.map.month.stops.glance.trips.days\", &[(\"days_in_month\", Value::String(\"sample\")), (\"days_with_stops\", Value::String(\"sample\")), (\"home_area\", Value::String(\"sample\")), (\"home_days\", Value::String(\"sample\")), (\"stops_quantity\", Value::Cardinal(0)), (\"trip_quantity\", Value::Cardinal(0)), (\"trips\", Value::String(\"sample\"))])",
       "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e7472697073",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e74726970732e64617973",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "trip_quantity",
+            "type": "cardinal",
+            "value": 1
+          },
+          {
+            "name": "days_with_stops",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "days_in_month",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "home_days",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "home_area",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "trips",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "stops_quantity",
+            "type": "cardinal",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.map.month.stops.glance.trips.days\u0004m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e74726970732e64617973",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e74726970732e64617973_plural",
+        "gettext_unsigned_quantity": 1,
+        "locale": "en-US",
+        "message_id": "journal.window.map.month.stops.glance.trips.days",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e74726970732e64617973",
+        "signed_quantity": 1
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "⁨sample⁩ of ⁨sample⁩ days ⁨have⁩ stops: ⁨sample⁩ around ⁨sample⁩, and ⁨sample⁩ trip more than 50 km away.",
+      "folder": null,
+      "inputs": {
+        "days_in_month": "sample",
+        "days_with_stops": "sample",
+        "home_area": "sample",
+        "home_days": "sample",
+        "stops_quantity": 0,
+        "trip_quantity": 1,
+        "trips": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ of ⁨sample⁩ days ⁨have⁩ stops: ⁨sample⁩ around ⁨sample⁩, and ⁨sample⁩ trip more than 50 km away.",
+      "message_id": "journal.window.map.month.stops.glance.trips.days",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.map.month.stops.glance.trips.days\", &[(\"days_in_month\", Value::String(\"sample\")), (\"days_with_stops\", Value::String(\"sample\")), (\"home_area\", Value::String(\"sample\")), (\"home_days\", Value::String(\"sample\")), (\"stops_quantity\", Value::Cardinal(0)), (\"trip_quantity\", Value::Cardinal(1)), (\"trips\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e74726970732e64617973",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "trip_quantity",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "days_with_stops",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "days_in_month",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "home_days",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "home_area",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "trips",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "stops_quantity",
+            "type": "cardinal",
+            "value": 1
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.map.month.stops.glance.trips.days\u0004m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e74726970732e64617973",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e74726970732e64617973_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.map.month.stops.glance.trips.days",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e74726970732e64617973",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "⁨sample⁩ of ⁨sample⁩ days ⁨has⁩ stops: ⁨sample⁩ around ⁨sample⁩, and ⁨sample⁩ trips more than 50 km away.",
+      "folder": null,
+      "inputs": {
+        "days_in_month": "sample",
+        "days_with_stops": "sample",
+        "home_area": "sample",
+        "home_days": "sample",
+        "stops_quantity": 1,
+        "trip_quantity": 0,
+        "trips": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ of ⁨sample⁩ days ⁨has⁩ stops: ⁨sample⁩ around ⁨sample⁩, and ⁨sample⁩ trips more than 50 km away.",
+      "message_id": "journal.window.map.month.stops.glance.trips.days",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.map.month.stops.glance.trips.days\", &[(\"days_in_month\", Value::String(\"sample\")), (\"days_with_stops\", Value::String(\"sample\")), (\"home_area\", Value::String(\"sample\")), (\"home_days\", Value::String(\"sample\")), (\"stops_quantity\", Value::Cardinal(1)), (\"trip_quantity\", Value::Cardinal(0)), (\"trips\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e74726970732e64617973",
       "target": "rust"
     },
     {

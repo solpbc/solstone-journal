@@ -31096,16 +31096,16 @@
       "locales": []
     },
     {
-      "id": "journal.window.map.month.stops.glance.home",
-      "source": "c2f43285436e7d066f6421e42602b708e6c446022d9a225f523eff7159dff759",
-      "contract": "10a60133d5aac1748d0ee1788c6366321bc1578495d371e5bddc5ab73b879a4d",
+      "id": "journal.window.map.month.stops.glance.home.days",
+      "source": "16c9c2bc9433dcf52ff23d159c66dd61f844ffbe0c2c3636fd22d2a75d4d244e",
+      "contract": "876104a1ef010d5597bc6ab91c9b8c54c05b0ed0d930350609f9df0f58366f5e",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
       "locales": []
     },
     {
-      "id": "journal.window.map.month.stops.glance.trips",
-      "source": "7bf3905d7d280a789c11289bebec42eb3c2fd5122a9206a73c6c8b525fc1abba",
-      "contract": "6c144f5ca2d4adf64294e01a82a2b8c360391ec321cd16c13597c39ecba03c6c",
+      "id": "journal.window.map.month.stops.glance.trips.days",
+      "source": "dd12d9112bd08c2b937a530c35dd87bc5bac086db726606e21dcc46336b1ae86",
+      "contract": "ae7c20078a8da0ae207ca3ce0f93b2a7e656f92d04ee65c5e56396cbedc3dba0",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
       "locales": []
     },

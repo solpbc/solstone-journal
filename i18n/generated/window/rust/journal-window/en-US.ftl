@@ -10998,11 +10998,20 @@ m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e6365 = { 
    *[other] { $days_with_stops } of { $days_in_month } days have stops.
 }
 
-m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e686f6d65 = { $days_with_stops } of { $days_in_month } days have stops: { $home_days } around { $home_area }.
+m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e686f6d652e64617973 = { $i18nCategory ->
+    [one] { $days_with_stops } of { $days_in_month } days has stops: { $home_days } around { $home_area }.
+   *[other] { $days_with_stops } of { $days_in_month } days have stops: { $home_days } around { $home_area }.
+}
 
-m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e7472697073 = { $i18nCategory ->
-    [one] { $days_with_stops } of { $days_in_month } days have stops: { $home_days } around { $home_area }, and { $trips } trip more than 50 km away.
-   *[other] { $days_with_stops } of { $days_in_month } days have stops: { $home_days } around { $home_area }, and { $trips } trips more than 50 km away.
+m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e676c616e63652e74726970732e64617973 = { $i18nCategory ->
+    [one] { $days_with_stops } of { $days_in_month } days { $i18nCategory-stops_quantity ->
+        [one] has
+       *[other] have
+    } stops: { $home_days } around { $home_area }, and { $trips } trip more than 50 km away.
+   *[other] { $days_with_stops } of { $days_in_month } days { $i18nCategory-stops_quantity ->
+        [one] has
+       *[other] have
+    } stops: { $home_days } around { $home_area }, and { $trips } trips more than 50 km away.
 }
 
 m6a6f75726e616c2e77696e646f772e6d61702e6d6f6e74682e73746f70732e756e647261776e2e68696464656e = { $i18nCategory ->
