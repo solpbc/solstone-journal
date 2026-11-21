@@ -1,0 +1,30 @@
+{
+  "description": "Result of a backup spot-check, with the total number of equal data parts.",
+  "context": "Journal window. Result of a backup spot-check, with the total number of equal data parts.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "parts_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "parts",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "4896f260fedd10b37f9e5f5f31c2024a7b40ededb905a773ec92e4fc12d1fb21",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "parts_quantity",
+    "type": "cardinal"
+  }
+}

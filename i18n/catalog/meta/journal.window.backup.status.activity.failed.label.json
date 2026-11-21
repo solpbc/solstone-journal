@@ -1,0 +1,34 @@
+{
+  "description": "Display of the failed phase of a backup operation, as a label.",
+  "context": "Journal window. Display of the failed phase of a backup operation, as a label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "operation_kind",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "7bb13405cc4d9119d2a7b640f7d26e0723a90f8ca35f0c129271c12458d406e0",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "operation_kind",
+    "type": "string",
+    "enum_values": [
+      "setup",
+      "rotate",
+      "stop",
+      "restore",
+      "prepare",
+      "approve"
+    ],
+    "enum_default": "approve"
+  }
+}

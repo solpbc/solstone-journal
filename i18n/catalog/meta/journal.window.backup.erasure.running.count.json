@@ -1,0 +1,30 @@
+{
+  "description": "Number of erased records being removed from backups.",
+  "context": "Journal window. Number of erased records being removed from backups.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "things_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "things",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "b3e9abc61d898f5c83356e73d1fe768f6e7e89e92fa50104ce98970abb20c0d1",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "things_quantity",
+    "type": "cardinal"
+  }
+}

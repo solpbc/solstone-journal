@@ -1,0 +1,21 @@
+{
+  "description": "Backup or verification history when the stored date is displayed without computing elapsed time.",
+  "context": "Journal window. Backup or verification history when the stored date is displayed without computing elapsed time.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "recorded_at",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4865228038b00cbbf577e4d96d0e2f9f9dafa73e38470897f2f073af6a03fba9",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

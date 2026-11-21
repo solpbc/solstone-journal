@@ -1,0 +1,30 @@
+{
+  "description": "Number of erased records waiting while backup is paused.",
+  "context": "Journal window. Number of erased records waiting while backup is paused.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "things_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "things",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "eeee788919eae3898f0ee6341e8ba49c640bf0eecf1ec2c421a68f4d51f484ee",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "things_quantity",
+    "type": "cardinal"
+  }
+}

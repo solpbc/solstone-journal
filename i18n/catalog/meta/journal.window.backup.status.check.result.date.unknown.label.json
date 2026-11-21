@@ -1,0 +1,32 @@
+{
+  "description": "Recorded backup or verification result with a unknown time, as a label.",
+  "context": "Journal window. Recorded backup or verification result with a unknown time, as a label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "outcome",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "65aa87538daf40e723de02082df28688a86d7eed3f67eef05b7527574a5fe467",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "outcome",
+    "type": "string",
+    "enum_values": [
+      "completed",
+      "failed",
+      "never-recorded",
+      "could-not-run"
+    ],
+    "enum_default": "could-not-run"
+  }
+}

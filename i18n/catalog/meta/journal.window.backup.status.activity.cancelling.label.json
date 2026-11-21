@@ -1,0 +1,34 @@
+{
+  "description": "Display of the cancelling phase of a backup operation, as a label.",
+  "context": "Journal window. Display of the cancelling phase of a backup operation, as a label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "operation_kind",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "f47816accc909d29a7f49cda1b7bb875b2d78bbbc50ba1ee08ff7d3e6d4e7f1a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "operation_kind",
+    "type": "string",
+    "enum_values": [
+      "setup",
+      "rotate",
+      "stop",
+      "restore",
+      "prepare",
+      "approve"
+    ],
+    "enum_default": "approve"
+  }
+}

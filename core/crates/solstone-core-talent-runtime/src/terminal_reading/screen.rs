@@ -7,11 +7,14 @@
 //!
 //! Captures repeat a whole screen every few seconds, so most of a raw segment
 //! is the same lines again, wrapped in terminal styling codes. Here a line is
-//! shown at its first appearance only. A line rewritten in place (a spinner, a
-//! timer, a progress count, an input line being typed) keeps one entry that
-//! shows its latest version. Styling is dropped except strikethrough, which
-//! agent task lists use to mark finished steps, and dim text after the cursor,
-//! which is a placeholder or suggestion rather than typing, is left out.
+//! shown at its first appearance only, and a line the pane already showed in
+//! the stream's segment before is not new when it comes back into view (an
+//! agent redrawing its conversation, a scroll back). A line rewritten in place
+//! (a spinner, a timer, a progress count, an input line being typed) keeps one
+//! entry that shows its latest version. Styling is dropped except
+//! strikethrough, which agent task lists use to mark finished steps, and dim
+//! text after the cursor, which is a placeholder or suggestion rather than
+//! typing, is left out.
 
 use super::cursor;
 use super::diff_matcher::{OpcodeTag, SequenceMatcher};
@@ -230,6 +233,37 @@ fn tidy(lines: Vec<String>) -> Vec<String> {
     out
 }
 
+/// The lines each pane of a session showed, by pane id.
+pub(super) type Shown = HashMap<String, HashSet<String>>;
+
+/// Every non-blank line each pane of each session showed in `frames`, by
+/// session name, as the reading compares them.
+pub(super) fn shown_by_pane(frames: &[Value]) -> HashMap<String, Shown> {
+    let mut shown: HashMap<String, Shown> = HashMap::new();
+    for frame in frames {
+        let tmux = &frame["content"]["tmux"];
+        let Some(session) = tmux["session"].as_str() else {
+            continue;
+        };
+        for pane in tmux["panes"].as_array().into_iter().flatten() {
+            let Some(id) = pane["id"].as_str() else {
+                continue;
+            };
+            shown
+                .entry(session.to_owned())
+                .or_default()
+                .entry(id.to_owned())
+                .or_default()
+                .extend(
+                    pane_lines(pane)
+                        .into_iter()
+                        .filter(|l| !l.trim().is_empty()),
+                );
+        }
+    }
+    shown
+}
+
 fn pane_lines(pane: &Value) -> Vec<String> {
     let content = pane["content"].as_str().unwrap_or("");
     let cursor_row =
@@ -248,8 +282,14 @@ fn pane_lines(pane: &Value) -> Vec<String> {
         .collect()
 }
 
-/// Read one session's frames, in time order, into entries.
-pub(super) fn read(name: &str, frames: &[Value], typed_budget_bytes: usize) -> Session {
+/// Read one session's frames, in time order, into entries. `before` holds what
+/// each of its panes showed in the stream's segment before.
+pub(super) fn read(
+    name: &str,
+    frames: &[Value],
+    typed_budget_bytes: usize,
+    before: &Shown,
+) -> Session {
     let mut session = Session {
         name: name.to_owned(),
         captures: frames.len(),
@@ -283,11 +323,14 @@ pub(super) fn read(name: &str, frames: &[Value], typed_budget_bytes: usize) -> S
                     window: window.clone(),
                     id: id.clone(),
                 });
-                let seen = lines
+                let mut seen: HashSet<String> = lines
                     .iter()
                     .filter(|l| !l.trim().is_empty())
                     .cloned()
                     .collect();
+                if let Some(earlier) = before.get(&id) {
+                    seen.extend(earlier.iter().cloned());
+                }
                 session.items.push(Item {
                     kind: Kind::FirstSeen,
                     time,
@@ -444,7 +487,7 @@ mod tests {
             frame(15.0, pane("$ make\nbuilding\n")),
             frame(20.0, pane("$ make\nbuilding\nerror: x\nwarning: y\n")),
         ];
-        let s = read("s", &frames, 6000);
+        let s = read("s", &frames, 6000, &Shown::new());
         let texts: Vec<_> = s
             .items
             .iter()
@@ -463,6 +506,46 @@ mod tests {
     }
 
     #[test]
+    fn a_line_the_pane_showed_in_the_segment_before_is_not_new_when_it_comes_back() {
+        let before = vec![frame(
+            0.0,
+            pane("⏺ Fixed the typo in setup.sh\n⏺ Update(setup.sh)\n"),
+        )];
+        let frames = vec![
+            frame(0.0, pane("$ make\n")),
+            frame(5.0, pane("$ make\nbuilding\n")),
+            // The agent redraws its conversation: the earlier fix is back in view.
+            frame(
+                10.0,
+                pane("⏺ Fixed the typo in setup.sh\n⏺ Update(setup.sh)\n$ make\nbuilding\nok\n"),
+            ),
+        ];
+        let texts = |before: &Shown| {
+            read("s", &frames, 6000, before)
+                .items
+                .iter()
+                .map(|i| (i.kind, i.lines.join("|")))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            texts(&shown_by_pane(&before)["s"]),
+            [
+                (Kind::FirstSeen, "$ make".to_owned()),
+                (Kind::NewText, "building".to_owned()),
+                (Kind::NewText, "ok".to_owned()),
+            ]
+        );
+        // Without the segment before, the redrawn lines read as new: the defect.
+        assert_eq!(
+            texts(&Shown::new())[2],
+            (
+                Kind::NewText,
+                "⏺ Fixed the typo in setup.sh|⏺ Update(setup.sh)||ok".to_owned()
+            )
+        );
+    }
+
+    #[test]
     fn typed_input_is_an_entry_before_the_text_of_its_capture() {
         let typing = |time: f64, content: &str, x: u64, y: u64| {
             frame(
@@ -475,7 +558,7 @@ mod tests {
             typing(5.0, "> run the tests\n", 15, 0),
             typing(10.0, "> run the tests\n⏺ Running tests\n> \n", 2, 2),
         ];
-        let s = read("s", &frames, 6000);
+        let s = read("s", &frames, 6000, &Shown::new());
         let kinds: Vec<_> = s
             .items
             .iter()

@@ -1,0 +1,21 @@
+{
+  "description": "Backup status with the recorded date of the pause.",
+  "context": "Journal window. Backup status with the recorded date of the pause.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "paused_at",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a8d995fc0aeca25e70b752c2fd6222ab69dc491319b18e4a10fdcb68c35d7228",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

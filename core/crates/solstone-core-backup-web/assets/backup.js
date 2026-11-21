@@ -69,8 +69,6 @@
         "saved_new": window.JournalI18n.render('journal.window.backup.copy.destination.edit.saved.new'),
         "confirm_title": window.JournalI18n.render('journal.window.backup.copy.destination.edit.confirm.title'),
         "confirm_lead": window.JournalI18n.renderEnglish('journal.window.backup.copy.destination.edit.confirm.lead'),
-        "confirm_days": window.JournalI18n.renderEnglish('journal.window.backup.copy.destination.edit.confirm.days'),
-        "confirm_day": window.JournalI18n.renderEnglish('journal.window.backup.copy.destination.edit.confirm.day'),
         "confirm_days_unavailable": window.JournalI18n.renderEnglish('journal.window.backup.copy.destination.edit.confirm.days.unavailable'),
         "confirm_action": window.JournalI18n.render('journal.window.backup.copy.destination.edit.confirm.action'),
         "refusals": {
@@ -107,7 +105,6 @@
     "management": {
       "destructive_action": window.JournalI18n.render('journal.window.backup.copy.management.destructive.action'),
       "destructive_caption": window.JournalI18n.renderEnglish('journal.window.backup.copy.management.destructive.caption'),
-      "teardown_gate_lead": window.JournalI18n.renderEnglish('journal.window.backup.copy.management.teardown.gate.lead'),
       "teardown_gate_unavailable_lead": window.JournalI18n.renderEnglish('journal.window.backup.copy.management.teardown.gate.unavailable.lead'),
       "teardown_gate_zero_lead": window.JournalI18n.renderEnglish('journal.window.backup.copy.management.teardown.gate.zero.lead'),
       "teardown_confirm_phrase": "delete",
@@ -116,7 +113,6 @@
       "rotate_key_summary": window.JournalI18n.render('journal.window.backup.copy.management.rotate.key.summary'),
       "rotate_key_caption": window.JournalI18n.render('journal.window.backup.copy.management.rotate.key.caption'),
       "retention_hint": window.JournalI18n.render('journal.window.backup.copy.management.retention.hint'),
-      "location_meta": window.JournalI18n.render('journal.window.backup.copy.management.location.meta'),
       "pause": {
         "title": window.JournalI18n.render('journal.window.backup.copy.management.pause.title'),
         "caption": window.JournalI18n.render('journal.window.backup.copy.management.pause.caption')
@@ -136,7 +132,6 @@
         "last_verification": window.JournalI18n.render('journal.window.backup.copy.management.status.labels.last.verification'),
         "not_available": window.JournalI18n.render('journal.window.backup.copy.management.status.labels.not.available'),
         "not_yet": window.JournalI18n.render('journal.window.backup.copy.management.status.labels.not.yet'),
-        "ago": window.JournalI18n.render('journal.window.backup.copy.management.status.labels.ago'),
         "enabled": window.JournalI18n.render('journal.window.backup.copy.management.status.labels.enabled'),
         "disabled": window.JournalI18n.render('journal.window.backup.copy.management.status.labels.disabled'),
         "destination": window.JournalI18n.render('journal.window.backup.copy.management.status.labels.destination'),
@@ -179,13 +174,7 @@
     "status": {
       "last_backup": {
         "never_run": window.JournalI18n.render('journal.window.backup.copy.status.last.backup.never.run'),
-        "failed": window.JournalI18n.render('journal.window.backup.copy.status.last.backup.failed')
       },
-      "last_verification": {
-        "ok": window.JournalI18n.render('journal.window.backup.copy.status.last.verification.ok'),
-        "failed": window.JournalI18n.render('journal.window.backup.copy.status.last.verification.failed'),
-        "skipped": window.JournalI18n.render('journal.window.backup.copy.status.last.verification.skipped')
-      }
     },
     "offload": {
       "title": window.JournalI18n.render('journal.window.backup.copy.offload.title'),
@@ -193,9 +182,7 @@
       "stakes": window.JournalI18n.renderEnglish('journal.window.backup.copy.offload.stakes'),
       "stalled_lead": window.JournalI18n.render('journal.window.backup.copy.offload.stalled.lead'),
       "backup_only_label": window.JournalI18n.render('journal.window.backup.copy.offload.backup.only.label'),
-      "restore_expectation": window.JournalI18n.render('journal.window.backup.copy.offload.restore.expectation'),
       "restore_report": {
-        "effects": window.JournalI18n.render('journal.window.backup.copy.offload.restore.report.effects'),
         "files": window.JournalI18n.render('journal.window.backup.copy.offload.restore.report.files'),
         "held": window.JournalI18n.render('journal.window.backup.copy.offload.restore.report.held'),
         "dispositions": {
@@ -215,11 +202,11 @@
       "enable_hint": window.JournalI18n.render('journal.window.backup.copy.offload.enable.hint'),
       "not_ready": window.JournalI18n.render('journal.window.backup.copy.offload.not.ready'),
       "labels": {
+        "gb_suffix": "GiB",
         "budget_gb": window.JournalI18n.render('journal.window.backup.copy.offload.labels.budget.gb'),
         "floor_gb": window.JournalI18n.render('journal.window.backup.copy.offload.labels.floor.gb'),
         "budget_short": window.JournalI18n.render('journal.window.backup.copy.offload.labels.budget.short'),
         "floor_short": window.JournalI18n.render('journal.window.backup.copy.offload.labels.floor.short'),
-        "suggested": window.JournalI18n.render('journal.window.backup.copy.offload.labels.suggested'),
         "raw_media": window.JournalI18n.render('journal.window.backup.copy.offload.labels.raw.media'),
         "proposed": window.JournalI18n.render('journal.window.backup.copy.offload.labels.proposed'),
         "eligible": window.JournalI18n.render('journal.window.backup.copy.offload.labels.eligible'),
@@ -232,9 +219,6 @@
         "last_restore": window.JournalI18n.render('journal.window.backup.copy.offload.labels.last.restore'),
         "last_completed": window.JournalI18n.render('journal.window.backup.copy.offload.labels.last.completed'),
         "days": window.JournalI18n.render('journal.window.backup.copy.offload.labels.days'),
-        "mb_suffix": "MiB",
-        "under_1mb": window.JournalI18n.render('journal.window.backup.copy.offload.labels.under.one.mib'),
-        "gb_suffix": "GiB"
       },
       "result_labels": {
         "ok": window.JournalI18n.render('journal.window.backup.copy.offload.result.labels.ok'),
@@ -258,7 +242,6 @@
       "messages": {
         "saved": window.JournalI18n.render('journal.window.backup.copy.offload.messages.saved'),
         "empty_days": window.JournalI18n.render('journal.window.backup.copy.offload.messages.empty.days'),
-        "show_all_days": window.JournalI18n.render('journal.window.backup.copy.offload.messages.show.all.days'),
         "incomplete": window.JournalI18n.render('journal.window.backup.copy.offload.messages.incomplete'),
         "degraded": window.JournalI18n.render('journal.window.backup.copy.offload.messages.degraded')
       },
@@ -387,16 +370,20 @@
     "null|ok": { "backup": { "copy_key": "status.last_backup.never_run", "duration_source": null }, "verification": { "copy_key": "management.status_labels.not_yet", "duration_source": null } },
     "null|skipped": { "backup": { "copy_key": "status.last_backup.never_run", "duration_source": null }, "verification": { "copy_key": "management.status_labels.not_yet", "duration_source": null } },
     "null|error": { "backup": { "copy_key": "status.last_backup.never_run", "duration_source": null }, "verification": { "copy_key": "management.status_labels.not_yet", "duration_source": null } },
-    "ok|null": { "backup": { "copy_key": "management.status_labels.ago", "duration_source": "last_backup.time" }, "verification": { "copy_key": "management.status_labels.not_yet", "duration_source": null } },
-    "ok|ok": { "backup": { "copy_key": "management.status_labels.ago", "duration_source": "last_backup.time" }, "verification": { "copy_key": "status.last_verification.ok", "duration_source": "last_verification.time" } },
-    "ok|skipped": { "backup": { "copy_key": "management.status_labels.ago", "duration_source": "last_backup.time" }, "verification": { "copy_key": "status.last_verification.skipped", "duration_source": "last_verification.time" } },
-    "ok|error": { "backup": { "copy_key": "management.status_labels.ago", "duration_source": "last_backup.time" }, "verification": { "copy_key": "status.last_verification.failed", "duration_source": "last_verification.time" } },
-    "error|null": { "backup": { "copy_key": "status.last_backup.failed", "duration_source": "last_backup.time" }, "verification": { "copy_key": "management.status_labels.not_yet", "duration_source": null } },
-    "error|ok": { "backup": { "copy_key": "status.last_backup.failed", "duration_source": "last_backup.time" }, "verification": { "copy_key": "status.last_verification.ok", "duration_source": "last_verification.time" } },
-    "error|skipped": { "backup": { "copy_key": "status.last_backup.failed", "duration_source": "last_backup.time" }, "verification": { "copy_key": "status.last_verification.skipped", "duration_source": "last_verification.time" } },
-    "error|error": { "backup": { "copy_key": "status.last_backup.failed", "duration_source": "last_backup.time" }, "verification": { "copy_key": "status.last_verification.failed", "duration_source": "last_verification.time" } }
+    "ok|null": { "backup": { "message_family": "journal.window.backup.age.elapsed", "duration_source": "last_backup.time" }, "verification": { "copy_key": "management.status_labels.not_yet", "duration_source": null } },
+    "ok|ok": { "backup": { "message_family": "journal.window.backup.age.elapsed", "duration_source": "last_backup.time" }, "verification": { "message_family": "journal.window.backup.age.elapsed", "duration_source": "last_verification.time" } },
+    "ok|skipped": { "backup": { "message_family": "journal.window.backup.age.elapsed", "duration_source": "last_backup.time" }, "verification": { "message_family": "journal.window.backup.age.check.skipped", "duration_source": "last_verification.time" } },
+    "ok|error": { "backup": { "message_family": "journal.window.backup.age.elapsed", "duration_source": "last_backup.time" }, "verification": { "message_family": "journal.window.backup.age.check.failed", "duration_source": "last_verification.time" } },
+    "error|null": { "backup": { "message_family": "journal.window.backup.age.backup.failed", "duration_source": "last_backup.time" }, "verification": { "copy_key": "management.status_labels.not_yet", "duration_source": null } },
+    "error|ok": { "backup": { "message_family": "journal.window.backup.age.backup.failed", "duration_source": "last_backup.time" }, "verification": { "message_family": "journal.window.backup.age.elapsed", "duration_source": "last_verification.time" } },
+    "error|skipped": { "backup": { "message_family": "journal.window.backup.age.backup.failed", "duration_source": "last_backup.time" }, "verification": { "message_family": "journal.window.backup.age.check.skipped", "duration_source": "last_verification.time" } },
+    "error|error": { "backup": { "message_family": "journal.window.backup.age.backup.failed", "duration_source": "last_backup.time" }, "verification": { "message_family": "journal.window.backup.age.check.failed", "duration_source": "last_verification.time" } }
   };
   const copy = BACKUP_COPY;
+
+  function backupCount(name, value, display = String(value)) {
+    return [[name + '_quantity', window.JournalI18n.cardinalQuantity(value)], [name, display]];
+  }
   const BYTES_PER_GB = 1073741824;
   const BYTES_PER_MB = 1048576;
   const MAX_OFFLOAD_DAY_ROWS = 21;
@@ -1141,11 +1128,7 @@
   // backup's lock, so the page says a backup waits; while backup is paused,
   // the paused panel says what waits. Read from the trash's own answer.
   const BACKUP_ERASE_COPY = {
-    runningOne: window.JournalI18n.render('journal.window.backup.erasure.running.one'),
-    running: window.JournalI18n.render('journal.window.backup.erasure.running.many'),
     note: window.JournalI18n.render('journal.window.backup.window.explanation.a.backup.waits.until.this.finishes'),
-    pausedOne: window.JournalI18n.render('journal.window.backup.window.explanation.erased.thing.waits.to.be.removed'),
-    pausedMany: window.JournalI18n.render('journal.window.backup.erasure.paused.many'),
   };
   let backupErase = null;
   let backupEraseReading = false;
@@ -1170,7 +1153,7 @@
     if (banner) {
       banner.hidden = !running;
       if (running) {
-        setText('[data-backup-erase-phase]', n === 1 ? C.runningOne : C.running.replace('{n}', n));
+        setText('[data-backup-erase-phase]', window.JournalI18n.render('journal.window.backup.erasure.running.count', backupCount('things', n)));
         setText('[data-backup-erase-note]', C.note);
       }
     }
@@ -1178,7 +1161,7 @@
     if (note) {
       const show = backupPaused() && n > 0;
       note.hidden = !show;
-      if (show) note.textContent = n === 1 ? C.pausedOne : C.pausedMany.replace('{n}', n);
+      if (show) note.textContent = window.JournalI18n.render('journal.window.backup.erasure.paused.count', backupCount('things', n));
     }
   }
 
@@ -1191,7 +1174,7 @@
     section.hidden = !show;
     if (!show) return;
     const backend = destination.backend === 'b2' ? fieldLabels.b2 : fieldLabels.s3;
-    setText('[data-byo-location-meta]', (managementCopy.location_meta || '').replace('{backend}', backend || ''));
+    setText('[data-byo-location-meta]', window.JournalI18n.render('journal.window.backup.storage.user.backend', [['storage_backend', backend || '']]));
     setText('[data-byo-location-repository]', repository);
   }
 
@@ -1213,10 +1196,10 @@
     return typeof value === 'number' && Number.isFinite(value) && value > 0;
   }
 
-  function timestampRelativeDuration(value) {
+  function timestampRelativeLabel(value, family) {
     const elapsed = Date.now() - value * 1000;
     if (Number.isFinite(elapsed) && elapsed >= 0 && typeof relativeTime === 'function') {
-      return relativeTime(elapsed);
+      return relativeTime(elapsed, family);
     }
     return null;
   }
@@ -1226,14 +1209,8 @@
       return { text: statusLabels.not_yet || '', title: '' };
     }
     const title = formatTime(value);
-    const duration = timestampRelativeDuration(value);
-    if (title && duration !== null) {
-      return {
-        text: (statusLabels.ago || '').replace('{duration}', duration),
-        title,
-      };
-    }
-    return { text: title, title };
+    const text = timestampRelativeLabel(value, 'journal.window.backup.age.elapsed');
+    return { text: title && text !== null ? text : title, title };
   }
 
   function resolveCopyPath(source, path) {
@@ -1249,13 +1226,15 @@
   }
 
   function statusSelectionDisplay(selection) {
-    const template = resolveCopyPath(copy, selection.copy_key) || '';
-    if (!selection.duration_source) return { text: template, title: '' };
+    if (!selection.duration_source) {
+      return { text: resolveCopyPath(copy, selection.copy_key) || '', title: '' };
+    }
     const value = stateValue(selection.duration_source);
     if (!validTimestamp(value)) return timestampDisplay(value);
     const title = formatTime(value);
-    const duration = timestampRelativeDuration(value) || title;
-    return { text: template.replace('{duration}', duration), title };
+    const text = timestampRelativeLabel(value, selection.message_family)
+      || window.JournalI18n.render(`${selection.message_family}.clock`, [['recorded_at', title]]);
+    return { text, title };
   }
 
   function ensureBackupStatusNodes() {
@@ -1323,28 +1302,24 @@
     const hint = root.querySelector(hintSelector);
     if (!hint) return;
     hint.textContent = suggestion
-      ? (offloadLabels.suggested || '').replace('{value}', formatBytes(suggestedBytes))
+      ? window.JournalI18n.render('journal.window.backup.offload.capacity.suggested', [['suggested_size', formatBytes(suggestedBytes)]])
       : '';
     hint.hidden = !hint.textContent;
   }
 
-  function formatBytes(bytes) {
+  function formatBytes(bytes, { sourceEnglish = false } = {}) {
+    const render = sourceEnglish ? window.JournalI18n.renderEnglish : window.JournalI18n.render;
+    const locale = sourceEnglish ? undefined : window.JournalI18n.formatLocale;
     if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes < 0) {
-      return statusLabels.not_available || '';
+      return render('journal.window.backup.copy.management.status.labels.not.available');
     }
-    if (bytes === 0) {
-      const suffix = offloadLabels.gb_suffix || '';
-      return `0${suffix ? ' ' + suffix : ''}`;
-    }
-    if (bytes < BYTES_PER_MB) {
-      return offloadLabels.under_1mb || '';
-    }
+    if (bytes === 0) return render('journal.window.backup.capacity.gib', [['amount', '0']]);
+    if (bytes < BYTES_PER_MB) return render('journal.window.backup.copy.offload.labels.under.one.mib');
     const isGb = bytes >= BYTES_PER_GB;
-    const suffix = isGb ? offloadLabels.gb_suffix || '' : offloadLabels.mb_suffix || '';
-    const divisor = isGb ? BYTES_PER_GB : BYTES_PER_MB;
-    const value = bytes / divisor;
+    const value = bytes / (isGb ? BYTES_PER_GB : BYTES_PER_MB);
     const rounded = value >= 10 ? Math.round(value) : Math.round(value * 10) / 10;
-    return `${rounded.toLocaleString(window.JournalI18n.formatLocale)}${suffix ? ' ' + suffix : ''}`;
+    const id = isGb ? 'journal.window.backup.capacity.gib' : 'journal.window.backup.capacity.mib';
+    return render(id, [['amount', rounded.toLocaleString(locale)]]);
   }
 
   function gbToBytes(value) {
@@ -1421,7 +1396,7 @@
 
   function offloadRestoreExpectation(bytes) {
     if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes < 0) return '';
-    return (offloadCopy.restore_expectation || '').replace('{size}', formatBytes(bytes));
+    return window.JournalI18n.render('journal.window.backup.offload.restore.capacity.expectation', [['restore_size', formatBytes(bytes)]]);
   }
 
   function teardownConfirmPhrase() {
@@ -1485,7 +1460,7 @@
     const bytes = backupOnly.total_bytes;
     if (typeof days !== 'number' || !Number.isFinite(days) || days < 0) return null;
     if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes < 0) return null;
-    return { days, size: formatBytes(bytes), bytes };
+    return { days, bytes };
   }
 
   function renderTeardownGate(totals) {
@@ -1502,9 +1477,10 @@
       if (restoreFirst) setButtonDisabled(restoreFirst, true);
       return;
     }
-    stakes.textContent = (managementCopy.teardown_gate_lead || '')
-      .replace('{days}', totals.days.toLocaleString(window.JournalI18n.formatLocale))
-      .replace('{size}', totals.size);
+    stakes.textContent = window.JournalI18n.renderEnglish('journal.window.backup.consent.teardown.backup.only.days', [
+      ...backupCount('days', totals.days, totals.days.toLocaleString()),
+      ['backup_size', formatBytes(totals.bytes, { sourceEnglish: true })],
+    ]);
     if (restoreFirst) setButtonDisabled(restoreFirst, false);
   }
 
@@ -1526,7 +1502,7 @@
     if (gate) gate.hidden = true;
     setElementHidden('[data-action="teardown-open"]', false);
     disarmTeardownConfirm();
-    showMessage(window.JournalI18n.render('journal.window.backup.status.text.data.teardown.status'), '');
+    showMessage('[data-teardown-status]', '');
   }
 
   // These metadata totals explain the confirmation. The server owns teardown
@@ -1633,9 +1609,9 @@
         button.title = offloadRestoreExpectation(day.backup_only_bytes);
         button.setAttribute(
           'aria-label',
-          [offloadCopy.actions && offloadCopy.actions.restore_day, displayDay]
-            .filter(Boolean)
-            .join(': '),
+          displayDay
+            ? window.JournalI18n.render('journal.window.backup.offload.restore.day.accessible.name', [['day', displayDay]])
+            : window.JournalI18n.render('journal.window.backup.copy.offload.actions.restore.day'),
         );
         setButtonDisabled(button, !day.backup_only_segments);
       }
@@ -1646,10 +1622,8 @@
       const button = document.createElement('button');
       button.type = 'button';
       button.setAttribute('data-action', 'offload-show-all-days');
-      button.textContent = (offloadMessages.show_all_days || '').replace(
-        '{count}',
-        filtered.length.toLocaleString(window.JournalI18n.formatLocale),
-      );
+      button.textContent = window.JournalI18n.render('journal.window.backup.offload.days.show.all',
+        backupCount('days', filtered.length, filtered.length.toLocaleString(window.JournalI18n.formatLocale)));
       target.append(button);
     }
   }
@@ -1872,12 +1846,13 @@
   }
 
   function restoreEffectText(value) {
-    const labels = offloadCopy.restore_report || {};
     const validCount = (count) => Number.isSafeInteger(count) && count >= 0;
     const files = validCount(value.files_restored)
       ? value.files_restored.toLocaleString(window.JournalI18n.formatLocale) : statusLabels.not_available || '';
     const size = formatBytes(validCount(value.bytes_restored) ? value.bytes_restored : null);
-    return (labels.effects || '').replace('{files}', files).replace('{size}', size);
+    return window.JournalI18n.render('journal.window.backup.offload.restore.effects', [
+      ...backupCount('files', value.files_restored, files), ['size', size],
+    ]);
   }
 
   function renderRestoreReport(operation) {
@@ -2372,7 +2347,7 @@
         } else if (payload.operation && payload.operation.kind === 'teardown') {
           resetTeardownGate();
         } else if (payload.operation && payload.operation.kind === 'offload_restore') {
-          showMessage(window.JournalI18n.render('journal.window.backup.status.text.data.offload.restore.status'), '');
+          showMessage('[data-offload-restore-status]', '');
           try {
             await refreshOffloadStatus();
           } catch (err) {
@@ -2478,7 +2453,7 @@
     syncBackendFields('');
     setDestinationEditMode(true);
     destinationMessage('', null);
-    showMessage(window.JournalI18n.render('journal.window.backup.status.text.data.byo.location.status'), '');
+    showMessage('[data-byo-location-status]', '');
     showPanel('destination');
   }
 
@@ -2486,7 +2461,7 @@
     setDestinationEditMode(false);
     destinationMessage('', null);
     showPanel('management');
-    showMessage(window.JournalI18n.render('journal.window.backup.status.text.data.byo.location.status'), savedMessage || '');
+    showMessage('[data-byo-location-status]', savedMessage || '');
   }
 
   function editRefusal(err) {
@@ -2512,13 +2487,13 @@
     const kept = Boolean(totals && (totals.days > 0 || totals.bytes > 0));
     let line = '';
     if (totals === null) line = editCopy.confirm_days_unavailable || '';
-    else if (kept && totals.days === 1) line = (editCopy.confirm_day || '').replace('{size}', totals.size);
     else if (kept) {
-      line = (editCopy.confirm_days || '')
-        .replace('{days}', totals.days.toLocaleString(window.JournalI18n.formatLocale))
-        .replace('{size}', totals.size);
+      line = window.JournalI18n.renderEnglish('journal.window.backup.consent.destination.backup.only.days', [
+        ...backupCount('days', totals.days, totals.days.toLocaleString()),
+        ['backup_size', formatBytes(totals.bytes, { sourceEnglish: true })],
+      ]);
     }
-    showMessage(window.JournalI18n.render('journal.window.backup.status.text.data.switch.days'), line);
+    showMessage('[data-switch-days]', line);
     setElementHidden('[data-action="switch-restore-first"]', !kept);
     destinationMessage('', null);
     setElementHidden('[data-destination-actions]', true);
@@ -2615,11 +2590,11 @@
           showPanel('display');
         }
         if (action === 'copy-key') {
-          showMessage(window.JournalI18n.render('journal.window.backup.status.text.data.recovery.error'), '');
+          showMessage('[data-recovery-error]', '');
           await copyRecoveryKey();
         }
         if (action === 'save-key') {
-          showMessage(window.JournalI18n.render('journal.window.backup.status.text.data.recovery.error'), '');
+          showMessage('[data-recovery-error]', '');
           await saveRecoveryKey();
         }
         if (action === 'enable-backup') {
@@ -2653,7 +2628,7 @@
         if (action === 'switch-restore-first') {
           closeDestinationEdit('');
           const totalBytes = offloadState.payload?.backup_only?.total_bytes;
-          showMessage(window.JournalI18n.render('journal.window.backup.status.text.data.offload.restore.status'), offloadRestoreExpectation(totalBytes));
+          showMessage('[data-offload-restore-status]', offloadRestoreExpectation(totalBytes));
           await startOperation('/app/backup/offload/restore', { all: true });
         }
         if (action === 'teardown-restore-first') {
@@ -2661,7 +2636,7 @@
             offloadState.payload &&
             offloadState.payload.backup_only &&
             offloadState.payload.backup_only.total_bytes;
-          showMessage(window.JournalI18n.render('journal.window.backup.status.text.data.offload.restore.status'), offloadRestoreExpectation(totalBytes));
+          showMessage('[data-offload-restore-status]', offloadRestoreExpectation(totalBytes));
           await startOperation('/app/backup/offload/restore', { all: true });
           resetTeardownGate();
         }
@@ -2675,7 +2650,7 @@
         if (action === 'offload-enable') {
           const limits = offloadLimitState();
           if (limits.exactlyOnePositive) {
-            showMessage(window.JournalI18n.render('journal.window.backup.status.text.data.offload.config.status'), offloadCopy.invalid_limits || '');
+            showMessage('[data-offload-config-status]', offloadCopy.invalid_limits || '');
             return;
           }
           if (limits.bothPositive) {
@@ -2684,17 +2659,17 @@
             }
           }
           if (applyOffloadPayload(await postJson('/app/backup/offload/enable'))) {
-            showMessage(window.JournalI18n.render('journal.window.backup.status.text.data.offload.config.status'), offloadMessages.saved || '');
+            showMessage('[data-offload-config-status]', offloadMessages.saved || '');
           }
         }
         if (action === 'offload-save') {
           if (applyOffloadPayload(await postJson('/app/backup/offload/config', offloadConfigBody()))) {
-            showMessage(window.JournalI18n.render('journal.window.backup.status.text.data.offload.config.status'), offloadMessages.saved || '');
+            showMessage('[data-offload-config-status]', offloadMessages.saved || '');
           }
         }
         if (action === 'offload-disable') {
           if (applyOffloadPayload(await postJson('/app/backup/offload/disable'))) {
-            showMessage(window.JournalI18n.render('journal.window.backup.status.text.data.offload.config.status'), offloadMessages.saved || '');
+            showMessage('[data-offload-config-status]', offloadMessages.saved || '');
           }
         }
         if (action === 'offload-restore-day') {
@@ -2704,7 +2679,7 @@
             Array.isArray(offloadState.payload.days) &&
             offloadState.payload.days.find((candidate) => candidate && candidate.day === day);
           showMessage(
-            window.JournalI18n.render('journal.window.backup.status.text.data.offload.restore.status'),
+            '[data-offload-restore-status]',
             offloadRestoreExpectation(entry && entry.backup_only_bytes),
           );
           await startOperation('/app/backup/offload/restore', { day });
@@ -2715,16 +2690,16 @@
         }
       } catch (err) {
         if (['offload-restore-day', 'teardown-restore-first', 'switch-restore-first'].includes(action)) {
-          showMessage(window.JournalI18n.render('journal.window.backup.status.text.data.offload.restore.status'), '');
+          showMessage('[data-offload-restore-status]', '');
         }
         if (['copy-key', 'save-key'].includes(action)) {
-          showError(window.JournalI18n.render('journal.window.backup.status.text.data.recovery.error'), err);
+          showError('[data-recovery-error]', err);
         } else if (action && action.startsWith('teardown-')) {
-          showError(window.JournalI18n.render('journal.window.backup.status.text.data.teardown.status'), err);
+          showError('[data-teardown-status]', err);
         } else if (action && action.startsWith('offload-')) {
-          showMessage(window.JournalI18n.render('journal.window.backup.status.text.data.offload.config.status'), offloadActionError(err));
+          showMessage('[data-offload-config-status]', offloadActionError(err));
         } else {
-          showError(window.JournalI18n.render('journal.window.backup.status.text.data.operation.error'), err);
+          showError('[data-operation-error]', err);
         }
       }
     });
@@ -2740,7 +2715,7 @@
           const entered = root.querySelector('[data-confirm-input]').value || '';
           const payload = await postJson('/app/backup/confirm', { recovery_key: entered });
           applyPayload(payload);
-          showMessage(window.JournalI18n.render('journal.window.backup.status.text.data.confirm.error'), '');
+          showMessage('[data-confirm-error]', '');
           if (state.destination && state.destination.credentials_set) {
             await startOperation('/app/backup/enable');
             showPanel('management');
@@ -2748,7 +2723,7 @@
             showPanel('destination');
           }
         } catch (err) {
-          showError(window.JournalI18n.render('journal.window.backup.status.text.data.confirm.error'), err);
+          showError('[data-confirm-error]', err);
         }
       });
     }
@@ -2765,7 +2740,7 @@
         try {
           await saveDestination(destinationForm, '[data-destination-status]');
         } catch (err) {
-          showError(window.JournalI18n.render('journal.window.backup.status.text.data.destination.status'), err);
+          showError('[data-destination-status]', err);
         }
       });
     }
@@ -2782,9 +2757,9 @@
         try {
           const payload = await postJson('/app/backup/retention', body);
           applyPayload(payload);
-          showMessage(window.JournalI18n.render('journal.window.backup.status.text.data.retention.status'), phaseLabels.done || '');
+          showMessage('[data-retention-status]', phaseLabels.done || '');
         } catch (err) {
-          showError(window.JournalI18n.render('journal.window.backup.status.text.data.retention.status'), err);
+          showError('[data-retention-status]', err);
         }
       });
     }
@@ -2798,9 +2773,9 @@
         body.recovery_key = restoreForm.elements.recovery_key.value || '';
         try {
           await startOperation('/app/backup/restore', body);
-          showMessage(window.JournalI18n.render('journal.window.backup.status.text.data.restore.status'), labelForPhase('restoring'));
+          showMessage('[data-restore-status]', labelForPhase('restoring'));
         } catch (err) {
-          showError(window.JournalI18n.render('journal.window.backup.status.text.data.restore.status'), err);
+          showError('[data-restore-status]', err);
         }
       });
     }

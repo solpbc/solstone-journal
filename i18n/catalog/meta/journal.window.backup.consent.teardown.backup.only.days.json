@@ -1,0 +1,34 @@
+{
+  "description": "Teardown consequence with the days that exist only in the backup and their size.",
+  "context": "Journal window. Teardown consequence with the days that exist only in the backup and their size.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "days_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "days",
+      "type": "string"
+    },
+    {
+      "name": "backup_size",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "75fc9eda7371d4c50eadee351dfbacb1b2bf890a848112c19c153aa7b1189a75",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "days_quantity",
+    "type": "cardinal"
+  }
+}

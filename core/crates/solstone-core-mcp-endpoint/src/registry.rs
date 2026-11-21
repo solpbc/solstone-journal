@@ -220,7 +220,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::GetWeek,
         wire_name: "get_week",
         title: "read a week",
-        description: "read a week from sunday to saturday. pass any day in it as week, or omit week for the current week. use include for a day-by-day summary of body, places, photos, notes or entities. these summaries use what this connection may read and are available without a week page. entities gives a count and up to 12 names of people listed as present or heard in readable activities. body gives movement totals from readable entries and nights by source. check the notes alongside movement totals. without a readable week page, there are no day states or quotes. memories and up to seven activity rows come from the week's activities. said quotes the owner's words. mentioned, on_screen and scheduled alone do not establish attendance. use list_activities to read more of the week.",
+        description: "read one week (sunday to saturday) or a date range of up to 366 days as one row per day, such as a month, a season or a year. pass day_from and day_to for a date range: each day row carries its journal link, top memory, activity count, and, where the week has a stored page, day state and the owner's quotes with the activity each quote came from. a range omits activity rows and pages up to 100 days at a time; pass next_cursor as cursor with the same arguments to continue. pass any day as week for one week's full view (memories, up to seven activity rows and body items), or omit week, day_from and day_to for the current week. use include in either mode for a day-by-day summary of body, places, photos, notes or entities. these summaries use what this connection may read and are available without a week page. entities gives a count and up to 12 names of people listed as present or heard in readable activities. body gives movement totals from readable entries and nights by source. check the notes alongside movement totals. without a readable week page, days have no state or quotes; memories and summaries still come from readable activities and entries. said quotes the owner's words. mentioned, on_screen and scheduled alone do not establish attendance. use list_activities to list individual activities on a day or short range.",
         input_schema: week_input_schema,
         requires: WEEK,
         audit_name: solstone_core_mcp_audit::ToolName::GetWeek,
@@ -229,7 +229,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::ListActivities,
         wire_name: "list_activities",
         title: "list activities",
-        description: "list activities from the facets this connection may read. use day or an inclusive range with day_from and day_to. on the activity list without the shared find filters, a moment in several facets appears once, with the other facets in also_in. mentioned, on_screen and scheduled alone do not establish attendance. pass an activity reference to get_activity_sources. in a filtered result, use activity_reference when present. use kind, person, place or activity to find matching journal entries, then pass their references to fetch. pass next_cursor as cursor with the same filters. give the owner a journal link when available.",
+        description: "list individual activities from the facets this connection may read. use day or an inclusive range with day_from and day_to. for a day-by-day overview across a month, a season or a year (with day links, memories, owner quotes and optional daily summaries), use get_week with day_from and day_to instead when available. on the activity list without the shared find filters, a moment in several facets appears once, with the other facets in also_in. mentioned, on_screen and scheduled alone do not establish attendance. pass an activity reference to get_activity_sources. in a filtered result, use activity_reference when present. use kind, person, place or activity to find matching journal entries, then pass their references to fetch. pass next_cursor as cursor with the same filters. give the owner a journal link when available.",
         input_schema: list_activities_input_schema,
         requires: FACETS,
         audit_name: solstone_core_mcp_audit::ToolName::ListActivities,
@@ -400,7 +400,8 @@ pub(crate) fn requirement_refusal(
     }
     if entry.requires.whole_journal && !matches!(snapshot.scope, ConnectionScope::WholeJournal) {
         return Some(
-            "this connection can read a week only with access to the whole journal.".to_owned(),
+            "this connection can read a week or date range only with access to the whole journal."
+                .to_owned(),
         );
     }
     None
@@ -907,13 +908,33 @@ fn week_input_schema(_context: &SchemaContext<'_>) -> Value {
                 "type": "array",
                 "maxItems": crate::tools::week::SUMMARY_KINDS.len(),
                 "items": {"type": "string", "enum": crate::tools::week::SUMMARY_KINDS.iter().map(category_token).collect::<Vec<_>>()},
-                "description": "kinds to summarize inside each day. entities gives a count and up to 12 names of people listed as present or heard in readable activities.",
+                "description": "kinds to summarize inside each day, for one week or across a date range. entities gives a count and up to 12 names of people listed as present or heard in readable activities.",
             },
             "week": {
                 "type": "string",
                 "maxLength": MAX_DAY_BYTES,
                 "pattern": DAY_PATTERN,
-                "description": "any day in the week, as YYYYMMDD or YYYY-MM-DD. omit it to read the week containing today.",
+                "description": "any day in a single week (sunday to saturday), as YYYYMMDD or YYYY-MM-DD. omit week, day_from and day_to to read the week containing today. mutually exclusive with day_from, day_to and cursor.",
+            },
+            "day_from": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": MAX_DAY_BYTES,
+                "pattern": DAY_PATTERN,
+                "description": "first day of an inclusive date range (up to 366 days, such as a month, a season or a year), as YYYYMMDD or YYYY-MM-DD. use with day_to to read one compact row per day instead of a single week. mutually exclusive with week.",
+            },
+            "day_to": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": MAX_DAY_BYTES,
+                "pattern": DAY_PATTERN,
+                "description": "last day of an inclusive date range (up to 366 days), as YYYYMMDD or YYYY-MM-DD. use with day_from to read one compact row per day instead of a single week. days after today are omitted. mutually exclusive with week.",
+            },
+            "cursor": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": MAX_OPAQUE_REFERENCE_BYTES,
+                "description": "opaque cursor from next_cursor in a previous get_week date-range call. pass with the same day_from, day_to and include.",
             }
         }
     })
@@ -924,12 +945,12 @@ fn list_activities_input_schema(context: &SchemaContext<'_>) -> Value {
         "type": "object",
         "additionalProperties": false,
         "properties": {
-            "day": { "type": "string", "minLength": 1, "maxLength": MAX_DAY_BYTES, "pattern": DAY_PATTERN, "description": "A single day, YYYYMMDD or YYYY-MM-DD. Mutually exclusive with day_from and day_to. Without any of them, today." },
-            "day_from": { "type": "string", "minLength": 1, "maxLength": MAX_DAY_BYTES, "pattern": DAY_PATTERN, "description": "First day of a range, YYYYMMDD or YYYY-MM-DD (inclusive)." },
-            "day_to": { "type": "string", "minLength": 1, "maxLength": MAX_DAY_BYTES, "pattern": DAY_PATTERN, "description": "Last day of a range, YYYYMMDD or YYYY-MM-DD (inclusive)." },
-            "entity": { "type": "string", "description": "Filter by entity display name, or by an entity's reference from list_entities or search." },
-            "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 10, "description": "Maximum number of activities to return (default 10, max 100)." },
-            "cursor": { "type": "string", "minLength": 1, "maxLength": MAX_OPAQUE_REFERENCE_BYTES, "description": "Opaque cursor from a previous list_activities call." },
+            "day": { "type": "string", "minLength": 1, "maxLength": MAX_DAY_BYTES, "pattern": DAY_PATTERN, "description": "a single day, YYYYMMDD or YYYY-MM-DD. mutually exclusive with day_from and day_to. without any of them, today." },
+            "day_from": { "type": "string", "minLength": 1, "maxLength": MAX_DAY_BYTES, "pattern": DAY_PATTERN, "description": "first day of a range of individual activities, YYYYMMDD or YYYY-MM-DD (inclusive). for one summary row per day across a month, season or year, use get_week with day_from and day_to when available." },
+            "day_to": { "type": "string", "minLength": 1, "maxLength": MAX_DAY_BYTES, "pattern": DAY_PATTERN, "description": "last day of a range of individual activities, YYYYMMDD or YYYY-MM-DD (inclusive)." },
+            "entity": { "type": "string", "description": "filter by entity display name, or by an entity's reference from list_entities or search." },
+            "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 10, "description": "maximum number of activities to return (default 10, max 100)." },
+            "cursor": { "type": "string", "minLength": 1, "maxLength": MAX_OPAQUE_REFERENCE_BYTES, "description": "opaque cursor from a previous list_activities call." },
         }
     });
     with_find_filters(schema, context)
@@ -1224,6 +1245,16 @@ mod tests {
                 "`from`",
             ),
             (ToolName::GetWeek, json!({"week": "tuesday"}), "`week`"),
+            (
+                ToolName::GetWeek,
+                json!({"day_from": "tuesday", "day_to": "2025-01-02"}),
+                "`day_from`",
+            ),
+            (
+                ToolName::GetWeek,
+                json!({"day_from": "2025-01-01", "day_to": "tuesday"}),
+                "`day_to`",
+            ),
         ] {
             let message = explain(tool, arguments);
             assert!(message.contains(named), "{message} does not name {named}");
@@ -1328,6 +1359,10 @@ mod tests {
         );
         assert_eq!(
             list_entities_input_schema(&context)["properties"]["cursor"]["maxLength"],
+            MAX_OPAQUE_REFERENCE_BYTES
+        );
+        assert_eq!(
+            week_input_schema(&context)["properties"]["cursor"]["maxLength"],
             MAX_OPAQUE_REFERENCE_BYTES
         );
         assert_eq!(

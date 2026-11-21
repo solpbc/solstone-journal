@@ -1,0 +1,30 @@
+{
+  "description": "Button revealing the count of all listed days.",
+  "context": "Journal window. Button revealing the count of all listed days.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "days_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "d9fd4d129421f729b88534f85a9e012e0cff1b2eaa0adaddaaa3f85c97f2eaf8",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "days_quantity",
+    "type": "cardinal"
+  }
+}

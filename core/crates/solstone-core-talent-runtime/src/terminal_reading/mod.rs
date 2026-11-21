@@ -5,8 +5,9 @@
 //! read them, Sense and Screen (docs/THINK.md § Terminal segments).
 //!
 //! Each tmux session's captures become entries: each pane's screen when first
-//! seen, the lines that later appeared on it, each line once, and the input the
-//! owner typed. The entries are then fitted to the budget the floor window
+//! seen, the lines that later appeared on it, each line once and none the pane
+//! already showed in the stream's segment before, and the input the owner
+//! typed. The entries are then fitted to the budget the floor window
 //! leaves after everything else in the request, so the source is bounded by
 //! design and reads the same on every backend. The result takes the place of
 //! the screen captures in the talent's ordinary request, which runs, validates and
@@ -20,12 +21,18 @@ mod screen;
 
 use crate::{ExecutionContext, PreparedTalent};
 use serde_json::{Value, json};
+use solstone_core_format::segment::segment_key;
+use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
 
 /// Typed input kept per segment, newest first.
 const TYPED_BUDGET_BYTES: usize = 6000;
 /// Room for the request's message framing and tokenizer boundary effects
 /// between separately counted parts.
 const FRAMING_TOKENS: u32 = 256;
+/// Largest capture file read from the segment before; a larger one is skipped.
+const MAX_BEFORE_BYTES: u64 = 32 * 1024 * 1024;
 /// Distinct terminal contexts listed, the most observed first.
 const CONTEXT_ROWS: usize = 30;
 /// Desktop-activity fields that locate a record rather than describe it.
@@ -133,6 +140,8 @@ pub(crate) fn prepare(prepared: &mut PreparedTalent, context: &ExecutionContext)
     let day = prepared.config.get("day")?.as_str()?;
     let segment = prepared.config.get("segment")?.as_str()?;
     let stream = prepared.config.get("stream").and_then(Value::as_str);
+    // Every source is checked below to sit in this segment's directory.
+    let segment_dir = sources.first()?.path.parent()?.to_path_buf();
     let mut screens: Vec<(String, String, Vec<Value>)> = Vec::new();
     let mut contexts: Vec<(String, String)> = Vec::new();
     for source in sources {
@@ -242,9 +251,18 @@ pub(crate) fn prepare(prepared: &mut PreparedTalent, context: &ExecutionContext)
         + FRAMING_TOKENS;
     let budget = floor.checked_sub(fixed)?;
     let typed_budget = TYPED_BUDGET_BYTES / screens.len();
+    let before = shown_before(&segment_dir, segment);
+    let none = screen::Shown::new();
     let sessions: Vec<screen::Session> = screens
         .iter()
-        .map(|(_, name, frames)| screen::read(name, frames, typed_budget))
+        .map(|(_, name, frames)| {
+            screen::read(
+                name,
+                frames,
+                typed_budget,
+                before.get(name).unwrap_or(&none),
+            )
+        })
         .collect();
     let fit = sample::fit(&sessions, base_ms, budget, &|text| {
         solstone_core_tokens::count(text)
@@ -293,7 +311,8 @@ pub struct ShownLines {
 /// pane's screen when first seen, then only lines that later appeared on it,
 /// each once, in time order. The same reading Sense and Screen follow, without
 /// the separate typed-input entries: what was typed is here only as the pane
-/// echoed it, which is what was visible. `None` when any frame is not a
+/// echoed it, which is what was visible. Nor does it read the segment before:
+/// a line that comes back into view was visible again. `None` when any frame is not a
 /// canonical tmux capture.
 #[must_use]
 pub fn terminal_shown_lines(frames: &[Value]) -> Option<Vec<ShownLines>> {
@@ -321,7 +340,7 @@ pub fn terminal_shown_lines(frames: &[Value]) -> Option<Vec<ShownLines>> {
     let mut shown = Vec::new();
     let mut pane_base = 0;
     for (name, frames) in &sessions {
-        let session = screen::read(name, frames, 0);
+        let session = screen::read(name, frames, 0, &screen::Shown::new());
         for item in session.items {
             if item.kind == screen::Kind::Typed {
                 continue;
@@ -336,6 +355,56 @@ pub fn terminal_shown_lines(frames: &[Value]) -> Option<Vec<ShownLines>> {
     }
     shown.sort_by_key(|item| item.offset_ms);
     Some(shown)
+}
+
+/// What each tmux pane showed in the stream's segment before this one, by
+/// session name: the latest earlier segment beside this one. Its frames only
+/// say what was already shown, so a line coming back into view later is not
+/// read as new. Empty when there is none, or for a capture that cannot be read.
+fn shown_before(segment_dir: &Path, segment: &str) -> HashMap<String, screen::Shown> {
+    let Some(stream_dir) = segment_dir.parent() else {
+        return HashMap::new();
+    };
+    let Some(before) = fs::read_dir(stream_dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|entry| entry.path().is_dir())
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|name| {
+            segment_key(name).as_deref() == Some(name.as_str()) && name.as_str() < segment
+        })
+        .max()
+    else {
+        return HashMap::new();
+    };
+    let mut frames = Vec::new();
+    for entry in fs::read_dir(stream_dir.join(before))
+        .into_iter()
+        .flatten()
+        .flatten()
+    {
+        let file = entry.file_name();
+        let Some(file) = file.to_str() else {
+            continue;
+        };
+        if !(file == "screen.jsonl" || file.ends_with("_screen.jsonl"))
+            || !entry
+                .metadata()
+                .is_ok_and(|meta| meta.is_file() && meta.len() <= MAX_BEFORE_BYTES)
+        {
+            continue;
+        }
+        let Ok(text) = fs::read_to_string(entry.path()) else {
+            continue;
+        };
+        frames.extend(
+            text.lines()
+                .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+                .filter(valid_frame),
+        );
+    }
+    screen::shown_by_pane(&frames)
 }
 
 fn valid_frame(frame: &Value) -> bool {

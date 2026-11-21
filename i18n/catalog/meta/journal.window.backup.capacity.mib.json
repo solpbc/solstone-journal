@@ -1,0 +1,28 @@
+{
+  "description": "Formatted capacity in MIB.",
+  "context": "Journal window. Formatted capacity in MIB.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "amount",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a82f2268da312389e72df751ba5aab936f9a0613ee8364ab0a3a55fb68ccc32f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "unit",
+      "kind": "accepted-input",
+      "value": "MiB"
+    }
+  ]
+}
