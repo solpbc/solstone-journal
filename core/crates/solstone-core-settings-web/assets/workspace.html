@@ -2377,12 +2377,21 @@ button:focus:not(:focus-visible) {
 .granola-note { margin: 0.6em 0 0; color: var(--ink-faint); font-size: 0.85em; }
 .granola-key:not([hidden]) + #granolaConnected { margin-top: 1.25em; padding-top: 1em; border-top: 1px solid var(--hairline); }
 .granola-load-error { margin: 0.5em 0 0; color: var(--danger); font-size: 0.9em; }
+#settingsAudioFolder h3 { margin: 0 0 0.75rem; }
+#settingsAudioFolder p { line-height: 1.5; }
+#settingsAudioFolder summary { cursor: pointer; min-height: 44px; display: list-item; padding: 0.75rem 0; }
+#settingsAudioFolder select { font: inherit; min-height: 44px; max-width: 100%; color: var(--ink); background: var(--paper); border: 1px solid var(--hairline); border-radius: 4px; }
+#settingsAudioFolder form > label { display: inline-flex; align-items: center; min-height: 44px; gap: 0.5rem; margin: 0.25rem 0.5rem 0.25rem 0; }
+#settingsAudioFolder form .granola-actions { margin-top: 0.75rem; }
+#settingsAudioFolder:not([hidden]) { margin-top: 1.25em; padding-top: 1em; border-top: 1px solid var(--hairline); }
+#settingsAudioFolder .granola-actions + .granola-actions, #settingsAudioFolder details { margin-top: 0.75em; }
 @media (max-width: 480px) {
   .granola-actions button { min-height: 44px; }
 }
 </style>
 
 <script src="/app/settings/static/settings.js"></script>
+<script src="/app/settings/static/audio_folder.js"></script>
 
 <div id="settings-state-gate" class="settings-state-gate" aria-live="polite"></div>
 <div class="settings-wrap" id="settings-index-view" hidden>
@@ -2908,6 +2917,8 @@ button:focus:not(:focus-visible) {
       </div>
 
       </form>
+
+      <div id="settingsAudioFolder" hidden></div>
     </section>
 
     <!-- Local access Section (hidden unless the journal answers) -->
@@ -3794,6 +3805,8 @@ function disposeSettings() {
 }
 // A mount that throws part-way runs it too.
 ctx.onDispose(disposeSettings);
+// A phone journal's audio folder syncs from here; elsewhere this draws nothing.
+window.SettingsAudioFolder?.mount(ctx);
 
 let INSTALL_COPY = {};
 const IN_FLIGHT_INSTALL_STATES = ['resolving', 'downloading', 'verifying', 'installing'];

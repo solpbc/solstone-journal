@@ -1,13 +1,13 @@
 {
-  "description": "Visible text in the journal's import view.",
-  "context": "Journal window, import view. Visible text.",
+  "description": "Visible text for the phone journal's audio folder sync, in settings.",
+  "context": "Journal window, settings view, the phone journal's audio folder card under sync. Visible text.",
   "bundles": [
     "journal-window"
   ],
   "arguments": [],
   "format_intent": "text",
-  "source_revision": "31803b92031cabc17ecd4994834436e6220b6a3b7dcf0ad1b515ad83b7035f3b",
-  "max_length": 158,
+  "source_revision": "68f27fd4694be1c714099ed1a318bf8daae7267e001613159083a75b68f958ef",
+  "max_length": 233,
   "risk": "consent",
   "auto_merge": false,
   "surfaces": [

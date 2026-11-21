@@ -822,6 +822,90 @@ fn redacted_root(root: &Map<String, Value>) -> Map<String, Value> {
     redacted
 }
 
+/// The import records a sync made: each Plaud recording and each file the audio
+/// folder brought in. A source that syncs a backlog is not an import, so the
+/// Import page and its list leave these out; their windows stay where they are.
+#[derive(Debug, Default)]
+pub struct SyncMadeImports {
+    plaud_imports: std::collections::BTreeSet<String>,
+    audio_hashes: std::collections::BTreeSet<String>,
+}
+
+impl SyncMadeImports {
+    /// Read from the syncs' own records of what they brought in. An unreadable
+    /// record names nothing, and the rows it would have named stay listed.
+    #[must_use]
+    pub fn read(root: &Path) -> Self {
+        let mut made = Self::default();
+        if let SyncStateRead::Loaded(state) = read_sync_state(root, BackendName::Plaud) {
+            made.plaud_imports = file_entries(state.root())
+                .filter_map(|entry| entry.get("import_timestamp").and_then(Value::as_str))
+                .map(str::to_owned)
+                .collect();
+        }
+        if let SyncStateRead::Loaded(state) = read_sync_state(root, BackendName::Audio) {
+            let retained = state
+                .root()
+                .get("retained_catalogs")
+                .and_then(Value::as_object)
+                .into_iter()
+                .flat_map(|catalogs| catalogs.values())
+                .filter_map(Value::as_object)
+                .flat_map(|files| files.values())
+                .filter_map(Value::as_object);
+            made.audio_hashes = file_entries(state.root())
+                .chain(retained)
+                .filter(|entry| {
+                    entry.get("status").and_then(Value::as_str) == Some("imported")
+                        || entry.contains_key("imported_at")
+                })
+                .filter_map(|entry| entry.get("hash").and_then(Value::as_str))
+                .map(str::to_owned)
+                .collect();
+        }
+        made
+    }
+
+    /// Whether the import `id` is one a sync made.
+    #[must_use]
+    pub fn contains(&self, root: &Path, id: &str) -> bool {
+        if self.plaud_imports.contains(id) {
+            return true;
+        }
+        let dir = root.join("imports").join(id);
+        let read = |name: &str| -> Option<Map<String, Value>> {
+            serde_json::from_slice::<Value>(&fs::read(dir.join(name)).ok()?)
+                .ok()?
+                .as_object()
+                .cloned()
+        };
+        let import = read("import.json");
+        if import
+            .as_ref()
+            .and_then(|record| record.get("plaud_file_id"))
+            .is_some_and(Value::is_string)
+        {
+            return true;
+        }
+        if self.audio_hashes.is_empty() {
+            return false;
+        }
+        [import, read("manifest.json")]
+            .into_iter()
+            .flatten()
+            .filter_map(|record| record.get("source_hash")?.as_str().map(str::to_owned))
+            .any(|hash| self.audio_hashes.contains(&hash))
+    }
+}
+
+fn file_entries(root: &Map<String, Value>) -> impl Iterator<Item = &Map<String, Value>> {
+    root.get("files")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flat_map(|files| files.values())
+        .filter_map(Value::as_object)
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;

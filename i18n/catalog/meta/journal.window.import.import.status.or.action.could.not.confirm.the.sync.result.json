@@ -1,12 +1,12 @@
 {
-  "description": "Import status or action in the journal's import view.",
-  "context": "Journal window, import view. Import status or action.",
+  "description": "Import status or action for the phone journal's audio folder sync, in settings.",
+  "context": "Journal window, settings view, the phone journal's audio folder card under sync. Import status or action.",
   "bundles": [
     "journal-window"
   ],
   "arguments": [],
   "format_intent": "text",
-  "source_revision": "a5ba2ecd23b9829d295a836ab71bd098fbbca379569bcd389ceb2257f87342c4",
+  "source_revision": "c23e7b405bcc768c5ae7207ab676ea6a0506a4486c9b0422bd1685b2f75257f5",
   "max_length": 86,
   "risk": "routine",
   "auto_merge": true,

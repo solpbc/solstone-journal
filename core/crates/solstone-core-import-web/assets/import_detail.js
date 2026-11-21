@@ -6,7 +6,7 @@
 
   // A draw writes only what differs from what the page already shows, so a
   // re-read that changes nothing leaves the page as it is. The same setters
-  // are in import's own script and source_connections.js.
+  // are in import's own script and settings' audio_folder.js.
   function writeText(el, text) {
     if (!el) return;
     const next = String(text ?? '');

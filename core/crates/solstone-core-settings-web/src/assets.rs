@@ -9,6 +9,7 @@ use axum::{
 const SHELL: &[u8] = include_bytes!("../../solstone-core-convey-shell/assets/static/shell.html");
 const WORKSPACE: &[u8] = include_bytes!("../assets/workspace.html");
 const SETTINGS_JS: &[u8] = include_bytes!("../assets/settings.js");
+const AUDIO_FOLDER_JS: &[u8] = include_bytes!("../assets/audio_folder.js");
 
 pub async fn shell() -> Response<Body> {
     asset(SHELL, "text/html; charset=utf-8")
@@ -20,6 +21,10 @@ pub async fn workspace() -> Response<Body> {
 
 pub async fn settings_js() -> Response<Body> {
     asset(SETTINGS_JS, "text/javascript; charset=utf-8")
+}
+
+pub async fn audio_folder_js() -> Response<Body> {
+    asset(AUDIO_FOLDER_JS, "text/javascript; charset=utf-8")
 }
 
 fn asset(bytes: &'static [u8], content_type: &'static str) -> Response<Body> {

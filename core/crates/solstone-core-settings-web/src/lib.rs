@@ -104,6 +104,10 @@ pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: Lock
         )
         .route("/app/settings/workspace", get(assets::workspace))
         .route("/app/settings/static/settings.js", get(assets::settings_js))
+        .route(
+            "/app/settings/static/audio_folder.js",
+            get(assets::audio_folder_js),
+        )
         .route("/app/settings/facets/{slug}", get(assets::shell))
         .route(
             "/app/settings/api/state",

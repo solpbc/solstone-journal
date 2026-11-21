@@ -448,6 +448,7 @@ pub(crate) async fn list(
     let waiting = solstone_core_import::segment_trash::waiting_by_import(&state.root);
     let mut source_options = BTreeSet::new();
     let apple = crate::body_state::apple_imports(&state.root);
+    let sync_made = solstone_core_import::sync_state::SyncMadeImports::read(&state.root);
     for entry in entries.flatten() {
         let timestamp = entry.file_name().to_string_lossy().into_owned();
         if timestamp.len() != 15 || timestamp.matches('_').count() != 1 || !entry.path().is_dir() {
@@ -465,6 +466,11 @@ pub(crate) async fn list(
                 .and_then(Value::as_str)
                 .is_some()
         {
+            continue;
+        }
+        // A sync's runs are not imports: Plaud's recordings and the audio
+        // folder's files stay out of history, where they are set up instead.
+        if client_item.is_none() && sync_made.contains(&state.root, &timestamp) {
             continue;
         }
         // An Apple Health row is named and read as one before anything below
@@ -917,6 +923,59 @@ mod tests {
             assert_eq!(body["imports"].as_array().unwrap().len(), 1);
             assert_eq!(body["imports"][0]["source_type"], expected_source);
         }
+    }
+
+    #[tokio::test]
+    async fn a_syncs_runs_leave_history_and_an_owners_imports_stay() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        let chosen = "20260101_120000";
+        let plaud = "20260102_120000";
+        let folder = "20260103_120000";
+        let oura = "20260104_120000";
+        for id in [chosen, plaud, folder] {
+            write_native_attempt(root, id, "audio");
+        }
+        write_native_attempt(root, oura, "oura");
+        let set = |id: &str, key: &str, value: &str| {
+            let path = root.join("imports").join(id).join("import.json");
+            let mut record: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+            record[key] = json!(value);
+            fs::write(&path, serde_json::to_vec(&record).unwrap()).unwrap();
+        };
+        set(chosen, "source_hash", "sha256:owner");
+        set(plaud, "plaud_file_id", "plaud-1");
+        set(folder, "source_hash", "sha256:folder");
+        fs::write(
+            root.join("imports").join("audio.json"),
+            serde_json::to_vec(&json!({"backend": "audio", "files": {
+                "talk.m4a": {"status": "imported", "hash": "sha256:folder"},
+                "skipped.m4a": {"status": "skipped", "hash": "sha256:owner"},
+            }}))
+            .unwrap(),
+        )
+        .unwrap();
+        let state = AppState {
+            root: root.to_path_buf(),
+            route: None,
+        };
+        let response = list(None, State(state.clone()), Query(HashMap::new())).await;
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        let listed: Vec<&str> = body["imports"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["timestamp"].as_str().unwrap())
+            .collect();
+        // Oura stays listed until it has a home that deletes a whole run.
+        assert_eq!(listed, [oura, chosen]);
+        assert_eq!(body["total"], 2);
+        // A sync's run keeps its own page, where the owner deletes it whole.
+        let detail = detail_sync(state, plaud.to_owned(), "en");
+        assert_eq!(detail.status(), StatusCode::OK);
     }
 
     #[test]

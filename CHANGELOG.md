@@ -20,6 +20,11 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
 - the android development app can review interrupted storage work while your journal stays stopped. it can remove temporary copies after checking that the originals are still complete.
 
+### Changed
+
+- recordings from your Plaud sync, and files from a phone journal's audio folder, no longer appear in import history or in the import list an agent can read, so history shows what you chose to import. you can still delete them from transcripts. Oura's syncs still appear in import history for now.
+- on the android and iphone development journals, the audio folder's controls moved from the import page to settings, under sync. the import page's Plaud row and its sync now are gone too; Plaud syncs every hour once you turn it on in settings.
+
 ### Fixed
 
 - work an agent does on its own in a tmux session you've listed in `output_sessions` is now usually described as the agent's, such as "the agent in qa ran the tests", so your journal is less likely to credit it to you. thanks @dvanduzer for the report (#424).

@@ -604,11 +604,7 @@ function journal(overrides = {}) {
       case 'POST /app/import/api/preview': return { preview_token: 'preview-1', size: { recordings: 1, days: 1 } };
       case 'POST /app/import/api/start': return { import_id: SAVED };
       case 'POST /app/settings/api/trash/recover': return { done: ['trash-1'] };
-      case 'GET /api/journal/sources/audio': return { source: 'audio', connection: null };
-      case 'GET /api/journal/sources/plaud': return { source: 'plaud', available: true };
       default:
-        if (u.pathname.startsWith('/api/journal/recurrences/source/')) return { source: u.pathname.split('/').pop(), enabled: false, entries: [], blocked_names: [] };
-        if (/\/sync\/[^/]+$/.test(u.pathname)) return { source: u.pathname.split('/')[4], request_id: decodeURIComponent(u.pathname.split('/').pop()), reference: 'ref-1', state: 'running', terminal: false };
         return {};
     }
   };
@@ -951,13 +947,12 @@ module.exports = async function importContractCases(crateDir) {
   const workspace = fs.readFileSync(path.join(crateDir, 'assets/workspace.html'), 'utf8');
   const inline = [...workspace.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
   const detailJs = fs.readFileSync(path.join(crateDir, 'assets/import_detail.js'), 'utf8');
-  const sourcesJs = fs.readFileSync(path.join(crateDir, 'assets/source_connections.js'), 'utf8');
   const template = workspace.replace(/<style>[\s\S]*?<\/style>/g, '').replace(/<script[\s\S]*?<\/script>/g, '').replace(/<link[^>]*>/g, '');
   const { JournalI18n } = journalContext({});
   const markup = JournalI18n.renderWorkspace(template);
   const shellDir = path.join(crateDir, '../solstone-core-convey-shell/assets/static');
-  // In the fragment's order: the view's script, then its two files.
-  const env = { markup, shellDir, scripts: [['workspace.html', inline[0]], ['source_connections.js', sourcesJs], ['import_detail.js', detailJs]] };
+  // In the fragment's order: the view's script, then its file.
+  const env = { markup, shellDir, scripts: [['workspace.html', inline[0]], ['import_detail.js', detailJs]] };
   const mountSource = inline[0].slice(inline[0].indexOf('function mountImport(ctx) {'));
 
   await test('the fragment is a contract view with its first reads, one script, and no handler naming a global', async () => {
@@ -966,7 +961,7 @@ module.exports = async function importContractCases(crateDir) {
     assert.ok(inline.length === 1, 'one inline script');
     const handlers = [...workspace.matchAll(/\son[a-z]+="([^"]*)"/g)].map((m) => m[1]);
     assert.deepStrictEqual(handlers, ['return false;'], "the guided form's submit guard is the only inline handler, and it calls nothing");
-    for (const source of [inline[0], detailJs, sourcesJs]) {
+    for (const source of [inline[0], detailJs]) {
       assert.ok(!/history\.(pushState|replaceState)/.test(source), 'the address is written only through the view contract');
       assert.ok(!/location\.hash\s*=/.test(source), 'no hash is assigned');
       assert.ok(!/window\.(onclick|loadContent|toggleContentItem|_quick|_guided)/.test(source), 'nothing is put on window');
@@ -993,7 +988,7 @@ module.exports = async function importContractCases(crateDir) {
     const streams = p.liveStreams();
     p.loadScripts();
     assert.ok(p.calls.length === 0, 'no read at load');
-    assert.deepStrictEqual(p.windowKeys().filter((k) => !keys.includes(k)), ['ImportDetail', 'ImportSourceConnections'], 'only the two files\' code is defined');
+    assert.deepStrictEqual(p.windowKeys().filter((k) => !keys.includes(k)), ['ImportDetail'], 'only the detail file\'s code is defined');
     assert.deepStrictEqual(listenerCounts(p), listeners, 'no listener at load');
     assert.ok(p.window.SolViews.registered('import') === true);
     assert.ok(p.clock.live() === 0, 'no timer at load');
@@ -1044,11 +1039,9 @@ module.exports = async function importContractCases(crateDir) {
       const listeners = listenerCounts(p);
       for (let round = 0; round < 2; round += 1) {
         p.place();
-        p.holds.push((call) => call.url.includes('/recurrences/'));
         await p.mount();
         assert.ok(p.window.listenerCount() > listeners[0], 'the view listens on the window while it is up');
         assert.ok(p.main.listenerCount() === 2, 'one press and one key delegation on #main-content');
-        assert.ok(p.qa('[data-sync-source]').length === 2, 'the source rows draw');
         assert.ok(p.liveStreams() >= 2, 'a stream of its own is on');
         p.leave();
         await settle();
@@ -1059,7 +1052,6 @@ module.exports = async function importContractCases(crateDir) {
         assert.ok(p.clock.live() === 0, `round ${round}: no timer`);
         assert.ok(p.liveStreams() === 1, `round ${round}: every stream stopped but the router's`);
         assert.ok(p.window.JournalOwnerFolders.cancels >= round + 1, 'a folder chooser the app has open is cancelled');
-        assert.ok(p.window.JournalOwnerSources.cancels >= round + 1, 'a source chooser too');
         p.holds.length = 0;
         p.window.history.back();
         await settle();
@@ -1238,15 +1230,11 @@ module.exports = async function importContractCases(crateDir) {
     assert.ok(p.calls.filter(isList).length === lists, 'a gone list is not reloaded');
   });
 
-  await test('each poll stops when import goes: the thinking progress, the source sync check and the 1 s list reload', async () => {
+  await test('each poll stops when import goes: the thinking progress and the 1 s list reload', async () => {
     // The thinking progress, on a progress view.
     const p = await boot(env, `/app/import/#progress/${RUNNING}`, { folders: true });
     assert.ok(p.byId('guideSteps').querySelector('.import-progress-panel'), 'the progress panel draws');
     assert.ok(p.clock.live() >= 1, 'the progress poll is set');
-    // A source sync left running: its check is set from sessionStorage.
-    p.storage.set('journal-source-operation:audio', JSON.stringify({ sync: { request_id: 'req-1', reference: 'ref-1' } }));
-    p.window.fire({ type: 'pageshow' });
-    await settle();
     // A completed row reloads the list a second later.
     p.streams.find((s) => s.kind === 'listen' && !s.stopped).fn({ event: 'completed', import_id: RUNNING, generation: 2 });
     await settle();
@@ -1259,26 +1247,6 @@ module.exports = async function importContractCases(crateDir) {
     p.clock.advance(60000);
     await settle();
     assert.ok(p.calls.length === before, 'nothing is read after leaving');
-  });
-
-  await test("a source sync left running is checked every 5 s on the list, and the check stops when import goes", async () => {
-    const p = makePage(env, '/app/import/', { folders: true });
-    p.storage.set('journal-source-operation:audio', JSON.stringify({ sync: { request_id: 'req-1', reference: 'ref-1' } }));
-    p.loadScripts();
-    p.place();
-    await p.mount();
-    await settle();
-    const checks = () => p.reads('/api/journal/sources/audio/sync/req-1').length;
-    assert.ok(checks() === 1, 'the sync is checked on mount');
-    p.clock.advance(5000);
-    await settle();
-    assert.ok(checks() === 2, 'and again 5 s later');
-    p.leave();
-    await settle();
-    assert.ok(p.clock.live() === 0, 'its check stopped');
-    p.clock.advance(60000);
-    await settle();
-    assert.ok(checks() === 2, 'nothing is checked after leaving');
   });
 
   await test("a press on import's gone markup (a tap the page still had queued) starts no write", async () => {
@@ -1468,10 +1436,9 @@ module.exports = async function importContractCases(crateDir) {
     assert.ok(detect2.style.display === 'none', 'dispose closed the detect dialog');
   });
 
-  await test('the next mount picks up what a full load would: a running import, a stashed receipt, and a source sync', async () => {
+  await test('the next mount picks up what a full load would: a running import and a stashed receipt', async () => {
     const p = makePage(env, '/app/import/', { folders: true });
     p.storage.set('journal-import-delete-receipt', JSON.stringify({ at: Date.now(), erase: false, outcome: { kind: 'moved', trashId: 'trash-1', eraseAt: '2026-12-01T00:00:00Z' } }));
-    p.storage.set('journal-source-operation:plaud', JSON.stringify({ sync: { request_id: 'req-9', reference: 'ref-1' } }));
     p.loadScripts();
     p.place();
     await p.mount();
@@ -1479,7 +1446,6 @@ module.exports = async function importContractCases(crateDir) {
     assert.ok(p.notices.some((n) => n.title === 'moved to the trash'), 'the stashed receipt shows');
     assert.ok(!p.storage.has('journal-import-delete-receipt'), 'and is taken');
     assert.ok(p.streams.find((s) => s.kind === 'listen' && !s.stopped).pending.tracked.has(RUNNING), 'the running import is tracked again');
-    assert.ok(p.reads('/api/journal/sources/plaud/sync/req-9').length === 1, 'the source sync is checked again');
   });
 
   // ---- M9u: presses keep focus, and a draw that changes nothing writes nothing
@@ -1685,23 +1651,6 @@ module.exports = async function importContractCases(crateDir) {
     await settle();
     same(s.q('[data-saved-start-action]'), button, "the saved start's button is kept");
     same(s.doc.activeElement, button, 'and focused');
-  });
-
-  await test("the source rows' sync check with nothing new writes nothing", async () => {
-    const p = listPage('/app/import/', {}, { folders: true });
-    p.storage.set('journal-source-operation:plaud', JSON.stringify({ sync: { request_id: 'req-9', reference: 'ref-1' } }));
-    p.loadScripts();
-    p.place();
-    await p.mount();
-    await settle();
-    const check = p.q('[data-sync-source="plaud"] [data-source-refresh]');
-    check.focus();
-    const mark = mutationMark();
-    p.clock.advance(5000);
-    await settle();
-    assert.ok(p.reads('/api/journal/sources/plaud/sync/req-9').length >= 2, 'the check ran again');
-    assert.ok(under(p, '#importSyncSources', mark) === 0, `it wrote ${under(p, '#importSyncSources', mark)}`);
-    same(p.doc.activeElement, check, 'focus stays');
   });
 
   await test('a source card lands on its guide, and every way back to the grid on the card it came from', async () => {
@@ -1932,30 +1881,6 @@ module.exports = async function importContractCases(crateDir) {
     assert.ok(focusOn(p) === 'BUTTON:3', `the last page's own number (${focusOn(p)})`);
   });
 
-  await test('a sync source: busy while its sync is out, then its check status while the sync runs', async () => {
-    for (const mode of ['held', 'answered']) {
-      const p = listPage('/app/import/', {
-        'POST /api/journal/sources/plaud/sync': (_u, opts) => ({ accepted: true, source: 'plaud', request_id: JSON.parse(opts.body).request_id, reference: 'ref-1' }),
-      }, { folders: true });
-      p.loadScripts();
-      p.place();
-      await p.mount();
-      await settle();
-      const sync = p.q('[data-sync-source="plaud"] [data-source-sync]');
-      if (mode === 'held') p.holds.push((c) => c.url === '/api/journal/sources/plaud/sync');
-      sync.focus();
-      p.press(sync);
-      await settle();
-      if (mode === 'held') {
-        same(p.doc.activeElement, sync, 'focus stays on sync now');
-        assert.ok(sync.getAttribute('aria-busy') === 'true' && !sync.disabled, 'busy, not disabled');
-      } else {
-        assert.ok(sync.disabled, 'sync now is unavailable while the sync runs');
-        assert.ok(p.doc.activeElement.hasAttribute('data-source-refresh'), `check status (${focusOn(p)})`);
-      }
-    }
-  });
-
   await test('focus outside import is left alone by a changed re-read and a stream', async () => {
     const p = await bootList();
     const rail = p.byId('rail-home');
@@ -2013,11 +1938,6 @@ module.exports = async function importContractCases(crateDir) {
     ['the time zone', () => bootList('/app/import/#guide/audio_archive', {
       'GET /app/import/api/sources': () => ({ items: [...sourcesAnswer().items, archive] }),
     }), (p) => p.byId('guidedArchiveZone'), 'America/Denver'],
-    ['a cadence', async () => {
-      const p = await bootList('/app/import/', {}, { folders: true });
-      p.q('[data-sync-source="audio"] details').setAttribute('open', '');
-      return p;
-    }, (p) => p.byId('source-audio-every'), '1h'],
   ];
 
   for (const [name, open, find, value] of PICKS) {

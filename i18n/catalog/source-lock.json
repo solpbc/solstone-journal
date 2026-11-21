@@ -25308,14 +25308,14 @@
     },
     {
       "id": "journal.window.import.import.status.or.action.could.not.confirm.the.sync.result",
-      "source": "a5ba2ecd23b9829d295a836ab71bd098fbbca379569bcd389ceb2257f87342c4",
+      "source": "c23e7b405bcc768c5ae7207ab676ea6a0506a4486c9b0422bd1685b2f75257f5",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
       "locales": []
     },
     {
       "id": "journal.window.import.import.status.or.action.could.not.confirm.this.sync.request",
-      "source": "40a85051209c336ae4bc4bb8dd31abd3cd4180bb016dbf97be5430b9c44dc0e8",
+      "source": "a34a7cf67678dad88c0241421e27fdb5ea6b6c97db27dac4fb86c95411762370",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
       "locales": []
@@ -25329,7 +25329,7 @@
     },
     {
       "id": "journal.window.import.import.status.or.action.folder.access.forgotten.earlier.imports.stay",
-      "source": "533923cf1efb2ac9f199bc5b571662b9ba8c7452e167fb26f30c50ed2329e049",
+      "source": "00ff299f7abb4562bb8189cd84ad77520f58cd2f2efd8c13052bc38c9646e77d",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
       "locales": []
@@ -25357,7 +25357,7 @@
     },
     {
       "id": "journal.window.import.import.status.or.action.source.sync.did.not.finish.check",
-      "source": "1d486e30910822cb1149742f931e5308b17fa527ef14e1982425458af8101475",
+      "source": "ee1421c86be0375c45a20e1f961ffb3e1447281d9ee5bf601b55c5242067e026",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
       "locales": []
@@ -27786,7 +27786,7 @@
     },
     {
       "id": "journal.window.import.visible.text.connecting.keeps.read.access.to.the",
-      "source": "31803b92031cabc17ecd4994834436e6220b6a3b7dcf0ad1b515ad83b7035f3b",
+      "source": "68f27fd4694be1c714099ed1a318bf8daae7267e001613159083a75b68f958ef",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
       "locales": []
@@ -39511,7 +39511,7 @@
     },
     {
       "id": "journal.window.settings.visible.text.automatically.sync.and.import.material.from",
-      "source": "1eeb851728da09e9a316ec1c467911488bea22e54f72c0a295ad019f7e4c9f11",
+      "source": "cfd5f9f1e09287692695b9bbf10fd8f25c5a3aa254701a18be67eb1abd949610",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "9a91b42b95bf3ee8dd9abff4b41a7c0874fa9f959033259a8bc04d681709ed16",
       "locales": []
@@ -39959,7 +39959,7 @@
     },
     {
       "id": "journal.window.settings.visible.text.import.audio.from.plaud.recorder.paste",
-      "source": "5e9da1d08cc894809647a122ec6e3388d937a79575b721519a9a57b6ad35d72f",
+      "source": "92f8bc85b4c7cdf7681d22c5dde21bbcc3cdac25c20eca106975d9f0677fdf24",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "6b06ed6533b9eafa5ff98bc77412571ccb182205c832e49cc8b1dfe771dfa908",
       "locales": []
@@ -40456,7 +40456,7 @@
     },
     {
       "id": "journal.window.settings.visible.text.sync.and.import.plaud.material.every",
-      "source": "82640ac6820e99a3cb137c294ac0c8bb1745a01590b20d4988a5ea18c6939a0b",
+      "source": "a7ca1f7ba03d204cc7c5ec50a17fff21aea28687f5cd7087a1a4c40e6cac7153",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "9a91b42b95bf3ee8dd9abff4b41a7c0874fa9f959033259a8bc04d681709ed16",
       "locales": []

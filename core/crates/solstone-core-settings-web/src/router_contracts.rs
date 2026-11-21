@@ -91,6 +91,7 @@ async fn ac14_shell_router_applies_session_and_corrupt_contracts() {
         "/app/settings/facets/work-life",
         "/app/settings/workspace",
         "/app/settings/static/settings.js",
+        "/app/settings/static/audio_folder.js",
     ] {
         let response = shell_router(corrupt.path())
             .oneshot(Request::get(path).body(Body::empty()).expect("request"))

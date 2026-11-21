@@ -20,7 +20,7 @@ function functionSource(source, name) {
 }
 
 function harness(crateDir, source = 'audio') {
-  const script = fs.readFileSync(path.join(crateDir, 'assets/source_connections.js'), 'utf8');
+  const script = fs.readFileSync(path.join(crateDir, 'assets/audio_folder.js'), 'utf8');
   const storage = new Map();
   const calls = [];
   const field = () => ({ textContent: '', innerHTML: '', disabled: false, isConnected: true, attrs: {}, focus() { this.focused = true; },
@@ -76,7 +76,7 @@ function harness(crateDir, source = 'audio') {
   return { context, run, storage, calls, fields, buttons, select, input };
 }
 
-module.exports = async function sourceConnectionContracts(crateDir) {
+module.exports = async function audioFolderContracts(crateDir) {
   let cases = 0;
   {
     const h = harness(crateDir);

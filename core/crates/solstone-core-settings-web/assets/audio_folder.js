@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
-// The import page's sync sources, drawn by import's mount:
-// `ImportSourceConnections.mount(ctx)` draws them into the page's
-// #importSyncSources, and everything it adds outside that goes through `ctx`
-// and goes with the view.
+// The audio folder a journal on a phone syncs, in settings' sync section:
+// `SettingsAudioFolder.mount(ctx)` draws it into #settingsAudioFolder when the
+// phone's folder access is there, and everything it adds outside that goes
+// through `ctx` and goes with the view. A sync is not an import, so this lives
+// beside the other syncs rather than on the import page.
 (() => {
   'use strict';
-  const sources = { plaud: 'Plaud', audio: window.JournalI18n.render('journal.window.import.import.source.control.audio.folder') };
-  window.ImportSourceConnections = Object.freeze({ mount: mountSourceConnections });
+  const sources = { audio: window.JournalI18n.render('journal.window.import.import.source.control.audio.folder') };
+  window.SettingsAudioFolder = Object.freeze({ mount: mountSourceConnections });
 
   function mountSourceConnections(ctx) {
+  // Only a journal on a phone has a folder to sync; elsewhere nothing is added.
+  if (!window.JournalOwnerFolders) return;
   const rows = new Map();
   let root = null;
   let disposed = false;
@@ -99,8 +102,7 @@
   function controls(row) {
     const off = new Map();
     for (const button of row.node.querySelectorAll('button')) off.set(button, row.busy);
-    const connected = row.source === 'plaud' ? row.available === true
-      : row.connection?.remembered === true && row.connection.access_state === 'ready';
+    const connected = row.connection?.remembered === true && row.connection.access_state === 'ready';
     off.set(row.node.querySelector('[data-source-sync]'), row.busy || !row.readable || !connected || row.syncPending);
     for (const button of row.node.querySelectorAll('[data-source-change]')) {
       off.set(button, row.busy || !row.readable || !window.JournalOwnerSources);
@@ -117,18 +119,14 @@
 
   function showConnection(row) {
     const details = row.node.querySelector('[data-source-connection]');
-    if (row.source === 'plaud') {
-      details.textContent = row.available ? window.JournalI18n.render('journal.window.import.visible.text.ready.to.sync.recordings.into.your') : window.JournalI18n.render('journal.window.import.visible.text.add.your.plaud.token.in.settings');
-      return;
-    }
     const connection = row.connection;
     details.textContent = !connection ? window.JournalI18n.render('journal.window.import.visible.text.no.folder.connected')
       : connection.access_state === 'ready' ? window.JournalI18n.renderEnglish('journal.window.import.folder.access.remembered', [['folder', String(connection.folder_name)]])
       : window.JournalI18n.render('journal.window.import.folder.access.repeat', [['folder', String(connection.folder_name)]]);
     const actions = row.node.querySelector('[data-source-connection-actions]');
     actions.innerHTML = connection
-      ? `<button type="button" class="import-secondary-btn" data-source-change="reauthorize">${window.JournalI18n.renderHtml('journal.window.import.button.label.choose.folder.again')}</button> <button type="button" class="import-secondary-btn" data-source-change="replace">${window.JournalI18n.renderHtml('journal.window.import.button.label.change.folder')}</button> <button type="button" class="import-secondary-btn" data-source-change="forget">${window.JournalI18n.renderHtml('journal.window.import.button.label.forget.folder')}</button>`
-      : `<button type="button" class="import-secondary-btn" data-source-change="begin">${window.JournalI18n.renderHtml('journal.window.import.button.label.connect.folder')}</button>`;
+      ? `<button type="button" class="btn-secondary" data-source-change="reauthorize">${window.JournalI18n.renderHtml('journal.window.import.button.label.choose.folder.again')}</button> <button type="button" class="btn-secondary" data-source-change="replace">${window.JournalI18n.renderHtml('journal.window.import.button.label.change.folder')}</button> <button type="button" class="btn-secondary" data-source-change="forget">${window.JournalI18n.renderHtml('journal.window.import.button.label.forget.folder')}</button>`
+      : `<button type="button" class="btn-secondary" data-source-change="begin">${window.JournalI18n.renderHtml('journal.window.import.button.label.connect.folder')}</button>`;
   }
 
   function showSchedule(row) {
@@ -160,10 +158,7 @@
     const connection = results[0];
     if (connection.status === 'fulfilled' && connection.value.source === row.source) {
       const value = connection.value;
-      if (row.source === 'plaud' && typeof value.available === 'boolean') {
-        row.available = value.available;
-        row.readable = true;
-      } else if (row.source !== 'plaud' && (value.connection === null || validConnection(value.connection))) {
+      if (value.connection === null || validConnection(value.connection)) {
         row.connection = value.connection;
         row.readable = true;
       }
@@ -326,21 +321,21 @@
   }
 
   function mount() {
-    root = document.getElementById('importSyncSources');
-    if (!root || !window.JournalOwnerFolders) return;
-    root.hidden = !!window.location.hash && window.location.hash !== '#';
-    root.innerHTML = `<h2>${window.JournalI18n.renderHtml('journal.window.import.section.heading.sync.sources')}</h2>${Object.entries(sources).map(([source, name]) => `
-      <section class="import-sync-source" data-sync-source="${source}" aria-labelledby="source-${source}-title">
-        <h3 id="source-${source}-title">${escape(name)}</h3>
+    root = document.getElementById('settingsAudioFolder');
+    if (!root) return;
+    root.hidden = false;
+    root.innerHTML = `${Object.entries(sources).map(([source, name]) => `
+      <section class="settings-audio-folder" data-sync-source="${source}" aria-labelledby="source-${source}-title">
+        <h3 class="settings-subsection-title" id="source-${source}-title">${escape(name)}</h3>
         <p data-source-connection>${window.JournalI18n.renderHtml('journal.window.import.visible.text.checking.source')}</p>
-        ${source === 'plaud' ? `<p><a href="/app/settings/#apikeys">${window.JournalI18n.renderHtml('journal.window.import.link.label.plaud.connection.settings')}</a></p>` : `<p class="import-field-hint">${window.JournalI18n.renderEnglishHtml('journal.window.import.visible.text.connecting.keeps.read.access.to.the')}</p><div class="import-action-row" data-source-connection-actions></div>`}
-        <div class="import-action-row"><button type="button" class="import-primary-btn" data-source-sync disabled>${window.JournalI18n.renderHtml('journal.window.import.button.label.sync.now')}</button><button type="button" class="import-secondary-btn" data-source-refresh>${window.JournalI18n.renderHtml('journal.window.import.button.label.check.status')}</button></div>
+        <p class="settings-subsection-desc">${window.JournalI18n.renderEnglishHtml('journal.window.import.visible.text.connecting.keeps.read.access.to.the')}</p><div class="granola-actions" data-source-connection-actions></div>
+        <div class="granola-actions"><button type="button" class="btn" data-source-sync disabled>${window.JournalI18n.renderHtml('journal.window.import.button.label.sync.now')}</button><button type="button" class="btn-secondary" data-source-refresh>${window.JournalI18n.renderHtml('journal.window.import.button.label.check.status')}</button></div>
         <p data-source-read-status role="status" aria-live="polite"></p><p data-source-change-status role="status" aria-live="polite"></p><p data-source-status role="status" aria-live="polite"></p>
         <details><summary>${window.JournalI18n.renderHtml('journal.window.import.disclosure.label.automatic.sync')}</summary><form data-source-schedule>
           <p data-source-schedule-state>${window.JournalI18n.renderHtml('journal.window.import.visible.text.checking.schedule')}</p><p data-source-conflicts></p>
           <label for="source-${source}-every">${window.JournalI18n.renderHtml('journal.window.import.field.label.how.often')}</label> <select id="source-${source}-every" disabled><option value="">${window.JournalI18n.renderHtml('journal.window.import.option.label.choose.a.cadence')}</option></select>
           <label><input type="checkbox" disabled> ${window.JournalI18n.renderHtml('journal.window.import.field.label.automatic.sync.enabled')}</label>
-          <div class="import-action-row"><button type="submit" class="import-secondary-btn" disabled>${window.JournalI18n.renderHtml('journal.window.import.button.label.save.schedule')}</button><button type="button" class="import-secondary-btn" data-source-remove disabled>${window.JournalI18n.renderHtml('journal.window.import.button.label.remove.schedule')}</button></div>
+          <div class="granola-actions"><button type="submit" class="btn-secondary" disabled>${window.JournalI18n.renderHtml('journal.window.import.button.label.save.schedule')}</button><button type="button" class="btn-secondary" data-source-remove disabled>${window.JournalI18n.renderHtml('journal.window.import.button.label.remove.schedule')}</button></div>
         </form></details>
       </section>`).join('')}`;
     for (const node of root.querySelectorAll('[data-sync-source]')) {

@@ -17420,7 +17420,7 @@ journal.window.settings.visible.text.attached.activities = attached activities
 
 journal.window.settings.visible.text.audio.is.waiting.set.up.your = audio is waiting. set up your voice again, or turn this mode off to process it.
 
-journal.window.settings.visible.text.automatically.sync.and.import.material.from = automatically sync and import material from your { $slot1 } device every hour.
+journal.window.settings.visible.text.automatically.sync.and.import.material.from = automatically sync your recordings from { $slot1 } every hour.
 
 journal.window.settings.visible.text.background.errors.that.weren.t.shown = background errors that weren't shown as notifications.
 
@@ -17548,7 +17548,7 @@ journal.window.settings.visible.text.iana.timezone.identifier = { $slot1 } timez
 
 journal.window.settings.visible.text.identity = identity
 
-journal.window.settings.visible.text.import.audio.from.plaud.recorder.paste = import audio from { $slot1 } recorder. paste the token from your { $slot2 } web session. it's kept in your journal and used only to fetch your recordings from { $slot3 }.
+journal.window.settings.visible.text.import.audio.from.plaud.recorder.paste = sync audio from your { $slot1 } recorder. paste the token from your { $slot2 } web session. it's kept in your journal and used only to fetch your recordings from { $slot3 }.
 
 journal.window.settings.visible.text.installed.parakeet.model.version.for.local = installed { $slot1 } model version for local transcription
 
@@ -17690,7 +17690,7 @@ journal.window.settings.visible.text.speech.to.text.engine.to.use = speech-to-te
 
 journal.window.settings.visible.text.storage.use.couldn.t.be.measured = storage use couldn't be measured. your retention settings are still available.{ $slot1 }
 
-journal.window.settings.visible.text.sync.and.import.plaud.material.every = sync and import { $slot1 } material every hour
+journal.window.settings.visible.text.sync.and.import.plaud.material.every = sync { $slot1 } recordings every hour
 
 journal.window.settings.visible.text.system = { $slot1 }(system)
 
@@ -19244,13 +19244,13 @@ journal.window.import.import.status.or.action.could.not.confirm.the.folder.chang
 
 journal.window.import.import.status.or.action.could.not.confirm.the.schedule.change = could not confirm the schedule change. check the current schedule before trying again.
 
-journal.window.import.import.status.or.action.could.not.confirm.the.sync.result = could not confirm the sync result. check import history.
+journal.window.import.import.status.or.action.could.not.confirm.the.sync.result = could not confirm the sync result. check status again in a moment.
 
-journal.window.import.import.status.or.action.could.not.confirm.this.sync.request = could not confirm this sync request. check import history before syncing again.
+journal.window.import.import.status.or.action.could.not.confirm.this.sync.request = could not confirm this sync request. check status before syncing again.
 
 journal.window.import.import.status.or.action.could.not.read.the.sync.result = could not read the sync result. check again before syncing again.
 
-journal.window.import.import.status.or.action.folder.access.forgotten.earlier.imports.stay = folder access forgotten. earlier imports stay in your journal.
+journal.window.import.import.status.or.action.folder.access.forgotten.earlier.imports.stay = folder forgotten. what it already brought in stays in your journal.
 
 journal.window.import.import.status.or.action.folder.connection.updated = folder connection updated.
 
@@ -19258,7 +19258,7 @@ journal.window.import.import.status.or.action.schedule.updated = schedule update
 
 journal.window.import.import.status.or.action.sending.sync.request = sending sync request…
 
-journal.window.import.import.status.or.action.source.sync.did.not.finish.check = source sync did not finish. check import history for what was saved.
+journal.window.import.import.status.or.action.source.sync.did.not.finish.check = source sync did not finish. try again.
 
 journal.window.import.import.status.or.action.source.sync.finished.media.processing.may = source sync finished. media processing may continue.
 
@@ -19778,7 +19778,7 @@ journal.window.import.visible.text.completed = completed
 
 journal.window.import.visible.text.configure.and.start = configure and start
 
-journal.window.import.visible.text.connecting.keeps.read.access.to.the = connecting keeps read access to the selected folder for future syncs. forgetting a folder keeps earlier imports in your journal.
+journal.window.import.visible.text.connecting.keeps.read.access.to.the = your journal keeps access to this folder and brings in its audio, including what's already there. forgetting the folder stops that, and what it already brought in stays in your journal.
 
 journal.window.import.visible.text.contains.gaps = contains gaps
 
