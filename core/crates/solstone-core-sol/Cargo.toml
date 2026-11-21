@@ -9,6 +9,12 @@ publish = false
 [features]
 full-tests = []
 
+# No unit tests live in this target, so the unit gate builds no harness for it.
+[[bin]]
+name = "solstone-resident-fixture"
+path = "src/bin/solstone-resident-fixture.rs"
+test = false
+
 [dependencies]
 solstone-core-about.workspace = true
 serde_json = { workspace = true }

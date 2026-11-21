@@ -12,6 +12,7 @@ publish = false
 [[bin]]
 name = "solstone-core-pdf"
 path = "src/main.rs"
+test = false
 
 [features]
 full-tests = []

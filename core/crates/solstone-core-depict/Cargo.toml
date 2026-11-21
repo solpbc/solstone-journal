@@ -12,6 +12,12 @@ publish = false
 [features]
 full-tests = []
 
+# No unit tests live in this target, so the unit gate builds no harness for it.
+[[bin]]
+name = "solstone-core-depict"
+path = "src/main.rs"
+test = false
+
 [dependencies]
 solstone-core-segment.workspace = true
 base64 = "0.22.1"

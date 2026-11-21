@@ -15,6 +15,7 @@ skip = "standalone inspection bed; production brain verbs ship through solstone-
 [[bin]]
 name = "solstone-brain"
 path = "src/main.rs"
+test = false
 
 [dependencies]
 jiff = { workspace = true }

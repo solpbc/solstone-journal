@@ -9,6 +9,12 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
+# No unit tests live in this target, so the unit gate builds no harness for it.
+[[bin]]
+name = "solstone-core-ced-analyze"
+path = "src/main.rs"
+test = false
+
 [dependencies]
 serde_json = { workspace = true }
 solstone-core-ced-sys = { workspace = true }

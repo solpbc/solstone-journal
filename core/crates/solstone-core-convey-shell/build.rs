@@ -641,7 +641,12 @@ fn inventory(
     let mut records: Vec<Record> = sources
         .into_iter()
         .map(|(kind, route, content_type, file)| {
-            println!("cargo:rerun-if-changed={}", file.display());
+            // The bundles are written by this run into its own output. Watching
+            // them makes Cargo see a file newer than the run that wrote it and
+            // build this crate, and everything over it, a second time.
+            if !file.starts_with(output) {
+                println!("cargo:rerun-if-changed={}", file.display());
+            }
             let bytes = fs::read(&file)
                 .unwrap_or_else(|error| panic!("asset {} readable: {error}", file.display()));
             let tree = tree_root(&route);

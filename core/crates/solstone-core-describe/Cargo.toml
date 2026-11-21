@@ -98,3 +98,4 @@ solstone-core-speakers-onnx.workspace = true
 [[bin]]
 name = "solstone-face-pass"
 path = "src/face_pass_main.rs"
+test = false

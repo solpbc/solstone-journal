@@ -26,6 +26,8 @@ These packages keep `runtime` in their default feature set, so ordinary producti
 - **In `make ci-full`:** a test that walks or parses the whole repository. Prefer a visibility boundary the compiler enforces (`pub(crate)`, a `test-hooks` re-export) to a scan.
 - **Nowhere:** a new test that pins the text of the Makefile, CI configuration or another file's source, and a test that enforces copy, casing, punctuation, color or other design choices. Assert what the code produces for an input, not how its strings or styles read.
 
+A binary or library target with no unit tests says `test = false` in its `Cargo.toml`. `make ci` asks `solstone-ci unit-targets` which targets to test, so such a target gets no harness built, linked or run; remove the line when the target gains its first unit test.
+
 Keep each routine test well under a second at the dev profile's opt-level 0. Use the smallest input that proves the property: a short image strip rather than a 4K frame, a sample of prefixes rather than every prefix of a 5 KB input. Build an expensive fixture once per process with `OnceLock`, not once per test. A timeout or poll goes on an injected duration or tokio's paused clock, not a real wait.
 
 `make ci` runs each crate's unit tests in parallel, as threads of one process. A test that uses process-wide state (a global logger or log capture, a static hook or counter, an environment variable, the current directory) shares it with every test running beside it. Key that state by something the test owns, such as its thread or its fixture's journal root, or, for an environment variable or the current directory, hold a lock that every test touching it takes. A test that waits for background work waits on a signal from that work, not on the host being fast enough.

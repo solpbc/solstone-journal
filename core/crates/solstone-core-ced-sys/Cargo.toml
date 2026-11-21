@@ -9,6 +9,10 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
+# No unit tests live in this library, so the unit gate builds no harness for it.
+[lib]
+test = false
+
 [dependencies]
 libloading = { workspace = true }
 

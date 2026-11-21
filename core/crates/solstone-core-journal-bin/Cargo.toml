@@ -9,10 +9,12 @@ publish = false
 [[bin]]
 name = "solstone-core-journal"
 path = "src/main.rs"
+test = false
 
 [[bin]]
 name = "setup-fixture-journal"
 path = "src/setup_fixture_journal.rs"
+test = false
 
 [dependencies]
 solstone-core-setup.workspace = true

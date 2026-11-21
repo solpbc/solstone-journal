@@ -105,6 +105,10 @@ fn run() -> Result<i32, String> {
             }
             Ok(0)
         }
+        "unit-targets" => {
+            println!("{}", unit_targets(&repo, args)?);
+            Ok(0)
+        }
         "boundary-snapshot" => {
             if args.next().is_some() {
                 return Err("boundary-snapshot does not accept arguments".to_owned());
@@ -174,7 +178,7 @@ fn run() -> Result<i32, String> {
         }
         "help" | "--help" | "-h" => {
             println!(
-                "usage: solstone-ci <validate|plan|run|classified|boundary-snapshot|release-manifest-check|advisory-audit|windows-plan|windows-run> [options]"
+                "usage: solstone-ci <validate|plan|run|classified|unit-targets|boundary-snapshot|release-manifest-check|advisory-audit|windows-plan|windows-run> [options]"
             );
             println!("selectors union within a dimension and intersect across dimensions");
             Ok(0)
@@ -1788,6 +1792,71 @@ fn command_stdout(repo: &Path, program: &str, args: &[&str]) -> Result<String, S
     String::from_utf8(output.stdout)
         .map(|value| value.trim().to_owned())
         .map_err(|error| format!("decode {program} output: {error}"))
+}
+
+/// The Cargo target selection for the routine unit gate, to follow `--lib`:
+/// one `--bin` for each workspace binary the manifests leave testable, and an
+/// `--exclude` for each package whose targets are all marked `test = false`.
+/// `--lib --bins` would build and run a harness for every binary, tests or
+/// not, because naming a target kind overrides `test = false`.
+fn unit_targets(repo: &Path, mut args: impl Iterator<Item = String>) -> Result<String, String> {
+    let mut excluded = BTreeSet::new();
+    while let Some(flag) = args.next() {
+        if flag != "--exclude" {
+            return Err(format!("unknown unit-targets option {flag}"));
+        }
+        excluded.insert(args.next().ok_or("--exclude needs a package")?);
+    }
+    let output = Command::new(env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
+        .args(["metadata", "--no-deps", "--locked", "--offline"])
+        .args(["--format-version", "1", "--manifest-path"])
+        .arg(repo.join("core/Cargo.toml"))
+        .stderr(Stdio::inherit())
+        .output()
+        .map_err(|error| format!("cargo metadata did not start: {error}"))?;
+    if !output.status.success() {
+        return Err(format!("cargo metadata failed: {}", output.status));
+    }
+    let metadata: serde_json::Value =
+        serde_json::from_slice(&output.stdout).map_err(|error| error.to_string())?;
+    let mut untested = BTreeSet::new();
+    let mut bins = BTreeSet::new();
+    for package in metadata["packages"].as_array().ok_or("no packages")? {
+        let name = package["name"].as_str().ok_or("package without a name")?;
+        if excluded.contains(name) {
+            continue;
+        }
+        let mut tested = false;
+        for target in package["targets"].as_array().ok_or("no targets")? {
+            let is = |kind: &str| {
+                target["kind"]
+                    .as_array()
+                    .is_some_and(|kinds| kinds.iter().any(|value| value == kind))
+            };
+            let unit = is("bin") || is("lib") || is("rlib") || is("cdylib") || is("staticlib");
+            if !unit || target["test"] != true {
+                continue;
+            }
+            tested = true;
+            if is("bin") {
+                bins.insert(
+                    target["name"]
+                        .as_str()
+                        .ok_or("bin without a name")?
+                        .to_owned(),
+                );
+            }
+        }
+        if !tested {
+            untested.insert(name.to_owned());
+        }
+    }
+    let selection: Vec<String> = untested
+        .iter()
+        .map(|package| format!("--exclude {package}"))
+        .chain(bins.iter().map(|bin| format!("--bin {bin}")))
+        .collect();
+    Ok(selection.join(" "))
 }
 
 fn repo_root() -> Result<PathBuf, String> {

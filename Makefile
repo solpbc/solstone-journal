@@ -98,9 +98,7 @@ REQUIRE_RUSTUP := command -v rustup >/dev/null 2>&1 || { echo "rustup is require
 
 # Standalone from-source build-readiness check. Deliberately not a dependency
 # of build/dev/test/ci/ci-full/install -- it changes nothing about any other
-# target, it only reports. A dependency-free shell script, so it needs no
-# entry in UV_OPTIONAL_GOALS below (that list already carries `preflight`
-# from the retired Python-era battery; this reuses the same carve-out).
+# target, it only reports. A dependency-free shell script.
 preflight:
 	@bash scripts/preflight_env.sh
 # Prep measured, rather than merely anticipated, that a host GNU cargo build of
@@ -306,36 +304,14 @@ endef
 
 REQUIRE_PDF_HOST_RUNTIME = $(REQUIRE_SUPPORTED_PDF_HOST); $(DEFINE_PDF_RUNTIME_VALIDATOR); if validate_pdf_runtime; then :; else validation_status=$$?; echo "$$validation_error" >&2; exit "$$validation_status"; fi
 
-# Require uv only for goals that actually use it. `preflight` is a
-# dependency-free shell script and `install` is a retired stub that only
-# prints an error, so neither should abort at parse time when uv is absent --
-# they report uv-absence (or their own retirement) themselves. Rust-only and
-# retired/gated goals are likewise optional; Python-dependent goals outside
-# this list still abort at parse time.
+# uv is needed only by the goals that run it or the Python environment it
+# builds. Those are named here, and every other goal parses without it. The
+# list used to name the goals that did not need uv, so each new Rust-only
+# target had to be added to it or it stopped parsing on a host without uv.
 UV := $(shell command -v uv 2>/dev/null)
-UV_OPTIONAL_GOALS := \
-	preflight install \
-	check-rust-fmt check-rust-msrv check-rust-clippy check-rust-clippy-full \
-	check-standalone-lockfiles check-rust-screen-ocr-helper check-rust-i18n-catalog \
-	journal-window-catalog check-journal-window-catalog \
-	check-rust-unit check-rust-doc check-rust-test check-rust-race \
-	check-rust-journal-mcp-endpoint check-rust-embedded-speech \
-	check-rust-android check-rust-android-prepared \
-	build-mobile-android build-mobile-ios \
-	check-mobile-native-android check-mobile-native-ios check-mobile-native-driver \
-	check-rust-ios check-rust-macos check-rust-windows check-rust-deny check-rust-describe-cli-stubs \
-	require-win-remote-host sync-win-host win-host-ci \
-	check-rust-vad-analyze-test build-sandbox-processing check-rust-sandbox-processing-build check-rust-onnx-stage check-rust-onnx-ready check-rust-onnx-test \
-	check-rust-pdf-stage check-rust-pdf-ready check-rust-pdf-test $(PDF_RUNTIME_HOST_LINK_DIR) \
-	check-rust-registry-suite check-rust-registry-package check-rust-shipped-binaries \
-	check-rust-ci-topology ci ci-under-poison ci-full ci-full-under-poison ci-full-plan \
-	ci-contained ci-prep-ffmpeg \
-	ci-full-prep ci-full-prep-cargo ci-full-prep-onnx ci-full-prep-pdf ci-full-prep-ios check-rust-ios-ready \
-	verify test build format format-check report-rust-code-evidence \
-	check-service-legacy-evidence service-legacy-evidence-capture audit \
-	test-cov test-integration test-performance test-app test-only watch coverage
+UV_GOALS := .installed uv.lock update versions pre-commit screen-ocr-rust-notices
 ifndef UV
-ifneq ($(filter-out $(UV_OPTIONAL_GOALS),$(MAKECMDGOALS)),)
+ifneq ($(filter $(UV_GOALS),$(MAKECMDGOALS)),)
 $(error uv is not installed. Install it: curl -LsSf https://astral.sh/uv/install.sh | sh)
 endif
 endif
@@ -647,10 +623,13 @@ check-rust-msrv:
 		fi; \
 		exit "$$cargo_status"
 
+# The ONNX-linked packages are linted with the workspace: Clippy checks without
+# linking, so their default production closure needs no staged runtime, and a
+# separate pass for them alone re-checked a hundred shared dependencies under
+# a narrower feature selection.
 check-rust-clippy:
 	@$(REQUIRE_CARGO)
-	cargo clippy --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --lib --bins --locked --offline -- -D warnings
-	cargo clippy --manifest-path $(RUST_MANIFEST) $(RUST_NATIVE_ROUTINE_PACKAGES) --lib --bins --locked --offline -- -D warnings
+	cargo clippy --manifest-path $(RUST_MANIFEST) --workspace --lib --bins --locked --offline -- -D warnings
 	cargo clippy --manifest-path $(RUST_MANIFEST) $(RUST_NATIVE_ROUTINE_PACKAGES) --no-default-features --lib --locked --offline -- -D warnings
 
 # Every classified package's suite features are linted in one workspace pass
@@ -679,13 +658,18 @@ check-rust-classified-full-clippy-onnx:
 	cargo clippy --manifest-path $(RUST_MANIFEST) $(RUST_NATIVE_ROUTINE_PACKAGES) --features full-tests --all-targets --locked -- -D warnings
 
 # Routine validation runs only in-process unit harnesses from workspace library
-# and binary targets. This --lib --bins Clippy invocation does not select Cargo
+# and binary targets. A binary or library with no unit tests says `test = false`
+# in its manifest and gets no harness: `solstone-ci unit-targets` names the
+# rest, because `--bins` would build and run one for every binary regardless. This --lib --bins Clippy invocation does not select Cargo
 # integration-test targets. `make ci` uses this Clippy command, while both
 # public code commands use the unit target below; full validation selects its
 # own registered evidence.
 check-rust-unit:
 	@$(REQUIRE_CARGO)
-	cargo test --manifest-path $(RUST_MANIFEST) --workspace $(RUST_ROUTINE_EXCLUDES) --lib --bins --locked --offline --no-fail-fast
+	@set -eu; \
+	targets=$$($(SOLSTONE_CI_RUNNER) unit-targets $(RUST_ROUTINE_EXCLUDES)); \
+	set -x; \
+	cargo test --manifest-path $(RUST_MANIFEST) --workspace $(RUST_ROUTINE_EXCLUDES) --lib $$targets --locked --offline --no-fail-fast
 	cargo test --manifest-path $(RUST_MANIFEST) $(RUST_NATIVE_ROUTINE_PACKAGES) --no-default-features --lib --locked --offline --no-fail-fast
 
 .PHONY: report-rust-code-evidence
@@ -718,11 +702,27 @@ check-rust-doc:
 	cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core-assets --doc --locked -- --test-threads=1
 	cargo test --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --exclude solstone-core-backup-runtime --exclude solstone-core-assets --doc --locked -- --test-threads=1
 
+# In the routine gate the two tools run without `-p`, so Cargo resolves their
+# features across the workspace, as the Clippy and unit steps do, and those
+# steps reuse what the tools compiled. With `-p <tool>` Cargo resolves features
+# for that one package: about 190 third-party crates were compiled for the
+# tools with narrower features and then again for the workspace. Every other
+# caller keeps `-p`, so the producer and the full gate build exactly the
+# package they name.
+ifneq ($(strip $(filter ci ci-contained ci-under-poison ci-prep-ffmpeg,$(MAKECMDGOALS))),)
+export SOLSTONE_CI_ROUTINE := 1
+endif
+ifeq ($(SOLSTONE_CI_ROUTINE),1)
+SOLSTONE_CI_RUNNER := cargo run --manifest-path $(RUST_MANIFEST) --bin solstone-ci --locked --offline --
+SOLSTONE_DISTRIBUTION := cargo run --manifest-path $(RUST_MANIFEST) --bin solstone-distribution --locked --offline --
+SOLSTONE_DISTRIBUTION_ACQUIRE := cargo run --manifest-path $(RUST_MANIFEST) --bin solstone-distribution --locked --
+else
 SOLSTONE_CI_RUNNER := cargo run --manifest-path $(RUST_MANIFEST) -p solstone-core-repository-contracts --bin solstone-ci --locked --offline --
 SOLSTONE_DISTRIBUTION := cargo run --manifest-path $(RUST_MANIFEST) -p solstone-core-distribution --bin solstone-distribution --locked --offline --
 # Acquire is the only distribution surface allowed to fetch. The producer
 # itself stays offline and consumes the files this writes.
 SOLSTONE_DISTRIBUTION_ACQUIRE := cargo run --manifest-path $(RUST_MANIFEST) -p solstone-core-distribution --bin solstone-distribution --locked --
+endif
 
 # The helper has an independent lock and notice closure. Regenerate its notices
 # and source index here when its lock or inventory changes.
@@ -1552,7 +1552,11 @@ ci-under-poison:
 	@$(SOLSTONE_DISTRIBUTION) check-build-features
 	@$(MAKE) check-rust-clippy
 	@$(MAKE) check-rust-unit
-	@$(MAKE) check-rust-screen-ocr-helper
+	@if sh scripts/standalone_check_unchanged.sh core/screen-ocr-helper; then \
+	  echo "Screen OCR helper: unchanged against origin/main, so its format, Clippy and unit checks did not run. make check-rust-screen-ocr-helper runs them."; \
+	else \
+	  $(MAKE) check-rust-screen-ocr-helper; \
+	fi
 	@$(MAKE) check-rust-i18n-catalog
 	@$(MAKE) --no-print-directory RUST_CODE_EVIDENCE_CONTEXT=ci report-rust-code-evidence
 

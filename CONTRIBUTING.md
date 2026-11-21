@@ -94,7 +94,7 @@ make ci-full              # full operator final-tree gate
 source-derived omission boundary. The [Makefile](Makefile) is authoritative:
 `make ci` is the efficient routine gate with formatting,
 topology validation, library/binary Clippy, and
-serialized library/binary unit tests. It does not run Cargo integration-test
+library/binary unit tests. It does not run Cargo integration-test
 targets or heavyweight native, platform, and policy legs. An operator runs the
 selectable, registry-driven `make ci-full` gate on the exact final-tree SHA
 after `make ci-full-prep`.

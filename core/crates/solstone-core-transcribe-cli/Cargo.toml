@@ -15,6 +15,7 @@ skip = "standalone transcription integration bed; production transcribe ships th
 [[bin]]
 name = "solstone-transcribe"
 path = "src/main.rs"
+test = false
 
 [[bin]]
 # Standalone helper-process fixtures for the AC16 integration test.  They are

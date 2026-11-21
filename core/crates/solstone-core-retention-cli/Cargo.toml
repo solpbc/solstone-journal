@@ -12,6 +12,7 @@ publish = false
 [[bin]]
 name = "solstone-retention"
 path = "src/main.rs"
+test = false
 
 [dependencies]
 solstone-core-removals.workspace = true
