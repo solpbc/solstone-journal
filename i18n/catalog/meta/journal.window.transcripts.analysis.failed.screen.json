@@ -1,0 +1,16 @@
+{
+  "description": "Analysis failed heading when the observed content is screen.",
+  "context": "Journal window. Analysis failed heading when the observed content is screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "75e9ff8f306580177cc7901542ab6440ba3cc02fcbea81a8cc733098ed8f9e6b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

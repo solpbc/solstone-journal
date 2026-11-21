@@ -1,0 +1,16 @@
+{
+  "description": "Analysis pending heading when the observed content is image.",
+  "context": "Journal window. Analysis pending heading when the observed content is image.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "137be8cae3d30459bad19c3daadc60cdd10a5cae996a600294e88cebb6e62375",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

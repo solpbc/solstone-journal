@@ -1,0 +1,30 @@
+{
+  "description": "Standalone minute duration in a timeline detail label.",
+  "context": "Journal window. Standalone minute duration in a timeline detail label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "minutes",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "0d94df7b8853c8691bd0d5e1e742c2aeab88f0ef7b3e905159f55fef5806e6b0",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

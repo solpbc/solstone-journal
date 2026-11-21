@@ -1,0 +1,30 @@
+{
+  "description": "Processing warnings alert count.",
+  "context": "Journal window. Processing warnings alert count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "warnings_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "warnings",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "980406419d170c61a3cdbe99899d4317e7f0a8ce4e92dc10a0a50ed9ff63a0be",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "warnings_quantity",
+    "type": "cardinal"
+  }
+}

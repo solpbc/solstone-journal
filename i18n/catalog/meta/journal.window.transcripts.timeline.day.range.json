@@ -1,0 +1,25 @@
+{
+  "description": "Accessible label for the day timeline with its clock range.",
+  "context": "Journal window. Accessible label for the day timeline with its clock range.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "start_time",
+      "type": "string"
+    },
+    {
+      "name": "end_time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "88f9771971c7ac0551ba2bb362957f4931d5b823568ac0ae6f33059fc2c1efb8",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

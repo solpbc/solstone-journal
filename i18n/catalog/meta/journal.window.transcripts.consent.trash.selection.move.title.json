@@ -1,0 +1,30 @@
+{
+  "description": "Consent trash copy moveTitle in the journal's transcripts view.",
+  "context": "Journal window. Consent trash copy moveTitle in the journal's transcripts view.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "segments_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "segments",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "41da28b3e6b711ae79d6f2e3eea96120c0dc944b2d6fac5e28ec5050a1fe92b9",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "segments_quantity",
+    "type": "cardinal"
+  }
+}

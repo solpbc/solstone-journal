@@ -1,0 +1,21 @@
+{
+  "description": "Consent trash copy size in the journal's transcripts view.",
+  "context": "Journal window. Consent trash copy size in the journal's transcripts view.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "media_size",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ced2fb10068dd9d393e894ad836a5d78503afadc0991dde833ddcfa183e1dc98",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

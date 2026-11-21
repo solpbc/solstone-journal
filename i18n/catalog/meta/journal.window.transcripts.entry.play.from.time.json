@@ -1,0 +1,21 @@
+{
+  "description": "Accessible name for playing a transcript entry from its timestamp.",
+  "context": "Journal window. Accessible name for playing a transcript entry from its timestamp.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "adeb4d14d5b9f94f426a7ffb998c5a18483a88f282b3d80fad964060ccd8ec45",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

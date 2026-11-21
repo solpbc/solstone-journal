@@ -1,0 +1,16 @@
+{
+  "description": "Analysis pending heading when the observed content is audio.",
+  "context": "Journal window. Analysis pending heading when the observed content is audio.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7a225891ebc5688553f73ccbc2108db7660bb88cdf44346b0d99f68c56d012e0",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

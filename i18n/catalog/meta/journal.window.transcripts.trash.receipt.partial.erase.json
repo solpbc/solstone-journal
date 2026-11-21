@@ -1,0 +1,39 @@
+{
+  "description": "trash copy title in the journal's transcripts view.",
+  "context": "Journal window. trash copy title in the journal's transcripts view.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "processed_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "processed",
+      "type": "string"
+    },
+    {
+      "name": "segments_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "segments",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "215f74879abdf80da55e509aa6b9fa5b33e154c48570db0dd9cf3d094ca09f27",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "processed_quantity",
+    "type": "cardinal"
+  }
+}

@@ -7,11 +7,7 @@
   const locale = globalThis.document?.documentElement?.lang;
   const language = locale && locale !== 'en' ? locale : sourceLocale;
   const prefix = 'journal.window.chrome.';
-  const argumentsByKey = {
-    'zone.time': [['label', '{label}']],
-    'day.zones.part': [['zones', '{zones}']],
-    'day.zones.all': [['zones', '{zones}']],
-  };
+  const dynamicMessages = new Set(['view.document.title', 'zone.time', 'day.zones.part', 'day.zones.all']);
 
   function renderMessage(selected, id, args = []) {
     return bundle.render(selected, id, args, { useIsolating: selected !== sourceLocale });
@@ -111,11 +107,11 @@
   });
   window.CONVEY_COPY = Object.freeze(Object.fromEntries(
     bundle.messageIds
-      .filter(id => id.startsWith(prefix) && id !== 'journal.window.chrome.view.document.title')
+      .filter(id => id.startsWith(prefix) && !dynamicMessages.has(id.slice(prefix.length)))
       .map(id => {
         const key = id.slice(prefix.length);
         const format = key === 'report.privacy.note' ? renderEnglish : render;
-        return [key.replaceAll('.', '_').toUpperCase(), format(id, argumentsByKey[key])];
+        return [key.replaceAll('.', '_').toUpperCase(), format(id)];
       }),
   ));
 })();

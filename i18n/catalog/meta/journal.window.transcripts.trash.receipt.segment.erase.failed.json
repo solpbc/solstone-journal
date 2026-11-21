@@ -1,0 +1,16 @@
+{
+  "description": "trash copy title in the journal's transcripts view.",
+  "context": "Journal window. trash copy title in the journal's transcripts view.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ad3a54fa7a36b0e0e4d4d22278e1451cf0a7bc08a5aa06843e86da0c1adee229",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

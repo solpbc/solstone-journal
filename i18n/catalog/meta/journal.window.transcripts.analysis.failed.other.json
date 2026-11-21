@@ -1,0 +1,21 @@
+{
+  "description": "Analysis failed heading when the observed content is other.",
+  "context": "Journal window. Analysis failed heading when the observed content is other.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "modality",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e67c2c32de41eeb4b2f18deef3ca63aa86431b7deafd1a3761b13b9115480908",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

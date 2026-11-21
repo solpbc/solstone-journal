@@ -1,0 +1,25 @@
+{
+  "description": "Audio capture warning paired with its source file.",
+  "context": "Journal window. Audio capture warning paired with its source file.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    },
+    {
+      "name": "source_file",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e4a6296207f050563f1e9b4577152242abf49df0e9d87c0d0247b23b82c7dd5b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

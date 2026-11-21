@@ -1,0 +1,34 @@
+{
+  "description": "Location segment row with its clock time and the quantity of readings.",
+  "context": "Journal window. Location segment row with its clock time and the quantity of readings.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "readings_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "readings",
+      "type": "string"
+    },
+    {
+      "name": "start_time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "b2a5392dde8794ff53527c0bd73099368c617e30bec384fe7190e8217f12937f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "readings_quantity",
+    "type": "cardinal"
+  }
+}

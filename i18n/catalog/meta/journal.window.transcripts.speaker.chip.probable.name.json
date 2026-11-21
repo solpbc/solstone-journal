@@ -1,0 +1,21 @@
+{
+  "description": "Tentative named-speaker label.",
+  "context": "Journal window. Tentative named-speaker label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "speaker_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "98716198f480f5350fd0f70d118123940a5891c5a816aaa97abb19cbe56c1f9e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

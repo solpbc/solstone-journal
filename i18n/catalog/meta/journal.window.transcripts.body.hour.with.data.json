@@ -1,0 +1,25 @@
+{
+  "description": "Tooltip for an hour and its body readings.",
+  "context": "Journal window. Tooltip for an hour and its body readings.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "hour",
+      "type": "string"
+    },
+    {
+      "name": "summary",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4a439dd0803da4af9dc8eb01ef5022d53f6f5cc5e9121ef82cb3279eeb322934",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

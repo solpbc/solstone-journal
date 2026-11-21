@@ -1,0 +1,30 @@
+{
+  "description": "Count in a group of collapsed screen frames.",
+  "context": "Journal window. Count in a group of collapsed screen frames.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "frames_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "frames",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "8da86703680b3104a86cdb244536c34e0871216f8e90aa21a28a5bb6dc95212d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "frames_quantity",
+    "type": "cardinal"
+  }
+}

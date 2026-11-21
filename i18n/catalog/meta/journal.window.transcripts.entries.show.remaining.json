@@ -1,0 +1,30 @@
+{
+  "description": "Control to reveal the rest of the transcript, with the remaining entry quantity.",
+  "context": "Journal window. Control to reveal the rest of the transcript, with the remaining entry quantity.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "remaining_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "remaining",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "102525156ea7d2a6803143d36e05bcf8c70d6e2b0e419834e5efe08ae86010fa",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "remaining_quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Count of entries in the body context.",
+  "context": "Journal window. Count of entries in the body context.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "entries_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "entries",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "831d3cfa457fa3b28933017d582af2dadd378c4be862ac2f13b83613e74855bd",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "entries_quantity",
+    "type": "cardinal"
+  }
+}

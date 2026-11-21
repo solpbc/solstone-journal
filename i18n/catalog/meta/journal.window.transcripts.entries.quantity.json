@@ -1,0 +1,30 @@
+{
+  "description": "Accessible list name with the number of entries in the rendered transcript.",
+  "context": "Journal window. Accessible list name with the number of entries in the rendered transcript.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "items_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "items",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "7e75f6d4d409f880173bfb5bc1020c559999260eca00dc5013126238a44f5f77",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "items_quantity",
+    "type": "cardinal"
+  }
+}

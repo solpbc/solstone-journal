@@ -1,0 +1,21 @@
+{
+  "description": "Consent stretch copy kinds in the journal's transcripts view.",
+  "context": "Journal window. Consent stretch copy kinds in the journal's transcripts view.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "content_kinds",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e0b01d8886c1058d62d36953d2677e5ffee14313f4201fe67f9f5a3e2cf4e9cc",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

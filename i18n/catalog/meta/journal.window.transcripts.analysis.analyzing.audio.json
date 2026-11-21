@@ -1,0 +1,16 @@
+{
+  "description": "Analysis analyzing heading when the observed content is audio.",
+  "context": "Journal window. Analysis analyzing heading when the observed content is audio.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "95d62006ef9fb2dfbf2a68abbe5287a2831b856e525c385713fd020614e650b6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

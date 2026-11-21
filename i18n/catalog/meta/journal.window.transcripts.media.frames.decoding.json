@@ -1,0 +1,43 @@
+{
+  "description": "Progress while decoding the preview key frames, with both counts and the percent.",
+  "context": "Journal window. Progress while decoding the preview key frames, with both counts and the percent.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "decoded_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "decoded",
+      "type": "string"
+    },
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "percent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "58198a811f1480c813193a4f30e9c49fafd928a0baa7a0760e13bb7b36d81e6e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "decoded_quantity",
+    "type": "cardinal"
+  }
+}

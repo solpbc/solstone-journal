@@ -1,0 +1,30 @@
+{
+  "description": "Toggle to display the number of segments with location.",
+  "context": "Journal window. Toggle to display the number of segments with location.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "segments_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "segments",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "c32d2a70ada25f60725bfe7e8d05927ec7bdcda3f56011a09f99ffb5148154b6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "segments_quantity",
+    "type": "cardinal"
+  }
+}

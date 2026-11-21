@@ -1,0 +1,16 @@
+{
+  "description": "Uncertain label when the speaker may be the journal owner.",
+  "context": "Journal window. Uncertain label when the speaker may be the journal owner.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "61c42e8c4c1a71924aaab775e2ffe3f11bd3a1b901fd1cdff7a4874892366568",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

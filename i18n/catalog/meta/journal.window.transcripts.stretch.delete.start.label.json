@@ -1,0 +1,21 @@
+{
+  "description": "stretch copy buttonLabel in the journal's transcripts view.",
+  "context": "Journal window. stretch copy buttonLabel in the journal's transcripts view.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "92baa9da50026d8c79eea74f723a2a687cfec085a6c735257093747b6f744718",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

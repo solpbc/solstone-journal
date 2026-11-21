@@ -13866,6 +13866,355 @@ journal.window.time.duration.week.count = { $quantity ->
        *[other] { $count } weeks
     }
 
+journal.window.transcripts.analysis.analyzing.audio = audio observed · analyzing…
+
+journal.window.transcripts.analysis.analyzing.image = photos · analyzing…
+
+journal.window.transcripts.analysis.analyzing.other = { $modality } observed · analyzing…
+
+journal.window.transcripts.analysis.analyzing.screen = screen observed · analyzing…
+
+journal.window.transcripts.analysis.failed.audio = audio observed · analysis failed
+
+journal.window.transcripts.analysis.failed.image = photos · analysis failed
+
+journal.window.transcripts.analysis.failed.other = { $modality } observed · analysis failed
+
+journal.window.transcripts.analysis.failed.screen = screen observed · analysis failed
+
+journal.window.transcripts.analysis.pending.audio = audio observed · analysis pending
+
+journal.window.transcripts.analysis.pending.image = photos · analysis pending
+
+journal.window.transcripts.analysis.pending.other = { $modality } observed · analysis pending
+
+journal.window.transcripts.analysis.pending.screen = screen observed · analysis pending
+
+journal.window.transcripts.body.entries.held = { $entries_quantity ->
+        [one] { $entries } entries present
+       *[other] { $entries } entries present
+    }
+
+journal.window.transcripts.body.entry.count = { $entries_quantity ->
+        [one] { $entries } entry
+       *[other] { $entries } entries
+    }
+
+journal.window.transcripts.body.hour.with.data = { $hour } · { $summary }
+
+journal.window.transcripts.body.hour.without.data = { $hour } · no body data
+
+journal.window.transcripts.body.hours.remaining = { $hours_quantity ->
+        [one] and { $hours } more hours
+       *[other] and { $hours } more hours
+    }
+
+journal.window.transcripts.body.sleep.count = { $sessions_quantity ->
+        [one] 1 sleep session
+       *[other] { $sessions } sleep sessions
+    }
+
+journal.window.transcripts.body.workout.count = { $workouts_quantity ->
+        [one] 1 workout
+       *[other] { $workouts } workouts
+    }
+
+journal.window.transcripts.consent.stretch.content.kinds = that's { $content_kinds }.
+
+journal.window.transcripts.consent.stretch.erase.range = this erases everything in your journal from { $start_time } to { $end_time }.
+
+journal.window.transcripts.consent.stretch.journal.zone = times are in your journal's time zone, { $journal_zone }.
+
+journal.window.transcripts.consent.stretch.move.range = this moves everything in your journal from { $start_time } to { $end_time }.
+
+journal.window.transcripts.consent.trash.import.erase.files.count = { $retained_files_quantity ->
+        [one] it's the last segment from its import, so the { $retained_files } files it kept and its row in your import history are erased with it.
+       *[other] it's the last segment from its import, so the { $retained_files } files it kept and its row in your import history are erased with it.
+    }
+
+journal.window.transcripts.consent.trash.import.erase.named = it's the last segment from { $import_name }, so that file and its row in your import history are erased with it.
+
+journal.window.transcripts.consent.trash.import.move.files.count = { $retained_files_quantity ->
+        [one] it's the last segment from its import, so the { $retained_files } files it kept and its row in your import history go to the trash with it.
+       *[other] it's the last segment from its import, so the { $retained_files } files it kept and its row in your import history go to the trash with it.
+    }
+
+journal.window.transcripts.consent.trash.import.move.named = it's the last segment from { $import_name }, so that file and its row in your import history go to the trash with it.
+
+journal.window.transcripts.consent.trash.import.pending.count = { $waiting_segments_quantity ->
+        [one] the import's { $waiting_segments } other segments in the trash are erased with it.
+       *[other] the import's { $waiting_segments } other segments in the trash are erased with it.
+    }
+
+journal.window.transcripts.consent.trash.import.set.erase.named = this includes the last of the segments from { $import_name }, so that file and its row in your import history are erased too.
+
+journal.window.transcripts.consent.trash.import.set.move.named = this includes the last of the segments from { $import_name }, so that file and its row in your import history go to the trash too.
+
+journal.window.transcripts.consent.trash.import.set.pending.count = { $waiting_segments_quantity ->
+        [one] { $waiting_segments } other segments from that import in the trash are erased too.
+       *[other] { $waiting_segments } other segments from that import in the trash are erased too.
+    }
+
+journal.window.transcripts.consent.trash.import.stay.named = { $import_name }, the file it came from, stays in your journal, because other segments still come from it. to remove it, delete the import.
+
+journal.window.transcripts.consent.trash.imports.set.erase.count = { $imports_quantity ->
+        [one] this includes the last of the segments from { $imports } imports, so the files they kept and their rows in your import history are erased too.
+       *[other] this includes the last of the segments from { $imports } imports, so the files they kept and their rows in your import history are erased too.
+    }
+
+journal.window.transcripts.consent.trash.imports.set.erase.without.files.count = { $imports_quantity ->
+        [one] this includes the last of the segments from { $imports } imports, so their rows in your import history are erased too.
+       *[other] this includes the last of the segments from { $imports } imports, so their rows in your import history are erased too.
+    }
+
+journal.window.transcripts.consent.trash.imports.set.move.count = { $imports_quantity ->
+        [one] this includes the last of the segments from { $imports } imports, so the files they kept and their rows in your import history go to the trash too.
+       *[other] this includes the last of the segments from { $imports } imports, so the files they kept and their rows in your import history go to the trash too.
+    }
+
+journal.window.transcripts.consent.trash.imports.set.move.without.files.count = { $imports_quantity ->
+        [one] this includes the last of the segments from { $imports } imports, so their rows in your import history go to the trash too.
+       *[other] this includes the last of the segments from { $imports } imports, so their rows in your import history go to the trash too.
+    }
+
+journal.window.transcripts.consent.trash.imports.set.pending.count = { $waiting_segments_quantity ->
+        [one] { $waiting_segments } other segments from those imports in the trash are erased too.
+       *[other] { $waiting_segments } other segments from those imports in the trash are erased too.
+    }
+
+journal.window.transcripts.consent.trash.imports.stay.count = { $imports_quantity ->
+        [one] the files { $imports } imports kept stay in your journal, because other segments still come from them. to remove one, delete its import on the import page.
+       *[other] the files { $imports } imports kept stay in your journal, because other segments still come from them. to remove one, delete its import on the import page.
+    }
+
+journal.window.transcripts.consent.trash.imports.stay.named = { $import_name } stays in your journal, because other segments still come from it. to remove it, delete its import on the import page.
+
+journal.window.transcripts.consent.trash.media.size = current raw media size: { $media_size }
+
+journal.window.transcripts.consent.trash.selection.erase.title = { $segments_quantity ->
+        [one] erase { $segments } segments now?
+       *[other] erase { $segments } segments now?
+    }
+
+journal.window.transcripts.consent.trash.selection.more = { $segments_quantity ->
+        [one] and { $segments } more
+       *[other] and { $segments } more
+    }
+
+journal.window.transcripts.consent.trash.selection.move.title = { $segments_quantity ->
+        [one] delete { $segments } segments?
+       *[other] delete { $segments } segments?
+    }
+
+journal.window.transcripts.entries.quantity = { $items_quantity ->
+        [one] transcript entries, { $items } items
+       *[other] transcript entries, { $items } items
+    }
+
+journal.window.transcripts.entries.show.remaining = { $remaining_quantity ->
+        [one] show the rest of this block ({ $remaining } more) →
+       *[other] show the rest of this block ({ $remaining } more) →
+    }
+
+journal.window.transcripts.entries.shown = { $shown_quantity ->
+        [one] transcript entries, { $shown } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    } shown
+       *[other] transcript entries, { $shown } of { $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    } shown
+    }
+
+journal.window.transcripts.entry.play.from.time = play from { $time }
+
+journal.window.transcripts.entry.possible.name = (possible name: { $entity_name })
+
+journal.window.transcripts.location.only.readings = { $readings_quantity ->
+        [one] this segment holds location only: 1 reading.
+       *[other] this segment holds location only: { $readings } readings.
+    }
+
+journal.window.transcripts.location.row.readings = { $readings_quantity ->
+        [one] { $start_time } · 1 reading
+       *[other] { $start_time } · { $readings } readings
+    }
+
+journal.window.transcripts.location.show.count = { $segments_quantity ->
+        [one] show 1 location segment
+       *[other] show { $segments } location segments
+    }
+
+journal.window.transcripts.media.frame.count = { $frames_quantity ->
+        [one] 1 frame
+       *[other] { $frames } frames
+    }
+
+journal.window.transcripts.media.frames.decoding = { $decoded_quantity ->
+        [one] Decoding key frames { $decoded }/{ $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    } ({ $percent }%)…
+       *[other] Decoding key frames { $decoded }/{ $total_quantity ->
+        [one] { $total }
+       *[other] { $total }
+    } ({ $percent }%)…
+    }
+
+journal.window.transcripts.raw.json.summary = raw { $json_label }, { $summary }
+
+journal.window.transcripts.segment.range.entries = { $entries_quantity ->
+        [one] { $range } · { $entries } entry
+       *[other] { $range } · { $entries } entries
+    }
+
+journal.window.transcripts.signals.calendar.repeated = { $visits_quantity ->
+        [one] { $range } · seen { $visits }x
+       *[other] { $range } · seen { $visits }x
+    }
+
+journal.window.transcripts.speaker.chip.maybe.name = maybe { $speaker_name }?
+
+journal.window.transcripts.speaker.chip.maybe.owner = maybe you?
+
+journal.window.transcripts.speaker.chip.probable.name = probably { $speaker_name }
+
+journal.window.transcripts.speaker.chip.probable.owner = probably you
+
+journal.window.transcripts.speaker.chip.voice.number = voice { $voice_number }
+
+journal.window.transcripts.speaker.line.only.help = your answer is for this line, not its voice. to teach your journal a voice, or tidy up the voices it knows, go to { $link_start }speakers{ $link_end }.
+
+journal.window.transcripts.speaker.named.sentences = { $sentences_quantity ->
+        [one] 1 sentence now shows this name
+       *[other] { $sentences } sentences now show this name
+    }
+
+journal.window.transcripts.stretch.delete.start.label = delete a stretch of time, starting { $day }
+
+journal.window.transcripts.stretch.receipt.erase.date = it erases { $erase_date } unless you recover it.
+
+journal.window.transcripts.stretch.receipt.erase.range = erased { $date_range } from your journal
+
+journal.window.transcripts.stretch.receipt.move.range = moved { $date_range } to the trash
+
+journal.window.transcripts.stretch.receipt.recover.range = { $date_range } recovered
+
+journal.window.transcripts.stretch.removed.erase.date = it erases { $erase_date } unless you recover it.
+
+journal.window.transcripts.stretch.removed.range.and.date = it went with everything from { $date_range }, and it comes back only with all of it. it erases { $erase_date } unless you recover it.
+
+journal.window.transcripts.timeline.day.range = day timeline ({ $start_time }–{ $end_time })
+
+journal.window.transcripts.timeline.detail.range = detail timeline ({ $start_time }–{ $end_time })
+
+journal.window.transcripts.timeline.duration.minute = { $quantity ->
+        [one] { $minutes } min
+       *[other] { $minutes } min
+    }
+
+journal.window.transcripts.timeline.segment.accessible = segment { $details }
+
+journal.window.transcripts.trash.receipt.erase.none.help = { $remaining_quantity ->
+        [one] look for it below or in the trash.
+       *[other] look for them below or in the trash.
+    }
+
+journal.window.transcripts.trash.receipt.erase.partial.help = { $remaining_quantity ->
+        [one] the other wasn't erased. look for it below or in the trash.
+       *[other] the others weren't erased. look for them below or in the trash.
+    }
+
+journal.window.transcripts.trash.receipt.keep.remaining = { $remaining_quantity ->
+        [one] { $remaining } is still in your journal, marked below.
+       *[other] { $remaining } are still in your journal, marked below.
+    }
+
+journal.window.transcripts.trash.receipt.marked.remaining = { $remaining_quantity ->
+        [one] { $remaining } couldn't be moved and is still in your journal, marked below.
+       *[other] { $remaining } couldn't be moved and are still in your journal, marked below.
+    }
+
+journal.window.transcripts.trash.receipt.partial.erase = { $processed_quantity ->
+        [one] erased { $processed } of { $segments_quantity ->
+        [one] { $segments }
+       *[other] { $segments }
+    }
+       *[other] erased { $processed } of { $segments_quantity ->
+        [one] { $segments }
+       *[other] { $segments }
+    }
+    }
+
+journal.window.transcripts.trash.receipt.partial.move = { $processed_quantity ->
+        [one] moved { $processed } of { $segments_quantity ->
+        [one] { $segments }
+       *[other] { $segments }
+    } to the trash
+       *[other] moved { $processed } of { $segments_quantity ->
+        [one] { $segments }
+       *[other] { $segments }
+    } to the trash
+    }
+
+journal.window.transcripts.trash.receipt.partial.recovery = { $processed_quantity ->
+        [one] recovered { $processed } of { $segments_quantity ->
+        [one] { $segments }
+       *[other] { $segments }
+    }
+       *[other] recovered { $processed } of { $segments_quantity ->
+        [one] { $segments }
+       *[other] { $segments }
+    }
+    }
+
+journal.window.transcripts.trash.receipt.recovery.partial.help = { $remaining_quantity ->
+        [one] the other is still in the trash. you can try again from there.
+       *[other] the others are still in the trash. you can try again from there.
+    }
+
+journal.window.transcripts.trash.receipt.segment.erase.date = erases { $erase_date } unless you recover it.
+
+journal.window.transcripts.trash.receipt.segment.erase.failed = couldn't erase that segment
+
+journal.window.transcripts.trash.receipt.segment.erased = segment erased from your journal
+
+journal.window.transcripts.trash.receipt.segment.recovered = segment recovered
+
+journal.window.transcripts.trash.receipt.segment.recovery.failed = couldn't recover that segment
+
+journal.window.transcripts.trash.receipt.segments.erase.date = they erase { $erase_date } unless you recover them.
+
+journal.window.transcripts.trash.receipt.segments.erased = { $segments_quantity ->
+        [one] erased { $segments } segments from your journal
+       *[other] erased { $segments } segments from your journal
+    }
+
+journal.window.transcripts.trash.receipt.segments.moved = { $segments_quantity ->
+        [one] moved { $segments } segments to the trash
+       *[other] moved { $segments } segments to the trash
+    }
+
+journal.window.transcripts.trash.receipt.segments.recovered = { $segments_quantity ->
+        [one] { $segments } segments recovered
+       *[other] { $segments } segments recovered
+    }
+
+journal.window.transcripts.trash.selection.count = { $segments_quantity ->
+        [one] { $segments } selected
+       *[other] { $segments } selected
+    }
+
+journal.window.transcripts.trash.selection.range = { $start_time } – { $end_time }
+
+journal.window.transcripts.warning.audio.source = { $detail } source: { $source_file }
+
+journal.window.transcripts.warning.processing.count = { $warnings_quantity ->
+        [one] 1 warning during processing
+       *[other] { $warnings } warnings during processing
+    }
+
 journal.window.view.activities.date.count = { $quantity ->
         [one] 1 activity
        *[other] { $count } activities
@@ -16137,17 +16486,7 @@ journal.window.settings.vision.detail.unknown.category = Unknown category:{ $slo
 
 journal.window.transcripts.accessible.label.current.time = current time
 
-journal.window.transcripts.accessible.label.day.timeline = day timeline (
-
-journal.window.transcripts.accessible.label.detail.timeline = detail timeline (
-
 journal.window.transcripts.accessible.label.screenshot.viewer = screenshot viewer
-
-journal.window.transcripts.accessible.label.segment = segment{ $slot1 }
-
-journal.window.transcripts.accessible.label.transcript.entries.value1.items = transcript entries,{ $slot1 }{ $value1 }{ $slot2 }items
-
-journal.window.transcripts.accessible.label.transcript.entries.value1.of.value2.shown = transcript entries,{ $slot1 }{ $value1 }{ $slot2 }of{ $slot3 }{ $value2 }{ $slot4 }shown
 
 journal.window.transcripts.accessible.name.body.context.events = body context events
 
@@ -16158,12 +16497,6 @@ journal.window.transcripts.accessible.name.copy.stream.id = copy stream id
 journal.window.transcripts.accessible.name.day.timeline = day timeline
 
 journal.window.transcripts.accessible.name.items = items
-
-journal.window.transcripts.accessible.name.play.from = play from
-
-journal.window.transcripts.accessible.name.transcript.entries = transcript entries,
-
-journal.window.transcripts.analysis.observed = { $kind }{ $slot1 }observed
 
 journal.window.transcripts.analysis.request.failed = analysis request failed
 
@@ -16185,35 +16518,17 @@ journal.window.transcripts.awaiting.thinking.label.label.awaiting.thinking = awa
 
 journal.window.transcripts.body.context = body context
 
-journal.window.transcripts.body.count.entry.many = { $count }{ $slot1 }entries
-
-journal.window.transcripts.body.count.entry.one = { $count }{ $slot1 }entry
-
-journal.window.transcripts.body.entries.present = { $count }{ $slot1 }entries present
-
 journal.window.transcripts.body.full.day = full day
 
 journal.window.transcripts.body.hidden.copy.hidden.you.hid.this.day.s.body = you hid this day's body data.
 
 journal.window.transcripts.body.hour = hour
 
-journal.window.transcripts.body.hours.more = and{ $slot1 }{ $count }{ $slot2 }more hours
-
-journal.window.transcripts.body.no.data.suffix = { $slot1 }· no body data
-
 journal.window.transcripts.body.section.brief = brief
 
 journal.window.transcripts.body.section.events = events
 
 journal.window.transcripts.body.section.sources = sources
-
-journal.window.transcripts.body.sleep.many = { $count }{ $slot1 }sleep sessions
-
-journal.window.transcripts.body.sleep.one = 1 sleep session
-
-journal.window.transcripts.body.workout.many = { $count }{ $slot1 }workouts
-
-journal.window.transcripts.body.workout.one = 1 workout
 
 journal.window.transcripts.btn.label.failed.label.try.again = try again
 
@@ -16237,10 +16552,6 @@ journal.window.transcripts.consent.stretch.copy.audio.audio = audio
 
 journal.window.transcripts.consent.stretch.copy.body.body.data = body data
 
-journal.window.transcripts.consent.stretch.copy.bounds.this.erases.everything.in.your.journal = this erases everything in your journal from { $slot1 } to { $slot2 }.
-
-journal.window.transcripts.consent.stretch.copy.bounds.this.moves.everything.in.your.journal = this moves everything in your journal from { $slot1 } to { $slot2 }.
-
 journal.window.transcripts.consent.stretch.copy.import.running.anything.from.an.import.that.s = anything from an import that's still running
 
 journal.window.transcripts.consent.stretch.copy.imported.things.you.imported = things you imported
@@ -16248,8 +16559,6 @@ journal.window.transcripts.consent.stretch.copy.imported.things.you.imported = t
 journal.window.transcripts.consent.stretch.copy.in.trash.anything.from.then.that.s.already = anything from then that's already in the trash, which keeps its own date
 
 journal.window.transcripts.consent.stretch.copy.inflight.to.move.those.delete.this.stretch = to move those, delete this stretch again once they're done.
-
-journal.window.transcripts.consent.stretch.copy.kinds.that.s.kinds = that's { $slot1 }.
 
 journal.window.transcripts.consent.stretch.copy.location.location = location
 
@@ -16283,8 +16592,6 @@ journal.window.transcripts.consent.stretch.copy.title.erase.this.stretch.of.time
 
 journal.window.transcripts.consent.stretch.copy.whole.day.whole.day.body.data.like.a = whole-day body data, like a day's sleep score or readiness score, for a day this doesn't fully cover
 
-journal.window.transcripts.consent.stretch.copy.zone.times.are.in.your.journal.s = times are in your journal's time zone, { $slot1 }.
-
 journal.window.transcripts.consent.trash.copy.analysis.analysis.stored.with.it = analysis stored with it
 
 journal.window.transcripts.consent.trash.copy.audio.audio = audio
@@ -16303,23 +16610,9 @@ journal.window.transcripts.consent.trash.copy.erasereach.they.leave.your.journal
 
 journal.window.transcripts.consent.trash.copy.erasestays.activities.made.from.them.drop.them = activities made from them drop them now, and the write-ups of their days and weeks leave search. your journal then writes those again from what's left, with the thinking you chose.
 
-journal.window.transcripts.consent.trash.copy.erasetitle.erase.n.segments.now = erase { $slot1 } segments now?
-
 journal.window.transcripts.consent.trash.copy.found.detected.entities.drop.it.too.and = detected entities drop it too, and any voice samples from it leave your known voices. the entities you're tending stay, and what your journal wrote about them may still mention it.
 
 journal.window.transcripts.consent.trash.copy.found.detected.entities.drop.it.too.and.variant2 = detected entities drop it too, and any voice samples from it leave your known voices. the entities you're tending aren't erased, and what your journal wrote about them may still mention it.
-
-journal.window.transcripts.consent.trash.copy.label.it.s.the.last.segment.from = it's the last segment from { $slot1 }, so that file and its row in your import history are erased with it.
-
-journal.window.transcripts.consent.trash.copy.label.it.s.the.last.segment.from.variant2 = it's the last segment from { $slot1 }, so that file and its row in your import history go to the trash with it.
-
-journal.window.transcripts.consent.trash.copy.label.label.stays.in.your.journal.because = { $slot1 } stays in your journal, because other segments still come from it. to remove it, delete its import on the import page.
-
-journal.window.transcripts.consent.trash.copy.label.label.the.file.it.came.from = { $slot1 }, the file it came from, stays in your journal, because other segments still come from it. to remove it, delete the import.
-
-journal.window.transcripts.consent.trash.copy.label.this.includes.the.last.of.the = this includes the last of the segments from { $slot1 }, so that file and its row in your import history are erased too.
-
-journal.window.transcripts.consent.trash.copy.label.this.includes.the.last.of.the.variant2 = this includes the last of the segments from { $slot1 }, so that file and its row in your import history go to the trash too.
 
 journal.window.transcripts.consent.trash.copy.lead.this.erases.the.segment.s.own = this erases the segment's own:
 
@@ -16327,31 +16620,11 @@ journal.window.transcripts.consent.trash.copy.lead.this.moves.the.segment.s.own 
 
 journal.window.transcripts.consent.trash.copy.location.location = location
 
-journal.window.transcripts.consent.trash.copy.many.it.s.the.last.segment.from = it's the last segment from its import, so the { $slot1 } files it kept and its row in your import history are erased with it.
-
-journal.window.transcripts.consent.trash.copy.many.it.s.the.last.segment.from.variant2 = it's the last segment from its import, so the { $slot1 } files it kept and its row in your import history go to the trash with it.
-
 journal.window.transcripts.consent.trash.copy.many.the.files.its.import.kept.stay = the files its import kept stay in your journal, because other segments still come from them. to remove them, delete the import.
-
-journal.window.transcripts.consent.trash.copy.many.the.files.j.imports.kept.stay = the files { $slot1 } imports kept stay in your journal, because other segments still come from them. to remove one, delete its import on the import page.
-
-journal.window.transcripts.consent.trash.copy.many.the.import.s.w.other.segments = the import's { $slot1 } other segments in the trash are erased with it.
 
 journal.window.transcripts.consent.trash.copy.many.their.original.media.in.the.trash = their original media in the trash is erased with them.
 
-journal.window.transcripts.consent.trash.copy.many.this.includes.the.last.of.the = this includes the last of the segments from { $slot1 } imports, so the files they kept and their rows in your import history are erased too.
-
-journal.window.transcripts.consent.trash.copy.many.this.includes.the.last.of.the.variant2 = this includes the last of the segments from { $slot1 } imports, so the files they kept and their rows in your import history go to the trash too.
-
-journal.window.transcripts.consent.trash.copy.manymany.w.other.segments.from.those.imports = { $slot1 } other segments from those imports in the trash are erased too.
-
-journal.window.transcripts.consent.trash.copy.manynone.this.includes.the.last.of.the = this includes the last of the segments from { $slot1 } imports, so their rows in your import history are erased too.
-
-journal.window.transcripts.consent.trash.copy.manynone.this.includes.the.last.of.the.variant2 = this includes the last of the segments from { $slot1 } imports, so their rows in your import history go to the trash too.
-
 journal.window.transcripts.consent.trash.copy.manyone.other.segment.from.those.imports.in = 1 other segment from those imports in the trash is erased too.
-
-journal.window.transcripts.consent.trash.copy.more.and.n.more = and { $slot1 } more
 
 journal.window.transcripts.consent.trash.copy.move.if.it.s.the.last.segment = if it's the last segment from its import, the import and any file it kept go to the trash with it.
 
@@ -16364,8 +16637,6 @@ journal.window.transcripts.consent.trash.copy.movelead.this.moves.each.segment.s
 journal.window.transcripts.consent.trash.copy.movereach.they.leave.your.journal.now.and = they leave your journal now and wait in the trash, then they're erased. you can recover each one until then.
 
 journal.window.transcripts.consent.trash.copy.movestays.activities.made.from.them.drop.them = activities made from them drop them now, and the write-ups of their days and weeks leave search. your journal then writes those again from what's left, with the thinking you chose.
-
-journal.window.transcripts.consent.trash.copy.movetitle.delete.n.segments = delete { $slot1 } segments?
 
 journal.window.transcripts.consent.trash.copy.movetotrash.move.to.trash = move to trash
 
@@ -16389,8 +16660,6 @@ journal.window.transcripts.consent.trash.copy.one.this.includes.the.last.of.the 
 
 journal.window.transcripts.consent.trash.copy.one.this.includes.the.last.of.the.variant2 = this includes the last of the segments from 1 import, so the file it kept and its row in your import history go to the trash too.
 
-journal.window.transcripts.consent.trash.copy.onemany.w.other.segments.from.that.import = { $slot1 } other segments from that import in the trash are erased too.
-
 journal.window.transcripts.consent.trash.copy.onenone.this.includes.the.last.of.the = this includes the last of the segments from 1 import, so its row in your import history is erased too.
 
 journal.window.transcripts.consent.trash.copy.onenone.this.includes.the.last.of.the.variant2 = this includes the last of the segments from 1 import, so its row in your import history goes to the trash too.
@@ -16409,8 +16678,6 @@ journal.window.transcripts.consent.trash.copy.screen.screen.frames = screen fram
 
 journal.window.transcripts.consent.trash.copy.screenshot.screenshot = screenshot
 
-journal.window.transcripts.consent.trash.copy.size.current.raw.media.size.size = current raw media size: { $slot1 }
-
 journal.window.transcripts.consent.trash.copy.stays.activities.made.from.it.drop.it = activities made from it drop it now, and the write-ups of its day and week leave search. your journal then writes those again from what's left, with the thinking you chose.
 
 journal.window.transcripts.consent.trash.copy.title.delete.segment = delete segment?
@@ -16424,10 +16691,6 @@ journal.window.transcripts.consent.trash.copy.unknown.any.file.its.import.kept.s
 journal.window.transcripts.consent.trash.copy.unknown.it.s.the.last.segment.from = it's the last segment from its import, so any file it kept and its row in your import history are erased with it.
 
 journal.window.transcripts.consent.trash.copy.unknown.it.s.the.last.segment.from.variant2 = it's the last segment from its import, so any file it kept and its row in your import history go to the trash with it.
-
-journal.window.transcripts.data.state.suffix.failed.analysis.failed = analysis failed
-
-journal.window.transcripts.data.state.suffix.pending.analysis.pending = analysis pending
 
 journal.window.transcripts.date.last.weekday = Last{ $slot1 }{ $weekday }
 
@@ -16496,12 +16759,6 @@ journal.window.transcripts.kind.photos = photos
 journal.window.transcripts.link.label.more.in.body = more in body
 
 journal.window.transcripts.link.label.open.full.body.day = open full body day
-
-journal.window.transcripts.location.reading.many = { $time }{ $slot1 }·{ $slot2 }{ $count }{ $slot3 }readings
-
-journal.window.transcripts.location.reading.one = { $time }{ $slot1 }· 1 reading
-
-journal.window.transcripts.location.show.many = show{ $slot1 }{ $count }{ $slot2 }location segments
 
 journal.window.transcripts.media.audio.duration = segment audio ·{ $slot1 }{ $duration }
 
@@ -16753,8 +17010,6 @@ journal.window.transcripts.section.heading.location = location
 
 journal.window.transcripts.section.heading.transcripts = transcripts
 
-journal.window.transcripts.signals.calendar.seen = { $slot1 }· seen{ $slot2 }{ $count }x
-
 journal.window.transcripts.signals.no = no
 
 journal.window.transcripts.signals.row.accuracy = accuracy
@@ -16897,19 +17152,13 @@ journal.window.transcripts.status.text.hide.location.segments = hide location se
 
 journal.window.transcripts.status.text.raw.json = raw { $slot1 }
 
-journal.window.transcripts.status.text.raw.json.value1 = raw { $slot1 },{ $slot2 }{ $value1 }
-
 journal.window.transcripts.status.text.screen.image = screen image
 
 journal.window.transcripts.status.text.untitled.event = Untitled event
 
-journal.window.transcripts.stretch.copy.alone.it.erases.date.unless.you.recover = it erases { $slot1 } unless you recover it.
-
 journal.window.transcripts.stretch.copy.backwards.the.end.has.to.be.after = the end has to be after the start.
 
 journal.window.transcripts.stretch.copy.button.delete.a.stretch.of.time = delete a stretch of time
-
-journal.window.transcripts.stretch.copy.buttonlabel.delete.a.stretch.of.time.starting = delete a stretch of time, starting { $slot1 }
 
 journal.window.transcripts.stretch.copy.checking.checking.what.s.in.your.journal = checking what's in your journal from then…
 
@@ -16923,8 +17172,6 @@ journal.window.transcripts.stretch.copy.from.from = from
 
 journal.window.transcripts.stretch.copy.heading.this.segment.is.in.the.trash = this segment is in the trash
 
-journal.window.transcripts.stretch.copy.message.it.erases.date.unless.you.recover = it erases { $slot1 } unless you recover it.
-
 journal.window.transcripts.stretch.copy.message.it.s.back.in.your.journal = it's back in your journal.
 
 journal.window.transcripts.stretch.copy.message.it.s.still.moving.into.the = it's still moving into the trash. try again from there once it's done.
@@ -16937,17 +17184,9 @@ journal.window.transcripts.stretch.copy.message.some.of.it.couldn.t.be = some of
 
 journal.window.transcripts.stretch.copy.retry.try.again = try again
 
-journal.window.transcripts.stretch.copy.stretch.it.went.with.everything.from.bounds = it went with everything from { $slot1 }, and it comes back only with all of it. it erases { $slot2 } unless you recover it.
-
-journal.window.transcripts.stretch.copy.title.bounds.recovered = { $slot1 } recovered
-
 journal.window.transcripts.stretch.copy.title.couldn.t.recover.that = couldn't recover that
 
 journal.window.transcripts.stretch.copy.title.couldn.t.recover.that.yet = couldn't recover that yet
-
-journal.window.transcripts.stretch.copy.title.erased.bounds.from.your.journal = erased { $slot1 } from your journal
-
-journal.window.transcripts.stretch.copy.title.moved.bounds.to.the.trash = moved { $slot1 } to the trash
 
 journal.window.transcripts.stretch.copy.title.nothing.was.moved = nothing was moved
 
@@ -16983,8 +17222,6 @@ journal.window.transcripts.tooltip.drag.to.adjust.end = drag to adjust end
 
 journal.window.transcripts.tooltip.drag.to.adjust.start = drag to adjust start
 
-journal.window.transcripts.tooltip.min = { $slot1 }min
-
 journal.window.transcripts.tooltip.next.frame.right.arrow = next frame (right arrow)
 
 journal.window.transcripts.tooltip.previous.frame.left.arrow = previous frame (left arrow)
@@ -17005,8 +17242,6 @@ journal.window.transcripts.trash.copy.eraseother.this.wasn.t.erased.try.again = 
 
 journal.window.transcripts.trash.copy.importing.this.wasn.t.moved.because.it = this wasn't moved because it's still importing. try again once it's done.
 
-journal.window.transcripts.trash.copy.message.erases.date.unless.you.recover.it = erases { $slot1 } unless you recover it.
-
 journal.window.transcripts.trash.copy.message.it.may.already.be.back.in = it may already be back in your journal. reload to check.
 
 journal.window.transcripts.trash.copy.message.it.may.already.be.erased.reload = it may already be erased. reload to check.
@@ -17021,8 +17256,6 @@ journal.window.transcripts.trash.copy.message.it.s.still.in.the.trash = it's sti
 
 journal.window.transcripts.trash.copy.message.it.s.still.in.your.journal = it's still in your journal.
 
-journal.window.transcripts.trash.copy.message.they.erase.date.unless.you.recover = they erase { $slot1 } unless you recover them.
-
 journal.window.transcripts.trash.copy.message.they.may.already.be.back.in = they may already be back in your journal. reload to check.
 
 journal.window.transcripts.trash.copy.message.they.may.already.be.erased.reload = they may already be erased. reload to check.
@@ -17033,45 +17266,15 @@ journal.window.transcripts.trash.copy.message.they.re.back.in.your.journal = the
 
 journal.window.transcripts.trash.copy.message.they.re.still.in.the.trash = they're still in the trash. you can try again from there.
 
-journal.window.transcripts.trash.copy.noneerasedmany.look.for.them.below.or.in = look for them below or in the trash.
-
-journal.window.transcripts.trash.copy.noneerasedone.look.for.it.below.or.in = look for it below or in the trash.
-
-journal.window.transcripts.trash.copy.nonestillmany.k.are.still.in.your.journal = { $slot1 } are still in your journal, marked below.
-
-journal.window.transcripts.trash.copy.nonestillone.k.is.still.in.your.journal = { $slot1 } is still in your journal, marked below.
-
 journal.window.transcripts.trash.copy.opentrash.open.trash = open trash
 
 journal.window.transcripts.trash.copy.other.this.wasn.t.moved.try.again = this wasn't moved. try again.
 
-journal.window.transcripts.trash.copy.parterasedmany.the.others.weren.t.erased.look = the others weren't erased. look for them below or in the trash.
-
-journal.window.transcripts.trash.copy.parterasedone.the.other.wasn.t.erased.look = the other wasn't erased. look for it below or in the trash.
-
-journal.window.transcripts.trash.copy.partrecoveredmany.the.others.are.still.in.the = the others are still in the trash. you can try again from there.
-
-journal.window.transcripts.trash.copy.partrecoveredone.the.other.is.still.in.the = the other is still in the trash. you can try again from there.
-
-journal.window.transcripts.trash.copy.pickrange.start.end = { $slot1 } – { $slot2 }
-
 journal.window.transcripts.trash.copy.recover.recover = recover
-
-journal.window.transcripts.trash.copy.segment.segment = segment
-
-journal.window.transcripts.trash.copy.segments.segments = segments
 
 journal.window.transcripts.trash.copy.select.select = select
 
 journal.window.transcripts.trash.copy.selectall.select.all = select all
-
-journal.window.transcripts.trash.copy.selected.n.selected = { $slot1 } selected
-
-journal.window.transcripts.trash.copy.stillmany.k.couldn.t.be.moved.and = { $slot1 } couldn't be moved and are still in your journal, marked below.
-
-journal.window.transcripts.trash.copy.stillone.k.couldn.t.be.moved.and = { $slot1 } couldn't be moved and is still in your journal, marked below.
-
-journal.window.transcripts.trash.copy.title.couldn.t.erase.that.noun = couldn't erase that { $slot1 }
 
 journal.window.transcripts.trash.copy.title.couldn.t.erase.those = couldn't erase those
 
@@ -17079,27 +17282,9 @@ journal.window.transcripts.trash.copy.title.couldn.t.move.that.to.the = couldn't
 
 journal.window.transcripts.trash.copy.title.couldn.t.move.those.to.the = couldn't move those to the trash
 
-journal.window.transcripts.trash.copy.title.couldn.t.recover.that.noun = couldn't recover that { $slot1 }
-
 journal.window.transcripts.trash.copy.title.couldn.t.recover.those = couldn't recover those
 
-journal.window.transcripts.trash.copy.title.erased.done.of.n = erased { $slot1 } of { $slot2 }
-
-journal.window.transcripts.trash.copy.title.erased.n.things.from.your.journal = erased { $slot1 } { $slot2 } from your journal
-
-journal.window.transcripts.trash.copy.title.moved.done.of.n.to.the = moved { $slot1 } of { $slot2 } to the trash
-
-journal.window.transcripts.trash.copy.title.moved.n.things.to.the.trash = moved { $slot1 } { $slot2 } to the trash
-
 journal.window.transcripts.trash.copy.title.moved.to.the.trash = moved to the trash
-
-journal.window.transcripts.trash.copy.title.n.things.recovered = { $slot1 } { $slot2 } recovered
-
-journal.window.transcripts.trash.copy.title.noun.erased.from.your.journal = { $slot1 } erased from your journal
-
-journal.window.transcripts.trash.copy.title.noun.recovered = { $slot1 } recovered
-
-journal.window.transcripts.trash.copy.title.recovered.done.of.n = recovered { $slot1 } of { $slot2 }
 
 journal.window.transcripts.trash.copy.title.your.journal.didn.t.answer = your journal didn't answer
 
@@ -17123,8 +17308,6 @@ journal.window.transcripts.visible.text.day = day
 
 journal.window.transcripts.visible.text.day.rhythm = day rhythm
 
-journal.window.transcripts.visible.text.decoding.key.frames.value1.value2.value3 = Decoding key frames{ $slot1 }{ $value1 }/{ $value2 }{ $slot2 }({ $value3 }%)…
-
 journal.window.transcripts.visible.text.detail = detail
 
 journal.window.transcripts.visible.text.import = import
@@ -17145,8 +17328,6 @@ journal.window.transcripts.visible.text.now = now
 
 journal.window.transcripts.visible.text.pages = pages:
 
-journal.window.transcripts.visible.text.possible.name = (possible name:
-
 journal.window.transcripts.visible.text.rendering.screen.entries = Rendering screen entries…
 
 journal.window.transcripts.visible.text.screen = screen
@@ -17159,15 +17340,11 @@ journal.window.transcripts.visible.text.show.full.output = show full output
 
 journal.window.transcripts.visible.text.show.less.output = show less output
 
-journal.window.transcripts.visible.text.show.the.rest.of.this.block = show the rest of this block ({ $value1 }{ $slot1 }more) →
-
 journal.window.transcripts.visible.text.sleep = sleep
 
 journal.window.transcripts.visible.text.still.working = still working…
 
 journal.window.transcripts.visible.text.transcripts = transcripts
-
-journal.window.transcripts.visible.text.value1.source.value2 = { $value1 }{ $slot1 }source:{ $slot2 }{ $value2 }
 
 journal.window.transcripts.visible.text.warning.details.unavailable = warning details unavailable
 
@@ -17176,10 +17353,6 @@ journal.window.transcripts.visible.text.workout = workout
 journal.window.transcripts.visible.text.your.browser.does.not.support.audio = Your browser does not support audio.
 
 journal.window.transcripts.warning.age = { $age }{ $slot1 }ago
-
-journal.window.transcripts.warning.count.many = { $count }{ $slot1 }warnings during processing
-
-journal.window.transcripts.warning.count.one = 1 warning during processing
 
 journal.window.transcripts.warning.detail.label = warning
 
@@ -17203,13 +17376,7 @@ journal.window.transcripts.window.explanation.no.compact.body.context.in.this = 
 
 journal.window.transcripts.window.explanation.photos.and.button.presses = photos and button presses
 
-journal.window.transcripts.window.explanation.show.location.segment = show 1 location segment
-
 journal.window.transcripts.window.explanation.this.segment.holds.location.only = this segment holds location only.
-
-journal.window.transcripts.window.explanation.this.segment.holds.location.only.reading = this segment holds location only: 1 reading.
-
-journal.window.transcripts.window.explanation.this.segment.holds.location.only.value1 = this segment holds location only:{ $slot1 }{ $value1 }{ $slot2 }readings.
 
 journal.window.shared.import.item.kind.note = note
 

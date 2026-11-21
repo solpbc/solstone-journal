@@ -1,0 +1,28 @@
+{
+  "description": "Expandable raw JSON summary with an extra caption.",
+  "context": "Journal window. Expandable raw JSON summary with an extra caption.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "summary",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c5b8cb26fc1812c20ba47f36307534f4a40596e492b8fcd8ca34060dd2f74764",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "json_label",
+      "kind": "accepted-input",
+      "value": "JSON"
+    }
+  ]
+}

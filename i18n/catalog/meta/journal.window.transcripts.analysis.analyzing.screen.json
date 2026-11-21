@@ -1,0 +1,16 @@
+{
+  "description": "Analysis analyzing heading when the observed content is screen.",
+  "context": "Journal window. Analysis analyzing heading when the observed content is screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "560bb1bc80d5e9cabbc211e4ad4ec2a6c282ab1cd3ca6759a7332f220bd607fa",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Speaker picker explanation for labeling just this line, with a link to Speakers.",
+  "context": "Journal window. Speaker picker explanation for labeling just this line, with a link to Speakers.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "link_start",
+      "type": "string"
+    },
+    {
+      "name": "link_end",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d42948bbb4b4c9dfc66f598d24b1101b4d4b5529516898fb3f38a4da90134d5d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -2,15 +2,16 @@
 // Copyright (c) 2026 sol pbc
 
 (function () {
-  const WEEKDAYS = [
-    window.JournalI18n.render('journal.window.date.weekdays.sunday'),
-    window.JournalI18n.render('journal.window.date.weekdays.monday'),
-    window.JournalI18n.render('journal.window.date.weekdays.tuesday'),
-    window.JournalI18n.render('journal.window.date.weekdays.wednesday'),
-    window.JournalI18n.render('journal.window.date.weekdays.thursday'),
-    window.JournalI18n.render('journal.window.date.weekdays.friday'),
-    window.JournalI18n.render('journal.window.date.weekdays.saturday')
+  const WEEKDAYS_IDS = [
+    'journal.window.date.weekdays.sunday',
+    'journal.window.date.weekdays.monday',
+    'journal.window.date.weekdays.tuesday',
+    'journal.window.date.weekdays.wednesday',
+    'journal.window.date.weekdays.thursday',
+    'journal.window.date.weekdays.friday',
+    'journal.window.date.weekdays.saturday'
   ];
+  const WEEKDAYS = WEEKDAYS_IDS.map(id => window.JournalI18n.render(id));
   const WEEKDAYS_SHORT_IDS = [
     'journal.window.date.weekdays.short.sun',
     'journal.window.date.weekdays.short.mon',
@@ -70,7 +71,7 @@
     return new Date().getFullYear();
   }
 
-  function formatDateShort(dateString, now) {
+  function formatDateShort(dateString, now, { sourceEnglish = false } = {}) {
     const parsed = parseDay(dateString);
     if (!parsed) return dateString;
 
@@ -85,17 +86,15 @@
     }
     const deltaDays = Math.round((parsed.getTime() - today.getTime()) / 86400000);
 
-    if (deltaDays === 0) return window.JournalI18n.render('journal.window.date.today');
-    if (deltaDays === -1) return window.JournalI18n.render('journal.window.date.yesterday');
-    if (deltaDays === 1) return window.JournalI18n.render('journal.window.date.tomorrow');
-    if (deltaDays >= -6 && deltaDays < 0) return WEEKDAYS[parsed.getDay()];
-
-    let short = `${WEEKDAYS_SHORT[parsed.getDay()]} ${MONTHS_SHORT[parsed.getMonth()]} ${parsed.getDate()}`;
-    const thisYear = currentJournalYear();
-    if (parsed.getFullYear() !== thisYear) {
-      short += ` '${String(parsed.getFullYear()).slice(-2)}`;
+    const render = sourceEnglish ? window.JournalI18n.renderEnglish : window.JournalI18n.render;
+    if (deltaDays === 0) return render('journal.window.date.today');
+    if (deltaDays === -1) return render('journal.window.date.yesterday');
+    if (deltaDays === 1) return render('journal.window.date.tomorrow');
+    if (deltaDays >= -6 && deltaDays < 0) {
+      const weekday = parsed.getDay();
+      return sourceEnglish ? render(WEEKDAYS_IDS[weekday]) : WEEKDAYS[weekday];
     }
-    return short;
+    return formatAnchoredDay(parsed, sourceEnglish);
   }
 
   // Always an anchored date. `formatDateShort` deliberately collapses the last
@@ -103,7 +102,10 @@
   // date order — and a bare "Tuesday" is not enough to decide a deletion on.
   function formatDateFull(dateString, { sourceEnglish = false } = {}) {
     const parsed = parseDay(dateString);
-    if (!parsed) return dateString;
+    return parsed ? formatAnchoredDay(parsed, sourceEnglish) : dateString;
+  }
+
+  function formatAnchoredDay(parsed, sourceEnglish) {
     const weekday = sourceEnglish
       ? window.JournalI18n.renderEnglish(WEEKDAYS_SHORT_IDS[parsed.getDay()])
       : WEEKDAYS_SHORT[parsed.getDay()];

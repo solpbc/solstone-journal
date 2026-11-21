@@ -1,0 +1,21 @@
+{
+  "description": "Accessible name for a calendar segment followed by its labeled fields.",
+  "context": "Journal window. Accessible name for a calendar segment followed by its labeled fields.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "details",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d795aac1cc0c84b080dc43ee9182da6a98f153b1a87fae104cc1bf8ab85ccd8f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

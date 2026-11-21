@@ -1,0 +1,34 @@
+{
+  "description": "Selected segment time range and the displayed count of entries.",
+  "context": "Journal window. Selected segment time range and the displayed count of entries.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "entries_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "entries",
+      "type": "string"
+    },
+    {
+      "name": "range",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "cd164613f7bed3ed6dab06c6dd0d076fea5ad487c7428820ddaf7572fbd26b33",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "entries_quantity",
+    "type": "cardinal"
+  }
+}

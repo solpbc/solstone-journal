@@ -1,0 +1,16 @@
+{
+  "description": "Analysis failed heading when the observed content is audio.",
+  "context": "Journal window. Analysis failed heading when the observed content is audio.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c3ecca7d378f4ee7b51d540e750198f6eec8557f5a55a096aa24389faf06bb68",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

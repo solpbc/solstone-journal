@@ -1,0 +1,30 @@
+{
+  "description": "Consent trash copy manyNone in the journal's transcripts view.",
+  "context": "Journal window. Consent trash copy manyNone in the journal's transcripts view.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "imports_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "imports",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "0c061faaeea8b437e395f844e6ca74ab9f366dba8e0cb4f009ec821a89a5a225",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "imports_quantity",
+    "type": "cardinal"
+  }
+}

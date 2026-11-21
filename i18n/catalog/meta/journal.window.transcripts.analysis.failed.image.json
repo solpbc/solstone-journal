@@ -1,0 +1,16 @@
+{
+  "description": "Analysis failed heading when the observed content is image.",
+  "context": "Journal window. Analysis failed heading when the observed content is image.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9232e4937c73caf294f097b10c6a20f6905e2791278fab4bca3b04a86b654664",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

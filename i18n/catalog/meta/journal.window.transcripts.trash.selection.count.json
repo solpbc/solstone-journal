@@ -1,0 +1,30 @@
+{
+  "description": "trash copy selected in the journal's transcripts view.",
+  "context": "Journal window. trash copy selected in the journal's transcripts view.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "segments_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "segments",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "e32b460520801faf86bba3c826b07527e0870ccbbaa8efc38c1985246ae21014",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "segments_quantity",
+    "type": "cardinal"
+  }
+}

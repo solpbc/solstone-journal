@@ -1,0 +1,25 @@
+{
+  "description": "stretch copy stretch in the journal's transcripts view.",
+  "context": "Journal window. stretch copy stretch in the journal's transcripts view.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "date_range",
+      "type": "string"
+    },
+    {
+      "name": "erase_date",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ceb8bd3109e17475190aa7fb7bf3fb419829449a5f0039e6c06f33b606258493",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

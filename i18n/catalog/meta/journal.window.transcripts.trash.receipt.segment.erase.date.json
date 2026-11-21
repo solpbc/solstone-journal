@@ -1,0 +1,21 @@
+{
+  "description": "trash copy message in the journal's transcripts view.",
+  "context": "Journal window. trash copy message in the journal's transcripts view.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "erase_date",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3a3bd6c2e6aa0d85257ac9937ca083c24a6ac1637073e549049a375e3e0d2776",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Consent stretch copy bounds in the journal's transcripts view.",
+  "context": "Journal window. Consent stretch copy bounds in the journal's transcripts view.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "start_time",
+      "type": "string"
+    },
+    {
+      "name": "end_time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e5ca9585847ecfd3bdd6105dec33c97d82092f746d969ecd54305f70c1b0d56b",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

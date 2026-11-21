@@ -1,0 +1,30 @@
+{
+  "description": "Count of sleep sessions in the body context.",
+  "context": "Journal window. Count of sleep sessions in the body context.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "sessions_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "sessions",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "5c48669bb818aae3c48ad4fb797a3fbcd5bd31b0aa1bec75a362aa6b259823a6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "sessions_quantity",
+    "type": "cardinal"
+  }
+}

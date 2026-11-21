@@ -1,0 +1,16 @@
+{
+  "description": "Tentative label when the likely speaker is the journal owner.",
+  "context": "Journal window. Tentative label when the likely speaker is the journal owner.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "173be56cd9a290aaa526f67dd81506f7fcb7ac08b261ee0460a30180f4e6790e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

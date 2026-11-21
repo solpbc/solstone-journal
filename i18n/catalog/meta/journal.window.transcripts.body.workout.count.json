@@ -1,0 +1,30 @@
+{
+  "description": "Count of workouts in the body context.",
+  "context": "Journal window. Count of workouts in the body context.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "workouts_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "workouts",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "776bc0098c3f56fff92823c4696aa2d2a00bcf763d4e936b6bb2151859611dfa",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "workouts_quantity",
+    "type": "cardinal"
+  }
+}

@@ -26,6 +26,176 @@
     window.location.href = '/app/settings#trash';
   }
 
+  function transcriptCount(name, amount, display = String(amount)) {
+    return [[name + '_quantity', window.JournalI18n.cardinalQuantity(amount)], [name, display]];
+  }
+
+  // Owner copy for deleting a segment: the dialog, its erase step and the receipt.
+  function transcriptTrashCopy() {
+    return {
+      select: window.JournalI18n.render('journal.window.transcripts.trash.copy.select.select'),
+      selectAll: window.JournalI18n.render('journal.window.transcripts.trash.copy.selectall.select.all'),
+      selected: ({ n }) => window.JournalI18n.render('journal.window.transcripts.trash.selection.count', transcriptCount('segments', n)),
+      delete: window.JournalI18n.render('journal.window.transcripts.trash.copy.delete.delete'),
+      done: window.JournalI18n.render('journal.window.transcripts.trash.copy.done.done'),
+      pickRange: ({ start, end }) => window.JournalI18n.render('journal.window.transcripts.trash.selection.range', [['start_time', String(start ?? '')], ['end_time', String(end ?? '')]]),
+      set: {
+        moveTitle: ({ n }) => window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.selection.move.title', transcriptCount('segments', n)),
+        eraseTitle: ({ n }) => window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.selection.erase.title', transcriptCount('segments', n)),
+        more: ({ n }) => window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.selection.more', transcriptCount('segments', n)),
+        moveReach: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.movereach.they.leave.your.journal.now.and'),
+        eraseReach: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.erasereach.they.leave.your.journal.now.and'),
+        moveLead: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.movelead.this.moves.each.segment.s.own'),
+        eraseLead: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.eraselead.this.erases.each.segment.s.own'),
+        moveStays: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.movestays.activities.made.from.them.drop.them'),
+        moveFound: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.movefound.detected.entities.drop.them.too.and'),
+        eraseStays: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.erasestays.activities.made.from.them.drop.them'),
+        eraseFound: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.erasefound.detected.entities.drop.them.too.and'),
+        size: ({ size }) => window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.media.size', [['media_size', String(size ?? '')]]),
+      },
+      notes: {
+        busy: window.JournalI18n.render('journal.window.transcripts.trash.copy.busy.this.is.already.being.moved.or'),
+        importing: window.JournalI18n.render('journal.window.transcripts.trash.copy.importing.this.wasn.t.moved.because.it'),
+        other: window.JournalI18n.render('journal.window.transcripts.trash.copy.other.this.wasn.t.moved.try.again'),
+        eraseImporting: window.JournalI18n.render('journal.window.transcripts.trash.copy.eraseimporting.this.wasn.t.erased.because.it'),
+        eraseOther: window.JournalI18n.render('journal.window.transcripts.trash.copy.eraseother.this.wasn.t.erased.try.again'),
+      },
+      setReceipt: {
+        moved: { title: ({ n }) => window.JournalI18n.render('journal.window.transcripts.trash.receipt.segments.moved', transcriptCount('segments', n)), message: ({ date }) => window.JournalI18n.render('journal.window.transcripts.trash.receipt.segments.erase.date', [['erase_date', String(date ?? '')]]) },
+        partMoved: { title: ({ done, n }) => window.JournalI18n.render('journal.window.transcripts.trash.receipt.partial.move', [...transcriptCount('processed', done), ...transcriptCount('segments', n)]) },
+        still: (count) => window.JournalI18n.render('journal.window.transcripts.trash.receipt.marked.remaining', transcriptCount('remaining', count)),
+        noneMoved: { title: window.JournalI18n.render('journal.window.transcripts.trash.copy.title.couldn.t.move.those.to.the') },
+        noneStill: (count) => window.JournalI18n.render('journal.window.transcripts.trash.receipt.keep.remaining', transcriptCount('remaining', count)),
+        erased: { title: ({ n }) => window.JournalI18n.render('journal.window.transcripts.trash.receipt.segments.erased', transcriptCount('segments', n)) },
+        partErased: { title: ({ done, n }) => window.JournalI18n.render('journal.window.transcripts.trash.receipt.partial.erase', [...transcriptCount('processed', done), ...transcriptCount('segments', n)]) },
+        partErasedMessage: (count) => window.JournalI18n.render('journal.window.transcripts.trash.receipt.erase.partial.help', [['remaining_quantity', window.JournalI18n.cardinalQuantity(count)]]),
+        noneErased: { title: window.JournalI18n.render('journal.window.transcripts.trash.copy.title.couldn.t.erase.those') },
+        noneErasedMessage: (count) => window.JournalI18n.render('journal.window.transcripts.trash.receipt.erase.none.help', [['remaining_quantity', window.JournalI18n.cardinalQuantity(count)]]),
+        recovered: { title: ({ n }) => window.JournalI18n.render('journal.window.transcripts.trash.receipt.segments.recovered', transcriptCount('segments', n)), message: window.JournalI18n.render('journal.window.transcripts.trash.copy.message.they.re.back.in.your.journal') },
+        partRecovered: { title: ({ done, n }) => window.JournalI18n.render('journal.window.transcripts.trash.receipt.partial.recovery', [...transcriptCount('processed', done), ...transcriptCount('segments', n)]) },
+        partRecoveredMessage: (count) => window.JournalI18n.render('journal.window.transcripts.trash.receipt.recovery.partial.help', [['remaining_quantity', window.JournalI18n.cardinalQuantity(count)]]),
+        recoverFailed: { title: window.JournalI18n.render('journal.window.transcripts.trash.copy.title.couldn.t.recover.those'), message: window.JournalI18n.render('journal.window.transcripts.trash.copy.message.they.re.still.in.the.trash') },
+        noAnswerMove: { title: window.JournalI18n.render('journal.window.transcripts.trash.copy.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.transcripts.trash.copy.message.they.may.already.be.in.the') },
+        noAnswerErase: { title: window.JournalI18n.render('journal.window.transcripts.trash.copy.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.transcripts.trash.copy.message.they.may.already.be.erased.reload') },
+        noAnswerRecover: { title: window.JournalI18n.render('journal.window.transcripts.trash.copy.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.transcripts.trash.copy.message.they.may.already.be.back.in') },
+      },
+      move: {
+        title: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.title.delete.segment'),
+        reach: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.reach.it.leaves.your.journal.now.and.variant2'),
+        lead: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.lead.this.moves.the.segment.s.own'),
+        stays: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.stays.activities.made.from.it.drop.it'),
+        found: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.found.detected.entities.drop.it.too.and'),
+        size: ({ size }) => window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.media.size', [['media_size', String(size ?? '')]]),
+      },
+      // A segment from an import: its last takes the import and the file it
+      // kept; any other leaves them. Keyed on `kept`, the files the import's
+      // own record holds.
+      imports: {
+        importGoes: {
+          label: ({ label }) => window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.import.move.named', [['import_name', String(label ?? '')]]),
+          one: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.one.it.s.the.last.segment.from.variant2'),
+          many: ({ n }) => window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.import.move.files.count', transcriptCount('retained_files', n)),
+          none: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.none.it.s.the.last.segment.from.variant2'),
+          unknown: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.unknown.it.s.the.last.segment.from.variant2'),
+        },
+        importErased: {
+          label: ({ label }) => window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.import.erase.named', [['import_name', String(label ?? '')]]),
+          one: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.one.it.s.the.last.segment.from'),
+          many: ({ n }) => window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.import.erase.files.count', transcriptCount('retained_files', n)),
+          none: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.none.it.s.the.last.segment.from'),
+          unknown: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.unknown.it.s.the.last.segment.from'),
+        },
+        waitingErased: {
+          one: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.one.the.import.s.other.segment.in'),
+          many: ({ w }) => window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.import.pending.count', transcriptCount('waiting_segments', w)),
+        },
+        importStays: {
+          label: ({ label }) => window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.import.stay.named', [['import_name', String(label ?? '')]]),
+          one: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.one.the.file.it.came.from.stays'),
+          many: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.many.the.files.its.import.kept.stay'),
+          unknown: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.unknown.any.file.its.import.kept.stays'),
+        },
+        openImport: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.openimport.open.the.import'),
+        importMaybe: {
+          move: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.move.if.it.s.the.last.segment'),
+          erase: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.erase.if.it.s.the.last.segment'),
+        },
+        setTakes: {
+          label: ({ label }) => window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.import.set.move.named', [['import_name', String(label ?? '')]]),
+          one: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.one.this.includes.the.last.of.the.variant2'),
+          oneNone: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.onenone.this.includes.the.last.of.the.variant2'),
+          many: ({ k }) => window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.imports.set.move.count', transcriptCount('imports', k)),
+          manyNone: ({ k }) => window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.imports.set.move.without.files.count', transcriptCount('imports', k)),
+        },
+        setErases: {
+          label: ({ label }) => window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.import.set.erase.named', [['import_name', String(label ?? '')]]),
+          one: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.one.this.includes.the.last.of.the'),
+          oneNone: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.onenone.this.includes.the.last.of.the'),
+          many: ({ k }) => window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.imports.set.erase.count', transcriptCount('imports', k)),
+          manyNone: ({ k }) => window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.imports.set.erase.without.files.count', transcriptCount('imports', k)),
+        },
+        setWaiting: {
+          oneOne: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.oneone.other.segment.from.that.import.in'),
+          oneMany: ({ w }) => window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.import.set.pending.count', transcriptCount('waiting_segments', w)),
+          manyOne: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.manyone.other.segment.from.those.imports.in'),
+          manyMany: ({ w }) => window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.imports.set.pending.count', transcriptCount('waiting_segments', w)),
+        },
+        setStays: {
+          label: ({ label }) => window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.imports.stay.named', [['import_name', String(label ?? '')]]),
+          one: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.one.the.file.import.kept.stays.in'),
+          many: ({ j }) => window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.imports.stay.count', transcriptCount('imports', j)),
+        },
+        setMaybe: {
+          move: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.move.if.these.include.the.last.segments'),
+          erase: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.erase.if.these.include.the.last.segments'),
+        },
+      },
+      // Erasing a segment erases its original media waiting in the trash too.
+      originalsGo: {
+        one: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.one.its.original.media.in.the.trash'),
+        many: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.many.their.original.media.in.the.trash'),
+      },
+      erase: {
+        title: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.title.erase.this.segment.now'),
+        reach: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.reach.it.leaves.your.journal.now.and'),
+        lead: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.lead.this.erases.the.segment.s.own'),
+        stays: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.stays.activities.made.from.it.drop.it'),
+        found: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.found.detected.entities.drop.it.too.and.variant2'),
+      },
+      parts: {
+        audio: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.audio.audio'),
+        screen: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.screen.screen.frames'),
+        transcript: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.transcript.transcript'),
+        analysis: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.analysis.analysis.stored.with.it'),
+        location: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.location.location'),
+        // J8 in the design system's screenshots copy file: a screenshot's
+        // segment holds its screenshot, not audio or frames.
+        screenshot: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.screenshot.screenshot'),
+        photo: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.photo.photo'),
+      },
+      buttons: {
+        eraseNow: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.erasenow.erase.now'),
+        cancel: window.JournalI18n.render('journal.window.transcripts.trash.copy.cancel.cancel'),
+        moveToTrash: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.movetotrash.move.to.trash'),
+        back: window.JournalI18n.render('journal.window.transcripts.trash.copy.back.back'),
+        recover: window.JournalI18n.render('journal.window.transcripts.trash.copy.recover.recover'),
+        openTrash: window.JournalI18n.render('journal.window.transcripts.trash.copy.opentrash.open.trash'),
+      },
+      receipt: {
+        moved: { title: window.JournalI18n.render('journal.window.transcripts.trash.copy.title.moved.to.the.trash'), message: ({ date }) => window.JournalI18n.render('journal.window.transcripts.trash.receipt.segment.erase.date', [['erase_date', String(date ?? '')]]) },
+        recovered: { title: window.JournalI18n.render('journal.window.transcripts.trash.receipt.segment.recovered'), message: window.JournalI18n.render('journal.window.transcripts.trash.copy.message.it.s.back.in.your.journal') },
+        erased: { title: window.JournalI18n.render('journal.window.transcripts.trash.receipt.segment.erased') },
+        recoverFailed: { title: window.JournalI18n.render('journal.window.transcripts.trash.receipt.segment.recovery.failed'), message: window.JournalI18n.render('journal.window.transcripts.trash.copy.message.it.s.still.in.the.trash') },
+        moveRefused: { title: window.JournalI18n.render('journal.window.transcripts.trash.copy.title.couldn.t.move.that.to.the'), message: window.JournalI18n.render('journal.window.transcripts.trash.copy.message.it.s.still.in.your.journal') },
+        eraseRefused: { title: window.JournalI18n.render('journal.window.transcripts.trash.receipt.segment.erase.failed'), message: window.JournalI18n.render('journal.window.transcripts.trash.copy.message.it.s.still.in.your.journal') },
+        eraseFailed: { title: window.JournalI18n.render('journal.window.transcripts.trash.receipt.segment.erase.failed'), message: window.JournalI18n.render('journal.window.transcripts.trash.copy.message.it.s.in.the.trash.you') },
+        noAnswerMove: { title: window.JournalI18n.render('journal.window.transcripts.trash.copy.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.transcripts.trash.copy.message.it.may.already.be.in.the') },
+        noAnswerErase: { title: window.JournalI18n.render('journal.window.transcripts.trash.copy.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.transcripts.trash.copy.message.it.may.already.be.erased.reload') },
+        noAnswerRecover: { title: window.JournalI18n.render('journal.window.transcripts.trash.copy.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.transcripts.trash.copy.message.it.may.already.be.back.in') },
+      },
+    };
+  }
+
   function plainSegment(seg) {
     if (!seg || typeof seg !== 'object') return seg;
     const copy = {};
@@ -38,11 +208,8 @@
     return copy;
   }
 
-  function fillWords(template, values) {
-    return Object.entries(values).reduce(
-      (text, [key, value]) => text.split(`{${key}}`).join(String(value)),
-      String(template)
-    );
+  function renderTranscriptCopy(message, values) {
+    return typeof message === 'function' ? message(values) : message;
   }
 
   function showTranscriptNotice(notice) {
@@ -51,32 +218,28 @@
 
   function awayTrashReceipt(copy, kind, fill = {}, buttons = []) {
     const card = copy.receipt[kind];
-    const put = (text) => String(text)
-      .replace('{noun}', copy.noun.segment)
-      .replace('{date}', fill.date || '');
     const settled = kind === 'moved' || kind === 'recovered' || kind === 'erased';
     const notice = {
       app: 'transcripts',
       icon: settled ? (kind === 'recovered' ? 'undo-2' : 'trash-2') : 'triangle-alert',
-      title: put(card.title),
+      title: renderTranscriptCopy(card.title, fill),
       dismissible: true,
       buttons,
     };
-    if (card.message && (kind !== 'moved' || fill.date)) notice.message = put(card.message);
+    if (card.message && (kind !== 'moved' || fill.date)) notice.message = renderTranscriptCopy(card.message, fill);
     if (settled) notice.autoDismiss = 10000;
     showTranscriptNotice(notice);
   }
 
   function awaySetReceipt(copy, card, fill = {}, buttons = [], options = {}) {
-    const put = (text) => fillWords(text, { things: copy.noun.segments, ...fill });
     const notice = {
       app: 'transcripts',
       icon: options.icon || (options.settled ? 'trash-2' : 'triangle-alert'),
-      title: put(card.title),
+      title: renderTranscriptCopy(card.title, fill),
       dismissible: true,
       buttons,
     };
-    const message = options.message !== undefined ? options.message : card.message && put(card.message);
+    const message = options.message !== undefined ? options.message : card.message && renderTranscriptCopy(card.message, fill);
     if (message) notice.message = message;
     if (options.settled) notice.autoDismiss = 10000;
     showTranscriptNotice(notice);
@@ -164,7 +327,7 @@
     } else if (back.length) {
       const others = ids.length - back.length;
       awaySetReceipt(copy, cards.partRecovered, { done: back.length, n: ids.length }, [awayOpenTrash(copy)], {
-        message: others === 1 ? cards.partRecoveredOne : cards.partRecoveredMany,
+        message: cards.partRecoveredMessage(others),
       });
     } else if (one) {
       awayTrashReceipt(copy, 'recoverFailed', {}, [awayOpenTrash(copy)]);
@@ -231,7 +394,7 @@
       marks.forEach((mark) => {
         const at = Math.min(text.length, Math.max(cursor, Number(mark.at) || 0));
         html += escapeHtml(text.slice(cursor, at));
-        html += ` <span class="tr-possible-name">${window.JournalI18n.renderHtml('journal.window.transcripts.visible.text.possible.name')} ${escapeHtml(mark.name || '')})</span>`;
+        html += ` <span class="tr-possible-name">${window.JournalI18n.renderHtml('journal.window.transcripts.entry.possible.name', [['entity_name', String(mark.name || '')]])}</span>`;
         cursor = at;
       });
       return html + escapeHtml(text.slice(cursor));
@@ -489,21 +652,12 @@
     const ANALYZE_POLL_INTERVAL_MS = 3000;
     const ANALYZE_POLL_MAX_MS = 30 * 60 * 1000;
 
-    const DATA_STATE_SUFFIX = {
-      pending: window.JournalI18n.render('journal.window.transcripts.data.state.suffix.pending.analysis.pending'),
-      analyzing: '',
-      failed: window.JournalI18n.render('journal.window.transcripts.data.state.suffix.failed.analysis.failed')
-    };
-
     function dataStateCopy(modality, state) {
-      const label = modality === 'image'
-        ? window.JournalI18n.render('journal.window.transcripts.kind.photos')
-        : window.JournalI18n.render('journal.window.transcripts.analysis.observed', [['kind', segmentTypeLabel(modality)]]);
-      if (state === 'analyzing') {
-        return `${label} · ${ANALYZING_LABEL}`;
+      if (state !== 'pending' && state !== 'analyzing' && state !== 'failed') return '';
+      if (modality === 'audio' || modality === 'screen' || modality === 'image') {
+        return window.JournalI18n.render(`journal.window.transcripts.analysis.${state}.${modality}`);
       }
-      const suffix = DATA_STATE_SUFFIX[state];
-      return suffix ? `${label} · ${suffix}` : '';
+      return window.JournalI18n.render(`journal.window.transcripts.analysis.${state}.other`, [['modality', String(modality)]]);
     }
 
     function warningTimestampLabel(ts) {
@@ -527,9 +681,7 @@
         ? window.JournalI18n.render('journal.window.transcripts.visible.text.audio.may.be.incomplete.for.this')
         : details.some(detail => detail.type === 'audio_capture_history')
         ? window.JournalI18n.render('journal.window.transcripts.visible.text.an.earlier.audio.copy.attempt.had')
-        : count === 1
-          ? window.JournalI18n.render('journal.window.transcripts.warning.count.one')
-          : window.JournalI18n.render('journal.window.transcripts.warning.count.many', [['count', String(count)]]);
+        : window.JournalI18n.render('journal.window.transcripts.warning.processing.count', transcriptCount('warnings', count));
       if (details.length === 0) {
         const item = document.createElement('li');
         item.textContent = window.JournalI18n.render('journal.window.transcripts.visible.text.warning.details.unavailable');
@@ -540,7 +692,7 @@
           const type = detail.type;
           const file = detail.file || window.JournalI18n.render('journal.window.transcripts.warning.file.unknown');
           if (type === 'audio_capture' || type === 'audio_capture_history') {
-            item.textContent = window.JournalI18n.render('journal.window.transcripts.visible.text.value1.source.value2', [['value1', String(detail.message || window.JournalI18n.render('journal.window.transcripts.window.explanation.audio.may.be.incomplete.for.this'))], ['value2', String(file)]]);
+            item.textContent = window.JournalI18n.render('journal.window.transcripts.warning.audio.source', [['detail', String(detail.message || window.JournalI18n.render('journal.window.transcripts.window.explanation.audio.may.be.incomplete.for.this'))], ['source_file', String(file)]]);
           } else if (type === 'desktop_activity' && detail.message) {
             item.textContent = `${detail.message}: ${file}`;
           } else {
@@ -1215,7 +1367,7 @@
     function bodyHourSummary(hour) {
       const summary = (hour?.summary || []).filter(Boolean);
       if (summary.length) return summary.slice(0, 3).join(' · ');
-      if (hour?.has_data && hour?.entry_total_label) return window.JournalI18n.render('journal.window.transcripts.body.entries.present', [['count', String(hour.entry_total_label)]]);
+      if (hour?.has_data && hour?.entry_total_label) return window.JournalI18n.render('journal.window.transcripts.body.entries.held', transcriptCount('entries', Number(hour.entry_total), String(hour.entry_total_label)));
       return '';
     }
 
@@ -1232,7 +1384,7 @@
       if (!hours.length) return '';
       const visible = hours.slice(0, limit);
       const more = hours.length > visible.length
-        ? `<li><time></time><span>${window.JournalI18n.renderHtml('journal.window.transcripts.body.hours.more', [['count', String(hours.length - visible.length)]])}</span></li>`
+        ? `<li><time></time><span>${window.JournalI18n.renderHtml('journal.window.transcripts.body.hours.remaining', transcriptCount('hours', hours.length - visible.length))}</span></li>`
         : '';
       return '<ul class="tr-body-hour-list">'
         + visible.map(hour => {
@@ -1274,7 +1426,10 @@
           const hourLabel = index % 6 === 0
             ? `<span class="tr-body-hour-label">${escapeHtml(hour.label || '')}</span>`
             : '';
-          const title = `${hour.range_label || hour.label || window.JournalI18n.render('journal.window.transcripts.body.hour')}${summary ? ' · ' + summary : window.JournalI18n.render('journal.window.transcripts.body.no.data.suffix')}`;
+          const hourLabelText = hour.range_label || hour.label || window.JournalI18n.render('journal.window.transcripts.body.hour');
+          const title = summary
+            ? window.JournalI18n.render('journal.window.transcripts.body.hour.with.data', [['hour', hourLabelText], ['summary', summary]])
+            : window.JournalI18n.render('journal.window.transcripts.body.hour.without.data', [['hour', hourLabelText]]);
           const actionAttrs = hour.has_data
             ? ` data-action="open-body-hour" data-from="${escapeHtml(hour.start || '')}" data-to="${escapeHtml(hour.end || '')}" data-range="${escapeHtml(hour.range_label || '')}"`
             : ' disabled';
@@ -1304,9 +1459,7 @@
       const label = String(item?.count_label ?? item?.count ?? '').trim();
       if (!label) return '';
       if (/[a-z]/i.test(label)) return label;
-      return Number(item?.count) === 1
-        ? window.JournalI18n.render('journal.window.transcripts.body.count.entry.one', [['count', label]])
-        : window.JournalI18n.render('journal.window.transcripts.body.count.entry.many', [['count', label]]);
+      return window.JournalI18n.render('journal.window.transcripts.body.entry.count', transcriptCount('entries', Number(item?.count), label));
     }
 
     function renderBodyPanelFooter() {
@@ -1409,14 +1562,10 @@
       });
       const parts = [];
       if (counts.sleep) {
-        parts.push(counts.sleep === 1
-          ? window.JournalI18n.render('journal.window.transcripts.body.sleep.one')
-          : window.JournalI18n.render('journal.window.transcripts.body.sleep.many', [['count', String(counts.sleep)]]));
+        parts.push(window.JournalI18n.render('journal.window.transcripts.body.sleep.count', transcriptCount('sessions', counts.sleep)));
       }
       if (counts.workout) {
-        parts.push(counts.workout === 1
-          ? window.JournalI18n.render('journal.window.transcripts.body.workout.one')
-          : window.JournalI18n.render('journal.window.transcripts.body.workout.many', [['count', String(counts.workout)]]));
+        parts.push(window.JournalI18n.render('journal.window.transcripts.body.workout.count', transcriptCount('workouts', counts.workout)));
       }
       return parts;
     }
@@ -1728,7 +1877,7 @@
       const isZeroLengthMoment = startMin === endMin && type === 'image';
       el.title = isZeroLengthMoment
         ? hhmm(startMin) + ' (' + typeDisplay + labelPart + stateSuffix + ')' + rawSuffix
-        : hhmm(startMin) + ' – ' + hhmm(endMin) + ' (' + (endMin - startMin) + window.JournalI18n.render('journal.window.transcripts.tooltip.min') + typePart + labelPart + stateSuffix + ')' + rawSuffix;
+        : hhmm(startMin) + ' – ' + hhmm(endMin) + ' (' + window.JournalI18n.render('journal.window.transcripts.timeline.duration.minute', [['quantity', window.JournalI18n.cardinalQuantity(endMin - startMin)], ['minutes', String(endMin - startMin)]]) + typePart + labelPart + stateSuffix + ')' + rawSuffix;
       const activate = () => {
         if (segment) {
           selectSegment(segment);
@@ -2040,7 +2189,7 @@
         pill.title = itemLabel ? datedImportLabel(itemLabel, titleSpan) + statusSuffix :
           titleSpan + typeTitlePart + ' · ' + label + statusSuffix + ' (' + seg.stream + ')';
         if (itemLabel) pill.setAttribute('aria-label', datedImportLabel(itemLabel, ariaSpan) + ariaStatusSuffix);
-        else pill.setAttribute('aria-label', window.JournalI18n.render('journal.window.transcripts.accessible.label.segment') + ariaSpan + typeAriaPart + ', ' + label + ariaStatusSuffix);
+        else pill.setAttribute('aria-label', window.JournalI18n.render('journal.window.transcripts.timeline.segment.accessible', [['details', ariaSpan + typeAriaPart + ', ' + label + ariaStatusSuffix]]));
         pill.dataset.key = seg.key;
         pill.dataset.stream = seg.stream;
 
@@ -2147,8 +2296,9 @@
       if (!selectedSegment) return;
       const rangeLabel = segmentRangeLabel(selectedSegment);
       rangeText.textContent = !isDateOnlyImport(selectedSegment) && Number.isFinite(count) && count > 0
-        ? `${rangeLabel} · ${window.JournalI18n.render(count === 1
-            ? 'journal.window.transcripts.body.count.entry.one' : 'journal.window.transcripts.body.count.entry.many', [['count', String(count)]])}`
+        ? window.JournalI18n.render('journal.window.transcripts.segment.range.entries', [
+          ...transcriptCount('entries', count), ['range', rangeLabel],
+        ])
         : rangeLabel;
     }
 
@@ -2341,7 +2491,7 @@
         const pct = Math.min(100, Math.round((decoded / totalFrames) * 100));
         statusEl.textContent = done
           ? window.JournalI18n.render('journal.window.transcripts.visible.text.rendering.screen.entries')
-          : window.JournalI18n.render('journal.window.transcripts.visible.text.decoding.key.frames.value1.value2.value3', [['value1', String(decoded)], ['value2', String(totalFrames)], ['value3', String(pct)]]);
+          : window.JournalI18n.render('journal.window.transcripts.media.frames.decoding', [...transcriptCount('decoded', decoded), ...transcriptCount('total', totalFrames), ['percent', String(pct)]]);
       };
 
       const makeProgressHandler = (videoUrl) => (count) => {
@@ -2651,10 +2801,8 @@
       const hasReadings = typeof data?.location_readings === 'number';
       const readings = hasReadings ? data.location_readings : null;
       let desc = window.JournalI18n.render('journal.window.transcripts.window.explanation.this.segment.holds.location.only');
-      if (readings === 1) {
-        desc = window.JournalI18n.render('journal.window.transcripts.window.explanation.this.segment.holds.location.only.reading');
-      } else if (readings !== null && readings > 1) {
-        desc = window.JournalI18n.render('journal.window.transcripts.window.explanation.this.segment.holds.location.only.value1', [['value1', String(readings)]]);
+      if (readings > 0) {
+        desc = window.JournalI18n.render('journal.window.transcripts.location.only.readings', transcriptCount('readings', readings));
       }
       const countAttr = (hasReadings && readings > 0) ? ` data-location-count="${readings}"` : '';
       panel.innerHTML = `
@@ -2976,8 +3124,12 @@
       if (calendarEvents.length > 0) {
         const items = calendarEvents.slice(0, 12).map(event => {
           const when = `${signalTimestampLabel(event.dtStart)}${event.dtEnd ? ' - ' + signalTimestampLabel(event.dtEnd) : ''}`;
-          const repeats = event.seen_count > 1 ? window.JournalI18n.render('journal.window.transcripts.signals.calendar.seen', [['count', String(event.seen_count)]]) : '';
-          return `<li><strong>${escapeHtml(event.title || window.JournalI18n.render('journal.window.transcripts.status.text.untitled.event'))}</strong><br><span class="tr-signal-label">${escapeHtml(when)}${escapeHtml(repeats)}</span></li>`;
+          const timing = event.seen_count > 1
+            ? window.JournalI18n.render('journal.window.transcripts.signals.calendar.repeated', [
+              ...transcriptCount('visits', event.seen_count), ['range', when],
+            ])
+            : when;
+          return `<li><strong>${escapeHtml(event.title || window.JournalI18n.render('journal.window.transcripts.status.text.untitled.event'))}</strong><br><span class="tr-signal-label">${escapeHtml(timing)}</span></li>`;
         }).join('');
         const more = calendarEvents.length > 12
           ? `<div class="tr-signal-label">${calendarEvents.length - 12} ${window.JournalI18n.renderHtml('journal.window.transcripts.visible.text.more.deduped.calendar.events.hidden.in')}</div>`
@@ -3012,15 +3164,10 @@
         TR_SPEAKER_SOMEONE_ELSE: TR_COPY.TR_SPEAKER_SOMEONE_ELSE || '',
         TR_SPEAKER_PICKER_NO_RESULTS: TR_COPY.TR_SPEAKER_PICKER_NO_RESULTS || '',
         TR_SPEAKER_UNKNOWN_CHIP: TR_COPY.TR_SPEAKER_UNKNOWN_CHIP || '',
-        TR_SPEAKER_VOICE_CHIP: TR_COPY.TR_SPEAKER_VOICE_CHIP || '',
         TR_SPEAKER_VOICE_ASSISTIVE: TR_COPY.TR_SPEAKER_VOICE_ASSISTIVE || '',
         TR_SPEAKER_VOICE_NAMED_ASSISTIVE: TR_COPY.TR_SPEAKER_VOICE_NAMED_ASSISTIVE || '',
         TR_SPEAKER_VOICE_SCOPE: TR_COPY.TR_SPEAKER_VOICE_SCOPE || '',
-        TR_SPEAKER_VOICE_NAMED_COUNT: TR_COPY.TR_SPEAKER_VOICE_NAMED_COUNT || '',
-        TR_SPEAKER_VOICE_NAMED_ONE: TR_COPY.TR_SPEAKER_VOICE_NAMED_ONE || '',
         TR_SPEAKER_VOICE_SCOPE_NOTE: TR_COPY.TR_SPEAKER_VOICE_SCOPE_NOTE || '',
-        TR_SPEAKER_HEDGE_PROBABLE: TR_COPY.TR_SPEAKER_HEDGE_PROBABLE || '',
-        TR_SPEAKER_HEDGE_MAYBE: TR_COPY.TR_SPEAKER_HEDGE_MAYBE || '',
         TR_SPEAKER_CONFIDENCE_HIGH: TR_COPY.TR_SPEAKER_CONFIDENCE_HIGH || '',
         TR_SPEAKER_CONFIDENCE_UNKNOWN: TR_COPY.TR_SPEAKER_CONFIDENCE_UNKNOWN || '',
         TR_SPEAKER_MARGIN_OWNER: TR_COPY.TR_SPEAKER_MARGIN_OWNER || '',
@@ -3036,8 +3183,6 @@
         TR_SPEAKER_PICKER_UNKNOWN: TR_COPY.TR_SPEAKER_PICKER_UNKNOWN || '',
         TR_SPEAKER_PICKER_GUESS: TR_COPY.TR_SPEAKER_PICKER_GUESS || '',
         TR_SPEAKER_LINE_ONLY: TR_COPY.TR_SPEAKER_LINE_ONLY || '',
-        TR_SPEAKER_LINE_ONLY_BODY: TR_COPY.TR_SPEAKER_LINE_ONLY_BODY || '',
-        TR_SPEAKER_LINE_ONLY_LINK: TR_COPY.TR_SPEAKER_LINE_ONLY_LINK || '',
         TR_SPEAKER_OWNER_SET: TR_COPY.TR_SPEAKER_OWNER_SET || '',
         TR_SPEAKER_OWNER_UNKNOWN_CHIP: TR_COPY.TR_SPEAKER_OWNER_UNKNOWN_CHIP || '',
         TR_SPEAKER_LINE_REFUSED: TR_COPY.TR_SPEAKER_LINE_REFUSED || '',
@@ -3048,10 +3193,6 @@
         TR_SPEAKER_LINE_UNREADABLE: TR_COPY.TR_SPEAKER_LINE_UNREADABLE || ''
       };
       return values[key] || '';
-    }
-
-    function trCopyTemplate(key, values) {
-      return trCopy(key).replace(/\{(\w+)\}/g, (_, name) => values[name] ?? '');
     }
 
     function speakerNameForLabel(label) {
@@ -3074,14 +3215,14 @@
     function speakerVoiceChipModel(voice) {
       if (voice.name) {
         return {
-          text: trCopyTemplate('TR_SPEAKER_HEDGE_PROBABLE', { name: voice.name }),
+          text: window.JournalI18n.render('journal.window.transcripts.speaker.chip.probable.name', [['speaker_name', String(voice.name)]]),
           dotClass: 'tr-speaker-dot-medium',
           neutral: false,
           assistive: trCopy('TR_SPEAKER_VOICE_NAMED_ASSISTIVE')
         };
       }
       return {
-        text: trCopyTemplate('TR_SPEAKER_VOICE_CHIP', { number: voice.voice_id }),
+        text: window.JournalI18n.render('journal.window.transcripts.speaker.chip.voice.number', [['voice_number', String(voice.voice_id ?? '')]]),
         dotClass: '',
         neutral: true,
         assistive: trCopy('TR_SPEAKER_VOICE_ASSISTIVE')
@@ -3125,7 +3266,9 @@
       const hasMargin = !!(label.owner_margin_declined || label.acoustic_margin_declined);
       if (hasMargin) {
         return {
-          text: trCopyTemplate('TR_SPEAKER_HEDGE_MAYBE', { name }),
+          text: label.is_owner
+            ? window.JournalI18n.render('journal.window.transcripts.speaker.chip.maybe.owner')
+            : window.JournalI18n.render('journal.window.transcripts.speaker.chip.maybe.name', [['speaker_name', name]]),
           dotClass: 'tr-speaker-dot-medium',
           neutral: false,
           assistive: speakerMarginText(label)
@@ -3142,7 +3285,9 @@
       }
 
       return {
-        text: trCopyTemplate('TR_SPEAKER_HEDGE_PROBABLE', { name }),
+        text: label.is_owner
+          ? window.JournalI18n.render('journal.window.transcripts.speaker.chip.probable.owner')
+          : window.JournalI18n.render('journal.window.transcripts.speaker.chip.probable.name', [['speaker_name', name]]),
         dotClass: 'tr-speaker-dot-medium',
         neutral: false,
         assistive: ''
@@ -3344,9 +3489,13 @@
     }
 
     function lineOnlyHtml() {
-      const link = `<a href="/app/speakers/" data-copy-key="TR_SPEAKER_LINE_ONLY_LINK">${escapeHtml(trCopy('TR_SPEAKER_LINE_ONLY_LINK'))}</a>`;
-      const body = escapeHtml(trCopy('TR_SPEAKER_LINE_ONLY_BODY')).replace('{link}', link);
-      const bodyHtml = `<p data-copy-key="TR_SPEAKER_LINE_ONLY_BODY">${body}</p>`;
+      const link = document.createElement('a');
+      link.setAttribute('href', '/app/speakers/');
+      link.dataset.copyKey = 'TR_SPEAKER_LINE_ONLY_LINK';
+      const body = document.createElement('p');
+      body.dataset.copyKey = 'TR_SPEAKER_LINE_ONLY_BODY';
+      body.append(...window.JournalI18n.renderMarkup('journal.window.transcripts.speaker.line.only.help', [], { elements: { link } }));
+      const bodyHtml = body.outerHTML;
       return `<div class="tr-speaker-picker-line-only" data-copy-key="TR_SPEAKER_LINE_ONLY">${window.Drawer.render({ id: 'speaker-line-only', label: trCopy('TR_SPEAKER_LINE_ONLY'), bodyHtml })}</div>`;
     }
 
@@ -3643,9 +3792,7 @@
         const count = Number(result?.sentences_attributed ?? 0);
         const message = result?.status !== 'identified'
           ? trCopy('TR_SPEAKER_ALREADY_CORRECT')
-          : (count === 1
-            ? trCopy('TR_SPEAKER_VOICE_NAMED_ONE')
-            : trCopyTemplate('TR_SPEAKER_VOICE_NAMED_COUNT', { count }));
+          : window.JournalI18n.render('journal.window.transcripts.speaker.named.sentences', transcriptCount('sentences', count));
         await loadSegmentContent(selectedSegment, activeTab);
         renderSpeakerStatus(speakerSlotFor(sentenceId, source), message);
       } catch (err) {
@@ -3831,7 +3978,7 @@
       setPaneEntryCount(targetEl, displayItems.length);
 
       let html = renderBodyStrip(data.body_window) + granolaNotes;
-      html += `<div class="tr-unified" role="list" aria-label="${window.JournalI18n.renderHtml('journal.window.transcripts.accessible.name.transcript.entries')} ${displayItems.length} ${window.JournalI18n.renderHtml('journal.window.transcripts.accessible.name.items')}">`;
+      html += `<div class="tr-unified" role="list" aria-label="${window.JournalI18n.renderHtml('journal.window.transcripts.entries.quantity', transcriptCount('items', displayItems.length))}">`;
 
       // Audio player section (if we have audio)
       if (data.audio_file && showAudio) {
@@ -3865,7 +4012,7 @@
           if (item.audio_url && item.audio_origin !== undefined) {
             audioAttrs = ` data-audio-url="${escapeHtml(item.audio_url)}" data-audio-origin="${item.audio_origin}"`;
           }
-          html += `<div class="tr-entry tr-entry-audio" data-idx="${idx}" data-type="audio" data-timestamp="${item.timestamp}"${audioAttrs} role="listitem" tabindex="0" aria-label="${window.JournalI18n.renderHtml('journal.window.transcripts.accessible.name.play.from')} ${timeStr}">`;
+          html += `<div class="tr-entry tr-entry-audio" data-idx="${idx}" data-type="audio" data-timestamp="${item.timestamp}"${audioAttrs} role="listitem" tabindex="0" aria-label="${window.JournalI18n.renderHtml('journal.window.transcripts.entry.play.from.time', [['time', timeStr]])}">`;
           html += `<div class="tr-entry-time">${timeStr}</div>`;
           html += '<div class="tr-entry-content">';
           html += `<span class="sr-only">${window.JournalI18n.renderHtml('journal.window.transcripts.visible.text.audio.variant2')} </span>`;
@@ -4267,7 +4414,7 @@
       const timeRange = group.startTime === group.endTime
         ? group.startTime
         : `${group.startTime} - ${group.endTime}`;
-      const countText = count === 1 ? '1 frame' : `${count} frames`;
+      const countText = window.JournalI18n.render('journal.window.transcripts.media.frame.count', transcriptCount('frames', count));
 
       let html = `<div class="tr-group" data-idx="${idx}" role="listitem">`;
       html += `<div class="tr-group-header" role="button" tabindex="0" aria-expanded="false" aria-controls="tr-group-grid-${idx}">`;
@@ -4487,7 +4634,7 @@
     function renderRawJsonDisclosure(raw, parsed) {
       const summary = screenJsonSummary(parsed);
       return '<details class="tr-raw-json">'
-        + `<summary>${escapeHtml(summary ? window.JournalI18n.render('journal.window.transcripts.status.text.raw.json.value1', [['value1', String(summary)]]) : window.JournalI18n.render('journal.window.transcripts.status.text.raw.json'))}</summary>`
+        + `<summary>${escapeHtml(summary ? window.JournalI18n.render('journal.window.transcripts.raw.json.summary', [['summary', String(summary)]]) : window.JournalI18n.render('journal.window.transcripts.status.text.raw.json'))}</summary>`
         + `<pre>${escapeHtml(raw)}</pre>`
         + '</details>';
     }
@@ -4554,23 +4701,23 @@
       // screen reader was told about entries it could not reach. The label says
       // what is rendered; the button beside it carries the rest.
       const shown = items.length - rest.length;
-      list.setAttribute('aria-label', window.JournalI18n.render('journal.window.transcripts.accessible.label.transcript.entries.value1.of.value2.shown', [['value1', String(shown)], ['value2', String(items.length)]]));
+      list.setAttribute('aria-label', window.JournalI18n.render('journal.window.transcripts.entries.shown', [...transcriptCount('shown', shown), ...transcriptCount('total', items.length)]));
 
       const more = document.createElement('button');
       more.type = 'button';
       more.className = 'tr-entry-more';
       more.setAttribute('aria-expanded', 'false');
-      more.textContent = window.JournalI18n.render('journal.window.transcripts.visible.text.show.the.rest.of.this.block', [['value1', String(rest.length)]]);
+      more.textContent = window.JournalI18n.render('journal.window.transcripts.entries.show.remaining', transcriptCount('remaining', rest.length));
       more.addEventListener('click', () => {
         const expanded = more.getAttribute('aria-expanded') !== 'true';
         rest.forEach(entry => { entry.hidden = !expanded; });
         more.setAttribute('aria-expanded', String(expanded));
         list.setAttribute('aria-label', expanded
-          ? window.JournalI18n.render('journal.window.transcripts.accessible.label.transcript.entries.value1.items', [['value1', String(items.length)]])
-          : window.JournalI18n.render('journal.window.transcripts.accessible.label.transcript.entries.value1.of.value2.shown', [['value1', String(shown)], ['value2', String(items.length)]]));
+          ? window.JournalI18n.render('journal.window.transcripts.entries.quantity', transcriptCount('items', items.length))
+          : window.JournalI18n.render('journal.window.transcripts.entries.shown', [...transcriptCount('shown', shown), ...transcriptCount('total', items.length)]));
         more.textContent = expanded
           ? window.JournalI18n.render('journal.window.transcripts.visible.text.show.fewer.entries')
-          : window.JournalI18n.render('journal.window.transcripts.visible.text.show.the.rest.of.this.block', [['value1', String(rest.length)]]);
+          : window.JournalI18n.render('journal.window.transcripts.entries.show.remaining', transcriptCount('remaining', rest.length));
         if (expanded) collapseLongPreBlocks(targetEl);
       });
       list.insertAdjacentElement('afterend', more);
@@ -4860,7 +5007,7 @@
     }
 
     function updateZoom() {
-      zoom.setAttribute('aria-label', window.JournalI18n.render('journal.window.transcripts.accessible.label.detail.timeline') + clockLabel(range.start) + '\u2013' + clockLabel(range.end) + ')');
+      zoom.setAttribute('aria-label', window.JournalI18n.render('journal.window.transcripts.timeline.detail.range', [['start_time', clockLabel(range.start)], ['end_time', clockLabel(range.end)]]));
       zoomHeight = zoom.clientHeight - ZOOM_PADDING;
       const rangeLen = range.end - range.start;
       if (rangeLen > 0) {
@@ -4880,17 +5027,19 @@
     // One quiet line when part of the day was recorded on another clock, so
     // the grid's times (each on its own recording's clock) read right.
     function dayZonesText(zones) {
-      const copy = window.CONVEY_COPY || {};
       if (!zones || !Array.isArray(zones.zones) || zones.zones.length === 0) return '';
       const list = items => items.length <= 1
         ? items.join('')
         : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
       const places = zones.zones.filter(zone => zone.place).map(zone => zone.label);
       const offsets = zones.zones.filter(zone => !zone.place).map(zone => zone.label);
-      const named = places.length && copy.ZONE_TIME ? [copy.ZONE_TIME.replace('{label}', list(places))] : [];
+      const named = places.length
+        ? [window.JournalI18n.render('journal.window.chrome.zone.time', [['label', list(places)]])]
+        : [];
       const text = list(named.concat(offsets));
-      const template = zones.all ? copy.DAY_ZONES_ALL : copy.DAY_ZONES_PART;
-      return template && text ? template.replace('{zones}', text) : '';
+      if (!text) return '';
+      const id = zones.all ? 'journal.window.chrome.day.zones.all' : 'journal.window.chrome.day.zones.part';
+      return window.JournalI18n.render(id, [['zones', text]]);
     }
 
     function renderDayZones(zones) {
@@ -4934,7 +5083,7 @@
         const bounds = computeTimelineBounds(data);
         timelineStart = bounds.start;
         timelineEnd = bounds.end;
-        timeline.setAttribute('aria-label', window.JournalI18n.render('journal.window.transcripts.accessible.label.day.timeline') + clockLabel(timelineStart) + '\u2013' + clockLabel(timelineEnd) + ')');
+        timeline.setAttribute('aria-label', window.JournalI18n.render('journal.window.transcripts.timeline.day.range', [['start_time', clockLabel(timelineStart)], ['end_time', clockLabel(timelineEnd)]]));
 
         // Recalculate pixels-per-minute with new bounds
         height = timeline.clientHeight - DAY_PADDING;
@@ -5106,7 +5255,7 @@
       }
       if (locationLoad === 'ready' && locationSegments.length > 0) {
         const count = locationSegments.length;
-        const collapsedText = count === 1 ? window.JournalI18n.render('journal.window.transcripts.window.explanation.show.location.segment') : window.JournalI18n.render('journal.window.transcripts.location.show.many', [['count', String(count)]]);
+        const collapsedText = window.JournalI18n.render('journal.window.transcripts.location.show.count', transcriptCount('segments', count));
         // Name each row's device only when more than one sent location this day.
         const manyLocationStreams = new Set(locationSegments.map(s => humanizeStreamName(s.stream))).size > 1;
         const rowsHtml = locationSectionExpanded ? `
@@ -5117,12 +5266,11 @@
                 : '';
               const hasReadings = typeof s.location_readings === 'number';
               const readings = hasReadings ? s.location_readings : null;
-              let text = s.start;
-              if (readings === 1) {
-                text = window.JournalI18n.render('journal.window.transcripts.location.reading.one', [['time', s.start]]);
-              } else if (readings !== null && readings > 1) {
-                text = window.JournalI18n.render('journal.window.transcripts.location.reading.many', [['time', s.start], ['count', String(readings)]]);
-              }
+              const text = readings > 0
+                ? window.JournalI18n.render('journal.window.transcripts.location.row.readings', [
+                  ...transcriptCount('readings', readings), ['start_time', s.start],
+                ])
+                : s.start;
               const dataReadingsAttr = hasReadings ? ` data-readings="${readings}"` : '';
               return `<button type="button" class="tr-location-row" data-key="${escapeHtml(s.key)}" data-stream="${escapeHtml(s.stream)}"${dataReadingsAttr}>${escapeHtml(text)}${deviceSuffix}</button>`;
             }).join('')}
@@ -5520,175 +5668,7 @@
       return pos.charAt(0).toUpperCase() + pos.slice(1);
     }
 
-    // Owner copy for deleting a segment: the dialog, its erase step and the receipt.
-    const TRASH_COPY = {
-      noun: { segment: window.JournalI18n.render('journal.window.transcripts.trash.copy.segment.segment'), segments: window.JournalI18n.render('journal.window.transcripts.trash.copy.segments.segments') },
-      select: window.JournalI18n.render('journal.window.transcripts.trash.copy.select.select'),
-      selectAll: window.JournalI18n.render('journal.window.transcripts.trash.copy.selectall.select.all'),
-      selected: window.JournalI18n.render('journal.window.transcripts.trash.copy.selected.n.selected'),
-      delete: window.JournalI18n.render('journal.window.transcripts.trash.copy.delete.delete'),
-      done: window.JournalI18n.render('journal.window.transcripts.trash.copy.done.done'),
-      pickRange: window.JournalI18n.render('journal.window.transcripts.trash.copy.pickrange.start.end'),
-      set: {
-        moveTitle: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.movetitle.delete.n.segments'),
-        eraseTitle: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.erasetitle.erase.n.segments.now'),
-        more: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.more.and.n.more'),
-        moveReach: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.movereach.they.leave.your.journal.now.and'),
-        eraseReach: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.erasereach.they.leave.your.journal.now.and'),
-        moveLead: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.movelead.this.moves.each.segment.s.own'),
-        eraseLead: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.eraselead.this.erases.each.segment.s.own'),
-        moveStays: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.movestays.activities.made.from.them.drop.them'),
-        moveFound: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.movefound.detected.entities.drop.them.too.and'),
-        eraseStays: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.erasestays.activities.made.from.them.drop.them'),
-        eraseFound: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.erasefound.detected.entities.drop.them.too.and'),
-        size: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.size.current.raw.media.size.size'),
-      },
-      notes: {
-        busy: window.JournalI18n.render('journal.window.transcripts.trash.copy.busy.this.is.already.being.moved.or'),
-        importing: window.JournalI18n.render('journal.window.transcripts.trash.copy.importing.this.wasn.t.moved.because.it'),
-        other: window.JournalI18n.render('journal.window.transcripts.trash.copy.other.this.wasn.t.moved.try.again'),
-        eraseImporting: window.JournalI18n.render('journal.window.transcripts.trash.copy.eraseimporting.this.wasn.t.erased.because.it'),
-        eraseOther: window.JournalI18n.render('journal.window.transcripts.trash.copy.eraseother.this.wasn.t.erased.try.again'),
-      },
-      setReceipt: {
-        moved: { title: window.JournalI18n.render('journal.window.transcripts.trash.copy.title.moved.n.things.to.the.trash'), message: window.JournalI18n.render('journal.window.transcripts.trash.copy.message.they.erase.date.unless.you.recover') },
-        partMoved: { title: window.JournalI18n.render('journal.window.transcripts.trash.copy.title.moved.done.of.n.to.the') },
-        stillOne: window.JournalI18n.render('journal.window.transcripts.trash.copy.stillone.k.couldn.t.be.moved.and'),
-        stillMany: window.JournalI18n.render('journal.window.transcripts.trash.copy.stillmany.k.couldn.t.be.moved.and'),
-        noneMoved: { title: window.JournalI18n.render('journal.window.transcripts.trash.copy.title.couldn.t.move.those.to.the') },
-        noneStillOne: window.JournalI18n.render('journal.window.transcripts.trash.copy.nonestillone.k.is.still.in.your.journal'),
-        noneStillMany: window.JournalI18n.render('journal.window.transcripts.trash.copy.nonestillmany.k.are.still.in.your.journal'),
-        erased: { title: window.JournalI18n.render('journal.window.transcripts.trash.copy.title.erased.n.things.from.your.journal') },
-        partErased: { title: window.JournalI18n.render('journal.window.transcripts.trash.copy.title.erased.done.of.n') },
-        partErasedOne: window.JournalI18n.render('journal.window.transcripts.trash.copy.parterasedone.the.other.wasn.t.erased.look'),
-        partErasedMany: window.JournalI18n.render('journal.window.transcripts.trash.copy.parterasedmany.the.others.weren.t.erased.look'),
-        noneErased: { title: window.JournalI18n.render('journal.window.transcripts.trash.copy.title.couldn.t.erase.those') },
-        noneErasedOne: window.JournalI18n.render('journal.window.transcripts.trash.copy.noneerasedone.look.for.it.below.or.in'),
-        noneErasedMany: window.JournalI18n.render('journal.window.transcripts.trash.copy.noneerasedmany.look.for.them.below.or.in'),
-        recovered: { title: window.JournalI18n.render('journal.window.transcripts.trash.copy.title.n.things.recovered'), message: window.JournalI18n.render('journal.window.transcripts.trash.copy.message.they.re.back.in.your.journal') },
-        partRecovered: { title: window.JournalI18n.render('journal.window.transcripts.trash.copy.title.recovered.done.of.n') },
-        partRecoveredOne: window.JournalI18n.render('journal.window.transcripts.trash.copy.partrecoveredone.the.other.is.still.in.the'),
-        partRecoveredMany: window.JournalI18n.render('journal.window.transcripts.trash.copy.partrecoveredmany.the.others.are.still.in.the'),
-        recoverFailed: { title: window.JournalI18n.render('journal.window.transcripts.trash.copy.title.couldn.t.recover.those'), message: window.JournalI18n.render('journal.window.transcripts.trash.copy.message.they.re.still.in.the.trash') },
-        noAnswerMove: { title: window.JournalI18n.render('journal.window.transcripts.trash.copy.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.transcripts.trash.copy.message.they.may.already.be.in.the') },
-        noAnswerErase: { title: window.JournalI18n.render('journal.window.transcripts.trash.copy.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.transcripts.trash.copy.message.they.may.already.be.erased.reload') },
-        noAnswerRecover: { title: window.JournalI18n.render('journal.window.transcripts.trash.copy.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.transcripts.trash.copy.message.they.may.already.be.back.in') },
-      },
-      move: {
-        title: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.title.delete.segment'),
-        reach: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.reach.it.leaves.your.journal.now.and.variant2'),
-        lead: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.lead.this.moves.the.segment.s.own'),
-        stays: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.stays.activities.made.from.it.drop.it'),
-        found: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.found.detected.entities.drop.it.too.and'),
-        size: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.size.current.raw.media.size.size'),
-      },
-      // A segment from an import: its last takes the import and the file it
-      // kept; any other leaves them. Keyed on `kept`, the files the import's
-      // own record holds.
-      imports: {
-        importGoes: {
-          label: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.label.it.s.the.last.segment.from.variant2'),
-          one: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.one.it.s.the.last.segment.from.variant2'),
-          many: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.many.it.s.the.last.segment.from.variant2'),
-          none: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.none.it.s.the.last.segment.from.variant2'),
-          unknown: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.unknown.it.s.the.last.segment.from.variant2'),
-        },
-        importErased: {
-          label: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.label.it.s.the.last.segment.from'),
-          one: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.one.it.s.the.last.segment.from'),
-          many: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.many.it.s.the.last.segment.from'),
-          none: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.none.it.s.the.last.segment.from'),
-          unknown: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.unknown.it.s.the.last.segment.from'),
-        },
-        waitingErased: {
-          one: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.one.the.import.s.other.segment.in'),
-          many: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.many.the.import.s.w.other.segments'),
-        },
-        importStays: {
-          label: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.label.label.the.file.it.came.from'),
-          one: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.one.the.file.it.came.from.stays'),
-          many: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.many.the.files.its.import.kept.stay'),
-          unknown: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.unknown.any.file.its.import.kept.stays'),
-        },
-        openImport: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.openimport.open.the.import'),
-        importMaybe: {
-          move: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.move.if.it.s.the.last.segment'),
-          erase: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.erase.if.it.s.the.last.segment'),
-        },
-        setTakes: {
-          label: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.label.this.includes.the.last.of.the.variant2'),
-          one: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.one.this.includes.the.last.of.the.variant2'),
-          oneNone: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.onenone.this.includes.the.last.of.the.variant2'),
-          many: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.many.this.includes.the.last.of.the.variant2'),
-          manyNone: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.manynone.this.includes.the.last.of.the.variant2'),
-        },
-        setErases: {
-          label: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.label.this.includes.the.last.of.the'),
-          one: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.one.this.includes.the.last.of.the'),
-          oneNone: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.onenone.this.includes.the.last.of.the'),
-          many: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.many.this.includes.the.last.of.the'),
-          manyNone: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.manynone.this.includes.the.last.of.the'),
-        },
-        setWaiting: {
-          oneOne: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.oneone.other.segment.from.that.import.in'),
-          oneMany: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.onemany.w.other.segments.from.that.import'),
-          manyOne: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.manyone.other.segment.from.those.imports.in'),
-          manyMany: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.manymany.w.other.segments.from.those.imports'),
-        },
-        setStays: {
-          label: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.label.label.stays.in.your.journal.because'),
-          one: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.one.the.file.import.kept.stays.in'),
-          many: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.many.the.files.j.imports.kept.stay'),
-        },
-        setMaybe: {
-          move: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.move.if.these.include.the.last.segments'),
-          erase: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.erase.if.these.include.the.last.segments'),
-        },
-      },
-      // Erasing a segment erases its original media waiting in the trash too.
-      originalsGo: {
-        one: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.one.its.original.media.in.the.trash'),
-        many: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.many.their.original.media.in.the.trash'),
-      },
-      erase: {
-        title: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.title.erase.this.segment.now'),
-        reach: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.reach.it.leaves.your.journal.now.and'),
-        lead: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.lead.this.erases.the.segment.s.own'),
-        stays: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.stays.activities.made.from.it.drop.it'),
-        found: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.found.detected.entities.drop.it.too.and.variant2'),
-      },
-      parts: {
-        audio: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.audio.audio'),
-        screen: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.screen.screen.frames'),
-        transcript: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.transcript.transcript'),
-        analysis: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.analysis.analysis.stored.with.it'),
-        location: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.location.location'),
-        // J8 in the design system's screenshots copy file: a screenshot's
-        // segment holds its screenshot, not audio or frames.
-        screenshot: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.screenshot.screenshot'),
-        photo: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.photo.photo'),
-      },
-      buttons: {
-        eraseNow: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.erasenow.erase.now'),
-        cancel: window.JournalI18n.render('journal.window.transcripts.trash.copy.cancel.cancel'),
-        moveToTrash: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.movetotrash.move.to.trash'),
-        back: window.JournalI18n.render('journal.window.transcripts.trash.copy.back.back'),
-        recover: window.JournalI18n.render('journal.window.transcripts.trash.copy.recover.recover'),
-        openTrash: window.JournalI18n.render('journal.window.transcripts.trash.copy.opentrash.open.trash'),
-      },
-      receipt: {
-        moved: { title: window.JournalI18n.render('journal.window.transcripts.trash.copy.title.moved.to.the.trash'), message: window.JournalI18n.render('journal.window.transcripts.trash.copy.message.erases.date.unless.you.recover.it') },
-        recovered: { title: window.JournalI18n.render('journal.window.transcripts.trash.copy.title.noun.recovered'), message: window.JournalI18n.render('journal.window.transcripts.trash.copy.message.it.s.back.in.your.journal') },
-        erased: { title: window.JournalI18n.render('journal.window.transcripts.trash.copy.title.noun.erased.from.your.journal') },
-        recoverFailed: { title: window.JournalI18n.render('journal.window.transcripts.trash.copy.title.couldn.t.recover.that.noun'), message: window.JournalI18n.render('journal.window.transcripts.trash.copy.message.it.s.still.in.the.trash') },
-        moveRefused: { title: window.JournalI18n.render('journal.window.transcripts.trash.copy.title.couldn.t.move.that.to.the'), message: window.JournalI18n.render('journal.window.transcripts.trash.copy.message.it.s.still.in.your.journal') },
-        eraseRefused: { title: window.JournalI18n.render('journal.window.transcripts.trash.copy.title.couldn.t.erase.that.noun'), message: window.JournalI18n.render('journal.window.transcripts.trash.copy.message.it.s.still.in.your.journal') },
-        eraseFailed: { title: window.JournalI18n.render('journal.window.transcripts.trash.copy.title.couldn.t.erase.that.noun'), message: window.JournalI18n.render('journal.window.transcripts.trash.copy.message.it.s.in.the.trash.you') },
-        noAnswerMove: { title: window.JournalI18n.render('journal.window.transcripts.trash.copy.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.transcripts.trash.copy.message.it.may.already.be.in.the') },
-        noAnswerErase: { title: window.JournalI18n.render('journal.window.transcripts.trash.copy.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.transcripts.trash.copy.message.it.may.already.be.erased.reload') },
-        noAnswerRecover: { title: window.JournalI18n.render('journal.window.transcripts.trash.copy.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.transcripts.trash.copy.message.it.may.already.be.back.in') },
-      },
-    };
+    const TRASH_COPY = transcriptTrashCopy();
 
     deleteSegmentModalErase.textContent = TRASH_COPY.buttons.eraseNow;
     deleteSegmentModalCancel.textContent = TRASH_COPY.buttons.cancel;
@@ -5797,15 +5777,15 @@
         if (imp.takes) {
           const form = keptForm(imp);
           const table = erasing ? C.importErased : C.importGoes;
-          const lines = [importLine(segPickFill(table[form], { n: imp.kept, label: imp.label || '' }))];
+          const lines = [importLine(renderTranscriptCopy(table[form], { n: imp.kept, label: imp.label || '' }))];
           if (erasing && imp.waiting > 0) {
-            lines.push(importLine(segPickFill(imp.waiting === 1 ? C.waitingErased.one : C.waitingErased.many, { w: imp.waiting })));
+            lines.push(importLine(renderTranscriptCopy(imp.waiting === 1 ? C.waitingErased.one : C.waitingErased.many, { w: imp.waiting })));
           }
           return lines;
         }
         const form = keptForm(imp, false);
         if (!form) return [];
-        return [importLine(segPickFill(C.importStays[form], { label: imp.label || '' }), `/app/import/${encodeURIComponent(imp.id)}`)];
+        return [importLine(renderTranscriptCopy(C.importStays[form], { label: imp.label || '' }), `/app/import/${encodeURIComponent(imp.id)}`)];
       }
       const lines = [];
       const taken = dialogImports.filter((imp) => imp.takes);
@@ -5816,17 +5796,17 @@
         let key;
         if (taken.length === 1) key = taken[0].kept >= 1 && taken[0].label ? 'label' : (anyKept ? 'one' : 'oneNone');
         else key = anyKept ? 'many' : 'manyNone';
-        lines.push(importLine(segPickFill(table[key], { k: taken.length, label: taken[0].label || '' })));
+        lines.push(importLine(renderTranscriptCopy(table[key], { k: taken.length, label: taken[0].label || '' })));
         const waiting = taken.reduce((sum, imp) => sum + (imp.waiting || 0), 0);
         if (erasing && waiting > 0) {
           const key = `${taken.length === 1 ? 'one' : 'many'}${waiting === 1 ? 'One' : 'Many'}`;
-          lines.push(importLine(segPickFill(C.setWaiting[key], { w: waiting })));
+          lines.push(importLine(renderTranscriptCopy(C.setWaiting[key], { w: waiting })));
         }
       }
       if (left.length === 1) {
-        lines.push(importLine(segPickFill(left[0].label ? C.setStays.label : C.setStays.one, { label: left[0].label || '' })));
+        lines.push(importLine(renderTranscriptCopy(left[0].label ? C.setStays.label : C.setStays.one, { label: left[0].label || '' })));
       } else if (left.length > 1) {
-        lines.push(importLine(segPickFill(C.setStays.many, { j: left.length })));
+        lines.push(importLine(renderTranscriptCopy(C.setStays.many, { j: left.length })));
       }
       return lines;
     }
@@ -5876,7 +5856,7 @@
       );
       const totalBytes = (ownData?.media_sizes?.audio || 0) + (ownData?.media_sizes?.screen || 0);
       if (!erasing && !isLocRow && totalBytes > 0) {
-        deleteSegmentModalBody.append(deleteDialogElement('p', 'tr-delete-segment-size trash-dlg-size', copy.size.replace('{size}', formatSize(totalBytes))));
+        deleteSegmentModalBody.append(deleteDialogElement('p', 'tr-delete-segment-size trash-dlg-size', copy.size({ size: formatSize(totalBytes) })));
       }
     }
 
@@ -6013,14 +5993,13 @@
     // never a count.
     const STRETCH_COPY = {
       button: window.JournalI18n.render('journal.window.transcripts.stretch.copy.button.delete.a.stretch.of.time'),
-      buttonLabel: window.JournalI18n.render('journal.window.transcripts.stretch.copy.buttonlabel.delete.a.stretch.of.time.starting'),
       from: window.JournalI18n.render('journal.window.transcripts.stretch.copy.from.from'),
       to: window.JournalI18n.render('journal.window.transcripts.stretch.copy.to.to'),
-      zone: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.stretch.copy.zone.times.are.in.your.journal.s'),
+      zone: ({ zone }) => window.JournalI18n.renderEnglish('journal.window.transcripts.consent.stretch.journal.zone', [['journal_zone', String(zone ?? '')]]),
       checking: window.JournalI18n.render('journal.window.transcripts.stretch.copy.checking.checking.what.s.in.your.journal'),
       move: {
         title: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.stretch.copy.title.delete.a.stretch.of.time'),
-        bounds: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.stretch.copy.bounds.this.moves.everything.in.your.journal'),
+        bounds: ({ from, to }) => window.JournalI18n.renderEnglish('journal.window.transcripts.consent.stretch.move.range', [['start_time', String(from ?? '')], ['end_time', String(to ?? '')]]),
         reach: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.stretch.copy.reach.it.all.leaves.your.journal.now.variant2'),
         madeChanges: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.stretch.copy.madechanges.activities.made.from.it.drop.it'),
         made: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.stretch.copy.made.the.entities.you.re.tending.and'),
@@ -6028,13 +6007,13 @@
       },
       erase: {
         title: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.stretch.copy.title.erase.this.stretch.of.time.now'),
-        bounds: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.stretch.copy.bounds.this.erases.everything.in.your.journal'),
+        bounds: ({ from, to }) => window.JournalI18n.renderEnglish('journal.window.transcripts.consent.stretch.erase.range', [['start_time', String(from ?? '')], ['end_time', String(to ?? '')]]),
         reach: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.stretch.copy.reach.it.all.leaves.your.journal.now'),
         madeChanges: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.stretch.copy.madechanges.activities.made.from.it.drop.it'),
         made: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.stretch.copy.made.the.entities.you.re.tending.and.variant2'),
         madeBody: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.stretch.copy.madebody.activities.summaries.and.entities.made.from.variant2'),
       },
-      kinds: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.stretch.copy.kinds.that.s.kinds'),
+      kinds: ({ kinds }) => window.JournalI18n.renderEnglish('journal.window.transcripts.consent.stretch.content.kinds', [['content_kinds', String(kinds ?? '')]]),
       kindWords: {
         audio: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.stretch.copy.audio.audio'),
         screen: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.stretch.copy.screen.screen'),
@@ -6060,18 +6039,18 @@
       failed: window.JournalI18n.render('journal.window.transcripts.stretch.copy.failed.couldn.t.check.what.s.in'),
       retry: window.JournalI18n.render('journal.window.transcripts.stretch.copy.retry.try.again'),
       receipt: {
-        moved: { title: window.JournalI18n.render('journal.window.transcripts.stretch.copy.title.moved.bounds.to.the.trash'), message: window.JournalI18n.render('journal.window.transcripts.stretch.copy.message.it.erases.date.unless.you.recover') },
-        partMoved: { title: window.JournalI18n.render('journal.window.transcripts.stretch.copy.title.moved.bounds.to.the.trash'), message: window.JournalI18n.render('journal.window.transcripts.stretch.copy.message.some.of.it.couldn.t.be') },
-        erased: { title: window.JournalI18n.render('journal.window.transcripts.stretch.copy.title.erased.bounds.from.your.journal') },
-        recovered: { title: window.JournalI18n.render('journal.window.transcripts.stretch.copy.title.bounds.recovered'), message: window.JournalI18n.render('journal.window.transcripts.stretch.copy.message.it.s.back.in.your.journal') },
+        moved: { title: ({ bounds }) => window.JournalI18n.render('journal.window.transcripts.stretch.receipt.move.range', [['date_range', String(bounds ?? '')]]), message: ({ date }) => window.JournalI18n.render('journal.window.transcripts.stretch.receipt.erase.date', [['erase_date', String(date ?? '')]]) },
+        partMoved: { title: ({ bounds }) => window.JournalI18n.render('journal.window.transcripts.stretch.receipt.move.range', [['date_range', String(bounds ?? '')]]), message: window.JournalI18n.render('journal.window.transcripts.stretch.copy.message.some.of.it.couldn.t.be') },
+        erased: { title: ({ bounds }) => window.JournalI18n.render('journal.window.transcripts.stretch.receipt.erase.range', [['date_range', String(bounds ?? '')]]) },
+        recovered: { title: ({ bounds }) => window.JournalI18n.render('journal.window.transcripts.stretch.receipt.recover.range', [['date_range', String(bounds ?? '')]]), message: window.JournalI18n.render('journal.window.transcripts.stretch.copy.message.it.s.back.in.your.journal') },
         recoverBlocked: { title: window.JournalI18n.render('journal.window.transcripts.stretch.copy.title.couldn.t.recover.that'), message: window.JournalI18n.render('journal.window.transcripts.stretch.copy.message.part.of.it.comes.from.an') },
         recoverFinishing: { title: window.JournalI18n.render('journal.window.transcripts.stretch.copy.title.couldn.t.recover.that.yet'), message: window.JournalI18n.render('journal.window.transcripts.stretch.copy.message.it.s.still.moving.into.the') },
         empty: { title: window.JournalI18n.render('journal.window.transcripts.stretch.copy.title.nothing.was.moved'), message: window.JournalI18n.render('journal.window.transcripts.stretch.copy.message.nothing.from.that.time.could.go') },
       },
       inTrash: {
         heading: window.JournalI18n.render('journal.window.transcripts.stretch.copy.heading.this.segment.is.in.the.trash'),
-        stretch: window.JournalI18n.render('journal.window.transcripts.stretch.copy.stretch.it.went.with.everything.from.bounds'),
-        alone: window.JournalI18n.render('journal.window.transcripts.stretch.copy.alone.it.erases.date.unless.you.recover'),
+        stretch: ({ bounds, date }) => window.JournalI18n.render('journal.window.transcripts.stretch.removed.range.and.date', [['date_range', String(bounds ?? '')], ['erase_date', String(date ?? '')]]),
+        alone: ({ date }) => window.JournalI18n.render('journal.window.transcripts.stretch.removed.erase.date', [['erase_date', String(date ?? '')]]),
       },
     };
     const STRETCH_KIND_ORDER = ['audio', 'screen', 'location', 'body', 'imported', 'other'];
@@ -6080,10 +6059,6 @@
 
     let stretchDialog = null;
     const stretchButton = document.getElementById('trStretchBtn');
-
-    function stretchFill(template, values = {}) {
-      return Object.entries(values).reduce((text, [key, value]) => text.split(`{${key}}`).join(String(value)), template);
-    }
 
     // A wall time `YYYY-MM-DDTHH:MM[:SS]` as a Date on the browser's clock that
     // reads the same digits, for formatting only.
@@ -6100,8 +6075,8 @@
       return stretchTimeFormat.format(at.date).toLowerCase();
     }
 
-    function stretchDayWord(at) {
-      return window.JournalFormat.day(at.day).toLowerCase();
+    function stretchDayWord(at, sourceEnglish = false) {
+      return window.JournalFormat.day(at.day, undefined, { sourceEnglish }).toLowerCase();
     }
 
     // `sat nov 7, 2:05 – 3:35 pm`, or across days `sat nov 7, 11:00 pm – sun nov 8, 1:10 am`.
@@ -6124,8 +6099,8 @@
       const b = stretchWall(to);
       if (!a || !b) return { from: '', to: '' };
       return {
-        from: `${stretchDayWord(a)}, ${stretchTime(a)}`,
-        to: a.day === b.day ? stretchTime(b) : `${stretchDayWord(b)}, ${stretchTime(b)}`,
+        from: `${stretchDayWord(a, true)}, ${stretchTime(a)}`,
+        to: a.day === b.day ? stretchTime(b) : `${stretchDayWord(b, true)}, ${stretchTime(b)}`,
       };
     }
 
@@ -6133,7 +6108,7 @@
       const words = STRETCH_KIND_ORDER.filter((kind) => kinds.includes(kind)).map((kind) => STRETCH_COPY.kindWords[kind]);
       if (!words.length) return '';
       const list = words.length === 1 ? words[0] : `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`;
-      return stretchFill(STRETCH_COPY.kinds, { kinds: list });
+      return renderTranscriptCopy(STRETCH_COPY.kinds, { kinds: list });
     }
 
     function minutesWall(dayKey, minutes) {
@@ -6290,7 +6265,7 @@
         const journalZone = window.JournalClock?.zone?.();
         const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
         if (journalZone && browserZone && journalZone !== browserZone) {
-          nodes.push(deleteDialogElement('p', 'tr-delete-stays', stretchFill(STRETCH_COPY.zone, { zone: journalZone })));
+          nodes.push(deleteDialogElement('p', 'tr-delete-stays', renderTranscriptCopy(STRETCH_COPY.zone, { zone: journalZone })));
         }
         // A change makes what the dialog shows no longer what it would take:
         // the answer it showed, and any answer still on its way, are dropped,
@@ -6333,7 +6308,7 @@
       } else if (plan) {
         const halves = stretchFromTo(plan.from, plan.to);
         nodes.push(
-          deleteDialogElement('p', 'tr-stretch-bounds', stretchFill(copy.bounds, halves)),
+          deleteDialogElement('p', 'tr-stretch-bounds', renderTranscriptCopy(copy.bounds, halves)),
           deleteDialogElement('p', 'tr-delete-reach', copy.reach),
         );
         const kinds = stretchKindsText(plan.kinds || []);
@@ -6355,11 +6330,11 @@
       const notice = {
         app: 'transcripts',
         icon: settled ? (kind === 'recovered' ? 'undo-2' : 'trash-2') : 'triangle-alert',
-        title: stretchFill(copy.title, fill),
+        title: renderTranscriptCopy(copy.title, fill),
         dismissible: true,
         buttons,
       };
-      if (copy.message && (kind !== 'moved' || fill.date)) notice.message = stretchFill(copy.message, fill);
+      if (copy.message && (kind !== 'moved' || fill.date)) notice.message = renderTranscriptCopy(copy.message, fill);
       if (fill.message) notice.message = fill.message;
       if (settled) notice.autoDismiss = 10000;
       window.AppServices.notifications.show(notice);
@@ -6461,8 +6436,8 @@
     function segmentInTrashHtml(trash) {
       const date = trashEraseDate(trash.erase_at);
       const desc = trash.stretch
-        ? stretchFill(STRETCH_COPY.inTrash.stretch, { bounds: stretchBounds(trash.stretch.from, trash.stretch.to), date })
-        : stretchFill(STRETCH_COPY.inTrash.alone, { date });
+        ? renderTranscriptCopy(STRETCH_COPY.inTrash.stretch, { bounds: stretchBounds(trash.stretch.from, trash.stretch.to), date })
+        : renderTranscriptCopy(STRETCH_COPY.inTrash.alone, { date });
       const label = document.createElement('span');
       label.textContent = TRASH_COPY.buttons.openTrash;
       return window.SurfaceState.empty({
@@ -6476,7 +6451,6 @@
     if (stretchButton) {
       const label = stretchButton.querySelector('[data-stretch-label]');
       if (label) label.textContent = STRETCH_COPY.button;
-      stretchButton.dataset.labelTemplate = STRETCH_COPY.buttonLabel;
       const icon = stretchButton.querySelector('[data-stretch-icon]');
       if (icon && window.ConveyIcons) icon.innerHTML = window.ConveyIcons.svg('trash-2');
       stretchButton.addEventListener('click', showStretchDialog);
@@ -6496,8 +6470,12 @@
         delete button.dataset.focusOnShow;
         button.focus();
       }
-      const label = button.dataset.labelTemplate;
-      if (label) button.setAttribute('aria-label', label.split('{day}').join(window.JournalFormat.day(day).toLowerCase()));
+      if (day) {
+        const label = window.JournalI18n.render('journal.window.transcripts.stretch.delete.start.label', [
+          ['day', window.JournalFormat.day(day).toLowerCase()],
+        ]);
+        button.setAttribute('aria-label', label);
+      }
     }
 
     function sortSegmentsByKey() {
@@ -6540,18 +6518,15 @@
 
     function trashReceipt(kind, fill = {}, buttons = []) {
       const copy = TRASH_COPY.receipt[kind];
-      const put = text => text
-        .replace('{noun}', TRASH_COPY.noun.segment)
-        .replace('{date}', fill.date || '');
       const settled = kind === 'moved' || kind === 'recovered' || kind === 'erased';
       const notice = {
         app: 'transcripts',
         icon: settled ? (kind === 'recovered' ? 'undo-2' : 'trash-2') : 'triangle-alert',
-        title: put(copy.title),
+        title: renderTranscriptCopy(copy.title, fill),
         dismissible: true,
         buttons,
       };
-      if (copy.message && (kind !== 'moved' || fill.date)) notice.message = put(copy.message);
+      if (copy.message && (kind !== 'moved' || fill.date)) notice.message = renderTranscriptCopy(copy.message, fill);
       if (fill.message) notice.message = fill.message;
       // A refused or failed card stays until the owner dismisses it.
       if (settled) notice.autoDismiss = 10000;
@@ -6624,7 +6599,7 @@
         return { kind: 'eraseFailed' };
       }
       const trashId = data.trash?.id;
-      const recoverCopy = { receipt: TRASH_COPY.receipt, noun: TRASH_COPY.noun, buttons: TRASH_COPY.buttons };
+      const recoverCopy = { receipt: TRASH_COPY.receipt, buttons: TRASH_COPY.buttons };
       trashReceipt('moved', { date: trashEraseDate(data.trash?.erase_at) }, [
         { label: TRASH_COPY.buttons.recover, onClick: segmentRecoverClick(trashId, seg, segDay, recoverCopy) },
         openTrashButton(),
@@ -6736,15 +6711,11 @@
     }
 
     // ----- Select mode: several segments of this range, deleted together -----
-    function segPickFill(template, values = {}) {
-      return Object.entries(values).reduce((text, [key, value]) => text.split(`{${key}}`).join(String(value)), template);
-    }
-
     function segPickRange(seg) {
       if (seg.item && !isDateOnlyImport(seg)) return importItemWhen(seg);
       // A screenshot is a moment, so its time alone.
       if (isScreenshotsStream(seg.stream)) return seg.start;
-      return segPickFill(TRASH_COPY.pickRange, { start: seg.start, end: seg.end });
+      return renderTranscriptCopy(TRASH_COPY.pickRange, { start: seg.start, end: seg.end });
     }
 
     function segPickNoteKey(key, erase) {
@@ -6782,7 +6753,7 @@
       pickSome.hidden = count === 0;
       pickAll.checked = false;
       pickAllLabel.textContent = TRASH_COPY.selectAll;
-      pickCount.textContent = segPickFill(TRASH_COPY.selected, { n: count });
+      pickCount.textContent = renderTranscriptCopy(TRASH_COPY.selected, { n: count });
       pickDelete.textContent = TRASH_COPY.delete;
       pickDoneIdle.textContent = TRASH_COPY.done;
       pickDoneSome.textContent = TRASH_COPY.done;
@@ -6853,7 +6824,7 @@
     function renderDeleteSetStep(segs, step) {
       const erasing = step === 'erase';
       const copy = TRASH_COPY.set;
-      deleteSegmentModalTitle.textContent = segPickFill(erasing ? copy.eraseTitle : copy.moveTitle, { n: segs.length });
+      deleteSegmentModalTitle.textContent = renderTranscriptCopy(erasing ? copy.eraseTitle : copy.moveTitle, { n: segs.length });
       deleteSegmentModalHeader.classList.toggle('danger', erasing);
       deleteSegmentModalBody.className = erasing ? 'delete-warning' : 'trash-dlg-note';
       deleteSegmentModalBody.dataset.step = step;
@@ -6868,7 +6839,7 @@
         item.append(deleteDialogElement('strong', null, segPickRange(seg)), deleteDialogElement('span', null, ` · ${importItemLabel(seg) || humanizeStreamName(seg.stream)}`));
         shown.append(item);
       });
-      if (segs.length > 5) shown.append(deleteDialogElement('li', 'trash-set-more', segPickFill(copy.more, { n: segs.length - 5 })));
+      if (segs.length > 5) shown.append(deleteDialogElement('li', 'trash-set-more', renderTranscriptCopy(copy.more, { n: segs.length - 5 })));
 
       const holdsLoc = segs.some((seg) => isOpenSegment(seg) && segmentData?.holds_location);
       const parts = segmentParts(segs, holdsLoc);
@@ -6891,20 +6862,19 @@
       const sizes = segs.map(knownSegmentBytes);
       const total = sizes.every((bytes) => bytes !== null) ? sizes.reduce((sum, bytes) => sum + bytes, 0) : 0;
       if (!erasing && total > 0) {
-        deleteSegmentModalBody.append(deleteDialogElement('p', 'tr-delete-segment-size trash-dlg-size', segPickFill(copy.size, { size: formatSize(total) })));
+        deleteSegmentModalBody.append(deleteDialogElement('p', 'tr-delete-segment-size trash-dlg-size', renderTranscriptCopy(copy.size, { size: formatSize(total) })));
       }
     }
 
     function setTrashReceipt(copy, fill = {}, buttons = [], options = {}) {
-      const put = (text) => segPickFill(text, { things: TRASH_COPY.noun.segments, ...fill });
       const notice = {
         app: 'transcripts',
         icon: options.icon || (options.settled ? 'trash-2' : 'triangle-alert'),
-        title: put(copy.title),
+        title: renderTranscriptCopy(copy.title, fill),
         dismissible: true,
         buttons,
       };
-      const message = options.message !== undefined ? options.message : copy.message && put(copy.message);
+      const message = options.message !== undefined ? options.message : copy.message && renderTranscriptCopy(copy.message, fill);
       if (message) notice.message = message;
       if (options.settled) notice.autoDismiss = 10000;
       window.AppServices.notifications.show(notice);
@@ -6971,16 +6941,15 @@
           const clause = backupsClause(n);
           setTrashReceipt(R.erased, { n }, [], clause ? { settled: true, message: clause } : { settled: true });
         } else if (erased) {
-          setTrashReceipt(R.partErased, { done: erased, n }, [openTrash], { message: n - erased === 1 ? R.partErasedOne : R.partErasedMany });
+          setTrashReceipt(R.partErased, { done: erased, n }, [openTrash], { message: R.partErasedMessage(n - erased) });
         } else {
-          setTrashReceipt(R.noneErased, {}, [openTrash], { message: n === 1 ? R.noneErasedOne : R.noneErasedMany });
+          setTrashReceipt(R.noneErased, {}, [openTrash], { message: R.noneErasedMessage(n) });
         }
         return;
       }
       const moved = done.filter(({ entry }) => entry.trash?.id);
       const recoverCopy = {
         receipt: TRASH_COPY.receipt,
-        noun: TRASH_COPY.noun,
         buttons: TRASH_COPY.buttons,
         setReceipt: TRASH_COPY.setReceipt,
       };
@@ -6990,9 +6959,9 @@
         const date = trashEraseDate(earliest);
         setTrashReceipt(R.moved, { n, date }, [recover, openTrash], { settled: true, message: date ? undefined : '' });
       } else if (done.length) {
-        setTrashReceipt(R.partMoved, { done: done.length, n }, [recover, openTrash], { message: segPickFill(k === 1 ? R.stillOne : R.stillMany, { k }) });
+        setTrashReceipt(R.partMoved, { done: done.length, n }, [recover, openTrash], { message: R.still(k) });
       } else {
-        setTrashReceipt(R.noneMoved, {}, [], { message: segPickFill(k === 1 ? R.noneStillOne : R.noneStillMany, { k }) });
+        setTrashReceipt(R.noneMoved, {}, [], { message: R.noneStill(k) });
       }
     }
 
@@ -7026,7 +6995,7 @@
         else setTrashReceipt(R.recovered, { n: ids.length }, [], { settled: true, icon: 'undo-2' });
       } else if (back.length) {
         const others = ids.length - back.length;
-        setTrashReceipt(R.partRecovered, { done: back.length, n: ids.length }, [openTrashButton()], { message: others === 1 ? R.partRecoveredOne : R.partRecoveredMany });
+        setTrashReceipt(R.partRecovered, { done: back.length, n: ids.length }, [openTrashButton()], { message: R.partRecoveredMessage(others) });
       } else if (one) {
         trashReceipt('recoverFailed', {}, [openTrashButton()]);
       } else {

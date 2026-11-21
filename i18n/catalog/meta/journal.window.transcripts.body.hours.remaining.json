@@ -1,0 +1,30 @@
+{
+  "description": "Body context count for hours in the visible time window.",
+  "context": "Journal window. Body context count for hours in the visible time window.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "hours_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "hours",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "06c48b48f877e098b3c59c71192716dbe25141dd7d3fc4b5df33001c75e7978d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "hours_quantity",
+    "type": "cardinal"
+  }
+}

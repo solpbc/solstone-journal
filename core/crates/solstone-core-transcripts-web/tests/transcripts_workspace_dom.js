@@ -224,6 +224,17 @@ class Element {
   get innerHTML() {
     return this._innerHTML || this.textContent;
   }
+
+  get outerHTML() {
+    const escape = (text) => String(text).replaceAll('&', '&amp;').replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+    if (this.tagName === '#TEXT') return escape(this.textContent);
+    const tag = this.tagName.toLowerCase();
+    const attrs = Object.entries(this.attributes).map(([key, value]) => ` ${key}="${escape(value)}"`).join('');
+    const content = this.children.length ? this.children.map(child => child.outerHTML).join('') : escape(this.textContent);
+    return `<${tag}${attrs}>${content}</${tag}>`;
+  }
+
   set innerHTML(value) {
     this._innerHTML = String(value);
     this.children = [];
@@ -264,7 +275,9 @@ class Element {
     return newNode;
   }
 
-  append(...children) { children.forEach((child) => this.appendChild(child)); }
+  append(...children) {
+    children.forEach((child) => this.appendChild(typeof child === 'string' ? this.ownerDocument.createTextNode(child) : child));
+  }
 
   replaceChildren(...children) {
     this.children.forEach((child) => { child.parentElement = null; });
@@ -384,6 +397,11 @@ class Document {
   }
 
   createElement(tagName) { return new Element(tagName, this); }
+  createTextNode(value) {
+    const node = this.createElement('#text');
+    node.textContent = value;
+    return node;
+  }
   getElementById(id) { return this.querySelector('#' + id); }
   querySelector(selector) {
     if (selector === 'body') return this.body;
@@ -514,21 +532,12 @@ const viewRuntimeSource = ['store.js', 'views.js', 'focus.js']
 
 const scriptSource = loadTranscriptsScript();
 
-// A copy table the page declares as a plain object literal, read from its source
-// so a test names a copy key and never the words behind it.
-function sourceTable(source, name) {
-  const start = source.indexOf(`const ${name} = {`);
-  assert.ok(start >= 0, `${name} is declared`);
-  const open = source.indexOf('{', start);
-  let depth = 0;
-  let end = open;
-  for (; end < source.length; end++) {
-    if (source[end] === '{') depth++;
-    else if (source[end] === '}' && --depth === 0) break;
-  }
-  return vm.runInContext(`(${source.slice(open, end + 1)})`, journalContext({}));
-}
-const TRASH_COPY = sourceTable(scriptSource, 'TRASH_COPY');
+// Resolve the page's own copy factory for the table assertions.
+const TRASH_COPY = vm.runInContext(
+  scriptSource.slice(scriptSource.indexOf('  function transcriptCount('), scriptSource.indexOf('  function plainSegment('))
+    + '\ntranscriptTrashCopy()',
+  journalContext({}),
+);
 
 function receiptButton(notice, label) {
   const button = (notice?.buttons || []).find((item) => item.label === label);
@@ -2816,7 +2825,7 @@ test('delete dialog: a neutral first step with three buttons, and erase now swap
   assert.strictEqual(text('.tr-delete-reach'), TRASH_COPY.move.reach);
   assert.strictEqual(text('.tr-delete-lead'), TRASH_COPY.move.lead);
   assert.strictEqual(text('.tr-delete-stays'), TRASH_COPY.move.stays);
-  assert.ok(text('.tr-delete-segment-size').startsWith(TRASH_COPY.move.size.replace('{size}', '')));
+  assert.ok(text('.tr-delete-segment-size').startsWith(TRASH_COPY.move.size({ size: '' })));
   const dayName = env.doc.querySelectorAll('.tr-delete-segment-meta strong')[1];
   assert.strictEqual(dayName.textContent, 'DAY-20200115'.toLowerCase(), 'the day goes through JournalFormat.day, lowercased');
   assert.ok(!$('trDeleteSegmentModalBody')._innerHTML, 'the dialog body is built from text, never markup');
@@ -2885,7 +2894,7 @@ async function deleteFromDialog(options, { erase = false } = {}) {
 
 function assertReceipt(notice, kind, { settled, buttons = [], date = null }) {
   const copy = TRASH_COPY.receipt[kind];
-  const fill = (template) => template.replace('{noun}', TRASH_COPY.noun.segment).replace('{date}', date);
+  const fill = (message) => typeof message === 'function' ? message({ date }) : message;
   assert.ok(notice, `a ${kind} receipt is shown`);
   assert.strictEqual(notice.app, 'transcripts');
   assert.strictEqual(notice.title, fill(copy.title), kind);
@@ -3435,7 +3444,7 @@ test('full-frame temporary pixels are released after drawing and after a draw fa
 });
 
 // Select mode: several segments of this range chosen and deleted together.
-const pickFill = (template, values) => Object.entries(values).reduce((text, [key, value]) => text.split(`{${key}}`).join(String(value)), template);
+const pickFill = (message, values) => typeof message === 'function' ? message(values) : message;
 const pickId = (pill) => JSON.stringify([pill.dataset.stream, pill.dataset.key]);
 const pickRows = (doc) => doc.querySelectorAll('#trPickList .trash-row');
 const settle = () => new Promise((r) => setTimeout(r, 10));
@@ -3599,12 +3608,12 @@ test('select mode: a set that partly moves keeps the refused one chosen with its
   const R = TRASH_COPY.setReceipt;
   const notice = env.notifications.at(-1);
   assert.strictEqual(notice.title, pickFill(R.partMoved.title, { done: 2, n: 3 }));
-  assert.strictEqual(notice.message, pickFill(R.stillOne, { k: 1 }));
+  assert.strictEqual(notice.message, R.still(1));
   assert.strictEqual(notice.autoDismiss, undefined);
   await receiptButton(notice, TRASH_COPY.buttons.recover).onClick();
   assert.deepStrictEqual(env.posts.at(-1).body, { ids: ['ta', 'tb'], page: 'transcripts' });
   assert.strictEqual(getZoomPills(env.doc).length, 3, 'recover puts them back');
-  assert.strictEqual(env.notifications.at(-1).title, pickFill(R.recovered.title, { n: 2, things: TRASH_COPY.noun.segments }));
+  assert.strictEqual(env.notifications.at(-1).title, pickFill(R.recovered.title, { n: 2 }));
 });
 
 test('select mode: a set that all moves leaves select mode; one chosen uses the single dialog', async () => {
@@ -3636,7 +3645,7 @@ test('select mode: a set that all moves leaves select mode; one chosen uses the 
   assert.strictEqual(getZoomPills(env.doc).length, 0);
   assert.ok(!$('trContent').classList.contains('tr-picking'), 'all done: select mode ends');
   const notice = env.notifications.at(-1);
-  assert.strictEqual(notice.title, pickFill(TRASH_COPY.setReceipt.erased.title, { n: 3, things: TRASH_COPY.noun.segments }));
+  assert.strictEqual(notice.title, pickFill(TRASH_COPY.setReceipt.erased.title, { n: 3 }));
   assert.strictEqual(notice.autoDismiss, 10000);
 });
 
@@ -3759,7 +3768,7 @@ test('an open segment notice does not keep a disposed transcripts mount', async 
   await notice.buttons.find((button) => button.label === TRASH_COPY.buttons.recover).onClick();
   assert.deepStrictEqual(pillKeys(env.doc), keys, 'recover does not draw on the view that was left');
   assert.deepStrictEqual(env.posts.at(-1).body, { ids: ['trash_1'], page: 'transcripts' });
-  assert.strictEqual(env.notifications.at(-1).title, TRASH_COPY.receipt.recovered.title.replace('{noun}', TRASH_COPY.noun.segment));
+  assert.strictEqual(env.notifications.at(-1).title, TRASH_COPY.receipt.recovered.title);
 });
 
 test('an open set notice does not keep a disposed transcripts mount', async () => {
@@ -3785,7 +3794,7 @@ test('an open set notice does not keep a disposed transcripts mount', async () =
   $('trDeleteSegmentModalConfirm').dispatchEvent({ type: 'click' });
   await settle();
   const notice = env.notifications.at(-1);
-  assert.strictEqual(notice.title, pickFill(TRASH_COPY.setReceipt.moved.title, { n: 3, things: TRASH_COPY.noun.segments }));
+  assert.strictEqual(notice.title, pickFill(TRASH_COPY.setReceipt.moved.title, { n: 3 }));
   const keys = pillKeys(env.doc);
   assert.strictEqual(keys.length, 0, 'what moved has left');
   assert.strictEqual(await viewIsGone(env), true);
@@ -3793,7 +3802,7 @@ test('an open set notice does not keep a disposed transcripts mount', async () =
   await notice.buttons.find((button) => button.label === TRASH_COPY.buttons.recover).onClick();
   assert.deepStrictEqual(pillKeys(env.doc), keys, 'recover does not draw on the view that was left');
   assert.deepStrictEqual(env.posts.at(-1).body, { ids: ['set_0', 'set_1', 'set_2'], page: 'transcripts' });
-  assert.strictEqual(env.notifications.at(-1).title, pickFill(TRASH_COPY.setReceipt.recovered.title, { n: 3, things: TRASH_COPY.noun.segments }));
+  assert.strictEqual(env.notifications.at(-1).title, pickFill(TRASH_COPY.setReceipt.recovered.title, { n: 3 }));
 });
 
 function otherDayAnswer(url, payload) {

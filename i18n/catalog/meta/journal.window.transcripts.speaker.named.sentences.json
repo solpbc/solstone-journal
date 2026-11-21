@@ -1,0 +1,30 @@
+{
+  "description": "Receipt showing how many statements now use the chosen name.",
+  "context": "Journal window. Receipt showing how many statements now use the chosen name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "sentences_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "sentences",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "c10a65daeeaf09f377ff32ef98b4d58458ebab794a4b394605968c56735e4fd3",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "sentences_quantity",
+    "type": "cardinal"
+  }
+}

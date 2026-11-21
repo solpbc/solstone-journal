@@ -1,0 +1,25 @@
+{
+  "description": "Accessible label for the detail timeline with its clock range.",
+  "context": "Journal window. Accessible label for the detail timeline with its clock range.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "start_time",
+      "type": "string"
+    },
+    {
+      "name": "end_time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fc8efb92bd33ab30c854d0fb0eaf691f61bcdb4f9035d0257f876a029b6b9ccf",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

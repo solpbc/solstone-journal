@@ -1,0 +1,30 @@
+{
+  "description": "Consent trash copy manyMany in the journal's transcripts view.",
+  "context": "Journal window. Consent trash copy manyMany in the journal's transcripts view.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "waiting_segments_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "waiting_segments",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "8bf62c631b6437594a0490550f2873a4646dd47f32412682530e470d9795b0f4",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "waiting_segments_quantity",
+    "type": "cardinal"
+  }
+}

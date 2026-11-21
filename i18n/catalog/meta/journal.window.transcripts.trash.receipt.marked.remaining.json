@@ -1,0 +1,30 @@
+{
+  "description": "Receipt detail showing which segments are still listed after a move.",
+  "context": "Journal window. Receipt detail showing which segments are still listed after a move.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "remaining_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "remaining",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "c68d148df92554d56435b081bc9f3808fd613326d45fc15b82ba29189f4d2aca",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "remaining_quantity",
+    "type": "cardinal"
+  }
+}

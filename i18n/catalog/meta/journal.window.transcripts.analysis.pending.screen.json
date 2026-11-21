@@ -1,0 +1,16 @@
+{
+  "description": "Analysis pending heading when the observed content is screen.",
+  "context": "Journal window. Analysis pending heading when the observed content is screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "96e3f77cde743e607a02fe77fea2970144adf816734f4bc89e63e558932915f1",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

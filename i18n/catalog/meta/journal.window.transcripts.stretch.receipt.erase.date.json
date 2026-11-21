@@ -1,0 +1,21 @@
+{
+  "description": "stretch copy message in the journal's transcripts view.",
+  "context": "Journal window. stretch copy message in the journal's transcripts view.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "erase_date",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2c53c2d64b9f68be9f81289ecfb4f92f04385919ba540993a485ade01c855b33",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Body context count for entries in the visible time window.",
+  "context": "Journal window. Body context count for entries in the visible time window.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "entries_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "entries",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "2cef9b7a3d67cda8a377bc18fe9dbf53a9d027f69452213549e78244b6c23b2e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "entries_quantity",
+    "type": "cardinal"
+  }
+}

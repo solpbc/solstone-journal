@@ -1,0 +1,25 @@
+{
+  "description": "trash copy pickRange in the journal's transcripts view.",
+  "context": "Journal window. trash copy pickRange in the journal's transcripts view.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "start_time",
+      "type": "string"
+    },
+    {
+      "name": "end_time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ece3d560f53a1ae199b872a75ce9f4dd2706acec55dbe8aa7482c3152d7f0ea1",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

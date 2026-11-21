@@ -1,0 +1,21 @@
+{
+  "description": "Tentative entity name shown next to a detected mention.",
+  "context": "Journal window. Tentative entity name shown next to a detected mention.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "entity_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d61089845fec78547a921b97f7e034e93a2590477fb2e49dbb2b21045bd434a2",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Label sharing a stable numerical voice identifier.",
+  "context": "Journal window. Label sharing a stable numerical voice identifier.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "voice_number",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "259d4c50dd6d177955fc9bcf8b6b117045a8f00f99d3499ae013a587051d4367",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Location-only segment explanation with the available number of readings.",
+  "context": "Journal window. Location-only segment explanation with the available number of readings.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "readings_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "readings",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "3504cd0dfe951a71973a16f66a9c49fba9e8a06b674cb86fb375e5fca59d5174",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "readings_quantity",
+    "type": "cardinal"
+  }
+}

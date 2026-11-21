@@ -1,0 +1,21 @@
+{
+  "description": "Uncertain named-speaker label.",
+  "context": "Journal window. Uncertain named-speaker label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "speaker_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a3403fd7ff55bb9aaf4784afd01f946ddb045928cd0769a8424989671bcefea8",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

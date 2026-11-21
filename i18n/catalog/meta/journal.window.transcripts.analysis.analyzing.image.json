@@ -1,0 +1,16 @@
+{
+  "description": "Analysis analyzing heading when the observed content is image.",
+  "context": "Journal window. Analysis analyzing heading when the observed content is image.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3c29e3c491e5f991b299b52e91868107848796585c9b91971e2212a48ed3fb4c",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

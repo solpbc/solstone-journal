@@ -1,0 +1,21 @@
+{
+  "description": "Tooltip for an hour with no body readings.",
+  "context": "Journal window. Tooltip for an hour with no body readings.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "hour",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c3707ca61025e86c218eed8f5e51f436828ba795db27cbb4c73968b14cd6bf24",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

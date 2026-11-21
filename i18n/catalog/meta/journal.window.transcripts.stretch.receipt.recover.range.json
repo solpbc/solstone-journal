@@ -1,0 +1,21 @@
+{
+  "description": "stretch copy title in the journal's transcripts view.",
+  "context": "Journal window. stretch copy title in the journal's transcripts view.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "date_range",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7e99fdadbd9f02f3f8c16e8ec6ae8c6e0201682244e43e63774052806f7970b5",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Consent trash copy eraseTitle in the journal's transcripts view.",
+  "context": "Journal window. Consent trash copy eraseTitle in the journal's transcripts view.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "segments_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "segments",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "1bee64fe5e6e1f50d08ea8c2d6c5e73de23098a86695c39607bfaaadb94d31be",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "segments_quantity",
+    "type": "cardinal"
+  }
+}
