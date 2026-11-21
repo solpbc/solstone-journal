@@ -30,6 +30,13 @@ module.exports = async function(manifestDir) {
       }
       return {total:samples.length,items:samples,cursor:null};
     }};
+  // Stand-ins that echo what they were given: the row must ask the
+  // dashboard's own formatters, and their answers must reach it.
+  context.JournalFormat = {
+    stream: (raw) => `label<${raw}>`,
+    dayFull: (day) => `day<${day}>`,
+    segmentTimeOfDay: (segment) => `time<${segment}>`,
+  };
   journalContext(context);
   vm.runInContext(workspace.slice(workspace.indexOf('function entityWindowArgs('), workspace.indexOf('// Every entities refusal')), context);
   vm.runInContext(workspace.slice(workspace.indexOf('function entityCountArgs('), workspace.indexOf('function fillLastMentionedDate(')), context);
@@ -40,7 +47,11 @@ module.exports = async function(manifestDir) {
   await context.loadVoiceSamples(entity);
   let rows = section.all(n => n.className === 'voice-sample-row');
   check(rows.length===1,'the owner sees the saved row');
-  check(rows[0].textContent.includes('2026-11-12') && rows[0].textContent.includes('12:00:00'),'date and time are from the original segment');
+  check(rows[0].textContent.includes('day<20261112>') && rows[0].textContent.includes('time<120000_300>'),'date and time are from the original segment');
+  const device = rows[0].all(n => n.tagName === 'SPAN')[0];
+  check(device && device.textContent === 'label<mic>', 'the device reads by its label');
+  check(device.title.startsWith('mic / 120000_300'), 'the exact recording name stays in its tooltip');
+  check(!rows[0].textContent.includes('mic / 120000_300'), 'the raw name is not in the row\'s text');
   const open = rows[0].all(n => n.tagName === 'A')[0];
   check(open.href.startsWith('/app/speakers/20261112#') && !open.href.includes('speaker='),'the recording opens even if its speaker is unknown');
   const button = rows[0].all(n => n.tagName === 'BUTTON')[0];

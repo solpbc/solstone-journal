@@ -39959,7 +39959,7 @@
       "resource": "m6a6f75726e616c2e77696e646f772e656e7469746965732e77696e646f772e6578706c616e6174696f6e2e62746e2e62746e2e7365636f6e646172792e62746e2e736d2e656e74",
       "namespace": "journal.window.entities.window.explanation.btn.btn.secondary.btn.sm",
       "owner": "journal",
-      "tombstone": false,
+      "tombstone": true,
       "replacement": null,
       "format_intent": "text",
       "arguments": [],

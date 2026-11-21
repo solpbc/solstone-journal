@@ -2582,6 +2582,9 @@ pub(crate) fn assemble_journal_entity_records(
             Ok(Some(declaration)) => declaration,
             Ok(None) | Err(_) => continue,
         };
+        // A muted facet stays on the record, marked, but its notes don't
+        // count: the entity's moments and the facet menu leave it out too.
+        let muted = declaration.muted == Some(true);
         let declaration = declaration.value();
         let title = declaration
             .get("title")
@@ -2658,6 +2661,12 @@ pub(crate) fn assemble_journal_entity_records(
                 activity_ts,
                 &zone,
             );
+            if muted {
+                facet
+                    .as_object_mut()
+                    .expect("facet record is an object")
+                    .insert("muted".to_owned(), Value::Bool(true));
+            }
             if scoped.detached {
                 facet
                     .as_object_mut()
@@ -2667,9 +2676,11 @@ pub(crate) fn assemble_journal_entity_records(
                 let aggregate = aggregates
                     .entry(scoped.entity_dir.clone())
                     .or_insert((0, false, None));
-                match summary {
-                    Some(summary) => aggregate.0 += summary.count,
-                    None => aggregate.1 = true,
+                if !muted {
+                    match summary {
+                        Some(summary) => aggregate.0 += summary.count,
+                        None => aggregate.1 = true,
+                    }
                 }
                 aggregate.2 = aggregate.2.max(activity_ts);
             }

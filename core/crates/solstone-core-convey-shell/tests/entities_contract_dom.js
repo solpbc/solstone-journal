@@ -1340,6 +1340,53 @@ module.exports = async function entitiesContractCases(manifestDir) {
     focusIsSomewhere(p, 'show more');
   });
 
+  await test('a moment\'s line ends at its day: the time the journal wrote it down is not shown', async () => {
+    const serve = journal(copy);
+    const written = Date.parse('2026-11-03T21:15:00Z');
+    const answers = (url, opts) => {
+      const u = new URL(url, ORIGIN);
+      if (u.pathname === '/app/entities/api/work/entity/w1') {
+        return { entity: { id: 'w1', name: 'Work One', type: 'Person', aka: [], attached: true, detached: false }, observations: [{ id: 1, content: 'met at the lab', source_day: '20261101', observed_at: written }], total: 1, has_more: false };
+      }
+      if (u.pathname === '/app/entities/api/journal/entity/p3/observations') {
+        return { total: 1, offset: 0, limit: 50, has_more: false, items: [{ id: 1, facet: 'work', facet_title: 'Work', facet_color: '#2f6fdd', content: 'met at the lab', source_day: '20261101', observed_at: written }] };
+      }
+      return serve(url, opts);
+    };
+    for (const [address, box] of [['/app/entities/?facet=work#w1', 'detail-observations'], ['/app/entities/#p3', 'journal-detail-moments']]) {
+      const p = await boot(env, address, { answers });
+      const meta = p.byId(box).querySelector('.observation-meta');
+      assert.ok(meta, `${box}: the moment has its line`);
+      const day = meta.querySelector('a');
+      assert.strictEqual(meta.childNodes.at(-1), day, `${box}: its day is the line's last part`);
+    }
+  });
+
+  await test('an entity\'s all-facets page leaves a muted facet out of its facet list and facet count', async () => {
+    const page = async (facets) => {
+      const serve = journal(copy);
+      const answers = (url, opts) => {
+        if (new URL(url, ORIGIN).pathname === '/app/entities/api/journal/entity/p3') {
+          const body = detail('p3');
+          body.entity.facets = facets;
+          body.entity.total_observation_count = 2;
+          return body;
+        }
+        return serve(url, opts);
+      };
+      return boot(env, '/app/entities/#p3', { answers });
+    };
+    const work = { name: 'work', title: 'Work', color: '#2f6fdd', observation_count: 2 };
+    const quiet = { name: 'quiet', title: 'Quiet', color: '#888888', observation_count: 3, muted: true };
+    const withMuted = await page([work, quiet]);
+    const without = await page([work]);
+    const rows = withMuted.byId('journal-detail-facets').querySelectorAll('.facet-relationship-row');
+    assert.strictEqual(rows.length, 1, 'only the unmuted facet is listed');
+    assert.ok(rows[0].textContent.includes('Work') && !rows[0].textContent.includes('Quiet'), 'and it is the unmuted one');
+    assert.strictEqual(withMuted.byId('journal-detail-indicators').innerHTML, without.byId('journal-detail-indicators').innerHTML,
+      'the header counts what an entity in the unmuted facet alone would show');
+  });
+
   await test('a hidden entity\'s all-facets page shows no moments and asks for none', async () => {
     const serve = journal(copy);
     const answers = (url, opts) => {

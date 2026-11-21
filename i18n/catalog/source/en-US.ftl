@@ -9231,8 +9231,6 @@ journal.window.entities.visible.text.you = you
 
 journal.window.entities.voice.invalid.key = invalid voice sample key
 
-journal.window.entities.window.explanation.btn.btn.secondary.btn.sm.ent = btn btn-secondary btn-sm ent-unhide-btn
-
 journal.window.entities.window.explanation.couldn.t.keep.it.separate.it = couldn't keep it separate. it's still listed.
 
 journal.window.entities.window.explanation.couldn.t.keep.them.separate.they = couldn't keep them separate. they're still listed.

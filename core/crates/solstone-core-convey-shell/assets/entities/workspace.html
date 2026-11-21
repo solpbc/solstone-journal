@@ -3423,17 +3423,9 @@ function renderObservationItem(obs, { facet = false } = {}) {
       meta.appendChild(document.createTextNode(formatDateShort(row.source_day) || row.source_day));
     }
   }
-  if (row.observed_at) {
-    if (meta.childNodes.length > 0) {
-      meta.appendChild(document.createTextNode(' · '));
-    }
-    const timeText = window.JournalClock?.formatInstant
-      ? window.JournalClock.formatInstant(row.observed_at, { hour: 'numeric', minute: '2-digit' })
-      : '';
-    const timeEl = document.createElement('span');
-    timeEl.textContent = timeText;
-    meta.appendChild(timeEl);
-  }
+  // No time: `observed_at` is when the journal wrote the moment down, which
+  // beside its day would read as when it came up. A moment keeps no time of
+  // its own.
 
   item.appendChild(content);
   item.appendChild(meta);
@@ -3466,19 +3458,6 @@ function renderObservationList(entity, observations, options = {}) {
   } else {
     obsContainer.innerHTML = '<span class="observations-empty"></span>';
     obsContainer.querySelector('.observations-empty').textContent = entityWindowText('journal.window.entities.observation.none.with.entity', { entity_name: entity.name });
-  }
-  const headingEl = document.getElementById('detail-observations-heading');
-  if (headingEl) {
-    if (rows.some((row) => row?.observed_at)) {
-      if (window.JournalClock?.placeNote) {
-        window.JournalClock.placeNote(headingEl, { inside: false });
-      }
-    } else {
-      const sibling = headingEl.nextElementSibling;
-      if (sibling?.hasAttribute('data-zone-note')) {
-        sibling.remove();
-      }
-    }
   }
 }
 
@@ -3535,17 +3514,6 @@ let journalMoments = { token: 0, items: [], total: 0, loading: false };
 
 function journalMomentKey(row) {
   return `${row?.facet}\u0000${row?.id}`;
-}
-
-function placeMomentsZoneNote(headingId, rows) {
-  const heading = document.getElementById(headingId);
-  if (!heading) return;
-  if (rows.some((row) => row?.observed_at)) {
-    window.JournalClock?.placeNote?.(heading, { inside: false });
-    return;
-  }
-  const sibling = heading.nextElementSibling;
-  if (sibling?.hasAttribute('data-zone-note')) sibling.remove();
 }
 
 function loadJournalMoments(entity, token, { more = false } = {}) {
@@ -3608,7 +3576,6 @@ function renderJournalMoments(entity, token) {
   const container = document.getElementById('journal-detail-moments');
   if (!container) return;
   const { items, total } = journalMoments;
-  placeMomentsZoneNote('journal-detail-moments-heading', items);
   if (!items.length) {
     container.innerHTML = '<span class="observations-empty"></span>';
     container.querySelector('.observations-empty').textContent = entityWindowText('journal.window.entities.observation.none.with.entity', { entity_name: entity.name });
@@ -4885,6 +4852,10 @@ function renderJournalDetailView(entity) {
     akaEl.textContent = '';
   }
 
+  // A muted facet is left out here as in the facet menu and the moments:
+  // its row would open nothing, and its notes aren't in the count.
+  const facets = (entity.facets || []).filter((facet) => facet?.muted !== true);
+
   // Indicators (total observations, facet count)
   const indicators = [];
   const displayDate = getEntityDisplayDate(entity);
@@ -4894,15 +4865,14 @@ function renderJournalDetailView(entity) {
   if (entity.total_observation_count > 0) {
     indicators.push(journalNotesLabel(entity.total_observation_count));
   }
-  if (entity.facets && entity.facets.length > 0) {
-    indicators.push(window.JournalI18n.renderHtml('journal.window.entities.detail.facets.count', [...entityCountArgs('facets', entity.facets.length, String(entity.facets.length))]));
+  if (facets.length > 0) {
+    indicators.push(window.JournalI18n.renderHtml('journal.window.entities.detail.facets.count', [...entityCountArgs('facets', facets.length, String(facets.length))]));
   }
   document.getElementById('journal-detail-indicators').innerHTML = indicators.join(' · ');
   renderJournalDetailIdNote(entity);
 
   // Facet relationships
   const facetsContainer = document.getElementById('journal-detail-facets');
-  const facets = entity.facets || [];
 
   if (facets.length === 0) {
     facetsContainer.innerHTML = `<div class="no-facet-relationships">${window.JournalI18n.renderHtml('journal.window.entities.visible.text.not.attached.to.any.facets.yet')}</div>`;
@@ -7739,7 +7709,7 @@ function createHiddenRow(entry) {
   }
   const unhideBtn = document.createElement('button');
   unhideBtn.type = 'button';
-  unhideBtn.className = window.JournalI18n.render('journal.window.entities.window.explanation.btn.btn.secondary.btn.sm.ent');
+  unhideBtn.className = 'btn btn-secondary btn-sm ent-unhide-btn';
   unhideBtn.textContent = detectedCopy('ENT_DETECTED_UNHIDE');
   unhideBtn.onclick = () => unhideDetectedName(entry.name, unhideBtn);
   lastCell.appendChild(unhideBtn);
@@ -9407,14 +9377,23 @@ async function loadVoiceSamples(entity, cursor = 0, append = false) {
       const provenance = document.createElement('div');
       const day = String(sample.day || '');
       const segment = String(sample.segment_key || '');
-      const time = segment.slice(0, 6).replace(/^(..)(..)(..)$/, '$1:$2:$3');
+      const stream = sample.stream || '_default';
+      // The day in full, since a sample is removed from here, and the time
+      // its recording began, read as the page's other rows read a time.
       const title = document.createElement('div');
-      title.textContent = `${day.slice(0,4)}-${day.slice(4,6)}-${day.slice(6,8)} · ${time}`;
+      title.textContent = [
+        window.JournalFormat.dayFull(day),
+        window.JournalFormat.segmentTimeOfDay(segment, { omitMissing: true }),
+      ].filter(Boolean).join(' · ');
+      // The device by its name. The recording's own name, and the audio
+      // source within it, stay on hover.
+      const device = document.createElement('span');
+      device.textContent = window.JournalFormat.stream(stream);
+      device.title = [`${stream} / ${segment}`, sample.source].filter(Boolean).join(' · ');
       const detail = document.createElement('small');
-      detail.textContent = `${sample.stream || '_default'} / ${segment} · ${sample.source || ''} · ${entityWindowText('journal.window.entities.voice.sample.sentence', { sentence_id: sample.sentence_id })}`;
+      detail.append(device, ` · ${entityWindowText('journal.window.entities.voice.sample.sentence', { sentence_id: sample.sentence_id })}`);
       provenance.append(title, detail);
       const open = document.createElement('a');
-      const stream = sample.stream || '_default';
       const layout = sample.stream_layout || (stream === '_default' ? 'direct' : 'named');
       open.href = `/app/speakers/${encodeURIComponent(day)}#${encodeURIComponent(JSON.stringify([day, layout, stream, segment]))}`;
       open.textContent = ENT_COPY.ENT_VOICE_OPEN;

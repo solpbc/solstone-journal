@@ -14359,13 +14359,6 @@
       "locales": []
     },
     {
-      "id": "journal.window.entities.window.explanation.btn.btn.secondary.btn.sm.ent",
-      "source": "84e8d23cc2685405c3546b1ab988a76caa5441366b68a9ebff09142f935f04c5",
-      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
-      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
-    },
-    {
       "id": "journal.window.entities.window.explanation.couldn.t.keep.it.separate.it",
       "source": "402381795c9eb06b57e4d567f0e3b04309896c351e4e96474ca28140c8b40594",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",

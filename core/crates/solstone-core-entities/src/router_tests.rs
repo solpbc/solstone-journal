@@ -10009,3 +10009,41 @@ async fn journal_moments_leave_out_muted_and_detached_facets_and_hidden_entities
     assert_eq!(status, 404, "{body}");
     assert_eq!(body["reason_code"], "entity_not_found");
 }
+
+#[tokio::test]
+async fn journal_entity_notes_count_leaves_out_muted_facets_as_its_moments_do() {
+    let j = Journal::new();
+    let root = j.path();
+    seed_entity(root, "ada", "Ada");
+    write(root, "facets/work/facet.json", json!({"title":"Work"}));
+    write(
+        root,
+        "facets/quiet/facet.json",
+        json!({"title":"Quiet","muted":true}),
+    );
+    seed_facet_entity(root, "work", "ada");
+    seed_facet_entity(root, "quiet", "ada");
+    seed_moments(root, "work", "ada", &[(1, "a moment", "20260105")]);
+    seed_moments(
+        root,
+        "quiet",
+        "ada",
+        &[(1, "a quiet one", "20260104"), (2, "another", "20260103")],
+    );
+
+    let (status, moments) = call(root, "/app/entities/api/journal/entity/ada/observations").await;
+    assert_eq!(status, 200, "{moments}");
+    let (status, body) = call(root, "/app/entities/api/journal/entity/ada").await;
+    assert_eq!(status, 200, "{body}");
+    let entity = &body["entity"];
+    assert_eq!(entity["total_observation_count"], moments["total"]);
+    let facets = entity["facets"].as_array().expect("facets");
+    let facet = |name: &str| {
+        facets
+            .iter()
+            .find(|facet| facet["name"] == name)
+            .unwrap_or_else(|| panic!("{name} is on the record"))
+    };
+    assert_eq!(facet("quiet")["muted"], true, "the muted facet is marked");
+    assert!(facet("work").get("muted").is_none());
+}

@@ -32,6 +32,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- an entity's notes count, on its all-facets page and in the entities list, no longer includes notes in facets you've muted, and its all-facets page no longer lists those facets. a moment now shows only the day it came up, not the time your journal wrote it down. each of a person's saved voice samples now names where it came from, such as the device, instead of the recording's internal name, which shows when you hover over the device.
 - in a facet's settings, an emoji made of several joined together, such as 🧑‍💻, is no longer cut short; a digit, or text with an emoji in it, is no longer taken as the emoji; and pressing escape leaves the emoji as it was. the editor now says when what you entered isn't one emoji. the emoji box for a new custom activity also keeps joined emoji whole and takes only one emoji. thanks @dvanduzer for the report (#427).
 - work an agent does on its own in a tmux session you've listed in `output_sessions` is now usually described as the agent's, such as "the agent in qa ran the tests", so your journal is less likely to credit it to you. thanks @dvanduzer for the report (#424).
 - imported conversations that opened to an empty pane now show their text in transcripts.

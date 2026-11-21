@@ -822,6 +822,10 @@ async function detectedHideCases(workspace, copy) {
     const rows = el(h, 'detected-hidden-tbody').children;
     check(rows.length === 2 && rows[0].all('journal-row-badge')[0].textContent === copy.ENT_DETECTED_HIDDEN_BADGE, 'each hidden name carries the hidden badge');
     check(rows[0].all('mention-count-badge').length === 1 && rows[1].all('mention-count-badge').length === 0, 'the count shows only when there is one');
+    const unhideClasses = unhideButtons(h).map((button) => button.className.split(/\s+/));
+    check(unhideButtons(h).length === 2 && unhideButtons(h).every((button) => button.textContent === copy.ENT_DETECTED_UNHIDE)
+      && unhideClasses.every((names) => ['btn', 'btn-secondary', 'btn-sm', 'ent-unhide-btn'].every((name) => names.includes(name))),
+      'each unhide says its message and keeps its button classes, which come from the markup, not the message');
     check(rows[0].all('ent-hidden-last')[0].textContent === fill('ENT_DETECTED_HIDDEN_LAST', { day: 'day:20261109' })
       && rows[1].all('ent-hidden-last').length === 0, 'last detected, lowercased, only with a day');
     h.doc.getElementById('entity-search').value = 'clinic';
