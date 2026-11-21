@@ -1,0 +1,6 @@
+{
+  "unknown": {"type": "future.example", "id": "unknown-1", "future": 1},
+  "invalid": {"type": "import.pick", "id": "invalid-1", "area": "quick", "multiple": true, "accept": [], "context": []},
+  "pick": {"type": "import.pick", "id": "pick-1", "area": "quick", "accept": [".txt", "text/plain"], "multiple": true, "future": {"ignore": true}, "context": {"setting": "host conformance", "future": {"preserve": true}}},
+  "file": "sample.txt"
+}

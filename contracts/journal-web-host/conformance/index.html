@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Journal import host conformance</title>
+<h1>Journal import host conformance</h1>
+<p>Open this page in the test viewer. Run the checks in order. For the queue check choose sample.txt. The picker should offer text files and all files.</p>
+<button id="detect">Check capability</button>
+<button id="wire">Check message replies</button>
+<button id="cancel">Open picker and cancel</button>
+<button id="queue">Choose sample.txt</button>
+<pre role="log" aria-live="polite" id="log"></pre>
+<script type="module">
+const [contract, cases] = await Promise.all(['../import-host-contract.json', 'cases.json'].map(async file => {
+  const response = await fetch(file);
+  if (!response.ok) throw Error(file);
+  return response.json();
+}));
+const host = window[contract.capability];
+const log = text => document.querySelector('#log').append(document.createTextNode(text + '\n'));
+function check(value, label) {
+  if (!value) throw Error(label);
+  log('PASS ' + label);
+}
+function button(id, action) {
+  document.getElementById(id).onclick = async () => {
+    try { await action(); } catch (error) { log('FAIL ' + error.message); }
+  };
+}
+async function send(request) {
+  const reply = await host.send(request);
+  check(reply.id === request.id, 'reply matches ' + request.id);
+  return reply;
+}
+window.addEventListener('message', event => {
+  const child = document.getElementById('frameFixture');
+  if (!child || event.source !== child.contentWindow || event.origin !== location.origin || event.data?.fixture !== 'import-frame') return;
+  log((event.data.capability ? 'FAIL' : 'PASS') + ' embedded document capability isolation');
+});
+document.addEventListener('securitypolicyviolation', event => {
+  if (event.effectiveDirective === 'frame-src' && event.blockedURI === new URL('frame.html', location.href).href)
+    log('PASS embedded document blocked by the viewer');
+});
+button('detect', () => {
+  const frame = document.createElement('iframe');
+  document.getElementById('frameFixture')?.remove();
+  frame.id = 'frameFixture';
+  frame.hidden = true;
+  frame.src = 'frame.html';
+  document.body.append(frame);
+  if (!host) { log('Browser or older host. Verify ordinary web upload on the import page.'); return; }
+  check(host.version === contract.version && host.types.includes(contract.pick) && typeof host.send === 'function', 'top document capability');
+});
+button('wire', async () => {
+  check((await send(cases.unknown)).type === contract.unsupported, 'unsupported message');
+  check((await send(cases.invalid)).outcome === 'refused', 'invalid context refused');
+});
+button('cancel', async () => {
+  const pending = send({...cases.pick, id:'cancel-1'});
+  check((await send({...cases.pick, id:'overlap-1'})).outcome === 'busy', 'overlapping request reports busy');
+  check((await pending).outcome === 'cancelled', 'picker cancellation');
+});
+const requests = new Map();
+button('queue', async () => {
+  const id = crypto.randomUUID();
+  requests.set(id, []);
+  const reply = await send({...cases.pick, id});
+  check(reply.type === contract.reply && reply.outcome === 'queued' &&
+    reply.items.some(item => item.name === cases.file && item.item), 'queue owns the sample');
+  requests.set(id, reply.items.map(entry => entry.item));
+});
+window.addEventListener(contract.event, event => {
+  const detail = event.detail;
+  if (!requests.has(detail?.id)) return;
+  try {
+    check(detail.type === contract.status && requests.get(detail.id).includes(detail.item), 'correlated status ' + detail.state);
+    if (detail.state === 'delivered') check(typeof detail.import_id === 'string' && detail.import_id.length > 0, 'journal row returned');
+  } catch (error) { log('FAIL ' + error.message); }
+});
+</script>
+</html>

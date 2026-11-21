@@ -364,11 +364,15 @@ fn only_the_apple_cards_start_with_the_token_it_showed_carries_the_go_ahead() {
             .contains(&"--confirm-body-save".to_owned())
     };
     assert!(go_ahead(
-        json!({"body_confirmed": "shown"}),
+        json!({"body_confirmed": "shown", "preview_token": "shown"}),
         &card("apple_health")
     ));
     assert!(!go_ahead(
         json!({"body_confirmed": "another"}),
+        &card("apple_health")
+    ));
+    assert!(!go_ahead(
+        json!({"body_confirmed": "shown"}),
         &card("apple_health")
     ));
     assert!(!go_ahead(json!({}), &card("apple_health")));
@@ -377,7 +381,7 @@ fn only_the_apple_cards_start_with_the_token_it_showed_carries_the_go_ahead() {
         &card("apple_health")
     ));
     assert!(!go_ahead(
-        json!({"body_confirmed": "shown"}),
+        json!({"body_confirmed": "shown", "preview_token": "shown"}),
         &card("strava")
     ));
     let unpreviewed = json!({"source_hint": "apple_health"})
@@ -415,7 +419,7 @@ async fn a_card_import_that_no_longer_fits_isnt_started() {
         root.path(),
         "POST",
         crate::mobile_import_contract::START_PATH,
-        Some(json!({"path": path, "timestamp": id, "import_id": id, "body_confirmed": "shown"})),
+        Some(json!({"path": path, "timestamp": id, "import_id": id, "body_confirmed": "shown", "preview_token": "shown"})),
     )
     .await;
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
@@ -459,7 +463,7 @@ async fn post_start(root: &Path, id: &str, path: &str) -> (StatusCode, Value) {
         root,
         "POST",
         crate::mobile_import_contract::START_PATH,
-        Some(json!({"path": path, "timestamp": id, "import_id": id, "body_confirmed": "shown"})),
+        Some(json!({"path": path, "timestamp": id, "import_id": id, "body_confirmed": "shown", "preview_token": "shown"})),
     )
     .await
 }

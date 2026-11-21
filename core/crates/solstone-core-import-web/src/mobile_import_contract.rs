@@ -112,6 +112,7 @@ impl SavedSource {
 pub enum ImportErrorKind {
     AlreadyImported,
     AlreadyRunning,
+    BodyConfirmationRequired,
     ClientItemConflict,
     NothingToImport,
     SourceChanged,
@@ -125,6 +126,7 @@ impl ImportErrorKind {
         &[
             Self::AlreadyImported,
             Self::AlreadyRunning,
+            Self::BodyConfirmationRequired,
             Self::ClientItemConflict,
             Self::NothingToImport,
             Self::SourceChanged,
@@ -138,6 +140,7 @@ impl ImportErrorKind {
         match self {
             Self::AlreadyImported => "already_imported",
             Self::AlreadyRunning => "already_running",
+            Self::BodyConfirmationRequired => "body_confirmation_required",
             Self::ClientItemConflict => "client_item_conflict",
             Self::NothingToImport => "nothing_to_import",
             Self::SourceChanged => "source_changed",
@@ -226,7 +229,9 @@ pub fn schema_json() -> Value {
                     "file": {"description": "The item's bytes; the part's filename is required and its content type is recorded.", "type": "string", "contentMediaType": "application/octet-stream"},
                     "text": {"description": "Pasted text, staged as paste.txt.", "type": "string"},
                     "imported_via": {"description": "The door the item came through; web_dashboard when absent.", "type": "string"},
-                    "source_hint": {"description": "strava is the only door a Strava download is taken through.", "type": "string"},
+                    "source_hint": {"description": "The import card selected by the owner. Omit for general file intake.", "type": "string"},
+                    "area": {"description": "Import area selected on the journal page.", "type":"string","maxLength":96},
+                    "context": {"description": "JSON object of choices made on the import page. Unknown keys are retained inside context.", "type":"string","contentMediaType":"application/json"},
                     "setting": {"type": "string"},
                     "observer_handle": {"type": "string"},
                     "caption": {"description": "Owner-written text shared alongside an image.", "type": "string"},

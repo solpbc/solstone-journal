@@ -24425,6 +24425,125 @@
       "locales": []
     },
     {
+      "id": "journal.window.import.handoff.busy",
+      "source": "3c006c50fc2958d7203fc9d373bef4ee66811cd04574711923b329c5141325ff",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.import.handoff.cancelled",
+      "source": "f8b8aeedd72f6393b33e994c61d2d94d0043bd3dbe1e51970b28beee80511ea9",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.import.handoff.date",
+      "source": "d9bcae829011760c1aeaa50018d15bf03c8d7e5e9bc4ce8b13d74410e1a6e632",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.import.handoff.delivered",
+      "source": "39a64960f1022e22d058f74f47fd93a01e2dbca24bb2d7bb5051482e59b40be8",
+      "contract": "85053d723b7e1f28ae28297c665d0d09f73ecf55449bd50a1109e25a8c40f725",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.import.handoff.device",
+      "source": "632ef89cd8a0fb582692822d3c65aa962072b6edbaa9b03859b32953f6143a83",
+      "contract": "57aa7d99313b6ebf8101151a5e5e4f6a4eb3a4d597c33f93c2ae4a9703324281",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.import.handoff.health.expiry",
+      "source": "d6715f67fe17fad24d84301287e8d09144c59774ff8e6b6b2363987996201300",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.import.handoff.health.review",
+      "source": "5335361fd4442cafe5f29acdee409d38d52e076d78f82c371a447983ada85580",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.import.handoff.health.unavailable",
+      "source": "1ff2882b16de7b2c7c991399907e7704f7e6065c85f5094339c3132fd4b4b959",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.import.handoff.notebook",
+      "source": "cc5c92d07ef1b0032f4d3c149054e68432542add2cd680199658732011a7660d",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.import.handoff.origin.browser",
+      "source": "616c3db3adcadbea91b8dadf87ee6cb8eb651a877e21760f6c21634d662c905f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.import.handoff.origin.cli",
+      "source": "efba615c531ead3d83503e6e4f78181a06e9f731e81fe6e623537daa22ff6e9c",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.import.handoff.origin.desktop",
+      "source": "feae72004afa2f408012c5cb10d31f354c8a47361d727fe0c7f8bd56aac3a7a2",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.import.handoff.origin.linux",
+      "source": "351773d4db65a41f2d809ed8055cbb93cccfe46b7413f9b720c0d269b9252cce",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.import.handoff.origin.mobile",
+      "source": "dd5bdc740106a10bca072e514b94d86786de7e60f2bdbaae29c35e48266b066d",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.import.handoff.refused",
+      "source": "aab7f58958f55e46e54e6d4df99d328fcdba941057f7c31e2910e68eb6c9e0f8",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.import.handoff.sending",
+      "source": "60fda5c7453bb105220d1030ea7a171e27b299e60a885e2be3db9db0de2ebe19",
+      "contract": "85053d723b7e1f28ae28297c665d0d09f73ecf55449bd50a1109e25a8c40f725",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.import.handoff.waiting",
+      "source": "f72ded455aec2a87ad1db4425e1d466d764a590260797020fa220a93aecd46ed",
+      "contract": "85053d723b7e1f28ae28297c665d0d09f73ecf55449bd50a1109e25a8c40f725",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.import.import.delete.copy.apple.health.each.apple.health.export.holds.your",
       "source": "27fea474d2b64e3fa976fdc0dd3c102edb9a50cea7b275c02914899bf1837cdb",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",

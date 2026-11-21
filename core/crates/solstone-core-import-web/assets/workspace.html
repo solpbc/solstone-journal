@@ -1278,6 +1278,23 @@ async function navigateTo(view, options = {}) {
   if (cleanView.startsWith('guide/')) {
     const source = cleanView.split('/')[1];
     await loadGuidedFlow(source);
+    const waiting = cleanView.split('/')[2];
+    if (source === 'apple_health' && /^\d{8}_\d{6}$/.test(waiting)) {
+      const detail = await ctx.fetch('/app/import/api/' + waiting);
+      const metadata = detail.ok ? (await detail.json()).import_json : null;
+      if (ctx.disposed || currentGuideSource !== source || hashAtEntry !== window.location.hash) return;
+      if (metadata?.source_hint === source && metadata.file_path) {
+        currentGuidedSaved = {path: metadata.file_path, timestamp: waiting, source_timestamp: metadata.source_timestamp};
+        document.getElementById('guidedFileLabel').textContent = metadata.original_filename;
+        const start = document.getElementById('guidedStartBtn');
+        start.hidden = false;
+        start.closest('li').hidden = false;
+        const setting = document.getElementById('guidedSettingInput');
+        if (setting) setting.value = metadata.setting || '';
+      } else {
+        window.showError?.(handoffText('health.unavailable'));
+      }
+    }
     if (hashAtEntry === window.location.hash) landShownPart(cleanView, held, leftSource);
   } else if (cleanView.startsWith('progress/')) {
     const importId = cleanView.split('/')[1];
@@ -1820,7 +1837,15 @@ function renderImportRow(imp, picking = false) {
   }
   html += '</td>';
   html += `<td class="import-file-cell">${escapeHtml(fileDisplay)}${note ? `<div class="import-row-note">${escapeHtml(IMPORT_DELETE_COPY.notes[note] || IMPORT_DELETE_COPY.notes.other)}</div>` : ''}</td>`;
-  html += `<td class="source-cell">${sourceCell}</td>`;
+  const origins = { browser:'browser', cli:'cli', linux:'linux', desktop:'desktop', mobile:'mobile', mobile_share:'mobile' };
+  const originKey = Object.hasOwn(origins, imp.imported_via) ? origins[imp.imported_via] : null;
+  const origin = imp.observer_handle
+    ? handoffText('device', [['device', String(imp.observer_handle)]])
+    : originKey ? handoffText('origin.' + originKey) : '';
+  html += `<td class="source-cell">${sourceCell}${origin ? '<div>' + escapeHtml(origin) + '</div>' : ''}</td>`;
+  if (imp.source_hint === 'apple_health' && imp.status === 'pending') {
+    statusDetail += `<div><a href="/app/import/#guide/apple_health/${encodedId}">${escapeHtml(handoffText('health.review'))}</a></div>`;
+  }
   html += `<td class="status-cell"><span class="import-status ${statusClass}">${statusText}</span>${statusDetail}</td>`;
   html += `<td class="stats-cell import-stats-cell">${statsText}</td>`;
   html += `<td class="nowrap import-at-cell">${importedAt}</td>`;
@@ -3256,7 +3281,7 @@ async function loadGuidedFlow(sourceName) {
   if (guidedForm && guidedStartBtn) {
     guidedForm.addEventListener('submit', e => {
       e.preventDefault();
-      guidedStartBtn.click();
+      if (!guidedStartBtn.hidden) guidedStartBtn.click();
     });
   }
 }
@@ -3426,6 +3451,147 @@ function renderQuickImportFlow() {
   setupQuickImportForm();
 }
 
+function handoffText(key, args = []) {
+  return window.JournalI18n.render('journal.window.import.handoff.' + key, args);
+}
+
+function importHost() {
+  const c = window.solstoneImportContract;
+  const host = c && window[c.capability];
+  return host && host.version === c.version && Array.isArray(host.types) && host.types.includes(c.pick) && typeof host.send === 'function' ? host : null;
+}
+
+let dropOnCurrentCard;
+const handoffRows = new Map();
+function handoffStatus(item, text, row = null, name = null) {
+  const host = document.getElementById('handoffStatus');
+  if (!host) return;
+  let line = handoffRows.get(item);
+  if (!line || !host.contains(line)) {
+    line = document.createElement('div');
+    host.append(line);
+    handoffRows.set(item, line);
+  }
+  line.textContent = '';
+  if (name) {
+    const title = document.createElement('strong');
+    title.textContent = name;
+    line.append(title, document.createElement('br'));
+  }
+  if (row && /^\d{8}_\d{6}$/.test(row)) {
+    const link = document.createElement('a');
+    link.href = '/app/import/' + encodeURIComponent(row);
+    link.textContent = text;
+    line.append(link);
+  } else {
+    line.append(text);
+  }
+}
+
+function enableHandoff(area, input, control) {
+  const host = importHost();
+  if (!host) return;
+  const c = window.solstoneImportContract;
+  const form = control.closest('form');
+  const fields = document.createElement('div');
+  if (area !== 'apple_health' && area !== 'strava') {
+    const label = document.createElement('label');
+    label.textContent = handoffText('date');
+    const date = document.createElement('input');
+    date.type = 'datetime-local';
+    date.id = 'handoffDate';
+    label.append(date);
+    fields.append(label);
+  }
+  if (area === 'evernote') {
+    const label = document.createElement('label');
+    label.textContent = handoffText('notebook');
+    const notebook = document.createElement('input');
+    notebook.id = 'handoffNotebook';
+    label.append(notebook);
+    fields.append(label);
+  }
+  // Put choices before the control that commits them, including for keyboard traversal.
+  const alreadyAsked = form.querySelector('#guidedSettingInput, #quickSettingInput');
+  if (alreadyAsked) fields.prepend(alreadyAsked.closest('.confirm-field'));
+  const facet = form.querySelector('#guidedFacet');
+  if (facet) fields.append(facet);
+  const originals = form.querySelector('#guidedOriginals');
+  if (originals) fields.append(originals);
+  control.before(fields);
+  const start = form.querySelector('#guidedStartBtn');
+  if (start && !form.querySelector('#guidedFolderBtn')) {
+    start.hidden = true;
+    if (area !== 'journal_archive') start.closest('li').hidden = true;
+  }
+  const accept = input.accept.split(',').map(entry => entry.trim()).filter(Boolean);
+  async function pick(dropToken) {
+    const id = crypto.randomUUID();
+    if (originals?.dataset.originalsPending === 'true') {
+      originals.scrollIntoView({block:'nearest'});
+      return;
+    }
+    try {
+      const context = {};
+      if (alreadyAsked?.value.trim()) context.setting = alreadyAsked.value.trim();
+      const date = fields.querySelector('#handoffDate')?.value;
+      if (date) context.timestamp = date.replaceAll('-', '').replace('T', '_').replace(':', '') + '00';
+      if (area === 'strava' || area === 'apple_health') {
+        const choice = stravaFacetChoice();
+        if (!choice) throw new Error(stravaFacetText('unanswered'));
+        context.body_facet = choice;
+      }
+      const notebook = fields.querySelector('#handoffNotebook')?.value.trim();
+      if (notebook) context.notebook = notebook;
+      const reply = await host.send({type:c.pick,id,area,accept,multiple:area === 'quick',context,
+        ...(dropToken ? {drop:dropToken} : {})});
+      if (ctx.disposed || reply.id !== id) return;
+      for (const item of reply.items || []) {
+        handoffStatus(item.item, handoffText('waiting', [['name', item.name]]));
+      }
+      for (const item of reply.refused || []) {
+        handoffStatus(crypto.randomUUID(), item.reason || handoffText('refused'), null, item.name);
+      }
+      if (reply.outcome !== 'queued') {
+        handoffStatus(id, reply.reason || handoffText(({busy:'busy',cancelled:'cancelled'})[reply.outcome] || 'refused'));
+      }
+    } catch (error) {
+      handoffStatus(id, error?.message || handoffText('refused'));
+    }
+  }
+  control.onclick = event => { event.preventDefault(); pick(); };
+  control.addEventListener('keydown', event => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      pick();
+    }
+  }, true);
+  dropOnCurrentCard = event => {
+    if (control.isConnected && !ctx.disposed && control.offsetParent !== null) {
+      event.preventDefault();
+      pick(event.detail.token);
+    }
+  };
+
+}
+
+if (importHost()) {
+  const region = document.createElement('div');
+  region.id = 'handoffStatus';
+  region.setAttribute('role', 'status');
+  region.setAttribute('aria-live', 'polite');
+  document.getElementById('importGuide')?.before(region);
+  ctx.on(window, window.solstoneImportContract.drop, event => dropOnCurrentCard?.(event));
+  ctx.on(window, window.solstoneImportContract.event, event => {
+    const state = event.detail;
+    if (!state?.item) return;
+    const label = {waiting:'waiting', uploading:'sending', delivered:'delivered', gone:'refused'}[state.state];
+    if (label || state.reason) handoffStatus(state.item, state.reason || (label === 'refused' ? handoffText(label) : handoffText(label, [['name', state.name]])), state.import_id);
+    if (state.state === 'delivered' || state.import_id) loadImports();
+  });
+}
+
 function setupGuidedUploadArea() {
   const dropArea = document.getElementById('guidedDropArea');
   const fileInput = document.getElementById('guidedFileInput');
@@ -3483,6 +3649,7 @@ function setupGuidedUploadArea() {
   fileInput.onchange = event => {
     setFile(event.target.files[0]);
   };
+  enableHandoff(currentGuideSource, fileInput, dropArea);
 }
 
 function setupQuickImportForm() {
@@ -3526,6 +3693,7 @@ function setupQuickImportForm() {
   invalidateImportPreview('quick');
     }
   });
+  enableHandoff('quick', fileInput, dropArea);
   fileInput.onchange = e => {
     currentFile = e.target.files[0];
     if (currentFile) {
@@ -3563,6 +3731,7 @@ function setupQuickImportForm() {
 
     try {
       const fd = new FormData();
+      fd.append('imported_via', 'browser');
       if (hasFile) {
         fd.append('file', currentFile);
       } else {
@@ -3618,6 +3787,7 @@ async function uploadGuidedSourceFile(source) {
 
   const guidedSettingInput = document.getElementById('guidedSettingInput');
   const fd = new FormData();
+  fd.append('imported_via', 'browser');
   fd.append('file', currentGuidedFile);
   fd.append(
     'client_item_id',
@@ -3797,6 +3967,7 @@ async function saveGuidedPath(source) {
   const setting = guidedSettingInput ? guidedSettingInput.value.trim() : '';
   const payload = {
     path: pathInput.value.trim(),
+    imported_via: 'browser',
     setting,
     client_item_id: importDraft.guidedClientItemId
       || (importDraft.guidedClientItemId = crypto.randomUUID()),

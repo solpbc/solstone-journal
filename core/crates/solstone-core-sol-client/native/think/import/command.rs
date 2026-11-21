@@ -350,6 +350,7 @@ fn save_media(
 
 fn save_data(parsed: &ParsedArgs, client_item_id: &str) -> Vec<(String, String)> {
     let mut data = Vec::new();
+    data.push(("imported_via".to_string(), "cli".to_string()));
     data.push(("client_item_id".to_string(), client_item_id.to_string()));
     push_payload_value(&mut data, "setting", parsed.setting.as_deref());
     push_payload_value(&mut data, "source_hint", parsed.source.as_deref());
@@ -803,6 +804,10 @@ mod tests {
                     }],
                     data: vec![
                         FormField {
+                            name: "imported_via".to_string(),
+                            value: "cli".to_string(),
+                        },
+                        FormField {
                             name: "client_item_id".to_string(),
                             value: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
                         },
@@ -910,6 +915,10 @@ mod tests {
                         body: b"hello".to_vec(),
                     }],
                     data: vec![
+                        FormField {
+                            name: "imported_via".to_string(),
+                            value: "cli".to_string(),
+                        },
                         FormField {
                             name: "client_item_id".to_string(),
                             value: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
@@ -1032,6 +1041,7 @@ mod tests {
                     path: "/app/import/api/save-path".to_string(),
                     params: vec![],
                     json: Some(json!({
+                        "imported_via": "cli",
                         "client_item_id": "bbbbbbbbbbbb4bbb8bbbbbbbbbbbbbbb",
                         "path": "/journal-host/media/source-dir"
                     })),
@@ -1118,6 +1128,7 @@ mod tests {
                     path: "/app/import/api/save-path".to_string(),
                     params: vec![],
                     json: Some(json!({
+                        "imported_via": "cli",
                         "client_item_id": "cccccccccccc4ccc8ccccccccccccccc",
                         "path": "media.txt"
                     })),
@@ -1246,6 +1257,7 @@ mod tests {
                 path: "/app/import/api/save-path".to_string(),
                 params: vec![],
                 json: Some(json!({
+                    "imported_via": "cli",
                     "client_item_id": "11111111111141118111111111111111",
                     "path": "media.txt"
                 })),
@@ -1278,6 +1290,7 @@ mod tests {
                 path: "/app/import/api/save-path".to_string(),
                 params: vec![],
                 json: Some(json!({
+                    "imported_via": "cli",
                     "client_item_id": "11111111111141118111111111111111",
                     "path": "media.txt"
                 })),
@@ -1312,6 +1325,7 @@ mod tests {
                 path: "/app/import/api/save-path".to_string(),
                 params: vec![],
                 json: Some(json!({
+                    "imported_via": "cli",
                     "client_item_id": "11111111111141118111111111111111",
                     "path": "media.txt"
                 })),
@@ -1356,6 +1370,7 @@ mod tests {
                     path: "/app/import/api/save-path".to_string(),
                     params: vec![],
                     json: Some(json!({
+                        "imported_via": "cli",
                         "client_item_id": "11111111111141118111111111111111",
                         "path": "media.txt"
                     })),

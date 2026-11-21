@@ -1,0 +1,6 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Frame fixture</title>
+<script type="module">
+const contract = await (await fetch('../import-host-contract.json')).json();
+parent.postMessage({fixture:'import-frame', capability:typeof window[contract.capability] !== 'undefined'}, location.origin);
+</script></html>

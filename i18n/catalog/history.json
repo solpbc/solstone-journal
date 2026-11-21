@@ -69243,6 +69243,242 @@
       "selector": null
     },
     {
+      "id": "journal.window.import.handoff.busy",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e68616e646f66662e62757379",
+      "namespace": "journal.window.import.handoff",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.handoff.cancelled",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e68616e646f66662e63616e63656c6c6564",
+      "namespace": "journal.window.import.handoff",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.handoff.date",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e68616e646f66662e64617465",
+      "namespace": "journal.window.import.handoff",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.handoff.delivered",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e68616e646f66662e64656c697665726564",
+      "namespace": "journal.window.import.handoff",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.handoff.device",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e68616e646f66662e646576696365",
+      "namespace": "journal.window.import.handoff",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.handoff.health.expiry",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e68616e646f66662e6865616c74682e657870697279",
+      "namespace": "journal.window.import.handoff.health",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.handoff.health.review",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e68616e646f66662e6865616c74682e726576696577",
+      "namespace": "journal.window.import.handoff.health",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.handoff.health.unavailable",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e68616e646f66662e6865616c74682e756e617661696c61626c65",
+      "namespace": "journal.window.import.handoff.health",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.handoff.notebook",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e68616e646f66662e6e6f7465626f6f6b",
+      "namespace": "journal.window.import.handoff",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.handoff.origin.browser",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e68616e646f66662e6f726967696e2e62726f77736572",
+      "namespace": "journal.window.import.handoff.origin",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.handoff.origin.cli",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e68616e646f66662e6f726967696e2e636c69",
+      "namespace": "journal.window.import.handoff.origin",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.handoff.origin.desktop",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e68616e646f66662e6f726967696e2e6465736b746f70",
+      "namespace": "journal.window.import.handoff.origin",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.handoff.origin.linux",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e68616e646f66662e6f726967696e2e6c696e7578",
+      "namespace": "journal.window.import.handoff.origin",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.handoff.origin.mobile",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e68616e646f66662e6f726967696e2e6d6f62696c65",
+      "namespace": "journal.window.import.handoff.origin",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.handoff.refused",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e68616e646f66662e72656675736564",
+      "namespace": "journal.window.import.handoff",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.handoff.sending",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e68616e646f66662e73656e64696e67",
+      "namespace": "journal.window.import.handoff",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.handoff.waiting",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e68616e646f66662e77616974696e67",
+      "namespace": "journal.window.import.handoff",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.import.import.delete.copy.apple.health.each.apple.health.export.holds.your",
       "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e696d706f72742e64656c6574652e636f70792e6170706c652e6865616c74682e656163682e6170706c652e6865616c74682e6578706f72742e686f6c64732e796f7572",
       "namespace": "journal.window.import.import.delete.copy.apple.health.each.apple.health.export.holds",

@@ -79,6 +79,7 @@
       "enum": [
         "already_imported",
         "already_running",
+        "body_confirmation_required",
         "client_item_conflict",
         "nothing_to_import",
         "source_changed",
@@ -142,8 +143,18 @@
           "type": "string"
         },
         "source_hint": {
-          "description": "strava is the only door a Strava download is taken through.",
+          "description": "The import card selected by the owner. Omit for general file intake.",
           "type": "string"
+        },
+        "area": {
+          "description": "Import area selected on the journal page.",
+          "type": "string",
+          "maxLength": 96
+        },
+        "context": {
+          "description": "JSON object of choices made on the import page. Unknown keys are retained inside context.",
+          "type": "string",
+          "contentMediaType": "application/json"
         },
         "setting": {
           "type": "string"

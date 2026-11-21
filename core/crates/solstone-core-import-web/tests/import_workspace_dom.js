@@ -116,7 +116,7 @@ function makeContext(globals) {
   };
   withShell(caseWindow);
   Object.defineProperty(context, 'window', { configurable: true, enumerable: true, get: () => caseWindow, set: (value) => { caseWindow = withShell(value); } });
-  for (const name of ['setImportButton', 'invalidateImportPreview', 'restoreImportButton', 'prepareImportPreview', 'renderThinkingProgress', 'scheduleThinkingProgress']) {
+  for (const name of ['importHost', 'enableHandoff', 'handoffText', 'setImportButton', 'invalidateImportPreview', 'restoreImportButton', 'prepareImportPreview', 'renderThinkingProgress', 'scheduleThinkingProgress']) {
     vm.runInContext(functionSource(source, name), context);
   }
   return context;
