@@ -1107,7 +1107,7 @@ fn imported_conversation_turns<'a>(
         let speaker = row.get("speaker").and_then(Value::as_str);
         use solstone_core_format::content::conversation::{TurnTime, turn_time};
         let timestamp = match turn_time(Some(context.stream), row) {
-            _ if untimed => None,
+            _ if untimed || row.contains_key("cue_start") => None,
             TurnTime::Unknown => None,
             TurnTime::Sent(instant) => Some(instant),
             TurnTime::Recorded => row
@@ -1125,12 +1125,18 @@ fn imported_conversation_turns<'a>(
                         .ok()
                 }),
         };
-        let time = timestamp.map(|instant| {
-            instant
-                .to_zoned_datetime(context.zone.clone())
-                .strftime("%H:%M:%S")
-                .to_string()
-        });
+        let time = row
+            .get("cue_start")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+            .or_else(|| {
+                timestamp.map(|instant| {
+                    instant
+                        .to_zoned_datetime(context.zone.clone())
+                        .strftime("%H:%M:%S")
+                        .to_string()
+                })
+            });
         let mut chunk = json!({
             "type": "transcript",
             "time": time,

@@ -111,7 +111,13 @@ pub fn conversation_item(root: &Path, relative: &str, name: &str) -> Option<Conv
         .flatten();
     let untimed = header.as_ref().and_then(|h| h["untimed"].as_bool());
     let instant = |key: &str| {
-        if untimed == Some(true) || !native_chat {
+        if untimed == Some(true)
+            || (!native_chat
+                && !relative
+                    .split('/')
+                    .nth(1)
+                    .is_some_and(|s| s == "import.text"))
+        {
             return None;
         }
         header.as_ref()?[key]
@@ -160,10 +166,11 @@ pub fn message_fields(
 ) -> Option<Value> {
     let text = row.get("text")?.as_str().filter(|text| !text.is_empty())?;
     let mut fields = serde_json::json!({"file":file, "turn_id":turn_id(file,index,text)});
+    let native = matches!(stream, "import.claude" | "import.gemini" | "import.chatgpt");
     if let Some(author) = row
         .get("speaker")
         .and_then(Value::as_str)
-        .filter(|s| !s.is_empty())
+        .filter(|s| !s.is_empty() && !(native && *s == "You"))
     {
         fields["author"] = Value::from(author);
     }
@@ -183,9 +190,7 @@ pub fn message_fields(
             fields[key] = Value::from(value);
         }
     }
-    if matches!(stream, "import.claude" | "import.gemini" | "import.chatgpt")
-        && let Some(owner) = row.get("is_owner").and_then(Value::as_bool)
-    {
+    if native && let Some(owner) = row.get("is_owner").and_then(Value::as_bool) {
         fields["role"] = Value::from(if owner { "user" } else { "assistant" });
     }
     if let Some(to) = row.get("to").and_then(Value::as_array).filter(|names| {
@@ -457,7 +462,8 @@ pub fn imported_text_medium(header: &Value, sidecar: Option<&Value>) -> Conversa
     };
     let legacy = sidecar.filter(|metadata| metadata["import_id"].as_str() == Some(id));
     if let Some(embedded) = imported.get("triage") {
-        let medium = verdict_medium(embedded);
+        let medium =
+            verdict_medium_with_notice(embedded, imported["whatsapp_export_notice"] == true);
         if legacy.is_some_and(|legacy| {
             ["kind", "ruleset_version", "reasons"]
                 .iter()
@@ -471,6 +477,9 @@ pub fn imported_text_medium(header: &Value, sidecar: Option<&Value>) -> Conversa
 }
 
 fn verdict_medium(verdict: &Value) -> ConversationMedium {
+    verdict_medium_with_notice(verdict, false)
+}
+fn verdict_medium_with_notice(verdict: &Value, whatsapp_notice: bool) -> ConversationMedium {
     use ConversationMedium::{Spoken, Unresolved, Written};
     let Some(version @ 1..=7) = verdict["ruleset_version"].as_u64() else {
         return Unresolved;
@@ -495,6 +504,8 @@ fn verdict_medium(verdict: &Value) -> ConversationMedium {
                 "zoom_chat" | "discord_export" | "signal_sigtop_long" | "sms_backup_xml"
                 | "slack_text",
             ) => Written,
+            Some("whatsapp_bracketed" | "whatsapp_dash") if whatsapp_notice => Written,
+            Some("whatsapp_bracketed" | "whatsapp_dash") => continue,
             // Other rules describe shapes shared by more than one medium.
             // They contribute no positive evidence. Ignore known generic
             // shapes alongside a specific format; unfamiliar reasons fail closed.
