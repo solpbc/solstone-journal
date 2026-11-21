@@ -25,7 +25,7 @@ static SEGMENT: LazyLock<Regex> = LazyLock::new(|| {
 });
 static CHANNEL: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r"(?m)^### (?P<kind>Transcript|Screen Activity|Browser Content|ChatGPT Conversation|Claude Conversation|Gemini Conversation|Calendar Event|Note|Highlights|Imported Text)[ \t]*$",
+        r"(?m)^### (?P<kind>Transcript|Imported Transcript|Imported Conversation|Imported Messages|Screen Activity|Browser Content|ChatGPT Conversation|Claude Conversation|Gemini Conversation|Calendar Event|Note|Document|Screenshot|Photo|Highlights|Body Records|Imported Text)[ \t]*$",
     )
     .expect("channel heading pattern")
 });
@@ -337,5 +337,41 @@ mod tests {
                 .text
                 .contains("Source channel: ChatGPT Conversation")
         );
+    }
+
+    #[test]
+    fn a_segment_with_two_imported_kinds_splits_into_two_import_units() {
+        let transcript = concat!(
+            "## 2026-04-07 09:00:00 - 09:05:00\n\n",
+            "### Note\n\nfield note text\n\n",
+            "### Document\n\nmanual text\n\n",
+            "### Imported Transcript\n\nspoken import\n\n",
+            "### Screenshot\n\nreceipt text\n\n",
+            "### Photo\n\ngarden bench\n\n",
+            "### Body Records\n\nworkout running\n",
+        );
+        let units = source_units(transcript, "import");
+        assert_eq!(units.len(), 6);
+        for (idx, expected) in [
+            "Note",
+            "Document",
+            "Imported Transcript",
+            "Screenshot",
+            "Photo",
+            "Body Records",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            assert_eq!(units[idx].kind, SourceKind::Import, "{expected}");
+            assert_eq!(units[idx].channel, idx + 1, "{expected}");
+            assert!(
+                units[idx]
+                    .text
+                    .contains(&format!("Source channel: {expected}\n")),
+                "{}",
+                units[idx].text
+            );
+        }
     }
 }

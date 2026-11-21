@@ -1855,6 +1855,7 @@ fn search(
     let possible_names = ConnectionPossibleNames::new(journal_root, snapshot);
     let mut checker = LiveTranscriptPages::new(Arc::clone(&possible_names), snapshot);
     let mut import_previews = BTreeMap::new();
+    let mut sources: Option<BTreeMap<String, String>> = None;
     while results.len() < request.limit && examined < MAX_SEARCH_EXAMINED_ROWS {
         // One query reads each activity day file once.
         let day_files = crate::body_source::ActivityDayFiles::default();
@@ -2264,17 +2265,20 @@ fn search(
                 &hit.metadata.path,
                 hit_activity_id.as_deref(),
             );
-            if let Some(kind) = request.content_kinds.as_ref().and_then(|kinds| {
-                if kinds.contains(&category) {
-                    Some(category)
-                } else {
-                    solstone_core_format::content::kinds::additional_indexed_permission(
-                        &hit.metadata.path,
-                    )
-                    .filter(|extra| kinds.contains(extra))
-                }
+            let hit_kind = if record.as_ref().is_some_and(|record| {
+                solstone_core_facets::is_body_record(record)
+                    || solstone_core_format::content::is_strava_reading(record)
             }) {
-                value["content_kind"] = json!(kind.as_str());
+                AdmittedCategory::Body
+            } else {
+                category
+            };
+            insert_indexed_kind(&mut value, &hit.metadata.path, hit_kind);
+            if let Some(stream) =
+                indexed_hit_stream(&hit.metadata.stream, &hit.metadata.path, record.as_ref())
+            {
+                let labels = sources.get_or_insert_with(|| source_labels(journal_root));
+                value["source"] = json!(source_label(labels, stream));
             }
             if let Some(reference) = activity_source {
                 value["activity_reference"] = json!(reference);
@@ -2865,7 +2869,11 @@ fn fetch(
                     "title": entry_title(&entry.day),
                     "date": entry.day,
                     "text": page.text,
+                    "content_kind": AdmittedCategory::ScreenText.as_str(),
                 });
+                if let Some(stream) = indexed_hit_stream(&entry.stream, &entry.path, None) {
+                    value["source"] = json!(source_label(&source_labels(journal_root), stream));
+                }
                 // The text keeps its bytes, and its headings count from here: when
                 // its recording began, on the recording device's clock.
                 if let Some(start) =
@@ -3087,6 +3095,14 @@ fn fetch(
                 "date": entry.day,
                 "text": decoded.as_deref().unwrap_or(&text),
             });
+            insert_indexed_kind(
+                &mut value,
+                &entry.path,
+                indexed_entry_kind(journal_root, &entry.path, record.as_ref()),
+            );
+            if let Some(stream) = indexed_hit_stream(&entry.stream, &entry.path, record.as_ref()) {
+                value["source"] = json!(source_label(&source_labels(journal_root), stream));
+            }
             if let Some(hidden) = hidden {
                 value["hidden"] = Value::Bool(hidden);
             }
@@ -3217,11 +3233,24 @@ pub(crate) fn fetch_activity(
         return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
     }
 
+    let activity_content_kind = if solstone_core_format::content::is_strava_reading(&record) {
+        AdmittedCategory::Body
+    } else {
+        AdmittedCategory::Facets
+    };
     let mut value = json!({
         "title": entry_title(&place.day),
         "date": place.day,
         "text": text,
+        "content_kind": activity_content_kind.as_str(),
     });
+    if let Some(stream) = record
+        .get("stream")
+        .and_then(Value::as_str)
+        .filter(|stream| !stream.is_empty())
+    {
+        value["source"] = json!(source_label(&source_labels(journal_root), stream));
+    }
     if !subjects[0].segments.is_empty() {
         value["segments"] = Value::Array(subjects[0].segments.clone());
     }
@@ -3259,6 +3288,7 @@ fn fetch_body_face(
         "title": entry_title(&face.anchor.day),
         "date": face.anchor.day,
         "text": text,
+        "content_kind": AdmittedCategory::Body.as_str(),
     });
     let mut targets = vec![format!("{rel_path}#{record_identity}")];
     crate::body_source::name_windows(&mut targets, crate::body_source::face_windows(&face));
@@ -4105,14 +4135,18 @@ fn list_transcripts(
             targets.push(format!("{day}/{stream}/{name}"));
             let time_str = clock.as_ref().map(|c| c.label.as_str()).unwrap_or("");
             let mut seg_val = json!({
-                "title": format!("Transcript segment — {}", day),
+                "title": segment_title(&page.content_kinds, page.unresolved_conversation, day),
                 "date": day,
                 "time": time_str,
                 "source": source_label(&sources, &stream),
+                "content_kinds": page.content_kinds,
                 "reference": reference,
                 // How much was said, so a segment can be chosen without reading it.
                 "lines": page.entries.len(),
             });
+            if page.unresolved_conversation {
+                seg_val["conversation_state"] = json!("unresolved");
+            }
             owner_links.attach(journal_root, &mut seg_val, day, &stream, &name);
             if let Some(clock) = &clock {
                 seg_val["seconds"] = json!(
@@ -4480,11 +4514,19 @@ pub(crate) fn read_segment(
         .map(|item| solstone_core_format::markdown::literal_text(&item.text))
         .collect::<Vec<_>>();
     let count = entries.len();
+    let mut content_kinds = page.content_kinds;
+    if screen.is_some() && !content_kinds.contains(&AdmittedCategory::ScreenText.as_str()) {
+        content_kinds.push(AdmittedCategory::ScreenText.as_str());
+    }
     let mut response_val = json!({
         "entries": entries,
         "source": source_label(&source_labels(journal_root), &reference.stream),
+        "content_kinds": content_kinds,
         "next_cursor": next_cursor,
     });
+    if page.unresolved_conversation {
+        response_val["conversation_state"] = json!("unresolved");
+    }
     crate::journal_links::Recordings::default().attach(
         journal_root,
         &mut response_val,
@@ -4547,9 +4589,129 @@ pub(crate) fn segment_assignment_probe_path(day: &str, stream: &str, segment: &s
     format!("{day}/{stream}/{segment}/talents/transcript.md")
 }
 
+/// Stream behind an indexed search hit or fetched entry, if any.
+///
+/// Entries with no stream behind them (day documents, weekly reflections,
+/// import summaries, body faces, streamless activities) return `None` so they
+/// carry no `source`.
+fn indexed_hit_stream<'a>(
+    stored_stream: &'a str,
+    path: &'a str,
+    activity_record: Option<&'a Map<String, Value>>,
+) -> Option<&'a str> {
+    if !stored_stream.is_empty() {
+        return Some(stored_stream);
+    }
+    if let Some(record) = activity_record {
+        if solstone_core_facets::is_body_record(record) {
+            return None;
+        }
+        return record
+            .get("stream")
+            .and_then(Value::as_str)
+            .filter(|stream| !stream.is_empty());
+    }
+    let rel = path.strip_prefix("chronicle/").unwrap_or(path);
+    let mut parts = rel.split('/');
+    let day = parts.next()?;
+    let second = parts.next()?;
+    if !solstone_core_journal_io::is_day_key(day) {
+        return None;
+    }
+    let third = parts.next()?;
+    if !second.is_empty()
+        && solstone_core_format::segment::segment_key(third).is_some()
+        && parts.next().is_some()
+    {
+        return Some(second);
+    }
+    if solstone_core_format::segment::segment_key(second).is_some() {
+        return Some(solstone_core_journal_io::paths::DEFAULT_STREAM);
+    }
+    None
+}
+
+/// Older imported Markdown may be admitted without establishing a medium.
+fn insert_indexed_kind(value: &mut Value, path: &str, kind: AdmittedCategory) {
+    if solstone_core_format::content::conversation::unresolved_markdown(path) {
+        value["conversation_state"] = json!("unresolved");
+    } else {
+        value["content_kind"] = json!(kind.as_str());
+    }
+}
+
+/// Content kind of an indexed entry as the registry and permission check settle it.
+fn indexed_entry_kind(
+    journal_root: &Path,
+    path: &str,
+    activity_record: Option<&Map<String, Value>>,
+) -> AdmittedCategory {
+    if activity_record.is_some_and(|record| {
+        solstone_core_facets::is_body_record(record)
+            || solstone_core_format::content::is_strava_reading(record)
+    }) {
+        return AdmittedCategory::Body;
+    }
+    let rel = path.strip_prefix("chronicle/").unwrap_or(path);
+    let stored = solstone_core_format::content::resolve_spec(rel)
+        .and_then(|spec| match spec.disposition {
+            solstone_core_format::content::IndexDisposition::Admitted { category, .. } => {
+                Some(category)
+            }
+            solstone_core_format::content::IndexDisposition::Excluded => None,
+        })
+        .unwrap_or(AdmittedCategory::Transcripts);
+    solstone_core_format::content::kinds::indexed_permission(Some(journal_root), rel, stored)
+}
+
+/// Title for a listed segment row: speech keeps `"Transcript segment — {day}"`;
+/// segments holding no speech are titled by what they actually hold.
+fn segment_title(content_kinds: &[&str], unresolved: bool, day: &str) -> String {
+    if content_kinds.contains(&AdmittedCategory::Transcripts.as_str()) {
+        return format!("Transcript segment — {day}");
+    }
+    if content_kinds.is_empty() {
+        return if unresolved {
+            format!("Conversation — {day}")
+        } else {
+            format!("Segment — {day}")
+        };
+    }
+    let noun = |kind: &str| match kind {
+        "messages" => "messages",
+        "notes" => "note",
+        "documents" => "document",
+        "photos" => "photo",
+        "screen_text" => "screen",
+        "body" => "body records",
+        "calendar" => "calendar event",
+        "places" => "places",
+        "facets" => "activity",
+        "entities" => "entity",
+        _ => "segment",
+    };
+    let mut nouns: Vec<&str> = content_kinds.iter().map(|kind| noun(kind)).collect();
+    if unresolved {
+        nouns.push("conversation");
+    }
+    let phrase = match nouns.as_slice() {
+        [only] => (*only).to_owned(),
+        [first, second] => format!("{first} and {second}"),
+        many => many.join(", "),
+    };
+    let mut chars = phrase.chars();
+    let titled = match chars.next() {
+        Some(first) => format!("{}{}", first.to_uppercase(), chars.as_str()),
+        None => "Segment".to_owned(),
+    };
+    format!("{titled} — {day}")
+}
+
 /// Where each stream's segments came from, in the owner's words. ⛔ Never a
-/// stream name: an agent tells two same-time segments apart by this label and
-/// matches a listed segment to its text with it.
+/// stream name. Unified import sources (`imported file`, `Obsidian`, `Evernote`,
+/// `PDF`) share one label across their backing streams so narrowing by `source`
+/// matches all of them; `content_kinds` and `reference` distinguish same-time
+/// segments that share a source.
 pub(crate) fn source_labels(journal_root: &Path) -> BTreeMap<String, String> {
     use solstone_core_home::provenance::{agent_stream_labels, load_stream_labels};
     agent_stream_labels(&load_stream_labels(journal_root))
@@ -4672,8 +4834,8 @@ fn digest(value: &str) -> String {
 ///
 /// ✅ So the digest covers what was served — titles, dates, snippets, text,
 /// names, coverage — with every sealed token (`reference`, `next_cursor`,
-/// `span_reference`, `next_reference`, `continuation`, and journal `link`)
-/// excluded, and object
+/// `span_reference`, `next_reference`, `continuation`, and journal `link`) and
+/// classification label (`content_kind`, `content_kinds`) excluded, and object
 /// keys sorted so a later field reordering does not silently invalidate every
 /// record already written. ⚠ It is therefore a digest of the **content**, not
 /// a fingerprint of the exact bytes on the wire; the targets beside it say
@@ -4698,6 +4860,9 @@ pub(crate) fn canonical_content(value: &Value) -> Value {
                             | "span_reference"
                             | "next_reference"
                             | "continuation"
+                            | "content_kind"
+                            | "content_kinds"
+                            | "conversation_state"
                     )
                 })
                 .collect::<Vec<_>>();
@@ -4754,6 +4919,62 @@ mod literal_tests {
             serde_json::json!({"snippet":snippet(source), "reference":"third", "link":"three"});
         assert_ne!(content_digest(&before), content_digest(&after));
         assert_eq!(content_digest(&after), content_digest(&replay));
+    }
+
+    #[test]
+    fn audit_digest_ignores_added_kind_labels_but_tracks_content_and_source() {
+        let plain_hit = serde_json::json!({
+            "title": "journal entry from 20260407",
+            "date": "20260407",
+            "snippet": "body summary line",
+            "reference": "ref-1"
+        });
+        let labelled_hit = serde_json::json!({
+            "title": "journal entry from 20260407",
+            "date": "20260407",
+            "snippet": "body summary line",
+            "content_kind": "body",
+            "reference": "ref-2"
+        });
+        assert_eq!(content_digest(&plain_hit), content_digest(&labelled_hit));
+
+        let plain_segment = serde_json::json!({
+            "entries": ["[10:00:05] hello"],
+            "source": "your mac · audio",
+            "next_cursor": null
+        });
+        let labelled_segment = serde_json::json!({
+            "entries": ["[10:00:05] hello"],
+            "source": "your mac · audio",
+            "content_kinds": ["transcripts"],
+            "next_cursor": null
+        });
+        assert_eq!(
+            content_digest(&plain_segment),
+            content_digest(&labelled_segment)
+        );
+
+        let moved_content = serde_json::json!({
+            "entries": ["[10:00:05] different words"],
+            "source": "your mac · audio",
+            "content_kinds": ["transcripts"],
+            "next_cursor": null
+        });
+        assert_ne!(
+            content_digest(&labelled_segment),
+            content_digest(&moved_content)
+        );
+
+        let moved_source = serde_json::json!({
+            "entries": ["[10:00:05] hello"],
+            "source": "imported file",
+            "content_kinds": ["transcripts"],
+            "next_cursor": null
+        });
+        assert_ne!(
+            content_digest(&labelled_segment),
+            content_digest(&moved_source)
+        );
     }
 
     #[test]

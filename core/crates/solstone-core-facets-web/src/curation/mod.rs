@@ -111,25 +111,33 @@ async fn state(
     if let Some(response) = corrupt_config(&root) {
         return response;
     }
-    let value = load_state(&root, locale).and_then(|value| match (&query.group, query.limit) {
-        (None, None) => Ok(value),
-        (None, Some(limit)) => Ok(first_pages(value, Some(limit))),
-        (Some(group), limit) => group_page(value, group, query.offset.unwrap_or(0), limit),
-    });
-    match value {
-        Ok(value) => Json(value).into_response(),
-        Err(error) if error.starts_with(UNKNOWN_GROUP) => http::error(
-            "unknown_group",
-            "journal.window.facets.curation.response.error.message.that.list.isn.t.one.curation",
-            error.into(),
-            StatusCode::BAD_REQUEST,
-        ),
-        Err(error) => http::error(
-            "entity_operation_failed",
-            "journal.window.facets.curation.response.error.message.that.entity.operation.couldn.t.be",
-            error.into(),
-            StatusCode::INTERNAL_SERVER_ERROR,
-        ),
+    let value = match load_state(&root, locale) {
+        Ok(value) => value,
+        Err(error) => {
+            return http::error(
+                "entity_operation_failed",
+                "journal.window.facets.curation.response.error.message.that.entity.operation.couldn.t.be",
+                error.into(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            );
+        }
+    };
+    match (&query.group, query.limit) {
+        (None, None) => Json(value).into_response(),
+        (None, Some(limit)) => Json(first_pages(value, Some(limit))).into_response(),
+        (Some(group), limit) => match group_page(value, group, query.offset.unwrap_or(0), limit) {
+            Some(page) => Json(page).into_response(),
+            None => http::error(
+                "unknown_group",
+                "journal.window.facets.curation.response.error.message.that.list.isn.t.one.curation",
+                http::Detail::with_arg(
+                    "journal.window.facets.curation.response.detail.unknown.group",
+                    "group",
+                    group.clone(),
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
+        },
     }
 }
 
@@ -197,8 +205,6 @@ fn suggestions_to_review(state: &Value) -> usize {
     facet_groups.len() + ambiguity_count + speaker_count + pair_count
 }
 
-const UNKNOWN_GROUP: &str = "unknown curation group";
-
 fn page_limit(limit: Option<usize>) -> usize {
     limit.unwrap_or(STATE_PAGE_MAX).clamp(1, STATE_PAGE_MAX)
 }
@@ -262,22 +268,15 @@ fn first_pages(mut state: Value, limit: Option<usize>) -> Value {
     state
 }
 
-fn group_page(
-    state: Value,
-    group: &str,
-    offset: usize,
-    limit: Option<usize>,
-) -> Result<Value, String> {
-    let Some((_, list)) = PAGED_LISTS.iter().find(|(name, _)| *name == group) else {
-        return Err(format!("{UNKNOWN_GROUP}: {group}"));
-    };
+fn group_page(state: Value, group: &str, offset: usize, limit: Option<usize>) -> Option<Value> {
+    let (_, list) = PAGED_LISTS.iter().find(|(name, _)| *name == group)?;
     let items = state
         .get(*list)
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
     let (page, total) = page_of(list, &items, offset, page_limit(limit));
-    Ok(json!({"group": group, "items": page, "total": total, "offset": offset}))
+    Some(json!({"group": group, "items": page, "total": total, "offset": offset}))
 }
 
 fn is_row_suppressed(row: &Value) -> bool {
@@ -1575,8 +1574,9 @@ fn missing(field: &str) -> Response {
     http::error(
         "missing_required_field",
         "journal.window.facets.curation.response.error.message.a.required.field.is.missing",
-        http::Detail::with_value(
-            "journal.window.facets.curation.response.error.detail.missing.value",
+        http::Detail::with_arg(
+            "journal.window.facets.curation.response.detail.missing.field",
+            "field_name",
             field.to_string(),
         ),
         StatusCode::BAD_REQUEST,
@@ -1619,7 +1619,7 @@ fn corrupt_config(root: &Path) -> Option<Response> {
             http::error(
                 "corrupt_config",
                 "journal.window.facets.curation.response.error.message.your.settings.couldn.t.be.read",
-                http::Detail::with_value("journal.window.facets.curation.response.error.detail.your.settings.file.at.value.couldn", path.display().to_string()),
+                http::Detail::with_arg("journal.window.facets.curation.response.detail.unreadable.settings", "settings_path", path.display().to_string()),
                 StatusCode::INTERNAL_SERVER_ERROR,
             )
         })
@@ -1737,7 +1737,7 @@ mod tests {
         let more = group_page(state.clone(), "set_aside", 2, Some(4)).expect("group page");
         assert_eq!(more["items"], json!(many(7)[2..6]));
         assert_eq!(more["total"], json!(7));
-        assert!(group_page(state, "facet", 0, None).is_err());
+        assert!(group_page(state, "facet", 0, None).is_none());
     }
 
     #[tokio::test]

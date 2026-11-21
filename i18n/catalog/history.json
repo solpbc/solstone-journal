@@ -37645,6 +37645,26 @@
       "selector": null
     },
     {
+      "id": "journal.window.facets.activities.calendar.scheduled.title",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e63616c656e6461722e7363686564756c65642e7469746c65",
+      "namespace": "journal.window.facets.activities.calendar.scheduled",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "meeting_title",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.facets.activities.copy.action.correct",
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e636f70792e616374696f6e2e636f7272656374",
       "namespace": "journal.window.facets.activities.copy.action",
@@ -37733,8 +37753,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e636f70792e63616c656e6461722e7468656e",
       "namespace": "journal.window.facets.activities.copy.calendar",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.activities.calendar.scheduled.title",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -37823,8 +37843,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e636f70792e656d7074792e66616365742e68656164696e67",
       "namespace": "journal.window.facets.activities.copy.empty.facet",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.activities.empty.facet.day",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -37889,8 +37909,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e636f70792e65766964656e63652e73686f772e616c6c",
       "namespace": "journal.window.facets.activities.copy.evidence.show",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.activities.evidence.show.all.count",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -37907,8 +37927,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e636f70792e6669656c64732e6465736372697074696f6e",
       "namespace": "journal.window.facets.activities.copy.fields",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.activities.history.changed.fields",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -37919,8 +37939,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e636f70792e6669656c64732e7469746c65",
       "namespace": "journal.window.facets.activities.copy.fields",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.activities.history.changed.fields",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -37979,8 +37999,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e636f70792e68696464656e2e666f6f746572",
       "namespace": "journal.window.facets.activities.copy.hidden",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.activities.hidden.footer.count",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -38009,8 +38029,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e636f70792e686973746f72792e666f756e64",
       "namespace": "journal.window.facets.activities.copy.history",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.activities.history.found.stream",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -38039,8 +38059,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e636f70792e686973746f72792e72656d6f76652e6c6162656c",
       "namespace": "journal.window.facets.activities.copy.history.remove",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.activities.history.remove.description",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -38069,8 +38089,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e636f70792e686973746f72792e7375676765737465642e6279",
       "namespace": "journal.window.facets.activities.copy.history.suggested",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.activities.history.suggested.agent",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -38087,8 +38107,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e636f70792e686973746f72792e796f752e6368616e676564",
       "namespace": "journal.window.facets.activities.copy.history.you",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.activities.history.changed.fields",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -38117,8 +38137,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e636f70792e686973746f72792e796f752e6c696e65732e6d616e79",
       "namespace": "journal.window.facets.activities.copy.history.you.lines",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.activities.history.corrected.lines",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -38183,8 +38203,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e636f70792e6c696e652e706c61792e6174",
       "namespace": "journal.window.facets.activities.copy.line.play",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.activities.line.play.time",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -38201,8 +38221,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e636f70792e6c696e65732e636f756e74",
       "namespace": "journal.window.facets.activities.copy.lines",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.activities.line.drawer.count",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -38219,8 +38239,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e636f70792e6c696e65732e636f756e742e6f6e65",
       "namespace": "journal.window.facets.activities.copy.lines.count",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.activities.line.drawer.count",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -38255,8 +38275,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e636f70792e6c696e65732e6f6e6c792e626f6479",
       "namespace": "journal.window.facets.activities.copy.lines.only",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.activities.line.correction.help",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -38273,8 +38293,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e636f70792e6c696e65732e6f6e6c792e6c696e6b",
       "namespace": "journal.window.facets.activities.copy.lines.only",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.activities.line.correction.help",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -38297,8 +38317,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e636f70792e6c696e65732e7175657374696f6e2e6e",
       "namespace": "journal.window.facets.activities.copy.lines.question",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.activities.line.question.selected",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -38363,8 +38383,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e636f70792e70656f706c652e6d616e79",
       "namespace": "journal.window.facets.activities.copy.people",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.activities.people.recorded.more",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -38391,8 +38411,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e636f70792e70656f706c652e6d616e792e6f6e65",
       "namespace": "journal.window.facets.activities.copy.people.many",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.activities.people.recorded.more",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -38414,8 +38434,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e636f70792e70656f706c652e6f6e65",
       "namespace": "journal.window.facets.activities.copy.people",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.activities.people.recorded.one",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -38432,8 +38452,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e636f70792e70656f706c652e74776f",
       "namespace": "journal.window.facets.activities.copy.people",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.activities.people.recorded.two",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -38467,8 +38487,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e636f70792e706c6163652e7468656e",
       "namespace": "journal.window.facets.activities.copy.place",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.activities.place.recorded.then",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -38550,8 +38570,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e636f70792e73636f70652e6661636574",
       "namespace": "journal.window.facets.activities.copy.scope",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.activities.scope.selected.facet",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -38568,8 +38588,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e636f70792e7365676d656e742e6d696e75746573",
       "namespace": "journal.window.facets.activities.copy.segment",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.activities.evidence.duration.minutes",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -38586,8 +38606,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e636f70792e7365676d656e74732e6d616e79",
       "namespace": "journal.window.facets.activities.copy.segments",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.activities.evidence.segments.named",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -38614,8 +38634,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e636f70792e7365676d656e74732e6f6e65",
       "namespace": "journal.window.facets.activities.copy.segments",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.activities.evidence.segments.named",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -38661,8 +38681,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e636f70792e73686f77696e672e68696464656e",
       "namespace": "journal.window.facets.activities.copy.showing",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.activities.hidden.showing.count",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -38691,8 +38711,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e636f70792e736f757263652e756e6b6e6f776e2e706872617365",
       "namespace": "journal.window.facets.activities.copy.source.unknown",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.activities.evidence.segments.unknown",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -38793,6 +38813,532 @@
       "arguments": [],
       "protected_slots": [],
       "selector": null
+    },
+    {
+      "id": "journal.window.facets.activities.empty.facet.day",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e656d7074792e66616365742e646179",
+      "namespace": "journal.window.facets.activities.empty.facet",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "facet_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.activities.evidence.duration.minutes",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e65766964656e63652e6475726174696f6e2e6d696e75746573",
+      "namespace": "journal.window.facets.activities.evidence.duration",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.facets.activities.evidence.segments.mixed",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e65766964656e63652e7365676d656e74732e6d69786564",
+      "namespace": "journal.window.facets.activities.evidence.segments",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "time_range",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.facets.activities.evidence.segments.named",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e65766964656e63652e7365676d656e74732e6e616d6564",
+      "namespace": "journal.window.facets.activities.evidence.segments",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "stream_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "time_range",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.facets.activities.evidence.segments.unknown",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e65766964656e63652e7365676d656e74732e756e6b6e6f776e",
+      "namespace": "journal.window.facets.activities.evidence.segments",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "time_range",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.facets.activities.evidence.show.all.count",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e65766964656e63652e73686f772e616c6c2e636f756e74",
+      "namespace": "journal.window.facets.activities.evidence.show.all",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.facets.activities.hidden.footer.count",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e68696464656e2e666f6f7465722e636f756e74",
+      "namespace": "journal.window.facets.activities.hidden.footer",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.facets.activities.hidden.showing.count",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e68696464656e2e73686f77696e672e636f756e74",
+      "namespace": "journal.window.facets.activities.hidden.showing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.facets.activities.history.changed.fields",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e686973746f72792e6368616e6765642e6669656c6473",
+      "namespace": "journal.window.facets.activities.history.changed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "enum",
+      "arguments": [
+        {
+          "name": "field_group",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "field_group",
+        "type": "string",
+        "enum_values": [
+          "title",
+          "description",
+          "details",
+          "title-description",
+          "title-details",
+          "description-details",
+          "title-description-details"
+        ],
+        "enum_default": "title"
+      }
+    },
+    {
+      "id": "journal.window.facets.activities.history.changed.unclassified",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e686973746f72792e6368616e6765642e756e636c6173736966696564",
+      "namespace": "journal.window.facets.activities.history.changed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "slot1",
+          "kind": "whitespace",
+          "value": " "
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.activities.history.corrected.lines",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e686973746f72792e636f727265637465642e6c696e6573",
+      "namespace": "journal.window.facets.activities.history.corrected",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.facets.activities.history.found.stream",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e686973746f72792e666f756e642e73747265616d",
+      "namespace": "journal.window.facets.activities.history.found",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "stream_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.activities.history.remove.description",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e686973746f72792e72656d6f76652e6465736372697074696f6e",
+      "namespace": "journal.window.facets.activities.history.remove",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "recorded_change",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.activities.history.suggested.agent",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e686973746f72792e7375676765737465642e6167656e74",
+      "namespace": "journal.window.facets.activities.history.suggested",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "agent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.activities.line.correction.help",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e6c696e652e636f7272656374696f6e2e68656c70",
+      "namespace": "journal.window.facets.activities.line.correction",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "speakers_start",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "speakers_end",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.activities.line.drawer.count",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e6c696e652e6472617765722e636f756e74",
+      "namespace": "journal.window.facets.activities.line.drawer",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.facets.activities.line.play.time",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e6c696e652e706c61792e74696d65",
+      "namespace": "journal.window.facets.activities.line.play",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "time",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.activities.line.question.selected",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e6c696e652e7175657374696f6e2e73656c6563746564",
+      "namespace": "journal.window.facets.activities.line.question",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
     },
     {
       "id": "journal.window.facets.activities.line.refusal.owner.line.answers.unreadable",
@@ -39023,6 +39569,186 @@
       "selector": null
     },
     {
+      "id": "journal.window.facets.activities.people.recorded.more",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e70656f706c652e7265636f726465642e6d6f7265",
+      "namespace": "journal.window.facets.activities.people.recorded",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "first_person",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "second_person",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "others",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.facets.activities.people.recorded.one",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e70656f706c652e7265636f726465642e6f6e65",
+      "namespace": "journal.window.facets.activities.people.recorded",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "person",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.activities.people.recorded.two",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e70656f706c652e7265636f726465642e74776f",
+      "namespace": "journal.window.facets.activities.people.recorded",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "first_person",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "second_person",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.activities.place.recorded.then",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e706c6163652e7265636f726465642e7468656e",
+      "namespace": "journal.window.facets.activities.place.recorded",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "device_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "place",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.activities.response.detail.disallowed.fields",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e726573706f6e73652e64657461696c2e646973616c6c6f7765642e6669656c6473",
+      "namespace": "journal.window.facets.activities.response.detail.disallowed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "field_list",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.activities.response.detail.previous.answer.unreadable",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e726573706f6e73652e64657461696c2e70726576696f75732e616e737765722e756e7265616461626c65",
+      "namespace": "journal.window.facets.activities.response.detail.previous.answer",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "read_error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.activities.response.detail.segment.outside.activity",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e726573706f6e73652e64657461696c2e7365676d656e742e6f7574736964652e6163746976697479",
+      "namespace": "journal.window.facets.activities.response.detail.segment.outside",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "segment_path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.facets.activities.response.error.detail.activities.couldn.t.be.updated.right",
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e726573706f6e73652e6572726f722e64657461696c2e616374697669746965732e636f756c646e2e742e62652e757064617465642e7269676874",
       "namespace": "journal.window.facets.activities.response.error.detail.activities.couldn.t.be.updated",
@@ -39129,8 +39855,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e726573706f6e73652e6572726f722e64657461696c2e70617463682e636f6e7461696e732e646973616c6c6f7765642e6669656c64732e76616c7565",
       "namespace": "journal.window.facets.activities.response.error.detail.patch.contains.disallowed.fields",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.activities.response.detail.disallowed.fields",
       "format_intent": "text",
       "arguments": [
         {
@@ -39285,8 +40011,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e726573706f6e73652e6572726f722e64657461696c2e7468652e616e737765722e746869732e656469742e7265706c616365642e63616e",
       "namespace": "journal.window.facets.activities.response.error.detail.the.answer.this.edit.replaced",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.activities.response.detail.previous.answer.unreadable",
       "format_intent": "text",
       "arguments": [
         {
@@ -39323,8 +40049,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e726573706f6e73652e6572726f722e64657461696c2e76616c75652e69736e2e742e612e7365676d656e742e6f66",
       "namespace": "journal.window.facets.activities.response.error.detail.value.isn.t.a.segment",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.activities.response.detail.segment.outside.activity",
       "format_intent": "text",
       "arguments": [
         {
@@ -39509,6 +40235,176 @@
       "replacement": null,
       "format_intent": "text",
       "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.activities.scope.selected.facet",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e73636f70652e73656c65637465642e6661636574",
+      "namespace": "journal.window.facets.activities.scope.selected",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "facet_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.activities.timeline.item.hidden",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e74696d656c696e652e6974656d2e68696464656e",
+      "namespace": "journal.window.facets.activities.timeline.item",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "time_range",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "facet_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "activity_title",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.activities.timeline.item.hidden.source",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e74696d656c696e652e6974656d2e68696464656e2e736f75726365",
+      "namespace": "journal.window.facets.activities.timeline.item.hidden",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "time_range",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "facet_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "stream_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "activity_title",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.activities.timeline.item.visible",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e74696d656c696e652e6974656d2e76697369626c65",
+      "namespace": "journal.window.facets.activities.timeline.item",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "time_range",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "facet_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "activity_title",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.activities.timeline.item.visible.source",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e74696d656c696e652e6974656d2e76697369626c652e736f75726365",
+      "namespace": "journal.window.facets.activities.timeline.item.visible",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "time_range",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "facet_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "stream_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "activity_title",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
       "protected_slots": [],
       "selector": null
     },
@@ -39901,8 +40797,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e77696e646f772e6578706c616e6174696f6e2e7468652e6465736372697074696f6e2e616e642e796f75722e6163636f756e742e6f66",
       "namespace": "journal.window.facets.activities.window.explanation.the.description.and.your.account",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.activities.history.changed.fields",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -39925,8 +40821,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e77696e646f772e6578706c616e6174696f6e2e7468652e7469746c652e616e642e6465736372697074696f6e",
       "namespace": "journal.window.facets.activities.window.explanation.the.title.and",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.activities.history.changed.fields",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -39937,8 +40833,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e77696e646f772e6578706c616e6174696f6e2e7468652e7469746c652e616e642e796f75722e6163636f756e742e6f66",
       "namespace": "journal.window.facets.activities.window.explanation.the.title.and.your.account",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.activities.history.changed.fields",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -39949,8 +40845,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e77696e646f772e6578706c616e6174696f6e2e7468652e7469746c652e7468652e6465736372697074696f6e2e616e642e796f7572",
       "namespace": "journal.window.facets.activities.window.explanation.the.title.the.description.and",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.activities.history.changed.fields",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -40045,8 +40941,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e77696e646f772e6578706c616e6174696f6e2e77686f2e736169642e7468652e6c696e652e796f752e7469636b6564",
       "namespace": "journal.window.facets.activities.window.explanation.who.said.the.line.you",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.activities.line.question.selected",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -40081,8 +40977,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e77696e646f772e6578706c616e6174696f6e2e796f752e66697865642e77686f2e736169642e6c696e65",
       "namespace": "journal.window.facets.activities.window.explanation.you.fixed.who.said",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.activities.history.corrected.lines",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -40173,6 +41069,78 @@
       "selector": null
     },
     {
+      "id": "journal.window.facets.awareness.response.detail.multiple.import.answers",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e61776172656e6573732e726573706f6e73652e64657461696c2e6d756c7469706c652e696d706f72742e616e7377657273",
+      "namespace": "journal.window.facets.awareness.response.detail.multiple.import",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "answer_list",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "slot1",
+          "kind": "accepted-input",
+          "value": "record/declined/nudge"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.awareness.response.detail.unknown.section",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e61776172656e6573732e726573706f6e73652e64657461696c2e756e6b6e6f776e2e73656374696f6e",
+      "namespace": "journal.window.facets.awareness.response.detail.unknown",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "section_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.awareness.response.detail.unreadable.settings",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e61776172656e6573732e726573706f6e73652e64657461696c2e756e7265616461626c652e73657474696e6773",
+      "namespace": "journal.window.facets.awareness.response.detail.unreadable",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "settings_path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "slot3",
+          "kind": "accepted-input",
+          "value": "config/journal.json"
+        }
+      ],
+      "selector": null
+    },
+    {
       "id": "journal.window.facets.awareness.response.error.detail.kind.is.required",
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e61776172656e6573732e726573706f6e73652e6572726f722e64657461696c2e6b696e642e69732e7265717569726564",
       "namespace": "journal.window.facets.awareness.response.error.detail.kind.is",
@@ -40189,8 +41157,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e61776172656e6573732e726573706f6e73652e6572726f722e64657461696c2e6e6f2e61776172656e6573732e73656374696f6e2e6e616d65642e76616c7565",
       "namespace": "journal.window.facets.awareness.response.error.detail.no.awareness.section.named",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.awareness.response.detail.unknown.section",
       "format_intent": "text",
       "arguments": [
         {
@@ -40239,8 +41207,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e61776172656e6573732e726573706f6e73652e6572726f722e64657461696c2e796f75722e73657474696e67732e66696c652e61742e76616c75652e636f756c646e",
       "namespace": "journal.window.facets.awareness.response.error.detail.your.settings.file.at.value",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.awareness.response.detail.unreadable.settings",
       "format_intent": "text",
       "arguments": [
         {
@@ -40407,8 +41375,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e61776172656e6573732e726573706f6e73652e746f6f2e6d616e792e696d706f72742e616e7377657273",
       "namespace": "journal.window.facets.awareness.response.too.many.import",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.awareness.response.detail.multiple.import.answers",
       "format_intent": "text",
       "arguments": [
         {
@@ -40431,6 +41399,110 @@
           "value": " "
         }
       ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.curation.ambiguity.choose.name",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e616d626967756974792e63686f6f73652e6e616d65",
+      "namespace": "journal.window.facets.curation.ambiguity.choose",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "candidate_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.curation.ambiguity.member.occurrences",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e616d626967756974792e6d656d6265722e6f6363757272656e636573",
+      "namespace": "journal.window.facets.curation.ambiguity.member",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.facets.curation.ambiguity.occurrences",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e616d626967756974792e6f6363757272656e636573",
+      "namespace": "journal.window.facets.curation.ambiguity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.facets.curation.ambiguity.question",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e616d626967756974792e7175657374696f6e",
+      "namespace": "journal.window.facets.curation.ambiguity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "ambiguous_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
       "selector": null
     },
     {
@@ -40510,8 +41582,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e65766964656e63652e706172742e6f66",
       "namespace": "journal.window.facets.curation.evidence.part",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.evidence.showing.partial",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -40522,8 +41594,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e65766964656e63652e706172742e73686f77696e67",
       "namespace": "journal.window.facets.curation.evidence.part",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.evidence.showing.partial",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -40534,8 +41606,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e65766964656e63652e70696563652e6d616e79",
       "namespace": "journal.window.facets.curation.evidence.piece",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.evidence.total.pieces",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -40546,10 +41618,155 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e65766964656e63652e70696563652e6f6e65",
       "namespace": "journal.window.facets.curation.evidence.piece",
       "owner": "journal",
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.evidence.total.pieces",
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.curation.evidence.showing.partial",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e65766964656e63652e73686f77696e672e7061727469616c",
+      "namespace": "journal.window.facets.curation.evidence.showing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "shown_quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "shown",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total_quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "shown_quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.facets.curation.evidence.total.pieces",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e65766964656e63652e746f74616c2e706965636573",
+      "namespace": "journal.window.facets.curation.evidence.total",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.facets.curation.facet.additional.names",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e66616365742e6164646974696f6e616c2e6e616d6573",
+      "namespace": "journal.window.facets.curation.facet.additional",
+      "owner": "journal",
       "tombstone": false,
       "replacement": null,
       "format_intent": "text",
-      "arguments": [],
+      "arguments": [
+        {
+          "name": "alias_list",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.curation.facet.create.question",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e66616365742e6372656174652e7175657374696f6e",
+      "namespace": "journal.window.facets.curation.facet.create",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "facet_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.curation.list.items",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e6c6973742e6974656d73",
+      "namespace": "journal.window.facets.curation.list",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "preceding_items",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "last_item",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
       "protected_slots": [],
       "selector": null
     },
@@ -40564,6 +41781,324 @@
       "arguments": [],
       "protected_slots": [],
       "selector": null
+    },
+    {
+      "id": "journal.window.facets.curation.preview.activities.count",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e707265766965772e616374697669746965732e636f756e74",
+      "namespace": "journal.window.facets.curation.preview.activities",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.facets.curation.preview.aliases",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e707265766965772e616c6961736573",
+      "namespace": "journal.window.facets.curation.preview",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "aliases",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.curation.preview.emails.count",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e707265766965772e656d61696c732e636f756e74",
+      "namespace": "journal.window.facets.curation.preview.emails",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.facets.curation.preview.facet.links",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e707265766965772e66616365742e6c696e6b73",
+      "namespace": "journal.window.facets.curation.preview.facet",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "moved_quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "moved",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "merged_quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "merged",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "moved_quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.facets.curation.preview.notes.count",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e707265766965772e6e6f7465732e636f756e74",
+      "namespace": "journal.window.facets.curation.preview.notes",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.facets.curation.preview.observations.count",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e707265766965772e6f62736572766174696f6e732e636f756e74",
+      "namespace": "journal.window.facets.curation.preview.observations",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.facets.curation.preview.speaker.labels.count",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e707265766965772e737065616b65722e6c6162656c732e636f756e74",
+      "namespace": "journal.window.facets.curation.preview.speaker.labels",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.facets.curation.preview.speaker.segments",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e707265766965772e737065616b65722e7365676d656e7473",
+      "namespace": "journal.window.facets.curation.preview.speaker",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "labels_quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "labels",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "corrections_quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "corrections",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "labels_quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.facets.curation.preview.voice.samples",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e707265766965772e766f6963652e73616d706c6573",
+      "namespace": "journal.window.facets.curation.preview.voice",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "added_quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "added",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total_quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "added_quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
     },
     {
       "id": "journal.window.facets.curation.response.batch.candidate.identity.missing",
@@ -41463,6 +42998,72 @@
       "selector": null
     },
     {
+      "id": "journal.window.facets.curation.response.detail.missing.field",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e726573706f6e73652e64657461696c2e6d697373696e672e6669656c64",
+      "namespace": "journal.window.facets.curation.response.detail.missing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "field_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.curation.response.detail.unknown.group",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e726573706f6e73652e64657461696c2e756e6b6e6f776e2e67726f7570",
+      "namespace": "journal.window.facets.curation.response.detail.unknown",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "group",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.curation.response.detail.unreadable.settings",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e726573706f6e73652e64657461696c2e756e7265616461626c652e73657474696e6773",
+      "namespace": "journal.window.facets.curation.response.detail.unreadable",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "settings_path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "slot3",
+          "kind": "accepted-input",
+          "value": "config/journal.json"
+        }
+      ],
+      "selector": null
+    },
+    {
       "id": "journal.window.facets.curation.response.entity.busy.detail",
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e726573706f6e73652e656e746974792e627573792e64657461696c",
       "namespace": "journal.window.facets.curation.response.entity.busy",
@@ -41515,8 +43116,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e726573706f6e73652e6572726f722e64657461696c2e6d697373696e672e76616c7565",
       "namespace": "journal.window.facets.curation.response.error.detail.missing",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.response.detail.missing.field",
       "format_intent": "text",
       "arguments": [
         {
@@ -41541,8 +43142,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e726573706f6e73652e6572726f722e64657461696c2e796f75722e73657474696e67732e66696c652e61742e76616c75652e636f756c646e",
       "namespace": "journal.window.facets.curation.response.error.detail.your.settings.file.at.value",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.response.detail.unreadable.settings",
       "format_intent": "text",
       "arguments": [
         {
@@ -41717,6 +43318,65 @@
       "selector": null
     },
     {
+      "id": "journal.window.facets.curation.review.total",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e7265766965772e746f74616c",
+      "namespace": "journal.window.facets.curation.review",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.facets.curation.speaker.merge.question",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e737065616b65722e6d657267652e7175657374696f6e",
+      "namespace": "journal.window.facets.curation.speaker.merge",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "source_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "target_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.facets.curation.status.text.journal",
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e7374617475732e746578742e6a6f75726e616c",
       "namespace": "journal.window.facets.curation.status.text",
@@ -41829,8 +43489,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e2e646973706c61792e746578742e6f6363757272656e6365",
       "namespace": "journal.window.facets.curation.suggestion.display.text",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.ambiguity.occurrences",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -41841,8 +43501,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e2e646973706c61792e746578742e6f6363757272656e636573",
       "namespace": "journal.window.facets.curation.suggestion.display.text",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.ambiguity.occurrences",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -41889,8 +43549,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e2e646973706c61792e746578742e76616c7565312e616e642e76616c756532",
       "namespace": "journal.window.facets.curation.suggestion.display.text.value1.and",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.list.items",
       "format_intent": "text",
       "arguments": [
         {
@@ -41927,8 +43587,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e2e646973706c61792e746578742e76616c7565312e76616c7565322e61646465642e76616c7565332e746f74616c",
       "namespace": "journal.window.facets.curation.suggestion.display.text.value1.value2.added.value3",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.preview.voice.samples",
       "format_intent": "text",
       "arguments": [
         {
@@ -41982,8 +43642,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e2e646973706c61792e746578742e76616c7565312e76616c7565322e6c6162656c732e76616c7565332e636f7272656374696f6e73",
       "namespace": "journal.window.facets.curation.suggestion.display.text.value1.value2.labels.value3",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.preview.speaker.segments",
       "format_intent": "text",
       "arguments": [
         {
@@ -42037,8 +43697,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e2e646973706c61792e746578742e76616c7565312e76616c7565322e6d6f7665642e76616c7565332e6d6572676564",
       "namespace": "journal.window.facets.curation.suggestion.display.text.value1.value2.moved.value3",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.preview.facet.links",
       "format_intent": "text",
       "arguments": [
         {
@@ -42104,8 +43764,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e6163636570746564",
       "namespace": "journal.window.facets.curation.suggestions",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.suggestions.receipt.accepted.ask",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -42122,8 +43782,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e61636365707465642e616c736f2e6b6e6f776e2e6173",
       "namespace": "journal.window.facets.curation.suggestions.accepted.also.known",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.suggestions.receipt.accepted.alias",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -42150,8 +43810,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e61636365707465642e6e6f742e61736b6564",
       "namespace": "journal.window.facets.curation.suggestions.accepted.not",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.suggestions.receipt.accepted.ask.unconfirmed",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -42168,8 +43828,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e61636365707465642e7061727469616c",
       "namespace": "journal.window.facets.curation.suggestions.accepted",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.suggestions.receipt.accepted.partial",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -42186,8 +43846,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e61636365707465642e706c61696e",
       "namespace": "journal.window.facets.curation.suggestions.accepted",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.suggestions.receipt.accepted.simple",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -42204,8 +43864,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e61636365707465642e72656e616d65",
       "namespace": "journal.window.facets.curation.suggestions.accepted",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.suggestions.receipt.accepted.rename",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -42232,8 +43892,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e61636365707465642e73616d652e706572736f6e",
       "namespace": "journal.window.facets.curation.suggestions.accepted.same",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.suggestions.receipt.accepted.merged.people",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -42265,8 +43925,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e6163636f756e742e61732e7772697474656e",
       "namespace": "journal.window.facets.curation.suggestions.account.as",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.suggestions.account.attributed.agent",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -42279,12 +43939,32 @@
       "selector": null
     },
     {
+      "id": "journal.window.facets.curation.suggestions.account.attributed.agent",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e6163636f756e742e617474726962757465642e6167656e74",
+      "namespace": "journal.window.facets.curation.suggestions.account.attributed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "agent_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.facets.curation.suggestions.also.known.as",
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e616c736f2e6b6e6f776e2e6173",
       "namespace": "journal.window.facets.curation.suggestions.also.known",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.suggestions.name.alias",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -42302,12 +43982,92 @@
       "selector": null
     },
     {
+      "id": "journal.window.facets.curation.suggestions.basis.agent.journal.shows",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e62617369732e6167656e742e6a6f75726e616c2e73686f7773",
+      "namespace": "journal.window.facets.curation.suggestions.basis.agent.journal",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "agent_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.curation.suggestions.basis.agent.my.own.work",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e62617369732e6167656e742e6d792e6f776e2e776f726b",
+      "namespace": "journal.window.facets.curation.suggestions.basis.agent.my.own",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "agent_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.curation.suggestions.basis.agent.outside.source",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e62617369732e6167656e742e6f7574736964652e736f75726365",
+      "namespace": "journal.window.facets.curation.suggestions.basis.agent.outside",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "agent_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.curation.suggestions.basis.agent.owner.said",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e62617369732e6167656e742e6f776e65722e73616964",
+      "namespace": "journal.window.facets.curation.suggestions.basis.agent.owner",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "agent_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.facets.curation.suggestions.basis.journal.shows",
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e62617369732e6a6f75726e616c2e73686f7773",
       "namespace": "journal.window.facets.curation.suggestions.basis.journal",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.suggestions.basis.agent.journal.shows",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -42324,8 +44084,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e62617369732e6d792e6f776e2e776f726b",
       "namespace": "journal.window.facets.curation.suggestions.basis.my.own",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.suggestions.basis.agent.my.own.work",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -42342,8 +44102,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e62617369732e6f7574736964652e736f75726365",
       "namespace": "journal.window.facets.curation.suggestions.basis.outside",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.suggestions.basis.agent.outside.source",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -42360,8 +44120,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e62617369732e6f776e65722e73616964",
       "namespace": "journal.window.facets.curation.suggestions.basis.owner",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.suggestions.basis.agent.owner.said",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -42402,8 +44162,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e6469736d6973736564",
       "namespace": "journal.window.facets.curation.suggestions",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.suggestions.receipt.dismissed.agent",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -42517,6 +44277,46 @@
       "selector": null
     },
     {
+      "id": "journal.window.facets.curation.suggestions.filter.empty.agent",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e66696c7465722e656d7074792e6167656e74",
+      "namespace": "journal.window.facets.curation.suggestions.filter.empty",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "agent_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.curation.suggestions.filter.only.agent",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e66696c7465722e6f6e6c792e6167656e74",
+      "namespace": "journal.window.facets.curation.suggestions.filter.only",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "agent_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.facets.curation.suggestions.group",
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e67726f7570",
       "namespace": "journal.window.facets.curation.suggestions",
@@ -42589,12 +44389,143 @@
       "selector": null
     },
     {
+      "id": "journal.window.facets.curation.suggestions.lines.assigned.named",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e6c696e65732e61737369676e65642e6e616d6564",
+      "namespace": "journal.window.facets.curation.suggestions.lines.assigned",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "speaker",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.facets.curation.suggestions.lines.assigned.owner",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e6c696e65732e61737369676e65642e6f776e6572",
+      "namespace": "journal.window.facets.curation.suggestions.lines.assigned",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "speaker_start",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "speaker_end",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.facets.curation.suggestions.lines.assigned.unknown",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e6c696e65732e61737369676e65642e756e6b6e6f776e",
+      "namespace": "journal.window.facets.curation.suggestions.lines.assigned",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "speaker_start",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "speaker_end",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
       "id": "journal.window.facets.curation.suggestions.lines.many",
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e6c696e65732e6d616e79",
       "namespace": "journal.window.facets.curation.suggestions.lines",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.suggestions.lines.assigned.named",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -42616,8 +44547,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e6c696e65732e6f6e65",
       "namespace": "journal.window.facets.curation.suggestions.lines",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.suggestions.lines.assigned.named",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -42630,12 +44561,66 @@
       "selector": null
     },
     {
+      "id": "journal.window.facets.curation.suggestions.name.alias",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e6e616d652e616c696173",
+      "namespace": "journal.window.facets.curation.suggestions.name",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "former_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "new_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.curation.suggestions.name.change",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e6e616d652e6368616e6765",
+      "namespace": "journal.window.facets.curation.suggestions.name",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "former_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "new_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.facets.curation.suggestions.none.from",
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e6e6f6e652e66726f6d",
       "namespace": "journal.window.facets.curation.suggestions.none",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.suggestions.filter.empty.agent",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -42652,8 +44637,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e6e6f7465732e6d616e79",
       "namespace": "journal.window.facets.curation.suggestions.notes",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.suggestions.person.notes.count",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -42670,8 +44655,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e6e6f7465732e6f6e65",
       "namespace": "journal.window.facets.curation.suggestions.notes",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.suggestions.person.notes.count",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -42718,8 +44703,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e6f6e6c792e66726f6d",
       "namespace": "journal.window.facets.curation.suggestions.only",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.suggestions.filter.only.agent",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -42784,8 +44769,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e6f70656e2e6e616d6564",
       "namespace": "journal.window.facets.curation.suggestions.open",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.suggestions.open.person.name",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -42798,12 +44783,52 @@
       "selector": null
     },
     {
+      "id": "journal.window.facets.curation.suggestions.open.person.name",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e6f70656e2e706572736f6e2e6e616d65",
+      "namespace": "journal.window.facets.curation.suggestions.open.person",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "person_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.curation.suggestions.person.facet.membership",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e706572736f6e2e66616365742e6d656d62657273686970",
+      "namespace": "journal.window.facets.curation.suggestions.person.facet",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "facet_list",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.facets.curation.suggestions.person.in",
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e706572736f6e2e696e",
       "namespace": "journal.window.facets.curation.suggestions.person",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.suggestions.person.facet.membership",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -42816,12 +44841,300 @@
       "selector": null
     },
     {
+      "id": "journal.window.facets.curation.suggestions.person.notes.count",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e706572736f6e2e6e6f7465732e636f756e74",
+      "namespace": "journal.window.facets.curation.suggestions.person.notes",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.facets.curation.suggestions.receipt.accepted.alias",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e726563656970742e61636365707465642e616c696173",
+      "namespace": "journal.window.facets.curation.suggestions.receipt.accepted",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "agent_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "former_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "new_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.curation.suggestions.receipt.accepted.ask",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e726563656970742e61636365707465642e61736b",
+      "namespace": "journal.window.facets.curation.suggestions.receipt.accepted",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "agent_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.curation.suggestions.receipt.accepted.ask.unconfirmed",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e726563656970742e61636365707465642e61736b2e756e636f6e6669726d6564",
+      "namespace": "journal.window.facets.curation.suggestions.receipt.accepted.ask",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "agent_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.curation.suggestions.receipt.accepted.merged.people",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e726563656970742e61636365707465642e6d65726765642e70656f706c65",
+      "namespace": "journal.window.facets.curation.suggestions.receipt.accepted.merged",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "agent_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "kept_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "merged_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.curation.suggestions.receipt.accepted.partial",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e726563656970742e61636365707465642e7061727469616c",
+      "namespace": "journal.window.facets.curation.suggestions.receipt.accepted",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "agent_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.curation.suggestions.receipt.accepted.rename",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e726563656970742e61636365707465642e72656e616d65",
+      "namespace": "journal.window.facets.curation.suggestions.receipt.accepted",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "agent_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "former_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "new_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.curation.suggestions.receipt.accepted.simple",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e726563656970742e61636365707465642e73696d706c65",
+      "namespace": "journal.window.facets.curation.suggestions.receipt.accepted",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "agent_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.curation.suggestions.receipt.dismissed.agent",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e726563656970742e6469736d69737365642e6167656e74",
+      "namespace": "journal.window.facets.curation.suggestions.receipt.dismissed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "agent_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.curation.suggestions.receipt.undone.alias",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e726563656970742e756e646f6e652e616c696173",
+      "namespace": "journal.window.facets.curation.suggestions.receipt.undone",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "former_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "new_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.curation.suggestions.receipt.undone.rename",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e726563656970742e756e646f6e652e72656e616d65",
+      "namespace": "journal.window.facets.curation.suggestions.receipt.undone",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "former_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "new_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.facets.curation.suggestions.rename",
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e72656e616d65",
       "namespace": "journal.window.facets.curation.suggestions",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.suggestions.name.change",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -42879,8 +45192,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e737065616b65722e6f776e6572",
       "namespace": "journal.window.facets.curation.suggestions.speaker",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.suggestions.lines.assigned.owner",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -42891,8 +45204,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e7374616c65",
       "namespace": "journal.window.facets.curation.suggestions",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.suggestions.stale.changed.after.agent",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -42902,6 +45215,26 @@
           "value": "{agent}"
         }
       ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.curation.suggestions.stale.changed.after.agent",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e7374616c652e6368616e6765642e61667465722e6167656e74",
+      "namespace": "journal.window.facets.curation.suggestions.stale.changed.after",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "agent_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
       "selector": null
     },
     {
@@ -42917,12 +45250,127 @@
       "selector": null
     },
     {
+      "id": "journal.window.facets.curation.suggestions.stale.pair.changed.after.agent",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e7374616c652e706169722e6368616e6765642e61667465722e6167656e74",
+      "namespace": "journal.window.facets.curation.suggestions.stale.pair.changed.after",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "first_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "second_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "agent_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.curation.suggestions.stale.pair.journal.candidate",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e7374616c652e706169722e6a6f75726e616c2e63616e646964617465",
+      "namespace": "journal.window.facets.curation.suggestions.stale.pair.journal",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "first_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "second_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.curation.suggestions.stale.pair.journal.question",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e7374616c652e706169722e6a6f75726e616c2e7175657374696f6e",
+      "namespace": "journal.window.facets.curation.suggestions.stale.pair.journal",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "first_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "second_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.curation.suggestions.stale.pair.owner.answered",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e7374616c652e706169722e6f776e65722e616e737765726564",
+      "namespace": "journal.window.facets.curation.suggestions.stale.pair.owner",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "first_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "second_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.facets.curation.suggestions.stale.same.person.changed",
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e7374616c652e73616d652e706572736f6e2e6368616e676564",
       "namespace": "journal.window.facets.curation.suggestions.stale.same.person",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.suggestions.stale.pair.changed.after.agent",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -42949,8 +45397,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e7374616c652e73616d652e706572736f6e2e6a6f75726e616c2e63616e646964617465",
       "namespace": "journal.window.facets.curation.suggestions.stale.same.person.journal",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.suggestions.stale.pair.journal.candidate",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -42972,8 +45420,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e7374616c652e73616d652e706572736f6e2e6a6f75726e616c2e7175657374696f6e",
       "namespace": "journal.window.facets.curation.suggestions.stale.same.person.journal",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.suggestions.stale.pair.journal.question",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -42995,8 +45443,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e7374616c652e73616d652e706572736f6e2e6f776e65722e616e737765726564",
       "namespace": "journal.window.facets.curation.suggestions.stale.same.person.owner",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.suggestions.stale.pair.owner.answered",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -43042,8 +45490,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e7468656e2e6163636f756e74",
       "namespace": "journal.window.facets.curation.suggestions.then",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.suggestions.then.account.days",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -43056,12 +45504,32 @@
       "selector": null
     },
     {
+      "id": "journal.window.facets.curation.suggestions.then.account.days",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e7468656e2e6163636f756e742e64617973",
+      "namespace": "journal.window.facets.curation.suggestions.then.account",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "affected_days",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.facets.curation.suggestions.then.activities",
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e7468656e2e61637469766974696573",
       "namespace": "journal.window.facets.curation.suggestions.then",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.suggestions.then.activities.days",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -43079,12 +45547,51 @@
       "selector": null
     },
     {
+      "id": "journal.window.facets.curation.suggestions.then.activities.days",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e7468656e2e616374697669746965732e64617973",
+      "namespace": "journal.window.facets.curation.suggestions.then.activities",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "affected_days",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
       "id": "journal.window.facets.curation.suggestions.then.activity",
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e7468656e2e6163746976697479",
       "namespace": "journal.window.facets.curation.suggestions.then",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.suggestions.then.activities.days",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -43097,12 +45604,32 @@
       "selector": null
     },
     {
+      "id": "journal.window.facets.curation.suggestions.then.alias.name",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e7468656e2e616c6961732e6e616d65",
+      "namespace": "journal.window.facets.curation.suggestions.then.alias",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "new_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.facets.curation.suggestions.then.also.known.as",
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e7468656e2e616c736f2e6b6e6f776e2e6173",
       "namespace": "journal.window.facets.curation.suggestions.then.also.known",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.suggestions.then.alias.name",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -43115,12 +45642,39 @@
       "selector": null
     },
     {
+      "id": "journal.window.facets.curation.suggestions.then.merge.people",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e7468656e2e6d657267652e70656f706c65",
+      "namespace": "journal.window.facets.curation.suggestions.then.merge",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "kept_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "merged_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.facets.curation.suggestions.then.rename",
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e7468656e2e72656e616d65",
       "namespace": "journal.window.facets.curation.suggestions.then",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.suggestions.then.retain.previous.name",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -43138,12 +45692,39 @@
       "selector": null
     },
     {
+      "id": "journal.window.facets.curation.suggestions.then.retain.previous.name",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e7468656e2e72657461696e2e70726576696f75732e6e616d65",
+      "namespace": "journal.window.facets.curation.suggestions.then.retain.previous",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "former_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "new_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.facets.curation.suggestions.then.same.person",
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e7468656e2e73616d652e706572736f6e",
       "namespace": "journal.window.facets.curation.suggestions.then.same",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.suggestions.then.merge.people",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -43182,8 +45763,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e756e646f6e652e616c736f2e6b6e6f776e2e6173",
       "namespace": "journal.window.facets.curation.suggestions.undone.also.known",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.suggestions.receipt.undone.alias",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -43217,8 +45798,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e73756767657374696f6e732e756e646f6e652e72656e616d65",
       "namespace": "journal.window.facets.curation.suggestions.undone",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.suggestions.receipt.undone.rename",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [
@@ -43324,8 +45905,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e76697369626c652e746578742e6f6363757272656e636573",
       "namespace": "journal.window.facets.curation.visible.text",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.ambiguity.member.occurrences",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -43372,8 +45953,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e76697369626c652e746578742e76616c7565312e73756767657374696f6e732e746f2e7265766965772e63686f6f73652e61",
       "namespace": "journal.window.facets.curation.visible.text.value1.suggestions.to.review.choose",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.review.total",
       "format_intent": "text",
       "arguments": [
         {
@@ -43410,8 +45991,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e77696e646f772e6578706c616e6174696f6e2e616c736f2e7365656e2e61732e76616c756531",
       "namespace": "journal.window.facets.curation.window.explanation.also.seen.as",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.facet.additional.names",
       "format_intent": "text",
       "arguments": [
         {
@@ -43525,8 +46106,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e6375726174696f6e2e77696e646f772e6578706c616e6174696f6e2e736f6d656f6e652e796f752e646f6e2e742e6b6e6f77",
       "namespace": "journal.window.facets.curation.window.explanation.someone.you.don.t",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.facets.curation.suggestions.lines.assigned.unknown",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],

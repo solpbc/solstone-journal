@@ -1,0 +1,21 @@
+{
+  "description": "Suggestion evidence describing the recorded facet membership. $facet_list is a display list of facets.",
+  "context": "Journal window. Suggestion evidence describing the recorded facet membership. $facet_list is a display list of facets.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "facet_list",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "78781d83cf293e27983f96683a3c989e3257a7ba88a39e6dfd3058bc67003a73",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

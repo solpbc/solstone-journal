@@ -16,7 +16,7 @@ use solstone_core_convey_http::{
 #[derive(Clone)]
 pub(crate) enum Detail {
     Raw(String),
-    Catalog(&'static str, Option<String>),
+    Catalog(&'static str, Option<(&'static str, String)>),
 }
 
 impl From<String> for Detail {
@@ -30,15 +30,15 @@ impl Detail {
         Self::Catalog(id, None)
     }
 
-    pub(crate) fn with_value(id: &'static str, value: String) -> Self {
-        Self::Catalog(id, Some(value))
+    pub(crate) fn with_arg(id: &'static str, name: &'static str, value: String) -> Self {
+        Self::Catalog(id, Some((name, value)))
     }
 
     fn render(&self, locale: &str) -> String {
         match self {
             Self::Raw(value) => value.clone(),
             Self::Catalog(id, None) => text(locale, id),
-            Self::Catalog(id, Some(value)) => strings(locale, id, [("value", value)]),
+            Self::Catalog(id, Some((name, value))) => strings(locale, id, [(*name, value)]),
         }
     }
 }

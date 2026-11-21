@@ -1,0 +1,29 @@
+{
+  "description": "Receipt after accepting a merge. The values are the agent and both displayed names.",
+  "context": "Journal window. Receipt after accepting a merge. The values are the agent and both displayed names.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    },
+    {
+      "name": "kept_name",
+      "type": "string"
+    },
+    {
+      "name": "merged_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6fd5ee82fb83503b778e460d51af84ca8273dc3f4ab6acb606dc17452d88abad",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

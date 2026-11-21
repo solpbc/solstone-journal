@@ -1,0 +1,30 @@
+{
+  "description": "Duration shown in an evidence row. $count is a whole number of minutes, at least one.",
+  "context": "Journal window. Duration shown in an evidence row. $count is a whole number of minutes, at least one.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "9a390b335446a01306e5a7d11033b7ec3c986022e0b850c4ae6bb030402a878f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

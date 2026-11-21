@@ -1,0 +1,21 @@
+{
+  "description": "Facet suggestion card. $facet_name is the suggested display name.",
+  "context": "Journal window. Facet suggestion card. $facet_name is the suggested display name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "facet_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c3a3b6897b88961efa9380845cefe49e5359389a35473822f54d22f18ac65651",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

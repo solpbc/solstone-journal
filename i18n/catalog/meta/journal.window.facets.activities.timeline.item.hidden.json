@@ -1,0 +1,29 @@
+{
+  "description": "Accessible name of an activity timeline entry. The values are its displayed clock range, facet and recorded title.",
+  "context": "Journal window. Accessible name of an activity timeline entry. The values are its displayed clock range, facet and recorded title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "time_range",
+      "type": "string"
+    },
+    {
+      "name": "facet_name",
+      "type": "string"
+    },
+    {
+      "name": "activity_title",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ce1f390d41aa7cd12c9ecfae6baa078b4ae23ce7017dabd413f70193985c73e6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

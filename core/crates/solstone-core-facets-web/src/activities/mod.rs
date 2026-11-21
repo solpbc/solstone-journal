@@ -623,8 +623,9 @@ async fn mutate_update(
         .cloned()
         .collect::<Vec<_>>();
     if !disallowed.is_empty() {
-        return invalid(http::Detail::with_value(
-            "journal.window.facets.activities.response.error.detail.patch.contains.disallowed.fields.value",
+        return invalid(http::Detail::with_arg(
+            "journal.window.facets.activities.response.detail.disallowed.fields",
+            "field_list",
             disallowed.join(", "),
         ));
     }

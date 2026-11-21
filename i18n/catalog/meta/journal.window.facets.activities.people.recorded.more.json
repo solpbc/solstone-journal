@@ -1,0 +1,38 @@
+{
+  "description": "Activity participant label with two recorded names and a count of additional people.",
+  "context": "Journal window. Activity participant label with two recorded names and a count of additional people.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "first_person",
+      "type": "string"
+    },
+    {
+      "name": "second_person",
+      "type": "string"
+    },
+    {
+      "name": "others",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "29ee29a70c30ce03cbe9935be9e552309e6be5c51490d6bcf92f313c79280162",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

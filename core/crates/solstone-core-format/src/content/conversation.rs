@@ -34,7 +34,7 @@ pub fn turn_time(stream: Option<&str>, row: &super::JsonObject) -> TurnTime {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ConversationMedium {
     Written,
     Spoken,

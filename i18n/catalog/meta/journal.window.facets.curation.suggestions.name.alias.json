@@ -1,0 +1,25 @@
+{
+  "description": "Alias preview. $former_name is the existing name, and $new_name is the emphasized proposed alias.",
+  "context": "Journal window. Alias preview. $former_name is the existing name, and $new_name is the emphasized proposed alias.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "former_name",
+      "type": "string"
+    },
+    {
+      "name": "new_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0f421fe67c803512afb5cc67af1565e1a53385c8044675cfd58a15950efbcd40",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Agent suggestion line. $agent_name is the displayed agent name.",
+  "context": "Journal window. Agent suggestion line. $agent_name is the displayed agent name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2beed1d6ca6847ed97f084caa4930a40a995cecc50101231a9609108ef9d17d0",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

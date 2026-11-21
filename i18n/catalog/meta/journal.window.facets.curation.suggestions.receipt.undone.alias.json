@@ -1,0 +1,25 @@
+{
+  "description": "Receipt after reversing an alias. Both arguments are names as displayed.",
+  "context": "Journal window. Receipt after reversing an alias. Both arguments are names as displayed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "former_name",
+      "type": "string"
+    },
+    {
+      "name": "new_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bcb85614680c9f41e3562df880afe33096a08815f50943bf6ae701a003f5582c",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

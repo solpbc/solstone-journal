@@ -1,0 +1,39 @@
+{
+  "description": "Merge preview with counts for speaker $labels and $corrections.",
+  "context": "Journal window. Merge preview with counts for speaker $labels and $corrections.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "labels_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "labels",
+      "type": "string"
+    },
+    {
+      "name": "corrections_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "corrections",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "03a6637c0bd109e83101ff12c0f7cdb040cdafcab22aefbbb8ed1b87acee1def",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "labels_quantity",
+    "type": "cardinal"
+  }
+}

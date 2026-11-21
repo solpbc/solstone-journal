@@ -11005,6 +11005,11 @@ fn write_segment_file(
 #[test]
 fn get_activity_sources_keeps_family_and_omits_untimed_clocks() {
     let journal = base_activity_journal();
+    let mut permission = ReadPermission::default_whole_journal();
+    permission.categories.push("messages".into());
+    PermissionStore::open(journal.path())
+        .set_permission(CONNECTION, permission)
+        .unwrap();
     let day = "20260308";
     write_segment_file(
         journal.path(),
@@ -11078,9 +11083,16 @@ fn get_activity_sources_keeps_family_and_omits_untimed_clocks() {
     assert_eq!(chat_unit["untimed"], true);
     assert!(chat_unit.get("timestamp").is_none());
     let chat_text = literal_display_text(chat_unit["text"].as_str().unwrap());
-    assert!(chat_text.contains("[00:00:00] **Ana:** untimedchatneedle"));
+    assert!(chat_text.contains("Ana: untimedchatneedle"), "{chat_text}");
+    assert!(!chat_text.contains("[00:00:00]"));
+    assert_eq!(chat_unit["content_kind"], "messages");
     assert!(chat_text.contains("ChatGPT Conversation"));
-    assert!(!chat_text.contains("### Transcript"));
+    assert!(
+        !chat_unit["text"]
+            .as_str()
+            .unwrap()
+            .contains("### Transcript")
+    );
 
     let audio = probe(
         &journal,
@@ -11094,7 +11106,11 @@ fn get_activity_sources_keeps_family_and_omits_untimed_clocks() {
     assert_eq!(audio_unit["timestamp"], "2026-03-08 10:00:00 - 10:05:00");
     let audio_text = literal_display_text(audio_unit["text"].as_str().unwrap());
     assert!(audio_text.contains("spokenaudioneedle"));
-    assert!(audio_text.contains("### Transcript"));
+    assert_eq!(audio_unit["content_kind"], "transcripts");
+    assert!(
+        audio_text.contains("Source channel: Transcript"),
+        "{audio_text}"
+    );
 
     let markdown = probe(
         &journal,
@@ -11106,15 +11122,21 @@ fn get_activity_sources_keeps_family_and_omits_untimed_clocks() {
     assert_eq!(markdown_unit["kind"], "import");
     assert!(markdown_unit.get("untimed").is_none());
     assert_eq!(markdown_unit["timestamp"], "2026-03-08 11:00:00 - 11:05:00");
-    let markdown_text = markdown_unit["text"].as_str().unwrap();
+    let markdown_text = literal_display_text(markdown_unit["text"].as_str().unwrap());
     assert!(markdown_text.contains("markdownneedlenotspeech"));
-    assert!(markdown_text.contains("### Imported Text"));
-    assert!(!markdown_text.contains("### Transcript"));
+    assert!(markdown_text.contains("Source channel: Imported Conversation"));
+    assert_eq!(markdown_unit["conversation_state"], "unresolved");
+    assert!(markdown_unit.get("content_kind").is_none());
 }
 
 #[test]
 fn get_activity_sources_untimed_qualifier_survives_continuation() {
     let journal = base_activity_journal();
+    let mut permission = ReadPermission::default_whole_journal();
+    permission.categories.push("messages".into());
+    PermissionStore::open(journal.path())
+        .set_permission(CONNECTION, permission)
+        .unwrap();
     let day = "20260308";
     let mut chat = String::from("{\"untimed\":true,\"imported\":{}}\n");
     chat.push_str("{\"start\":\"00:00:00\",\"speaker\":\"Ana\",\"text\":\"pagestartuntimed\"}\n");
@@ -11228,7 +11250,7 @@ fn assert_untimed_source_page(page: &serde_json::Value, needle: &str) {
         assert!(unit.get("timestamp").is_none());
         assert_eq!(unit["kind"], "import");
         let text = literal_display_text(unit["text"].as_str().unwrap());
-        assert!(text.contains("[00:00:00]"));
+        assert!(!text.contains("[00:00:00]"));
         saw_needle |= text.contains(needle);
     }
     assert!(saw_needle);
@@ -17583,6 +17605,17 @@ fn conversation_grants_agree_across_listing_direct_batch_and_search() {
                 "neutralturn",
             ],
         ),
+        (
+            vec!["transcripts", "messages", "notes"],
+            vec![
+                "cobaltcaption",
+                "amberchat",
+                "legacychat",
+                "quartzwritten",
+                "neutralturn",
+                "adjacentnote",
+            ],
+        ),
         (vec!["notes"], vec!["adjacentnote"]),
     ] {
         PermissionStore::open(root)
@@ -17595,6 +17628,12 @@ fn conversation_grants_agree_across_listing_direct_batch_and_search() {
             )
             .unwrap();
         let list = probe(&journal, "list_transcripts", json!({"day":day,"limit":100})).unwrap();
+        let span = probe(
+            &journal,
+            "get_transcript",
+            json!({"reference":list["span_reference"]}),
+        )
+        .unwrap();
         let mut direct_text = String::new();
         for row in list["transcripts"].as_array().unwrap() {
             let reference = &row["reference"];
@@ -17606,6 +17645,44 @@ fn conversation_grants_agree_across_listing_direct_batch_and_search() {
             )
             .unwrap();
             assert_eq!(direct["entries"], batch["items"][0]["result"]["entries"]);
+            let entries = direct["entries"].to_string();
+            let (expected, unresolved) =
+                if entries.contains("neutralturn") || entries.contains("oldneutralmarkdown") {
+                    (
+                        if entries.contains("adjacentnote") {
+                            json!(["notes"])
+                        } else {
+                            json!([])
+                        },
+                        true,
+                    )
+                } else if entries.contains("adjacentnote") {
+                    (json!(["notes"]), false)
+                } else if entries.contains("cobaltcaption") {
+                    (json!(["transcripts"]), false)
+                } else if ["amberchat", "legacychat", "quartzwritten"]
+                    .iter()
+                    .any(|word| entries.contains(word))
+                {
+                    (json!(["messages"]), false)
+                } else {
+                    direct_text.push_str(&entries);
+                    continue;
+                };
+            let section = span["segments"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|section| section["entries"] == direct["entries"])
+                .unwrap();
+            for result in [row, &direct, &batch["items"][0]["result"], section] {
+                assert_eq!(result["content_kinds"], expected, "{result}");
+                assert_eq!(
+                    result.get("conversation_state").and_then(Value::as_str),
+                    unresolved.then_some("unresolved"),
+                    "{result}"
+                );
+            }
             direct_text.push_str(&direct["entries"].to_string());
         }
         let both = kinds.contains(&"messages") && kinds.contains(&"transcripts");
@@ -17617,6 +17694,12 @@ fn conversation_grants_agree_across_listing_direct_batch_and_search() {
             "{kinds:?}"
         );
         if both {
+            let hit = &legacy["results"][0];
+            let fetched = probe(&journal, "fetch", json!({"reference":hit["reference"]})).unwrap();
+            for row in [hit, &fetched] {
+                assert_eq!(row["conversation_state"], "unresolved");
+                assert!(row.get("content_kind").is_none());
+            }
             for kind in ["messages", "transcripts"] {
                 let filtered = probe(
                     &journal,
@@ -17640,4 +17723,974 @@ fn conversation_grants_agree_across_listing_direct_batch_and_search() {
             );
         }
     }
+}
+
+#[test]
+fn agent_rows_report_source_and_content_kind_across_materials() {
+    use solstone_core_format::content::body_records::{BodyRow, RowKind, encode_rows, recorder_id};
+
+    let journal = base_activity_journal();
+    let root = journal.path();
+    let day = "20260407";
+
+    PermissionStore::open(root)
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec![
+                    "transcripts".into(),
+                    "entities".into(),
+                    "facets".into(),
+                    "screen_text".into(),
+                    "screenshots".into(),
+                    "body".into(),
+                    "notes".into(),
+                    "documents".into(),
+                    "calendar".into(),
+                    "places".into(),
+                    "photos".into(),
+                ],
+                scope: ReadScope::WholeJournal,
+            },
+        )
+        .unwrap();
+
+    fs::create_dir_all(root.join("streams")).unwrap();
+    for (idx, (stream, kind, cid, source, platform)) in [
+        ("import.text", "import", None, None, None),
+        ("import.document", "import", None, None, None),
+        ("import.image", "import", None, None, None),
+        ("import.obsidian", "import", None, None, None),
+        ("import.apple_health", "import", None, None, None),
+        (
+            "macos_audio",
+            "observer",
+            Some("sha256:mac1"),
+            Some("audio"),
+            Some("macos"),
+        ),
+        (
+            "macos_screen",
+            "observer",
+            Some("sha256:mac1"),
+            Some("screen"),
+            Some("macos"),
+        ),
+        (
+            "macos_obsidian",
+            "observer",
+            Some("sha256:mac1"),
+            Some("obsidian"),
+            Some("macos"),
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut obj = json!({
+            "name": stream,
+            "kind": kind,
+            "host": null,
+            "platform": platform,
+            "created_at": (idx as u64) + 1,
+            "last_day": day,
+            "last_segment": null,
+            "seq": 1
+        });
+        if let Some(cid) = cid {
+            obj["cid"] = json!(cid);
+        }
+        if let Some(source) = source {
+            obj["source"] = json!(source);
+        }
+        fs::write(root.join(format!("streams/{stream}.json")), obj.to_string()).unwrap();
+    }
+    fs::create_dir_all(root.join("link")).unwrap();
+    fs::write(
+        root.join("link/client-descriptions.json"),
+        json!({
+            "sha256:mac1": {
+                "protocol_version": 1,
+                "revision": 1,
+                "owner_label": null,
+                "updated_at": null,
+                "reported": {
+                    "name": "studio",
+                    "platform": "macos",
+                    "device_type": "desktop",
+                    "app_id": null,
+                    "app_version": null
+                }
+            }
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let seed_seg = |stream: &str, seg: &str, file: &str, body: &str| {
+        write_segment_file(root, day, stream, seg, "alpha", file, body);
+        fs::write(
+            root.join(format!("chronicle/{day}/{stream}/{seg}/stream.json")),
+            json!({"stream": stream}).to_string(),
+        )
+        .unwrap();
+    };
+
+    seed_seg(
+        "import.text",
+        "090000_300",
+        "note_transcript.md",
+        "# Field Note\n\nCheck lanternvalveneedle before winter.\n",
+    );
+    seed_seg(
+        "import.document",
+        "091000_300",
+        "document_transcript.md",
+        "# Pump Manual\n\n**Type:** Document\n\nInspect pumpsealneedle every autumn.\n",
+    );
+    seed_seg(
+        "import.text",
+        "092000_300",
+        "conversation_transcript.jsonl",
+        "{\"untimed\":true,\"imported\":{\"id\":\"example\",\"triage\":{\"kind\":\"transcripts\",\"ruleset_version\":7,\"reasons\":[\"webvtt_cues\"]}}}\n{\"start\":\"00:00:00\",\"speaker\":\"Nora\",\"text\":\"Order sparegasketneedle next week.\"}\n",
+    );
+    seed_seg(
+        "import.image",
+        "093000_300",
+        "screenshot_transcript.md",
+        "# Receipt Screenshot\n\n**Type:** Screenshot\n\nOrder receipttotalneedle 42 dollars.\n",
+    );
+    seed_seg(
+        "import.image",
+        "094000_300",
+        "image_transcript.md",
+        "# Garden Shed\n\n**Type:** Image\n\nRed wateringcanneedle beside the bench.\n",
+    );
+    seed_seg(
+        "import.obsidian",
+        "095000_300",
+        "note_transcript.md",
+        "# Trail Ideas\n\nRidgeloopneedle starts at dawn.\n",
+    );
+    seed_seg(
+        "macos_obsidian",
+        "095500_300",
+        "note_transcript.md",
+        "# Bound Vault Note\n\nBoundobsidianneedle from sync.\n",
+    );
+    seed_seg(
+        "macos_audio",
+        "100000_300",
+        "audio.jsonl",
+        "{\"source\":\"recording\"}\n{\"start\":\"10:00:05\",\"text\":\"Pack campstoveneedle before sunrise.\"}\n",
+    );
+    fs::write(
+        root.join(format!(
+            "chronicle/{day}/macos_audio/100000_300/talents/topics.md"
+        )),
+        "Packing campstoveneedle before sunrise.\n",
+    )
+    .unwrap();
+    // Screen-text segment (no speech file) for search/fetch/list verification.
+    let screen_seg = root.join(format!("chronicle/{day}/macos_screen/101000_300"));
+    fs::create_dir_all(screen_seg.join("talents")).unwrap();
+    fs::write(
+        screen_seg.join("talents/facets.json"),
+        r#"[{"facet":"alpha"}]"#,
+    )
+    .unwrap();
+    fs::write(
+        screen_seg.join("stream.json"),
+        json!({"stream": "macos_screen"}).to_string(),
+    )
+    .unwrap();
+    fs::write(
+        screen_seg.join("talents/screen_text.md"),
+        "## 00:00:05\n\nEditor showing screentextpageneedle.\n",
+    )
+    .unwrap();
+    // Mixed segment holding two imported kinds in one directory to verify unit splitting.
+    seed_seg(
+        "import.text",
+        "102000_300",
+        "note_transcript.md",
+        "# Combined Note\n\nCombinednoteneedle line.\n",
+    );
+    fs::write(
+        root.join(format!(
+            "chronicle/{day}/import.text/102000_300/document_transcript.md"
+        )),
+        "# Combined Doc\n\nCombineddocneedle line.\n",
+    )
+    .unwrap();
+
+    // Streamless day-level files: body.md and location.md carry content_kind and no source.
+    fs::write(
+        root.join(format!("chronicle/{day}/body.md")),
+        "# body on Tuesday, April 7, 2026\n\n## Apple Health · imported\n\n- workout: running bodydayneedle\n",
+    )
+    .unwrap();
+
+    fs::create_dir_all(root.join("imports")).unwrap();
+    fs::write(
+        root.join("imports/.apple_health-zone.json"),
+        r#"{"zone":"America/New_York"}"#,
+    )
+    .unwrap();
+    let mut row = BodyRow::new(
+        RowKind::Experience,
+        "w1".to_owned(),
+        "apple_health",
+        "HKWorkoutActivityTypeRunning",
+        "Running".to_owned(),
+    );
+    row.experience = Some("workout".to_owned());
+    row.start = Some("2026-04-07 07:00:00 -0400".to_owned());
+    row.end = Some("2026-04-07 07:40:00 -0400".to_owned());
+    row.by = Some("Synthetic Watch".to_owned());
+    let window = root.join(format!("chronicle/{day}/import.apple_health/070000_3600"));
+    fs::create_dir_all(window.join("talents")).unwrap();
+    fs::write(
+        window.join("body.jsonl"),
+        encode_rows(std::slice::from_ref(&row)),
+    )
+    .unwrap();
+    fs::write(
+        window.join("stream.json"),
+        json!({"stream": "import.apple_health"}).to_string(),
+    )
+    .unwrap();
+    fs::write(window.join("talents/facets.json"), r#"[{"facet":"alpha"}]"#).unwrap();
+
+    for (idx, (id, title, kind, seg, stream)) in [
+        (
+            "act_note",
+            "Field Note Review",
+            "note",
+            "090000_300",
+            "import.text",
+        ),
+        (
+            "act_doc",
+            "Pump Manual Review",
+            "document",
+            "091000_300",
+            "import.document",
+        ),
+        (
+            "act_tx",
+            "Imported Chat",
+            "conversation",
+            "092000_300",
+            "import.text",
+        ),
+        (
+            "act_shot",
+            "Receipt Check",
+            "import",
+            "093000_300",
+            "import.image",
+        ),
+        (
+            "act_photo",
+            "Garden Shed Photo",
+            "import",
+            "094000_300",
+            "import.image",
+        ),
+        (
+            "act_obs",
+            "Trail Planning Note",
+            "note",
+            "095000_300",
+            "import.obsidian",
+        ),
+        (
+            "act_rec",
+            "Sunrise Packing Call",
+            "conversation",
+            "100000_300",
+            "macos_audio",
+        ),
+        (
+            "act_two",
+            "Combined Import",
+            "import",
+            "102000_300",
+            "import.text",
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        write_activity_line(
+            root,
+            "alpha",
+            day,
+            id,
+            title,
+            100 + idx as i64,
+            Some(kind),
+            Some(&[seg]),
+            None,
+            None,
+            Some(stream),
+            None,
+            None,
+        );
+    }
+    let body_record = json!({
+        "id": "body_0123456789abcdef",
+        "source": "body",
+        "activity": "workout",
+        "account": {
+            "key": "import.apple_health\u{1f}w1",
+            "start": row.start,
+            "end": row.end,
+            "type": "running",
+            "recorder": recorder_id("import.apple_health", row.by.as_deref())
+        },
+    });
+    let act_path = root.join(format!("facets/alpha/activities/{day}.jsonl"));
+    let mut act_text = fs::read_to_string(&act_path).unwrap();
+    act_text.push_str(&format!("{body_record}\n"));
+    fs::write(&act_path, act_text).unwrap();
+
+    solstone_core_indexer_store::scan::scan_journal(root, true).unwrap();
+
+    // 1 & 2. Unfiltered search hits and fetched entries carry content_kind and source.
+    for (query, expected_kind, expected_source) in [
+        ("lanternvalveneedle", "notes", Some("imported file")),
+        ("pumpsealneedle", "documents", Some("PDF")),
+        ("receipttotalneedle", "screen_text", Some("imported file")),
+        ("wateringcanneedle", "photos", Some("imported file")),
+        ("ridgeloopneedle", "notes", Some("Obsidian")),
+        ("boundobsidianneedle", "notes", Some("Obsidian")),
+        ("campstoveneedle", "transcripts", Some("your mac · audio")),
+        (
+            "screentextpageneedle",
+            "screen_text",
+            Some("your mac · screen"),
+        ),
+        ("bodydayneedle", "body", None),
+    ] {
+        let search = probe(&journal, "search", json!({"query": query, "day": day})).unwrap();
+        assert_no_leaked_keys(&search);
+        let hit = &search["results"][0];
+        assert_eq!(hit["content_kind"], expected_kind, "{query}: {hit}");
+        assert_eq!(
+            hit.get("source").and_then(Value::as_str),
+            expected_source,
+            "{query}: {hit}"
+        );
+        let fetched = probe(&journal, "fetch", json!({"reference": hit["reference"]})).unwrap();
+        assert_no_leaked_keys(&fetched);
+        assert_eq!(fetched["content_kind"], expected_kind, "{query}: {fetched}");
+        assert_eq!(
+            fetched.get("source").and_then(Value::as_str),
+            expected_source,
+            "{query}: {fetched}"
+        );
+    }
+
+    // 3 & 6. list_transcripts, get_transcript, span, and non-speech titles.
+    let list_day = probe(&journal, "list_transcripts", json!({"day": day})).unwrap();
+    assert_no_leaked_keys(&list_day);
+    let rows = list_day["transcripts"].as_array().unwrap();
+    let row_at = |time: &str| rows.iter().find(|row| row["time"] == time).unwrap();
+    for (time, expected_source, expected_kinds, speech) in [
+        ("09:00-09:05", "imported file", json!(["notes"]), false),
+        ("09:10-09:15", "PDF", json!(["documents"]), false),
+        ("09:20-09:25", "imported file", json!(["transcripts"]), true),
+        (
+            "09:30-09:35",
+            "imported file",
+            json!(["screen_text"]),
+            false,
+        ),
+        ("09:40-09:45", "imported file", json!(["photos"]), false),
+        ("09:50-09:55", "Obsidian", json!(["notes"]), false),
+        ("09:55-10:00", "Obsidian", json!(["notes"]), false),
+        (
+            "10:00-10:05",
+            "your mac · audio",
+            json!(["transcripts"]),
+            true,
+        ),
+        (
+            "10:10-10:15",
+            "your mac · screen",
+            json!(["screen_text"]),
+            false,
+        ),
+        (
+            "10:20-10:25",
+            "imported file",
+            json!(["documents", "notes"]),
+            false,
+        ),
+    ] {
+        let row = row_at(time);
+        assert_eq!(row["source"], expected_source, "{time}: {row}");
+        assert_eq!(row["content_kinds"], expected_kinds, "{time}: {row}");
+        let title = row["title"].as_str().unwrap();
+        if speech {
+            assert!(title.starts_with("Transcript segment"), "{time}: {title}");
+        } else {
+            assert!(!title.starts_with("Transcript segment"), "{time}: {title}");
+        }
+        let read = probe(
+            &journal,
+            "get_transcript",
+            json!({"reference": row["reference"]}),
+        )
+        .unwrap();
+        assert_no_leaked_keys(&read);
+        assert_eq!(read["source"], expected_source, "{time}: {read}");
+        assert_eq!(read["content_kinds"], expected_kinds, "{time}: {read}");
+    }
+
+    let span = probe(
+        &journal,
+        "get_transcript",
+        json!({"reference": list_day["span_reference"]}),
+    )
+    .unwrap();
+    assert_no_leaked_keys(&span);
+    for section in span["segments"].as_array().unwrap() {
+        assert!(section["content_kinds"].is_array(), "{section}");
+        assert!(section["source"].is_string(), "{section}");
+    }
+
+    // Body source list and span carry ["body"].
+    let list_body = probe(
+        &journal,
+        "list_transcripts",
+        json!({"day": day, "source": "Apple Health · imported"}),
+    )
+    .unwrap();
+    assert_no_leaked_keys(&list_body);
+    assert_eq!(
+        list_body["transcripts"][0]["content_kinds"],
+        json!(["body"])
+    );
+    let span_body = probe(
+        &journal,
+        "get_transcript",
+        json!({"reference": list_body["span_reference"]}),
+    )
+    .unwrap();
+    assert_no_leaked_keys(&span_body);
+    assert_eq!(span_body["content_kinds"], json!(["body"]));
+
+    // 4. Activity source units carry kind-specific channel words and split two imported kinds.
+    let activities = probe(&journal, "list_activities", json!({"day": day})).unwrap();
+    assert_no_leaked_keys(&activities);
+    let act_rows = activities["activities"].as_array().unwrap();
+    let act_ref =
+        |title: &str| act_rows.iter().find(|a| a["title"] == title).unwrap()["reference"].clone();
+    for act in act_rows {
+        let expected = if act["source"] == "body" {
+            "body"
+        } else {
+            "facets"
+        };
+        assert_eq!(act["content_kind"], expected, "{act}");
+    }
+    for (title, channel, kind, content_kind, source) in [
+        (
+            "Field Note Review",
+            "Note",
+            "import",
+            "notes",
+            "imported file",
+        ),
+        (
+            "Pump Manual Review",
+            "Document",
+            "import",
+            "documents",
+            "PDF",
+        ),
+        (
+            "Imported Chat",
+            "Imported Transcript",
+            "import",
+            "transcripts",
+            "imported file",
+        ),
+        (
+            "Receipt Check",
+            "Screenshot",
+            "import",
+            "screen_text",
+            "imported file",
+        ),
+        (
+            "Garden Shed Photo",
+            "Photo",
+            "import",
+            "photos",
+            "imported file",
+        ),
+        ("Trail Planning Note", "Note", "import", "notes", "Obsidian"),
+        (
+            "Sunrise Packing Call",
+            "Transcript",
+            "audio",
+            "transcripts",
+            "your mac · audio",
+        ),
+    ] {
+        let sources = probe(
+            &journal,
+            "get_activity_sources",
+            json!({"reference": act_ref(title)}),
+        )
+        .unwrap();
+        assert_no_leaked_keys(&sources);
+        let unit = &sources["units"][0];
+        assert_eq!(unit["kind"], kind, "{title}: {unit}");
+        assert_eq!(unit["content_kind"], content_kind, "{title}: {unit}");
+        assert_eq!(unit["source_link"]["source"], source, "{title}: {unit}");
+        let text = literal_display_text(unit["text"].as_str().unwrap());
+        assert!(
+            text.contains(&format!("Source channel: {channel}\n")),
+            "{title} expected Source channel: {channel} in {text}"
+        );
+        assert!(
+            !text.contains("Imported Text"),
+            "{title} still said Imported Text: {text}"
+        );
+    }
+
+    // Two imported kinds in one segment split into two source units.
+    let two_sources = probe(
+        &journal,
+        "get_activity_sources",
+        json!({"reference": act_ref("Combined Import")}),
+    )
+    .unwrap();
+    assert_no_leaked_keys(&two_sources);
+    let units = two_sources["units"].as_array().unwrap();
+    assert_eq!(units.len(), 2, "{two_sources}");
+    assert_eq!(units[0]["content_kind"], "documents");
+    assert_eq!(units[0]["kind"], "import");
+    assert!(units[0]["text"].as_str().unwrap().contains("### Document"));
+    assert_eq!(units[1]["content_kind"], "notes");
+    assert_eq!(units[1]["kind"], "import");
+    assert!(units[1]["text"].as_str().unwrap().contains("### Note"));
+
+    // Body activity fetch and get_activity_sources carry content_kind: "body".
+    let body_fetch = probe(&journal, "fetch", json!({"reference": act_ref("Running")})).unwrap();
+    assert_no_leaked_keys(&body_fetch);
+    assert_eq!(body_fetch["content_kind"], "body");
+    assert!(body_fetch.get("source").is_none());
+    let body_sources = probe(
+        &journal,
+        "get_activity_sources",
+        json!({"reference": act_ref("Running")}),
+    )
+    .unwrap();
+    assert_no_leaked_keys(&body_sources);
+    assert_eq!(body_sources["units"][0]["content_kind"], "body");
+
+    // 7. get_week activity and body rows carry content_kind; memories do not.
+    let week = probe(&journal, "get_week", json!({"week": day})).unwrap();
+    assert_no_leaked_keys(&week);
+    for act in week["activities"].as_array().unwrap() {
+        assert_eq!(act["content_kind"], "facets", "{act}");
+    }
+    assert_eq!(week["body"][0]["content_kind"], "body");
+    for mem in week["memories"].as_array().unwrap() {
+        assert!(mem.get("content_kind").is_none(), "{mem}");
+    }
+}
+
+#[test]
+fn shared_import_source_labels_narrow_across_streams_and_disambiguate_by_kind() {
+    let journal = base_activity_journal();
+    let root = journal.path();
+    let day = "20260408";
+    PermissionStore::open(root)
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec!["transcripts".into(), "notes".into(), "photos".into()],
+                scope: ReadScope::WholeJournal,
+            },
+        )
+        .unwrap();
+
+    fs::create_dir_all(root.join("streams")).unwrap();
+    for (idx, (stream, kind, cid, source)) in [
+        ("import.text", "import", None, None),
+        ("import.image", "import", None, None),
+        ("import.obsidian", "import", None, None),
+        (
+            "mac_obsidian",
+            "observer",
+            Some("sha256:m1"),
+            Some("obsidian"),
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut obj = json!({
+            "name": stream,
+            "kind": kind,
+            "host": null,
+            "platform": null,
+            "created_at": (idx as u64) + 1,
+            "last_day": day,
+            "last_segment": null,
+            "seq": 1
+        });
+        if let Some(cid) = cid {
+            obj["cid"] = json!(cid);
+        }
+        if let Some(source) = source {
+            obj["source"] = json!(source);
+        }
+        fs::write(root.join(format!("streams/{stream}.json")), obj.to_string()).unwrap();
+    }
+
+    // Same timestamp 09:00-09:05 on both import.text and import.image.
+    write_segment_file(
+        root,
+        day,
+        "import.text",
+        "090000_300",
+        "alpha",
+        "note_transcript.md",
+        "# Same-Time Note\n\nNote body.\n",
+    );
+    write_segment_file(
+        root,
+        day,
+        "import.image",
+        "090000_300",
+        "alpha",
+        "image_transcript.md",
+        "# Same-Time Photo\n\nPhoto body.\n",
+    );
+    write_segment_file(
+        root,
+        day,
+        "import.obsidian",
+        "100000_300",
+        "alpha",
+        "note_transcript.md",
+        "# Imported Vault Note\n\nVault body.\n",
+    );
+    write_segment_file(
+        root,
+        day,
+        "mac_obsidian",
+        "100500_300",
+        "alpha",
+        "note_transcript.md",
+        "# Synced Vault Note\n\nSynced body.\n",
+    );
+
+    // Narrowing by "imported file" matches both import.text and import.image,
+    // and content_kinds + reference distinguish the two same-time segments.
+    let imported = probe(
+        &journal,
+        "list_transcripts",
+        json!({"day": day, "source": "imported file"}),
+    )
+    .unwrap();
+    assert_no_leaked_keys(&imported);
+    let rows = imported["transcripts"].as_array().unwrap();
+    assert_eq!(rows.len(), 2, "{imported}");
+    assert!(rows.iter().all(|r| r["source"] == "imported file"));
+    let kinds: std::collections::BTreeSet<&str> = rows
+        .iter()
+        .map(|r| r["content_kinds"][0].as_str().unwrap())
+        .collect();
+    assert_eq!(kinds, std::collections::BTreeSet::from(["notes", "photos"]));
+    assert_ne!(rows[0]["reference"], rows[1]["reference"]);
+    assert_ne!(rows[0]["title"], rows[1]["title"]);
+
+    let span = probe(
+        &journal,
+        "get_transcript",
+        json!({"reference": imported["span_reference"]}),
+    )
+    .unwrap();
+    let sections = span["segments"].as_array().unwrap();
+    assert_eq!(sections.len(), 2, "{span}");
+    let span_kinds: std::collections::BTreeSet<&str> = sections
+        .iter()
+        .map(|s| s["content_kinds"][0].as_str().unwrap())
+        .collect();
+    assert_eq!(span_kinds, kinds);
+
+    // Narrowing by "Obsidian" matches both import.obsidian and bound mac_obsidian.
+    let obsidian = probe(
+        &journal,
+        "list_transcripts",
+        json!({"day": day, "source": "Obsidian"}),
+    )
+    .unwrap();
+    assert_no_leaked_keys(&obsidian);
+    let obs_rows = obsidian["transcripts"].as_array().unwrap();
+    assert_eq!(obs_rows.len(), 2, "{obsidian}");
+    assert!(obs_rows.iter().all(|r| r["source"] == "Obsidian"));
+}
+
+#[test]
+fn transcripts_only_connection_never_sees_unpermitted_kinds_or_sources() {
+    use solstone_core_format::content::body_records::{BodyRow, RowKind, encode_rows};
+
+    let journal = base_activity_journal();
+    let root = journal.path();
+    let day = "20260409";
+
+    PermissionStore::open(root)
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec!["transcripts".into()],
+                scope: ReadScope::WholeJournal,
+            },
+        )
+        .unwrap();
+
+    fs::create_dir_all(root.join("streams")).unwrap();
+    for (idx, (stream, kind, cid, source)) in [
+        ("macos_audio", "observer", Some("sha256:m1"), Some("audio")),
+        ("import.obsidian", "import", None, None),
+        ("import.document", "import", None, None),
+        ("import.image", "import", None, None),
+        ("import.apple_health", "import", None, None),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut obj = json!({
+            "name": stream,
+            "kind": kind,
+            "host": null,
+            "platform": None::<&str>,
+            "created_at": (idx as u64) + 1,
+            "last_day": day,
+            "last_segment": null,
+            "seq": 1
+        });
+        if let Some(cid) = cid {
+            obj["cid"] = json!(cid);
+        }
+        if let Some(source) = source {
+            obj["source"] = json!(source);
+        }
+        fs::write(root.join(format!("streams/{stream}.json")), obj.to_string()).unwrap();
+    }
+
+    // Mixed segment holding speech alongside a note and a document.
+    write_segment_file(
+        root,
+        day,
+        "macos_audio",
+        "100000_300",
+        "alpha",
+        "audio.jsonl",
+        "{\"source\":\"recording\"}\n{\"start\":\"10:00:05\",\"text\":\"isolationneedle spoken line\"}\n",
+    );
+    fs::write(
+        root.join(format!(
+            "chronicle/{day}/macos_audio/100000_300/note_transcript.md"
+        )),
+        "isolationneedle hidden note\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join(format!(
+            "chronicle/{day}/macos_audio/100000_300/document_transcript.md"
+        )),
+        "isolationneedle hidden document\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join(format!(
+            "chronicle/{day}/macos_audio/100000_300/talents/topics.md"
+        )),
+        "isolationneedle topic summary\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join(format!(
+            "chronicle/{day}/macos_audio/100000_300/stream.json"
+        )),
+        json!({"stream": "macos_audio"}).to_string(),
+    )
+    .unwrap();
+
+    // Unpermitted-kind segments under distinct sources.
+    for (stream, seg, file, body) in [
+        (
+            "import.obsidian",
+            "090000_300",
+            "note_transcript.md",
+            "isolationneedle obsidian note\n",
+        ),
+        (
+            "import.document",
+            "091000_300",
+            "document_transcript.md",
+            "isolationneedle pdf doc\n",
+        ),
+        (
+            "import.image",
+            "092000_300",
+            "image_transcript.md",
+            "isolationneedle photo text\n",
+        ),
+    ] {
+        write_segment_file(root, day, stream, seg, "alpha", file, body);
+        fs::write(
+            root.join(format!("chronicle/{day}/{stream}/{seg}/stream.json")),
+            json!({"stream": stream}).to_string(),
+        )
+        .unwrap();
+    }
+    let mut b_row = BodyRow::new(
+        RowKind::Reading,
+        "r1".to_owned(),
+        "apple_health",
+        "HKQuantityTypeIdentifierHeartRate",
+        "heart rate".to_owned(),
+    );
+    b_row.at = Some("2026-04-09 08:00:00 -0400".to_owned());
+    b_row.value = Some("72".to_owned());
+    let b_dir = root.join(format!("chronicle/{day}/import.apple_health/080000_3600"));
+    fs::create_dir_all(b_dir.join("talents")).unwrap();
+    fs::write(b_dir.join("body.jsonl"), encode_rows(&[b_row])).unwrap();
+    fs::write(
+        b_dir.join("stream.json"),
+        json!({"stream": "import.apple_health"}).to_string(),
+    )
+    .unwrap();
+    fs::write(b_dir.join("talents/facets.json"), r#"[{"facet":"alpha"}]"#).unwrap();
+
+    write_activity_line(
+        root,
+        "alpha",
+        day,
+        "act_mixed",
+        "Mixed Segment Activity",
+        100,
+        Some("conversation"),
+        Some(&["100000_300"]),
+        None,
+        None,
+        Some("macos_audio"),
+        None,
+        None,
+    );
+
+    solstone_core_indexer_store::scan::scan_journal(root, true).unwrap();
+
+    let assert_no_foreign_kind_or_source = |label: &str, value: &Value| {
+        assert_no_leaked_keys(value);
+        let serialized = value.to_string();
+        for forbidden in [
+            "Obsidian",
+            "\"PDF\"",
+            "imported file",
+            "Apple Health",
+            "\"notes\"",
+            "\"documents\"",
+            "\"photos\"",
+            "\"screen_text\"",
+            "hidden note",
+            "hidden document",
+        ] {
+            assert!(
+                !serialized.contains(forbidden),
+                "{label} leaked {forbidden} in {serialized}"
+            );
+        }
+    };
+
+    // search + fetch
+    let search = probe(
+        &journal,
+        "search",
+        json!({"query": "isolationneedle", "day": day}),
+    )
+    .unwrap();
+    assert_no_foreign_kind_or_source("search", &search);
+    let hits = search["results"].as_array().unwrap();
+    assert_eq!(hits.len(), 1, "{search}");
+    assert_eq!(hits[0]["content_kind"], "transcripts");
+    let fetched = probe(
+        &journal,
+        "fetch",
+        json!({"reference": hits[0]["reference"]}),
+    )
+    .unwrap();
+    assert_no_foreign_kind_or_source("fetch", &fetched);
+    assert_eq!(fetched["content_kind"], "transcripts");
+
+    // list_transcripts + get_transcript (single and span)
+    let listed = probe(&journal, "list_transcripts", json!({"day": day})).unwrap();
+    assert_no_foreign_kind_or_source("list_transcripts", &listed);
+    let segs = listed["transcripts"].as_array().unwrap();
+    assert_eq!(segs.len(), 1, "{listed}");
+    assert_eq!(segs[0]["content_kinds"], json!(["transcripts"]));
+    assert_eq!(segs[0]["lines"], 1);
+
+    let single = probe(
+        &journal,
+        "get_transcript",
+        json!({"reference": segs[0]["reference"]}),
+    )
+    .unwrap();
+    assert_no_foreign_kind_or_source("get_transcript", &single);
+    assert_eq!(single["content_kinds"], json!(["transcripts"]));
+    assert_eq!(single["entries"].as_array().unwrap().len(), 1);
+
+    let span = probe(
+        &journal,
+        "get_transcript",
+        json!({"reference": listed["span_reference"]}),
+    )
+    .unwrap();
+    assert_no_foreign_kind_or_source("get_transcript span", &span);
+    assert_eq!(span["segments"].as_array().unwrap().len(), 1);
+    assert_eq!(span["segments"][0]["content_kinds"], json!(["transcripts"]));
+
+    // With facets + transcripts (still no notes/documents/photos/body):
+    // list_activities, get_activity_sources, and get_week never leak the hidden kinds or sources.
+    PermissionStore::open(root)
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec!["transcripts".into(), "facets".into()],
+                scope: ReadScope::WholeJournal,
+            },
+        )
+        .unwrap();
+    let acts = probe(&journal, "list_activities", json!({"day": day})).unwrap();
+    assert_no_foreign_kind_or_source("list_activities", &acts);
+    assert_eq!(acts["activities"][0]["content_kind"], "facets");
+
+    let sources = probe(
+        &journal,
+        "get_activity_sources",
+        json!({"reference": acts["activities"][0]["reference"]}),
+    )
+    .unwrap();
+    assert_no_foreign_kind_or_source("get_activity_sources", &sources);
+    assert_eq!(sources["units"].as_array().unwrap().len(), 1);
+    assert_eq!(sources["units"][0]["content_kind"], "transcripts");
+    assert_eq!(sources["units"][0]["kind"], "audio");
+
+    let week = probe(&journal, "get_week", json!({"week": day})).unwrap();
+    assert_no_foreign_kind_or_source("get_week", &week);
+    assert_eq!(week["activities"][0]["content_kind"], "facets");
+    assert!(week.get("body").is_none());
 }

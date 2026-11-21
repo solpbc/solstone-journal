@@ -1,0 +1,21 @@
+{
+  "description": "Activity history credit. $agent is the recorded name and optional short grant key.",
+  "context": "Journal window. Activity history credit. $agent is the recorded name and optional short grant key.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5a82ca39c4ffd616987f8cd7431d21a2de9e10042cdf2ea075bf78d6ca735aec",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "description": "Evidence summary. $count is the number of segments and $time_range is the displayed clock label.",
+  "context": "Journal window. Evidence summary. $count is the number of segments and $time_range is the displayed clock label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "time_range",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "5ac216c9439b68ac813a3e6e2ef05d690b9bc5df7a373a3222784eed9f24abe9",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

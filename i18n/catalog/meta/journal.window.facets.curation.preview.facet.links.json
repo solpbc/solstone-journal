@@ -1,0 +1,39 @@
+{
+  "description": "Merge preview for facet links. $moved and $merged are independent counts.",
+  "context": "Journal window. Merge preview for facet links. $moved and $merged are independent counts.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "moved_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "moved",
+      "type": "string"
+    },
+    {
+      "name": "merged_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "merged",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "79b773f550728684a36d73f9ad85a70b9569edfc827615ce5cb92a12ca54f631",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "moved_quantity",
+    "type": "cardinal"
+  }
+}

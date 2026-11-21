@@ -1,0 +1,28 @@
+{
+  "description": "The list of submitted response fields that were simultaneously set.",
+  "context": "Journal window. The list of submitted response fields that were simultaneously set.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "answer_list",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "dcd237766ded4f590986e73354adb98f32b73e0a63d747a1f1597af1d07b356e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "record/declined/nudge"
+    }
+  ]
+}

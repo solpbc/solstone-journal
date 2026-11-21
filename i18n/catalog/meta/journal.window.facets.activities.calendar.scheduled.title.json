@@ -1,0 +1,21 @@
+{
+  "description": "Lead in the calendar comparison row. $meeting_title is the recorded calendar title.",
+  "context": "Journal window. Lead in the calendar comparison row. $meeting_title is the recorded calendar title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "meeting_title",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bb3bd572e122f46b7a3c853877ce89394b6d097723b84cf64101537b674c82be",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

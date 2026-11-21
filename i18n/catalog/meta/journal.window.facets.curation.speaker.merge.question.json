@@ -1,0 +1,25 @@
+{
+  "description": "Speaker review question. Both arguments are displayed speaker names.",
+  "context": "Journal window. Speaker review question. Both arguments are displayed speaker names.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "source_name",
+      "type": "string"
+    },
+    {
+      "name": "target_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "11a54df1efbaff6f24e77e7453d204f652651bb0da879b6844281448e2c6ecd1",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

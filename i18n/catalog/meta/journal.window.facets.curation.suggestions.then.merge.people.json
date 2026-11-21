@@ -1,0 +1,25 @@
+{
+  "description": "Consent disclosure for merging two people. $kept_name and $merged_name are the displayed names.",
+  "context": "Journal window. Consent disclosure for merging two people. $kept_name and $merged_name are the displayed names.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "kept_name",
+      "type": "string"
+    },
+    {
+      "name": "merged_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "89126b670aa1cfb1c665cd71343b07c9b735d013d2281fcb6ebd00c5d77043fa",
+  "max_length": 1000,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

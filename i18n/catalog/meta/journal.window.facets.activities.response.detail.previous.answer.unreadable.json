@@ -1,0 +1,21 @@
+{
+  "description": "The diagnostic from reading the earlier speaker answer.",
+  "context": "Journal window. The diagnostic from reading the earlier speaker answer.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "read_error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0970080f8a6912522a49f4837032ad550d3418b990432ea23b24245cfc85a088",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

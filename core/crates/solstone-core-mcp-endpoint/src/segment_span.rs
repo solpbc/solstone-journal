@@ -369,6 +369,8 @@ pub(crate) fn read_segment_span(
             .and_then(|position| position.inside.clone());
         let mut inside = resumed.clone();
         let mut entries = Vec::new();
+        let mut content_kinds = Vec::new();
+        let mut unresolved_conversation = false;
         let mut untimed = false;
         let mut last_version;
         loop {
@@ -427,6 +429,12 @@ pub(crate) fn read_segment_span(
                 }
             };
             untimed |= page.untimed;
+            unresolved_conversation |= page.unresolved_conversation;
+            for kind in page.content_kinds {
+                if !content_kinds.contains(&kind) {
+                    content_kinds.push(kind);
+                }
+            }
             let version = page.version.fingerprint();
             last_version = version;
             for entry in page.entries {
@@ -460,6 +468,7 @@ pub(crate) fn read_segment_span(
             let mut section = json!({
                 "time": item.clock.as_ref().map_or("", |clock| clock.label.as_str()),
                 "source": source_label(&labels, &item.stream),
+                "content_kinds": content_kinds,
                 "entries": entries,
                 "reference": crate::dispatch::segment_reference(journal_root, principal, snapshot, SegmentReference {
                     day: reference.day.clone(), stream: item.stream.clone(), segment: item.name.clone(),
@@ -467,6 +476,9 @@ pub(crate) fn read_segment_span(
                     byte_offset: None, statement_ordinal: None,
                 })?,
             });
+            if unresolved_conversation {
+                section["conversation_state"] = json!("unresolved");
+            }
             owner_links.attach(
                 journal_root,
                 &mut section,

@@ -1,0 +1,25 @@
+{
+  "description": "Receipt after reversing a rename. Both arguments are the names as displayed.",
+  "context": "Journal window. Receipt after reversing a rename. Both arguments are the names as displayed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "former_name",
+      "type": "string"
+    },
+    {
+      "name": "new_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3adc78e7149b77e118fe656d1b72712be4e0ba5b93662d125113b909bdd7eef6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

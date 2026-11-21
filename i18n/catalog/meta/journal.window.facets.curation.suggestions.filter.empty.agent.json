@@ -1,0 +1,21 @@
+{
+  "description": "Agent suggestion line. $agent_name is the displayed agent name and optional short grant identifier.",
+  "context": "Journal window. Agent suggestion line. $agent_name is the displayed agent name and optional short grant identifier.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c943e5df92976cb97ead94a785a09cf88f94afb4dc8450628ca1b239d970dc93",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

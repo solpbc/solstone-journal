@@ -1,0 +1,39 @@
+{
+  "description": "Drawer summary with counts of displayed and total evidence pieces.",
+  "context": "Journal window. Drawer summary with counts of displayed and total evidence pieces.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "shown_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "shown",
+      "type": "string"
+    },
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "4010b0bff67028873f2b56d20981d3bc0151bb6ed9a7934da2363b6b26525060",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "shown_quantity",
+    "type": "cardinal"
+  }
+}

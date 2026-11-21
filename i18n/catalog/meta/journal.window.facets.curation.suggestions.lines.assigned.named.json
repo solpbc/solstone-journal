@@ -1,0 +1,34 @@
+{
+  "description": "Suggestion for the speaker of selected lines. $speaker is the isolated emphasized recorded name.",
+  "context": "Journal window. Suggestion for the speaker of selected lines. $speaker is the isolated emphasized recorded name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "speaker",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "141b65a62622e84ec4d81a6b5347c314ca0abfc9e028ad0405535a081fe851e9",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

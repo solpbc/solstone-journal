@@ -1,0 +1,23 @@
+{
+  "description": "Activity history for an earlier change record with no recognized fields. Keeps the legacy trailing space.",
+  "context": "Journal window. Activity history for an earlier change record with no recognized fields. Keeps the legacy trailing space.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "358a3bec61cfeee55405cf206fdf4f34e2eb2985f1e45702fa8e958919e31361",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "whitespace",
+      "value": " "
+    }
+  ]
+}

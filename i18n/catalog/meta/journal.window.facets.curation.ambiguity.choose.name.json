@@ -1,0 +1,21 @@
+{
+  "description": "Button label for selecting one of the recorded names.",
+  "context": "Journal window. Button label for selecting one of the recorded names.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "candidate_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ab215dbf44192dd58803242e466fb817dc910d6d60c4ecaa03a05cb71b4dc6be",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

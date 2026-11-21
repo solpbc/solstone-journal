@@ -1,0 +1,21 @@
+{
+  "description": "Sentence following the facet creation question. $alias_list is the formatted list of other recorded spellings.",
+  "context": "Journal window. Sentence following the facet creation question. $alias_list is the formatted list of other recorded spellings.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "alias_list",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7e5be43e826b6f88960537a6873934ff9779dcf0f489858aecc0fd5c3cb4d258",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

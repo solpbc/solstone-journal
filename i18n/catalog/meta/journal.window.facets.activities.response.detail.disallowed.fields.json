@@ -1,0 +1,21 @@
+{
+  "description": "The comma-separated submitted field names that an activity update may not change.",
+  "context": "Journal window. The comma-separated submitted field names that an activity update may not change.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "field_list",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "328fac248e02817ffff1fc66c692ef5b509d967886973ca017add59e5fd1763d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

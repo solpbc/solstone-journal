@@ -1,0 +1,33 @@
+{
+  "description": "Accessible name of an activity timeline entry. The values are its displayed clock range, facet and recorded title. $stream_name is the displayed stream label.",
+  "context": "Journal window. Accessible name of an activity timeline entry. The values are its displayed clock range, facet and recorded title. $stream_name is the displayed stream label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "time_range",
+      "type": "string"
+    },
+    {
+      "name": "facet_name",
+      "type": "string"
+    },
+    {
+      "name": "stream_name",
+      "type": "string"
+    },
+    {
+      "name": "activity_title",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d09aa0129d88cc65e32aad8da538fc018b58142de5a8db8a3a8ef39af1a9a8f3",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

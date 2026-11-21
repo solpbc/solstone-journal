@@ -543,10 +543,36 @@ pub fn rendered_stream_labels(table: &StreamLabelTable) -> Option<BTreeMap<Strin
     Some(result)
 }
 
-/// Labels for an agent: the owner's words, distinct per stream, and free of
-/// any stream name. A client name that contains a stream name is dropped, and
-/// streams that would still read alike are numbered in the order they were
-/// created ("your mac · audio (2)"). A failed table yields no labels.
+/// Agent-facing provenance label for one stream.
+///
+/// The second element is `true` when multiple streams intentionally share this
+/// source word (for example `import.text` and `import.image`, or imported and
+/// bound Obsidian streams) and must not be disambiguated with `(1)`/`(2)`.
+fn agent_provenance_label(part: &ProvenancePart, parenthetical: Option<&str>) -> (String, bool) {
+    match part {
+        ProvenancePart::Import { source } => match source.as_str() {
+            "text" | "image" => ("imported file".to_owned(), true),
+            "obsidian" => ("Obsidian".to_owned(), true),
+            "evernote" => ("Evernote".to_owned(), true),
+            "document" => ("PDF".to_owned(), true),
+            _ => (provenance_label(part, parenthetical), false),
+        },
+        ProvenancePart::Bound {
+            what: Some(WhatWord::Notes),
+            ..
+        } => ("Obsidian".to_owned(), true),
+        _ => (provenance_label(part, parenthetical), false),
+    }
+}
+
+/// Labels for an agent: the owner's words, free of any stream name.
+///
+/// Unified import sources (`imported file`, `Obsidian`, `Evernote`, `PDF`)
+/// share one source label across their backing streams so narrowing by source
+/// matches all of them without synthetic numbering. Other streams that would
+/// still read alike are numbered in the order they were created
+/// (`"your mac · audio (2)"`). A client name that contains a stream name is
+/// dropped. A failed table yields no labels.
 pub fn agent_stream_labels(table: &StreamLabelTable) -> BTreeMap<String, String> {
     if table.status == LabelTableStatus::Failed {
         return BTreeMap::new();
@@ -556,7 +582,7 @@ pub fn agent_stream_labels(table: &StreamLabelTable) -> BTreeMap<String, String>
         .iter()
         .map(|row| row.name.to_lowercase())
         .collect();
-    let mut rows: Vec<(&StreamLabelRow, String)> = table
+    let mut rows: Vec<(&StreamLabelRow, String, bool)> = table
         .rows
         .iter()
         .map(|row| {
@@ -564,19 +590,22 @@ pub fn agent_stream_labels(table: &StreamLabelTable) -> BTreeMap<String, String>
                 let identity = identity.to_lowercase();
                 !names.iter().any(|name| identity.contains(name.as_str()))
             });
-            (row, provenance_label(&row.part, parenthetical))
+            let (label, shared) = agent_provenance_label(&row.part, parenthetical);
+            (row, label, shared)
         })
         .collect();
-    rows.sort_by(|(a, _), (b, _)| a.created_at.cmp(&b.created_at).then(a.name.cmp(&b.name)));
+    rows.sort_by(|(a, _, _), (b, _, _)| a.created_at.cmp(&b.created_at).then(a.name.cmp(&b.name)));
 
     let mut counts: BTreeMap<String, usize> = BTreeMap::new();
-    for (_, label) in &rows {
-        *counts.entry(label.clone()).or_default() += 1;
+    for (_, label, shared) in &rows {
+        if !shared {
+            *counts.entry(label.clone()).or_default() += 1;
+        }
     }
     let mut seen: BTreeMap<String, usize> = BTreeMap::new();
     rows.into_iter()
-        .map(|(row, label)| {
-            let label = if counts[&label] > 1 {
+        .map(|(row, label, shared)| {
+            let label = if !shared && counts.get(&label).copied().unwrap_or(0) > 1 {
                 let ordinal = seen.entry(label.clone()).or_default();
                 *ordinal += 1;
                 format!("{label} ({ordinal})")
@@ -2081,5 +2110,99 @@ mod tests {
         let root = make_journal();
         write_file(root.path(), "streams/broken.json", "{not json");
         assert!(agent_stream_labels(&load_stream_labels(root.path())).is_empty());
+    }
+
+    #[test]
+    fn agent_import_labels_match_sources_without_changing_owner_dashboard_labels() {
+        let root = make_journal();
+        for (idx, stream) in [
+            "import.text",
+            "import.image",
+            "import.obsidian",
+            "import.evernote",
+            "import.document",
+            "import.apple_health",
+            "import.oura",
+            "import.strava",
+            "import.chatgpt",
+            "import.claude",
+            "import.gemini",
+            "import.kindle",
+            "import.granola",
+            "import.ics",
+            "import.audio",
+            "import.journal_archive",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let obj = json!({
+                "name": stream,
+                "kind": "import",
+                "host": null,
+                "platform": null,
+                "created_at": (idx as u64) + 1,
+                "last_day": null,
+                "last_segment": null,
+                "seq": 1
+            });
+            write_file(
+                root.path(),
+                &format!("streams/{stream}.json"),
+                &obj.to_string(),
+            );
+        }
+        write_stream(
+            root.path(),
+            "mac_obsidian",
+            "observer",
+            Some("sha256:obs1"),
+            Some("obsidian"),
+            Some("macos"),
+        );
+        write_stream(
+            root.path(),
+            "phone_obsidian",
+            "observer",
+            Some("sha256:obs2"),
+            Some("obsidian"),
+            None,
+        );
+        let table = load_stream_labels(root.path());
+        let agent = agent_stream_labels(&table);
+        let dashboard = rendered_stream_labels(&table).unwrap();
+
+        // Unified agent labels share their source word without synthetic numbering.
+        assert_eq!(agent["import.text"], "imported file");
+        assert_eq!(agent["import.image"], "imported file");
+        assert_eq!(agent["import.obsidian"], "Obsidian");
+        assert_eq!(agent["mac_obsidian"], "Obsidian");
+        assert_eq!(agent["phone_obsidian"], "Obsidian");
+        assert_eq!(agent["import.evernote"], "Evernote");
+        assert_eq!(agent["import.document"], "PDF");
+
+        // All other imports keep their existing labels untouched.
+        assert_eq!(agent["import.apple_health"], "Apple Health · imported");
+        assert_eq!(agent["import.oura"], "Oura · imported");
+        assert_eq!(agent["import.strava"], "Strava · imported");
+        assert_eq!(agent["import.chatgpt"], "ChatGPT · imported");
+        assert_eq!(agent["import.claude"], "Claude · imported");
+        assert_eq!(agent["import.gemini"], "Gemini · imported");
+        assert_eq!(agent["import.kindle"], "Kindle · imported");
+        assert_eq!(agent["import.granola"], "Granola · imported");
+        assert_eq!(agent["import.ics"], "calendar · imported");
+        assert_eq!(agent["import.audio"], "audio · imported");
+        assert_eq!(
+            agent["import.journal_archive"],
+            "another journal · imported"
+        );
+
+        // Owner dashboard labels remain untouched.
+        assert_eq!(dashboard["import.text"], "text · imported");
+        assert_eq!(dashboard["import.image"], "images · imported");
+        assert_eq!(dashboard["import.obsidian"], "notes · imported");
+        assert_eq!(dashboard["mac_obsidian"], "your device · Obsidian notes");
+        assert_eq!(dashboard["import.evernote"], "Evernote · imported");
+        assert_eq!(dashboard["import.document"], "documents · imported");
     }
 }

@@ -1,0 +1,30 @@
+{
+  "description": "Speaker correction question when one or more lines are selected. $count is the selection size.",
+  "context": "Journal window. Speaker correction question when one or more lines are selected. $count is the selection size.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "ceaee467389aff868075db026c00c22954cfb13707c465f21ec2b58711abb08f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

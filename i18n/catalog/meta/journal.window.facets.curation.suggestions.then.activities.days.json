@@ -1,0 +1,34 @@
+{
+  "description": "Effect of accepting a suggestion. $count is the number of affected activities and $affected_days is their display day list.",
+  "context": "Journal window. Effect of accepting a suggestion. $count is the number of affected activities and $affected_days is their display day list.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "affected_days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "546ed87b1999b072021d1690d2a693ef1726368d6fefc31ffd53823fba3e9152",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

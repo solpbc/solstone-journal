@@ -1,0 +1,28 @@
+{
+  "description": "The path of the settings file that could not be read.",
+  "context": "Journal window. The path of the settings file that could not be read.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "settings_path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b5a5389d5cd14ea4a4e1c63fb6be5cd4903c1f891893004747b43e46e20d560a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot3",
+      "kind": "accepted-input",
+      "value": "config/journal.json"
+    }
+  ]
+}

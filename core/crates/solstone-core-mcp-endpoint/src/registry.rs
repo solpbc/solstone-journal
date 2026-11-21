@@ -193,7 +193,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::GetTranscript,
         wire_name: "get_transcript",
         title: "read a transcript",
-        description: "read a transcript segment or a span_reference from list_transcripts. pass either reference for one read or references for up to 12 reads in input order. each batch item carries its own result or error. pass next_cursor as cursor with that single reference to continue. for one screen segment, pass offset_ms from the start (0 for a screenshot) to request a picture. when a timed description is available, description_offset_ms gives its time. segment_description describes the whole segment. if there are several screens, pass a display from the returned list. a span returns segments with times, sources and entries. a body span returns entries with their sources. give the owner the journal link when present. append ~HHMMSS from a timed line you actually read. use the link alone when untimed is true.",
+        description: "read a transcript segment or a span_reference from list_transcripts. pass either reference for one read or references for up to 12 reads in input order. each batch item carries its own result or error. pass next_cursor as cursor with that single reference to continue. for one screen segment, pass offset_ms from the start (0 for a screenshot) to request a picture. when a timed description is available, description_offset_ms gives its time. segment_description describes the whole segment. if there are several screens, pass a display from the returned list. a span returns segments with times, sources, content_kinds and entries. a body span returns entries with their sources. give the owner the journal link when present. append ~HHMMSS from a timed line you actually read. use the link alone when untimed is true.",
         input_schema: transcript_input_schema,
         requires: SEGMENT,
         audit_name: solstone_core_mcp_audit::ToolName::GetTranscript,
@@ -853,7 +853,7 @@ fn list_transcripts_input_schema(context: &SchemaContext<'_>) -> Value {
             "day_to": { "type": "string", "pattern": DAY_PATTERN, "description": DAY_DESCRIPTION },
             "time_from": { "type": "string", "description": "Start of a time range within day, as HH:MM." },
             "time_to": { "type": "string", "description": "End of a time range within day, as HH:MM." },
-            "source": { "type": "string", "minLength": 1, "maxLength": 256, "description": "A source label, exactly as a listed segment, other_sources or that day's body document gives it. Needs day, and can't be combined with facet." },
+            "source": { "type": "string", "minLength": 1, "maxLength": 256, "description": "A source label, exactly as a segment, search result, other_sources or that day's body document gives it. Matches every readable stream with that label. Needs day, and can't be combined with facet." },
             "entry_kind": { "type": "string", "minLength": 1, "maxLength": 256, "description": "one kind of entry in a body source, such as resting heart rate, workout or sleep. the list shows windows with matching entries. the span returns only those entries." },
         }
     });

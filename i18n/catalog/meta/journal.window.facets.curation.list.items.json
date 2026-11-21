@@ -1,0 +1,25 @@
+{
+  "description": "Display list of names or dates. $preceding_items contains the items before the final one.",
+  "context": "Journal window. Display list of names or dates. $preceding_items contains the items before the final one.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "preceding_items",
+      "type": "string"
+    },
+    {
+      "name": "last_item",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "04bcb463c6d497b5457a6e2ed81a1197a024760cc4bbd5dc6b84e86579cd60e0",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
