@@ -405,8 +405,8 @@ pub fn indexed_permission(
 
 /// A historical index may store every import summary under Transcripts.
 /// Agent queries need the import's actual kind before admitting even a count.
-/// AI and generic dialogue have direct readers only: their summaries may
-/// include excerpts and do not add a separate keyword-search route.
+/// A search hit on a conversation summary uses the Summaries grant. A hit
+/// on the original conversation goes through its own source reader.
 pub fn agent_indexed_permission(
     journal: Option<&Path>,
     path: &str,
@@ -428,6 +428,7 @@ fn import_summary_permission(journal: Option<&Path>, path: &str) -> Option<Admit
         "document" => C::Documents,
         "ics" => C::Calendar,
         "image" => C::Photos,
+        "chatgpt" | "claude" | "gemini" => C::Facets,
         "text" => body_material::text_summary_permission(journal, path, &manifest)?,
         _ => return None,
     })

@@ -41,6 +41,20 @@ pub(super) fn text_summary_permission(
         {
             return None;
         }
+        // The manifest identifies a summary of a conversation independently
+        // of whether the original turn is still present or readable.
+        if *stream == "import.text"
+            && (*name == "conversation_transcript.jsonl"
+                || super::conversation::unresolved_markdown(&format!(
+                    "{day}/{stream}/{segment}/{name}"
+                )))
+        {
+            if kind.is_some_and(|kind| kind != AdmittedCategory::Facets) {
+                return None;
+            }
+            kind = Some(AdmittedCategory::Facets);
+            continue;
+        }
         let expected = match *name {
             "note_transcript.md" => ("notes", AdmittedCategory::Notes),
             "document_transcript.md" => ("documents", AdmittedCategory::Documents),

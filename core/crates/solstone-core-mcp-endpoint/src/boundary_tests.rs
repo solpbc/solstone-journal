@@ -483,6 +483,21 @@ fn import_summary_search_and_saved_reference_follow_the_current_source() {
         grant("messages");
         assert!(search().is_empty(), "{source}");
     }
+    for job in [
+        json!({"source_type":"chatgpt"}),
+        json!({"source_type":"claude"}),
+        json!({"source_type":"gemini"}),
+        json!({"source_type":"text","files_created":["chronicle/20261120/import.text/110000_300/conversation_transcript.jsonl"]}),
+    ] {
+        fs::write(&manifest, job.to_string()).unwrap();
+        grant("facets");
+        let hits = search();
+        assert_eq!(hits.len(), 1, "{job}");
+        let summary = probe(&journal, "fetch", json!({"reference":hits[0]["reference"]})).unwrap();
+        assert!(summary["text"].as_str().unwrap().contains("summarystamp"));
+        grant("messages");
+        assert!(search().is_empty());
+    }
     grant("documents");
     fs::remove_file(&manifest).unwrap();
     assert!(search().is_empty());
@@ -11158,6 +11173,77 @@ fn write_segment_file(
     )
     .unwrap();
     fs::write(seg_dir.join(name), body).unwrap();
+}
+
+#[test]
+fn an_activity_can_quote_a_message_while_the_original_is_private() {
+    let journal = base_activity_journal();
+    let root = journal.path();
+    let day = "20260308";
+    let stream = "import.chatgpt";
+    let segment = "090000_300";
+    let quote = "Meet at the north gate";
+    write_segment_file(
+        root,
+        day,
+        stream,
+        segment,
+        "alpha",
+        "conversation_transcript.jsonl",
+        &format!(
+            "{}\n{}\n",
+            json!({"untimed":true,"imported":{}}),
+            json!({"start":"00:00:00","speaker":"Ana","text":format!("{quote}. Take the spare key.")})
+        ),
+    );
+    write_activity_line(
+        root,
+        "alpha",
+        day,
+        "gate",
+        quote,
+        100,
+        Some("import"),
+        Some(&[segment]),
+        None,
+        None,
+        Some(stream),
+        None,
+        None,
+    );
+    for can_open in [false, true] {
+        let mut grant = ReadPermission::default_whole_journal();
+        if can_open {
+            grant.categories.push("messages".into());
+        }
+        PermissionStore::open(root)
+            .set_permission(CONNECTION, grant)
+            .unwrap();
+        let listed = probe(&journal, "list_activities", json!({"day":day})).unwrap();
+        let activity = listed["activities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["title"] == quote)
+            .unwrap();
+        let source = probe(
+            &journal,
+            "get_activity_sources",
+            json!({"reference":activity["reference"]}),
+        )
+        .unwrap();
+        assert_eq!(
+            source["units"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|unit| unit["text"]
+                    .as_str()
+                    .is_some_and(|s| literal_display_text(s).contains("Take the spare key"))),
+            can_open,
+            "{source}"
+        );
+    }
 }
 
 #[test]
