@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for recovery path directory.",
+  "context": "Journal command-line text for recovery path directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "168620e2865fdb1e05ceade0fc14b51ac9e8b169ddec1f0548dc726c9b30ffec",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

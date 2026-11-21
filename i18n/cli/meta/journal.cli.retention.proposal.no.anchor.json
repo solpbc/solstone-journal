@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for proposal no anchor.",
+  "context": "Journal command-line text for proposal no anchor.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "anchor",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a40ab1f7a0d1c6b033eb9be98ca485b8d001d2eb7ebb70c97096888fb72ce957",
+  "max_length": 118,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "open_brace",
+      "kind": "accepted-input",
+      "value": "{"
+    },
+    {
+      "name": "close_brace",
+      "kind": "accepted-input",
+      "value": "}"
+    }
+  ]
+}

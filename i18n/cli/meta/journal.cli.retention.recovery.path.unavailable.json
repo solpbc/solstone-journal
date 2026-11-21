@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for recovery path unavailable.",
+  "context": "Journal command-line text for recovery path unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f6c9202ba5509167b04c4b18b0f90ce62450ba8d074228feb97930930ff6b8a0",
+  "max_length": 93,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1367,6 +1367,54 @@ m6a6f75726e616c2e636c692e726570726f636573732e75736167652e756e6b6e6f776e = usage:
 
 m6a6f75726e616c2e636c692e726570726f636573732e77616974696e67 = request saved; start the background service with { "solstone journal up" } to process it
 
+m6a6f75726e616c2e636c692e726574656e74696f6e2e70726f706f73616c2e656c696769626c65 = policy eligibility: Eligible { "{" } anchor: { $anchor }, age_days: { NUMBER($age_days, useGrouping: 0) }, period: Days({ NUMBER($period_days, useGrouping: 0) }) { "}" }
+
+m6a6f75726e616c2e636c692e726574656e74696f6e2e70726f706f73616c2e666f7265766572 = policy eligibility: KeptForever
+
+m6a6f75726e616c2e636c692e726574656e74696f6e2e70726f706f73616c2e6e6f2e616e63686f72 = policy eligibility: AnchorMissing { "{" } anchor: { $anchor } { "}" }
+
+m6a6f75726e616c2e636c692e726574656e74696f6e2e70726f706f73616c2e756e7265636f72646564 = removal failed before a proposal was recorded
+
+m6a6f75726e616c2e636c692e726574656e74696f6e2e70726f706f73616c2e796f756e67 = policy eligibility: TooYoung { "{" } anchor: { $anchor }, age_days: { NUMBER($age_days, useGrouping: 0) }, period: Days({ NUMBER($period_days, useGrouping: 0) }) { "}" }
+
+m6a6f75726e616c2e636c692e726574656e74696f6e2e7265636f766572792e61637469766974792e62696e64696e67 = your journal couldn't be checked, so this delete stopped
+
+m6a6f75726e616c2e636c692e726574656e74696f6e2e7265636f766572792e61637469766974792e62757379 = your journal is busy with another job
+
+m6a6f75726e616c2e636c692e726574656e74696f6e2e7265636f766572792e61637469766974792e686f6c64 = another journal operation needs attention before this removal can continue
+
+m6a6f75726e616c2e636c692e726574656e74696f6e2e7265636f766572792e61637469766974792e7265736572766564 = this location is reserved for a journal operation and cannot be removed
+
+m6a6f75726e616c2e636c692e726574656e74696f6e2e7265636f766572792e706174682e6469726563746f7279 = there is a folder where a recording was expected
+
+m6a6f75726e616c2e636c692e726574656e74696f6e2e7265636f766572792e706174682e696e76616c6964 = the location does not name a file inside your journal
+
+m6a6f75726e616c2e636c692e726574656e74696f6e2e7265636f766572792e706174682e6f757473696465 = this is not inside your journal, so it was left alone
+
+m6a6f75726e616c2e636c692e726574656e74696f6e2e7265636f766572792e706174682e7065726d697373696f6e = the file could not be read or removed, which usually means a permission problem
+
+m6a6f75726e616c2e636c692e726574656e74696f6e2e7265636f766572792e706174682e756e617661696c61626c65 = the file could not be removed; the journal was left unchanged
+
+m6a6f75726e616c2e636c692e726574656e74696f6e2e7265636f766572792e7265636f72642e70726570617265 = the record of this removal could not be prepared
+
+m6a6f75726e616c2e636c692e726574656e74696f6e2e7265636f766572792e7265636f72642e7772697465 = the record of this removal could not be written
+
+m6a6f75726e616c2e636c692e726574656e74696f6e2e7265636f766572792e7365676d656e742e62757379 = another process is working on this segment
+
+m6a6f75726e616c2e636c692e726574656e74696f6e2e7265636f766572792e7365676d656e742e676f6e65 = this segment has already been removed
+
+m6a6f75726e616c2e636c692e726574656e74696f6e2e7265636f766572792e7365676d656e742e6c6976652e6f63637570696564 = something new was written where this segment was, so it has been left set aside rather than overwritten
+
+m6a6f75726e616c2e636c692e726574656e74696f6e2e7265636f766572792e7365676d656e742e6d697373696e67 = there is no such segment in your journal
+
+m6a6f75726e616c2e636c692e726574656e74696f6e2e7265636f766572792e7365676d656e742e737461676564 = this segment is part-way through removal and is set aside; it is not listed with your other segments until it finishes
+
+m6a6f75726e616c2e636c692e726574656e74696f6e2e7265636f766572792e7365676d656e742e756e636f6e6669726d6564 = this could not be confirmed gone, so it is not being reported as removed
+
+m6a6f75726e616c2e636c692e726574656e74696f6e2e7265636f766572792e7365676d656e742e756e66696e6973686564 = a previous removal of this segment did not finish; it needs looking at before this can be retried
+
+m6a6f75726e616c2e636c692e726574656e74696f6e2e72656d6f76616c2e756e6365727461696e = deletion couldn't be completed or confirmed. recovery is needed.
+
 m6a6f75726e616c2e636c692e73746174732e617267756d656e7473 = usage: { "solstone journal journal-stats [-h] [--no-cache] [-v] [-d]" }{ "\u000a" }{ "solstone journal journal-stats" }: error: unrecognized arguments: { $argument }
 
 m6a6f75726e616c2e636c692e73746174732e63617573652e6661636574 = facet store error: { $detail }

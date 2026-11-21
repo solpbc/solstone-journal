@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for recovery segment live occupied.",
+  "context": "Journal command-line text for recovery segment live occupied.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "850efa2c33000fa6726c8792ad089e85f40c574bb179e1d5f1d7eb8f81782530",
+  "max_length": 135,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

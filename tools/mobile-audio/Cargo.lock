@@ -2358,6 +2358,7 @@ dependencies = [
  "sha2 0.10.9",
  "solstone-core-backup",
  "solstone-core-callosum",
+ "solstone-core-cli-copy",
  "solstone-core-entity",
  "solstone-core-format",
  "solstone-core-journal-config",

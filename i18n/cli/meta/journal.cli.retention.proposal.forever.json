@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for proposal forever.",
+  "context": "Journal command-line text for proposal forever.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ea435056df918c88d0813ff1183026a6bb5462412312aa5b84374326d21e5b0d",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

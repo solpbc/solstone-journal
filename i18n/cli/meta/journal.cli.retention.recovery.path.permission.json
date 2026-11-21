@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for recovery path permission.",
+  "context": "Journal command-line text for recovery path permission.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "80e9c79c991a3e6d3390858331c0371c5cf841b2bc5330b7fb3f9f789328af24",
+  "max_length": 111,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

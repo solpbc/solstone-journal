@@ -62,6 +62,25 @@ pub struct Candidate {
 }
 
 impl Candidate {
+    pub fn proposal(&self) -> (Target, crate::marks::Proposal) {
+        let mut names = self
+            .proven
+            .iter()
+            .map(|item| item.name().to_owned())
+            .collect::<Vec<_>>();
+        names.sort();
+        (
+            self.target.clone(),
+            crate::marks::Proposal {
+                bytes: self.bytes(),
+                reason: self
+                    .eligibility
+                    .proposal_reason(solstone_core_cli_copy::ENGLISH),
+                names,
+            },
+        )
+    }
+
     /// Bytes this candidate would reclaim.
     pub fn bytes(&self) -> u64 {
         self.proven

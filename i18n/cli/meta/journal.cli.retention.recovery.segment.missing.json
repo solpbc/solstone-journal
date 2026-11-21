@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for recovery segment missing.",
+  "context": "Journal command-line text for recovery segment missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8bb11f4d8f061a92e63a5adaab8aeaf4051fc365f8f26aecbf73af4d3027017b",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

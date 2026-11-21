@@ -1,0 +1,43 @@
+{
+  "description": "Journal command-line text for proposal young.",
+  "context": "Journal command-line text for proposal young.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "anchor",
+      "type": "string"
+    },
+    {
+      "name": "age_days",
+      "type": "integer",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "period_days",
+      "type": "integer",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "772819e0f1c919f8fb5a3c53da7576fe2ee10f57ae2b41a2bc48af3281b0b582",
+  "max_length": 170,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "open_brace",
+      "kind": "accepted-input",
+      "value": "{"
+    },
+    {
+      "name": "close_brace",
+      "kind": "accepted-input",
+      "value": "}"
+    }
+  ]
+}

@@ -262,11 +262,7 @@ fn remove_one(
             .collect::<BTreeSet<_>>();
         let accounted = mark.proposal.names.iter().all(|name| {
             let rel = crate::layout::content_rel(&target.day, &target.stream, &target.dir, name);
-            removed.contains(rel.as_str())
-                || row
-                    .not_removed
-                    .iter()
-                    .any(|item| item.reason == NO_LONGER_PRESENT && item.entry == rel)
+            removed.contains(rel.as_str()) || !found_names.contains(name.as_str())
         });
         let complete = accounted && !row.not_removed.iter().any(|item| item.staged.is_some());
         let staged = row.not_removed.iter().find_map(|item| {
@@ -397,7 +393,13 @@ fn refused(mark: &Mark, reason: &str) -> TargetOutcome {
 const REVIEW_REFUSED: &str =
     "the originals couldn't be deleted because their current state couldn't be confirmed.";
 #[cfg(any(unix, windows))]
-const REVIEW_UNCERTAIN: &str = "deletion couldn't be completed or confirmed. recovery is needed.";
+fn review_uncertain() -> String {
+    solstone_core_cli_copy::render_for(
+        solstone_core_cli_copy::ENGLISH,
+        "journal.cli.retention.removal.uncertain",
+        &[],
+    )
+}
 const REVIEW_POST_COMMIT: &str =
     "this file was deleted, but the change or its records couldn't be fully saved.";
 const REVIEW_HALTED: &str =
@@ -1992,7 +1994,7 @@ fn execute_reviewed_mode(
                             row.not_removed.push(reviewed_not_removed(
                                 mark,
                                 name,
-                                REVIEW_UNCERTAIN,
+                                &review_uncertain(),
                                 staged,
                             ));
                             stop = true;
@@ -2055,7 +2057,7 @@ fn execute_reviewed_mode(
                     row.not_removed.push(reviewed_not_removed(
                         mark,
                         name,
-                        REVIEW_UNCERTAIN,
+                        &review_uncertain(),
                         staged,
                     ));
                 }
@@ -2154,7 +2156,7 @@ fn execute_reviewed_mode(
                         row.not_removed.push(reviewed_not_removed(
                             mark,
                             name,
-                            REVIEW_UNCERTAIN,
+                            &review_uncertain(),
                             reviewed_stage_path(&attempt.native),
                         ));
                     }
@@ -2184,7 +2186,7 @@ fn execute_reviewed_mode(
                 mark,
                 Failure {
                     at: solstone_core_time::utc_z(now, solstone_core_time::Precision::Secs),
-                    reason: REVIEW_UNCERTAIN.to_owned(),
+                    reason: review_uncertain(),
                     staged,
                 },
             ))

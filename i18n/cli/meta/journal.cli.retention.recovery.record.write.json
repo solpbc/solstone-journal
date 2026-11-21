@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for recovery record write.",
+  "context": "Journal command-line text for recovery record write.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "70f84fde5bbfb3e2144a09bdb0259f357614142a54024cf47f73113cb3e46303",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

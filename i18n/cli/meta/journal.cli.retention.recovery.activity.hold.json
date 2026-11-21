@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for recovery activity hold.",
+  "context": "Journal command-line text for recovery activity hold.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "54625bd15d302deb06a553816cefd5fb2dbea85c83d9e64ef10c88737414edd2",
+  "max_length": 106,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

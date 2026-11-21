@@ -58,8 +58,8 @@ use solstone_core_retention::logs::{
     plan as plan_logs, plan_compactions,
 };
 use solstone_core_retention::marks::{
-    Failure, MarkId, Proposal, RemovalClass, decline, load, preflight, reconcile,
-    reconcile_recovered, record_failure, resolve_offload, upsert_offload,
+    Failure, MarkId, RemovalClass, decline, load, preflight, reconcile, reconcile_recovered,
+    record_failure, resolve_offload, upsert_offload,
 };
 use solstone_core_retention::oplog_retention::{OplogRetentionPlan, plan_oplog_retention};
 use solstone_core_retention::original_deletion::RawReleaseClass;
@@ -1148,22 +1148,7 @@ fn run_mark(args: &Args) -> ExitCode {
     let mut proposals = plan
         .candidates
         .iter()
-        .map(|candidate| {
-            let mut names = candidate
-                .proven
-                .iter()
-                .map(|item| item.name().to_owned())
-                .collect::<Vec<_>>();
-            names.sort();
-            (
-                candidate.target.clone(),
-                Proposal {
-                    bytes: candidate.bytes(),
-                    reason: format!("policy eligibility: {:?}", candidate.eligibility),
-                    names,
-                },
-            )
-        })
+        .map(solstone_core_retention::sweep::Candidate::proposal)
         .collect::<Vec<_>>();
     if !plan.unreadable_days.is_empty() {
         let register = match load(&journal) {

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for recovery activity binding.",
+  "context": "Journal command-line text for recovery activity binding.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "899f48f2320f472ca4d69261b101c9287e29fe5967e21326d2d79eb489894984",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

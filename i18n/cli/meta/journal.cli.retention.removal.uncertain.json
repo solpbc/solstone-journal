@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for removal uncertain.",
+  "context": "Journal command-line text for removal uncertain.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "769e18611ca47895f89c68b57e1270d745fc64ef6f7478678978a6493fa3c867",
+  "max_length": 96,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}
