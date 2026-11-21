@@ -7,7 +7,7 @@
 //! Everything here is a count of stored records or a date. Nothing is ranked,
 //! scored or picked: rows come back in the order they first appear.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -77,19 +77,11 @@ fn is_year(value: &str) -> bool {
 /// One year of the journal. With no `year`, the latest year that holds a day
 /// on or before `today`; with nothing held, today's year, empty. Days after
 /// `today` are never counted.
+///
+/// The layers and places are read for the year shown only. Names are read
+/// over every day held, since a name is spelled as it was first found and a
+/// day that can't be read keeps every year's names back.
 pub(crate) fn year_view(root: &Path, today: &str, year: Option<&str>) -> Value {
-    let held = |day: &str| day <= today;
-
-    let activities: BTreeMap<String, u64> = solstone_core_facets_web::activity_day_counts(root)
-        .into_iter()
-        .filter(|(day, count)| held(day) && *count > 0)
-        .map(|(day, count)| (day, count as u64))
-        .collect();
-    let location: BTreeMap<String, u64> = solstone_core_location::list_location_days(root)
-        .into_iter()
-        .filter(|(day, _)| held(day))
-        .collect();
-
     // Places: what the map shows, less anything the owner hid from it. A
     // hidden place's own name stays out of the names too.
     let store = solstone_core_location::places::PlaceStore::read(root);
@@ -99,30 +91,6 @@ pub(crate) fn year_view(root: &Path, today: &str, year: Option<&str>) -> Value {
         .filter(|place| place.hidden)
         .filter_map(|place| place.name.clone())
         .collect();
-    let (places, places_unavailable) = match solstone_core_location::read_places(root) {
-        Ok(views) => {
-            let places = views
-                .into_iter()
-                .filter(|view| {
-                    !view.place.hidden && !store.hides(view.place.latitude, view.place.longitude)
-                })
-                .map(|view| {
-                    let days: BTreeSet<String> = view
-                        .stays
-                        .iter()
-                        .map(|stay| stay.day.clone())
-                        .filter(|day| held(day))
-                        .collect();
-                    (view.place.id.clone(), view.label(), days)
-                })
-                .collect::<Vec<_>>();
-            (places, false)
-        }
-        Err(error) => {
-            log::warn!("year: places not listed: {error}");
-            (Vec::new(), true)
-        }
-    };
 
     // Names: when any hide can't be read, none are listed.
     let (names, names_unavailable) = match solstone_core_facets::detected_name_days(
@@ -138,19 +106,17 @@ pub(crate) fn year_view(root: &Path, today: &str, year: Option<&str>) -> Value {
         }
     };
 
-    let mut years: BTreeSet<String> = BTreeSet::new();
-    let mut note = |day: &str| {
-        if let Some(year) = day.get(..4) {
-            years.insert(year.to_owned());
-        }
-    };
-    activities.keys().for_each(|day| note(day));
-    location.keys().for_each(|day| note(day));
-    for (_, _, days) in &places {
-        days.iter().for_each(|day| note(day));
-    }
+    // The years with a day a layer counts or a name is found on. A place's
+    // days are days its stays hold location, so the location layer has them.
+    let mut years = solstone_core_facets_web::activity_years(root, today);
+    years.extend(solstone_core_location::location_years(root, today));
     for name in &names {
-        name.days.iter().for_each(|day| note(day));
+        years.extend(
+            name.days
+                .iter()
+                .filter_map(|day| day.get(..4))
+                .map(str::to_owned),
+        );
     }
 
     let year = year
@@ -158,12 +124,45 @@ pub(crate) fn year_view(root: &Path, today: &str, year: Option<&str>) -> Value {
         .or_else(|| years.last().cloned())
         .unwrap_or_else(|| today.get(..4).unwrap_or_default().to_owned());
     let in_year = |day: &String| day.starts_with(&year);
+    // Every day key in the year, up to today.
+    let from = format!("{year}0000");
+    let to = format!("{year}9999").min(today.to_owned());
+
+    let activities: BTreeMap<String, u64> =
+        solstone_core_facets_web::activity_day_counts_between(root, &from, &to)
+            .into_iter()
+            .filter(|(_, count)| *count > 0)
+            .map(|(day, count)| (day, count as u64))
+            .collect();
+    let location: BTreeMap<String, u64> =
+        solstone_core_location::list_location_days_between(root, &from, &to)
+            .into_iter()
+            .collect();
+
+    let (places, places_unavailable) =
+        match solstone_core_location::read_place_days_between(root, &from, &to) {
+            Ok(places) => {
+                let places = places
+                    .into_iter()
+                    .filter(|found| {
+                        !found.place.hidden
+                            && !store.hides(found.place.latitude, found.place.longitude)
+                    })
+                    .map(|found| (found.place.id, found.label, found.days))
+                    .filter(|(_, _, days)| !days.is_empty())
+                    .collect::<Vec<_>>();
+                (places, false)
+            }
+            Err(error) => {
+                log::warn!("year: places not listed: {error}");
+                (Vec::new(), true)
+            }
+        };
 
     // Rows run in the order they first appear in the year, then by label.
     let mut place_rows: Vec<(String, String, Vec<String>)> = places
         .into_iter()
-        .map(|(id, label, days)| (id, label, days.into_iter().filter(in_year).collect()))
-        .filter(|(_, _, days): &(String, String, Vec<String>)| !days.is_empty())
+        .map(|(id, label, days)| (id, label, days.into_iter().collect()))
         .collect();
     place_rows.sort_by(|a, b| (&a.2[0], &a.1, &a.0).cmp(&(&b.2[0], &b.1, &b.0)));
     let mut name_rows: Vec<(String, String, Vec<String>)> = names
@@ -176,16 +175,13 @@ pub(crate) fn year_view(root: &Path, today: &str, year: Option<&str>) -> Value {
         .collect();
     name_rows.sort_by(|a, b| (&a.2[0], &a.1, &a.0).cmp(&(&b.2[0], &b.1, &b.0)));
 
-    let layer = |counts: BTreeMap<String, u64>| -> BTreeMap<String, u64> {
-        counts.into_iter().filter(|(day, _)| in_year(day)).collect()
-    };
     json!({
         "year": year,
         "years": years,
         "today": today,
         "layers": {
-            "activities": layer(activities),
-            "location": layer(location),
+            "activities": activities,
+            "location": location,
         },
         "places": place_rows
             .into_iter()
@@ -202,6 +198,7 @@ pub(crate) fn year_view(root: &Path, today: &str, year: Option<&str>) -> Value {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::{BTreeMap, BTreeSet};
     use std::fs;
     use std::path::Path;
 
@@ -254,6 +251,204 @@ mod tests {
         }
         let mut reconciler = solstone_core_location::Reconciler::default();
         solstone_core_location::reconcile_journal(root, &mut reconciler).unwrap();
+    }
+
+    /// The view as read over the whole journal and then cut to the year: what
+    /// [`year_view`] must answer for every journal and year.
+    pub(super) fn whole_journal_view(root: &Path, today: &str, year: Option<&str>) -> Value {
+        let held = |day: &str| day <= today;
+
+        let activities: BTreeMap<String, u64> = solstone_core_facets_web::activity_day_counts(root)
+            .into_iter()
+            .filter(|(day, count)| held(day) && *count > 0)
+            .map(|(day, count)| (day, count as u64))
+            .collect();
+        let location: BTreeMap<String, u64> = solstone_core_location::list_location_days(root)
+            .into_iter()
+            .filter(|(day, _)| held(day))
+            .collect();
+
+        // Places: what the map shows, less anything the owner hid from it. A
+        // hidden place's own name stays out of the names too.
+        let store = solstone_core_location::places::PlaceStore::read(root);
+        let hidden_place_names: Vec<String> = store
+            .places
+            .iter()
+            .filter(|place| place.hidden)
+            .filter_map(|place| place.name.clone())
+            .collect();
+        let (places, places_unavailable) = match solstone_core_location::read_places(root) {
+            Ok(views) => {
+                let places = views
+                    .into_iter()
+                    .filter(|view| {
+                        !view.place.hidden
+                            && !store.hides(view.place.latitude, view.place.longitude)
+                    })
+                    .map(|view| {
+                        let days: BTreeSet<String> = view
+                            .stays
+                            .iter()
+                            .map(|stay| stay.day.clone())
+                            .filter(|day| held(day))
+                            .collect();
+                        (view.place.id.clone(), view.label(), days)
+                    })
+                    .collect::<Vec<_>>();
+                (places, false)
+            }
+            Err(error) => {
+                log::warn!("year: places not listed: {error}");
+                (Vec::new(), true)
+            }
+        };
+
+        // Names: when any hide can't be read, none are listed.
+        let (names, names_unavailable) = match solstone_core_facets::detected_name_days(
+            root,
+            "00000000",
+            today,
+            &hidden_place_names,
+        ) {
+            Ok(names) => (names, false),
+            Err(error) => {
+                log::warn!("year: names not listed: {error}");
+                (Vec::new(), true)
+            }
+        };
+
+        let mut years: BTreeSet<String> = BTreeSet::new();
+        let mut note = |day: &str| {
+            if let Some(year) = day.get(..4) {
+                years.insert(year.to_owned());
+            }
+        };
+        activities.keys().for_each(|day| note(day));
+        location.keys().for_each(|day| note(day));
+        for (_, _, days) in &places {
+            days.iter().for_each(|day| note(day));
+        }
+        for name in &names {
+            name.days.iter().for_each(|day| note(day));
+        }
+
+        let year = year
+            .map(str::to_owned)
+            .or_else(|| years.last().cloned())
+            .unwrap_or_else(|| today.get(..4).unwrap_or_default().to_owned());
+        let in_year = |day: &String| day.starts_with(&year);
+
+        // Rows run in the order they first appear in the year, then by label.
+        let mut place_rows: Vec<(String, String, Vec<String>)> = places
+            .into_iter()
+            .map(|(id, label, days)| (id, label, days.into_iter().filter(in_year).collect()))
+            .filter(|(_, _, days): &(String, String, Vec<String>)| !days.is_empty())
+            .collect();
+        place_rows.sort_by(|a, b| (&a.2[0], &a.1, &a.0).cmp(&(&b.2[0], &b.1, &b.0)));
+        let mut name_rows: Vec<(String, String, Vec<String>)> = names
+            .into_iter()
+            .map(|name| {
+                let days = name.days.into_iter().filter(in_year).collect();
+                (name.entity_type, name.name, days)
+            })
+            .filter(|(_, _, days): &(String, String, Vec<String>)| !days.is_empty())
+            .collect();
+        name_rows.sort_by(|a, b| (&a.2[0], &a.1, &a.0).cmp(&(&b.2[0], &b.1, &b.0)));
+
+        let layer = |counts: BTreeMap<String, u64>| -> BTreeMap<String, u64> {
+            counts.into_iter().filter(|(day, _)| in_year(day)).collect()
+        };
+        json!({
+            "year": year,
+            "years": years,
+            "today": today,
+            "layers": {
+                "activities": layer(activities),
+                "location": layer(location),
+            },
+            "places": place_rows
+                .into_iter()
+                .map(|(id, label, days)| json!({"id": id, "label": label, "days": days}))
+                .collect::<Vec<_>>(),
+            "names": name_rows
+                .into_iter()
+                .map(|(entity_type, name, days)| json!({"type": entity_type, "name": name, "days": days}))
+                .collect::<Vec<_>>(),
+            "places_unavailable": places_unavailable,
+            "names_unavailable": names_unavailable,
+        })
+    }
+
+    fn activity(root: &Path, facet: &str, day: &str, hidden: bool) {
+        let folder = root.join("facets").join(facet).join("activities");
+        fs::create_dir_all(&folder).unwrap();
+        let row = json!({"id": "coding_090000_300", "activity": "coding", "segments": ["090000_300"], "title": "", "description": "", "details": "", "active_entities": [], "hidden": hidden, "source": "user", "edits": [], "created_at": 0});
+        fs::write(folder.join(format!("{day}.jsonl")), format!("{row}\n")).unwrap();
+    }
+
+    #[test]
+    fn each_year_reads_the_same_as_the_whole_journal_cut_to_it() {
+        let root = tempfile::tempdir().unwrap();
+        let root = root.path();
+        facet(root, "work");
+        facet(root, "home");
+        // 2023 holds only a day folder and a hidden activity: not a year held.
+        fs::create_dir_all(root.join("chronicle/20230105")).unwrap();
+        activity(root, "work", "20230106", true);
+        activity(root, "work", "20240301", false);
+        activity(root, "home", "20251231", false);
+        activity(root, "work", "20260115", false);
+        activity(root, "work", "20261201", false);
+        // One name spelled two ways, a name hidden in one facet, a name found
+        // only after today, and the name of a place the owner hid.
+        detect(root, "work", "20240302", &["ada wong", "Ben Okri"]);
+        detect(
+            root,
+            "home",
+            "20250102",
+            &["Ada Wong", "Ben Okri", "Blue Door"],
+        );
+        detect(root, "work", "20250103", &["Cy Young"]);
+        detect(root, "home", "20270101", &["Dee Ray"]);
+        solstone_core_facets::hide_detected_name(root, "work", "Ben Okri").unwrap();
+        visits(root, &["20240610", "20251001"], 39.7527);
+        visits(root, &["20251002", "20251003"], 39.7627);
+        let hidden = year_view(root, "20261117", Some("2025"))["places"][1]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        PlaceStore::update(root, |store| {
+            for place in &mut store.places {
+                if place.id == hidden {
+                    place.hidden = true;
+                    place.name = Some("Blue Door".to_owned());
+                }
+            }
+        })
+        .unwrap();
+
+        assert_eq!(
+            year_view(root, "20261117", None)["years"],
+            json!(["2024", "2025", "2026"])
+        );
+        let view = year_view(root, "20261117", Some("2025"));
+        assert_eq!(view["places"].as_array().unwrap().len(), 1);
+        assert!(!view.to_string().contains("Blue Door"));
+        assert!(!view.to_string().contains("Ben Okri"));
+        for year in [
+            None,
+            Some("2023"),
+            Some("2024"),
+            Some("2025"),
+            Some("2026"),
+            Some("2027"),
+        ] {
+            assert_eq!(
+                year_view(root, "20261117", year).to_string(),
+                whole_journal_view(root, "20261117", year).to_string(),
+                "{year:?}"
+            );
+        }
     }
 
     fn name_rows(view: &Value) -> Vec<(String, Vec<String>)> {

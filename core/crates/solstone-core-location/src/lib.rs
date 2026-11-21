@@ -36,7 +36,7 @@ pub mod stay;
 pub use fingerprint::daily_location_fingerprint;
 
 use solstone_core_window_catalog::{ENGLISH, strings, text};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 pub use area::{AreaName, AreaTier, Boundary, Bounds, TownPoint};
@@ -167,9 +167,39 @@ pub fn reconcile_journal_owned(
 
 /// Days that hold location, from their build records, with reading counts.
 pub fn list_location_days(journal: &Path) -> Vec<(String, u64)> {
+    location_days_where(journal, |_| true)
+}
+
+/// [`list_location_days`] for the days from `from` to `to`: no other day's
+/// build record is opened.
+pub fn list_location_days_between(journal: &Path, from: &str, to: &str) -> Vec<(String, u64)> {
+    location_days_where(journal, |day| from <= day && day <= to)
+}
+
+/// The years with a day on or before `through` that [`list_location_days`]
+/// lists. Each year's records are read in day order only until one holds.
+pub fn location_years(journal: &Path, through: &str) -> BTreeSet<String> {
+    let mut days: Vec<String> = solstone_core_journal_io::day_dirs(journal)
+        .unwrap_or_default()
+        .into_keys()
+        .filter(|day| day.as_str() <= through)
+        .collect();
+    days.sort_unstable();
+    let mut years = BTreeSet::new();
+    for day in days {
+        let Some(year) = day.get(..4) else { continue };
+        if !years.contains(year) && projection::read_build_record(journal, &day).is_some() {
+            years.insert(year.to_owned());
+        }
+    }
+    years
+}
+
+fn location_days_where(journal: &Path, keep: impl Fn(&str) -> bool) -> Vec<(String, u64)> {
     let mut days: Vec<(String, u64)> = solstone_core_journal_io::day_dirs(journal)
         .unwrap_or_default()
         .into_keys()
+        .filter(|day| keep(day))
         .filter_map(|day| {
             let record = projection::read_build_record(journal, &day)?;
             Some((day, (record.readings + record.visits).max(1)))
@@ -246,17 +276,82 @@ pub fn read_places(journal: &Path) -> Result<Vec<PlaceView>, area::AreaTierError
     let store = places::PlaceStore::read(journal);
     let stays = projection::all_stays(journal);
     let zone = solstone_core_journal_config::owner_zone(journal);
-    let offset = |at: i64| {
-        jiff::Timestamp::new(at, 0).map_or(0, |utc| i64::from(zone.to_offset(utc).seconds()))
+    let mut views: Vec<PlaceView> = members_by_place(&store, &stays)
+        .into_iter()
+        .map(|(place, members)| place_view(place, members, tier, packs.as_deref(), &zone))
+        .collect();
+    views.sort_by(|a, b| {
+        b.description
+            .last
+            .cmp(&a.description.last)
+            .then_with(|| b.description.dates.cmp(&a.description.dates))
+    });
+    Ok(views)
+}
+
+/// One place [`read_places`] shows, by the days of its stays in a range.
+#[derive(Debug, Clone)]
+pub struct PlaceDays {
+    pub place: places::Place,
+    /// [`PlaceView::label`], as [`read_places`] gives it.
+    pub label: String,
+    /// The days from `from` to `to` it has a stay on.
+    pub days: BTreeSet<String>,
+}
+
+/// The places [`read_places`] shows that have a stay on a day from `from` to
+/// `to`, with those days and the same label, in no set order. Only those
+/// days' build records are opened, unless the location-accuracy download is
+/// installed: the words for a spot then weigh every stay it rests on, so
+/// every day's are read.
+pub fn read_place_days_between(
+    journal: &Path,
+    from: &str,
+    to: &str,
+) -> Result<Vec<PlaceDays>, area::AreaTierError> {
+    let tier = area_tier()?;
+    let packs = accuracy::installed_packs(journal);
+    let store = places::PlaceStore::read(journal);
+    let stays = if packs.is_some() {
+        projection::all_stays(journal)
+    } else {
+        projection::stays_between(journal, from, to)
     };
-    // Each stay belongs to at most one place; find it once.
+    let zone = solstone_core_journal_config::owner_zone(journal);
+    Ok(members_by_place(&store, &stays)
+        .into_iter()
+        .filter_map(|(place, members)| {
+            let days: BTreeSet<String> = members
+                .iter()
+                .map(|stay| stay.day.clone())
+                .filter(|day| from <= day.as_str() && day.as_str() <= to)
+                .collect();
+            if days.is_empty() {
+                return None;
+            }
+            let view = place_view(place, members, tier, packs.as_deref(), &zone);
+            Some(PlaceDays {
+                label: view.label(),
+                place: view.place,
+                days,
+            })
+        })
+        .collect())
+}
+
+/// Each shown place, in the store's order, with the stays it rests on in
+/// day order. Each stay belongs to at most one place.
+fn members_by_place<'a>(
+    store: &'a places::PlaceStore,
+    stays: &[places::StayRecord],
+) -> Vec<(&'a places::Place, Vec<places::StayRecord>)> {
     let mut by_place: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
     for (index, stay) in stays.iter().enumerate() {
         if let Some(place) = store.place_for(stay.latitude, stay.longitude, stay.margin_m) {
             by_place.entry(place.id.as_str()).or_default().push(index);
         }
     }
-    let mut views: Vec<PlaceView> = store
+    store
         .places
         .iter()
         // A dormant place's stays are in the trash: it isn't shown.
@@ -266,60 +361,66 @@ pub fn read_places(journal: &Path) -> Result<Vec<PlaceView>, area::AreaTierError
                 .get(place.id.as_str())
                 .map(|indexes| indexes.iter().map(|&index| stays[index].clone()).collect())
                 .unwrap_or_default();
-            let description = places::describe(&members.iter().collect::<Vec<_>>(), offset);
-            let clock = |at: Option<i64>| {
-                at.and_then(|at| jiff::Timestamp::new(at, 0).ok())
-                    .map(|utc| {
-                        utc.to_zoned_datetime(zone.clone())
-                            .strftime("%H:%M")
-                            .to_string()
-                    })
-            };
-            let clocks = members
-                .iter()
-                .map(|stay| (clock(stay.start), clock(stay.end)))
-                .collect();
-            let mut area = tier.name_point(place.latitude, place.longitude);
-            let mut words = None;
-            if let Some((within, found)) = packs.as_deref().and_then(|packs| {
-                packs.stop(
-                    place.latitude,
-                    place.longitude,
-                    // A circle from the centre that holds every stay with its
-                    // own margin, so "at" holds for each of them.
-                    Some(
-                        members
-                            .iter()
-                            .map(|stay| {
-                                pack::distance_m(
-                                    place.latitude,
-                                    place.longitude,
-                                    stay.latitude,
-                                    stay.longitude,
-                                ) + stay.margin_m
-                            })
-                            .fold(accuracy::MARGIN_FLOOR_M, f64::max),
-                    ),
-                )
-            }) {
-                area.within = within;
-                words = Some(found).filter(|found| !found.is_empty());
-            }
-            PlaceView {
-                place: place.clone(),
-                stays: members,
-                clocks,
-                description,
-                area,
-                words,
-            }
+            (place, members)
         })
+        .collect()
+}
+
+fn place_view(
+    place: &places::Place,
+    members: Vec<places::StayRecord>,
+    tier: &AreaTier,
+    packs: Option<&accuracy::Packs>,
+    zone: &jiff::tz::TimeZone,
+) -> PlaceView {
+    let offset = |at: i64| {
+        jiff::Timestamp::new(at, 0).map_or(0, |utc| i64::from(zone.to_offset(utc).seconds()))
+    };
+    let description = places::describe(&members.iter().collect::<Vec<_>>(), offset);
+    let clock = |at: Option<i64>| {
+        at.and_then(|at| jiff::Timestamp::new(at, 0).ok())
+            .map(|utc| {
+                utc.to_zoned_datetime(zone.clone())
+                    .strftime("%H:%M")
+                    .to_string()
+            })
+    };
+    let clocks = members
+        .iter()
+        .map(|stay| (clock(stay.start), clock(stay.end)))
         .collect();
-    views.sort_by(|a, b| {
-        b.description
-            .last
-            .cmp(&a.description.last)
-            .then_with(|| b.description.dates.cmp(&a.description.dates))
-    });
-    Ok(views)
+    let mut area = tier.name_point(place.latitude, place.longitude);
+    let mut words = None;
+    if let Some((within, found)) = packs.and_then(|packs| {
+        packs.stop(
+            place.latitude,
+            place.longitude,
+            // A circle from the centre that holds every stay with its
+            // own margin, so "at" holds for each of them.
+            Some(
+                members
+                    .iter()
+                    .map(|stay| {
+                        pack::distance_m(
+                            place.latitude,
+                            place.longitude,
+                            stay.latitude,
+                            stay.longitude,
+                        ) + stay.margin_m
+                    })
+                    .fold(accuracy::MARGIN_FLOOR_M, f64::max),
+            ),
+        )
+    }) {
+        area.within = within;
+        words = Some(found).filter(|found| !found.is_empty());
+    }
+    PlaceView {
+        place: place.clone(),
+        stays: members,
+        clocks,
+        description,
+        area,
+        words,
+    }
 }

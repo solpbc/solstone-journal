@@ -33,6 +33,21 @@ pub(crate) fn activity_day_counts(
     view::compute_day_counts(root, None)
 }
 
+pub(crate) fn activity_day_counts_between(
+    root: &std::path::Path,
+    from: &str,
+    to: &str,
+) -> std::collections::BTreeMap<String, usize> {
+    view::compute_day_counts_between(root, None, from, to)
+}
+
+pub(crate) fn activity_years(
+    root: &std::path::Path,
+    through: &str,
+) -> std::collections::BTreeSet<String> {
+    view::day_count_years(root, None, through)
+}
+
 pub(crate) const ACTOR_HEADER: &str = "x-solstone-actor";
 pub(crate) const ACTOR_OWNER: &str = "owner";
 
@@ -3566,6 +3581,48 @@ mod tests {
             solstone_core_facets::read_activity_records_strict(root.path(), "body", "20261011")
                 .unwrap();
         assert_eq!(rows[0]["hidden"], true, "{rows:?}");
+    }
+
+    #[test]
+    fn a_span_of_days_counts_each_as_counting_every_day_does() {
+        let root = body_journal();
+        add_late_run_across_midnight(root.path());
+        // A record a year before, so every day counted spans two years.
+        let row = json!({"id": "coding_090000_300", "activity": "coding", "segments": ["090000_300"], "source": "user"});
+        std::fs::write(
+            root.path().join("facets/body/activities/20251010.jsonl"),
+            format!("{row}\n"),
+        )
+        .unwrap();
+        let every = view::compute_day_counts(root.path(), None);
+        assert!(every.contains_key("20251010") && every.contains_key(BODY_DAY));
+        // The late run's second account is filed on 20261011 but shows under
+        // BODY_DAY: a span that starts there still sees the group whole.
+        for (from, to) in [
+            ("20250000", "20259999"),
+            ("20260000", "20269999"),
+            ("20261011", "20261011"),
+            ("20261011", "20269999"),
+            (BODY_DAY, BODY_DAY),
+        ] {
+            let expected: std::collections::BTreeMap<String, usize> = every
+                .iter()
+                .filter(|(day, _)| from <= day.as_str() && day.as_str() <= to)
+                .map(|(day, count)| (day.clone(), *count))
+                .collect();
+            assert_eq!(
+                view::compute_day_counts_between(root.path(), None, from, to),
+                expected,
+                "{from}..{to}"
+            );
+        }
+        let years: std::collections::BTreeSet<String> =
+            every.keys().map(|day| day[..4].to_owned()).collect();
+        assert_eq!(view::day_count_years(root.path(), None, "20261231"), years);
+        assert_eq!(
+            view::day_count_years(root.path(), None, "20251231"),
+            ["2025".to_owned()].into()
+        );
     }
 
     #[tokio::test]

@@ -27,6 +27,25 @@ pub fn activity_day_counts(
 ) -> std::collections::BTreeMap<String, usize> {
     activities::activity_day_counts(journal_root)
 }
+
+/// [`activity_day_counts`] for the days from `from` to `to`, reading only
+/// those days and the few around them a body group's members can be filed on.
+pub fn activity_day_counts_between(
+    journal_root: &std::path::Path,
+    from: &str,
+    to: &str,
+) -> std::collections::BTreeMap<String, usize> {
+    activities::activity_day_counts_between(journal_root, from, to)
+}
+
+/// The years with a day on or before `through` that [`activity_day_counts`]
+/// counts, each year read only until a day in it has a count.
+pub fn activity_years(
+    journal_root: &std::path::Path,
+    through: &str,
+) -> std::collections::BTreeSet<String> {
+    activities::activity_years(journal_root, through)
+}
 pub use facet_name::valid_facet;
 
 pub fn routes(journal_root: PathBuf, clock: Clock) -> Router {
