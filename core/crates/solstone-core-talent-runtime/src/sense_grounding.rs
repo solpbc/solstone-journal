@@ -413,6 +413,7 @@ mod tests {
     fn source(file: &str, lines: &[&str]) -> (Option<EntrySource>, &'static str) {
         (
             Some(EntrySource {
+                conversation_medium: None,
                 path: file.into(),
                 sha256: "fixture".into(),
                 rendered_range: 0..0,

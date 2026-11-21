@@ -96,7 +96,30 @@ pub fn activity_passages(
         .and_then(|record| record.get("activity"))
         .and_then(Value::as_str)
         .unwrap_or_default();
-    let units = source_units(transcript, kind);
+    let units = match prepared.passage_layout.as_ref() {
+        Some((digest, layout)) => {
+            use sha2::Digest;
+            let current: [u8; 32] = sha2::Sha256::digest(transcript.as_bytes()).into();
+            if &current == digest {
+                super::units::source_units_from_layout(transcript, kind, layout)
+            } else {
+                // Fitting changed the text. The original offsets can no longer
+                // substantiate a source channel in this version.
+                super::units::source_units_from_channels(
+                    kind,
+                    None,
+                    &[super::units::SourceChannel {
+                        channel: "unknown",
+                        text: transcript,
+                    }],
+                )
+                .into_iter()
+                .map(|(_, unit)| unit)
+                .collect()
+            }
+        }
+        None => source_units(transcript, kind),
+    };
     let extraction = extract(&units, &prepared.name, generate);
     Ok(ActivityPassages {
         talent: prepared.name,

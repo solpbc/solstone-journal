@@ -121,14 +121,36 @@ fn quoted_lines(source: &EntrySource) -> Option<Vec<(String, &str)>> {
         (from == record).then_some(text.as_str())
     };
     if stream.starts_with("import.") {
-        // The conversation importer writes the owner's messages as "You".
-        if source.file != "conversation_transcript.jsonl" {
+        // The native import names each participant role explicitly.
+        if source.conversation_medium
+            != Some(solstone_core_format::content::conversation::ConversationMedium::Written)
+            || !matches!(stream, "import.chatgpt" | "import.claude" | "import.gemini")
+            || source.file != "conversation_transcript.jsonl"
+        {
             return None;
         }
         let (header, messages) = source.records.split_first()?;
         let imported = header.get("imported").and_then(Value::as_object);
         if !imported.is_some_and(|imported| imported.keys().eq(["id"]))
-            || header.keys().any(|key| key != "imported" && key != "model")
+            || header.keys().any(|key| {
+                !matches!(
+                    key.as_str(),
+                    "imported" | "model" | "first_sent_at" | "last_sent_at"
+                )
+            })
+            || !match (header.get("first_sent_at"), header.get("last_sent_at")) {
+                (None, None) => true,
+                (Some(first), Some(last)) => {
+                    let bounds =
+                        |v: &Value| v.as_str().and_then(|s| s.parse::<jiff::Timestamp>().ok());
+                    let dates = messages
+                        .iter()
+                        .filter_map(|r| r.get("sent_at").and_then(bounds));
+                    bounds(first).is_some_and(|t| Some(t) == dates.clone().min())
+                        && bounds(last).is_some_and(|t| Some(t) == dates.max())
+                }
+                _ => false,
+            }
             || !header.get("model").is_none_or(Value::is_string)
             || messages.is_empty()
             || messages.len() != source.chunks.len()
@@ -139,27 +161,43 @@ fn quoted_lines(source: &EntrySource) -> Option<Vec<(String, &str)>> {
             .iter()
             .enumerate()
             .map(|(index, record)| {
-                let speaker = record.get("speaker")?.as_str()?;
-                let framing = match speaker {
-                    "You" => "You said",
-                    "Assistant" => "Your agent said",
-                    _ => return None,
+                let fields = solstone_core_format::content::conversation::message_fields(
+                    stream,
+                    &source.file,
+                    index + 1,
+                    record,
+                    false,
+                )?;
+                let framing = match fields["is_owner"].as_bool()? {
+                    true => "You said",
+                    false if record.get("speaker").and_then(Value::as_str) == Some("Assistant") => {
+                        "Your agent said"
+                    }
+                    false => return None,
                 };
-                let start = record.get("start")?.as_str()?;
                 let text = shown_text(record)?;
                 if record.get("source")?.as_str()? != "import"
-                    || rendered(index, record)? != format!("[{start}] (import) {speaker}: {text}")
+                    || record.get("start")?.as_str()?.is_empty()
+                    || record.get("text")?.as_str()? != text
+                    || record.get("truncated") == Some(&Value::Bool(true))
+                    || solstone_core_format::content::has_partial_input(record)
+                    || fields.get("to").is_some()
+                    || rendered(index, record)?
+                        != solstone_core_transcripts::talent_message_turn(
+                            stream,
+                            &source.file,
+                            index + 1,
+                            record,
+                            false,
+                        )?
                 {
                     return None;
                 }
-                let sent = record
-                    .get("source_ms")?
-                    .as_i64()
-                    .filter(|ms| *ms >= 0)
-                    .and_then(|ms| jiff::Timestamp::from_millisecond(ms).ok())
-                    .map(|ts| {
-                        solstone_core_time::utc_z(ts, solstone_core_time::Precision::Millis)
-                    })?;
+                let sent = fields["sent_at"]
+                    .as_str()?
+                    .parse::<jiff::Timestamp>()
+                    .ok()?;
+                let sent = solstone_core_time::utc_z(sent, solstone_core_time::Precision::Millis);
                 Some((format!("{framing} in a message dated {sent}"), text))
             })
             .collect()
@@ -1719,6 +1757,7 @@ mod tests {
             })
             .collect();
         EntrySource {
+            conversation_medium: None,
             path: std::path::PathBuf::from("capture_audio.jsonl"),
             sha256: "fixture".to_owned(),
             rendered_range: 0..0,

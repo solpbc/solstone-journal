@@ -1070,6 +1070,7 @@ mod tests {
     fn speaker_count_reads_the_labels_the_model_reads() {
         let transcript = "## seg\n[09:00:01] You: hi\n[09:00:02] Mina Okafor: hello\n[09:00:03] (laughing) Speaker 2: ha\n[09:00:04] Mina Okafor: so\n[09:00:05] Speaker 1: ok\nnot a line\n";
         let source = solstone_core_transcripts::EntrySource {
+            conversation_medium: None,
             path: "audio.jsonl".into(),
             sha256: String::new(),
             rendered_range: 0..transcript.len(),

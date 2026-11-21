@@ -16,6 +16,7 @@
           {
             "start": "00:00:00",
             "speaker": "You",
+            "is_owner": true,
             "text": "I signed the Cedar agreement on 1994-04-03. Do not use today's message date as the signing date.",
             "source": "import",
             "source_ms": 1767258000000
@@ -23,6 +24,7 @@
           {
             "start": "00:00:01",
             "speaker": "Assistant",
+            "is_owner": false,
             "text": "I have not obtained a copy of the signed agreement.",
             "source": "import",
             "source_ms": 1767258001000
@@ -145,6 +147,7 @@
           {
             "start": "00:00:00",
             "speaker": "You",
+            "is_owner": true,
             "text": "If the café’s Wi‑Fi returns, deploy v2 — only after Zoë approves. Don't use 'rush' mode.",
             "source": "import",
             "source_ms": 1767258000000
@@ -152,6 +155,7 @@
           {
             "start": "00:00:01",
             "speaker": "Assistant",
+            "is_owner": false,
             "text": "Understood: nothing is deployed yet; I'm waiting for Zoë.",
             "source": "import",
             "source_ms": 1767258001000
@@ -213,6 +217,7 @@
           {
             "start": "00:00:00",
             "speaker": "You",
+            "is_owner": true,
             "text": "I signed the Cedar agreement on 1994-04-03. Do not use today's message date as the signing date.",
             "source": "import",
             "source_ms": 1767258000000
@@ -220,6 +225,7 @@
           {
             "start": "00:00:01",
             "speaker": "Assistant",
+            "is_owner": false,
             "text": "I have not obtained a copy of the signed agreement.",
             "source": "import",
             "source_ms": 1767258001000
@@ -312,6 +318,7 @@
           {
             "start": "00:00:00",
             "speaker": "You",
+            "is_owner": true,
             "text": "I signed the Cedar agreement on 1994-04-03. Do not use today's message date as the signing date.",
             "source": "import",
             "source_ms": 1767258000000
@@ -319,6 +326,7 @@
           {
             "start": "00:00:01",
             "speaker": "Assistant",
+            "is_owner": false,
             "text": "I have not obtained a copy of the signed agreement.",
             "source": "import",
             "source_ms": 1767258001000
@@ -358,6 +366,7 @@
           {
             "start": "00:00:00",
             "speaker": "You",
+            "is_owner": true,
             "text": "I signed the Cedar agreement on 1994-04-03. Do not use today's message date as the signing date.",
             "source": "import",
             "source_ms": 1767258000000
@@ -365,6 +374,7 @@
           {
             "start": "00:00:01",
             "speaker": "Assistant",
+            "is_owner": false,
             "text": "I have not obtained a copy of the signed agreement.",
             "source": "import",
             "source_ms": 1767258001000
@@ -405,6 +415,7 @@
           {
             "start": "00:00:00",
             "speaker": "You",
+            "is_owner": true,
             "text": "I signed the Cedar agreement on 1994-04-03. Do not use today's message date as the signing date.",
             "source": "import",
             "source_ms": 1767258000000
@@ -412,6 +423,7 @@
           {
             "start": "00:00:01",
             "speaker": "Assistant",
+            "is_owner": false,
             "text": "I have not obtained a copy of the signed agreement.",
             "source": "import",
             "source_ms": 1767258001000
@@ -448,6 +460,7 @@
           {
             "start": "00:00:00",
             "speaker": "You",
+            "is_owner": true,
             "text": "Call it the “Cedar” deal.",
             "source": "import",
             "source_ms": 1767258000000
@@ -481,6 +494,7 @@
           {
             "start": "00:00:00",
             "speaker": "You",
+            "is_owner": true,
             "text": "The Birch ledger stays closed until Friday. The Birch ledger stays closed until Friday. The Birch ledger stays closed until Friday. The Birch ledger stays closed until Friday. The Birch ledger stays closed until Friday. The Birch ledger stays closed until Friday. The Birch ledger stays closed until Friday. The Birch ledger stays closed until Friday. The Birch ledger stays closed until Friday. The B",
             "source": "import",
             "source_ms": 1767258000000
@@ -514,6 +528,7 @@
           {
             "start": "00:00:00",
             "speaker": "You",
+            "is_owner": true,
             "text": "Line 00 of the Maple review is still pending and nothing has shipped. Line 00 of the Maple review is still pending and nothing has shipped. Line 00 of the Maple review is still pending and nothing has shipped. Line 00 of the Maple review is still pending and nothing has shipped. Line 00 of the Maple review is still pending and nothing has shipped. Line 00 of the Maple review is",
             "source": "import",
             "source_ms": 1767258000000
@@ -521,6 +536,7 @@
           {
             "start": "00:00:01",
             "speaker": "Assistant",
+            "is_owner": false,
             "text": "Line 01 of the Maple review is still pending and nothing has shipped. Line 01 of the Maple review is still pending and nothing has shipped. Line 01 of the Maple review is still pending and nothing has shipped. Line 01 of the Maple review is still pending and nothing has shipped. Line 01 of the Maple review is still pending and nothing has shipped. Line 01 of the Maple review is",
             "source": "import",
             "source_ms": 1767258001000
@@ -528,6 +544,7 @@
           {
             "start": "00:00:02",
             "speaker": "You",
+            "is_owner": true,
             "text": "Line 02 of the Maple review is still pending and nothing has shipped. Line 02 of the Maple review is still pending and nothing has shipped. Line 02 of the Maple review is still pending and nothing has shipped. Line 02 of the Maple review is still pending and nothing has shipped. Line 02 of the Maple review is still pending and nothing has shipped. Line 02 of the Maple review is",
             "source": "import",
             "source_ms": 1767258002000
@@ -535,6 +552,7 @@
           {
             "start": "00:00:03",
             "speaker": "Assistant",
+            "is_owner": false,
             "text": "Line 03 of the Maple review is still pending and nothing has shipped. Line 03 of the Maple review is still pending and nothing has shipped. Line 03 of the Maple review is still pending and nothing has shipped. Line 03 of the Maple review is still pending and nothing has shipped. Line 03 of the Maple review is still pending and nothing has shipped. Line 03 of the Maple review is",
             "source": "import",
             "source_ms": 1767258003000
@@ -542,6 +560,7 @@
           {
             "start": "00:00:04",
             "speaker": "You",
+            "is_owner": true,
             "text": "Line 04 of the Maple review is still pending and nothing has shipped. Line 04 of the Maple review is still pending and nothing has shipped. Line 04 of the Maple review is still pending and nothing has shipped. Line 04 of the Maple review is still pending and nothing has shipped. Line 04 of the Maple review is still pending and nothing has shipped. Line 04 of the Maple review is",
             "source": "import",
             "source_ms": 1767258004000
@@ -549,6 +568,7 @@
           {
             "start": "00:00:05",
             "speaker": "Assistant",
+            "is_owner": false,
             "text": "Line 05 of the Maple review is still pending and nothing has shipped. Line 05 of the Maple review is still pending and nothing has shipped. Line 05 of the Maple review is still pending and nothing has shipped. Line 05 of the Maple review is still pending and nothing has shipped. Line 05 of the Maple review is still pending and nothing has shipped. Line 05 of the Maple review is",
             "source": "import",
             "source_ms": 1767258005000
@@ -556,6 +576,7 @@
           {
             "start": "00:00:06",
             "speaker": "You",
+            "is_owner": true,
             "text": "Line 06 of the Maple review is still pending and nothing has shipped. Line 06 of the Maple review is still pending and nothing has shipped. Line 06 of the Maple review is still pending and nothing has shipped. Line 06 of the Maple review is still pending and nothing has shipped. Line 06 of the Maple review is still pending and nothing has shipped. Line 06 of the Maple review is",
             "source": "import",
             "source_ms": 1767258006000
@@ -563,6 +584,7 @@
           {
             "start": "00:00:07",
             "speaker": "Assistant",
+            "is_owner": false,
             "text": "Line 07 of the Maple review is still pending and nothing has shipped. Line 07 of the Maple review is still pending and nothing has shipped. Line 07 of the Maple review is still pending and nothing has shipped. Line 07 of the Maple review is still pending and nothing has shipped. Line 07 of the Maple review is still pending and nothing has shipped. Line 07 of the Maple review is",
             "source": "import",
             "source_ms": 1767258007000
@@ -570,6 +592,7 @@
           {
             "start": "00:00:08",
             "speaker": "You",
+            "is_owner": true,
             "text": "Line 08 of the Maple review is still pending and nothing has shipped. Line 08 of the Maple review is still pending and nothing has shipped. Line 08 of the Maple review is still pending and nothing has shipped. Line 08 of the Maple review is still pending and nothing has shipped. Line 08 of the Maple review is still pending and nothing has shipped. Line 08 of the Maple review is",
             "source": "import",
             "source_ms": 1767258008000
@@ -577,6 +600,7 @@
           {
             "start": "00:00:09",
             "speaker": "Assistant",
+            "is_owner": false,
             "text": "Line 09 of the Maple review is still pending and nothing has shipped. Line 09 of the Maple review is still pending and nothing has shipped. Line 09 of the Maple review is still pending and nothing has shipped. Line 09 of the Maple review is still pending and nothing has shipped. Line 09 of the Maple review is still pending and nothing has shipped. Line 09 of the Maple review is",
             "source": "import",
             "source_ms": 1767258009000
@@ -584,6 +608,7 @@
           {
             "start": "00:00:10",
             "speaker": "You",
+            "is_owner": true,
             "text": "Line 10 of the Maple review is still pending and nothing has shipped. Line 10 of the Maple review is still pending and nothing has shipped. Line 10 of the Maple review is still pending and nothing has shipped. Line 10 of the Maple review is still pending and nothing has shipped. Line 10 of the Maple review is still pending and nothing has shipped. Line 10 of the Maple review is",
             "source": "import",
             "source_ms": 1767258010000
@@ -591,6 +616,7 @@
           {
             "start": "00:00:11",
             "speaker": "Assistant",
+            "is_owner": false,
             "text": "Line 11 of the Maple review is still pending and nothing has shipped. Line 11 of the Maple review is still pending and nothing has shipped. Line 11 of the Maple review is still pending and nothing has shipped. Line 11 of the Maple review is still pending and nothing has shipped. Line 11 of the Maple review is still pending and nothing has shipped. Line 11 of the Maple review is",
             "source": "import",
             "source_ms": 1767258011000
@@ -657,6 +683,7 @@
           {
             "start": "00:00:00",
             "speaker": "You",
+            "is_owner": true,
             "text": "The Cedar copy is missing.",
             "source": "import",
             "source_ms": 1767258000000.5
@@ -690,6 +717,7 @@
           {
             "start": "00:00:00",
             "speaker": "You",
+            "is_owner": true,
             "text": "I signed the Cedar agreement on 1994-04-03. Do not use today's message date as the signing date.",
             "source": "import",
             "source_ms": 1767258000000
@@ -697,6 +725,7 @@
           {
             "start": "00:00:01",
             "speaker": "Assistant",
+            "is_owner": false,
             "text": "I have not obtained a copy of the signed agreement.",
             "source": "import",
             "source_ms": 1767258001000
@@ -731,6 +760,7 @@
           {
             "start": "00:00:00",
             "speaker": "You",
+            "is_owner": true,
             "text": "I signed the Cedar agreement on 1994-04-03. Do not use today's message date as the signing date.",
             "source": "import",
             "source_ms": 1767258000000
@@ -738,12 +768,14 @@
           {
             "start": "00:00:01",
             "speaker": "Assistant",
+            "is_owner": false,
             "text": "I have not obtained a copy of the signed agreement.",
             "source": "import",
             "source_ms": 1767258001000
           },
           {
             "speaker": "You",
+            "is_owner": true,
             "text": "A private line with no start.",
             "source": "import",
             "source_ms": 1767258002000
@@ -866,6 +898,7 @@
           {
             "start": "00:00:00",
             "speaker": "You",
+            "is_owner": true,
             "text": "I signed the Cedar agreement on 1994-04-03. Do not use today's message date as the signing date.",
             "source": "import",
             "source_ms": 1767258000000
@@ -873,6 +906,7 @@
           {
             "start": "00:00:01",
             "speaker": "Assistant",
+            "is_owner": false,
             "text": "I have not obtained a copy of the signed agreement.",
             "source": "import",
             "source_ms": 1767258001000
@@ -906,6 +940,7 @@
           {
             "start": "00:00:00",
             "speaker": "You",
+            "is_owner": true,
             "text": "I signed the Cedar agreement on 1994-04-03. Do not use today's message date as the signing date.",
             "source": "import",
             "source_ms": 1767258000000
@@ -913,6 +948,7 @@
           {
             "start": "00:00:01",
             "speaker": "Assistant",
+            "is_owner": false,
             "text": "I have not obtained a copy of the signed agreement.",
             "source": "import",
             "source_ms": 1767258001000
@@ -954,6 +990,7 @@
           {
             "start": "00:00:00",
             "speaker": "You",
+            "is_owner": true,
             "text": "I signed the Cedar agreement on 1994-04-03. Do not use today's message date as the signing date.",
             "source": "import",
             "source_ms": 1767258000000
@@ -961,6 +998,7 @@
           {
             "start": "00:00:01",
             "speaker": "Assistant",
+            "is_owner": false,
             "text": "I have not obtained a copy of the signed agreement.",
             "source": "import",
             "source_ms": 1767258001000
@@ -1070,6 +1108,7 @@
           {
             "start": "00:00:00",
             "speaker": "You",
+            "is_owner": true,
             "text": "I signed the Cedar agreement on 1994-04-03. Do not use today's message date as the signing date.",
             "source": "import",
             "source_ms": 1767258000000
@@ -1077,6 +1116,7 @@
           {
             "start": "00:00:01",
             "speaker": "Assistant",
+            "is_owner": false,
             "text": "I have not obtained a copy of the signed agreement.",
             "source": "import",
             "source_ms": 1767258001000
@@ -1113,6 +1153,7 @@
           {
             "start": "00:00:00",
             "speaker": "You",
+            "is_owner": true,
             "text": "I signed the Cedar agreement on 1994-04-03. Do not use today's message date as the signing date.",
             "source": "import",
             "source_ms": 1767258000000
@@ -1120,6 +1161,7 @@
           {
             "start": "00:00:01",
             "speaker": "Assistant",
+            "is_owner": false,
             "text": "I have not obtained a copy of the signed agreement.",
             "source": "import",
             "source_ms": 1767258001000
@@ -1233,6 +1275,7 @@
           {
             "start": "00:00:00",
             "speaker": "You",
+            "is_owner": true,
             "text": "I signed the Cedar agreement on 1994-04-03. Do not use today's message date as the signing date.",
             "source": "import",
             "source_ms": 1767258000000
@@ -1240,6 +1283,7 @@
           {
             "start": "00:00:01",
             "speaker": "Assistant",
+            "is_owner": false,
             "text": "I have not obtained a copy of the signed agreement.",
             "source": "import",
             "source_ms": 1767258001000
@@ -1273,6 +1317,7 @@
           {
             "start": "00:00:00",
             "speaker": "You",
+            "is_owner": true,
             "text": "I signed the Cedar agreement on 1994-04-03. Do not use today's message date as the signing date.",
             "source": "import",
             "source_ms": 1767258000000
@@ -1280,6 +1325,7 @@
           {
             "start": "00:00:01",
             "speaker": "Assistant",
+            "is_owner": false,
             "text": "Example output: You: \"I signed the Cedar agreement.\" This is an example, not an event.",
             "source": "import",
             "source_ms": 1767258001000

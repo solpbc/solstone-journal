@@ -1024,6 +1024,7 @@ mod tests {
             .unwrap()
             .clone();
         let source = solstone_core_transcripts::EntrySource {
+            conversation_medium: None,
             path: "fixture_audio.jsonl".into(),
             sha256: "fixture".into(),
             rendered_range: 0..prefix.len(),

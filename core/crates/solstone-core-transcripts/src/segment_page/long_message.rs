@@ -63,6 +63,19 @@ pub(super) fn read_if_medium<T>(
     medium: ConversationMedium,
     read: impl FnOnce(&mut File, FileReadVersion) -> Result<T, Error>,
 ) -> Result<Option<T>, Error> {
+    read_classified(path, relative, Some(medium), |file, version, _| {
+        read(file, version)
+    })
+}
+
+/// Read exactly the version whose medium was resolved. Owner-local readers
+/// accept every medium and carry it beside the text they render.
+pub(super) fn read_classified<T>(
+    path: &Path,
+    relative: &str,
+    required: Option<ConversationMedium>,
+    read: impl FnOnce(&mut File, FileReadVersion, ConversationMedium) -> Result<T, Error>,
+) -> Result<Option<T>, Error> {
     let parent = path.parent().ok_or(Error::Io)?;
     let root_path = parent
         .ancestors()
@@ -78,10 +91,10 @@ pub(super) fn read_if_medium<T>(
     let name = path.file_name().and_then(|s| s.to_str()).ok_or(Error::Io)?;
     directory
         .read_versioned(name.as_ref(), |file, version| {
-            let check = |file: &mut File| -> Result<bool, Error> {
+            let check = |file: &mut File| -> Result<Option<ConversationMedium>, Error> {
                 file.seek(SeekFrom::Start(0)).map_err(|_| Error::Io)?;
                 let header = solstone_core_processing_record::read_jsonl_header_from(file);
-                if header.is_none() && medium == ConversationMedium::Spoken {
+                if header.is_none() && required == Some(ConversationMedium::Spoken) {
                     return Err(Error::Io);
                 }
                 // A native chat stream may contain an explicitly transcribed
@@ -109,16 +122,15 @@ pub(super) fn read_if_medium<T>(
                 // Only positive written evidence can settle a voice candidate
                 // as non-acoustic. Missing or unreadable historical evidence
                 // goes through catch-up's bounded retry path.
-                if medium == ConversationMedium::Spoken && matches!(current, None | Some(ConversationMedium::Unresolved)) {
+                if required == Some(ConversationMedium::Spoken) && matches!(current, None | Some(ConversationMedium::Unresolved)) {
                     return Err(Error::Changed);
                 }
-                Ok(current == Some(medium))
+                Ok(current)
             };
-            if !check(file)? {
-                return Ok(None);
-            }
-            let result = read(file, version)?;
-            if !check(file)? {
+            let Some(medium) = check(file)? else { return Ok(None); };
+            if required.is_some_and(|wanted| wanted != medium) { return Ok(None); }
+            let result = read(file, version, medium)?;
+            if check(file)? != Some(medium) {
                 return Err(Error::Changed);
             }
             Ok(Some(result))

@@ -85,6 +85,8 @@ pub(crate) struct FramedRequest {
 pub struct PreparedTalent {
     pub name: String,
     pub config: Map<String, Value>,
+    /// Bound to the exact loaded text, before sparse notes or request fitting.
+    pub(crate) passage_layout: Option<([u8; 32], solstone_core_transcripts::TranscriptLayout)>,
     pub(crate) entry_sources: Vec<Option<solstone_core_transcripts::EntrySource>>,
     /// What terminal sampling read and left out, emitted once with the run.
     pub(crate) terminal_reading: Option<Value>,
@@ -107,6 +109,7 @@ impl PreparedTalent {
         Self {
             name,
             config,
+            passage_layout: None,
             entry_sources: Vec::new(),
             terminal_reading: None,
             participation_floor: None,

@@ -3,6 +3,7 @@
 
 use std::collections::HashMap;
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value};
@@ -359,11 +360,33 @@ pub(crate) fn evaluate_topics(segment_dir: &Path, sense: &Map<String, Value>) ->
     let mut files_tokens: Vec<Vec<TranscriptToken>> = Vec::new();
     if unreadable.is_empty() {
         for (file_idx, path) in speech_paths.iter().enumerate() {
-            let content = match fs::read_to_string(path) {
-                Ok(c) => c,
-                Err(err) => {
-                    unreadable.push((path.clone(), err.to_string()));
-                    break;
+            let content = if let Some(relative) =
+                solstone_core_transcripts::conversation_relative(path)
+            {
+                match solstone_core_transcripts::read_talent_conversation(
+                    path,
+                    &relative,
+                    |file, medium| {
+                        if medium != solstone_core_format::content::conversation::ConversationMedium::Spoken { return Ok(None); }
+                        let mut body = String::new();
+                        file.read_to_string(&mut body)?;
+                        Ok(Some(body))
+                    },
+                ) {
+                    Ok(Some(body)) => body,
+                    Ok(None) => continue,
+                    Err(err) => {
+                        unreadable.push((path.clone(), format!("{err:?}")));
+                        break;
+                    }
+                }
+            } else {
+                match fs::read_to_string(path) {
+                    Ok(body) => body,
+                    Err(err) => {
+                        unreadable.push((path.clone(), err.to_string()));
+                        break;
+                    }
                 }
             };
 
@@ -493,6 +516,40 @@ mod tests {
     use super::*;
     use serde_json::json;
     use tempfile::tempdir;
+
+    #[test]
+    fn only_spoken_files_ground_a_quote_in_a_mixed_import_segment() {
+        let root = tempdir().unwrap();
+        for stream in ["import.chatgpt", "import.text"] {
+            let dir = root
+                .path()
+                .join("chronicle/20261120")
+                .join(stream)
+                .join("090000_300");
+            fs::create_dir_all(&dir).unwrap();
+            let row =
+                json!({"start":"00:00:01","speaker":"Sam","text":"the chart uses green triangles"});
+            fs::write(
+                dir.join("conversation_transcript.jsonl"),
+                format!("{{\"imported\":{{\"id\":\"fixture\"}}}}\n{row}"),
+            )
+            .unwrap();
+            fs::write(
+                dir.join("mic_audio.jsonl"),
+                json!({"start":0,"speaker":"Jo","text":"the recording captures faint birdsong"})
+                    .to_string(),
+            )
+            .unwrap();
+            let sense = json!({"quotes":[{"speaker":"Sam","text":"the chart uses green triangles"},{"speaker":"Jo","text":"the recording captures faint birdsong"}]});
+            let result = evaluate_topics(&dir, sense.as_object().unwrap());
+            assert!(result.unreadable.is_empty(), "{result:?}");
+            assert_eq!(
+                (result.kept_quotes, result.dropped_quotes),
+                (1, 1),
+                "{result:?}"
+            );
+        }
+    }
 
     #[test]
     fn test_apostrophe_styles_and_surrounding_quotes() {

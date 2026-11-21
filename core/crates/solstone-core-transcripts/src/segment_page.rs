@@ -57,6 +57,20 @@ pub fn read_spoken_conversation<T>(
     })
 }
 
+/// Consume the retained conversation with its resolved medium. Local readers
+/// can skip a written or unresolved body without opening the file again.
+pub fn read_talent_conversation<T>(
+    path: &Path,
+    relative: &str,
+    read: impl FnOnce(&mut File, ConversationMedium) -> std::io::Result<T>,
+) -> Result<T, SegmentTranscriptReadError> {
+    long_message::read_classified(path, relative, None, |file, _, medium| {
+        file.rewind().map_err(|_| SegmentTranscriptReadError::Io)?;
+        read(file, medium).map_err(|_| SegmentTranscriptReadError::Io)
+    })?
+    .ok_or(SegmentTranscriptReadError::Changed)
+}
+
 /// Ordinary source window. A historical oversized written turn may take one
 /// initial record scan of up to 32 MiB, then 8 KiB per continuation.
 pub const MAX_TRANSCRIPT_PAGE_BYTES: usize = 64 * 1024;
