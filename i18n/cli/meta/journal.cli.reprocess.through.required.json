@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for through required.",
+  "context": "Journal command-line text for through required.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1fe291bddeb0b5452c752157cd4ac047e8c260b5af01c6555915faa68aa50b9f",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "through_flag",
+      "kind": "flag",
+      "value": "--through"
+    },
+    {
+      "name": "from_scratch_flag",
+      "kind": "flag",
+      "value": "--from-scratch"
+    }
+  ]
+}

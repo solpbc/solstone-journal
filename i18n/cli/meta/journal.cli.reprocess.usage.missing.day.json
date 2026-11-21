@@ -1,0 +1,53 @@
+{
+  "description": "Journal command-line text for usage missing day.",
+  "context": "Journal command-line text for usage missing day.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "positional",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "70347e0839ad30a521c91154777baafb55137965a96ee5da88d9a08ea9d613d5",
+  "max_length": 249,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal reprocess [-h] [--through THROUGH] [--yes] [--unit UNIT]"
+    },
+    {
+      "name": "syntax_continuation_1",
+      "kind": "accepted-input",
+      "value": "                         [--facet FACET] [--from-scratch | --mark-updated |"
+    },
+    {
+      "name": "syntax_continuation_2",
+      "kind": "accepted-input",
+      "value": "                         --owed] [--json] [-v] [-d]"
+    },
+    {
+      "name": "day_line",
+      "kind": "accepted-input",
+      "value": "                         day"
+    },
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal reprocess"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

@@ -11,7 +11,7 @@ use serde_json::Value;
 use solstone_core_indexer::daily_evidence::{DailyEvidence, DayProjectionCache};
 use solstone_core_journal_io::{DailyUnitIdentity, DailyUnitStatus, observe_daily_unit_record};
 use solstone_core_talent_config::{
-    TalentConfig, TalentFilter, load_talent_configs, read_talent_overrides,
+    TalentConfig, TalentFilter, load_talent_configs, read_talent_overrides_checked,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -154,7 +154,21 @@ pub fn daily_configs(
     talent: &Path,
     apps: &Path,
 ) -> Result<Vec<TalentConfig>, String> {
-    let overrides = read_talent_overrides(journal)?;
+    daily_configs_in(journal, talent, apps, solstone_core_cli_copy::ENGLISH)
+}
+pub(crate) fn daily_configs_in(
+    journal: &Path,
+    talent: &Path,
+    apps: &Path,
+    locale: &str,
+) -> Result<Vec<TalentConfig>, String> {
+    let overrides = read_talent_overrides_checked(journal).map_err(|path| {
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.reprocess.talent.overrides",
+            [("path", &path.display())],
+        )
+    })?;
     load_talent_configs(
         talent,
         apps,
@@ -306,8 +320,23 @@ pub fn accepted_reuse(
 }
 
 pub fn read_daily_coverage(journal: &Path, day: &str) -> Result<DailyCoverage, String> {
-    let (talent, apps) = package_roots()?;
-    read_daily_coverage_with_roots(journal, day, &talent, &apps)
+    read_daily_coverage_in(journal, day, solstone_core_cli_copy::ENGLISH)
+}
+
+pub fn read_daily_coverage_in(
+    journal: &Path,
+    day: &str,
+    locale: &str,
+) -> Result<DailyCoverage, String> {
+    let (talent, apps) = package_roots_in(locale)?;
+    read_daily_coverage_with_cache(
+        journal,
+        day,
+        &talent,
+        &apps,
+        &mut DayProjectionCache::new_in(journal, day, locale),
+        locale,
+    )
 }
 
 pub fn read_daily_coverage_with_roots(
@@ -322,6 +351,7 @@ pub fn read_daily_coverage_with_roots(
         talent,
         apps,
         &mut DayProjectionCache::new(journal, day),
+        solstone_core_cli_copy::ENGLISH,
     )
 }
 
@@ -332,15 +362,16 @@ fn read_daily_coverage_with_cache(
     talent: &Path,
     apps: &Path,
     cache: &mut DayProjectionCache,
+    locale: &str,
 ) -> Result<DailyCoverage, String> {
     // Held for the whole read, and taken before any of its work. `read_unit_coverage`
     // is deliberately not guarded: the maintenance unit calls it from in here and the
     // lock is not reentrant.
     let _one_read_at_a_time = acquire_coverage_read(&COVERAGE_READ, day);
-    let configs = daily_configs(journal, talent, apps)?;
+    let configs = daily_configs_in(journal, talent, apps, locale)?;
     let facets =
         solstone_core_facets::list_declared_facet_names(journal).map_err(|e| e.to_string())?;
-    let active = crate::activity_state::active_facets_checked(journal, day)?;
+    let active = crate::activity_state::active_facets_checked_in(journal, day, locale)?;
     let mut units = Vec::new();
     let mut maintenance = None;
     for config in configs {
@@ -1070,8 +1101,15 @@ mod tests {
         .unwrap();
 
         let mut cache = DayProjectionCache::new(root, day);
-        let mut shared =
-            read_daily_coverage_with_cache(root, day, &talent, &apps, &mut cache).unwrap();
+        let mut shared = read_daily_coverage_with_cache(
+            root,
+            day,
+            &talent,
+            &apps,
+            &mut cache,
+            solstone_core_cli_copy::ENGLISH,
+        )
+        .unwrap();
         // The suggestion unit for each active facet and the briefing, through both call sites.
         assert_eq!(shared.units.len(), 3, "{:?}", shared.units);
         assert_eq!(

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for facet classification.",
+  "context": "Journal command-line text for facet classification.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b72d5a73ac2ad784159480b067259ad8fe47e5450efb56718e76cad5889ad669",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

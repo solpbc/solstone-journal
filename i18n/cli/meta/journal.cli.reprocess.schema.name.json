@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for schema name.",
+  "context": "Journal command-line text for schema name.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2647a24c052d2810b263dd8ff7d54f31b19cd93b29d45462d05fa4c2509b835d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

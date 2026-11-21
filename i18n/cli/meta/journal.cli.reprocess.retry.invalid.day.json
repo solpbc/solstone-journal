@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for retry invalid day.",
+  "context": "Journal command-line text for retry invalid day.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fe8e2ee9f66c828e0d479983fbdd47c49c9f32ead4c30158aaa948699ebbd8c9",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

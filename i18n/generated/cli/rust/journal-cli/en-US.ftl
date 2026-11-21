@@ -1189,6 +1189,184 @@ m6a6f75726e616c2e636c692e706174682e686f6d65 = journal-path failed: could not det
 
 m6a6f75726e616c2e636c692e706174682e75746638 = journal-path failed: config is not valid { "UTF-8" }
 
+m6a6f75726e616c2e636c692e726570726f636573732e656d7074792e72616e6765 = no data for days { $day } through { $through }
+
+m6a6f75726e616c2e636c692e726570726f636573732e66616365742e636c617373696669636174696f6e = { $path }: invalid facet classification
+
+m6a6f75726e616c2e636c692e726570726f636573732e66616365742e75746638 = non-{ "UTF8" } facet
+
+m6a6f75726e616c2e636c692e726570726f636573732e68656c70 = usage: { "solstone journal reprocess [-h] [--through THROUGH] [--yes] [--unit UNIT]" }{ "\u000a" }{ "                         [--facet FACET] [--from-scratch | --mark-updated |" }{ "\u000a" }{ "                         --owed] [--json] [-v] [-d]" }{ "\u000a" }{ "                         day" }{ "\u000a" }{ "\u000a" }Submit a past journal day for reprocessing{ "\u000a" }{ "\u000a" }positional arguments:{ "\u000a" }{ "  day                " }Past day in { "YYYYMMDD" } format{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "         " }show this help message and exit{ "\u000a" }{ "  " }{ "--through THROUGH" }{ "  " }Inclusive range end in { "YYYYMMDD" } format{ "\u000a" }{ "  --yes" }{ "\u000a" }{ "  " }{ "--unit UNIT" }{ "        " }Request a retry of one failed daily processing step{ "\u000a" }{ "  " }{ "--facet FACET" }{ "      " }Facet of that unit; required when the unit has a facet{ "\u000a" }{ "  " }{ "--from-scratch" }{ "     " }Force a full daily re-run, preserving markers (does not{ "\u000a" }                     flag the day as updated){ "\u000a" }{ "  " }{ "--mark-updated" }{ "     " }Flag the day as having new raw data so daily processing{ "\u000a" }                     re-queues it, then nudge a drain{ "\u000a" }{ "  " }{ "--owed" }{ "             " }List the daily outputs owed on the day or range and why,{ "\u000a" }                     without submitting anything{ "\u000a" }{ "  " }{ "--json" }{ "             " }With { "--owed" }, report each day as states and counts: its{ "\u000a" }                     markers, its coverage, how many daily outputs it has and{ "\u000a" }                     how many are owed, by cause{ "\u000a" }{ "  " }{ "-v, --verbose" }{ "      " }Enable verbose output{ "\u000a" }{ "  " }{ "-d, --debug" }{ "        " }Enable debug logging
+
+m6a6f75726e616c2e636c692e726570726f636573732e696e7075742e646179 = invalid day: { $day }
+
+m6a6f75726e616c2e636c692e726570726f636573732e696e74656e742e62757379 = requested day is owned by another executor
+
+m6a6f75726e616c2e636c692e726570726f636573732e696e74656e742e696e76616c69642e646179 = invalid work day
+
+m6a6f75726e616c2e636c692e726570726f636573732e696e74656e742e756e6365727461696e = work intent publication is uncertain: { $outcome }
+
+m6a6f75726e616c2e636c692e726570726f636573732e696e74656e742e756e7265636f676e697a6564 = unrecognized work intent
+
+m6a6f75726e616c2e636c692e726570726f636573732e6e61746976652e617267756d656e7473 = native { "solstone-core" } { $verb } failed: arguments are not valid { "UTF-8" }
+
+m6a6f75726e616c2e636c692e726570726f636573732e6e6f2e64617461 = no data for day { $day }
+
+m6a6f75726e616c2e636c692e726570726f636573732e6e6f2e656e67696e65 = no model is chosen yet. choose one in thinking, then retry
+
+m6a6f75726e616c2e636c692e726570726f636573732e6f7765642e696e7465726e616c = { "--owed" } only reports; use { "run_cli" }
+
+m6a6f75726e616c2e636c692e726570726f636573732e6f7765642e6f6e6c79 = { "--owed" } only reports; nothing was submitted
+
+m6a6f75726e616c2e636c692e726570726f636573732e6f7765642e73756d6d617279 = { $i18nCategory ->
+    [one] { $i18nCategory-days_quantity ->
+        [one] { $i18nCategory-unreadable_quantity ->
+            [one] { $owed } owed output(s) on { $days } past day(s); { $unreadable } unreadable day(s)
+           *[other] { $owed } owed output(s) on { $days } past day(s); { $unreadable } unreadable day(s)
+        }
+       *[other] { $i18nCategory-unreadable_quantity ->
+            [one] { $owed } owed output(s) on { $days } past day(s); { $unreadable } unreadable day(s)
+           *[other] { $owed } owed output(s) on { $days } past day(s); { $unreadable } unreadable day(s)
+        }
+    }
+   *[other] { $i18nCategory-days_quantity ->
+        [one] { $i18nCategory-unreadable_quantity ->
+            [one] { $owed } owed output(s) on { $days } past day(s); { $unreadable } unreadable day(s)
+           *[other] { $owed } owed output(s) on { $days } past day(s); { $unreadable } unreadable day(s)
+        }
+       *[other] { $i18nCategory-unreadable_quantity ->
+            [one] { $owed } owed output(s) on { $days } past day(s); { $unreadable } unreadable day(s)
+           *[other] { $owed } owed output(s) on { $days } past day(s); { $unreadable } unreadable day(s)
+        }
+    }
+}
+
+m6a6f75726e616c2e636c692e726570726f636573732e6f7765642e73756d6d6172792e636175736573 = { $i18nCategory ->
+    [one] { $i18nCategory-days_quantity ->
+        [one] { $i18nCategory-unreadable_quantity ->
+            [one] { $owed } owed output(s) on { $days } past day(s): { $summary }; { $unreadable } unreadable day(s)
+           *[other] { $owed } owed output(s) on { $days } past day(s): { $summary }; { $unreadable } unreadable day(s)
+        }
+       *[other] { $i18nCategory-unreadable_quantity ->
+            [one] { $owed } owed output(s) on { $days } past day(s): { $summary }; { $unreadable } unreadable day(s)
+           *[other] { $owed } owed output(s) on { $days } past day(s): { $summary }; { $unreadable } unreadable day(s)
+        }
+    }
+   *[other] { $i18nCategory-days_quantity ->
+        [one] { $i18nCategory-unreadable_quantity ->
+            [one] { $owed } owed output(s) on { $days } past day(s): { $summary }; { $unreadable } unreadable day(s)
+           *[other] { $owed } owed output(s) on { $days } past day(s): { $summary }; { $unreadable } unreadable day(s)
+        }
+       *[other] { $i18nCategory-unreadable_quantity ->
+            [one] { $owed } owed output(s) on { $days } past day(s): { $summary }; { $unreadable } unreadable day(s)
+           *[other] { $owed } owed output(s) on { $days } past day(s): { $summary }; { $unreadable } unreadable day(s)
+        }
+    }
+}
+
+m6a6f75726e616c2e636c692e726570726f636573732e706173742e6f6e6c79 = reprocess is past-only (cannot reprocess today or a future day)
+
+m6a6f75726e616c2e636c692e726570726f636573732e706174682e75746638 = non-{ "UTF8" } source path
+
+m6a6f75726e616c2e636c692e726570726f636573732e72616e67652e706c616e = { $i18nCategory ->
+    [one] { $i18nCategory-segments_quantity ->
+        [one] from-scratch reprocess plan:{ "\u000a" }{ $days } day with data ({ $segments } segment) will be queued. Progress will be visible in { "solstone journal top" } or { "solstone journal health" }. Requests survive a supervisor restart; a day that cannot finish from scratch finishes as an ordinary reprocess.{ "\u000a" }This day can take hours; today's work goes first between tasks.{ "\u000a" }re-run with { "--yes" } to proceed
+       *[other] from-scratch reprocess plan:{ "\u000a" }{ $days } day with data ({ $segments } segments) will be queued. Progress will be visible in { "solstone journal top" } or { "solstone journal health" }. Requests survive a supervisor restart; a day that cannot finish from scratch finishes as an ordinary reprocess.{ "\u000a" }This day can take hours; today's work goes first between tasks.{ "\u000a" }re-run with { "--yes" } to proceed
+    }
+   *[other] { $i18nCategory-segments_quantity ->
+        [one] from-scratch reprocess plan:{ "\u000a" }{ $days } days with data ({ $segments } segment) will be queued. Progress will be visible in { "solstone journal top" } or { "solstone journal health" }. Requests survive a supervisor restart; a day that cannot finish from scratch finishes as an ordinary reprocess.{ "\u000a" }These days can take hours; today's work goes first between tasks.{ "\u000a" }re-run with { "--yes" } to proceed
+       *[other] from-scratch reprocess plan:{ "\u000a" }{ $days } days with data ({ $segments } segments) will be queued. Progress will be visible in { "solstone journal top" } or { "solstone journal health" }. Requests survive a supervisor restart; a day that cannot finish from scratch finishes as an ordinary reprocess.{ "\u000a" }These days can take hours; today's work goes first between tasks.{ "\u000a" }re-run with { "--yes" } to proceed
+    }
+}
+
+m6a6f75726e616c2e636c692e726570726f636573732e72616e67652e7361766564 = { $i18nCategory ->
+    [one] { $i18nCategory-segments_quantity ->
+        [one] saved from-scratch requests for { $days } day ({ $segments } segment){ "\u000a" }progress is visible in health; today's work goes first
+       *[other] saved from-scratch requests for { $days } day ({ $segments } segments){ "\u000a" }progress is visible in health; today's work goes first
+    }
+   *[other] { $i18nCategory-segments_quantity ->
+        [one] saved from-scratch requests for { $days } days ({ $segments } segment){ "\u000a" }progress is visible in health; today's work goes first
+       *[other] saved from-scratch requests for { $days } days ({ $segments } segments){ "\u000a" }progress is visible in health; today's work goes first
+    }
+}
+
+m6a6f75726e616c2e636c692e726570726f636573732e7265636f72642e696e76616c6964 = Malformed daily unit record: invalid daily unit identity
+
+m6a6f75726e616c2e636c692e726570726f636573732e7265636f72642e696f = I/O error: { $cause }
+
+m6a6f75726e616c2e636c692e726570726f636573732e7265636f72642e6d69736d61746368 = Malformed daily unit record: identity mismatch in record at { $path }: expected { $expected }, found { $found }
+
+m6a6f75726e616c2e636c692e726570726f636573732e72657472792e6163636570746564 = this daily output is already accepted
+
+m6a6f75726e616c2e636c692e726570726f636573732e72657472792e64697361626c6564 = daily talent is no longer enabled
+
+m6a6f75726e616c2e636c692e726570726f636573732e72657472792e696e76616c69642e646179 = invalid retry day
+
+m6a6f75726e616c2e636c692e726570726f636573732e72657472792e696e76616c69642e756e6974 = invalid retry unit
+
+m6a6f75726e616c2e636c692e726570726f636573732e72657472792e6d697373696e67 = daily unit is missing
+
+m6a6f75726e616c2e636c692e726570726f636573732e72657472792e6d697373696e672e65766964656e6365 = missing held evidence
+
+m6a6f75726e616c2e636c692e726570726f636573732e72657472792e6e6f2e6c6f6e6765722e68656c64 = unit is no longer held
+
+m6a6f75726e616c2e636c692e726570726f636573732e72657472792e6e6f742e6461696c79 = not daily work
+
+m6a6f75726e616c2e636c692e726570726f636573732e72657472792e7374617465 = this daily unit cannot be retried without resolving its current state
+
+m6a6f75726e616c2e636c692e726570726f636573732e7363686564756c652e6c6f6f6b6261636b = daily schedule lookback outside { "1..=366" }
+
+m6a6f75726e616c2e636c692e726570726f636573732e736368656d612e6d697373696e67 = schema prompt path is missing
+
+m6a6f75726e616c2e636c692e726570726f636573732e736368656d612e6e616d65 = schema must be a filename
+
+m6a6f75726e616c2e636c692e726570726f636573732e73686170652e696e76616c6964 = invalid shape for { $path }
+
+m6a6f75726e616c2e636c692e726570726f636573732e73686170652e6f626a656374 = shape sidecar is not an object
+
+m6a6f75726e616c2e636c692e726570726f636573732e73686170652e7772697474656e = invalid written source shape: { $path }
+
+m6a6f75726e616c2e636c692e726570726f636573732e736f757263652e6a736f6e2e6f626a656374 = { $path } is not a { "JSON" } object
+
+m6a6f75726e616c2e636c692e726570726f636573732e736f757263652e6c696e652e6572726f72 = { $path } line { $line }: { $error }
+
+m6a6f75726e616c2e636c692e726570726f636573732e736f757263652e6c696e652e6f626a656374 = { $path } line { $line } is not an object
+
+m6a6f75726e616c2e636c692e726570726f636573732e736f757263652e73796d6c696e6b = daily source is a symbolic link: { $path }
+
+m6a6f75726e616c2e636c692e726570726f636573732e736f757263652e75746638 = non-{ "UTF8" } daily source path
+
+m6a6f75726e616c2e636c692e726570726f636573732e7375626d69747465642e66726f6d2e73637261746368 = reprocess (from-scratch) submitted for { $day }
+
+m6a6f75726e616c2e636c692e726570726f636573732e7375626d69747465642e6d61726b2e75706461746564 = reprocess (mark-updated) submitted for { $day }
+
+m6a6f75726e616c2e636c692e726570726f636573732e7375626d69747465642e70726f636573732e6e6f77 = reprocess (process-now) submitted for { $day }
+
+m6a6f75726e616c2e636c692e726570726f636573732e74616c656e742e6f7665727269646573 = failed to read talent overrides from { $path }
+
+m6a6f75726e616c2e636c692e726570726f636573732e74656d706c6174652e75746638 = non-{ "UTF8" } template name
+
+m6a6f75726e616c2e636c692e726570726f636573732e7468726f7567682e6f72646572 = { "--through" } must be on or after the start day
+
+m6a6f75726e616c2e636c692e726570726f636573732e7468726f7567682e7265717569726564 = { "--through" } requires { "--from-scratch" }
+
+m6a6f75726e616c2e636c692e726570726f636573732e756e69742e6661696c6564 = reprocess unit failed: { $error }
+
+m6a6f75726e616c2e636c692e726570726f636573732e756e69742e7361766564 = retry request saved for { $unit } on { $day }
+
+m6a6f75726e616c2e636c692e726570726f636573732e756e7265616461626c65 = { $day }  (unreadable: { $error })
+
+m6a6f75726e616c2e636c692e726570726f636573732e75736167652e636f6e666c696374 = usage: { "solstone journal reprocess [-h] [--through THROUGH] [--yes] [--unit UNIT]" }{ "\u000a" }{ "                         [--facet FACET] [--from-scratch | --mark-updated |" }{ "\u000a" }{ "                         --owed] [--json] [-v] [-d]" }{ "\u000a" }{ "                         day" }{ "\u000a" }{ "solstone journal reprocess" }: error: argument { $option }: not allowed with argument { $previous }
+
+m6a6f75726e616c2e636c692e726570726f636573732e75736167652e6d697373696e672e646179 = usage: { "solstone journal reprocess [-h] [--through THROUGH] [--yes] [--unit UNIT]" }{ "\u000a" }{ "                         [--facet FACET] [--from-scratch | --mark-updated |" }{ "\u000a" }{ "                         --owed] [--json] [-v] [-d]" }{ "\u000a" }{ "                         day" }{ "\u000a" }{ "solstone journal reprocess" }: error: the following arguments are required: { $positional }
+
+m6a6f75726e616c2e636c692e726570726f636573732e75736167652e6d697373696e672e76616c7565 = usage: { "solstone journal reprocess [-h] [--through THROUGH] [--yes] [--unit UNIT]" }{ "\u000a" }{ "                         [--facet FACET] [--from-scratch | --mark-updated |" }{ "\u000a" }{ "                         --owed] [--json] [-v] [-d]" }{ "\u000a" }{ "                         day" }{ "\u000a" }{ "solstone journal reprocess" }: error: argument { $option }: expected one argument
+
+m6a6f75726e616c2e636c692e726570726f636573732e75736167652e7265717569726573 = usage: { "solstone journal reprocess [-h] [--through THROUGH] [--yes] [--unit UNIT]" }{ "\u000a" }{ "                         [--facet FACET] [--from-scratch | --mark-updated |" }{ "\u000a" }{ "                         --owed] [--json] [-v] [-d]" }{ "\u000a" }{ "                         day" }{ "\u000a" }{ "solstone journal reprocess" }: error: argument { $option }: requires { $required }
+
+m6a6f75726e616c2e636c692e726570726f636573732e75736167652e756e6b6e6f776e = usage: { "solstone journal reprocess [-h] [--through THROUGH] [--yes] [--unit UNIT]" }{ "\u000a" }{ "                         [--facet FACET] [--from-scratch | --mark-updated |" }{ "\u000a" }{ "                         --owed] [--json] [-v] [-d]" }{ "\u000a" }{ "                         day" }{ "\u000a" }{ "solstone journal reprocess" }: error: unrecognized arguments: { $arguments }
+
+m6a6f75726e616c2e636c692e726570726f636573732e77616974696e67 = request saved; start the background service with { "solstone journal up" } to process it
+
 m6a6f75726e616c2e636c692e73746174732e617267756d656e7473 = usage: { "solstone journal journal-stats [-h] [--no-cache] [-v] [-d]" }{ "\u000a" }{ "solstone journal journal-stats" }: error: unrecognized arguments: { $argument }
 
 m6a6f75726e616c2e636c692e73746174732e63617573652e6661636574 = facet store error: { $detail }

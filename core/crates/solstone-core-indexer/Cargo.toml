@@ -18,6 +18,7 @@ required-features = ["full-tests"]
 workspace = true
 
 [dependencies]
+solstone-core-cli-copy.workspace = true
 serde.workspace = true
 sha2.workspace = true
 solstone-core-journal-io.workspace = true

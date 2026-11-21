@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for intent invalid day.",
+  "context": "Journal command-line text for intent invalid day.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "416cdcf4d77e0eb5df69e0db24c29a1d0744b143bfcac1aa38c87a5d2bb2e0e7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

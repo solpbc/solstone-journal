@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for past only.",
+  "context": "Journal command-line text for past only.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "61aa7a7a0afb3caad6c064bd868ed176eb5e63510419930b78f86f8740a3578e",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

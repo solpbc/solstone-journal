@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for input day.",
+  "context": "Journal command-line text for input day.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2ec7c3532e92d9154f4ff8aad746cbb212344dbe1cec3556380d5ec2cece4c9b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -68,9 +68,9 @@ pub struct SourceProjection {
 
 /// The facet folders under `facets/`. A dot-named folder is never a facet: a
 /// merge's scratch copy, its dropped files, or a leftover.
-fn facet_folders(journal: &Path) -> Result<Vec<fs::DirEntry>, String> {
+fn facet_folders(journal: &Path, locale: &str) -> Result<Vec<fs::DirEntry>, String> {
     let mut folders = Vec::new();
-    for entry in entries(&journal.join("facets"))? {
+    for entry in entries(&journal.join("facets"), locale)? {
         if entry.file_type().map_err(|e| e.to_string())?.is_dir()
             && !entry.file_name().to_string_lossy().starts_with('.')
         {
@@ -80,11 +80,17 @@ fn facet_folders(journal: &Path) -> Result<Vec<fs::DirEntry>, String> {
     Ok(folders)
 }
 
-fn entries(path: &Path) -> Result<Vec<fs::DirEntry>, String> {
+fn entries(path: &Path, locale: &str) -> Result<Vec<fs::DirEntry>, String> {
     let values = match fs::read_dir(path) {
         Ok(values) => values,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(e) => return Err(format!("cannot read {}: {e}", path.display())),
+        Err(e) => {
+            return Err(solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.doctor.unretryable.transcribe.input.read",
+                [("path", &path.display()), ("error", &e)],
+            ));
+        }
     };
     let mut values = values
         .collect::<Result<Vec<_>, _>>()
@@ -97,29 +103,39 @@ fn collect(
     root: &Path,
     directory: &Path,
     out: &mut BTreeMap<String, PathBuf>,
+    locale: &str,
 ) -> Result<(), String> {
-    for entry in entries(directory)? {
+    for entry in entries(directory, locale)? {
         let name = entry.file_name();
-        let name = name.to_str().ok_or("non-UTF8 daily source path")?;
+        let name = name.to_str().ok_or_else(|| {
+            solstone_core_cli_copy::render_for(locale, "journal.cli.reprocess.source.utf8", &[])
+        })?;
         if name.starts_with('.') || matches!(name, "health" | "logs" | "news") {
             continue;
         }
         let kind = entry.file_type().map_err(|e| e.to_string())?;
         if kind.is_symlink() {
-            return Err(format!(
-                "daily source is a symbolic link: {}",
-                entry.path().display()
+            return Err(solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.reprocess.source.symlink",
+                [("path", &entry.path().display())],
             ));
         }
         if kind.is_dir() {
-            collect(root, &entry.path(), out)?;
+            collect(root, &entry.path(), out, locale)?;
         } else if kind.is_file() {
             let path = entry.path();
             let rel = path
                 .strip_prefix(root)
                 .map_err(|e| e.to_string())?
                 .to_str()
-                .ok_or("non-UTF8 daily source path")?
+                .ok_or_else(|| {
+                    solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.reprocess.source.utf8",
+                        &[],
+                    )
+                })?
                 .replace('\\', "/");
             out.insert(rel, path);
         }
@@ -143,9 +159,14 @@ fn normalized_rel(rel: &str) -> String {
     }
 }
 
-fn strict_text(path: &Path) -> Result<String, String> {
-    let text =
-        fs::read_to_string(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+fn strict_text(path: &Path, locale: &str) -> Result<String, String> {
+    let text = fs::read_to_string(path).map_err(|e| {
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.doctor.unretryable.transcribe.input.read",
+            [("path", &path.display()), ("error", &e)],
+        )
+    })?;
     match path.extension().and_then(|v| v.to_str()) {
         Some("jsonl") => {
             for (i, line) in text
@@ -153,13 +174,18 @@ fn strict_text(path: &Path) -> Result<String, String> {
                 .enumerate()
                 .filter(|(_, s)| !s.trim().is_empty())
             {
-                let row: Value = serde_json::from_str(line)
-                    .map_err(|e| format!("{} line {}: {e}", path.display(), i + 1))?;
+                let row: Value = serde_json::from_str(line).map_err(|e| {
+                    solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.reprocess.source.line.error",
+                        [("path", &path.display()), ("line", &(i + 1)), ("error", &e)],
+                    )
+                })?;
                 if !row.is_object() {
-                    return Err(format!(
-                        "{} line {} is not an object",
-                        path.display(),
-                        i + 1
+                    return Err(solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.reprocess.source.line.object",
+                        [("path", &path.display()), ("line", &(i + 1))],
                     ));
                 }
             }
@@ -168,7 +194,11 @@ fn strict_text(path: &Path) -> Result<String, String> {
             let value: Value =
                 serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
             if !value.is_object() {
-                return Err(format!("{} is not a JSON object", path.display()));
+                return Err(solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.reprocess.source.json.object",
+                    [("path", &path.display())],
+                ));
             }
         }
         _ => {}
@@ -264,11 +294,24 @@ pub fn capture_day_sources(journal: &Path, day: &str) -> Result<Vec<SourceChunk>
 }
 
 pub fn capture_day_projection(journal: &Path, day: &str) -> Result<SourceProjection, String> {
-    solstone_core_time::parse_day(day).ok_or_else(|| format!("invalid day: {day}"))?;
+    capture_day_projection_in(journal, day, solstone_core_cli_copy::ENGLISH)
+}
+fn capture_day_projection_in(
+    journal: &Path,
+    day: &str,
+    locale: &str,
+) -> Result<SourceProjection, String> {
+    solstone_core_time::parse_day(day).ok_or_else(|| {
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.reprocess.input.day",
+            [("day", &day)],
+        )
+    })?;
     let chronicle = journal.join("chronicle");
     let mut files = BTreeMap::new();
-    collect(&chronicle, &chronicle.join(day), &mut files)?;
-    for facet in facet_folders(journal)? {
+    collect(&chronicle, &chronicle.join(day), &mut files, locale)?;
+    for facet in facet_folders(journal, locale)? {
         for kind in ["activities", "events", "entities"] {
             let path = facet.path().join(kind).join(format!("{day}.jsonl"));
             match fs::metadata(&path) {
@@ -289,9 +332,10 @@ pub fn capture_day_projection(journal: &Path, day: &str) -> Result<SourceProject
             journal,
             &facet.path().join("activities").join(day),
             &mut files,
+            locale,
         )?;
     }
-    project_sources(files)
+    project_sources(files, locale)
 }
 
 /// Whether `rel` sits in a Strava tile that holds body data alone. A tile is
@@ -304,7 +348,10 @@ fn in_strava_tile(rel: &str) -> bool {
     parts.len() >= 4 && parts[1] == STRAVA_STREAM
 }
 
-fn project_sources(files: BTreeMap<String, PathBuf>) -> Result<SourceProjection, String> {
+fn project_sources(
+    files: BTreeMap<String, PathBuf>,
+    locale: &str,
+) -> Result<SourceProjection, String> {
     let mut chunks = Vec::new();
     let mut sources = Vec::new();
     for (rel, path) in files {
@@ -337,12 +384,24 @@ fn project_sources(files: BTreeMap<String, PathBuf>) -> Result<SourceProjection,
             Ok(text) => {
                 let shape: Value = serde_json::from_str(&text)
                     .map_err(|e| format!("{}: {e}", sidecar.display()))?;
-                let shape = shape.as_object().ok_or("shape sidecar is not an object")?;
+                let shape = shape.as_object().ok_or_else(|| {
+                    solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.reprocess.shape.object",
+                        &[],
+                    )
+                })?;
                 if !path_selected_family && let Some(value) = shape.get(filename) {
                     resolution = value
                         .as_str()
                         .and_then(content::parse_shape_name)
-                        .ok_or_else(|| format!("invalid shape for {rel}"))?;
+                        .ok_or_else(|| {
+                            solstone_core_cli_copy::display_for(
+                                locale,
+                                "journal.cli.reprocess.shape.invalid",
+                                [("path", &rel)],
+                            )
+                        })?;
                 }
             }
             Err(e) if e.kind() == io::ErrorKind::NotFound => {}
@@ -355,8 +414,13 @@ fn project_sources(files: BTreeMap<String, PathBuf>) -> Result<SourceProjection,
             continue;
         }
         let mut text = if path_selected_family {
-            let raw = fs::read_to_string(&path)
-                .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+            let raw = fs::read_to_string(&path).map_err(|e| {
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.doctor.unretryable.transcribe.input.read",
+                    [("path", &path.display()), ("error", &e)],
+                )
+            })?;
             raw.lines()
                 .filter(|line| {
                     let trimmed = line.trim();
@@ -368,7 +432,7 @@ fn project_sources(files: BTreeMap<String, PathBuf>) -> Result<SourceProjection,
                 .collect::<Vec<_>>()
                 .join("\n")
         } else {
-            strict_text(&path)?
+            strict_text(&path, locale)?
         };
         if resolution == ContentResolution::Indexed(Family::Activity) {
             text = text
@@ -401,7 +465,13 @@ fn project_sources(files: BTreeMap<String, PathBuf>) -> Result<SourceProjection,
             ContentResolution::Unindexed(family) => {
                 content::produce_raw_percept_chunks(family, &normalized, &text)
             }
-            _ => return Err(format!("invalid written source shape: {rel}")),
+            _ => {
+                return Err(solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.reprocess.shape.written",
+                    [("path", &rel)],
+                ));
+            }
         };
         if let Some(error) = produced.error {
             return Err(format!("{rel}: {error}"));
@@ -472,9 +542,10 @@ fn capture_facet_day_sources(
     day: &str,
     kind: &str,
     selected: Option<&str>,
+    locale: &str,
 ) -> Result<SourceProjection, String> {
     let mut files = BTreeMap::new();
-    for facet in facet_folders(journal)? {
+    for facet in facet_folders(journal, locale)? {
         if selected.is_some_and(|name| facet.file_name() != std::ffi::OsStr::new(name)) {
             continue;
         }
@@ -485,7 +556,13 @@ fn capture_facet_day_sources(
                     .strip_prefix(journal)
                     .map_err(|e| e.to_string())?
                     .to_str()
-                    .ok_or("non-UTF8 source path")?
+                    .ok_or_else(|| {
+                        solstone_core_cli_copy::render_for(
+                            locale,
+                            "journal.cli.reprocess.path.utf8",
+                            &[],
+                        )
+                    })?
                     .replace('\\', "/");
                 files.insert(rel, path);
             }
@@ -493,7 +570,7 @@ fn capture_facet_day_sources(
             Err(e) => return Err(e.to_string()),
         }
     }
-    project_sources(files)
+    project_sources(files, locale)
 }
 
 pub fn daily_hook(name: &str, metadata: &Map<String, Value>) -> Result<String, String> {
@@ -551,6 +628,25 @@ pub fn compute_contract_digest(
     overrides: Option<&Map<String, Value>>,
     daily_inputs: Option<&Map<String, Value>>,
 ) -> Result<String, String> {
+    compute_contract_digest_in(
+        journal,
+        name,
+        metadata,
+        body,
+        overrides,
+        daily_inputs,
+        solstone_core_cli_copy::ENGLISH,
+    )
+}
+fn compute_contract_digest_in(
+    journal: &Path,
+    name: &str,
+    metadata: &Map<String, Value>,
+    body: &str,
+    overrides: Option<&Map<String, Value>>,
+    daily_inputs: Option<&Map<String, Value>>,
+    locale: &str,
+) -> Result<String, String> {
     let mut effective = metadata.clone();
     let key = name
         .split_once(':')
@@ -568,19 +664,27 @@ pub fn compute_contract_digest(
     }
     daily_hook(name, &effective)?;
     if let Some(schema) = effective.get("schema") {
-        let schema = schema.as_str().ok_or("schema must be a filename")?;
+        let schema = schema.as_str().ok_or_else(|| {
+            solstone_core_cli_copy::render_for(locale, "journal.cli.reprocess.schema.name", &[])
+        })?;
         let base = effective
             .get("path")
             .and_then(Value::as_str)
             .and_then(|p| Path::new(p).parent())
-            .ok_or("schema prompt path is missing")?;
+            .ok_or_else(|| {
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.reprocess.schema.missing",
+                    &[],
+                )
+            })?;
         let schema: Value = serde_json::from_str(
             &fs::read_to_string(base.join(schema)).map_err(|e| e.to_string())?,
         )
         .map_err(|e| e.to_string())?;
         effective.insert("schema".to_owned(), schema);
     }
-    let templates = template_contract(&effective, body)?;
+    let templates = template_contract(&effective, body, locale)?;
     // The output ceiling is not part of what a day's result means: it is measured
     // above every natural completion, so retuning it must not re-owe finished days.
     for key in [
@@ -597,7 +701,7 @@ pub fn compute_contract_digest(
         effective.remove(key);
     }
     // Facet declarations determine both prompt scope and runtime schema substitution.
-    let facets = facet_declarations(journal)?;
+    let facets = facet_declarations(journal, locale)?;
     let configured = solstone_core_journal_config::read_journal_config(journal)
         .map_err(|e| e.to_string())?
         .config
@@ -614,9 +718,9 @@ pub fn compute_contract_digest(
     Ok(digest(&contract))
 }
 
-fn facet_declarations(journal: &Path) -> Result<BTreeMap<String, Value>, String> {
+fn facet_declarations(journal: &Path, locale: &str) -> Result<BTreeMap<String, Value>, String> {
     let mut out = BTreeMap::new();
-    for facet in facet_folders(journal)? {
+    for facet in facet_folders(journal, locale)? {
         let path = facet.path().join("facet.json");
         match fs::read_to_string(&path) {
             Ok(text) => {
@@ -631,7 +735,13 @@ fn facet_declarations(journal: &Path) -> Result<BTreeMap<String, Value>, String>
                     facet
                         .file_name()
                         .to_str()
-                        .ok_or("non-UTF8 facet")?
+                        .ok_or_else(|| {
+                            solstone_core_cli_copy::render_for(
+                                locale,
+                                "journal.cli.reprocess.facet.utf8",
+                                &[],
+                            )
+                        })?
                         .to_owned(),
                     value,
                 );
@@ -658,6 +768,7 @@ pub fn digest(value: &Value) -> String {
 /// of times. The cache belongs to the caller of one read and is never global or shared
 /// across threads, so every unit sees the day exactly as that one read captured it.
 pub struct DayProjectionCache {
+    locale: String,
     journal: PathBuf,
     day: String,
     /// Only the source list is kept: the chunk text of a projection is large and no unit needs it.
@@ -668,7 +779,11 @@ pub struct DayProjectionCache {
 
 impl DayProjectionCache {
     pub fn new(journal: &Path, day: &str) -> Self {
+        Self::new_in(journal, day, solstone_core_cli_copy::ENGLISH)
+    }
+    pub fn new_in(journal: &Path, day: &str, locale: &str) -> Self {
         Self {
+            locale: locale.to_owned(),
             journal: journal.to_path_buf(),
             day: day.to_owned(),
             sources: None,
@@ -695,7 +810,7 @@ impl DayProjectionCache {
         if self.sources.is_none() {
             self.captures += 1;
             self.sources = Some(
-                capture_day_projection(&self.journal, &self.day)
+                capture_day_projection_in(&self.journal, &self.day, &self.locale)
                     .map(|projection| projection.sources),
             );
         }
@@ -818,15 +933,29 @@ pub fn compute_daily_evidence_cached(
     overrides: Option<&Map<String, Value>>,
     cache: &mut DayProjectionCache,
 ) -> Result<DailyEvidence, String> {
+    let locale = cache.locale.as_str();
     let hook = daily_hook(name, metadata)?;
     let configured = solstone_core_journal_config::read_journal_config(journal)
         .map_err(|error| error.to_string())?
         .config
         .unwrap_or_default();
     let inputs = daily_input_contract(&hook, day, &configured)?;
-    let contract =
-        compute_contract_digest(journal, name, metadata, body, overrides, Some(&inputs))?;
-    let date = solstone_core_time::parse_day(day).ok_or_else(|| format!("invalid day: {day}"))?;
+    let contract = compute_contract_digest_in(
+        journal,
+        name,
+        metadata,
+        body,
+        overrides,
+        Some(&inputs),
+        &cache.locale,
+    )?;
+    let date = solstone_core_time::parse_day(day).ok_or_else(|| {
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.reprocess.input.day",
+            [("day", &day)],
+        )
+    })?;
     let evidence = if hook == "daily_schedule" {
         let anchor = journal_today(journal);
         let lookback = metadata
@@ -836,7 +965,11 @@ pub fn compute_daily_evidence_cached(
             .and_then(Value::as_i64)
             .unwrap_or(7);
         if !(1..=366).contains(&lookback) {
-            return Err("daily schedule lookback outside 1..=366".to_owned());
+            return Err(solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.reprocess.schedule.lookback",
+                &[],
+            ));
         }
         let mut windows = BTreeMap::new();
         for offset in 0..lookback {
@@ -871,12 +1004,12 @@ pub fn compute_daily_evidence_cached(
                     .map_err(|e| e.to_string())?,
             );
             sources.extend(if hook == "entities:entities_review" {
-                capture_facet_day_sources(journal, &d, "entities", facet)?.sources
+                capture_facet_day_sources(journal, &d, "entities", facet, &cache.locale)?.sources
             } else if cache.journal == journal && cache.day == d {
                 cache.sources()?
             } else {
                 cache.captures += 1;
-                capture_day_projection(journal, &d)?.sources
+                capture_day_projection_in(journal, &d, &cache.locale)?.sources
             });
         }
         let suggestions_digest = if hook == "entities:entity_observer" {
@@ -922,6 +1055,7 @@ pub fn journal_today(journal: &Path) -> Date {
 fn template_contract(
     metadata: &Map<String, Value>,
     body: &str,
+    locale: &str,
 ) -> Result<BTreeMap<String, String>, String> {
     let mut templates = BTreeMap::new();
     let Some(path) = metadata.get("path").and_then(Value::as_str) else {
@@ -933,15 +1067,14 @@ fn template_contract(
     else {
         return Ok(templates);
     };
-    for entry in entries(&root.join("think/templates"))? {
+    for entry in entries(&root.join("think/templates"), locale)? {
         let path = entry.path();
         if path.extension().and_then(|s| s.to_str()) != Some("md") {
             continue;
         }
-        let stem = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .ok_or("non-UTF8 template name")?;
+        let stem = path.file_stem().and_then(|s| s.to_str()).ok_or_else(|| {
+            solstone_core_cli_copy::render_for(locale, "journal.cli.reprocess.template.utf8", &[])
+        })?;
         if body.contains(&format!("${stem}")) || body.contains(&format!("${{{stem}}}")) {
             templates.insert(
                 stem.to_owned(),
@@ -1001,15 +1134,22 @@ mod tests {
             "facets/.facet-merge-x.dropped/files/activities/20261024.jsonl",
             "{\"title\":\"hidden\"}\n",
         );
-        let names: Vec<String> = facet_folders(&root)
+        let names: Vec<String> = facet_folders(&root, solstone_core_cli_copy::ENGLISH)
             .unwrap()
             .iter()
             .map(|entry| entry.file_name().to_string_lossy().into_owned())
             .collect();
         assert_eq!(names, vec!["work"]);
-        let declarations = facet_declarations(&root).unwrap();
+        let declarations = facet_declarations(&root, solstone_core_cli_copy::ENGLISH).unwrap();
         assert_eq!(declarations.keys().collect::<Vec<_>>(), vec!["work"]);
-        let sources = capture_facet_day_sources(&root, "20261024", "activities", None).unwrap();
+        let sources = capture_facet_day_sources(
+            &root,
+            "20261024",
+            "activities",
+            None,
+            solstone_core_cli_copy::ENGLISH,
+        )
+        .unwrap();
         assert!(
             !sources
                 .chunks

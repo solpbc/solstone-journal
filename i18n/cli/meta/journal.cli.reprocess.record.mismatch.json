@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for record mismatch.",
+  "context": "Journal command-line text for record mismatch.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "expected",
+      "type": "string"
+    },
+    {
+      "name": "found",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5cefc5be331c208ac6c17ae858e1fc1515724b58651e577e214b6bef0c9869e0",
+  "max_length": 143,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for unit failed.",
+  "context": "Journal command-line text for unit failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bc899b4316d9ab980a979e91dccd3590016512cc2bf8b168126c302144de2239",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

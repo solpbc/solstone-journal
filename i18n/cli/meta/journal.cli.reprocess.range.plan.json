@@ -1,0 +1,61 @@
+{
+  "description": "Journal command-line text for range plan.",
+  "context": "Journal command-line text for range plan.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "days_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "segments_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "days",
+      "type": "string"
+    },
+    {
+      "name": "segments",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "e87a122814a58d5bc5e607c28695160397af15ec48f1b7c340f4a70cefade96b",
+  "max_length": 1727,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "days_quantity",
+    "type": "cardinal"
+  },
+  "protected_slots": [
+    {
+      "name": "break",
+      "kind": "whitespace",
+      "value": "\n"
+    },
+    {
+      "name": "top",
+      "kind": "command",
+      "value": "solstone journal top"
+    },
+    {
+      "name": "health",
+      "kind": "command",
+      "value": "solstone journal health"
+    },
+    {
+      "name": "yes",
+      "kind": "flag",
+      "value": "--yes"
+    }
+  ]
+}

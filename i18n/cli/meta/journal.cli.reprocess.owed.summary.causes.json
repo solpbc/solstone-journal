@@ -1,0 +1,52 @@
+{
+  "description": "Journal command-line text for owed summary causes.",
+  "context": "Journal command-line text for owed summary causes.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "owed_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "days_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "unreadable_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "owed",
+      "type": "string"
+    },
+    {
+      "name": "days",
+      "type": "string"
+    },
+    {
+      "name": "unreadable",
+      "type": "string"
+    },
+    {
+      "name": "summary",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "b9c642d3c25b95e50ec29a49d6e480450edd5e6c36334fd8987e80e30f9a4f96",
+  "max_length": 1239,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "owed_quantity",
+    "type": "cardinal"
+  }
+}

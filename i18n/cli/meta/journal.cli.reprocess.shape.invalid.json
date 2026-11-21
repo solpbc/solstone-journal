@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for shape invalid.",
+  "context": "Journal command-line text for shape invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e75153f8c55ef7f096ef3add11061842cfc88f0d3a91f90c96fbe4143aa5fe56",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

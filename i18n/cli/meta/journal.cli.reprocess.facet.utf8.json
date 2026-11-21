@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for facet utf8.",
+  "context": "Journal command-line text for facet utf8.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "287f18888bb3bb5629343dff5928990e0ee07cfbc015e54992652ca42f98deec",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "encoding",
+      "kind": "accepted-input",
+      "value": "UTF8"
+    }
+  ]
+}

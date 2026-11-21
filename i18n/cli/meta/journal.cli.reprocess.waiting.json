@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for waiting.",
+  "context": "Journal command-line text for waiting.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c44cb2ec749e8f285a24ecb30f38a1132e0fde7abb28a88bbff03580acc72ab2",
+  "max_length": 113,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "start_command",
+      "kind": "command",
+      "value": "solstone journal up"
+    }
+  ]
+}

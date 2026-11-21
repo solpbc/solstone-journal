@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for source line error.",
+  "context": "Journal command-line text for source line error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "line",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3f151d3c91b8a93c1cfde576a97866c2c24918afbf9aad5105f65cc91a6e28bb",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

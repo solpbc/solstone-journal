@@ -59,8 +59,15 @@ impl Unit {
     }
 
     pub fn validate(&self) -> Result<(), String> {
+        self.validate_in(ENGLISH)
+    }
+    fn validate_in(&self, locale: &str) -> Result<(), String> {
         if self.day().len() != 8 || solstone_core_time::parse_day(self.day()).is_none() {
-            return Err("invalid retry day".into());
+            return Err(solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.reprocess.retry.invalid.day",
+                &[],
+            ));
         }
         let component = |value: &str| {
             !value.is_empty() && value != "." && value != ".." && !value.contains(['/', '\\', '\0'])
@@ -98,7 +105,11 @@ impl Unit {
         if valid {
             Ok(())
         } else {
-            Err("invalid retry unit".into())
+            Err(solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.reprocess.retry.invalid.unit",
+                &[],
+            ))
         }
     }
 
@@ -337,11 +348,12 @@ pub fn read_in(journal: &Path, id: &str, locale: &str) -> Result<Option<Record>,
 }
 
 fn update<T>(
+    locale: &str,
     journal: &Path,
     unit: &Unit,
     mutate: impl FnOnce(&mut Option<Record>) -> Result<T, String>,
 ) -> Result<T, String> {
-    update_checked(journal, unit, &|| Ok(()), mutate)
+    update_checked_in(journal, unit, &|| Ok(()), mutate, locale)
 }
 
 fn update_checked<T>(
@@ -350,12 +362,22 @@ fn update_checked<T>(
     checkpoint: &dyn Fn() -> Result<(), String>,
     mutate: impl FnOnce(&mut Option<Record>) -> Result<T, String>,
 ) -> Result<T, String> {
+    update_checked_in(journal, unit, checkpoint, mutate, ENGLISH)
+}
+
+fn update_checked_in<T>(
+    journal: &Path,
+    unit: &Unit,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+    mutate: impl FnOnce(&mut Option<Record>) -> Result<T, String>,
+    locale: &str,
+) -> Result<T, String> {
     let id = unit.id()?;
-    let path = path(journal, &id, ENGLISH)?;
+    let path = path(journal, &id, locale)?;
     std::fs::create_dir_all(directory(journal)).map_err(|e| e.to_string())?;
     let _lock = hold_lock(&path, LockOptions::default()).map_err(|e| e.to_string())?;
     checkpoint()?;
-    let mut record = read(journal, &id)?;
+    let mut record = read_in(journal, &id, locale)?;
     let result = mutate(&mut record)?;
     if let Some(record) = record {
         checkpoint()?;
@@ -377,34 +399,55 @@ pub fn observe_held_checked(
     input: &str,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<(), String> {
+    observe_held_checked_in(journal, unit, reason, input, checkpoint, ENGLISH)
+}
+
+fn observe_held_checked_in(
+    journal: &Path,
+    unit: &Unit,
+    reason: &str,
+    input: &str,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+    locale: &str,
+) -> Result<(), String> {
     checkpoint()?;
     if reason.is_empty() || input.is_empty() {
-        return Err("missing held evidence".into());
+        return Err(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.reprocess.retry.missing.evidence",
+            &[],
+        ));
     }
-    update_checked(journal, unit, checkpoint, |slot| {
-        if let Some(record) = slot {
-            record.reason = reason.into();
-            if !record.held {
-                record.held = true;
-                record.input = input.into();
-                record.consumed.insert(input_cause(input));
+    update_checked_in(
+        journal,
+        unit,
+        checkpoint,
+        |slot| {
+            if let Some(record) = slot {
+                record.reason = reason.into();
+                if !record.held {
+                    record.held = true;
+                    record.input = input.into();
+                    record.consumed.insert(input_cause(input));
+                }
+            } else {
+                *slot = Some(Record {
+                    version: 1,
+                    unit: unit.clone(),
+                    held: true,
+                    reason: reason.into(),
+                    input: input.into(),
+                    owner: None,
+                    consumed: BTreeSet::from([input_cause(input)]),
+                    attempt: None,
+                    failure_count: 0,
+                    first_failure_ms: None,
+                });
             }
-        } else {
-            *slot = Some(Record {
-                version: 1,
-                unit: unit.clone(),
-                held: true,
-                reason: reason.into(),
-                input: input.into(),
-                owner: None,
-                consumed: BTreeSet::from([input_cause(input)]),
-                attempt: None,
-                failure_count: 0,
-                first_failure_ms: None,
-            });
-        }
-        Ok(())
-    })
+            Ok(())
+        },
+        locale,
+    )
 }
 
 /// Independent failures remain observable if a sibling record is malformed.
@@ -465,14 +508,21 @@ pub fn execution_claim(
 }
 
 pub fn request(journal: &Path, unit: &Unit) -> Result<String, String> {
+    request_in(journal, unit, ENGLISH)
+}
+
+fn request_in(journal: &Path, unit: &Unit, locale: &str) -> Result<String, String> {
     let mut bytes = [0_u8; 16];
     getrandom::fill(&mut bytes).map_err(|e| e.to_string())?;
     let id: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
-    update(journal, unit, |slot| {
-        let record = slot
-            .as_mut()
-            .filter(|r| r.held)
-            .ok_or("unit is no longer held")?;
+    update(locale, journal, unit, |slot| {
+        let record = slot.as_mut().filter(|r| r.held).ok_or_else(|| {
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.reprocess.retry.no.longer.held",
+                &[],
+            )
+        })?;
         record.owner = Some(id.clone());
         Ok(())
     })?;

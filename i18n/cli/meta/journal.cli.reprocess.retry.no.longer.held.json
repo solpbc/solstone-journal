@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for retry no longer held.",
+  "context": "Journal command-line text for retry no longer held.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c089b27be12e4d0fa1ba44bc09ab8694d489afe2461372376ee51363526a2616",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

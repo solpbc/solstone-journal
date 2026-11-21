@@ -1288,7 +1288,13 @@ fn require_utf8_argv(verb: &str, args: &[OsString]) -> Result<Vec<String>, ExitC
     {
         Some(arguments) => Ok(arguments),
         None => {
-            eprintln!("native solstone-core {verb} failed: arguments are not valid UTF-8");
+            eprintln!(
+                "{}",
+                solstone_core_cli_copy::display(
+                    "journal.cli.reprocess.native.arguments",
+                    [("verb", &verb)]
+                )
+            );
             Err(ExitCode::from(EXIT_TEMPFAIL))
         }
     }

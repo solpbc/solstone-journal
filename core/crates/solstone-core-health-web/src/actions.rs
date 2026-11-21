@@ -8,7 +8,7 @@ use jiff::tz::TimeZone;
 use serde_json::{Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_convey_http::window_catalog::{strings, text};
-use solstone_core_reprocess_cli::{DayOutcome, Flavor, reprocess_day_with};
+use solstone_core_reprocess_cli::{DayOutcome, Flavor, reprocess_day_with_locale};
 use std::path::Path;
 
 pub async fn retry_import(body: Option<Json<Value>>, locale: &str) -> axum::response::Response {
@@ -115,7 +115,7 @@ where
 {
     response(
         day,
-        reprocess_day_with(root, day, flavor, now, zone, transport),
+        reprocess_day_with_locale(root, day, flavor, now, zone, locale, transport),
         locale,
     )
 }

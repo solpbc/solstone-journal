@@ -1,0 +1,57 @@
+{
+  "description": "Journal command-line text for usage conflict.",
+  "context": "Journal command-line text for usage conflict.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "option",
+      "type": "string"
+    },
+    {
+      "name": "previous",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d7fd99e3c173b920324dab4b274732ade2ffe3c27a8045b0281ac53540ad6ad3",
+  "max_length": 257,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal reprocess [-h] [--through THROUGH] [--yes] [--unit UNIT]"
+    },
+    {
+      "name": "syntax_continuation_1",
+      "kind": "accepted-input",
+      "value": "                         [--facet FACET] [--from-scratch | --mark-updated |"
+    },
+    {
+      "name": "syntax_continuation_2",
+      "kind": "accepted-input",
+      "value": "                         --owed] [--json] [-v] [-d]"
+    },
+    {
+      "name": "day_line",
+      "kind": "accepted-input",
+      "value": "                         day"
+    },
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal reprocess"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

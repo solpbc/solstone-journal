@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for record invalid.",
+  "context": "Journal command-line text for record invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "86b1754e307a091185c9292613ad108382e9c4347da717e4d135acfdc691b468",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

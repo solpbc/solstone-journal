@@ -89,6 +89,13 @@ fn with_live_facets(journal: &Path, mut active: BTreeSet<String>) -> BTreeSet<St
 
 /// Coverage admission must distinguish absent classification from unreadable classification.
 pub fn active_facets_checked(journal: &Path, day: &str) -> Result<BTreeSet<String>, String> {
+    active_facets_checked_in(journal, day, solstone_core_cli_copy::ENGLISH)
+}
+pub(crate) fn active_facets_checked_in(
+    journal: &Path,
+    day: &str,
+    locale: &str,
+) -> Result<BTreeSet<String>, String> {
     use solstone_core_journal_io::durability::{ArtifactId, DurableRead, read_json_durable};
     let segments = solstone_core_journal_io::iter_segments(
         journal,
@@ -116,7 +123,13 @@ pub fn active_facets_checked(journal: &Path, day: &str) -> Result<BTreeSet<Strin
                 .get("facet")
                 .and_then(Value::as_str)
                 .filter(|s| !s.is_empty())
-                .ok_or_else(|| format!("{}: invalid facet classification", path.display()))?;
+                .ok_or_else(|| {
+                    solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.reprocess.facet.classification",
+                        [("path", &path.display())],
+                    )
+                })?;
             facets.insert(facet.to_owned());
         }
     }

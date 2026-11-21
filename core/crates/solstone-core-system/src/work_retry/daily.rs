@@ -8,12 +8,20 @@ use std::path::Path;
 pub const INPUT_CONTRACT: &str = "solstone.retry-input.v1";
 
 pub fn identity(unit: &Unit) -> Result<DailyUnitIdentity, String> {
-    unit.validate()?;
+    identity_in(unit, solstone_core_cli_copy::ENGLISH)
+}
+
+fn identity_in(unit: &Unit, locale: &str) -> Result<DailyUnitIdentity, String> {
+    unit.validate_in(locale)?;
     match unit {
         Unit::Daily { day, talent, facet } => {
             Ok(DailyUnitIdentity::new(day, talent, facet.clone()))
         }
-        _ => Err("not daily work".into()),
+        _ => Err(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.reprocess.retry.not.daily",
+            &[],
+        )),
     }
 }
 
@@ -21,8 +29,16 @@ pub fn evidence(
     journal: &Path,
     unit: &Unit,
 ) -> Result<solstone_core_indexer::daily_evidence::DailyEvidence, String> {
-    let (talents, apps) = crate::daily_coverage::package_roots()?;
-    evidence_with_roots(journal, unit, &talents, &apps)
+    evidence_in(journal, unit, solstone_core_cli_copy::ENGLISH)
+}
+
+fn evidence_in(
+    journal: &Path,
+    unit: &Unit,
+    locale: &str,
+) -> Result<solstone_core_indexer::daily_evidence::DailyEvidence, String> {
+    let (talents, apps) = crate::daily_coverage::package_roots_in(locale)?;
+    evidence_with_roots_in(journal, unit, &talents, &apps, locale)
 }
 
 pub fn evidence_with_roots(
@@ -31,25 +47,44 @@ pub fn evidence_with_roots(
     talents: &Path,
     apps: &Path,
 ) -> Result<solstone_core_indexer::daily_evidence::DailyEvidence, String> {
-    let id = identity(unit)?;
-    let configs = crate::daily_coverage::daily_configs(journal, talents, apps)?;
-    let config = configs
-        .iter()
-        .find(|c| c.key == id.name)
-        .ok_or("daily talent is no longer enabled")?;
-    let today = crate::daily_coverage::local_day(journal, jiff::Timestamp::now());
-    solstone_core_indexer::daily_evidence::compute_daily_evidence(
+    evidence_with_roots_in(
         journal,
-        if id.name == "daily_schedule" {
-            &today
-        } else {
-            &id.day
-        },
+        unit,
+        talents,
+        apps,
+        solstone_core_cli_copy::ENGLISH,
+    )
+}
+
+fn evidence_with_roots_in(
+    journal: &Path,
+    unit: &Unit,
+    talents: &Path,
+    apps: &Path,
+    locale: &str,
+) -> Result<solstone_core_indexer::daily_evidence::DailyEvidence, String> {
+    let id = identity_in(unit, locale)?;
+    let configs = crate::daily_coverage::daily_configs_in(journal, talents, apps, locale)?;
+    let config = configs.iter().find(|c| c.key == id.name).ok_or_else(|| {
+        solstone_core_cli_copy::render_for(locale, "journal.cli.reprocess.retry.disabled", &[])
+    })?;
+    let today = crate::daily_coverage::local_day(journal, jiff::Timestamp::now());
+    let day = if id.name == "daily_schedule" {
+        &today
+    } else {
+        &id.day
+    };
+    solstone_core_indexer::daily_evidence::compute_daily_evidence_cached(
+        journal,
+        day,
         &config.key,
         &config.metadata,
         &config.body,
         id.facet.as_deref(),
         None,
+        &mut solstone_core_indexer::daily_evidence::DayProjectionCache::new_in(
+            journal, day, locale,
+        ),
     )
 }
 
@@ -174,23 +209,56 @@ fn observe_using_checked(
 /// and an entity review whose conflict a fresh preparation can clear. Other
 /// conflicts, accepted output and uncertain owner actions retain their guards.
 pub fn request(journal: &Path, unit: &Unit) -> Result<String, String> {
-    request_using(journal, unit, || evidence(journal, unit))
+    request_in(journal, unit, solstone_core_cli_copy::ENGLISH)
+}
+
+pub fn request_in(journal: &Path, unit: &Unit, locale: &str) -> Result<String, String> {
+    request_using(journal, unit, locale, || evidence_in(journal, unit, locale))
 }
 
 fn request_using(
     journal: &Path,
     unit: &Unit,
+    locale: &str,
     read_evidence: impl FnOnce() -> Result<solstone_core_indexer::daily_evidence::DailyEvidence, String>,
 ) -> Result<String, String> {
-    let record = solstone_core_journal_io::load_daily_unit_record(journal, &identity(unit)?)
-        .map_err(|e| e.to_string())?
-        .ok_or("daily unit is missing")?;
+    use solstone_core_journal_io::DailyUnitReadError;
+    let identity = identity_in(unit, locale)?;
+    let record = solstone_core_journal_io::load_daily_unit_record_detailed(journal, &identity)
+        .map_err(|error| match error {
+            DailyUnitReadError::InvalidIdentity => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.reprocess.record.invalid",
+                &[],
+            ),
+            DailyUnitReadError::Mismatch { path, found } => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.reprocess.record.mismatch",
+                [
+                    ("path", &path.display()),
+                    ("expected", &format_args!("{identity:?}")),
+                    ("found", &format_args!("{found:?}")),
+                ],
+            ),
+            DailyUnitReadError::Io(cause) => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.reprocess.record.io",
+                [("cause", &cause)],
+            ),
+        })?
+        .ok_or_else(|| {
+            solstone_core_cli_copy::render_for(locale, "journal.cli.reprocess.retry.missing", &[])
+        })?;
     let retryable = matches!(
         record.status,
         DailyUnitStatus::Failed | DailyUnitStatus::Capped
     ) || crate::daily_coverage::review_conflict_reprepares(&record);
     if !retryable || record.has_uncommitted_started_receipt() {
-        return Err("this daily unit cannot be retried without resolving its current state".into());
+        return Err(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.reprocess.retry.state",
+            &[],
+        ));
     }
     let evidence = read_evidence()?;
     if crate::daily_coverage::accepted_reuse(
@@ -201,15 +269,21 @@ fn request_using(
     )
     .is_some()
     {
-        return Err("this daily output is already accepted".into());
+        return Err(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.reprocess.retry.accepted",
+            &[],
+        ));
     }
-    super::observe_held(
+    super::observe_held_checked_in(
         journal,
         unit,
         record.reason_code.as_deref().unwrap_or("daily_failed"),
         &evidence.retry_revision_under(INPUT_CONTRACT),
+        &|| Ok(()),
+        locale,
     )?;
-    super::request(journal, unit)
+    super::request_in(journal, unit, locale)
 }
 
 #[cfg(test)]
@@ -363,7 +437,10 @@ mod tests {
             &[("0:a", "committed"), ("1:b", "committed")],
         );
         let input = evidence.retry_revision_under(INPUT_CONTRACT);
-        request_using(root.path(), &unit, || Ok(evidence.clone())).unwrap();
+        request_using(root.path(), &unit, solstone_core_cli_copy::ENGLISH, || {
+            Ok(evidence.clone())
+        })
+        .unwrap();
         let ledger = super::super::read(root.path(), &unit.id().unwrap())
             .unwrap()
             .unwrap();
@@ -386,7 +463,10 @@ mod tests {
         ] {
             let root = tempfile::tempdir().unwrap();
             let (unit, evidence) = stopped_review(root.path(), kind, receipts);
-            let error = request_using(root.path(), &unit, || Ok(evidence)).unwrap_err();
+            let error = request_using(root.path(), &unit, solstone_core_cli_copy::ENGLISH, || {
+                Ok(evidence)
+            })
+            .unwrap_err();
             assert_eq!(
                 error,
                 "this daily unit cannot be retried without resolving its current state"

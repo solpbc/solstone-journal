@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for owed internal.",
+  "context": "Journal command-line text for owed internal.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ebf7b14d77c9e201b6b6485bf673b3ae2b2dd2d5910298c1800991ab042ee220",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "flag",
+      "kind": "flag",
+      "value": "--owed"
+    },
+    {
+      "name": "function",
+      "kind": "accepted-input",
+      "value": "run_cli"
+    }
+  ]
+}

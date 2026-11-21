@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for retry state.",
+  "context": "Journal command-line text for retry state.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e02c778bddc7e9d1afc94a529192fb2f5fb527873c25722620a82c5a25e81a7f",
+  "max_length": 101,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

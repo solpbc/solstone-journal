@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for through order.",
+  "context": "Journal command-line text for through order.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e49aaab3a5891d24c98fac3c1197a911b81a022ec6031adbac115a2bb2248e84",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "through_flag",
+      "kind": "flag",
+      "value": "--through"
+    }
+  ]
+}

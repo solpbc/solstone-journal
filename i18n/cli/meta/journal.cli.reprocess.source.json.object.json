@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for source json object.",
+  "context": "Journal command-line text for source json object.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7b00b3cbdabe33bd2f48d8f4f26b9b33da29351aa9b6fc2834a5fe2179809543",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "encoding",
+      "kind": "accepted-input",
+      "value": "JSON"
+    }
+  ]
+}

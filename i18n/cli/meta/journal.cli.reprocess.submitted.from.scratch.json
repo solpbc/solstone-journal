@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for submitted from scratch.",
+  "context": "Journal command-line text for submitted from scratch.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e70b7530bb0377bab52d384bf7e61787c0dc38ed7d3fc19e8b11855bade96917",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -6176,6 +6176,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "solstone-core-cli-copy",
  "solstone-core-entity",
  "solstone-core-entity-matching",
  "solstone-core-format",
@@ -6829,12 +6830,14 @@ dependencies = [
  "serde",
  "serde_json",
  "solstone-core-callosum",
+ "solstone-core-cli-copy",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-segment",
  "solstone-core-system",
  "solstone-core-system-health",
  "solstone-core-time",
+ "solstone-core-window-catalog",
 ]
 
 [[package]]

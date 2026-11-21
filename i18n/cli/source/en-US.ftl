@@ -1287,3 +1287,181 @@ journal.cli.backfill.stamp.write = Could not stamp { $path }: write failed: { $e
 journal.cli.backfill.stream.directory = Could not list stream directory { $path }: not a directory
 
 journal.cli.backfill.stream.encoding = segment stream is not { $encoding } representable: { $path }
+
+journal.cli.reprocess.empty.range = no data for days { $day } through { $through }
+
+journal.cli.reprocess.help = usage: { $syntax }{ $line_break }{ $syntax_continuation_1 }{ $line_break }{ $syntax_continuation_2 }{ $line_break }{ $day_line }{ $line_break }{ $line_break }Submit a past journal day for reprocessing{ $line_break }{ $line_break }positional arguments:{ $line_break }{ $day_column }Past day in { $date_format } format{ $line_break }{ $line_break }options:{ $line_break }{ $indent_2 }{ $help_option }{ $gap_9 }show this help message and exit{ $line_break }{ $indent_2 }{ $through_option }{ $gap_2 }Inclusive range end in { $date_format } format{ $line_break }{ $syntax_continuation_13 }{ $line_break }{ $indent_2 }{ $unit_option }{ $gap_8 }Request a retry of one failed daily processing step{ $line_break }{ $indent_2 }{ $facet_option }{ $gap_6 }Facet of that unit; required when the unit has a facet{ $line_break }{ $indent_2 }{ $from_scratch_option }{ $gap_5 }Force a full daily re-run, preserving markers (does not{ $line_break }                     flag the day as updated){ $line_break }{ $indent_2 }{ $mark_updated_option }{ $gap_5 }Flag the day as having new raw data so daily processing{ $line_break }                     re-queues it, then nudge a drain{ $line_break }{ $indent_2 }{ $owed_option }{ $gap_13 }List the daily outputs owed on the day or range and why,{ $line_break }                     without submitting anything{ $line_break }{ $indent_2 }{ $json_option }{ $gap_13 }With { $owed_flag }, report each day as states and counts: its{ $line_break }                     markers, its coverage, how many daily outputs it has and{ $line_break }                     how many are owed, by cause{ $line_break }{ $indent_2 }{ $verbose_option }{ $gap_6 }Enable verbose output{ $line_break }{ $indent_2 }{ $debug_option }{ $gap_8 }Enable debug logging
+
+journal.cli.reprocess.native.arguments = native { $binary } { $verb } failed: arguments are not valid { $encoding }
+
+journal.cli.reprocess.no.data = no data for day { $day }
+
+journal.cli.reprocess.no.engine = no model is chosen yet. choose one in thinking, then retry
+
+journal.cli.reprocess.owed.only = { $owed_flag } only reports; nothing was submitted
+
+journal.cli.reprocess.owed.summary = { $owed_quantity ->
+    [one] { $days_quantity ->
+        [one] { $unreadable_quantity ->
+            [one] { $owed } owed output(s) on { $days } past day(s); { $unreadable } unreadable day(s)
+           *[other] { $owed } owed output(s) on { $days } past day(s); { $unreadable } unreadable day(s)
+        }
+       *[other] { $unreadable_quantity ->
+            [one] { $owed } owed output(s) on { $days } past day(s); { $unreadable } unreadable day(s)
+           *[other] { $owed } owed output(s) on { $days } past day(s); { $unreadable } unreadable day(s)
+        }
+    }
+   *[other] { $days_quantity ->
+        [one] { $unreadable_quantity ->
+            [one] { $owed } owed output(s) on { $days } past day(s); { $unreadable } unreadable day(s)
+           *[other] { $owed } owed output(s) on { $days } past day(s); { $unreadable } unreadable day(s)
+        }
+       *[other] { $unreadable_quantity ->
+            [one] { $owed } owed output(s) on { $days } past day(s); { $unreadable } unreadable day(s)
+           *[other] { $owed } owed output(s) on { $days } past day(s); { $unreadable } unreadable day(s)
+        }
+    }
+}
+
+journal.cli.reprocess.owed.summary.causes = { $owed_quantity ->
+    [one] { $days_quantity ->
+        [one] { $unreadable_quantity ->
+            [one] { $owed } owed output(s) on { $days } past day(s): { $summary }; { $unreadable } unreadable day(s)
+           *[other] { $owed } owed output(s) on { $days } past day(s): { $summary }; { $unreadable } unreadable day(s)
+        }
+       *[other] { $unreadable_quantity ->
+            [one] { $owed } owed output(s) on { $days } past day(s): { $summary }; { $unreadable } unreadable day(s)
+           *[other] { $owed } owed output(s) on { $days } past day(s): { $summary }; { $unreadable } unreadable day(s)
+        }
+    }
+   *[other] { $days_quantity ->
+        [one] { $unreadable_quantity ->
+            [one] { $owed } owed output(s) on { $days } past day(s): { $summary }; { $unreadable } unreadable day(s)
+           *[other] { $owed } owed output(s) on { $days } past day(s): { $summary }; { $unreadable } unreadable day(s)
+        }
+       *[other] { $unreadable_quantity ->
+            [one] { $owed } owed output(s) on { $days } past day(s): { $summary }; { $unreadable } unreadable day(s)
+           *[other] { $owed } owed output(s) on { $days } past day(s): { $summary }; { $unreadable } unreadable day(s)
+        }
+    }
+}
+
+journal.cli.reprocess.past.only = reprocess is past-only (cannot reprocess today or a future day)
+
+journal.cli.reprocess.range.plan = { $days_quantity ->
+    [one] { $segments_quantity ->
+        [one] from-scratch reprocess plan:{ $break }{ $days } day with data ({ $segments } segment) will be queued. Progress will be visible in { $top } or { $health }. Requests survive a supervisor restart; a day that cannot finish from scratch finishes as an ordinary reprocess.{ $break }This day can take hours; today's work goes first between tasks.{ $break }re-run with { $yes } to proceed
+       *[other] from-scratch reprocess plan:{ $break }{ $days } day with data ({ $segments } segments) will be queued. Progress will be visible in { $top } or { $health }. Requests survive a supervisor restart; a day that cannot finish from scratch finishes as an ordinary reprocess.{ $break }This day can take hours; today's work goes first between tasks.{ $break }re-run with { $yes } to proceed
+    }
+   *[other] { $segments_quantity ->
+        [one] from-scratch reprocess plan:{ $break }{ $days } days with data ({ $segments } segment) will be queued. Progress will be visible in { $top } or { $health }. Requests survive a supervisor restart; a day that cannot finish from scratch finishes as an ordinary reprocess.{ $break }These days can take hours; today's work goes first between tasks.{ $break }re-run with { $yes } to proceed
+       *[other] from-scratch reprocess plan:{ $break }{ $days } days with data ({ $segments } segments) will be queued. Progress will be visible in { $top } or { $health }. Requests survive a supervisor restart; a day that cannot finish from scratch finishes as an ordinary reprocess.{ $break }These days can take hours; today's work goes first between tasks.{ $break }re-run with { $yes } to proceed
+    }
+}
+
+journal.cli.reprocess.range.saved = { $days_quantity ->
+    [one] { $segments_quantity ->
+        [one] saved from-scratch requests for { $days } day ({ $segments } segment){ $break }progress is visible in health; today's work goes first
+       *[other] saved from-scratch requests for { $days } day ({ $segments } segments){ $break }progress is visible in health; today's work goes first
+    }
+   *[other] { $segments_quantity ->
+        [one] saved from-scratch requests for { $days } days ({ $segments } segment){ $break }progress is visible in health; today's work goes first
+       *[other] saved from-scratch requests for { $days } days ({ $segments } segments){ $break }progress is visible in health; today's work goes first
+    }
+}
+
+journal.cli.reprocess.submitted.from.scratch = reprocess (from-scratch) submitted for { $day }
+
+journal.cli.reprocess.submitted.mark.updated = reprocess (mark-updated) submitted for { $day }
+
+journal.cli.reprocess.submitted.process.now = reprocess (process-now) submitted for { $day }
+
+journal.cli.reprocess.through.order = { $through_flag } must be on or after the start day
+
+journal.cli.reprocess.through.required = { $through_flag } requires { $from_scratch_flag }
+
+journal.cli.reprocess.unit.failed = reprocess unit failed: { $error }
+
+journal.cli.reprocess.unit.saved = retry request saved for { $unit } on { $day }
+
+journal.cli.reprocess.unreadable = { $day }  (unreadable: { $error })
+
+journal.cli.reprocess.usage.conflict = usage: { $syntax }{ $line_break }{ $syntax_continuation_1 }{ $line_break }{ $syntax_continuation_2 }{ $line_break }{ $day_line }{ $line_break }{ $command }: error: argument { $option }: not allowed with argument { $previous }
+
+journal.cli.reprocess.usage.missing.day = usage: { $syntax }{ $line_break }{ $syntax_continuation_1 }{ $line_break }{ $syntax_continuation_2 }{ $line_break }{ $day_line }{ $line_break }{ $command }: error: the following arguments are required: { $positional }
+
+journal.cli.reprocess.usage.missing.value = usage: { $syntax }{ $line_break }{ $syntax_continuation_1 }{ $line_break }{ $syntax_continuation_2 }{ $line_break }{ $day_line }{ $line_break }{ $command }: error: argument { $option }: expected one argument
+
+journal.cli.reprocess.usage.requires = usage: { $syntax }{ $line_break }{ $syntax_continuation_1 }{ $line_break }{ $syntax_continuation_2 }{ $line_break }{ $day_line }{ $line_break }{ $command }: error: argument { $option }: requires { $required }
+
+journal.cli.reprocess.usage.unknown = usage: { $syntax }{ $line_break }{ $syntax_continuation_1 }{ $line_break }{ $syntax_continuation_2 }{ $line_break }{ $day_line }{ $line_break }{ $command }: error: unrecognized arguments: { $arguments }
+
+journal.cli.reprocess.waiting = request saved; start the background service with { $start_command } to process it
+
+journal.cli.reprocess.intent.busy = requested day is owned by another executor
+
+journal.cli.reprocess.intent.invalid.day = invalid work day
+
+journal.cli.reprocess.intent.uncertain = work intent publication is uncertain: { $outcome }
+
+journal.cli.reprocess.intent.unrecognized = unrecognized work intent
+
+journal.cli.reprocess.owed.internal = { $flag } only reports; use { $function }
+
+journal.cli.reprocess.retry.accepted = this daily output is already accepted
+
+journal.cli.reprocess.retry.disabled = daily talent is no longer enabled
+
+journal.cli.reprocess.retry.invalid.day = invalid retry day
+
+journal.cli.reprocess.retry.invalid.unit = invalid retry unit
+
+journal.cli.reprocess.retry.missing = daily unit is missing
+
+journal.cli.reprocess.retry.missing.evidence = missing held evidence
+
+journal.cli.reprocess.retry.no.longer.held = unit is no longer held
+
+journal.cli.reprocess.retry.not.daily = not daily work
+
+journal.cli.reprocess.retry.state = this daily unit cannot be retried without resolving its current state
+
+journal.cli.reprocess.facet.classification = { $path }: invalid facet classification
+
+journal.cli.reprocess.facet.utf8 = non-{ $encoding } facet
+
+journal.cli.reprocess.input.day = invalid day: { $day }
+
+journal.cli.reprocess.path.utf8 = non-{ $encoding } source path
+
+journal.cli.reprocess.schedule.lookback = daily schedule lookback outside { $range }
+
+journal.cli.reprocess.schema.missing = schema prompt path is missing
+
+journal.cli.reprocess.schema.name = schema must be a filename
+
+journal.cli.reprocess.shape.invalid = invalid shape for { $path }
+
+journal.cli.reprocess.shape.object = shape sidecar is not an object
+
+journal.cli.reprocess.shape.written = invalid written source shape: { $path }
+
+journal.cli.reprocess.source.json.object = { $path } is not a { $encoding } object
+
+journal.cli.reprocess.source.line.error = { $path } line { $line }: { $error }
+
+journal.cli.reprocess.source.line.object = { $path } line { $line } is not an object
+
+journal.cli.reprocess.source.symlink = daily source is a symbolic link: { $path }
+
+journal.cli.reprocess.source.utf8 = non-{ $encoding } daily source path
+
+journal.cli.reprocess.talent.overrides = failed to read talent overrides from { $path }
+
+journal.cli.reprocess.template.utf8 = non-{ $encoding } template name
+
+journal.cli.reprocess.record.invalid = Malformed daily unit record: invalid daily unit identity
+
+journal.cli.reprocess.record.io = I/O error: { $cause }
+
+journal.cli.reprocess.record.mismatch = Malformed daily unit record: identity mismatch in record at { $path }: expected { $expected }, found { $found }

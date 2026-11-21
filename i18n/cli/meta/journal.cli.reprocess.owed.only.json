@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for owed only.",
+  "context": "Journal command-line text for owed only.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e8e847e9ecdc5f85d44d3f761a7e7286fecfc50f8472390733cb6dce81ddbb07",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "owed_flag",
+      "kind": "flag",
+      "value": "--owed"
+    }
+  ]
+}

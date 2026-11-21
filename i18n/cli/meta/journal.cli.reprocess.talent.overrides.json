@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for talent overrides.",
+  "context": "Journal command-line text for talent overrides.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1059890f4d82e12a97483f0a97db5a8c5da254f302c978fabd124766be21c85f",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

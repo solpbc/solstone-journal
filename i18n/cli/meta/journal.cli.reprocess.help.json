@@ -1,0 +1,148 @@
+{
+  "description": "Journal command-line text for help.",
+  "context": "Journal command-line text for help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "15213e4e3136fad7a55ed7526357ea51a3a30b7482770e3ca62b03192bdee84b",
+  "max_length": 1791,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal reprocess [-h] [--through THROUGH] [--yes] [--unit UNIT]"
+    },
+    {
+      "name": "syntax_continuation_1",
+      "kind": "accepted-input",
+      "value": "                         [--facet FACET] [--from-scratch | --mark-updated |"
+    },
+    {
+      "name": "syntax_continuation_2",
+      "kind": "accepted-input",
+      "value": "                         --owed] [--json] [-v] [-d]"
+    },
+    {
+      "name": "day_line",
+      "kind": "accepted-input",
+      "value": "                         day"
+    },
+    {
+      "name": "day_column",
+      "kind": "accepted-input",
+      "value": "  day                "
+    },
+    {
+      "name": "date_format",
+      "kind": "accepted-input",
+      "value": "YYYYMMDD"
+    },
+    {
+      "name": "indent_2",
+      "kind": "whitespace",
+      "value": "  "
+    },
+    {
+      "name": "help_option",
+      "kind": "accepted-input",
+      "value": "-h, --help"
+    },
+    {
+      "name": "gap_9",
+      "kind": "whitespace",
+      "value": "         "
+    },
+    {
+      "name": "through_option",
+      "kind": "accepted-input",
+      "value": "--through THROUGH"
+    },
+    {
+      "name": "gap_2",
+      "kind": "whitespace",
+      "value": "  "
+    },
+    {
+      "name": "syntax_continuation_13",
+      "kind": "accepted-input",
+      "value": "  --yes"
+    },
+    {
+      "name": "unit_option",
+      "kind": "accepted-input",
+      "value": "--unit UNIT"
+    },
+    {
+      "name": "gap_8",
+      "kind": "whitespace",
+      "value": "        "
+    },
+    {
+      "name": "facet_option",
+      "kind": "accepted-input",
+      "value": "--facet FACET"
+    },
+    {
+      "name": "gap_6",
+      "kind": "whitespace",
+      "value": "      "
+    },
+    {
+      "name": "from_scratch_option",
+      "kind": "accepted-input",
+      "value": "--from-scratch"
+    },
+    {
+      "name": "gap_5",
+      "kind": "whitespace",
+      "value": "     "
+    },
+    {
+      "name": "mark_updated_option",
+      "kind": "accepted-input",
+      "value": "--mark-updated"
+    },
+    {
+      "name": "owed_option",
+      "kind": "accepted-input",
+      "value": "--owed"
+    },
+    {
+      "name": "gap_13",
+      "kind": "whitespace",
+      "value": "             "
+    },
+    {
+      "name": "json_option",
+      "kind": "accepted-input",
+      "value": "--json"
+    },
+    {
+      "name": "owed_flag",
+      "kind": "flag",
+      "value": "--owed"
+    },
+    {
+      "name": "verbose_option",
+      "kind": "accepted-input",
+      "value": "-v, --verbose"
+    },
+    {
+      "name": "debug_option",
+      "kind": "accepted-input",
+      "value": "-d, --debug"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

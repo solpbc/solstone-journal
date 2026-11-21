@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for unit saved.",
+  "context": "Journal command-line text for unit saved.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "unit",
+      "type": "string"
+    },
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1517dc51545524e0f072a5144f34cbe3dfd84792c876d1275ddd33c47708fe9c",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

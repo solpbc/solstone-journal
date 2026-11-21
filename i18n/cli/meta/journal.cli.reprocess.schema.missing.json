@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for schema missing.",
+  "context": "Journal command-line text for schema missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "939eaabedab70256c86449125569b98ee3a2e508c6c52c7110ed6073f75f5b1a",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

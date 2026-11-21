@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for path utf8.",
+  "context": "Journal command-line text for path utf8.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "033fa9bb85225994fca6dc75714938042f681a0e3aa2df9c4abfe17c920960c3",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "encoding",
+      "kind": "accepted-input",
+      "value": "UTF8"
+    }
+  ]
+}

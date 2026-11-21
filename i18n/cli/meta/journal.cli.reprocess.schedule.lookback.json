@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for schedule lookback.",
+  "context": "Journal command-line text for schedule lookback.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d09b214113df6c04a2d5733b20d840de23a46a1360a0ba2ce61b315088ad4eb4",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "range",
+      "kind": "accepted-input",
+      "value": "1..=366"
+    }
+  ]
+}

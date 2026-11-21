@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for retry accepted.",
+  "context": "Journal command-line text for retry accepted.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cc78cb1c9ef060d57715fb7b82284286b904ab28397fac52976ef6b1d4d8be07",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

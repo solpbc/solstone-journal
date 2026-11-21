@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for record io.",
+  "context": "Journal command-line text for record io.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "cause",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1d3183efd986d08d3fe324f9c3c2607d95301988b886e821f0bc8baec4264bd2",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

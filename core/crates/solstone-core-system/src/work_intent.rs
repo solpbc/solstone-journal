@@ -101,6 +101,10 @@ fn valid_day(day: &str) -> bool {
 }
 
 pub fn read(journal: &Path) -> Result<BTreeMap<String, OwnerIntent>, String> {
+    read_in(journal, solstone_core_cli_copy::ENGLISH)
+}
+
+fn read_in(journal: &Path, locale: &str) -> Result<BTreeMap<String, OwnerIntent>, String> {
     let bytes = match std::fs::read(journal.join(artifact(ArtifactId::WorkIntent).path)) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(BTreeMap::new()),
@@ -127,7 +131,11 @@ pub fn read(journal: &Path) -> Result<BTreeMap<String, OwnerIntent>, String> {
                 })
         })
     {
-        return Err("unrecognized work intent".into());
+        return Err(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.reprocess.intent.unrecognized",
+            &[],
+        ));
     }
     Ok(store.days)
 }
@@ -144,13 +152,22 @@ fn mutate_checked<T>(
     checkpoint: &dyn Fn() -> Result<(), String>,
     update: impl FnOnce(&mut BTreeMap<String, OwnerIntent>) -> Result<T, String>,
 ) -> Result<T, String> {
+    mutate_checked_in(journal, checkpoint, update, solstone_core_cli_copy::ENGLISH)
+}
+
+fn mutate_checked_in<T>(
+    journal: &Path,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+    update: impl FnOnce(&mut BTreeMap<String, OwnerIntent>) -> Result<T, String>,
+    locale: &str,
+) -> Result<T, String> {
     checkpoint()?;
     let path = journal.join(artifact(ArtifactId::WorkIntent).path);
     std::fs::create_dir_all(path.parent().expect("health parent"))
         .map_err(|error| error.to_string())?;
     let _lock = hold_lock(path.with_extension("lock"), LockOptions::default())
         .map_err(|error| error.to_string())?;
-    let mut days = read(journal)?;
+    let mut days = read_in(journal, locale)?;
     checkpoint()?;
     let result = update(&mut days)?;
     checkpoint()?;
@@ -174,7 +191,13 @@ fn mutate_checked<T>(
         .map_err(|e| e.to_string())?
         {
             solstone_core_journal_io::atomic::BoundAtomicOutcome::Published { .. } => {}
-            other => return Err(format!("work intent publication is uncertain: {other:?}")),
+            other => {
+                return Err(solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.reprocess.intent.uncertain",
+                    [("outcome", &format_args!("{other:?}"))],
+                ));
+            }
         }
     }
     #[cfg(windows)]
@@ -189,11 +212,24 @@ fn mutate_checked<T>(
 }
 
 pub fn register(journal: &Path, day: &str, from_scratch: bool) -> Result<OwnerIntent, String> {
+    register_in(journal, day, from_scratch, solstone_core_cli_copy::ENGLISH)
+}
+
+pub fn register_in(
+    journal: &Path,
+    day: &str,
+    from_scratch: bool,
+    locale: &str,
+) -> Result<OwnerIntent, String> {
     if !valid_day(day) {
-        return Err("invalid work day".into());
+        return Err(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.reprocess.intent.invalid.day",
+            &[],
+        ));
     }
     // A live executor owns publication until all its in-process work has joined.
-    let _execution = execution_lease(journal, day)?;
+    let _execution = execution_lease_in(journal, day, locale)?;
     let mut random = [0u8; 16];
     getrandom::fill(&mut random).map_err(|error| error.to_string())?;
     let intent = OwnerIntent {
@@ -205,10 +241,15 @@ pub fn register(journal: &Path, day: &str, from_scratch: bool) -> Result<OwnerIn
         restarted: false,
         asked_at_ms: Some(jiff::Timestamp::now().as_millisecond()),
     };
-    mutate(journal, |days| {
-        days.insert(day.to_owned(), intent.clone());
-        Ok(intent)
-    })
+    mutate_checked_in(
+        journal,
+        &|| Ok(()),
+        |days| {
+            days.insert(day.to_owned(), intent.clone());
+            Ok(intent)
+        },
+        locale,
+    )
 }
 
 fn execution_path(journal: &Path, day: &str) -> Result<PathBuf, String> {
@@ -219,6 +260,10 @@ fn execution_path(journal: &Path, day: &str) -> Result<PathBuf, String> {
 }
 
 fn execution_lease(journal: &Path, day: &str) -> Result<FileLock, String> {
+    execution_lease_in(journal, day, solstone_core_cli_copy::ENGLISH)
+}
+
+fn execution_lease_in(journal: &Path, day: &str, locale: &str) -> Result<FileLock, String> {
     hold_lock(
         execution_path(journal, day)?,
         LockOptions {
@@ -226,7 +271,9 @@ fn execution_lease(journal: &Path, day: &str) -> Result<FileLock, String> {
             ..LockOptions::default()
         },
     )
-    .map_err(|_| "requested day is owned by another executor".into())
+    .map_err(|_| {
+        solstone_core_cli_copy::render_for(locale, "journal.cli.reprocess.intent.busy", &[])
+    })
 }
 
 /// Discovery is advisory. Admission must retain the execution lease itself.

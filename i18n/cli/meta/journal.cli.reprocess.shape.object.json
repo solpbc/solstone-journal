@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for shape object.",
+  "context": "Journal command-line text for shape object.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "546207e4c705bead0a88b5eba403162775c1c826c17fa82ae52f5c6496e4edca",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

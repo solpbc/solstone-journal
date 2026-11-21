@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for native arguments.",
+  "context": "Journal command-line text for native arguments.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "verb",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "111bf445da593024d457288302d835b48bd80e0d1965bf41934c6979713816c4",
+  "max_length": 106,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "binary",
+      "kind": "command",
+      "value": "solstone-core"
+    },
+    {
+      "name": "encoding",
+      "kind": "accepted-input",
+      "value": "UTF-8"
+    }
+  ]
+}

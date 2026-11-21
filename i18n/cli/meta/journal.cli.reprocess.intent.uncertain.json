@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for intent uncertain.",
+  "context": "Journal command-line text for intent uncertain.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "outcome",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2650b00b07b02c2deed5e6286b9bbe61150925d85f19bf5412c59f6e573ecf0f",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

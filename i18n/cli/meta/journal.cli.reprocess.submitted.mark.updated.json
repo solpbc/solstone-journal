@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for submitted mark updated.",
+  "context": "Journal command-line text for submitted mark updated.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cd143b9e800b2da5114d9313917351bcd8f3efefc19321a990e718022f1721c4",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

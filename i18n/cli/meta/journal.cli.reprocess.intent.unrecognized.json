@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for intent unrecognized.",
+  "context": "Journal command-line text for intent unrecognized.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7be67f9e1367900dadaafd105cbb570c8d6e495d9e139bf45142ea8c41598db0",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

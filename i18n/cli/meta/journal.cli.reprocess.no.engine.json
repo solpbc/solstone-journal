@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for no engine.",
+  "context": "Journal command-line text for no engine.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "71869f7729ccf837d16b7667e58f2b519a144319725242f4e196b6fe10f6dafc",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

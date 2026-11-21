@@ -10,6 +10,7 @@ use jiff::Timestamp;
 use jiff::civil::Date;
 use serde_json::json;
 use solstone_core_callosum::{CallosumEnvelope, CallosumOneShotSender};
+use solstone_core_cli_copy as copy;
 use solstone_core_journal_config::TimeZone;
 use solstone_core_segment::{PathOrDay, day_path, iter_segments, touch_stream_health_marker};
 use solstone_core_system_health::{FilesystemSegmentSource, scan_day};
@@ -18,12 +19,9 @@ use solstone_core_system_health::{FilesystemSegmentSource, scan_day};
 // in the FOREGROUND (SKILL.md: "starts the supervisor runtime only"), so an
 // owner who follows it gets a process tied to that terminal and loses intake
 // when they close it. `journal up` is the alias for `journal service start`.
-const WAITING_MESSAGE: &str =
-    "request saved; start the background service with solstone journal up to process it";
-const THROUGH_REQUIRES_FROM_SCRATCH: &str = "--through requires --from-scratch";
-const THROUGH_BEFORE_START: &str = "--through must be on or after the start day";
-const HELP_FIXTURE: &str =
-    include_str!("../../../fixtures/journal-storage-ops-reference-grammar.txt");
+fn waiting_message() -> String {
+    copy::text("journal.cli.reprocess.waiting")
+}
 
 /// The observable result of a library-hosted CLI invocation.
 #[derive(Debug, PartialEq, Eq)]
@@ -95,30 +93,40 @@ where
     let parsed = match parse_arguments(args) {
         Ok(parsed) => parsed,
         Err(ParseResult::Help) => return success(reprocess_help()),
-        Err(ParseResult::Usage(message)) => return usage_error(&message),
+        Err(ParseResult::Usage(message)) => return usage_error(message),
     };
 
     if let Some(unit_name) = parsed.unit.as_deref() {
         let Some(day_date) = parse_day(journal_path, &parsed.day) else {
-            return failure("expected day in YYYYMMDD format");
+            return failure(&copy::text("journal.cli.backfill.invalid.day"));
         };
         let today = now.to_zoned_datetime(zone.clone()).date();
         if day_date >= today {
-            return failure("reprocess is past-only (cannot reprocess today or a future day)");
+            return failure(&copy::text("journal.cli.reprocess.past.only"));
         }
         let unit = solstone_core_system::work_retry::Unit::Daily {
             day: parsed.day.clone(),
             talent: unit_name.into(),
             facet: parsed.facet.clone(),
         };
-        let requested = solstone_core_system::work_retry::daily::request(journal_path, &unit);
+        let requested = solstone_core_system::work_retry::daily::request_in(
+            journal_path,
+            &unit,
+            copy::cli_locale(),
+        );
         if let Err(error) = requested {
-            return failure(&format!("reprocess unit failed: {error}"));
+            return failure(&copy::strings(
+                "journal.cli.reprocess.unit.failed",
+                [("error", &error)],
+            ));
         }
         let _ = transport(&drain_envelope(&parsed.day));
         return success(format!(
-            "retry request saved for {unit_name} on {}\n",
-            parsed.day
+            "{}\n",
+            copy::strings(
+                "journal.cli.reprocess.unit.saved",
+                [("unit", unit_name), ("day", &parsed.day)]
+            )
         ));
     }
 
@@ -134,26 +142,26 @@ where
     }
     if let Some(through_raw) = parsed.through.as_deref() {
         if parsed.flavor != Flavor::FromScratch {
-            return failure(THROUGH_REQUIRES_FROM_SCRATCH);
+            return failure(&copy::text("journal.cli.reprocess.through.required"));
         }
         let Some(start) = parse_day(journal_path, &parsed.day) else {
-            return failure("expected day in YYYYMMDD format");
+            return failure(&copy::text("journal.cli.backfill.invalid.day"));
         };
         let Some(through) = parse_day(journal_path, through_raw) else {
-            return failure("expected day in YYYYMMDD format");
+            return failure(&copy::text("journal.cli.backfill.invalid.day"));
         };
         let today = now.to_zoned_datetime(zone.clone()).date();
         if start >= today || through >= today {
-            return failure("reprocess is past-only (cannot reprocess today or a future day)");
+            return failure(&copy::text("journal.cli.reprocess.past.only"));
         }
         if through < start {
-            return failure(THROUGH_BEFORE_START);
+            return failure(&copy::text("journal.cli.reprocess.through.order"));
         }
         let days = enumerate_range_days(journal_path, start, through, now);
         if data_days(&days).is_empty() {
-            return failure(&format!(
-                "no data for days {} through {through_raw}",
-                parsed.day
+            return failure(&copy::strings(
+                "journal.cli.reprocess.empty.range",
+                [("day", &parsed.day), ("through", through_raw)],
             ));
         }
         if !parsed.yes {
@@ -167,12 +175,13 @@ where
 
     render_day_outcome(
         &parsed.day,
-        reprocess_day_with(
+        reprocess_day_with_locale(
             journal_path,
             &parsed.day,
             parsed.flavor,
             now,
             zone,
+            copy::cli_locale(),
             transport,
         ),
     )
@@ -200,23 +209,26 @@ fn parse_arguments(args: &[String]) -> Result<ParsedArgs, ParseResult> {
             "--json" => json = true,
             "--yes" => {
                 if unit.is_some() {
-                    return Err(ParseResult::Usage(
-                        "argument --yes: not allowed with argument --unit".to_owned(),
-                    ));
+                    return Err(ParseResult::Usage(copy::strings(
+                        "journal.cli.reprocess.usage.conflict",
+                        [("option", "--yes"), ("previous", "--unit")],
+                    )));
                 }
                 yes = true;
             }
             "--through" => {
                 index += 1;
                 let Some(value) = args.get(index) else {
-                    return Err(ParseResult::Usage(
-                        "argument --through: expected one argument".to_owned(),
-                    ));
+                    return Err(ParseResult::Usage(copy::strings(
+                        "journal.cli.reprocess.usage.missing.value",
+                        [("option", "--through")],
+                    )));
                 };
                 if unit.is_some() {
-                    return Err(ParseResult::Usage(
-                        "argument --through: not allowed with argument --unit".to_owned(),
-                    ));
+                    return Err(ParseResult::Usage(copy::strings(
+                        "journal.cli.reprocess.usage.conflict",
+                        [("option", "--through"), ("previous", "--unit")],
+                    )));
                 }
                 through_flag = true;
                 through = Some(value.clone());
@@ -224,23 +236,27 @@ fn parse_arguments(args: &[String]) -> Result<ParsedArgs, ParseResult> {
             "--unit" => {
                 index += 1;
                 let Some(value) = args.get(index) else {
-                    return Err(ParseResult::Usage(
-                        "argument --unit: expected one argument".to_owned(),
-                    ));
+                    return Err(ParseResult::Usage(copy::strings(
+                        "journal.cli.reprocess.usage.missing.value",
+                        [("option", "--unit")],
+                    )));
                 };
                 if through_flag {
-                    return Err(ParseResult::Usage(
-                        "argument --unit: not allowed with argument --through".to_owned(),
-                    ));
+                    return Err(ParseResult::Usage(copy::strings(
+                        "journal.cli.reprocess.usage.conflict",
+                        [("option", "--unit"), ("previous", "--through")],
+                    )));
                 }
                 if yes {
-                    return Err(ParseResult::Usage(
-                        "argument --unit: not allowed with argument --yes".to_owned(),
-                    ));
+                    return Err(ParseResult::Usage(copy::strings(
+                        "journal.cli.reprocess.usage.conflict",
+                        [("option", "--unit"), ("previous", "--yes")],
+                    )));
                 }
                 if let Some(previous) = flavor_flag {
-                    return Err(ParseResult::Usage(format!(
-                        "argument --unit: not allowed with argument {previous}"
+                    return Err(ParseResult::Usage(copy::strings(
+                        "journal.cli.reprocess.usage.conflict",
+                        [("option", "--unit"), ("previous", previous)],
                     )));
                 }
                 unit = Some(value.clone());
@@ -248,21 +264,24 @@ fn parse_arguments(args: &[String]) -> Result<ParsedArgs, ParseResult> {
             "--facet" => {
                 index += 1;
                 let Some(value) = args.get(index) else {
-                    return Err(ParseResult::Usage(
-                        "argument --facet: expected one argument".to_owned(),
-                    ));
+                    return Err(ParseResult::Usage(copy::strings(
+                        "journal.cli.reprocess.usage.missing.value",
+                        [("option", "--facet")],
+                    )));
                 };
                 facet = Some(value.clone());
             }
             "--from-scratch" | "--mark-updated" | "--owed" => {
                 if unit.is_some() {
-                    return Err(ParseResult::Usage(format!(
-                        "argument {argument}: not allowed with argument --unit"
+                    return Err(ParseResult::Usage(copy::strings(
+                        "journal.cli.reprocess.usage.conflict",
+                        [("option", argument), ("previous", "--unit")],
                     )));
                 }
                 if let Some(previous) = flavor_flag {
-                    return Err(ParseResult::Usage(format!(
-                        "argument {argument}: not allowed with argument {previous}"
+                    return Err(ParseResult::Usage(copy::strings(
+                        "journal.cli.reprocess.usage.conflict",
+                        [("option", argument), ("previous", previous)],
                     )));
                 }
                 flavor_flag = Some(argument);
@@ -279,19 +298,22 @@ fn parse_arguments(args: &[String]) -> Result<ParsedArgs, ParseResult> {
         index += 1;
     }
     if facet.is_some() && unit.is_none() {
-        return Err(ParseResult::Usage(
-            "argument --facet: requires --unit".to_owned(),
-        ));
+        return Err(ParseResult::Usage(copy::strings(
+            "journal.cli.reprocess.usage.requires",
+            [("option", "--facet"), ("required", "--unit")],
+        )));
     }
     if json && flavor != Flavor::Owed {
-        return Err(ParseResult::Usage(
-            "argument --json: requires --owed".to_owned(),
-        ));
+        return Err(ParseResult::Usage(copy::strings(
+            "journal.cli.reprocess.usage.requires",
+            [("option", "--json"), ("required", "--owed")],
+        )));
     }
     let Some(day) = day else {
-        return Err(ParseResult::Usage(
-            "the following arguments are required: day".to_owned(),
-        ));
+        return Err(ParseResult::Usage(copy::strings(
+            "journal.cli.reprocess.usage.missing.day",
+            [("positional", "day")],
+        )));
     };
     if unknown.is_empty() {
         Ok(ParsedArgs {
@@ -304,9 +326,9 @@ fn parse_arguments(args: &[String]) -> Result<ParsedArgs, ParseResult> {
             json,
         })
     } else {
-        Err(ParseResult::Usage(format!(
-            "unrecognized arguments: {}",
-            unknown.join(" ")
+        Err(ParseResult::Usage(copy::strings(
+            "journal.cli.reprocess.usage.unknown",
+            [("arguments", &(unknown.join(" ")))],
         )))
     }
 }
@@ -336,13 +358,32 @@ pub fn reprocess_day_with<F>(
     flavor: Flavor,
     now: Timestamp,
     zone: &TimeZone,
+    transport: F,
+) -> DayOutcome
+where
+    F: FnMut(&CallosumEnvelope) -> bool,
+{
+    reprocess_day_with_locale(journal, day, flavor, now, zone, copy::ENGLISH, transport)
+}
+
+pub fn reprocess_day_with_locale<F>(
+    journal: &Path,
+    day: &str,
+    flavor: Flavor,
+    now: Timestamp,
+    zone: &TimeZone,
+    locale: &str,
     mut transport: F,
 ) -> DayOutcome
 where
     F: FnMut(&CallosumEnvelope) -> bool,
 {
     if flavor == Flavor::Owed {
-        return DayOutcome::Failed("--owed only reports; use run_cli".to_owned());
+        return DayOutcome::Failed(copy::render_for(
+            locale,
+            "journal.cli.reprocess.owed.internal",
+            &[],
+        ));
     }
     let Some(parsed) = parse_day(journal, day) else {
         return DayOutcome::Malformed;
@@ -363,7 +404,9 @@ where
         return DayOutcome::NoThinkingEngine;
     }
     if flavor == Flavor::FromScratch {
-        if let Err(error) = solstone_core_system::work_intent::register(journal, day, true) {
+        if let Err(error) =
+            solstone_core_system::work_intent::register_in(journal, day, true, locale)
+        {
             return DayOutcome::Failed(error);
         }
         return if transport(&drain_envelope(day)) {
@@ -377,7 +420,9 @@ where
         if let Err(error) = touch_stream_health_marker(journal, day) {
             return DayOutcome::Failed(error.to_string());
         }
-        if let Err(error) = solstone_core_system::work_intent::register(journal, day, false) {
+        if let Err(error) =
+            solstone_core_system::work_intent::register_in(journal, day, false, locale)
+        {
             return DayOutcome::Failed(error);
         }
         return if transport(&drain_envelope(day)) {
@@ -388,7 +433,8 @@ where
     }
     // A current daily summary does not prove that native or activity work is
     // complete. Discovery expands this durable ask against every owning source.
-    if let Err(error) = solstone_core_system::work_intent::register(journal, day, false) {
+    if let Err(error) = solstone_core_system::work_intent::register_in(journal, day, false, locale)
+    {
         return DayOutcome::Failed(error);
     }
     if transport(&drain_envelope(day)) {
@@ -400,28 +446,43 @@ where
 
 fn render_day_outcome(day: &str, outcome: DayOutcome) -> CliRun {
     match outcome {
-        DayOutcome::Malformed => failure("expected day in YYYYMMDD format"),
-        DayOutcome::PastOnly => {
-            failure("reprocess is past-only (cannot reprocess today or a future day)")
-        }
-        DayOutcome::NoData => failure(&format!("no data for day {day}")),
-        DayOutcome::Submitted(Flavor::FromScratch) => {
-            success(format!("reprocess (from-scratch) submitted for {day}\n"))
-        }
-        DayOutcome::Submitted(Flavor::MarkUpdated) => {
-            success(format!("reprocess (mark-updated) submitted for {day}\n"))
-        }
-        DayOutcome::Submitted(Flavor::ProcessNow) => {
-            success(format!("reprocess (process-now) submitted for {day}\n"))
-        }
+        DayOutcome::Malformed => failure(&copy::text("journal.cli.backfill.invalid.day")),
+        DayOutcome::PastOnly => failure(&copy::text("journal.cli.reprocess.past.only")),
+        DayOutcome::NoData => failure(&copy::strings(
+            "journal.cli.reprocess.no.data",
+            [("day", day)],
+        )),
+        DayOutcome::Submitted(Flavor::FromScratch) => success(format!(
+            "{}\n",
+            copy::strings(
+                "journal.cli.reprocess.submitted.from.scratch",
+                [("day", day)]
+            )
+        )),
+        DayOutcome::Submitted(Flavor::MarkUpdated) => success(format!(
+            "{}\n",
+            copy::strings(
+                "journal.cli.reprocess.submitted.mark.updated",
+                [("day", day)]
+            )
+        )),
+        DayOutcome::Submitted(Flavor::ProcessNow) => success(format!(
+            "{}\n",
+            copy::strings(
+                "journal.cli.reprocess.submitted.process.now",
+                [("day", day)]
+            )
+        )),
         DayOutcome::Submitted(Flavor::Owed) => {
-            failure("--owed only reports; nothing was submitted")
+            failure(&copy::text("journal.cli.reprocess.owed.only"))
         }
-        DayOutcome::NoThinkingEngine => {
-            failure("no model is chosen yet. choose one in thinking, then retry")
-        }
-        DayOutcome::WaitingForSupervisor => success(format!("{WAITING_MESSAGE}\n")),
-        DayOutcome::Failed(error) => failure(&format!("reprocess failed: {error}")),
+        DayOutcome::NoThinkingEngine => failure(&copy::text("journal.cli.reprocess.no.engine")),
+        DayOutcome::WaitingForSupervisor => success(format!("{}\n", waiting_message())),
+        DayOutcome::Failed(error) => failure(&solstone_core_window_catalog::strings(
+            copy::cli_locale(),
+            "journal.window.health.action.reprocess.failed.cause",
+            [("cause", error.as_str())],
+        )),
     }
 }
 
@@ -471,10 +532,25 @@ fn range_segment_count(days: &[RangeDay]) -> usize {
 }
 
 fn range_plan(days: &[RangeDay]) -> String {
-    let count = data_days(days).len();
+    let segments = range_segment_count(days);
+    let days = data_days(days).len();
     format!(
-        "from-scratch reprocess plan:\n{count} days with data ({} segments) will be queued. Progress will be visible in solstone journal top or solstone journal health. Requests survive a supervisor restart; a day that cannot finish from scratch finishes as an ordinary reprocess.\nThese days can take hours; today's work goes first between tasks.\nre-run with --yes to proceed\n",
-        range_segment_count(days)
+        "{}\n",
+        copy::render(
+            "journal.cli.reprocess.range.plan",
+            &[
+                (
+                    "days_quantity",
+                    copy::Value::Cardinal(days.min(i32::MAX as usize) as i64)
+                ),
+                (
+                    "segments_quantity",
+                    copy::Value::Cardinal(segments.min(i32::MAX as usize) as i64)
+                ),
+                ("days", copy::Value::String(&days.to_string())),
+                ("segments", copy::Value::String(&segments.to_string()))
+            ]
+        )
     )
 }
 
@@ -492,12 +568,13 @@ where
     let mut queued = Vec::new();
     let mut waiting = false;
     for entry in days {
-        match reprocess_day_with(
+        match reprocess_day_with_locale(
             journal,
             &entry.day,
             Flavor::FromScratch,
             now,
             zone,
+            copy::cli_locale(),
             &mut *transport,
         ) {
             DayOutcome::NoData => {}
@@ -509,16 +586,29 @@ where
             other => return render_day_outcome(&entry.day, other),
         }
     }
-    success(format!(
-        "saved from-scratch requests for {} days ({} segments)\nprogress is visible in health; today's work goes first\n{}",
-        data_days.len(),
-        range_segment_count(days),
-        if waiting {
-            format!("{WAITING_MESSAGE}\n")
-        } else {
-            String::new()
-        }
-    ))
+    let segments = range_segment_count(days);
+    let days = data_days.len();
+    let mut output = copy::render(
+        "journal.cli.reprocess.range.saved",
+        &[
+            (
+                "days_quantity",
+                copy::Value::Cardinal(days.min(i32::MAX as usize) as i64),
+            ),
+            (
+                "segments_quantity",
+                copy::Value::Cardinal(segments.min(i32::MAX as usize) as i64),
+            ),
+            ("days", copy::Value::String(&days.to_string())),
+            ("segments", copy::Value::String(&segments.to_string())),
+        ],
+    );
+    output.push('\n');
+    if waiting {
+        output.push_str(&waiting_message());
+        output.push('\n');
+    }
+    success(output)
 }
 
 /// List every daily output owed on past days in the range, and why.
@@ -537,17 +627,17 @@ fn owed_report(
     json: bool,
 ) -> CliRun {
     let Some(start) = parse_day(journal, start_raw) else {
-        return failure("expected day in YYYYMMDD format");
+        return failure(&copy::text("journal.cli.backfill.invalid.day"));
     };
     let through = match through_raw {
         Some(raw) => match parse_day(journal, raw) {
             Some(day) => day,
-            None => return failure("expected day in YYYYMMDD format"),
+            None => return failure(&copy::text("journal.cli.backfill.invalid.day")),
         },
         None => start,
     };
     if through < start {
-        return failure(THROUGH_BEFORE_START);
+        return failure(&copy::text("journal.cli.reprocess.through.order"));
     }
     let today = now.to_zoned_datetime(zone.clone()).date();
     let through = through.min(today.yesterday().expect("today has a yesterday"));
@@ -564,7 +654,11 @@ fn owed_report(
         if !day_path(journal, &day, false).is_ok_and(|path| path.is_dir()) {
             continue;
         }
-        let coverage = solstone_core_system::daily_coverage::read_daily_coverage(journal, &day);
+        let coverage = solstone_core_system::daily_coverage::read_daily_coverage_in(
+            journal,
+            &day,
+            copy::cli_locale(),
+        );
         if json {
             let markers = match solstone_core_journal_io::day_marker_pair_status(journal, &day) {
                 Ok(status) if status.is_complete() => "complete",
@@ -608,7 +702,10 @@ fn owed_report(
                 days += usize::from(counted);
             }
             Err(error) => {
-                lines.push(format!("{day}  (unreadable: {error})"));
+                lines.push(copy::strings(
+                    "journal.cli.reprocess.unreadable",
+                    [("day", &day), ("error", &error)],
+                ));
                 unreadable += 1;
             }
         }
@@ -630,14 +727,50 @@ fn owed_report(
                 + "\n",
         );
     }
-    lines.push(format!(
-        "{owed} owed output(s) on {days} past day(s){}; {unreadable} unreadable day(s)",
-        if summary.is_empty() {
-            String::new()
-        } else {
-            format!(": {summary}")
-        }
-    ));
+    lines.push(if summary.is_empty() {
+        copy::render(
+            "journal.cli.reprocess.owed.summary",
+            &[
+                (
+                    "owed_quantity",
+                    copy::Value::Cardinal(owed.min(i32::MAX as usize) as i64),
+                ),
+                (
+                    "days_quantity",
+                    copy::Value::Cardinal(days.min(i32::MAX as usize) as i64),
+                ),
+                (
+                    "unreadable_quantity",
+                    copy::Value::Cardinal(unreadable.min(i32::MAX as usize) as i64),
+                ),
+                ("owed", copy::Value::String(&owed.to_string())),
+                ("days", copy::Value::String(&days.to_string())),
+                ("unreadable", copy::Value::String(&unreadable.to_string())),
+            ],
+        )
+    } else {
+        copy::render(
+            "journal.cli.reprocess.owed.summary.causes",
+            &[
+                (
+                    "owed_quantity",
+                    copy::Value::Cardinal(owed.min(i32::MAX as usize) as i64),
+                ),
+                (
+                    "days_quantity",
+                    copy::Value::Cardinal(days.min(i32::MAX as usize) as i64),
+                ),
+                (
+                    "unreadable_quantity",
+                    copy::Value::Cardinal(unreadable.min(i32::MAX as usize) as i64),
+                ),
+                ("owed", copy::Value::String(&owed.to_string())),
+                ("days", copy::Value::String(&days.to_string())),
+                ("unreadable", copy::Value::String(&unreadable.to_string())),
+                ("summary", copy::Value::String(&summary)),
+            ],
+        )
+    });
     success(lines.join("\n") + "\n")
 }
 
@@ -669,30 +802,7 @@ fn send_envelope(journal: &Path, envelope: &CallosumEnvelope) -> bool {
 }
 
 fn reprocess_help() -> String {
-    let header = "=== reprocess --help\n";
-    let start = HELP_FIXTURE
-        .find(header)
-        .expect("reprocess help fixture block exists")
-        + header.len();
-    let rest = &HELP_FIXTURE[start..];
-    let end = rest.find("\n=== ").unwrap_or(rest.len());
-    rest[..end].to_owned()
-}
-
-fn reprocess_usage() -> String {
-    let header = "=== reprocess (missing day)\n";
-    let start = HELP_FIXTURE
-        .find(header)
-        .expect("reprocess missing-day fixture block exists")
-        + header.len();
-    let rest = &HELP_FIXTURE[start..];
-    let end = rest.find("\n=== ").unwrap_or(rest.len());
-    let block = &rest[..end];
-    let usage_lines: Vec<&str> = block
-        .lines()
-        .take_while(|line| !line.starts_with("solstone journal reprocess: error:"))
-        .collect();
-    format!("{}\n", usage_lines.join("\n"))
+    format!("{}\n", copy::text("journal.cli.reprocess.help"))
 }
 
 fn success(stdout: impl Into<String>) -> CliRun {
@@ -711,13 +821,10 @@ fn failure(message: &str) -> CliRun {
     }
 }
 
-fn usage_error(message: &str) -> CliRun {
+fn usage_error(message: String) -> CliRun {
     CliRun {
         stdout: String::new(),
-        stderr: format!(
-            "{}solstone journal reprocess: error: {message}\n",
-            reprocess_usage()
-        ),
+        stderr: format!("{message}\n"),
         exit_code: 2,
     }
 }
@@ -875,7 +982,10 @@ mod tests {
             unknown.stderr,
             format!(
                 "{}solstone journal reprocess: error: unrecognized arguments: --nonsense\n",
-                reprocess_usage()
+                MISSING_DAY_STDERR
+                    .split("solstone journal reprocess: error:")
+                    .next()
+                    .unwrap()
             )
         );
         for (first, second) in [
@@ -893,7 +1003,10 @@ mod tests {
                 result.stderr,
                 format!(
                     "{}solstone journal reprocess: error: argument {second}: not allowed with argument {first}\n",
-                    reprocess_usage()
+                    MISSING_DAY_STDERR
+                        .split("solstone journal reprocess: error:")
+                        .next()
+                        .unwrap()
                 )
             );
         }
@@ -1289,7 +1402,7 @@ mod tests {
         assert_eq!(calls, 0);
         assert_eq!(
             result.stdout,
-            "from-scratch reprocess plan:\n1 days with data (0 segments) will be queued. Progress will be visible in solstone journal top or solstone journal health. Requests survive a supervisor restart; a day that cannot finish from scratch finishes as an ordinary reprocess.\nThese days can take hours; today's work goes first between tasks.\nre-run with --yes to proceed\n"
+            "from-scratch reprocess plan:\n1 day with data (0 segments) will be queued. Progress will be visible in solstone journal top or solstone journal health. Requests survive a supervisor restart; a day that cannot finish from scratch finishes as an ordinary reprocess.\nThis day can take hours; today's work goes first between tasks.\nre-run with --yes to proceed\n"
         );
     }
 
@@ -1327,7 +1440,7 @@ mod tests {
         assert_eq!(calls, 0);
         assert_eq!(
             range.stdout,
-            "from-scratch reprocess plan:\n1 days with data (1 segments) will be queued. Progress will be visible in solstone journal top or solstone journal health. Requests survive a supervisor restart; a day that cannot finish from scratch finishes as an ordinary reprocess.\nThese days can take hours; today's work goes first between tasks.\nre-run with --yes to proceed\n"
+            "from-scratch reprocess plan:\n1 day with data (1 segment) will be queued. Progress will be visible in solstone journal top or solstone journal health. Requests survive a supervisor restart; a day that cannot finish from scratch finishes as an ordinary reprocess.\nThis day can take hours; today's work goes first between tasks.\nre-run with --yes to proceed\n"
         );
     }
 

@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for empty range.",
+  "context": "Journal command-line text for empty range.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "through",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8fea6076fe380af0ef839fc96b425e9fd19448a56509cee658042ec74f3bd530",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

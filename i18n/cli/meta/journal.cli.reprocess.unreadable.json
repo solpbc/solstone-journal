@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for unreadable.",
+  "context": "Journal command-line text for unreadable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "538584dbb960c0414a0be82319c9ec35031d318b242a2f2f0d1ca8bae4bf0894",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -411,6 +411,10 @@ pub fn claim_daily_execution(
 }
 
 pub fn read_daily_unit_record(path: &Path) -> Result<Option<DailyUnitRecord>, DailyUnitError> {
+    read_record(path).map_err(DailyUnitError::Io)
+}
+
+fn read_record(path: &Path) -> io::Result<Option<DailyUnitRecord>> {
     match crate::durability::read_json_durable_validated::<DailyUnitRecord>(
         crate::durability::ArtifactId::DailyUnits,
         path,
@@ -428,7 +432,7 @@ pub fn read_daily_unit_record(path: &Path) -> Result<Option<DailyUnitRecord>, Da
             | crate::durability::DurableRead::SetAside(_)
             | crate::durability::DurableRead::Unreadable { .. },
         ) => Ok(None),
-        Err(e) => Err(DailyUnitError::Io(e)),
+        Err(e) => Err(e),
     }
 }
 
@@ -453,18 +457,44 @@ pub fn load_daily_unit_record(
     journal: &Path,
     identity: &DailyUnitIdentity,
 ) -> Result<Option<DailyUnitRecord>, DailyUnitError> {
-    validate_identity(identity)?;
-    let path = daily_unit_record_path(journal, identity);
-    let record = read_daily_unit_record(&path)?;
-    if let Some(ref rec) = record
-        && rec.identity != *identity
-    {
-        return Err(DailyUnitError::Malformed(format!(
+    load_daily_unit_record_detailed(journal, identity).map_err(|error| match error {
+        DailyUnitReadError::InvalidIdentity => {
+            DailyUnitError::Malformed("invalid daily unit identity".into())
+        }
+        DailyUnitReadError::Io(cause) => DailyUnitError::Io(cause),
+        DailyUnitReadError::Mismatch { path, found } => DailyUnitError::Malformed(format!(
             "identity mismatch in record at {}: expected {:?}, found {:?}",
             path.display(),
             identity,
-            rec.identity
-        )));
+            found
+        )),
+    })
+}
+
+#[derive(Debug)]
+pub enum DailyUnitReadError {
+    InvalidIdentity,
+    Io(io::Error),
+    Mismatch {
+        path: PathBuf,
+        found: DailyUnitIdentity,
+    },
+}
+
+pub fn load_daily_unit_record_detailed(
+    journal: &Path,
+    identity: &DailyUnitIdentity,
+) -> Result<Option<DailyUnitRecord>, DailyUnitReadError> {
+    validate_identity(identity).map_err(|_| DailyUnitReadError::InvalidIdentity)?;
+    let path = daily_unit_record_path(journal, identity);
+    let record = read_record(&path).map_err(DailyUnitReadError::Io)?;
+    if let Some(found) = &record
+        && found.identity != *identity
+    {
+        return Err(DailyUnitReadError::Mismatch {
+            path,
+            found: found.identity.clone(),
+        });
     }
     Ok(record)
 }

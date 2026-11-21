@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for submitted process now.",
+  "context": "Journal command-line text for submitted process now.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4a2d173d1b910697816bd6eff915ea86c6fb46e21b1e3a6e37ac8f029137ecf1",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

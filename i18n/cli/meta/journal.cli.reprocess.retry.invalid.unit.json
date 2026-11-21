@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for retry invalid unit.",
+  "context": "Journal command-line text for retry invalid unit.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "965485900f8d796fb2c51ef3324688520949b363a50d7b741bf8e27fed5a02c1",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

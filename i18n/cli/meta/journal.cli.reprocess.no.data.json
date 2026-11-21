@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for no data.",
+  "context": "Journal command-line text for no data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f7bff685dce8745778774f488e9550dd2b622ee972f2ad6e55e9f92b36e93e6d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

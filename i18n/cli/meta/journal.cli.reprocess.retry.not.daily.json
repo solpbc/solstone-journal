@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for retry not daily.",
+  "context": "Journal command-line text for retry not daily.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "af0c965f1462a7fad0a02362bcc9b850cb8c6117e60fae1daf3f6288430b87f1",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for shape written.",
+  "context": "Journal command-line text for shape written.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c4b87b22e736500f6d728f856643c17ff13d07f5d00f7ccb139b6c8aa927612d",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

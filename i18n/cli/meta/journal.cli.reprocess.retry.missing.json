@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for retry missing.",
+  "context": "Journal command-line text for retry missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "909ece73aba57cfa082db2793201d4c4201d4012fd8804902a851d95874fbbba",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}
