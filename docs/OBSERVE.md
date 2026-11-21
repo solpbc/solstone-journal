@@ -190,7 +190,7 @@ STT use the active brain and bundled local runtimes; owner cloud keys live in
 
 ## tmux pane snapshots
 
-The [producer's frame format](https://github.com/solpbc/solstone-tmux/blob/main/docs/FORMAT.md)
+The [producer's frame format](https://github.com/solpbc/solstone-linux/blob/main/crates/solstone-terminal/FORMAT.md)
 defines `content.tmux.panes`. Alongside screen text and geometry, new frames may
 include `cursor_x`, `cursor_y`, `cursor_visible`, `alternate_on`, and
 `pane_in_mode`. Older frames omit them. These fields remain in stored originals;

@@ -515,7 +515,7 @@ Bare links don't motivate clicking. Each entry below says when you actually need
 | Doc | When to read |
 |-----|--------------|
 | `docs/APPS.md` | **Required before adding or moving a Convey app** — native registry, `*-web` crates, journal `solstone/apps/` storage |
-| `docs/THINK.md` | Understanding the think-layer pipeline (importers, indexer, segment/stream processing) |
+| `docs/THINK.md` | Understanding the think-layer pipeline (importers, indexer, segment/stream processing). § Talent schedule says which talents run when, what each feeds, and how to test one: start there when changing or evaluating a talent's behavior |
 | `docs/CORTEX.md` | Modifying talent execution, cortex lifecycle, talent process management |
 | `docs/GENERATE.md` | The `generate` contract — the record vocabulary for asking the model boundary for one completion, its two framings, and the invariants it guarantees. Read before writing anything that calls a model, or that consumes a completion's outcome. |
 | `docs/SOURCE_PASSAGES.md` | Using or changing source passages: exact, bounded copies of an activity's source with offsets and hashes, the one-completion rule, and what a passage does not claim |

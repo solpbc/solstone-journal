@@ -293,17 +293,13 @@ Agent outputs are AI-generated `.md` or `.json` files that provide human-readabl
 
 ### Segment outputs
 
-After the original media is processed, segment-level outputs are generated within each segment folder as `talents/<name>.md` or `talents/<name>.json`, depending on the talent's declared `output` format. Available segment output types are defined by templates in `solstone/talent/` with `"schedule": "segment"` in their metadata JSON.
+After the original media is processed, segment-level outputs are generated within each segment folder as `talents/<name>.md` or `talents/<name>.json`, depending on the talent's declared `output` format. `solstone journal talent list --schedule segment` lists the talents that write them.
 
 ### Daily outputs
 
 Post-processing generates day-level outputs in the `talents/` directory that synthesize all segments.
 
-**Generator discovery:** Available generator types are discovered at runtime from:
-- `solstone/talent/*.md` – system generator templates (files with `schedule` field but no `tools` field)
-- `solstone/apps/{app}/talent/*.md` – app-specific generator templates
-
-Each template is a `.md` file with JSON frontmatter containing metadata (title, description, schedule, output format). The `schedule` field is required and must be `"segment"` or `"daily"` - generators with missing or invalid schedule are skipped. Use `get_talent_configs(has_tools=False)` from `solstone/think/talent.py` to retrieve all available generators, or `get_talent_configs(has_tools=False, schedule="daily")` to get generators filtered by schedule.
+**Which talents run:** the journal ships its talents, system ones and app-specific ones, each a `.md` file with JSON frontmatter (title, description, schedule, priority, output format). The `schedule` field says when one runs: `"segment"`, `"activity"`, `"cadence"`, `"daily"` or `"weekly"`; a talent without one runs only when a feature asks for it. `solstone journal talent list` lists them all, `--schedule daily` filters by schedule, `--json` prints each one's frontmatter, and `solstone journal talent show <name>` shows one.
 
 **Output naming:**
 - System outputs: `talents/{agent}.md` or `talents/{agent}.json`, depending on declared `output`

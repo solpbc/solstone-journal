@@ -139,7 +139,7 @@ If you change the helper source, rebuild it before testing the CoreML parakeet p
 
 ### Skills and talents
 
-Talent prompts live under `core/payload/solstone/talent/<name>.md`; apps may add app-specific talent files under `core/payload/solstone/apps/<app>/talent/`. Talent frontmatter declares type, schedule, provider/model behavior, hooks, priority, and output expectations.
+Talent prompts live under `core/payload/solstone/talent/<name>.md`; apps may add app-specific talent files under `core/payload/solstone/apps/<app>/talent/`. Talent frontmatter declares type, schedule, provider/model behavior, hooks, priority, and output expectations. Which talents run when, and what each one feeds: [`docs/THINK.md`](docs/THINK.md) § Talent schedule.
 
 The installed project skills are the two router skills under `core/payload/solstone/talent/solstone/` and `core/payload/solstone/talent/journal/`. App command fragments under `core/payload/solstone/apps/<app>/talent/<app>/SKILL.md` carry extra guidance, but are not installed as top-level skills. The router skills use live CLI help for command lists.
 
