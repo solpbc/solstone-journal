@@ -599,13 +599,48 @@ fn header_keeps_caller_and_model_setting_slots_distinct() {
     assert_eq!(
         rows(&created[0].path)[0],
         json!({
-            "imported": {"id": "id", "facet": "work", "setting": "caller-setting"},
+            "imported": {
+                "id": "id", "facet": "work", "setting": "caller-setting",
+                "triage": {"kind": "transcripts", "ruleset_version": 7, "reasons": ["webvtt_cues"]}
+            },
             "raw": "../../../imports/id/t.txt",
             "untimed": true,
             "topics": "planning",
             "setting": "office"
         })
     );
+}
+
+#[test]
+fn identically_named_conversations_keep_their_own_evidence_without_the_sidecar() {
+    use solstone_core_format::content::conversation::{
+        ConversationMedium::{Spoken, Unresolved, Written},
+        imported_text_medium,
+    };
+    for (text, expected) in [
+        ("WEBVTT\n\n00:01.000 --> 00:03.000\nA bell rings.\n", Spoken),
+        (
+            "10:07:10 From Ivo : Hold it.\n10:07:12 From Pia to Everyone : Holding.\n",
+            Written,
+        ),
+        (
+            "[9:01] Lio: Ready?\n[9:02] Val: Yes.\n[9:03] Lio: Go.\n",
+            Unresolved,
+        ),
+    ] {
+        let (_root, source, day) = setup("meeting.txt", text);
+        let created = run_ok(&source, &day, "12:00:00", &RecordingWire::always(wire_down));
+        let path = &created[0].path;
+        assert_eq!(path.file_name().unwrap(), "conversation_transcript.jsonl");
+        let mut header = rows(path).remove(0);
+        assert_eq!(imported_text_medium(&header, None), expected);
+        let legacy: Value =
+            serde_json::from_slice(&fs::read(path.with_file_name("import_kind.json")).unwrap())
+                .unwrap();
+        header["imported"].as_object_mut().unwrap().remove("triage");
+        assert_eq!(imported_text_medium(&header, Some(&legacy)), expected);
+        assert_eq!(imported_text_medium(&header, None), Unresolved);
+    }
 }
 
 #[test]

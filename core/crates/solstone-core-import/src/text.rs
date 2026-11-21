@@ -510,6 +510,7 @@ fn import(
                     origin,
                     import_id,
                     raw_filename,
+                    &verdict,
                     facet,
                     setting,
                     context.as_ref(),
@@ -1462,6 +1463,7 @@ fn jsonl_rows(
     origin: Timestamp,
     import_id: &str,
     raw_filename: &str,
+    verdict: &Verdict,
     facet: Option<&str>,
     caller_setting: Option<&str>,
     context: Option<&TileContext>,
@@ -1469,6 +1471,9 @@ fn jsonl_rows(
 ) -> Vec<Value> {
     let mut imported = Map::new();
     imported.insert("id".to_owned(), Value::String(import_id.to_owned()));
+    // Keep the source-format evidence with this import's rows. A neighboring
+    // note, attachment or earlier sidecar may have a different origin.
+    imported.insert("triage".to_owned(), serde_json::json!(verdict));
     if let Some(facet) = facet.filter(|value| !value.is_empty()) {
         imported.insert("facet".to_owned(), Value::String(facet.to_owned()));
     }

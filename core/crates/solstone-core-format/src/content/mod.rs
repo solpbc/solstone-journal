@@ -15,6 +15,7 @@ pub mod body_records;
 pub mod granola;
 pub use audio::{OTHER_VOICE, audio_speaker_label};
 mod browser;
+pub mod conversation;
 mod day_accumulator;
 mod desktop_activity;
 mod documents;
