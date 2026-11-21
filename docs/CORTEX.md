@@ -266,7 +266,9 @@ When a talent completes successfully, Rust publishes its result through the tale
 - Include an `output` field in the talent's frontmatter with the format ("md" or "json")
 - Output path is derived from talent name + format + schedule:
   - Daily talents: `chronicle/YYYYMMDD/talents/{name}.{ext}`
-  - Segment talents: `chronicle/YYYYMMDD/{segment}/{name}.{ext}`
+  - Segment talents: `chronicle/YYYYMMDD/{stream}/{segment}/talents/{name}.{ext}`
+  - A multi-facet run adds the facet: `talents/{facet}/{name}.{ext}`
+  - An app talent's file is named `_{app}_{name}.{ext}`
 - Writing occurs before completion
 - A publication failure produces a terminal failure even if the completion succeeded
 - Commonly used for scheduled talents that generate daily reports
@@ -292,9 +294,14 @@ The JSON frontmatter for a talent can include:
   the bundled model: 1.5 times its largest real output, rounded up to a multiple
   of 256. A talent without one fails validation, and nothing raises it (see
   [PROVIDERS.md § Output and Context Budgets](PROVIDERS.md#output-and-context-budgets))
-- `schedule`: Scheduling configuration for automated execution
-  - `"daily"`: Run automatically at the configured daily scheduler time
+- `schedule`: When the talent runs automatically; a talent without one runs only when a feature asks for it
+  - `"segment"`: for each segment, after its media is processed
+  - `"activity"`: when an activity ends
+  - `"cadence"`: every `cadence_minutes` (default 5), only if a segment or activity finished since its last run
+  - `"daily"`: at the configured daily scheduler time
     (`00:15` for a newly initialized schedule configuration)
+  - `"weekly"`: once a week, for the week that just ended
+  - Which talents use each, and what they feed: [THINK.md](THINK.md) § Talent schedule
 - `temperature`: The talent's sampling temperature (default 0.3); a request cannot change it
 - `mobile_local_timeout_s`: An optional positive generation timeout in seconds for
   the bundled local model on Android and iOS. Generate selects it after resolving
@@ -382,29 +389,12 @@ To force an agent to run for all facets regardless of activity, set `"always": t
 }
 ```
 
-#### Segment Multi-Facet Agents
+#### Segment Talents and Facets
 
-Segment agents can also be multi-facet. Active facets are determined from the `facets.json` output written by the facets generator (priority 90) during segment processing.
-
-```json
-{
-  "title": "Facet Activity Tracker",
-  "schedule": "segment",
-  "multi_facet": true
-}
-```
-
-The facets generator outputs an array of detected facets for each segment:
-```json
-[
-  {"facet": "work", "activity": "Code review", "level": "high"},
-  {"facet": "personal", "activity": "Email check", "level": "low"}
-]
-```
-
-Multi-facet segment agents spawn once per non-muted facet in this array. Muted facets are filtered out, consistent with daily agent behavior. If no enabled facets are detected (empty array, missing file, or all facets muted), the agent simply doesn't spawn for that segment.
-
-**Note**: The `"always"` flag is not supported for segment agents since facet detection is inherent to the segment content.
+`multi_facet` applies to daily and weekly talents. Segment talents run once per segment.
+Sense picks the segment's facets: its output's `facets` list, filtered to the journal's
+declared facets, is written to the segment's `talents/facets.json`, which daily facet
+detection above reads.
 
 ## Process Management
 

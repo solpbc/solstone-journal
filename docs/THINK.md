@@ -19,12 +19,44 @@ no Python think package and `make install` does not install one.
 ```bash
 solstone journal think [--day YYYYMMDD] [--segment HHMMSS_LEN] [--stream NAME] [--refresh] [--flush]
 solstone journal supervisor [--no-daily] [--no-cortex] [--no-spl] [--no-convey] [--no-schedule]
-solstone journal talent list [--schedule daily|segment] [--json]
+solstone journal talent list [--schedule daily|segment|activity] [--json]
 solstone journal talent show <name> [--prompt] [--day YYYYMMDD] [--segment HHMMSS_LEN] [--full]
 solstone journal talent passages <name> --day YYYYMMDD --facet NAME --activity ID [--json]
 ```
 
 `--refresh` overwrites existing generator output.
+
+## Talent schedule
+
+Each talent's frontmatter `schedule` decides when it runs. Within one trigger, lower
+`priority` runs first and equal priorities run together. `solstone journal talent list
+--json` prints every talent's frontmatter.
+
+| `schedule` | when it runs | talents, in priority order | what the owner sees |
+|---|---|---|---|
+| `segment` | each segment, after its media is processed | `sense`; `screen`, `documents`; `detection`, `possible_names`; `speaker_attribution` | Sense's activity line, possible-name labels beside the transcript, voice labels |
+| `activity` | when an activity ends | `participation`; `work` or `conversation`, whichever the activity record selects | the story (its first sentence becomes the title), topics, participation |
+| `cadence` | every `cadence_minutes` (5), only if a segment or activity finished since its last run | `pulse` | Home's pulse, including `needs_you` |
+| `daily` | once a day at the scheduler's daily time (`00:15` for a new configuration) | `daily_schedule`; `morning_briefing`; `entities_review`; `entity_suggest`; `entity_observer` | the daily briefing (`morning_briefing`) and entity notes; `daily_schedule` only times maintenance |
+| `weekly` | once a week (Sunday `03:15` for a new configuration), for the week that just ended | `weekly_reflection` | the weekly reflection on Home, a weekly notification, and in search |
+| none | when a feature asks | `entity_describe`; `linked_presence`, `linked_share`, `linked_share_activity` | entity descriptions, the sharing flow |
+
+The `cadence` entry in `config/schedules.json` runs `solstone journal think --cadence` every
+five minutes. Pulse skips a run, logging `talent.skip`, when its interval has not elapsed
+(`interval_not_elapsed`) or nothing finished since its last run (`no_new_work`). Otherwise its
+pre-hook gathers the segments and activities completed since then, and its output carries
+`title`, `one_sentence`, `full_details` and `needs_you`.
+
+Pulse, the daily briefing and the weekly reflection are written to be read. Stories, entity
+notes and labels are records kept current in place. `entities_review` promotes recurring
+entities to attached by itself, and `entity_observer` adds or corrects notes from
+`entity_suggest`'s candidates without asking the owner.
+
+To test a talent's behavior, render its prompt with `solstone journal talent show <name>
+--prompt` for a real `--day` and `--segment`, and set `debug.log_talent_requests` to `true` in
+`config/journal.json` to keep the exact request each run sent ([CORTEX.md](CORTEX.md) § `generate_input`). Outputs land at
+`chronicle/<day>/<stream>/<segment>/talents/<name>.<ext>` for segment talents and
+`chronicle/<day>/talents/<name>.<ext>` for daily ones (see [CORTEX.md](CORTEX.md) § Talent Output).
 
 ## Talent inputs
 
