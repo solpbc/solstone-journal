@@ -1837,12 +1837,12 @@ function renderImportRow(imp, picking = false) {
   }
   html += '</td>';
   html += `<td class="import-file-cell">${escapeHtml(fileDisplay)}${note ? `<div class="import-row-note">${escapeHtml(IMPORT_DELETE_COPY.notes[note] || IMPORT_DELETE_COPY.notes.other)}</div>` : ''}</td>`;
-  const origins = { browser:'browser', cli:'cli', linux:'linux', desktop:'desktop', mobile:'mobile', mobile_share:'mobile' };
+  const origins = { browser:'browser', cli:'cli', linux:'linux', desktop:'desktop', mobile:'mobile', mobile_share:'mobile', mobile_photos:'mobile' };
   const originKey = Object.hasOwn(origins, imp.imported_via) ? origins[imp.imported_via] : null;
   const origin = imp.observer_handle
     ? handoffText('device', [['device', String(imp.observer_handle)]])
     : originKey ? handoffText('origin.' + originKey) : '';
-  html += `<td class="source-cell">${sourceCell}${origin ? '<div>' + escapeHtml(origin) + '</div>' : ''}</td>`;
+  html += `<td class="source-cell"><div class="import-source-label">${sourceCell}</div>${origin ? '<div>' + escapeHtml(origin) + '</div>' : ''}</td>`;
   if (imp.source_hint === 'apple_health' && imp.status === 'pending') {
     statusDetail += `<div><a href="/app/import/#guide/apple_health/${encodedId}">${escapeHtml(handoffText('health.review'))}</a></div>`;
   }
@@ -3055,7 +3055,7 @@ function updateImportRow(importId, eventData, options = {}) {
 
   const statusCell = row.querySelector('.status-cell');
   const statsCell = row.querySelector('.stats-cell');
-  const sourceCell = row.querySelector('.source-cell');
+  const sourceCell = row.querySelector('.import-source-label');
 
   if (IMPORT_ROW_EVENTS.has(eventData.event)) {
     if (!importEvents[importId]?.stalled) {
