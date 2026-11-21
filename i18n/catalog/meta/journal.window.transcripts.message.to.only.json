@@ -1,0 +1,21 @@
+{
+  "description": "Recipients line of a message sent privately to one person inside a group conversation.",
+  "context": "Journal window, transcripts view. Under a message's sender.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "recipient",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "dace91d881a849a9aa98ab91eed4e944561f151bb02e9a34a945b354cc5e8565",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "The kind of an older imported conversation the journal can't tell was spoken or written.",
+  "context": "Journal window. Transcripts and search display the kind and provenance of a filed import.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d5514f7ed22cb247436abaacf2872208e9043b9b32e0f6a5ea8cc11040e0304f",
+  "max_length": 40,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Accessible name of the switch that filters a day by what its items are.",
+  "context": "Journal window, transcripts view. Names the day switch between everything, transcripts and messages.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d6107d74845dbea860a54c445485fb485a8e49381e8ea35476e2321bb7e216ae",
+  "max_length": 40,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

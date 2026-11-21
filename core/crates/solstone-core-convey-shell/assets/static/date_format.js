@@ -469,6 +469,29 @@
     return window.JournalI18n.render(IMPORT_ITEM_COPY + 'label', [['kind', kind], ['source', source]]);
   }
 
+  // A saved conversation the journal resolved as written (messages), or
+  // couldn't place (a conversation). Spoken transcripts keep importItem.
+  const CONVERSATION_SOURCES = { ChatGPT: 'chatgpt', Claude: 'claude', Gemini: 'gemini', imported: 'imported' };
+
+  function conversationKind(item) {
+    if (!item) return null;
+    if (item.conversation_state === 'unresolved') return 'conversation';
+    if (item.content_kind === 'messages') return 'messages';
+    if (item.content_kind === 'transcripts') return 'transcripts';
+    return null;
+  }
+
+  function conversationItem(item) {
+    const kind = conversationKind(item);
+    if (kind !== 'messages' && kind !== 'conversation') return '';
+    const source = CONVERSATION_SOURCES[item.source];
+    if (!source) return '';
+    return window.JournalI18n.render(IMPORT_ITEM_COPY + 'label', [
+      ['kind', window.JournalI18n.render(IMPORT_ITEM_COPY + 'kind.' + kind)],
+      ['source', window.JournalI18n.render(IMPORT_ITEM_COPY + 'source.' + source)],
+    ]);
+  }
+
   function isDateOnlyImport(item) {
     return item?.kind === 'notes' || item?.kind === 'documents';
   }
@@ -489,6 +512,8 @@
 
   window.JournalFormat = {
     importItem,
+    conversationItem,
+    conversationKind,
     isDateOnlyImport,
     filedDay,
     processingLane,

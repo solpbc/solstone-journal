@@ -1,0 +1,16 @@
+{
+  "description": "Recipients line of a message sent to everyone in a group chat or meeting.",
+  "context": "Journal window, transcripts view. Under a message's sender.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3689ebc681c611d897372148bc8189872a6686aeecf79119186884d6a9141208",
+  "max_length": 40,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

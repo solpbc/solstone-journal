@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy: the segment's conversation the journal can't place, listed among what a delete moves.",
+  "context": "Journal window, transcripts view. Consent trash copy conversation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d5514f7ed22cb247436abaacf2872208e9043b9b32e0f6a5ea8cc11040e0304f",
+  "max_length": 60,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}
