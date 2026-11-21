@@ -28,7 +28,7 @@ pub(super) fn read(text: &str, reasons: &[&str]) -> Option<Reading> {
     } else {
         return None;
     };
-    (!turns.is_empty() && turns.iter().all(|t| t.text.len() <= 8 * 1024)).then(|| Reading {
+    (!turns.is_empty()).then(|| Reading {
         clock_start: None,
         untimed: turns.iter().all(|turn| {
             matches!(
@@ -222,7 +222,7 @@ mod tests {
 
     fn rows(name: &str, input: &str) -> (ConversationMedium, Vec<Value>) {
         let verdict = crate::triage::classify(input.as_bytes(), name, Path::new(""), None, None);
-        let reading = reading_for(input, &verdict);
+        let reading = reading_for(input, &verdict, "import.text");
         let rows = jsonl_rows(
             &reading.turns,
             0,

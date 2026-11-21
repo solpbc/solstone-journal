@@ -361,7 +361,7 @@ fn import(
     let mut created = Vec::new();
 
     let (planned, untimed) = plan_tiles(
-        reading_for(&text, &verdict),
+        reading_for(&text, &verdict, stream),
         day_dir,
         start_time,
         stream,
@@ -588,7 +588,7 @@ pub fn preview(
 ) -> Result<crate::size::ImportSize, TextImportError> {
     let (text, verdict, _) = read_source(path)?;
     let (planned, _) = plan_tiles(
-        reading_for(&text, &verdict),
+        reading_for(&text, &verdict, stream),
         day_dir,
         start_time,
         stream,
@@ -929,30 +929,83 @@ fn zoom_chat_turns(text: &str) -> Option<Vec<Turn>> {
         }
     }
     // A partial parse leaves the original import representation intact.
-    (!turns.is_empty()
-        && turns
-            .iter()
-            .all(|t| !t.text.trim().is_empty() && t.text.len() <= 8 * 1024))
-    .then_some(turns)
+    (!turns.is_empty() && turns.iter().all(|t| !t.text.trim().is_empty())).then_some(turns)
 }
 
-fn reading_for(text: &str, verdict: &Verdict) -> Reading {
-    if verdict.kind == ContentKind::Transcripts
-        && let Some(reading) = export_turns::read(text, &verdict.reasons)
-    {
-        return reading;
+/// The ordinary reader takes one line per turn. Registered text exchanges
+/// can also resume within a large row, provided its encoded JSON fits.
+fn readable_export(reading: &Reading, verdict: &Verdict, stream: &str) -> bool {
+    use solstone_core_format::content::conversation::{
+        ConversationMedium, MAX_CONVERSATION_ROW_BYTES, verdict_medium_with_notice,
+    };
+    let fields = |turn: &Turn| {
+        turn.text.len()
+            + turn.speaker.as_deref().unwrap_or_default().len()
+            + turn.recipient.as_deref().unwrap_or_default().len()
+            + match &turn.export_time {
+                ExportTime::Caption { start, end } => start.len() + end.len(),
+                _ => 0,
+            }
+    };
+    if reading.turns.iter().all(|turn| fields(turn) <= 8 * 1024) {
+        return true;
     }
-    if verdict.kind == ContentKind::Transcripts
-        && verdict.reasons.contains(&"zoom_chat")
-        && let Some(turns) = zoom_chat_turns(text)
+    let notice = reading.turns.iter().any(|turn| turn.exporter_notice);
+    if stream != "import.text"
+        || reading
+            .turns
+            .iter()
+            .any(|t| matches!(t.export_time, ExportTime::Caption { .. }))
+        || verdict_medium_with_notice(&serde_json::json!(verdict), notice)
+            == ConversationMedium::Spoken
     {
-        // Zoom's saved chat carries a local clock but no date or time zone.
-        // Keep the filing time separate from a message's own send instant.
-        return Reading {
-            clock_start: None,
-            turns,
-            untimed: true,
-        };
+        return false;
+    }
+    // Reserve room for generated keys, times and the newline. Small values
+    // fit even at JSON's worst expansion. Measure larger values as encoded.
+    let budget = MAX_CONVERSATION_ROW_BYTES - 1024;
+    reading.turns.iter().all(|turn| {
+        let bytes = fields(turn);
+        if bytes <= budget / 6 {
+            return true;
+        }
+        if bytes > budget {
+            return false;
+        }
+        [
+            Some(turn.text.as_str()),
+            turn.speaker.as_deref(),
+            turn.recipient.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        .flat_map(str::bytes)
+        .map(|byte| match byte {
+            b'"' | b'\\' | 8 | 9 | 10 | 12 | 13 => 2usize,
+            0..=31 => 6,
+            _ => 1,
+        })
+        .sum::<usize>()
+            <= budget
+    })
+}
+
+fn reading_for(text: &str, verdict: &Verdict, stream: &str) -> Reading {
+    if verdict.kind == ContentKind::Transcripts {
+        let reading = export_turns::read(text, &verdict.reasons).or_else(|| {
+            if !verdict.reasons.contains(&"zoom_chat") {
+                return None;
+            }
+            // The export carries a local clock without a date or timezone.
+            Some(Reading {
+                clock_start: None,
+                turns: zoom_chat_turns(text)?,
+                untimed: true,
+            })
+        });
+        if let Some(reading) = reading.filter(|r| readable_export(r, verdict, stream)) {
+            return reading;
+        }
     }
     if verdict.kind == ContentKind::Transcripts
         && verdict.reasons.contains(&"existing_timed_layout")
@@ -1668,7 +1721,7 @@ mod tests {
         let source = "10:07:10 From Ivo to Everyone : Hold it.\n\n> quoted café\n\u{200e}10:07:12\u{a0}From\u{202f}Pia : Holding.";
         let verdict = triage::classify(source.as_bytes(), "meeting.txt", Path::new(""), None, None);
         assert!(verdict.reasons.contains(&"zoom_chat"));
-        let reading = reading_for(source, &verdict);
+        let reading = reading_for(source, &verdict, "import.text");
         assert!(reading.untimed);
         assert_eq!(reading.turns.len(), 2);
         assert_eq!(reading.turns[0].speaker.as_deref(), Some("Ivo"));
@@ -1676,14 +1729,35 @@ mod tests {
         assert_eq!(reading.turns[0].text, "Hold it.\n\n> quoted café");
         assert_eq!(reading.turns[1].recipient, None);
         assert_eq!(reading.turns[1].speaker.as_deref(), Some("Pia"));
-        let long = format!("10:07:12 From Pia : {}", "é".repeat(6000));
-        assert!(zoom_chat_turns(&long).is_none());
+        let body = format!("{}\n\nLast paragraph.", "é".repeat(38_000));
+        let long = format!("10:07:12 From Pia : {body}\n10:08:12 From Ivo : Done.");
+        let long_verdict =
+            triage::classify(long.as_bytes(), "meeting.txt", Path::new(""), None, None);
+        let long_reading = reading_for(&long, &long_verdict, "import.text");
+        assert_eq!(long_reading.turns.len(), 2);
+        assert_eq!(long_reading.turns[0].text, body);
+        assert_eq!(long_reading.turns[0].speaker.as_deref(), Some("Pia"));
         assert!(
-            reading_for(&long, &verdict)
+            reading_for(&long, &long_verdict, "custom")
                 .turns
                 .iter()
-                .all(|turn| turn.text.len() <= 8 * 1024)
+                .all(|t| t.text.len() <= 8 * 1024)
         );
+    }
+
+    #[test]
+    fn a_padded_caption_clock_cannot_create_an_unreadable_spoken_row() {
+        let hours = "0".repeat(70_000);
+        let text = format!("WEBVTT\n\n{hours}:00:00.000 --> {hours}:00:01.000\nHello.\n");
+        let verdict = Verdict {
+            kind: ContentKind::Transcripts,
+            reasons: vec!["webvtt_cues"],
+            ..triage::classify(b"", "captions.vtt", Path::new(""), None, None)
+        };
+        let parsed = export_turns::read(&text, &verdict.reasons).unwrap();
+        assert!(!readable_export(&parsed, &verdict, "import.text"));
+        let fallback = reading_for(&text, &verdict, "import.text");
+        assert!(fallback.turns.iter().all(|t| t.text.len() <= 8 * 1024));
     }
 
     #[test]
@@ -1692,7 +1766,7 @@ mod tests {
         let verdict = triage::classify(text.as_bytes(), "document.txt", Path::new(""), None, None);
         assert_eq!(verdict.kind, ContentKind::Documents);
         assert!(verdict.reasons.contains(&"existing_timed_layout"));
-        let reading = reading_for(text, &verdict);
+        let reading = reading_for(text, &verdict, "import.text");
         assert!(reading.turns.iter().all(|turn| turn.offset == 0));
     }
 

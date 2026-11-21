@@ -12,6 +12,9 @@ use serde_json::Value;
 
 use super::{AdmittedCategory, IMPORT_KIND_FILENAME};
 
+/// Largest encoded exchange row the bounded passage reader can open.
+pub const MAX_CONVERSATION_ROW_BYTES: usize = 32 * 1024 * 1024;
+
 /// Timing available for one imported conversation turn. Older chat writers
 /// sometimes used the thread or activity time to file both sides of an exchange.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -479,7 +482,10 @@ pub fn imported_text_medium(header: &Value, sidecar: Option<&Value>) -> Conversa
 fn verdict_medium(verdict: &Value) -> ConversationMedium {
     verdict_medium_with_notice(verdict, false)
 }
-fn verdict_medium_with_notice(verdict: &Value, whatsapp_notice: bool) -> ConversationMedium {
+
+/// Resolve the exporter evidence the writer will store with these turns.
+/// A WhatsApp notice counts only when parsed as a senderless exporter event.
+pub fn verdict_medium_with_notice(verdict: &Value, whatsapp_notice: bool) -> ConversationMedium {
     use ConversationMedium::{Spoken, Unresolved, Written};
     let Some(version @ 1..=7) = verdict["ruleset_version"].as_u64() else {
         return Unresolved;

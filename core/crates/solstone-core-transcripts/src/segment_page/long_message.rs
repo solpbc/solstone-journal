@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use solstone_core_format::content::conversation::{ConversationMedium, file_medium_with_header};
+use solstone_core_format::content::conversation::{
+    ConversationMedium, MAX_CONVERSATION_ROW_BYTES, file_medium_with_header,
+};
 use solstone_core_journal_io::{
     JournalRoot,
     media::{FileReadVersion, MediaDirectory},
@@ -19,7 +21,6 @@ use super::SegmentTranscriptReadError as Error;
 
 // Only the first read parses the complete historical row. Later reads seek
 // into the validated string and decode one small window directly from disk.
-const MAX_LEGACY_ROW: usize = 32 * 1024 * 1024;
 const PASSAGE_BYTES: usize = 8 * 1024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
@@ -133,10 +134,10 @@ fn first(
 ) -> Result<Passage, Error> {
     file.seek(SeekFrom::Start(offset)).map_err(|_| Error::Io)?;
     let mut line = Vec::new();
-    BufReader::new(file.take((MAX_LEGACY_ROW + 1) as u64))
+    BufReader::new(file.take((MAX_CONVERSATION_ROW_BYTES + 1) as u64))
         .read_until(b'\n', &mut line)
         .map_err(|_| Error::Io)?;
-    if line.len() > MAX_LEGACY_ROW {
+    if line.len() > MAX_CONVERSATION_ROW_BYTES {
         return Err(Error::RecordTooLarge);
     }
     let fields: BTreeMap<String, &RawValue> =
