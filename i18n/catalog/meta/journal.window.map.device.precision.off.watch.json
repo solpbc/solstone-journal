@@ -1,0 +1,16 @@
+{
+  "description": "Explains reduced location precision for a known device kind.",
+  "context": "Journal window. Explains reduced location precision for a known device kind.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dc39cdb25cebe4d5f81b4b6688a7b735f0b5803ca6bd6e385d85d63198ae73a7",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

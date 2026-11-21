@@ -1,0 +1,21 @@
+{
+  "description": "Describes the storage freed and the effect of removing the pack.",
+  "context": "Journal window. Describes the storage freed and the effect of removing the pack.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "storage",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ca226aa3116f07fc0ab304bc6d84ae1a8109b675f4c5a443b0fd5752be65ca80",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

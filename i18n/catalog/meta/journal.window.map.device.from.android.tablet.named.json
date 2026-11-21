@@ -1,0 +1,21 @@
+{
+  "description": "Heading or metadata showing the originating location device.",
+  "context": "Journal window. Heading or metadata showing the originating location device.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "device_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1ac00336244d2c945e6b040a554020118924ee21fabeccd766ad0abfa6ed84dc",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

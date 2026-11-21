@@ -1,0 +1,21 @@
+{
+  "description": "The month view reports two interruptions from an unrecognized device.",
+  "context": "Journal window. The month view reports two interruptions from an unrecognized device.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "device",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "eb279e1bfdd50ff9ed826be7dc5fa7c9adad38ba3602bd7a2e5e55aeed718068",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

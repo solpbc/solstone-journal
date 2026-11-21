@@ -1,0 +1,21 @@
+{
+  "description": "Metadata for a location stay with its originating device.",
+  "context": "Journal window. Metadata for a location stay with its originating device.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "device_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d9a32a0300b8ee00aec710147b8b9005ece3185bb98506d8cfd1e878bc71631c",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

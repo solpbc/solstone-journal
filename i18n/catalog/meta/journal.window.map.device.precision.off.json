@@ -1,0 +1,21 @@
+{
+  "description": "Why precise location disabled on this device changes the displayed area.",
+  "context": "Journal window. Why precise location disabled on this device changes the displayed area.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "device",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4ed37524584f02d4b8d69bad1682409d487e2023d97d1c28b06d0b2c669b7492",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

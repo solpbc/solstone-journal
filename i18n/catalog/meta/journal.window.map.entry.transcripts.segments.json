@@ -1,0 +1,30 @@
+{
+  "description": "Disclosure to open the underlying segments in Transcripts.",
+  "context": "Journal window. Disclosure to open the underlying segments in Transcripts.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "00b81362668f036ed054e99d9c5f8a56fff316590112c5ccc9a6862238562c46",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

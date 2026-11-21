@@ -1,0 +1,21 @@
+{
+  "description": "Metadata for a visit reported by the indicated device.",
+  "context": "Journal window. Metadata for a visit reported by the indicated device.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "device_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "db1107fa7efc93c7f550d40b1303dfa388b337829e6efbbb9af2f8e0a21b9f5e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

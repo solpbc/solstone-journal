@@ -1,0 +1,30 @@
+{
+  "description": "Count of stops excluded from the map because their locations are too wide or unknown.",
+  "context": "Journal window. Count of stops excluded from the map because their locations are too wide or unknown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "31f2b9167eb1fade73c45c03ce36c490f83a26c9b576077220e6a97dc8517373",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

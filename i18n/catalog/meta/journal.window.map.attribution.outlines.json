@@ -1,0 +1,41 @@
+{
+  "description": "Fixed English attribution for towns, borders and the optional location accuracy data.",
+  "context": "Journal window. Fixed English attribution for towns, borders and the optional location accuracy data.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "geonames_start",
+      "type": "string"
+    },
+    {
+      "name": "geonames_end",
+      "type": "string"
+    },
+    {
+      "name": "licence_start",
+      "type": "string"
+    },
+    {
+      "name": "licence_end",
+      "type": "string"
+    },
+    {
+      "name": "overture_start",
+      "type": "string"
+    },
+    {
+      "name": "overture_end",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "486902f43f92aaa7109f01a6a08ec2b9f5659603c0101e1444564b0319bbdcd8",
+  "max_length": 1000,
+  "risk": "legal",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

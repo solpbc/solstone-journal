@@ -1,0 +1,21 @@
+{
+  "description": "A stop with a reported end and no reported start.",
+  "context": "Journal window. A stop with a reported end and no reported start.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "departure",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a91700e5fe572d7432f3cff73df71c77a3493042299801139b620223c114e6ae",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

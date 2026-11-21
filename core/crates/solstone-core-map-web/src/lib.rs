@@ -457,6 +457,8 @@ fn device_json(view: &DayLocation, index: usize, device: &Device, locale: &str) 
         "precision_reduced": precision_reduced,
         "phrase": view.device_phrase_in(index, locale),
         "word": device.word_in(locale),
+        "word_key": device.word,
+        "visible_name": view.distinguishing_device_name(index),
         "platform": device.platform.as_str(),
         "tier": device.tier,
         "readings": device.readings,

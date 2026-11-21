@@ -1,0 +1,25 @@
+{
+  "description": "Link to a nearby month with location.",
+  "context": "Journal window. Link to a nearby month with location.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "month",
+      "type": "string"
+    },
+    {
+      "name": "year",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d7f0a460c7ba23463972347d7f73d784ca3623df741867967047a55cee33921f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Announces zooming into a set of grouped map areas.",
+  "context": "Journal window. Announces zooming into a set of grouped map areas.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "5b54599fff5f9e10dc6d573f6f1e93b09c8cbe8b86f32b24c0481de289ce9d6c",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

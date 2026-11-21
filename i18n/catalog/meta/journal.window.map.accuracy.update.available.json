@@ -1,0 +1,21 @@
+{
+  "description": "An installed location accuracy pack has an update, with its source and size.",
+  "context": "Journal window. An installed location accuracy pack has an update, with its source and size.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "size",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d921583df2e3ebf1a3e6aba850e847003eeea9eef4ab3a809baa3cb8fcb70d57",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

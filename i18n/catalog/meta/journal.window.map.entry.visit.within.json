@@ -1,0 +1,21 @@
+{
+  "description": "Shows the area that contains the position and its reported error margin.",
+  "context": "Journal window. Shows the area that contains the position and its reported error margin.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "area",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "452f02e4f4e8da11ebdb25a385dd647d4d95ac7ca5ff4447bd1d185d0f99bb04",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

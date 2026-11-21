@@ -1,0 +1,21 @@
+{
+  "description": "A stay inferred from readings supplied by the indicated device.",
+  "context": "Journal window. A stay inferred from readings supplied by the indicated device.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "device",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c51a23cfa6777677c9deda426d43e8e4ef4f24d1e03be4a41c42a3d964cbfba6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

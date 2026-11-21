@@ -1,0 +1,30 @@
+{
+  "description": "Number of areas outlined for the selected date.",
+  "context": "Journal window. Number of areas outlined for the selected date.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "a76eddcdd8fa203d72b607a4e580197bd55a36c8a0caea66e705391c3b5e9a09",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

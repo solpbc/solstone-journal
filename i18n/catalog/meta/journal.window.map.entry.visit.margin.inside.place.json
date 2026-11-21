@@ -1,0 +1,25 @@
+{
+  "description": "Explains the margin of error and the named place that contains it.",
+  "context": "Journal window. Explains the margin of error and the named place that contains it.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "margin_meters",
+      "type": "string"
+    },
+    {
+      "name": "place",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8fa1caaf54b43c08ad4f4324bf6bb896edee04d4857f487046d1605dfd1410fa",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

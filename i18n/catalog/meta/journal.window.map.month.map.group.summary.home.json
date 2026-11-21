@@ -1,0 +1,47 @@
+{
+  "description": "Accessible summary of grouped mapped areas and the independently counted areas in the list.",
+  "context": "Journal window. Accessible summary of grouped mapped areas and the independently counted areas in the list.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "shaded_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "area",
+      "type": "string"
+    },
+    {
+      "name": "shaded_areas",
+      "type": "string"
+    },
+    {
+      "name": "size",
+      "type": "string"
+    },
+    {
+      "name": "area_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "areas",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "a775b35486570a219b7db801988617824cb2f91a669ac409e31b06aa28de6744",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "shaded_quantity",
+    "type": "cardinal"
+  }
+}

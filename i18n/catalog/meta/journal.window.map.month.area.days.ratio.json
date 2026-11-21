@@ -1,0 +1,25 @@
+{
+  "description": "The number of days with a stop as a share of the days in the month.",
+  "context": "Journal window. The number of days with a stop as a share of the days in the month.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "days_with_stops",
+      "type": "string"
+    },
+    {
+      "name": "days_in_month",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a3d3df9b0f7c8ab4b26fabe0fc4d46eff9f68ec375caf63f405271c5e1575329",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

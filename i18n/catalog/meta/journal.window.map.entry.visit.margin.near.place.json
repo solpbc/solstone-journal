@@ -1,0 +1,29 @@
+{
+  "description": "Explains a nearby named place and the margin around this visit or stay.",
+  "context": "Journal window. Explains a nearby named place and the margin around this visit or stay.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "place",
+      "type": "string"
+    },
+    {
+      "name": "distance_meters",
+      "type": "string"
+    },
+    {
+      "name": "margin_meters",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "629daaa2b7564e1562518376eecbeeba4c569c9c14218b49937d92b4321bbe47",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

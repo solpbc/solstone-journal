@@ -1,0 +1,30 @@
+{
+  "description": "Number of owner-hidden places excluded from the month map.",
+  "context": "Journal window. Number of owner-hidden places excluded from the month map.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "69c39a16a2c2dedb20b03bec334adefb50137d648d6b228ec16251aa6fa4eef8",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

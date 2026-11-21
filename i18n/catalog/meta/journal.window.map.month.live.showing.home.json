@@ -1,0 +1,21 @@
+{
+  "description": "Live announcement when selecting the regular month area.",
+  "context": "Journal window. Live announcement when selecting the regular month area.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "area",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ea75f6517590dcae04c960ecc44c4586d783af0de4265d7dd580a5a2d01b2ece",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

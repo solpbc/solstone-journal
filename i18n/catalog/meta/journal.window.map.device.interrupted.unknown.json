@@ -1,0 +1,34 @@
+{
+  "description": "Interruption count with a device descriptor from an older or unrecognized response.",
+  "context": "Journal window. Interruption count with a device descriptor from an older or unrecognized response.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "device",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "c4d3bcd1a030ece4f7880964c054bcaa35d02f3c78f9e314a4352511dd9c1296",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

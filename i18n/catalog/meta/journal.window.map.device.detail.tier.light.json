@@ -1,0 +1,25 @@
+{
+  "description": "Label and emphasized explanation of the selected device location detail level.",
+  "context": "Journal window. Label and emphasized explanation of the selected device location detail level.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "level_start",
+      "type": "string"
+    },
+    {
+      "name": "level_end",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d522af31162b616e0044d2c87cfbce6348e95dc36fc0e549a49f9fc7561b8083",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

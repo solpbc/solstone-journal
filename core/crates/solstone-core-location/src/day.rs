@@ -261,24 +261,30 @@ impl DayLocation {
 
     pub fn device_phrase_in(&self, index: usize, locale: &str) -> String {
         let device = &self.devices[index];
-        let twins = self
-            .devices
-            .iter()
-            .filter(|other| other.word == device.word)
-            .count();
         let word = device.word_in(locale);
-        match (&device.name, twins > 1) {
-            (Some(name), true) => strings(
+        match self.distinguishing_device_name(index) {
+            Some(name) => strings(
                 locale,
                 "journal.window.map.device.possessive.named",
                 [("device", &word), ("name", name)],
             ),
-            _ => strings(
+            None => strings(
                 locale,
                 "journal.window.map.device.possessive",
                 [("device", &word)],
             ),
         }
+    }
+
+    /// The name that distinguishes a device when others of its kind also reported.
+    pub fn distinguishing_device_name(&self, index: usize) -> Option<&str> {
+        let device = &self.devices[index];
+        let name = device.name.as_deref()?;
+        self.devices
+            .iter()
+            .enumerate()
+            .any(|(other_index, other)| other_index != index && other.word == device.word)
+            .then_some(name)
     }
 }
 

@@ -1,0 +1,21 @@
+{
+  "description": "Shows the named area that contains a stay and its uncertainty margin.",
+  "context": "Journal window. Shows the named area that contains a stay and its uncertainty margin.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "area",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "39ee6f870e6b666805b33953b5cca191f589f258e11a2e50e98fcf6090a928ce",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Notice for time totals clipped to the active month.",
+  "context": "Journal window. Notice for time totals clipped to the active month.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "month",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "603467e900277552e25f01e5e4b83448a9cd23f122e283c56899638d0cc602fc",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

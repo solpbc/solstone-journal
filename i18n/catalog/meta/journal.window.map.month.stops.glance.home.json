@@ -1,0 +1,33 @@
+{
+  "description": "Share of the month with stops when all stopped days are in the main area.",
+  "context": "Journal window. Share of the month with stops when all stopped days are in the main area.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "days_with_stops",
+      "type": "string"
+    },
+    {
+      "name": "days_in_month",
+      "type": "string"
+    },
+    {
+      "name": "home_days",
+      "type": "string"
+    },
+    {
+      "name": "home_area",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c2f43285436e7d066f6421e42602b708e6c446022d9a225f523eff7159dff759",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

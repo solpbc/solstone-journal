@@ -1,0 +1,21 @@
+{
+  "description": "Link to a nearby day while the selected day has no location.",
+  "context": "Journal window. Link to a nearby day while the selected day has no location.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "date",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c64457b1c621194e0b10a015a562adf1926415b499385a53fa994bb0ed046b89",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
