@@ -202,7 +202,9 @@ pub fn run_mcp_probe(
     .map_err(|error| match error {
         DispatchError::InvalidInput
         | DispatchError::Tool(
-            ToolError::ActivityDayArguments | ToolError::TranscriptTimeArguments,
+            ToolError::ActivityDayArguments
+            | ToolError::TranscriptTimeArguments
+            | ToolError::WeekRangeArguments,
         ) => McpProbeError::InvalidInput,
         DispatchError::PermissionDenied(_) | DispatchError::KindDenied(_) => {
             McpProbeError::PermissionDenied
@@ -600,7 +602,8 @@ fn owner_error_reason(error: DispatchError) -> &'static str {
             ToolError::InvalidInput
             | ToolError::SourceArguments
             | ToolError::ActivityDayArguments
-            | ToolError::TranscriptTimeArguments,
+            | ToolError::TranscriptTimeArguments
+            | ToolError::WeekRangeArguments,
         )
         | DispatchError::InvalidInput => "the request's arguments were not valid for this tool",
         DispatchError::Tool(ToolError::SuggestionOperationConflict) => {
@@ -706,7 +709,22 @@ fn recorded_arguments(validated: &ValidatedTool) -> Map<String, Value> {
             );
         }
         ValidatedTool::GetWeek(request) => {
-            insert_present(&mut arguments, "week", request.week.as_deref());
+            match &request.query {
+                crate::tools::week::WeekQuery::Single(week) => {
+                    insert_present(&mut arguments, "week", week.as_deref());
+                }
+                crate::tools::week::WeekQuery::Range {
+                    day_from,
+                    day_to,
+                    cursor,
+                } => {
+                    arguments.insert("day_from".to_owned(), day_from.clone().into());
+                    arguments.insert("day_to".to_owned(), day_to.clone().into());
+                    if let Some(cursor) = cursor.as_deref() {
+                        arguments.insert("cursor".to_owned(), reference_fingerprint(cursor).into());
+                    }
+                }
+            }
             if !request.include.is_empty() {
                 arguments.insert(
                     "include".into(),

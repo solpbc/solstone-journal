@@ -17100,6 +17100,35 @@ fn week_summaries_and_typed_find_share_the_live_kind_and_facet_boundary() {
         summary["places"]["items"].to_string().contains("Denver"),
         "{summary}"
     );
+    let range_week = probe(
+        &journal,
+        "get_week",
+        json!({
+            "day_from": "2026-03-08",
+            "day_to": "2026-03-14",
+            "include": ["body", "places", "photos", "notes", "entities"],
+        }),
+    )
+    .unwrap();
+    assert_eq!(range_week["days"].as_array().unwrap().len(), 7);
+    assert_eq!(range_week["days"][0]["link"], week["days"][0]["link"]);
+    assert_eq!(range_week["days"][0]["summary"]["body"], summary["body"]);
+    assert_eq!(
+        range_week["days"][0]["summary"]["places"],
+        summary["places"]
+    );
+    assert_eq!(
+        range_week["days"][0]["summary"]["photos"]["count"],
+        summary["photos"]["count"]
+    );
+    assert_eq!(
+        range_week["days"][0]["summary"]["notes"]["items"][0]["title"],
+        "Orchard inventory"
+    );
+    assert_eq!(
+        range_week["days"][0]["summary"]["entities"],
+        summary["entities"]
+    );
     let place_rows = probe(&journal, "search", json!({"day": day, "kind":"places"})).unwrap();
     assert!(
         !place_rows["results"].as_array().unwrap().is_empty(),

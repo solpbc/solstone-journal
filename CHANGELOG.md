@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- an agent you've let see your whole journal, with transcripts and summaries, can now read a date range of up to a year as one row per day. each day carries its journal link and, when available, a top memory and quotes with their activity title. it can also include body, places, photos, notes and people for the kinds you've allowed.
 - when you choose an Obsidian vault, your journal uses the names you gave your paired devices and leaves out devices you removed.
 
 - an agent connected to your journal now gets instructions for showing your photos in something it builds for you, such as a printable book. in apps that let a page reach your journal, the instructions are for a page that loads each photo from your journal when you open it. your journal makes no public link for them.

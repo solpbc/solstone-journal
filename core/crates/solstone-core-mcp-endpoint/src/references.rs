@@ -31,6 +31,7 @@ pub(crate) enum ReferenceKind {
     ActivityList,
     SourceSpan,
     SegmentSpan,
+    WeekRange,
 }
 
 impl ReferenceKind {
@@ -48,6 +49,7 @@ impl ReferenceKind {
             Self::ActivityList => 10,
             Self::SourceSpan => 11,
             Self::SegmentSpan => 12,
+            Self::WeekRange => 13,
         }
     }
 
@@ -65,6 +67,7 @@ impl ReferenceKind {
             10 => Some(Self::ActivityList),
             11 => Some(Self::SourceSpan),
             12 => Some(Self::SegmentSpan),
+            13 => Some(Self::WeekRange),
             _ => None,
         }
     }
@@ -323,6 +326,15 @@ pub(crate) struct ActivityListCursor {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct WeekRangeCursor {
+    pub day_from: String,
+    pub day_to: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub include: Vec<String>,
+    pub next_day: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "target", rename_all = "snake_case")]
 pub(crate) enum ReferenceTarget {
     Entry(EntryReference),
@@ -337,6 +349,7 @@ pub(crate) enum ReferenceTarget {
     ActivityList(ActivityListCursor),
     SourceSpan(SourceSpanReference),
     SegmentSpan(SegmentSpanReference),
+    WeekRange(WeekRangeCursor),
 }
 
 impl ReferenceTarget {
@@ -354,6 +367,7 @@ impl ReferenceTarget {
             Self::ActivityList(_) => ReferenceKind::ActivityList,
             Self::SourceSpan(_) => ReferenceKind::SourceSpan,
             Self::SegmentSpan(_) => ReferenceKind::SegmentSpan,
+            Self::WeekRange(_) => ReferenceKind::WeekRange,
         }
     }
 }
@@ -591,7 +605,7 @@ mod tests {
     }
 
     #[test]
-    fn reference_kind_tags_roundtrip_1_through_12() {
+    fn reference_kind_tags_roundtrip_1_through_13() {
         for (kind, expected_tag) in [
             (ReferenceKind::Entry, 1),
             (ReferenceKind::Segment, 2),
@@ -605,11 +619,12 @@ mod tests {
             (ReferenceKind::ActivityList, 10),
             (ReferenceKind::SourceSpan, 11),
             (ReferenceKind::SegmentSpan, 12),
+            (ReferenceKind::WeekRange, 13),
         ] {
             assert_eq!(kind.tag(), expected_tag);
             assert_eq!(ReferenceKind::from_tag(expected_tag), Some(kind));
         }
-        for unknown in [0, 13, 255] {
+        for unknown in [0, 14, 255] {
             assert_eq!(ReferenceKind::from_tag(unknown), None);
         }
     }

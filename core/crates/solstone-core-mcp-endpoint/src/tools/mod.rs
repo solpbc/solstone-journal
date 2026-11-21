@@ -89,6 +89,7 @@ pub(crate) enum ToolError {
     SourceArguments,
     ActivityDayArguments,
     TranscriptTimeArguments,
+    WeekRangeArguments,
     SuggestionOperationConflict,
 }
 
@@ -104,9 +105,10 @@ impl ToolError {
             Self::FileUnreadable => "file_unreadable",
             Self::AuditUnavailable => "audit_unavailable",
             Self::ReferenceNotFound => "not_found",
-            Self::SourceArguments | Self::ActivityDayArguments | Self::TranscriptTimeArguments => {
-                "invalid_tool_input"
-            }
+            Self::SourceArguments
+            | Self::ActivityDayArguments
+            | Self::TranscriptTimeArguments
+            | Self::WeekRangeArguments => "invalid_tool_input",
             Self::SuggestionOperationConflict => "suggestion_operation_conflict",
         }
     }
@@ -136,6 +138,9 @@ impl ToolError {
             }
             Self::TranscriptTimeArguments => {
                 "time_from and time_to need a day, and time_to can't be before time_from"
+            }
+            Self::WeekRangeArguments => {
+                "pass either week for one week or both day_from and day_to for a date range (up to 366 days, with day_to on or after day_from); cursor needs day_from and day_to"
             }
             Self::SuggestionOperationConflict => {
                 "an operation with this id was already processed with different arguments"

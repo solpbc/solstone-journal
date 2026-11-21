@@ -11,20 +11,39 @@ use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_format::content::week_left_out::{LeftOut, read_left_out};
 use solstone_core_home::weekly::{
-    Said, WeekJudgment, checked_neighbors, format_week_intro, judge, resolve_day_cell_state,
-    week_day,
+    Said, TrustedSaid, WeekJudgment, checked_neighbors, format_week_intro, judge,
+    resolve_day_cell_state, week_day,
 };
 use solstone_core_indexer_query::AdmittedCategory;
 
 use super::ToolError;
-use crate::dispatch::{DispatchPrincipal, available_facets};
+use crate::dispatch::{DispatchPrincipal, available_facets, codec};
 use crate::permissions::ConnectionReadSnapshot;
-use crate::references::ActivityReference;
+use crate::references::{ActivityReference, ReferenceKind, ReferenceTarget, WeekRangeCursor};
+use crate::registry::category_token;
 use crate::segment_links::{LinkSubject, LiveTranscriptPages, issue_segment_links};
+
+/// Maximum inclusive days one range request may span (one full leap year).
+pub(crate) const MAX_RANGE_DAYS: usize = 366;
+/// Maximum day rows returned in one range page.
+pub(crate) const MAX_SPAN_PAGE_DAYS: usize = 100;
+/// Soft serialized byte ceiling per range page, keeping results comfortably
+/// inside hosted agent tool-result limits even when `include` is set.
+pub(crate) const MAX_SPAN_PAGE_BYTES: usize = 96 * 1024;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum WeekQuery {
+    Single(Option<String>),
+    Range {
+        day_from: String,
+        day_to: String,
+        cursor: Option<String>,
+    },
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ValidatedGetWeek {
-    pub(crate) week: Option<String>,
+    pub(crate) query: WeekQuery,
     pub(crate) include: BTreeSet<AdmittedCategory>,
 }
 
@@ -42,25 +61,18 @@ struct WeekParams {
     #[serde(default)]
     week: Option<Value>,
     #[serde(default)]
+    day_from: Option<Value>,
+    #[serde(default)]
+    day_to: Option<Value>,
+    #[serde(default)]
+    cursor: Option<Value>,
+    #[serde(default)]
     include: Vec<String>,
 }
 
-pub(crate) fn validate(params: Option<&Value>) -> Result<ValidatedGetWeek, ToolError> {
-    let params = match params {
-        None | Some(Value::Null) => {
-            return Ok(ValidatedGetWeek {
-                week: None,
-                include: BTreeSet::new(),
-            });
-        }
-        Some(val) => val,
-    };
-    let params = serde_json::from_value::<WeekParams>(params.clone())
-        .map_err(|_| ToolError::InvalidInput)?;
-
-    let week = match params.week {
-        None | Some(Value::Null) => None,
-        // Any day names its week, written either way a day is elsewhere.
+fn parse_optional_day(value: Option<Value>) -> Result<Option<String>, ToolError> {
+    match value {
+        None | Some(Value::Null) => Ok(None),
         Some(Value::String(s)) => {
             if s.len() > super::MAX_DAY_BYTES {
                 return Err(ToolError::InvalidInput);
@@ -71,10 +83,43 @@ pub(crate) fn validate(params: Option<&Value>) -> Result<ValidatedGetWeek, ToolE
             if week_day(&day).is_none() {
                 return Err(ToolError::InvalidInput);
             }
-            Some(day)
+            Ok(Some(day))
         }
-        Some(_) => return Err(ToolError::InvalidInput),
+        Some(_) => Err(ToolError::InvalidInput),
+    }
+}
+
+fn parse_optional_cursor(value: Option<Value>) -> Result<Option<String>, ToolError> {
+    match value {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(s)) => {
+            if s.is_empty() || s.len() > super::MAX_OPAQUE_REFERENCE_BYTES {
+                return Err(ToolError::InvalidInput);
+            }
+            Ok(Some(s))
+        }
+        Some(_) => Err(ToolError::InvalidInput),
+    }
+}
+
+pub(crate) fn validate(params: Option<&Value>) -> Result<ValidatedGetWeek, ToolError> {
+    let params = match params {
+        None | Some(Value::Null) => {
+            return Ok(ValidatedGetWeek {
+                query: WeekQuery::Single(None),
+                include: BTreeSet::new(),
+            });
+        }
+        Some(val) => val,
     };
+    let params = serde_json::from_value::<WeekParams>(params.clone())
+        .map_err(|_| ToolError::InvalidInput)?;
+
+    // Any day names its week, written either way a day is elsewhere.
+    let week = parse_optional_day(params.week)?;
+    let day_from = parse_optional_day(params.day_from)?;
+    let day_to = parse_optional_day(params.day_to)?;
+    let cursor = parse_optional_cursor(params.cursor)?;
 
     if params.include.len() > SUMMARY_KINDS.len() {
         return Err(ToolError::InvalidInput);
@@ -88,7 +133,40 @@ pub(crate) fn validate(params: Option<&Value>) -> Result<ValidatedGetWeek, ToolE
                 .ok_or(ToolError::InvalidInput)
         })
         .collect::<Result<_, _>>()?;
-    Ok(ValidatedGetWeek { week, include })
+
+    let has_range_arg = day_from.is_some() || day_to.is_some() || cursor.is_some();
+    if week.is_some() && has_range_arg {
+        return Err(ToolError::WeekRangeArguments);
+    }
+
+    let query = match (day_from, day_to) {
+        (None, None) => {
+            if cursor.is_some() {
+                return Err(ToolError::WeekRangeArguments);
+            }
+            WeekQuery::Single(week)
+        }
+        (Some(from), Some(to)) => {
+            let (Some(from_date), Some(to_date)) = (week_day(&from), week_day(&to)) else {
+                return Err(ToolError::InvalidInput);
+            };
+            let span_days = from_date
+                .until(to_date)
+                .map_err(|_| ToolError::WeekRangeArguments)?
+                .get_days();
+            if span_days < 0 || span_days >= MAX_RANGE_DAYS as i32 {
+                return Err(ToolError::WeekRangeArguments);
+            }
+            WeekQuery::Range {
+                day_from: from,
+                day_to: to,
+                cursor,
+            }
+        }
+        _ => return Err(ToolError::WeekRangeArguments),
+    };
+
+    Ok(ValidatedGetWeek { query, include })
 }
 
 pub(crate) struct WeekRead {
@@ -97,26 +175,47 @@ pub(crate) struct WeekRead {
     pub(crate) targets: Vec<String>,
 }
 
+fn sunday_of(date: Date) -> Date {
+    date - Span::new().days(date.weekday().to_sunday_zero_offset())
+}
+
 pub(crate) fn read_week(
     journal: &Path,
     request: &ValidatedGetWeek,
     principal: DispatchPrincipal<'_>,
     snapshot: &ConnectionReadSnapshot,
 ) -> Result<WeekRead, ToolError> {
-    let sunday_date = if let Some(day) = request.week.as_deref() {
-        let Some(date) = week_day(day) else {
-            return Err(ToolError::InvalidInput);
-        };
-        // The week a day falls in starts on the Sunday on or before it.
-        date - Span::new().days(date.weekday().to_sunday_zero_offset())
-    } else {
-        let owner_zone = solstone_core_journal_config::owner_zone(journal);
-        let today = jiff::Timestamp::now().to_zoned_datetime(owner_zone).date();
-        let days_from_sun = today.weekday().to_sunday_zero_offset();
-        today - Span::new().days(days_from_sun)
-    };
-
-    project_sunday(journal, sunday_date, principal, snapshot, &request.include)
+    match &request.query {
+        WeekQuery::Single(week) => {
+            let sunday_date = if let Some(day) = week.as_deref() {
+                let Some(date) = week_day(day) else {
+                    return Err(ToolError::InvalidInput);
+                };
+                // The week a day falls in starts on the Sunday on or before it.
+                sunday_of(date)
+            } else {
+                let owner_zone = solstone_core_journal_config::owner_zone(journal);
+                let today = jiff::Timestamp::now().to_zoned_datetime(owner_zone).date();
+                sunday_of(today)
+            };
+            project_sunday(journal, sunday_date, principal, snapshot, &request.include)
+        }
+        WeekQuery::Range {
+            day_from,
+            day_to,
+            cursor,
+        } => project_range_with_limits(
+            journal,
+            day_from,
+            day_to,
+            cursor.as_deref(),
+            principal,
+            snapshot,
+            &request.include,
+            MAX_SPAN_PAGE_DAYS,
+            MAX_SPAN_PAGE_BYTES,
+        ),
+    }
 }
 
 fn project_sunday(
@@ -506,16 +605,7 @@ fn project_sunday(
         }
         activities.push(activity);
 
-        let time_str = match (&start, &end) {
-            (Some(s), Some(e)) => Some(format!("{s} - {e}")),
-            (Some(s), None) => Some(s.clone()),
-            _ => None,
-        };
-        let mem_text = if let Some(ts) = time_str {
-            format!("{title} ({ts})")
-        } else {
-            title
-        };
+        let mem_text = format_memory_text(&title, start.as_deref(), end.as_deref());
 
         let rel_path = format!("facets/{}/activities/{}.jsonl", rep.facet_dir, rep.day);
         let mut single_subject = [LinkSubject {
@@ -607,12 +697,7 @@ fn project_sunday(
                     "uri": entry.uri,
                 });
                 // The weekly reader already validated this activity URI.
-                if let Some((facet, rest)) = entry
-                    .uri
-                    .strip_prefix("sol://facets/")
-                    .and_then(|uri| uri.split_once("/activities/"))
-                    && let Some((day, id)) = rest.split_once('#')
-                {
+                if let Some((facet, day, id)) = parse_said_uri(&entry.uri) {
                     crate::journal_links::activity(journal, &mut quote, facet, day, id);
                 }
                 said.push(quote);
@@ -668,55 +753,20 @@ fn project_sunday(
                 );
                 cell
             });
-            let mut summary = Map::new();
-            for &kind in include {
-                let value = if !snapshot.categories.contains(&kind) {
-                    json!({"note": if kind == AdmittedCategory::Body {
-                        crate::body_source::BODY_NOT_GRANTED.to_owned()
-                    } else {
-                        crate::dispatch::kind_refusal(kind)
-                    }})
-                } else {
-                    match kind {
-                        AdmittedCategory::Body => {
-                            if let Some(note) = body_summary_note {
-                                json!({"note": note})
-                            } else {
-                                body_days.remove(&key).unwrap_or_else(|| json!({}))
-                            }
-                        }
-                        AdmittedCategory::Places => {
-                            if let Some(note) = places_note {
-                                json!({"note": note})
-                            } else if let Some(document) = places.remove(&key) {
-                                windows.push(format!("location:{key}"));
-                                let mut rows =
-                                    document.lines().filter_map(|line| line.strip_prefix("- "));
-                                let entries: Vec<String> = rows
-                                    .by_ref()
-                                    .take(4)
-                                    .map(|line| line.chars().take(240).collect())
-                                    .collect();
-                                json!({"items": entries, "more": rows.next().is_some()})
-                            } else {
-                                json!({"items": []})
-                            }
-                        }
-                        AdmittedCategory::Entities => {
-                            let people = people_by_day.remove(&key).unwrap_or_default();
-                            json!({"count": people.len(), "people": people.into_iter().take(12).collect::<Vec<_>>()})
-                        }
-                        _ => {
-                            let (value, targets) = crate::dispatch::week_kind_summary(
-                                journal, principal, snapshot, &key, kind,
-                            );
-                            windows.extend(targets);
-                            value
-                        }
-                    }
-                };
-                summary.insert(kind.as_str().to_owned(), value);
-            }
+            let people = people_by_day.remove(&key).unwrap_or_default();
+            let (summary, day_targets) = build_day_summary(
+                journal,
+                principal,
+                snapshot,
+                &key,
+                include,
+                &mut body_days,
+                body_summary_note,
+                &mut places,
+                places_note,
+                people,
+            );
+            windows.extend(day_targets);
             cell["summary"] = Value::Object(summary);
         }
         days = cells.into_values().collect();
@@ -780,6 +830,546 @@ fn project_sunday(
         targets: std::iter::once(format!("week:{start_day}"))
             .chain(windows)
             .collect(),
+    })
+}
+
+fn format_memory_text(title: &str, start: Option<&str>, end: Option<&str>) -> String {
+    match (start, end) {
+        (Some(s), Some(e)) => format!("{title} ({s} - {e})"),
+        (Some(s), None) => format!("{title} ({s})"),
+        _ => title.to_owned(),
+    }
+}
+
+fn parse_said_uri(uri: &str) -> Option<(&str, &str, &str)> {
+    let (facet, rest) = uri
+        .strip_prefix("sol://facets/")
+        .and_then(|uri| uri.split_once("/activities/"))?;
+    let (day, id) = rest.split_once('#')?;
+    Some((facet, day, id))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_day_summary(
+    journal: &Path,
+    principal: DispatchPrincipal<'_>,
+    snapshot: &ConnectionReadSnapshot,
+    day: &str,
+    include: &BTreeSet<AdmittedCategory>,
+    body_days: &mut BTreeMap<String, Value>,
+    body_summary_note: Option<&'static str>,
+    places: &mut BTreeMap<String, String>,
+    places_note: Option<&'static str>,
+    people: BTreeSet<String>,
+) -> (Map<String, Value>, Vec<String>) {
+    let mut summary = Map::new();
+    let mut targets = Vec::new();
+    for &kind in include {
+        let value = if !snapshot.categories.contains(&kind) {
+            json!({"note": if kind == AdmittedCategory::Body {
+                crate::body_source::BODY_NOT_GRANTED.to_owned()
+            } else {
+                crate::dispatch::kind_refusal(kind)
+            }})
+        } else {
+            match kind {
+                AdmittedCategory::Body => {
+                    if let Some(note) = body_summary_note {
+                        json!({"note": note})
+                    } else {
+                        body_days.remove(day).unwrap_or_else(|| json!({}))
+                    }
+                }
+                AdmittedCategory::Places => {
+                    if let Some(note) = places_note {
+                        json!({"note": note})
+                    } else if let Some(document) = places.remove(day) {
+                        targets.push(format!("location:{day}"));
+                        let mut rows = document.lines().filter_map(|line| line.strip_prefix("- "));
+                        let entries: Vec<String> = rows
+                            .by_ref()
+                            .take(4)
+                            .map(|line| line.chars().take(240).collect())
+                            .collect();
+                        json!({"items": entries, "more": rows.next().is_some()})
+                    } else {
+                        json!({"items": []})
+                    }
+                }
+                AdmittedCategory::Entities => {
+                    json!({
+                        "count": people.len(),
+                        "people": people.iter().take(12).cloned().collect::<Vec<_>>(),
+                    })
+                }
+                _ => {
+                    let (value, kind_targets) =
+                        crate::dispatch::week_kind_summary(journal, principal, snapshot, day, kind);
+                    targets.extend(kind_targets);
+                    value
+                }
+            }
+        };
+        summary.insert(kind.as_str().to_owned(), value);
+    }
+    (summary, targets)
+}
+
+struct DayActivitiesSummary {
+    memory: Option<String>,
+    activities_total: usize,
+    admitted_titles: BTreeMap<(String, String), String>,
+    people: BTreeSet<String>,
+}
+
+fn summarize_day_activities(
+    journal: &Path,
+    snapshot: &ConnectionReadSnapshot,
+    facets: &[(String, String)],
+    day_str: &str,
+    collect_entities: bool,
+) -> Result<DayActivitiesSummary, ToolError> {
+    struct DayCollected {
+        record: Map<String, Value>,
+        day: String,
+        duration: u64,
+        sort_key: (String, String, i64, String),
+        copies: Vec<Map<String, Value>>,
+    }
+
+    let mut collected = Vec::new();
+    let mut admitted_titles = BTreeMap::new();
+    for (f_id, f_dir) in facets {
+        let rel_path = format!("facets/{f_dir}/activities/{day_str}.jsonl");
+        let day_file_bytes =
+            crate::activity_admit::read_contained_source(journal, &rel_path).unwrap_or_default();
+        if day_file_bytes.is_empty() {
+            let rows = solstone_core_facets::read_activity_records_strict(journal, f_dir, day_str)
+                .map_err(|_| ToolError::FileUnreadable)?;
+            if !rows.is_empty() {
+                return Err(ToolError::FileUnreadable);
+            }
+            continue;
+        }
+        let rows = solstone_core_facets::read_activity_records_strict(journal, f_dir, day_str)
+            .map_err(|_| ToolError::FileUnreadable)?;
+        let judged = crate::may_see::ActivityDay::new(journal, snapshot, f_dir, day_str, &rows);
+        for row in rows {
+            if judged.shows(&row) != crate::may_see::Shown::Yes
+                || solstone_core_facets::is_body_record(&row)
+            {
+                continue;
+            }
+            if let Some(id) = row.get("id").and_then(Value::as_str) {
+                admitted_titles.insert(
+                    (f_dir.clone(), id.to_owned()),
+                    crate::tools::activities::activity_title(&row),
+                );
+            }
+            let (_, _, dur) = crate::tools::activities::activity_times_and_duration(&row);
+            let sort_key = crate::tools::activities::sort_activity_key(day_str, f_id, &row);
+            collected.push(DayCollected {
+                record: row,
+                day: day_str.to_owned(),
+                duration: dur.unwrap_or(0),
+                sort_key,
+                copies: Vec::new(),
+            });
+        }
+    }
+
+    collected.sort_by(|a, b| a.sort_key.cmp(&b.sort_key));
+    let merged: Vec<DayCollected> = solstone_core_facets::merge_moment_copies(
+        collected,
+        |item| item.day.as_str(),
+        |item| &item.record,
+    )
+    .into_iter()
+    .map(|moment| {
+        let mut primary = moment.primary;
+        for copy in moment.copies {
+            primary.copies.push(copy.record);
+        }
+        primary
+    })
+    .collect();
+
+    let mut people = BTreeSet::new();
+    if collect_entities {
+        for row in &merged {
+            let found = crate::tools::activities::activity_people_across(
+                std::iter::once(&row.record).chain(row.copies.iter()),
+            );
+            people.extend(found.participants.into_iter().chain(found.heard));
+        }
+    }
+
+    let activities_total = merged.len();
+    let mut groups: BTreeMap<String, Vec<DayCollected>> = BTreeMap::new();
+    for item in merged {
+        let k = group_key_for_record(&item.record);
+        groups.entry(k).or_default().push(item);
+    }
+
+    struct BestActivity {
+        duration: u64,
+        people_count: usize,
+        earliest_sort_key: (String, String, i64, String),
+        record: Map<String, Value>,
+    }
+
+    let mut best: Option<BestActivity> = None;
+    for (_, mut items) in groups {
+        let duration: u64 = items.iter().map(|it| it.duration).sum();
+        let people_count = items
+            .iter()
+            .map(|it| {
+                let found = crate::tools::activities::activity_people_across(
+                    std::iter::once(&it.record).chain(it.copies.iter()),
+                );
+                crate::tools::activities::activity_entities(&it.record)
+                    .len()
+                    .max(found.participants.len() + found.heard.len())
+            })
+            .max()
+            .unwrap_or(0);
+        items.sort_by(|a, b| a.sort_key.cmp(&b.sort_key));
+        let earliest_sort_key = items[0].sort_key.clone();
+        let representative = items.remove(0).record;
+        let is_better = match &best {
+            None => true,
+            Some(current) => (duration, people_count)
+                .cmp(&(current.duration, current.people_count))
+                .then_with(|| current.earliest_sort_key.cmp(&earliest_sort_key))
+                .is_gt(),
+        };
+        if is_better {
+            best = Some(BestActivity {
+                duration,
+                people_count,
+                earliest_sort_key,
+                record: representative,
+            });
+        }
+    }
+
+    let memory = best.map(|best| {
+        let title = crate::tools::activities::activity_title(&best.record);
+        let (start, end, _) = crate::tools::activities::activity_times_and_duration(&best.record);
+        format_memory_text(&title, start.as_deref(), end.as_deref())
+    });
+
+    Ok(DayActivitiesSummary {
+        memory,
+        activities_total,
+        admitted_titles,
+        people,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn project_range_with_limits(
+    journal: &Path,
+    day_from: &str,
+    day_to: &str,
+    cursor: Option<&str>,
+    principal: DispatchPrincipal<'_>,
+    snapshot: &ConnectionReadSnapshot,
+    include: &BTreeSet<AdmittedCategory>,
+    max_days: usize,
+    max_bytes: usize,
+) -> Result<WeekRead, ToolError> {
+    let (Some(start_date), Some(end_date)) = (week_day(day_from), week_day(day_to)) else {
+        return Err(ToolError::InvalidInput);
+    };
+    let include_tokens: Vec<String> = include
+        .iter()
+        .map(|kind| category_token(kind).to_owned())
+        .collect();
+
+    // Validate the cursor before clamping against today so a tampered,
+    // foreign or mismatched cursor is always refused.
+    let cursor_next_date = if let Some(token) = cursor {
+        let ReferenceTarget::WeekRange(c) = codec()
+            .resolve(
+                token,
+                ReferenceKind::WeekRange,
+                principal.connection,
+                snapshot.generation,
+            )
+            .map_err(|_| ToolError::ReferenceNotFound)?
+        else {
+            return Err(ToolError::ReferenceNotFound);
+        };
+        if c.day_from != day_from || c.day_to != day_to || c.include != include_tokens {
+            return Err(ToolError::ReferenceNotFound);
+        }
+        let Some(next_date) = week_day(&c.next_day) else {
+            return Err(ToolError::ReferenceNotFound);
+        };
+        if next_date < start_date || next_date > end_date {
+            return Err(ToolError::ReferenceNotFound);
+        }
+        Some(next_date)
+    } else {
+        None
+    };
+
+    let owner_zone = solstone_core_journal_config::owner_zone(journal);
+    let today = jiff::Timestamp::now().to_zoned_datetime(owner_zone).date();
+    if start_date > today {
+        return Ok(WeekRead {
+            value: json!({
+                "range": {"start": day_from, "end": day_to},
+                "days": [],
+                "next_cursor": Value::Null,
+            }),
+            count: 0,
+            targets: Vec::new(),
+        });
+    }
+
+    let effective_end = end_date.min(today);
+    let effective_end_day = solstone_core_time::day_key(effective_end);
+    let page_start = cursor_next_date.unwrap_or(start_date);
+    if page_start > effective_end {
+        return Ok(WeekRead {
+            value: json!({
+                "range": {"start": day_from, "end": effective_end_day},
+                "days": [],
+                "next_cursor": Value::Null,
+            }),
+            count: 0,
+            targets: Vec::new(),
+        });
+    }
+
+    let mut candidate_dates = Vec::new();
+    let mut current = page_start;
+    while current <= effective_end && candidate_dates.len() < max_days {
+        candidate_dates.push(current);
+        let Ok(next) = current.tomorrow() else {
+            break;
+        };
+        current = next;
+    }
+
+    // Read weekly reflection pages once per Sunday touched by this page.
+    let left_out = read_left_out(journal);
+    let left_out_unreadable = matches!(left_out, LeftOut::Unreadable);
+    let left_out_keys = match left_out {
+        LeftOut::Keys(keys) => keys,
+        _ => BTreeSet::new(),
+    };
+    let mut day_states: BTreeMap<String, String> = BTreeMap::new();
+    let mut said_by_day: BTreeMap<String, Vec<TrustedSaid>> = BTreeMap::new();
+    let mut sundays = BTreeSet::new();
+    for &date in &candidate_dates {
+        sundays.insert(solstone_core_time::day_key(sunday_of(date)));
+    }
+    for stem in sundays {
+        if let WeekJudgment::Page(trusted) = judge(journal, &stem) {
+            let memory_by_id = trusted
+                .memories
+                .iter()
+                .map(|m| (m.id.as_str(), m))
+                .collect::<BTreeMap<_, _>>();
+            for day in &trusted.days {
+                let memory = day
+                    .memory_id
+                    .as_deref()
+                    .and_then(|id| memory_by_id.get(id).copied());
+                let memory_key = memory.map(|m| m.key.as_str());
+                let state = resolve_day_cell_state(day.state.as_str(), memory_key, &left_out_keys);
+                day_states.insert(day.day.clone(), state.to_owned());
+            }
+            if !left_out_unreadable && let Said::Entries(said_entries) = trusted.said {
+                for entry in said_entries {
+                    if left_out_keys.contains(&entry.key) {
+                        continue;
+                    }
+                    said_by_day
+                        .entry(entry.day.clone())
+                        .or_default()
+                        .push(entry);
+                }
+            }
+        }
+    }
+
+    let facets: Vec<(String, String)> = available_facets(journal, snapshot)
+        .map_err(|_| ToolError::FileUnreadable)?
+        .into_iter()
+        .map(|(id, dir, _)| (id, dir))
+        .collect();
+    let collect_entities = include.contains(&AdmittedCategory::Entities)
+        && snapshot.categories.contains(&AdmittedCategory::Entities);
+
+    let candidate_day_keys: Vec<String> = candidate_dates
+        .iter()
+        .map(|date| solstone_core_time::day_key(*date))
+        .collect();
+    let mut body_days = BTreeMap::new();
+    let mut body_targets = Vec::new();
+    let mut body_summary_note = None;
+    if !candidate_day_keys.is_empty()
+        && include.contains(&AdmittedCategory::Body)
+        && snapshot.categories.contains(&AdmittedCategory::Body)
+    {
+        let mut body_keys = candidate_day_keys.clone();
+        if let Ok(previous) = page_start.yesterday() {
+            body_keys.insert(0, solstone_core_time::day_key(previous));
+        }
+        match crate::body_source::week_totals(journal, snapshot, &body_keys) {
+            Ok((totals, targets)) => {
+                body_days = totals;
+                body_targets = targets;
+            }
+            Err(_) => body_summary_note = Some(ToolError::FileUnreadable.agent_message()),
+        }
+    }
+    let mut places = BTreeMap::new();
+    let mut places_note = None;
+    if !candidate_day_keys.is_empty()
+        && include.contains(&AdmittedCategory::Places)
+        && snapshot.categories.contains(&AdmittedCategory::Places)
+    {
+        match location_documents(journal, &candidate_day_keys) {
+            Some(documents) => places = documents,
+            None => places_note = Some(ToolError::FileUnreadable.agent_message()),
+        }
+    }
+
+    let mut days = Vec::new();
+    let mut served_weeks = BTreeSet::new();
+    let mut extra_targets = Vec::new();
+    let mut page_bytes: usize = 0;
+    let mut last_served_day: Option<String> = None;
+    let mut resume_date: Option<Date> = None;
+
+    for &date in &candidate_dates {
+        let day_str = solstone_core_time::day_key(date);
+        let summary_activities =
+            summarize_day_activities(journal, snapshot, &facets, &day_str, collect_entities)?;
+
+        let mut cell = json!({"day": day_str});
+        if let Some(state) = day_states.get(&day_str) {
+            cell["state"] = json!(state);
+        }
+        // A calendar cell is already admitted. Mint from its day alone:
+        // testing source existence here would reveal withheld body days.
+        crate::journal_links::attach(
+            journal,
+            &mut cell,
+            solstone_core_journal_link::Place::Day {
+                day: day_str.clone(),
+            },
+        );
+        if let Some(mem_text) = summary_activities.memory {
+            cell["memory"] = json!(mem_text);
+        }
+        cell["activities_total"] = json!(summary_activities.activities_total);
+
+        if let Some(entries) = said_by_day.get(&day_str)
+            && !entries.is_empty()
+        {
+            let mut quotes = Vec::with_capacity(entries.len());
+            for entry in entries {
+                let mut quote = json!({"quote": entry.quote});
+                if let Some((facet, qday, id)) = parse_said_uri(&entry.uri) {
+                    if qday == day_str
+                        && let Some(title) = summary_activities
+                            .admitted_titles
+                            .get(&(facet.to_owned(), id.to_owned()))
+                    {
+                        quote["activity"] = json!(title);
+                    }
+                    crate::journal_links::activity(journal, &mut quote, facet, qday, id);
+                }
+                quotes.push(quote);
+            }
+            cell["said"] = Value::Array(quotes);
+        }
+
+        let mut day_targets = Vec::new();
+        if !include.is_empty() {
+            let (summary, kind_targets) = build_day_summary(
+                journal,
+                principal,
+                snapshot,
+                &day_str,
+                include,
+                &mut body_days,
+                body_summary_note,
+                &mut places,
+                places_note,
+                summary_activities.people,
+            );
+            day_targets = kind_targets;
+            cell["summary"] = Value::Object(summary);
+        }
+
+        let row_bytes = serde_json::to_string(&cell).map_or(0, |s| s.len()) + 1;
+        if !days.is_empty() && page_bytes.saturating_add(row_bytes) > max_bytes {
+            resume_date = Some(date);
+            break;
+        }
+        page_bytes = page_bytes.saturating_add(row_bytes);
+        last_served_day = Some(day_str);
+        served_weeks.insert(solstone_core_time::day_key(sunday_of(date)));
+        extra_targets.extend(day_targets);
+        days.push(cell);
+    }
+
+    if resume_date.is_none()
+        && let Some(&last_date) = candidate_dates.last()
+        && last_date < effective_end
+    {
+        resume_date = last_date.tomorrow().ok().filter(|d| d <= &effective_end);
+    }
+
+    if let Some(ref last) = last_served_day {
+        for target in body_targets {
+            if target.split('/').next().is_some_and(|d| d <= last.as_str()) {
+                extra_targets.push(target);
+            }
+        }
+    }
+
+    let next_cursor = match resume_date {
+        Some(next_date) => Some(
+            codec()
+                .mint(
+                    principal.connection,
+                    snapshot.generation,
+                    ReferenceTarget::WeekRange(WeekRangeCursor {
+                        day_from: day_from.to_owned(),
+                        day_to: day_to.to_owned(),
+                        include: include_tokens,
+                        next_day: solstone_core_time::day_key(next_date),
+                    }),
+                )
+                .map_err(|_| ToolError::ReferenceNotFound)?,
+        ),
+        None => None,
+    };
+
+    let targets = served_weeks
+        .into_iter()
+        .map(|stem| format!("week:{stem}"))
+        .chain(extra_targets)
+        .collect();
+    let count = days.len();
+    let value = json!({
+        "range": {"start": day_from, "end": effective_end_day},
+        "days": days,
+        "next_cursor": next_cursor,
+    });
+
+    Ok(WeekRead {
+        value,
+        count,
+        targets,
     })
 }
 
@@ -893,7 +1483,7 @@ mod tests {
 
     const CONNECTION: &str = "bearer:week";
     const WHOLE_JOURNAL: &str =
-        "this connection can read a week only with access to the whole journal.";
+        "this connection can read a week or date range only with access to the whole journal.";
 
     fn journal(prefix: &str) -> tempfile::TempDir {
         tempfile::Builder::new()
@@ -1800,13 +2390,24 @@ mod tests {
             assert!(mon_out.empty_note.is_none());
         }
         assert_eq!(
-            validate(Some(&json!({"week": "2026-03-08"}))).unwrap().week,
-            Some("20260308".to_owned())
+            validate(Some(&json!({"week": "2026-03-08"})))
+                .unwrap()
+                .query,
+            super::WeekQuery::Single(Some("20260308".to_owned()))
         );
 
-        assert_eq!(validate(None).unwrap().week, None);
-        assert_eq!(validate(Some(&Value::Null)).unwrap().week, None);
-        assert_eq!(validate(Some(&json!({"week": null}))).unwrap().week, None);
+        assert_eq!(
+            validate(None).unwrap().query,
+            super::WeekQuery::Single(None)
+        );
+        assert_eq!(
+            validate(Some(&Value::Null)).unwrap().query,
+            super::WeekQuery::Single(None)
+        );
+        assert_eq!(
+            validate(Some(&json!({"week": null}))).unwrap().query,
+            super::WeekQuery::Single(None)
+        );
     }
 
     #[test]
@@ -2285,6 +2886,629 @@ mod tests {
                 .entries
                 .iter()
                 .all(|entry| { !entry.reason.as_deref().unwrap_or("").contains(sentinel) })
+        );
+    }
+
+    #[test]
+    fn range_validation_enforces_exclusivity_bounds_and_dates() {
+        // Leap year (366 inclusive days) and single day both validate.
+        assert_eq!(
+            validate(Some(
+                &json!({"day_from": "2024-01-01", "day_to": "2024-12-31"})
+            ))
+            .unwrap()
+            .query,
+            super::WeekQuery::Range {
+                day_from: "20240101".to_owned(),
+                day_to: "20241231".to_owned(),
+                cursor: None,
+            }
+        );
+        assert_eq!(
+            validate(Some(
+                &json!({"day_from": "20250308", "day_to": "2025-03-08"})
+            ))
+            .unwrap()
+            .query,
+            super::WeekQuery::Range {
+                day_from: "20250308".to_owned(),
+                day_to: "20250308".to_owned(),
+                cursor: None,
+            }
+        );
+
+        for refused in [
+            // Mutual exclusivity with week
+            json!({"week": "2025-03-08", "day_from": "2025-03-01", "day_to": "2025-03-08"}),
+            json!({"week": "2025-03-08", "day_from": "2025-03-01"}),
+            json!({"week": "2025-03-08", "cursor": "tok"}),
+            // Half-specified ranges and bare cursor
+            json!({"day_from": "2025-03-01"}),
+            json!({"day_to": "2025-03-08"}),
+            json!({"cursor": "tok"}),
+            // Reversed range
+            json!({"day_from": "2025-03-09", "day_to": "2025-03-08"}),
+            // 367 inclusive days (exceeds 366-day leap-year cap)
+            json!({"day_from": "2024-01-01", "day_to": "2025-01-01"}),
+        ] {
+            assert_eq!(
+                validate(Some(&refused)),
+                Err(ToolError::WeekRangeArguments),
+                "{refused}"
+            );
+        }
+        assert!(
+            ToolError::WeekRangeArguments
+                .agent_message()
+                .contains("366")
+        );
+
+        for bad_format in [
+            json!({"day_from": "tuesday", "day_to": "2025-03-08"}),
+            json!({"day_from": "2025-03-08", "day_to": "2025-02-30"}),
+            json!({"day_from": "2025-03-01", "day_to": "2025-03-08", "cursor": ""}),
+        ] {
+            assert_eq!(
+                validate(Some(&bad_format)),
+                Err(ToolError::InvalidInput),
+                "{bad_format}"
+            );
+        }
+    }
+
+    #[test]
+    fn range_mode_returns_compact_day_rows_links_quotes_with_activity_titles_and_handles_missing_pages()
+     {
+        let root = journal("solstone-week-range-basic-");
+        whole(root.path());
+        write_raw(
+            root.path(),
+            "facets/company/facet.json",
+            &json!({"id": "123e4567-e89b-42d3-a456-426614174000", "title": "Company", "description": "Company"}).to_string(),
+        );
+        write_raw(
+            root.path(),
+            "facets/household/facet.json",
+            &json!({"id": "123e4567-e89b-42d3-a456-426614174001", "title": "Household", "description": "Household"}).to_string(),
+        );
+
+        // 2025-10-22 (in stored week 2025-10-19): one long top activity, two shorter
+        // quoted activities (Gap Y2), plus a hidden activity whose quote must not
+        // disclose its hidden title.
+        write_raw(
+            root.path(),
+            "facets/company/activities/20251022.jsonl",
+            &([
+                json!({"id": "play", "title": "Came in for the afternoon play", "created_at": 100, "segments": ["140000_6840"]}).to_string(),
+                json!({"id": "earl", "title": "Heard that the Earl had died", "created_at": 200, "segments": ["162000_360"]}).to_string(),
+                json!({"id": "secret_act", "title": "HIDDEN_ACTIVITY_TITLE", "hidden": true, "created_at": 250, "segments": ["170000_120"]}).to_string(),
+            ]
+            .join("\n")
+                + "\n"),
+        );
+        write_raw(
+            root.path(),
+            "facets/household/activities/20251022.jsonl",
+            &(json!({"id": "tower", "title": "Spoke of an earl dead in the Tower", "created_at": 300, "segments": ["214000_120"]}).to_string()
+                + "\n"),
+        );
+
+        // 2025-10-26 (in week 2025-10-26, which intentionally has NO stored week page).
+        write_raw(
+            root.path(),
+            "facets/company/activities/20251026.jsonl",
+            &(json!({"id": "rehearsal", "title": "Morning rehearsal", "created_at": 400, "segments": ["090000_1800"]}).to_string()
+                + "\n"),
+        );
+
+        let q1_key = said_key("20251022", "company", "earl", "Not for my hand.");
+        let q2_key = said_key("20251022", "household", "tower", "Leave him his death.");
+        let q3_key = said_key("20251022", "company", "secret_act", "Quiet aside.");
+        let q_left_out = said_key("20251022", "company", "earl", "LEFT_OUT_QUOTE");
+        let q_outside_range = said_key("20251019", "company", "sunday", "SUNDAY_OUTSIDE_RANGE");
+        let said_json = format!(
+            "[{}]",
+            [
+                said_item(
+                    "s1",
+                    &q1_key,
+                    "20251022",
+                    "Not for my hand.",
+                    "sol://facets/company/activities/20251022#earl",
+                ),
+                said_item(
+                    "s2",
+                    &q2_key,
+                    "20251022",
+                    "Leave him his death.",
+                    "sol://facets/household/activities/20251022#tower",
+                ),
+                said_item(
+                    "s3",
+                    &q3_key,
+                    "20251022",
+                    "Quiet aside.",
+                    "sol://facets/company/activities/20251022#secret_act",
+                ),
+                said_item(
+                    "s4",
+                    &q_left_out,
+                    "20251022",
+                    "LEFT_OUT_QUOTE",
+                    "sol://facets/company/activities/20251022#earl",
+                ),
+                said_item(
+                    "s5",
+                    &q_outside_range,
+                    "20251019",
+                    "SUNDAY_OUTSIDE_RANGE",
+                    "sol://facets/company/activities/20251019#sunday",
+                ),
+            ]
+            .join(",")
+        );
+        let mem = Memory {
+            id: "m3",
+            key: "mem-20251022",
+            day_offset: 3,
+            text: "Stored page memory",
+            uri: "sol://chronicle/20251022/talents/morning_briefing",
+            refs: &[],
+        };
+        write_raw(
+            root.path(),
+            "reflections/weekly/20251019.json",
+            &document("20251019", &[mem], &said_json),
+        );
+        write_left_out(root.path(), &[&q_left_out]);
+
+        // Read across the boundary from a stored week (Oct 22–25) into a week with
+        // no stored page (Oct 26–27).
+        let single_week = probe(root.path(), json!({"week": "20251019"})).unwrap();
+        let range = probe(
+            root.path(),
+            json!({"day_from": "2025-10-22", "day_to": "2025-10-27"}),
+        )
+        .unwrap();
+
+        assert_eq!(
+            range["range"],
+            json!({"start": "20251022", "end": "20251027"})
+        );
+        assert!(range["next_cursor"].is_null());
+        assert!(
+            range.get("activities").is_none(),
+            "range omits activity rows"
+        );
+        assert!(range.get("memories").is_none());
+        assert!(!range.to_string().contains("LEFT_OUT_QUOTE"));
+        assert!(!range.to_string().contains("SUNDAY_OUTSIDE_RANGE"));
+        assert!(!range.to_string().contains("HIDDEN_ACTIVITY_TITLE"));
+
+        let days = range["days"].as_array().unwrap();
+        assert_eq!(days.len(), 6);
+
+        // Oct 22: stored week page + Gap Y2 quote attribution + identical day link.
+        let oct22 = &days[0];
+        assert_eq!(oct22["day"], "20251022");
+        assert_eq!(oct22["state"], "memory");
+        assert_eq!(oct22["link"], single_week["days"][3]["link"]);
+        assert_eq!(
+            oct22["memory"],
+            "Came in for the afternoon play (14:00:00 - 15:54:00)"
+        );
+        assert_eq!(oct22["activities_total"], 3);
+        let quotes = oct22["said"].as_array().unwrap();
+        assert_eq!(quotes.len(), 3);
+        assert_eq!(quotes[0]["quote"], "Not for my hand.");
+        assert_eq!(quotes[0]["activity"], "Heard that the Earl had died");
+        assert!(
+            quotes[0]["link"]
+                .as_str()
+                .unwrap()
+                .starts_with("https://go.solstone.app/j#")
+        );
+        assert_eq!(quotes[1]["quote"], "Leave him his death.");
+        assert_eq!(quotes[1]["activity"], "Spoke of an earl dead in the Tower");
+        assert_eq!(quotes[2]["quote"], "Quiet aside.");
+        assert!(
+            quotes[2].get("activity").is_none(),
+            "hidden activity title must not leak onto a quote"
+        );
+
+        // Oct 23 (in stored week, no activities): has state and link, no memory or said.
+        assert_eq!(days[1]["day"], "20251023");
+        assert_eq!(days[1]["state"], "nothing_shared");
+        assert_eq!(days[1]["link"], single_week["days"][4]["link"]);
+        assert!(days[1].get("memory").is_none());
+        assert!(days[1].get("said").is_none());
+        assert_eq!(days[1]["activities_total"], 0);
+
+        // Oct 26 (no stored week page, has an activity): no invented state, no said,
+        // still gets day link, memory and activity count.
+        let oct26 = &days[4];
+        assert_eq!(oct26["day"], "20251026");
+        assert!(
+            oct26.get("state").is_none(),
+            "no invented state without a week page"
+        );
+        assert!(oct26.get("said").is_none());
+        assert_eq!(oct26["memory"], "Morning rehearsal (09:00:00 - 09:30:00)");
+        assert_eq!(oct26["activities_total"], 1);
+        let oct26_sealed = oct26["link"].as_str().unwrap().split_once('#').unwrap().1;
+        assert_eq!(
+            solstone_core_journal_link::open(root.path(), oct26_sealed),
+            Ok(solstone_core_journal_link::Place::Day {
+                day: "20251026".into()
+            })
+        );
+
+        // Oct 27 (no stored week page, no activities): no state, no memory, still has link.
+        let oct27 = &days[5];
+        assert_eq!(oct27["day"], "20251027");
+        assert!(oct27.get("state").is_none());
+        assert!(oct27.get("memory").is_none());
+        assert_eq!(oct27["activities_total"], 0);
+
+        // Audit log records day_from, day_to and week targets.
+        let activity = page(root.path());
+        let entry = &activity.entries[0];
+        let req_args = &entry.request.as_ref().unwrap().arguments;
+        assert_eq!(req_args["day_from"], "20251022");
+        assert_eq!(req_args["day_to"], "20251027");
+        let targets = &entry.result.as_ref().unwrap().targets;
+        assert_eq!(
+            targets,
+            &vec!["week:20251019".to_owned(), "week:20251026".to_owned()]
+        );
+    }
+
+    #[test]
+    fn range_mode_does_not_disclose_a_withheld_body_only_day_without_a_week_page() {
+        let root = journal("solstone-week-range-body-hide-");
+        whole(root.path());
+        let before = probe(
+            root.path(),
+            json!({"day_from": "20250310", "day_to": "20250312"}),
+        )
+        .unwrap();
+        write_raw(
+            root.path(),
+            "chronicle/20250311/import.apple_health/090000_300/body.jsonl",
+            "{}\n",
+        );
+        let after = probe(
+            root.path(),
+            json!({"day_from": "20250310", "day_to": "20250312"}),
+        )
+        .unwrap();
+        assert_eq!(before, after, "a withheld body day changes nothing");
+    }
+
+    #[test]
+    fn range_mode_pages_by_day_count_and_byte_budget_and_binds_cursors() {
+        let root = journal("solstone-week-range-paging-");
+        whole(root.path());
+        write_raw(
+            root.path(),
+            "facets/work/facet.json",
+            &json!({"id": "123e4567-e89b-42d3-a456-426614174000", "title": "Work", "description": "Work"}).to_string(),
+        );
+        write_raw(
+            root.path(),
+            "facets/work/activities/20250101.jsonl",
+            &(json!({"id": "a1", "title": "New Year morning walk", "created_at": 100, "segments": ["080000_600"]}).to_string()
+                + "\n"),
+        );
+        write_raw(
+            root.path(),
+            "facets/work/activities/20250415.jsonl",
+            &(json!({"id": "a2", "title": "Spring review", "created_at": 200, "segments": ["100000_900"]}).to_string()
+                + "\n"),
+        );
+
+        // 105 days via public probe: 100 on page 1, 5 on page 2.
+        let p1 = probe(
+            root.path(),
+            json!({"day_from": "2025-01-01", "day_to": "2025-04-15"}),
+        )
+        .unwrap();
+        assert_eq!(p1["days"].as_array().unwrap().len(), 100);
+        assert_eq!(p1["days"][0]["day"], "20250101");
+        assert_eq!(p1["days"][99]["day"], "20250410");
+        let cursor = p1["next_cursor"].as_str().unwrap().to_owned();
+
+        // Format normalization on page 2 (YYYYMMDD vs YYYY-MM-DD) keeps cursor valid.
+        let p2 = probe(
+            root.path(),
+            json!({"day_from": "20250101", "day_to": "20250415", "cursor": cursor}),
+        )
+        .unwrap();
+        assert_eq!(p2["days"].as_array().unwrap().len(), 5);
+        assert_eq!(p2["days"][0]["day"], "20250411");
+        assert_eq!(p2["days"][4]["day"], "20250415");
+        assert_eq!(
+            p2["days"][4]["memory"],
+            "Spring review (10:00:00 - 10:15:00)"
+        );
+        assert!(p2["next_cursor"].is_null());
+
+        // Audit logs a fingerprint for cursor, never the raw token.
+        let latest = &page(root.path()).entries[0];
+        let latest_args = &latest.request.as_ref().unwrap().arguments;
+        assert!(latest_args["cursor"].is_string());
+        assert_ne!(latest_args["cursor"].as_str().unwrap(), cursor);
+
+        // Cursor rejects mismatched range, mismatched include, tampered bytes, or
+        // a changed permission generation.
+        for bad in [
+            json!({"day_from": "20250101", "day_to": "20250416", "cursor": cursor}),
+            json!({"day_from": "20250101", "day_to": "20250415", "include": ["entities"], "cursor": cursor}),
+            json!({"day_from": "20250101", "day_to": "20250415", "cursor": "tampered"}),
+        ] {
+            assert_eq!(probe(root.path(), bad), Err(McpProbeError::Unavailable));
+        }
+
+        // Byte-budget pagination via internal helper: always emits at least 1 row
+        // even when max_bytes is tiny, and never drops or duplicates days.
+        let decision = evaluate_connection_read(root.path(), CONNECTION);
+        let crate::permissions::PermissionDecision::Snapshot(snapshot) = decision else {
+            panic!("expected snapshot");
+        };
+        let principal = DispatchPrincipal {
+            connection: CONNECTION,
+            agent_identity: CONNECTION,
+        };
+        let mut seen = Vec::new();
+        let mut next: Option<String> = None;
+        let mut pages = 0;
+        loop {
+            let read = super::project_range_with_limits(
+                root.path(),
+                "20250101",
+                "20250105",
+                next.as_deref(),
+                principal,
+                &snapshot,
+                &BTreeSet::new(),
+                100,
+                1, // forces 1 day per page without wedging
+            )
+            .unwrap();
+            pages += 1;
+            for row in read.value["days"].as_array().unwrap() {
+                seen.push(row["day"].as_str().unwrap().to_owned());
+            }
+            next = read.value["next_cursor"].as_str().map(str::to_owned);
+            if next.is_none() {
+                break;
+            }
+        }
+        assert_eq!(pages, 5);
+        assert_eq!(
+            seen,
+            vec!["20250101", "20250102", "20250103", "20250104", "20250105"]
+        );
+    }
+
+    #[test]
+    fn range_mode_omits_days_after_today_and_returns_empty_for_future_ranges() {
+        let root = journal("solstone-week-range-future-");
+        whole(root.path());
+        let owner_zone = solstone_core_journal_config::owner_zone(root.path());
+        let today = jiff::Timestamp::now().to_zoned_datetime(owner_zone).date();
+        let yesterday = today.yesterday().unwrap();
+        let tomorrow = today.tomorrow().unwrap();
+        let next_week = today + jiff::Span::new().days(7);
+
+        let partial = probe(
+            root.path(),
+            json!({
+                "day_from": solstone_core_time::day_key(yesterday),
+                "day_to": solstone_core_time::day_key(next_week),
+            }),
+        )
+        .unwrap();
+        assert_eq!(
+            partial["range"],
+            json!({
+                "start": solstone_core_time::day_key(yesterday),
+                "end": solstone_core_time::day_key(today),
+            })
+        );
+        let partial_days: Vec<&str> = partial["days"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|d| d["day"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            partial_days,
+            vec![
+                solstone_core_time::day_key(yesterday),
+                solstone_core_time::day_key(today),
+            ]
+        );
+        assert!(partial["next_cursor"].is_null());
+
+        let future = probe(
+            root.path(),
+            json!({
+                "day_from": solstone_core_time::day_key(tomorrow),
+                "day_to": solstone_core_time::day_key(next_week),
+            }),
+        )
+        .unwrap();
+        assert_eq!(future["days"], json!([]));
+        assert!(future["next_cursor"].is_null());
+        assert_eq!(page(root.path()).entries[0].outcome, RecordedOutcome::Empty);
+    }
+
+    #[test]
+    fn range_mode_include_works_across_pages_and_respects_kind_permissions() {
+        let root = journal("solstone-week-range-include-");
+        grant(
+            root.path(),
+            &["transcripts", "facets", "entities", "body"],
+            ReadScope::WholeJournal,
+        );
+        write_raw(
+            root.path(),
+            "facets/work/facet.json",
+            &json!({"id": "123e4567-e89b-42d3-a456-426614174000", "title": "Work", "description": "Work"}).to_string(),
+        );
+        write_raw(
+            root.path(),
+            "facets/work/activities/20250309.jsonl",
+            &(json!({
+                "id": "m1",
+                "title": "Design review",
+                "created_at": 100,
+                "segments": ["090000_600"],
+                "participation": [{"name": "Alice", "role": "attendee"}]
+            })
+            .to_string()
+                + "\n"),
+        );
+        // Sleep recorded on 2025-03-08 waking on 2025-03-09: proves page 2 (starting
+        // on 2025-03-09) prepends yesterday when reading body totals.
+        write_raw(
+            root.path(),
+            "chronicle/20250308/import.apple_health/220000_300/body.jsonl",
+            &(json!({
+                "v": 1,
+                "id": "sleep-1",
+                "kind": "experience",
+                "source": "apple_health",
+                "type": "HKCategoryTypeIdentifierSleepAnalysis",
+                "label": "night",
+                "experience": "sleep",
+                "start": "2025-03-08T22:00:00Z",
+                "end": "2025-03-09T06:00:00Z",
+                "fields": {"total_sleep_duration": 27000}
+            })
+            .to_string()
+                + "\n"),
+        );
+
+        let decision = evaluate_connection_read(root.path(), CONNECTION);
+        let crate::permissions::PermissionDecision::Snapshot(snapshot) = decision else {
+            panic!("expected snapshot");
+        };
+        let principal = DispatchPrincipal {
+            connection: CONNECTION,
+            agent_identity: CONNECTION,
+        };
+        let include: BTreeSet<_> = [
+            solstone_core_indexer_query::AdmittedCategory::Body,
+            solstone_core_indexer_query::AdmittedCategory::Entities,
+            solstone_core_indexer_query::AdmittedCategory::Places,
+        ]
+        .into_iter()
+        .collect();
+
+        // Force 1 day per page so 2025-03-09 lands on page 2.
+        let p1 = super::project_range_with_limits(
+            root.path(),
+            "20250308",
+            "20250309",
+            None,
+            principal,
+            &snapshot,
+            &include,
+            1,
+            super::MAX_SPAN_PAGE_BYTES,
+        )
+        .unwrap();
+        let cursor = p1.value["next_cursor"].as_str().unwrap();
+        let p2 = super::project_range_with_limits(
+            root.path(),
+            "20250308",
+            "20250309",
+            Some(cursor),
+            principal,
+            &snapshot,
+            &include,
+            1,
+            super::MAX_SPAN_PAGE_BYTES,
+        )
+        .unwrap();
+        let day = &p2.value["days"][0];
+        assert_eq!(day["day"], "20250309");
+        assert_eq!(day["summary"]["entities"]["count"], 1);
+        assert_eq!(day["summary"]["entities"]["people"], json!(["Alice"]));
+        assert_eq!(day["summary"]["body"]["nights"][0]["asleep_seconds"], 27000);
+        // Connection lacks `places`, so summary carries a permission note.
+        assert!(day["summary"]["places"]["note"].is_string());
+        assert!(p2.value["next_cursor"].is_null());
+
+        // Reordering `include` in the request still accepts the same cursor.
+        let reordered = probe(
+            root.path(),
+            json!({
+                "day_from": "20250308",
+                "day_to": "20250309",
+                "include": ["places", "entities", "body"],
+                "cursor": cursor,
+            }),
+        )
+        .unwrap();
+        assert_eq!(reordered["days"][0]["day"], "20250309");
+    }
+
+    #[test]
+    fn range_mode_keeps_markup_inert_and_fails_closed_on_malformed_activity() {
+        let root = journal("solstone-week-range-safety-");
+        whole(root.path());
+        write_raw(
+            root.path(),
+            "facets/work/facet.json",
+            &json!({"id": "123e4567-e89b-42d3-a456-426614174000", "title": "Work", "description": "Work"}).to_string(),
+        );
+        let title = "open [link](https://example.test) <img src=x>";
+        write_raw(
+            root.path(),
+            "facets/work/activities/20250309.jsonl",
+            &(json!({"id": "a1", "title": title, "created_at": 100}).to_string() + "\n"),
+        );
+        let q = said_item(
+            "s1",
+            &said_key("20250309", "work", "a1", "hello [x](https://example.test)"),
+            "20250309",
+            "hello [x](https://example.test)",
+            "sol://facets/work/activities/20250309#a1",
+        );
+        write_raw(
+            root.path(),
+            "reflections/weekly/20250309.json",
+            &document("20250309", &[], &format!("[{q}]")),
+        );
+
+        let res = probe(
+            root.path(),
+            json!({"day_from": "20250309", "day_to": "20250309"}),
+        )
+        .unwrap();
+        assert!(!active_markup(res["days"][0]["memory"].as_str().unwrap()));
+        assert!(!active_markup(
+            res["days"][0]["said"][0]["quote"].as_str().unwrap()
+        ));
+        assert!(!active_markup(
+            res["days"][0]["said"][0]["activity"].as_str().unwrap()
+        ));
+
+        // Malformed activity file fails closed.
+        write_raw(
+            root.path(),
+            "facets/work/activities/20250310.jsonl",
+            "not json\n",
+        );
+        assert_eq!(
+            probe(
+                root.path(),
+                json!({"day_from": "20250309", "day_to": "20250310"})
+            ),
+            Err(McpProbeError::Unavailable)
         );
     }
 }
