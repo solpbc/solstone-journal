@@ -21730,13 +21730,6 @@
       "locales": []
     },
     {
-      "id": "journal.window.home.text.originals",
-      "source": "084ade9cae0c751e7f7c537eaabedd61ec129eef70ada89266924803489ad309",
-      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
-      "protected": "98c54c4bf11b4826a41f1cb2562e8d7b1ab8216daa067bde968b38c7562b6aee",
-      "locales": []
-    },
-    {
       "id": "journal.window.home.text.originals.the.list.couldn.t.be",
       "source": "0b9c0baf9947f3fb52adaed0143dd2b9f507aba9fd4aac9daec7181f39494370",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",

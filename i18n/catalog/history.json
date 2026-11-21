@@ -65895,8 +65895,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e746578742e6f726967696e616c73",
       "namespace": "journal.window.home.text",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.home.originals.heading.count",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [

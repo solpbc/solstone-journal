@@ -10893,8 +10893,6 @@ journal.window.home.text.backup.status.is.unavailable = backup status is unavail
 
 journal.window.home.text.no.time.measured = no time measured
 
-journal.window.home.text.originals = originals ·{ $slot1 }
-
 journal.window.home.text.originals.the.list.couldn.t.be = originals · the list couldn't be loaded.
 
 journal.window.home.text.queued.work.status.is.unavailable = queued work status is unavailable.
