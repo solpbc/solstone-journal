@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for restore degraded integrity unverified.",
+  "context": "Journal command-line text for restore degraded integrity unverified.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "counters",
+      "type": "string"
+    },
+    {
+      "name": "code",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "82efc3e04695501cea7f142eec43bbaa64995be3a3aafbe2509f758e12135cb4",
+  "max_length": 218,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "reason_field",
+      "kind": "accepted-input",
+      "value": "reason_code="
+    }
+  ]
+}

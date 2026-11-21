@@ -1,0 +1,41 @@
+{
+  "description": "Journal command-line text for run partial snapshot count.",
+  "context": "Journal command-line text for run partial snapshot count.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "snapshot",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "067901650288e423be6a6a24316ebe043c0815d5402c9b9c2933a9e78b15af63",
+  "max_length": 341,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  },
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal backup run"
+    }
+  ]
+}

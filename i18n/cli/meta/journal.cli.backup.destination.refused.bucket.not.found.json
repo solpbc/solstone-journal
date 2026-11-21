@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for destination refused bucket not found.",
+  "context": "Journal command-line text for destination refused bucket not found.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "192d3b101811ac3b2bc7789a96362c7599873895fe3b17da73c6a8de0505ee4a",
+  "max_length": 143,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

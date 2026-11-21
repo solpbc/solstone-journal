@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for restore recording failure integrity failed.",
+  "context": "Journal command-line text for restore recording failure integrity failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "78f82db59e2c34003de4c24739bea2bb96619cbd0b017002e8f4957c5f494382",
+  "max_length": 164,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

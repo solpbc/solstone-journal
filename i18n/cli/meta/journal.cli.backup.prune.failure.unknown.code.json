@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for prune failure unknown code.",
+  "context": "Journal command-line text for prune failure unknown code.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "code",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b4e15d08a797709a3a5dfc76cfcc4cf25fcd8f1efd2c378b02f7b32defcc7cc3",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

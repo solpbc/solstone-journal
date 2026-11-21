@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for offload status heading.",
+  "context": "Journal command-line text for offload status heading.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "21d71bbc0cb47cd44ed5b33ff676b8980180ca4e13c2c8341c9c8617f6008bf7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

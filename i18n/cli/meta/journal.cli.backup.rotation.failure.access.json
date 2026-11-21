@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for rotation failure access.",
+  "context": "Journal command-line text for rotation failure access.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ad8f977264cb12ed10d5571f5d4fc2e20dc6e1987fb018e5688f67356a6e20dd",
+  "max_length": 99,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

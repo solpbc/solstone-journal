@@ -11,8 +11,6 @@ use solstone_core_offload::cli_restore::{
 
 use super::{CliRun, ProductionClock, offload_restore_json, offload_restore_result, render_json};
 
-pub(super) const NOT_FINISHED: &str = "the restore didn't finish cleanly, so try again later.";
-
 /// The complete native outcome remains alive while output is borrowed.
 #[must_use = "Retain the whole restore result through printing and exit"]
 pub struct OwnedRestoreCliOutcome {
@@ -92,7 +90,9 @@ fn render(run: &OwnedRestoreCliRun, json_output: bool) -> CliRun {
         || (run.settlement() == CliRestoreSettlement::NotStarted && run.result().status == "no_op");
     output.exit_code = i32::from(!succeeded);
     if unfinished {
-        output.stderr.push_str(NOT_FINISHED);
+        output.stderr.push_str(&super::copy::text(
+            "journal.cli.backup.offload.restore.unfinished",
+        ));
         output.stderr.push('\n');
     }
     output

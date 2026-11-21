@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for pause complete.",
+  "context": "Journal command-line text for pause complete.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "10420285603ca334fd6c2df48e5fe17e629ea3ab7679a0c8d00b6048b4d8f60e",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command_resume",
+      "kind": "command",
+      "value": "solstone journal backup resume"
+    }
+  ]
+}

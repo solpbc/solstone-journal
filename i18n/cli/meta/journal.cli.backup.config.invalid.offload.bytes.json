@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for config invalid offload bytes.",
+  "context": "Journal command-line text for config invalid offload bytes.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "345961ce73a0323217a8deb1b6f69da390d1c3333074652859c359d439b5afce",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

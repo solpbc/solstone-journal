@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for teardown confirm.",
+  "context": "Journal command-line text for teardown confirm.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6842f3fe40aa19cec19e216f9f66edcd0f07cd48a8170eef51aa010c66fcdfcd",
+  "max_length": 111,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "yes_flag",
+      "kind": "flag",
+      "value": "--yes"
+    }
+  ]
+}

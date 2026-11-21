@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for offload status overflow.",
+  "context": "Journal command-line text for offload status overflow.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5d784590e894706e32d9217f39588e9a727992579afca87586b1672021cc29ae",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

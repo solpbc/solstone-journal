@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for run failure binding invalid.",
+  "context": "Journal command-line text for run failure binding invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "70e14dedb1d29f2539710f9670f3ebdb638ee5ac1aca2b9e403cf3be90696c41",
+  "max_length": 98,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

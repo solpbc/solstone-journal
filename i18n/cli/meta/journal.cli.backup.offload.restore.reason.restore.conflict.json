@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for offload restore reason restore conflict.",
+  "context": "Journal command-line text for offload restore reason restore conflict.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f9e993495f8a6b0a355e27dae7119b7246aae99eb5ea07e5686eaaa649e55e08",
+  "max_length": 173,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

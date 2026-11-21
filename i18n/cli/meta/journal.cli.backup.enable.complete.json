@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for enable complete.",
+  "context": "Journal command-line text for enable complete.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "30547e5e514cedeb7484eb9bbfcf884228cf8c529a7644cd5e9a4e44cc6964ac",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

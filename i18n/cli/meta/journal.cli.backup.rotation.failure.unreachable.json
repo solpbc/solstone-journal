@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for rotation failure unreachable.",
+  "context": "Journal command-line text for rotation failure unreachable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "56e3e862911142244b112557257612626bb59ab7ba0522375d4e229865721f3b",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

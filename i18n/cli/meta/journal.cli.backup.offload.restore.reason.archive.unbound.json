@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for offload restore reason archive unbound.",
+  "context": "Journal command-line text for offload restore reason archive unbound.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "08fa82a590662645f2ce89f1524a9faf8786c0e9bfe59d8700be35ef2c8e829d",
+  "max_length": 108,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

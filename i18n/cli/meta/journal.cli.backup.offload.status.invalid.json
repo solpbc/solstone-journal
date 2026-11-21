@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for offload status invalid.",
+  "context": "Journal command-line text for offload status invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dbf9b45d1859f9254195cd31bd5ad9fb04df2a6a582b34c0fe95564cc011cc8f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

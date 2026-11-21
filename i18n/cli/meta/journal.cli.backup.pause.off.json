@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pause off.",
+  "context": "Journal command-line text for pause off.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e7eb32e17c505e17d49d5362e4c8f1baacced6057e6156916e48bfca97923ab8",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

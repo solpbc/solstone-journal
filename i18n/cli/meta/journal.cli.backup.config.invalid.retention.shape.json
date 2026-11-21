@@ -1,0 +1,38 @@
+{
+  "description": "Journal command-line text for config invalid retention shape.",
+  "context": "Journal command-line text for config invalid retention shape.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e6ebf7f2a57dc2504fa8bc24fb0647bb248db70c79e2a86874ed2e3f30a24d1f",
+  "max_length": 112,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "monthly",
+      "kind": "accepted-input",
+      "value": "monthly"
+    },
+    {
+      "name": "hourly",
+      "kind": "accepted-input",
+      "value": "hourly"
+    },
+    {
+      "name": "weekly",
+      "kind": "accepted-input",
+      "value": "weekly"
+    },
+    {
+      "name": "daily",
+      "kind": "accepted-input",
+      "value": "daily"
+    }
+  ]
+}

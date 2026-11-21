@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for run failure failed.",
+  "context": "Journal command-line text for run failure failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "84d6dd437e02adc0bda4e4a8b1a4f7cd936a529761130fa41ba970fe956b27e1",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

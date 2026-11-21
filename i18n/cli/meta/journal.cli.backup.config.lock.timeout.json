@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for config lock timeout.",
+  "context": "Journal command-line text for config lock timeout.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "seconds",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "450c8175d261bdc104ee1ed7af5165f1b2a33e2525b5d0cb4940b63681e2c7a5",
+  "max_length": 89,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

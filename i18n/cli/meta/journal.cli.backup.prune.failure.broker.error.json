@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for prune failure broker error.",
+  "context": "Journal command-line text for prune failure broker error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5018bd61a35ff8545c305e13509c6da006a1dab3a0842153273281176852c27e",
+  "max_length": 113,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "company",
+      "kind": "mark-word",
+      "value": "sol pbc"
+    }
+  ]
+}

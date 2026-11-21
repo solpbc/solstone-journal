@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for config invalid mode.",
+  "context": "Journal command-line text for config invalid mode.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d8f3bc7110b72be07bb1e1f72967c3181343d9626924fed0b8d94ab700e2b0ce",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "operated",
+      "kind": "accepted-input",
+      "value": "operated"
+    },
+    {
+      "name": "byo",
+      "kind": "accepted-input",
+      "value": "byo"
+    }
+  ]
+}

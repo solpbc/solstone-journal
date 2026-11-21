@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for config unsupported backend.",
+  "context": "Journal command-line text for config unsupported backend.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9b5caa0a566c3c075b96d3ed7c386e905effd24eeafd40ed343d5c4e3714ea0b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "description": "Journal command-line text for run partial unconfirmed count reason.",
+  "context": "Journal command-line text for run partial unconfirmed count reason.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "62cf4bfcf8accb7082f8cee07ec5b0dcff7c816a4b7e52a8155352bdec62ab54",
+  "max_length": 419,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  },
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal backup run"
+    }
+  ]
+}

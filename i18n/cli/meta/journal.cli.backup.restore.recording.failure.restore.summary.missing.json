@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for restore recording failure restore summary missing.",
+  "context": "Journal command-line text for restore recording failure restore summary missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f24843c9054f2776ee90046a3b6ed013098faf13f5219df3b85f4393bb026a91",
+  "max_length": 114,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

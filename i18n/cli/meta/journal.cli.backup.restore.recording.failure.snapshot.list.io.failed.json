@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for restore recording failure snapshot list io failed.",
+  "context": "Journal command-line text for restore recording failure snapshot list io failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "451bf0971b1b95779bab0deb8c17cfeafb597140c63653519b08495d324e8ae5",
+  "max_length": 103,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

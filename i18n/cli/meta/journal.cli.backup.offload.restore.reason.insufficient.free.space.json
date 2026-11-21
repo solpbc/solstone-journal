@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for offload restore reason insufficient free space.",
+  "context": "Journal command-line text for offload restore reason insufficient free space.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c4440c91bc3ae5d1ca81a6bdae6062c0bb558e62fe692fa015b322503bb79e55",
+  "max_length": 102,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

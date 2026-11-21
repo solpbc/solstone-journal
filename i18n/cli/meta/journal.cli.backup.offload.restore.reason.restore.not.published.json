@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for offload restore reason restore not published.",
+  "context": "Journal command-line text for offload restore reason restore not published.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4ef52ba0606c603a4508bba51a9752da4af1339de75fdc47b6e7ab5034b3103e",
+  "max_length": 149,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

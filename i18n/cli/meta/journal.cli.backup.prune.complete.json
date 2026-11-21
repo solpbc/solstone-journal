@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for prune complete.",
+  "context": "Journal command-line text for prune complete.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1ec357e50e23f842cfe406eee5eb2180361a35360118c083d372626434485d70",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

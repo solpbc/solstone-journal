@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for restore recording failure journal snapshot not found.",
+  "context": "Journal command-line text for restore recording failure journal snapshot not found.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "af7e6d2e0311d12aa3a7d8ad3d4de6401b971f184c49e0ac7e924139afa5c64e",
+  "max_length": 102,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

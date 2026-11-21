@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for resume not paused.",
+  "context": "Journal command-line text for resume not paused.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "666a6066cdccefcd964c827ae2b6e67c08e67ff9ff9be70bb4a6fb41cde42520",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

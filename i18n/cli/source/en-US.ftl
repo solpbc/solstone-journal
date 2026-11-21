@@ -112,7 +112,6 @@ journal.cli.doctor.client.ingest.health.healthy = no devices failing ingest
 
 journal.cli.doctor.client.ingest.health.repair = update or restart the device, then confirm a valid upload clears the rejection
 
-
 journal.cli.doctor.client.transport.refusal.healthy = no devices had requests turned away in the last 7 days
 
 journal.cli.doctor.client.transport.refusal.repair = this is a busy connection, not a lost one; report it if it keeps happening
@@ -366,7 +365,6 @@ journal.cli.doctor.skill.state.link.stale = stale router skill link at { $path }
 journal.cli.doctor.supervisor.conflict.clear = no macOS supervisor conflict (native check: foreign-launcher scan only; no competing KeepAlive launcher found)
 
 journal.cli.doctor.supervisor.conflict.unsupported = not supported on windows
-
 
 journal.cli.doctor.task.pace.about.cap = a job is running long; it will be stopped automatically if it passes its cap — no action needed unless it persists
 
@@ -1546,9 +1544,6 @@ journal.cli.segment.verify.result = { $quantity ->
    *[other] { $passed }/{ $total } checks passed
 }
 
-
-
-
 journal.cli.segment.check.backward = backward chain
 
 journal.cli.segment.check.chain.no.day = { $prev_segment_key } set without { $prev_day_key }
@@ -1768,3 +1763,503 @@ journal.cli.segment.inspect.next.tail = next: (tail)
 journal.cli.segment.inspect.prev.missing = prev: { $path } [MISSING]
 
 journal.cli.segment.inspect.prev.none = prev: (none)
+
+journal.cli.backup.destination.backend.prefix = The repository must start with { $backend }: (for example { $example }).
+
+journal.cli.backup.destination.hosted = { $company } runs your backup storage, so there's no destination to change here. manage it in the services portal.
+
+journal.cli.backup.destination.refused.auth.failed = the destination rejected the credentials. nothing was saved.
+
+journal.cli.backup.destination.refused.bucket.not.found = these credentials can't open a bucket by that name. check the bucket name in the repository. nothing was saved.
+
+journal.cli.backup.destination.refused.locked = the backup there is busy. try again shortly. nothing was saved.
+
+journal.cli.backup.destination.refused.other = the destination couldn't be opened. check the repository and credentials, then try again. nothing was saved.
+
+journal.cli.backup.destination.refused.repo.missing = no backup was found there with these credentials. nothing was saved.
+
+journal.cli.backup.destination.refused.repository.key.refused = there's already a backup there that your recovery key can't open. choose another destination. nothing was saved.
+
+journal.cli.backup.destination.refused.timeout = the destination didn't answer in time. check the repository and credentials, then try again. nothing was saved.
+
+journal.cli.backup.destination.setup.failed = a backup couldn't be set up there ({ $reason }). nothing was saved.
+
+journal.cli.backup.destination.switch.confirm = to switch, run again with { $confirm_new_repository_flag }.
+
+journal.cli.backup.destination.switch.lead = that's a different repository. your existing backup stays where it is, untouched, and your journal won't back up to it or restore from it.
+
+journal.cli.backup.enable.complete = Backup enabled.
+
+journal.cli.backup.enable.complete.key = Backup enabled. Your recovery key:{ $line_break }{ $key_grid }
+
+journal.cli.backup.enable.confirm.key = Your recovery key (write it down - it is the only way to restore):{ $line_break }{ $key_grid }{ $line_break }Confirm by piping the key back: { $command_enable }
+
+journal.cli.backup.enable.destination.required = Set a destination first: { $command_destination_set }
+
+journal.cli.backup.enable.key.mismatch = Recovery key did not match.
+
+journal.cli.backup.enable.repository.missing = Repository not found; pre-initialize it or set { $recovery_setting } in config.
+
+journal.cli.backup.error = Error: { $message }
+
+journal.cli.backup.help.destination = usage: { $syntax }
+
+journal.cli.backup.help.offload = usage: { $syntax }
+
+journal.cli.backup.help.recovery.key = usage: { $syntax }
+
+journal.cli.backup.help.root = usage: { $syntax }
+
+journal.cli.backup.hosted.field = Missing { $name }.
+
+journal.cli.backup.init.code = Repository initialization failed ({ $code_field }{ $returncode }).
+
+journal.cli.backup.init.failed = repository initialization failed.
+
+journal.cli.backup.init.retained = repository initialization failed; retained operation state requires review.
+
+journal.cli.backup.input.io = { $stdin_stream } I/O error.
+
+journal.cli.backup.input.json = invalid { $json_format } on { $stdin_stream }: { $error }
+
+journal.cli.backup.input.limit = { $stdin_stream } request exceeds the { $json_format } input limit.
+
+journal.cli.backup.input.object = expected { $json_format } object on { $stdin_stream }.
+
+journal.cli.backup.offload.preview.held = a read-only offload preview is unavailable. no offload work was started.
+
+journal.cli.backup.offload.restore.day.invalid = Invalid day.
+
+journal.cli.backup.offload.restore.day.or.all = Use either a day or { $all_flag }, not both.
+
+journal.cli.backup.offload.restore.day.required = Provide a day or { $all_flag }.
+
+journal.cli.backup.offload.restore.heading = backup offload restore:
+
+journal.cli.backup.offload.restore.reason.archive.unbound = the backup record doesn't identify the archive needed to restore these files
+
+journal.cli.backup.offload.restore.reason.backup.not.ready = your backup isn't set up, so the offloaded files can't be fetched back
+
+journal.cli.backup.offload.restore.reason.destination.admission.failed = the backup destination couldn't be reached
+
+journal.cli.backup.offload.restore.reason.failed = the restore attempt failed for an unspecified reason
+
+journal.cli.backup.offload.restore.reason.insufficient.free.space = there isn't enough free space on this computer to bring the files back
+
+journal.cli.backup.offload.restore.reason.ledger.degraded = the record of what was offloaded is damaged and can't be used to restore
+
+journal.cli.backup.offload.restore.reason.legacy.read.failed = the backup copy of media offloaded by an earlier version of your journal couldn't be read, so it wasn't restored
+
+journal.cli.backup.offload.restore.reason.legacy.review.held = media offloaded by an earlier version of your journal couldn't be checked against your backup, so it wasn't restored
+
+journal.cli.backup.offload.restore.reason.legacy.verification.failed = the backup copy of media offloaded by an earlier version of your journal didn't match its record, so it wasn't restored
+
+journal.cli.backup.offload.restore.reason.locked = the backup at the destination is locked, usually by a run that's still going or one that was interrupted
+
+journal.cli.backup.offload.restore.reason.missing.file.after.restore = a file that should have come back with the restore is missing
+
+journal.cli.backup.offload.restore.reason.nothing.to.restore = there was nothing offloaded to restore
+
+journal.cli.backup.offload.restore.reason.rclone.unavailable = the { $rclone_program } program isn't available
+
+journal.cli.backup.offload.restore.reason.repo.missing = there's no backup at the destination yet
+
+journal.cli.backup.offload.restore.reason.restic.unavailable = the { $restic_program } backup program isn't available
+
+journal.cli.backup.offload.restore.reason.restore.conflict = a different file is already where at least one of these files belongs, so the file already there was kept and the backup copy wasn't restored
+
+journal.cli.backup.offload.restore.reason.restore.held = restoring offloaded files is temporarily unavailable
+
+journal.cli.backup.offload.restore.reason.restore.not.published = at least one file couldn't be put back in your journal this time and nothing was put in its place, so try again later
+
+journal.cli.backup.offload.restore.reason.segment.identity = one of your journal's recordings couldn't be verified against its own identity record
+
+journal.cli.backup.offload.restore.reason.segment.missing = the journal location these files belong to no longer exists on this computer
+
+journal.cli.backup.offload.restore.reason.stream.marker.failed = the files were restored, but updating the journal's records afterward failed
+
+journal.cli.backup.offload.restore.reason.timeout = it ran too long and stopped
+
+journal.cli.backup.offload.restore.reason.unknown.code = stopped without a reason ({ $code })
+
+journal.cli.backup.offload.restore.reason.verification.failed = a restored file didn't match what it should have been, so it may be damaged
+
+journal.cli.backup.offload.restore.unfinished = the restore didn't finish cleanly, so try again later.
+
+journal.cli.backup.offload.status.heading = backup offload:
+
+journal.cli.backup.offload.status.invalid = invalid offload status.
+
+journal.cli.backup.offload.use.installed = run `{ $command_offload_run }` with the installed { $program } command.
+
+journal.cli.backup.output.json = could not render { $json_format } output.
+
+journal.cli.backup.pause.already = backup is already paused.
+
+journal.cli.backup.pause.complete = backup paused. run `{ $command_resume }` to start it again.
+
+journal.cli.backup.pause.off = backup is off, so there's nothing to pause.
+
+journal.cli.backup.payload.backend = Missing backend.
+
+journal.cli.backup.payload.credential = Missing credential: { $key }.
+
+journal.cli.backup.payload.credentials = Missing credentials.
+
+journal.cli.backup.payload.recovery.key = Missing { $key_field }.
+
+journal.cli.backup.payload.repository = Missing repository.
+
+journal.cli.backup.payload.unsupported = Unsupported backend.
+
+journal.cli.backup.prune.complete = Retention prune complete.
+
+journal.cli.backup.prune.detail.failure.rclone.unavailable = Prune failed: the { $rclone_program } program isn't available. { $detail_field }{ $detail }
+
+journal.cli.backup.prune.detail.failure.restic.unavailable = Prune failed: the { $restic_program } backup program isn't available. { $detail_field }{ $detail }
+
+journal.cli.backup.prune.failure.access = Prune failed: the destination refused permission for this write.
+
+journal.cli.backup.prune.failure.auth.failed = Prune failed: the destination rejected the credentials.
+
+journal.cli.backup.prune.failure.binding.invalid = Prune failed: your journal's backup settings are no longer valid.
+
+journal.cli.backup.prune.failure.binding.superseded = Prune failed: newer backup settings replaced these.
+
+journal.cli.backup.prune.failure.broker.error = Prune failed: the backup service { $company } runs couldn't complete the request.
+
+journal.cli.backup.prune.failure.broker.unreachable = Prune failed: the backup service { $company } runs couldn't be reached.
+
+journal.cli.backup.prune.failure.bucket.not.found = Prune failed: your credentials can't open the bucket the repository names.
+
+journal.cli.backup.prune.failure.failed = Prune failed: no reason was given.
+
+journal.cli.backup.prune.failure.hosted.entitlement.inactive = Prune failed: { $company } isn't running backup for you.
+
+journal.cli.backup.prune.failure.journal.path.unresolved = Prune failed: couldn't find your journal.
+
+journal.cli.backup.prune.failure.locked = Prune failed: the backup at the destination is locked, usually by a run that's still going or one that was interrupted.
+
+journal.cli.backup.prune.failure.rclone.unavailable = Prune failed: the { $rclone_program } program isn't available.
+
+journal.cli.backup.prune.failure.repo.exists = Prune failed: there's already a backup there.
+
+journal.cli.backup.prune.failure.repo.missing = Prune failed: there's no backup at the destination yet.
+
+journal.cli.backup.prune.failure.repository.unsupported = Prune failed: the repository in your backup settings doesn't start with { $s3_backend } or { $b2_backend } to match its backend.
+
+journal.cli.backup.prune.failure.restic.unavailable = Prune failed: the { $restic_program } backup program isn't available.
+
+journal.cli.backup.prune.failure.timeout = Prune failed: it ran too long and stopped.
+
+journal.cli.backup.prune.failure.unknown.code = Prune failed: stopped without a reason ({ $code }).
+
+journal.cli.backup.prune.failure.unreachable = Prune failed: the destination couldn't be reached.
+
+journal.cli.backup.prune.skipped = Prune skipped (not enabled or not configured).
+
+journal.cli.backup.recovery.key.missing = No recovery key is set.
+
+journal.cli.backup.restore.already.set.up = restore couldn't start: your journal is already set up, so it can't be restored over. to use a backup, start a new journal and choose restore during setup.
+
+journal.cli.backup.restore.complete = restore complete: { $counters }, { $integrity_field }{ $integrity }, { $resume_field }{ $resumable }.
+
+journal.cli.backup.restore.degraded.integrity.failed = restore finished with a problem: { $counters }; the backup failed its integrity check and may be damaged, so your journal isn't set to the backup ({ $reason_field }{ $code }).
+
+journal.cli.backup.restore.degraded.integrity.unverified = restore finished with a problem: { $counters }; the integrity check couldn't run (the backup was busy or timed out), so your journal isn't set to the backup ({ $reason_field }{ $code }).
+
+journal.cli.backup.restore.degraded.other = restore finished with a problem: { $counters }; restore completed with degraded evidence ({ $reason_field }{ $code }).
+
+journal.cli.backup.restore.degraded.restore.summary.missing = restore finished with a problem: { $counters }; restore summary was missing or malformed ({ $reason_field }{ $code }).
+
+journal.cli.backup.restore.failed.counters = restore failed: { $counters }.
+
+journal.cli.backup.restore.failure.body.rebuild.failed = restore failed: your journal couldn't be rebuilt from the restored files; { $counters }.
+
+journal.cli.backup.restore.failure.destination.admission.failed = restore failed: the backup destination couldn't be reached; { $counters }.
+
+journal.cli.backup.restore.failure.destination.invalid = restore failed: the backup destination isn't valid; { $counters }.
+
+journal.cli.backup.restore.failure.destination.publish.failed = restore failed: the restored journal couldn't be saved to its destination; { $counters }.
+
+journal.cli.backup.restore.failure.full.scan.failed = restore failed: a full scan of the restored journal failed; { $counters }.
+
+journal.cli.backup.restore.failure.insufficient.free.space = restore failed: there isn't enough free space for this restore, so nothing changed; { $counters }.
+
+journal.cli.backup.restore.failure.integrity.check.io.failed = restore failed: the restored files couldn't be checked; { $counters }.
+
+journal.cli.backup.restore.failure.integrity.failed = restore failed: the backup failed its integrity check and may be damaged, so your journal isn't set to the backup; { $counters }.
+
+journal.cli.backup.restore.failure.integrity.unverified = restore failed: the integrity check couldn't run (the backup was busy or timed out), so your journal isn't set to the backup; { $counters }.
+
+journal.cli.backup.restore.failure.invalid.key = restore failed: the recovery key entered doesn't match this backup; { $counters }.
+
+journal.cli.backup.restore.failure.journal.already.set.up = restore failed: your journal is already set up, so it can't be restored over. to use a backup, start a new journal and choose restore during setup; { $counters }.
+
+journal.cli.backup.restore.failure.journal.snapshot.not.found = restore failed: no backup of your journal was found; { $counters }.
+
+journal.cli.backup.restore.failure.recovery.confirmation.publish.failed = restore failed: the recovery confirmation couldn't be saved; { $counters }.
+
+journal.cli.backup.restore.failure.recovery.key.publish.failed = restore failed: the recovery key couldn't be saved; { $counters }.
+
+journal.cli.backup.restore.failure.restic.unavailable = restore failed: the { $restic_program } backup program isn't available; { $counters }.
+
+journal.cli.backup.restore.failure.restore.failed = restore failed: the restore didn't complete; { $counters }.
+
+journal.cli.backup.restore.failure.restore.io.failed = restore failed: files couldn't be written during restore; { $counters }.
+
+journal.cli.backup.restore.failure.restore.record.failed = restore failed: the restore's result couldn't be recorded; { $counters }.
+
+journal.cli.backup.restore.failure.restore.summary.missing = restore failed: the restore finished but its summary is missing; { $counters }.
+
+journal.cli.backup.restore.failure.snapshot.catalog.invalid = restore failed: the list of backups is invalid; { $counters }.
+
+journal.cli.backup.restore.failure.snapshot.list.failed = restore failed: the list of backups couldn't be retrieved; { $counters }.
+
+journal.cli.backup.restore.failure.snapshot.list.io.failed = restore failed: the list of backups couldn't be read; { $counters }.
+
+journal.cli.backup.restore.failure.snapshot.selection.ambiguous = restore failed: more than one backup matched and none could be chosen automatically; { $counters }.
+
+journal.cli.backup.restore.failure.unknown.code = restore failed: stopped without a reason ({ $code }); { $counters }.
+
+journal.cli.backup.restore.recording.failure.body.rebuild.failed = Recording the result also failed: your journal couldn't be rebuilt from the restored files.
+
+journal.cli.backup.restore.recording.failure.destination.admission.failed = Recording the result also failed: the backup destination couldn't be reached.
+
+journal.cli.backup.restore.recording.failure.destination.invalid = Recording the result also failed: the backup destination isn't valid.
+
+journal.cli.backup.restore.recording.failure.destination.publish.failed = Recording the result also failed: the restored journal couldn't be saved to its destination.
+
+journal.cli.backup.restore.recording.failure.full.scan.failed = Recording the result also failed: a full scan of the restored journal failed.
+
+journal.cli.backup.restore.recording.failure.insufficient.free.space = Recording the result also failed: there isn't enough free space for this restore, so nothing changed.
+
+journal.cli.backup.restore.recording.failure.integrity.check.io.failed = Recording the result also failed: the restored files couldn't be checked.
+
+journal.cli.backup.restore.recording.failure.integrity.failed = Recording the result also failed: the backup failed its integrity check and may be damaged, so your journal isn't set to the backup.
+
+journal.cli.backup.restore.recording.failure.integrity.unverified = Recording the result also failed: the integrity check couldn't run (the backup was busy or timed out), so your journal isn't set to the backup.
+
+journal.cli.backup.restore.recording.failure.invalid.key = Recording the result also failed: the recovery key entered doesn't match this backup.
+
+journal.cli.backup.restore.recording.failure.journal.already.set.up = Recording the result also failed: your journal is already set up, so it can't be restored over. to use a backup, start a new journal and choose restore during setup.
+
+journal.cli.backup.restore.recording.failure.journal.snapshot.not.found = Recording the result also failed: no backup of your journal was found.
+
+journal.cli.backup.restore.recording.failure.recovery.confirmation.publish.failed = Recording the result also failed: the recovery confirmation couldn't be saved.
+
+journal.cli.backup.restore.recording.failure.recovery.key.publish.failed = Recording the result also failed: the recovery key couldn't be saved.
+
+journal.cli.backup.restore.recording.failure.restic.unavailable = Recording the result also failed: the { $restic_program } backup program isn't available.
+
+journal.cli.backup.restore.recording.failure.restore.failed = Recording the result also failed: the restore didn't complete.
+
+journal.cli.backup.restore.recording.failure.restore.io.failed = Recording the result also failed: files couldn't be written during restore.
+
+journal.cli.backup.restore.recording.failure.restore.record.failed = Recording the result also failed: the restore's result couldn't be recorded.
+
+journal.cli.backup.restore.recording.failure.restore.summary.missing = Recording the result also failed: the restore finished but its summary is missing.
+
+journal.cli.backup.restore.recording.failure.snapshot.catalog.invalid = Recording the result also failed: the list of backups is invalid.
+
+journal.cli.backup.restore.recording.failure.snapshot.list.failed = Recording the result also failed: the list of backups couldn't be retrieved.
+
+journal.cli.backup.restore.recording.failure.snapshot.list.io.failed = Recording the result also failed: the list of backups couldn't be read.
+
+journal.cli.backup.restore.recording.failure.snapshot.selection.ambiguous = Recording the result also failed: more than one backup matched and none could be chosen automatically.
+
+journal.cli.backup.restore.recording.failure.unknown.code = Recording the result also failed: stopped without a reason ({ $code }).
+
+journal.cli.backup.restore.unrecorded = restore completed, but recording the result failed: { $counters } ({ $reason_field }{ $restore_record }).
+
+journal.cli.backup.resume.complete = backup resumed. the next backup runs on its usual schedule.
+
+journal.cli.backup.resume.not.paused = backup isn't paused.
+
+journal.cli.backup.rotation.failed = Rotation failed: failed.
+
+journal.cli.backup.rotation.failure.access = Rotation failed: the destination refused permission for this write.
+
+journal.cli.backup.rotation.failure.auth.failed = Rotation failed: the destination rejected the credentials.
+
+journal.cli.backup.rotation.failure.binding.invalid = Rotation failed: your journal's backup settings are no longer valid.
+
+journal.cli.backup.rotation.failure.binding.superseded = Rotation failed: newer backup settings replaced these.
+
+journal.cli.backup.rotation.failure.broker.error = Rotation failed: the backup service { $company } runs couldn't complete the request.
+
+journal.cli.backup.rotation.failure.broker.unreachable = Rotation failed: the backup service { $company } runs couldn't be reached.
+
+journal.cli.backup.rotation.failure.bucket.not.found = Rotation failed: your credentials can't open the bucket the repository names.
+
+journal.cli.backup.rotation.failure.failed = Rotation failed: no reason was given.
+
+journal.cli.backup.rotation.failure.hosted.entitlement.inactive = Rotation failed: { $company } isn't running backup for you.
+
+journal.cli.backup.rotation.failure.journal.path.unresolved = Rotation failed: couldn't find your journal.
+
+journal.cli.backup.rotation.failure.locked = Rotation failed: the backup at the destination is locked, usually by a run that's still going or one that was interrupted.
+
+journal.cli.backup.rotation.failure.rclone.unavailable = Rotation failed: the { $rclone_program } program isn't available.
+
+journal.cli.backup.rotation.failure.repo.exists = Rotation failed: there's already a backup there.
+
+journal.cli.backup.rotation.failure.repo.missing = Rotation failed: there's no backup at the destination yet.
+
+journal.cli.backup.rotation.failure.repository.unsupported = Rotation failed: the repository in your backup settings doesn't start with { $s3_backend } or { $b2_backend } to match its backend.
+
+journal.cli.backup.rotation.failure.restic.unavailable = Rotation failed: the { $restic_program } backup program isn't available.
+
+journal.cli.backup.rotation.failure.timeout = Rotation failed: it ran too long and stopped.
+
+journal.cli.backup.rotation.failure.unknown.code = Rotation failed: stopped without a reason ({ $code }).
+
+journal.cli.backup.rotation.failure.unreachable = Rotation failed: the destination couldn't be reached.
+
+journal.cli.backup.rotation.key = New recovery key (write it down):{ $line_break }{ $key_grid }
+
+journal.cli.backup.rotation.skipped = Recovery key rotation skipped (backup not configured).
+
+journal.cli.backup.run.complete = Backup complete (snapshot { $snapshot }).
+
+journal.cli.backup.run.failure.access = Backup failed: the destination refused permission for this write.
+
+journal.cli.backup.run.failure.auth.failed = Backup failed: the destination rejected the credentials.
+
+journal.cli.backup.run.failure.binding.invalid = Backup failed: your journal's backup settings are no longer valid.
+
+journal.cli.backup.run.failure.binding.superseded = Backup failed: newer backup settings replaced these.
+
+journal.cli.backup.run.failure.broker.error = Backup failed: the backup service { $company } runs couldn't complete the request.
+
+journal.cli.backup.run.failure.broker.unreachable = Backup failed: the backup service { $company } runs couldn't be reached.
+
+journal.cli.backup.run.failure.bucket.not.found = Backup failed: your credentials can't open the bucket the repository names.
+
+journal.cli.backup.run.failure.failed = Backup failed: no reason was given.
+
+journal.cli.backup.run.failure.hosted.entitlement.inactive = Backup failed: { $company } isn't running backup for you.
+
+journal.cli.backup.run.failure.journal.path.unresolved = Backup failed: couldn't find your journal.
+
+journal.cli.backup.run.failure.locked = Backup failed: the backup at the destination is locked, usually by a run that's still going or one that was interrupted.
+
+journal.cli.backup.run.failure.rclone.unavailable = Backup failed: the { $rclone_program } program isn't available.
+
+journal.cli.backup.run.failure.repo.exists = Backup failed: there's already a backup there.
+
+journal.cli.backup.run.failure.repo.missing = Backup failed: there's no backup at the destination yet.
+
+journal.cli.backup.run.failure.repository.unsupported = Backup failed: the repository in your backup settings doesn't start with { $s3_backend } or { $b2_backend } to match its backend.
+
+journal.cli.backup.run.failure.restic.unavailable = Backup failed: the { $restic_program } backup program isn't available.
+
+journal.cli.backup.run.failure.timeout = Backup failed: it ran too long and stopped.
+
+journal.cli.backup.run.failure.unknown.code = Backup failed: stopped without a reason ({ $code }).
+
+journal.cli.backup.run.failure.unreachable = Backup failed: the destination couldn't be reached.
+
+journal.cli.backup.run.partial.snapshot.count = { $quantity ->
+    [one] Backup partial (snapshot { $snapshot }). 1 file couldn't be read, so it isn't in it. Run `{ $command }` again once that's fixed.
+   *[other] Backup partial (snapshot { $snapshot }). { $count } files couldn't be read, so they aren't in it. Run `{ $command }` again once that's fixed.
+}
+
+journal.cli.backup.run.partial.snapshot.count.reason = { $quantity ->
+    [one] Backup partial (snapshot { $snapshot }). 1 file couldn't be read, so it isn't in it. The first: { $reason }. Run `{ $command }` again once that's fixed.
+   *[other] Backup partial (snapshot { $snapshot }). { $count } files couldn't be read, so they aren't in it. The first: { $reason }. Run `{ $command }` again once that's fixed.
+}
+
+journal.cli.backup.run.partial.snapshot.unmeasured = Backup partial (snapshot { $snapshot }). some files couldn't be read, so they aren't in it. Run `{ $command_run }` again once that's fixed.
+
+journal.cli.backup.run.partial.unconfirmed.count = { $quantity ->
+    [one] Backup partial. 1 file couldn't be read, so it isn't in it, and the snapshot couldn't be confirmed. Run `{ $command }` again once that's fixed.
+   *[other] Backup partial. { $count } files couldn't be read, so they aren't in it, and the snapshot couldn't be confirmed. Run `{ $command }` again once that's fixed.
+}
+
+journal.cli.backup.run.partial.unconfirmed.count.reason = { $quantity ->
+    [one] Backup partial. 1 file couldn't be read, so it isn't in it, and the snapshot couldn't be confirmed. The first: { $reason }. Run `{ $command }` again once that's fixed.
+   *[other] Backup partial. { $count } files couldn't be read, so they aren't in it, and the snapshot couldn't be confirmed. The first: { $reason }. Run `{ $command }` again once that's fixed.
+}
+
+journal.cli.backup.run.partial.unconfirmed.unmeasured = Backup partial. some files couldn't be read, so they aren't in it, and the snapshot couldn't be confirmed. Run `{ $command_run }` again once that's fixed.
+
+journal.cli.backup.run.skipped = Backup skipped (not enabled or not configured).
+
+journal.cli.backup.teardown.backup.only.held = your backup holds the only copy of some of your media, so no backup changes were made. restore everything from the backup page first, then try again.
+
+journal.cli.backup.teardown.confirm = Refusing to tear down backup without { $yes_flag }. This forgets all snapshots.
+
+journal.cli.backup.teardown.not.started = turning off and deleting your backup couldn't start. no backup changes were made.
+
+journal.cli.backup.teardown.partial = backup teardown did not finish. keep recovery files and review the recorded effects before retrying.
+
+journal.cli.backup.teardown.prelaunch.held = turning off and deleting your backup isn't available here. no backup changes were made.
+
+journal.cli.backup.usage.destination = { $command }: error: unrecognized arguments: { $arguments }
+
+journal.cli.backup.usage.offload = { $command }: error: unrecognized arguments: { $arguments }
+
+journal.cli.backup.usage.recovery.key = { $command }: error: unrecognized arguments: { $arguments }
+
+journal.cli.backup.usage.root = { $command }: error: unrecognized arguments: { $arguments }
+
+journal.cli.backup.config.canonical.recovery.characters = canonical recovery key contains invalid { $Crockford } characters
+
+journal.cli.backup.config.canonical.recovery.length = canonical recovery key must be exactly 64 characters
+
+journal.cli.backup.config.entropy = could not generate backup key.
+
+journal.cli.backup.config.hosted.delete = could not delete hosted binding.
+
+journal.cli.backup.config.hosted.read = could not read hosted binding.
+
+journal.cli.backup.config.hosted.write = could not save hosted binding.
+
+journal.cli.backup.config.invalid.destination.shape = backup destination must be a { $JSON } object
+
+journal.cli.backup.config.invalid.mode = backup mode must be { $byo } or { $operated }
+
+journal.cli.backup.config.invalid.offload.bytes = backup offload byte values must be positive integers or null
+
+journal.cli.backup.config.invalid.offload.enabled = backup offload enabled must be a boolean
+
+journal.cli.backup.config.invalid.offload.shape = backup offload must include { $enabled }, { $budget_bytes }, { $floor_bytes }
+
+journal.cli.backup.config.invalid.offload.status = backup offload status must be { $ok_value }, { $skipped_value }, { $stalled_value }, or { $error_value }
+
+journal.cli.backup.config.invalid.restore.counters = backup restore counters must be non-negative integers
+
+journal.cli.backup.config.invalid.restore.scope = backup restore scope must be { $day_value }, { $all_value }, or { $journal_value }
+
+journal.cli.backup.config.invalid.restore.status = backup restore status must be { $ok_value }, { $no_op_value }, { $refused_value }, { $degraded_value }, or { $error_value }
+
+journal.cli.backup.config.invalid.retention.shape = backup retention must include { $hourly }, { $daily }, { $weekly }, { $monthly }
+
+journal.cli.backup.config.invalid.retention.value = backup retention values must be non-negative integers
+
+journal.cli.backup.config.invalid.verification.status = backup verification status must be { $ok_value }, { $skipped_value }, or { $error_value }
+
+journal.cli.backup.config.lock.timeout = could not acquire lock for { $path } within { $seconds }s
+
+journal.cli.backup.config.missing.credential = missing backup credential: { $key }
+
+journal.cli.backup.config.recovery.parse = recovery key must contain exactly 64 { $Crockford } characters after cleanup
+
+journal.cli.backup.config.stored.keys = backup keys must be strings when present
+
+journal.cli.backup.config.teardown.recovery.corrupt = teardown recovery record corrupt or invalid.
+
+journal.cli.backup.config.teardown.recovery.delete = could not delete teardown recovery record.
+
+journal.cli.backup.config.teardown.recovery.read = could not read teardown recovery record.
+
+journal.cli.backup.config.teardown.recovery.write = could not save teardown recovery record.
+
+journal.cli.backup.config.unsupported.backend = unsupported backup backend
+
+journal.cli.backup.offload.status.overflow = media status total overflow
+
+journal.cli.backup.offload.media.byte.overflow = media byte total overflow
+
+journal.cli.backup.offload.media.file.overflow = media file total overflow

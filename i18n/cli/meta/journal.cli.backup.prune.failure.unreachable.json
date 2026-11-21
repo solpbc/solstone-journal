@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for prune failure unreachable.",
+  "context": "Journal command-line text for prune failure unreachable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "959331c306d9f25851e4abaf4e8f41130d379297e70953a7e02c8cf7af7736ee",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

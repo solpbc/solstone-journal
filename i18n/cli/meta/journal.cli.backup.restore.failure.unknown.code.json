@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for restore failure unknown code.",
+  "context": "Journal command-line text for restore failure unknown code.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "code",
+      "type": "string"
+    },
+    {
+      "name": "counters",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e55c855a088f8cfe1f6223cbab5547e1e90f5a92a563437d1718dcc6f7d4034f",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

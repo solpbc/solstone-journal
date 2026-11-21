@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for pause already.",
+  "context": "Journal command-line text for pause already.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "153562aa3a083ccde8af8995feda9ad8c182c000dc51fb2044ad6026827c19d4",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

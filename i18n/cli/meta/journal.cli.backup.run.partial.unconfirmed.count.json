@@ -1,0 +1,37 @@
+{
+  "description": "Journal command-line text for run partial unconfirmed count.",
+  "context": "Journal command-line text for run partial unconfirmed count.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "dda1f859a7f00c95c5dd0584124b64ce28e50eff5e28db723b5dac2ada5118db",
+  "max_length": 371,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  },
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal backup run"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for restore failure destination admission failed.",
+  "context": "Journal command-line text for restore failure destination admission failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "counters",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a620a7021f250e780ac7bbb2e7e07ce5ad66c8061145028abc91fcd0bc3f1168",
+  "max_length": 106,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

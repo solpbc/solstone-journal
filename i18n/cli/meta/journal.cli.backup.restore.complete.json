@@ -1,0 +1,41 @@
+{
+  "description": "Journal command-line text for restore complete.",
+  "context": "Journal command-line text for restore complete.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "counters",
+      "type": "string"
+    },
+    {
+      "name": "integrity",
+      "type": "string"
+    },
+    {
+      "name": "resumable",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e2004e9048bbaa2a5c47d2f0e918202090bbb0dda255a801bf62124e2dae0602",
+  "max_length": 133,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "integrity_field",
+      "kind": "accepted-input",
+      "value": "integrity_ok="
+    },
+    {
+      "name": "resume_field",
+      "kind": "accepted-input",
+      "value": "resumable="
+    }
+  ]
+}

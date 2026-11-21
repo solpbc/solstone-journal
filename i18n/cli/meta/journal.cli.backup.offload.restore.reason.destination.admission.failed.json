@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for offload restore reason destination admission failed.",
+  "context": "Journal command-line text for offload restore reason destination admission failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "34f97d64101e203c0a2070f834c8ffac4de4fe0c1b9b5efa564fe46f10bd33cf",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

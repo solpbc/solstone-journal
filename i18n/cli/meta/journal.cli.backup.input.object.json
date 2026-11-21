@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for input object.",
+  "context": "Journal command-line text for input object.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7f0da29b0ace3e2cc0e2051054dc4b4e79f034cacbdf1262239f60ef2c7e8fd3",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "stdin_stream",
+      "kind": "accepted-input",
+      "value": "stdin"
+    },
+    {
+      "name": "json_format",
+      "kind": "accepted-input",
+      "value": "JSON"
+    }
+  ]
+}

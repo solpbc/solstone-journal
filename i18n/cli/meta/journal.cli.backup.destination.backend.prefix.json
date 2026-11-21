@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for destination backend prefix.",
+  "context": "Journal command-line text for destination backend prefix.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "backend",
+      "type": "string"
+    },
+    {
+      "name": "example",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b13058ed35557035ff6384d8b35cf7d5741f9592fd7cfd5a0da4247152919d9a",
+  "max_length": 104,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

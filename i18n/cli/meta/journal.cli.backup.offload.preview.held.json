@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for offload preview held.",
+  "context": "Journal command-line text for offload preview held.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "abe27ef201f7f20c98cdf9e93dca1c4c686d0142852dd1be8ba9b286399247b7",
+  "max_length": 104,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for rotation failure binding invalid.",
+  "context": "Journal command-line text for rotation failure binding invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e9841f1f6e3c2364d0e5b40756e1d6c415437f814dba68610bd17cc0b361868a",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

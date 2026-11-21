@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for init retained.",
+  "context": "Journal command-line text for init retained.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7608fbeb999f2e32c8942ef128908fabd4da3f96cfd2efb4af3356a35200e442",
+  "max_length": 107,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

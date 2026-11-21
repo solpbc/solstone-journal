@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for restore recording failure journal already set up.",
+  "context": "Journal command-line text for restore recording failure journal already set up.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "babd6934afe89ffa18e60adc624005fda5f1b06747a3195e0114fbf42aefff58",
+  "max_length": 197,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

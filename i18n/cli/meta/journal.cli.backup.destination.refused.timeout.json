@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for destination refused timeout.",
+  "context": "Journal command-line text for destination refused timeout.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ec5047516f7a0390be0a313f34f6c72b374910246886ca2b4b37187f761a977f",
+  "max_length": 143,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

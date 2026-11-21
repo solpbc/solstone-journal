@@ -1,0 +1,38 @@
+{
+  "description": "Journal command-line text for config invalid offload status.",
+  "context": "Journal command-line text for config invalid offload status.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1d458de4a743ea4075ff344199b0ecf71b71b2cef9f053f02c77e8f37fe5b228",
+  "max_length": 136,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "skipped_value",
+      "kind": "accepted-input",
+      "value": "skipped"
+    },
+    {
+      "name": "stalled_value",
+      "kind": "accepted-input",
+      "value": "stalled"
+    },
+    {
+      "name": "error_value",
+      "kind": "accepted-input",
+      "value": "error"
+    },
+    {
+      "name": "ok_value",
+      "kind": "accepted-input",
+      "value": "ok"
+    }
+  ]
+}

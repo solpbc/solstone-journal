@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for config invalid offload enabled.",
+  "context": "Journal command-line text for config invalid offload enabled.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d05d1cefe139922f2f7ffa5925a0da3392e6ee584b672bbe5b5ad865b2b8eb2f",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

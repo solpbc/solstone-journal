@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for prune failure timeout.",
+  "context": "Journal command-line text for prune failure timeout.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "59df58805e16b68067b5fe8516d1ed5531943717ed0b574d1ba95d4f1f0d4957",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for rotation failure hosted entitlement inactive.",
+  "context": "Journal command-line text for rotation failure hosted entitlement inactive.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "73851b4cad1377aa063decdf7883ee30ee9ede116fd561535ca0bbfafcb5f1b3",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "company",
+      "kind": "mark-word",
+      "value": "sol pbc"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for offload restore reason legacy verification failed.",
+  "context": "Journal command-line text for offload restore reason legacy verification failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6fda5fae022c87a31f046b359f7ee37823527009ddb03a8e9449ad5dd3252b89",
+  "max_length": 151,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

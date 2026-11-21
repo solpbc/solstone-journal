@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for resume complete.",
+  "context": "Journal command-line text for resume complete.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "aefd760a9b1314b2b571febd8219f38a0f0e58ab5907b2cc5256d1a2d0b1a8a2",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

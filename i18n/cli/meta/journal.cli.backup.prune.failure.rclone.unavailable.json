@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for prune failure rclone unavailable.",
+  "context": "Journal command-line text for prune failure rclone unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "64774bc7b597a3183022d67d16470b6d56d2139ab8578b0b7e7d0d561b912c5d",
+  "max_length": 94,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "rclone_program",
+      "kind": "accepted-input",
+      "value": "rclone"
+    }
+  ]
+}

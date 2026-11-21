@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for run failure repo exists.",
+  "context": "Journal command-line text for run failure repo exists.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cbf720a56590fa8cbae1f7816780ab789bc55859e43045e38d612506d31af4bd",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

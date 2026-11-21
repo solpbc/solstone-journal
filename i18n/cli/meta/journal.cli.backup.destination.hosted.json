@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for destination hosted.",
+  "context": "Journal command-line text for destination hosted.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d340230b4d8eabec4009e3c3cd1da20be800800d7586b13e401065f49c4b42b9",
+  "max_length": 146,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "company",
+      "kind": "mark-word",
+      "value": "sol pbc"
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for restore degraded integrity failed.",
+  "context": "Journal command-line text for restore degraded integrity failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "counters",
+      "type": "string"
+    },
+    {
+      "name": "code",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9b0ee13266707d37264954e9e1d2093bdc73fbbc6b285e84dfafa75455685561",
+  "max_length": 207,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "reason_field",
+      "kind": "accepted-input",
+      "value": "reason_code="
+    }
+  ]
+}

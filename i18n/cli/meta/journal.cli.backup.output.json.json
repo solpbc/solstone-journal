@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for output json.",
+  "context": "Journal command-line text for output json.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "475de395fcf012c652ee5f48c46b0c97e9791222b4473eae00b278f1abdac85d",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "json_format",
+      "kind": "accepted-input",
+      "value": "JSON"
+    }
+  ]
+}

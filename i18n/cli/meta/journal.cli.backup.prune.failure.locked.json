@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for prune failure locked.",
+  "context": "Journal command-line text for prune failure locked.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "74fa428f70cf28724fca6a07f41f899b8b64381896d33ac0621444a912a052c6",
+  "max_length": 151,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for prune failure access.",
+  "context": "Journal command-line text for prune failure access.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "60a5d195ef84cb8cdb412e34fcc066db0b1b0ebff0c5b0a401a113f17bb27757",
+  "max_length": 96,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

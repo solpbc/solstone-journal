@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for rotation failure repository unsupported.",
+  "context": "Journal command-line text for rotation failure repository unsupported.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "42839d256aa19156cfe40fbb49844a759fab5d616fac398d60768e240f41c418",
+  "max_length": 163,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "s3_backend",
+      "kind": "accepted-input",
+      "value": "s3:"
+    },
+    {
+      "name": "b2_backend",
+      "kind": "accepted-input",
+      "value": "b2:"
+    }
+  ]
+}

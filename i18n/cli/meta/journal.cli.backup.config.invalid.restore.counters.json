@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for config invalid restore counters.",
+  "context": "Journal command-line text for config invalid restore counters.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c220100ddc47c1869f48bbc3a19a524926361ba640d611c963fd140f293e8f00",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

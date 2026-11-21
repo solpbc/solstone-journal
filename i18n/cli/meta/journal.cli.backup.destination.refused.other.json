@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for destination refused other.",
+  "context": "Journal command-line text for destination refused other.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "870f29205760f9bc5730c6c092618b76c77936e3082b223472b29436e91d3781",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

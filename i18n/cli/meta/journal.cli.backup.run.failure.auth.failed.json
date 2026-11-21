@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for run failure auth failed.",
+  "context": "Journal command-line text for run failure auth failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "68e7b5cec537d95fd019091d7cd98eeaead329f9d21398ff9d3ab28cb95a10b9",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

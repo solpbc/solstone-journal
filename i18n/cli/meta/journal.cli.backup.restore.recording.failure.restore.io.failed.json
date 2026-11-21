@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for restore recording failure restore io failed.",
+  "context": "Journal command-line text for restore recording failure restore io failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bff65fd6a2053d91c1fbe7ef06e142c714e8c60b75201a64e0ba3b827130687b",
+  "max_length": 107,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

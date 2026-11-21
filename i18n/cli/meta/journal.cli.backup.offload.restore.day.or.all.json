@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for offload restore day or all.",
+  "context": "Journal command-line text for offload restore day or all.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dc73c63b483337c221c6e6dcac76314547933f0812a96ba1314ae191d412f85d",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "all_flag",
+      "kind": "flag",
+      "value": "--all"
+    }
+  ]
+}

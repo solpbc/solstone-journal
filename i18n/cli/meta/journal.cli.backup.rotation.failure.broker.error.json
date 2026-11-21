@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for rotation failure broker error.",
+  "context": "Journal command-line text for rotation failure broker error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7f35bb8987f7bcb3fa343e710c3aa88b96f2634a9afd3b79ee63cec1af134f75",
+  "max_length": 116,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "company",
+      "kind": "mark-word",
+      "value": "sol pbc"
+    }
+  ]
+}

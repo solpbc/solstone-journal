@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for destination refused locked.",
+  "context": "Journal command-line text for destination refused locked.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "21fd59196d9fc2fc02d98b35c7d300366858e2e6cbf8aa5f747ead7e228b2e7b",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

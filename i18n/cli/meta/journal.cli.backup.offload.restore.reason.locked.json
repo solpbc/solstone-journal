@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for offload restore reason locked.",
+  "context": "Journal command-line text for offload restore reason locked.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cbe2627bd670efb51dc1d243253aa931bfe8864c2878f59c9b5f1c5460a8665f",
+  "max_length": 136,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

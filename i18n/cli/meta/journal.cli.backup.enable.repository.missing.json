@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for enable repository missing.",
+  "context": "Journal command-line text for enable repository missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9518b6944ceb71765225616ada8a96663d5d3317d1f890920f04fa29d50dba0d",
+  "max_length": 111,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "recovery_setting",
+      "kind": "accepted-input",
+      "value": "backup.recovery_key"
+    }
+  ]
+}

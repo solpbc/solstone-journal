@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for restore recording failure snapshot selection ambiguous.",
+  "context": "Journal command-line text for restore recording failure snapshot selection ambiguous.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "951329a4006f1f686d1cfeef6839af1d0e8d9355143108c31699f7e934e6240b",
+  "max_length": 134,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

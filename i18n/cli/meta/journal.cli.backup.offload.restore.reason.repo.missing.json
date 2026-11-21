@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for offload restore reason repo missing.",
+  "context": "Journal command-line text for offload restore reason repo missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4f0a4c57d01c1df0e7dcc0b36f653fe49813e8a4b948023603aa778ae684b714",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

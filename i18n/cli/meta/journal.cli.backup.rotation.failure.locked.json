@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for rotation failure locked.",
+  "context": "Journal command-line text for rotation failure locked.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4a8f997d0fd799e26625bec218d507d2c3955ff258f552746ba07cb7973c63bb",
+  "max_length": 154,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

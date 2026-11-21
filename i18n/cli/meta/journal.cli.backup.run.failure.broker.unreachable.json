@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for run failure broker unreachable.",
+  "context": "Journal command-line text for run failure broker unreachable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8ef5c2c0698ee9328be5e380b31de19397bc17cedb0014ee562981b4facd9fe6",
+  "max_length": 104,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "company",
+      "kind": "mark-word",
+      "value": "sol pbc"
+    }
+  ]
+}

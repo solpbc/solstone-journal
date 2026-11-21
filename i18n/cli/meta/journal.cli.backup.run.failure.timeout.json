@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for run failure timeout.",
+  "context": "Journal command-line text for run failure timeout.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "08d72c544dea13932b3dfddc18fdb6b8f2fbee1a5a1f291d45e18d2e05c47b38",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for destination refused repo missing.",
+  "context": "Journal command-line text for destination refused repo missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8aa144cf5529662b83690983a2363b873f380ac0b41befeeec5d7a319181b1d8",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

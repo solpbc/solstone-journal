@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for run failure unreachable.",
+  "context": "Journal command-line text for run failure unreachable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7feca7ed1b694612669a6a7fba1a3616d06e0be5218db4b9b3910f120b16dec7",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for rotation failure timeout.",
+  "context": "Journal command-line text for rotation failure timeout.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ce5f7e491728c5feaa4f9ebd04767aabd29dc9d619b9945521aea2bae0707596",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

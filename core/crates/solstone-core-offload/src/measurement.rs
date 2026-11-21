@@ -58,6 +58,21 @@ pub struct RawMediaPopulation {
     pub unknown_paths: Vec<PathBuf>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum MediaTotalOverflow {
+    Bytes,
+    Files,
+}
+
+impl std::fmt::Display for MediaTotalOverflow {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Bytes => "media byte total overflow",
+            Self::Files => "media file total overflow",
+        })
+    }
+}
+
 impl RawMediaPopulation {
     pub fn complete(&self) -> bool {
         self.unknown_paths.is_empty()
@@ -65,14 +80,19 @@ impl RawMediaPopulation {
 
     /// Sum only the observed plain media; incomplete coverage remains explicit on this population.
     pub fn known_usage(&self) -> Result<RawMediaUsage, String> {
+        self.checked_known_usage()
+            .map_err(|error| error.to_string())
+    }
+
+    pub(crate) fn checked_known_usage(&self) -> Result<RawMediaUsage, MediaTotalOverflow> {
         let mut days = BTreeMap::<String, (u64, u64)>::new();
         for file in &self.files {
             let day = days.entry(file.key.day.clone()).or_default();
             day.0 = day
                 .0
                 .checked_add(file.bytes)
-                .ok_or("media byte total overflow")?;
-            day.1 = day.1.checked_add(1).ok_or("media file total overflow")?;
+                .ok_or(MediaTotalOverflow::Bytes)?;
+            day.1 = day.1.checked_add(1).ok_or(MediaTotalOverflow::Files)?;
         }
         let mut usage = RawMediaUsage {
             total_bytes: 0,
@@ -83,11 +103,11 @@ impl RawMediaPopulation {
             usage.total_bytes = usage
                 .total_bytes
                 .checked_add(bytes)
-                .ok_or("media byte total overflow")?;
+                .ok_or(MediaTotalOverflow::Bytes)?;
             usage.total_files = usage
                 .total_files
                 .checked_add(files)
-                .ok_or("media file total overflow")?;
+                .ok_or(MediaTotalOverflow::Files)?;
             usage.per_day.push(RawMediaDayUsage { day, bytes, files });
         }
         Ok(usage)

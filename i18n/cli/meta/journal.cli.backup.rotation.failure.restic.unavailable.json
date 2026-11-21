@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for rotation failure restic unavailable.",
+  "context": "Journal command-line text for rotation failure restic unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b834649ac02301a4e5fb462a9bc6d1f0964851681c2d8b0c4af4eeda2bd6e465",
+  "max_length": 104,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "restic_program",
+      "kind": "accepted-input",
+      "value": "restic"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for offload restore reason legacy read failed.",
+  "context": "Journal command-line text for offload restore reason legacy read failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f0d86f9a9793ff144e1e97cab166df593bc8fdfa414698a44636833acd846053",
+  "max_length": 144,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

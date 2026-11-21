@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for restore failure restore failed.",
+  "context": "Journal command-line text for restore failure restore failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "counters",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f4c88da15b95827a03a5fe8197a411281d44d06394f64e72dcc3324bc6c56153",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

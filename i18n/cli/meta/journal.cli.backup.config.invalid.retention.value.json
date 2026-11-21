@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for config invalid retention value.",
+  "context": "Journal command-line text for config invalid retention value.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4e9c85256c5549e1b9d8502f1abd022eef6eb57c1bfbfc2bac2306bde853630f",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

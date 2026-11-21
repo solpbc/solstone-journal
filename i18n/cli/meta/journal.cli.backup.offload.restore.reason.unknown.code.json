@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for offload restore reason unknown code.",
+  "context": "Journal command-line text for offload restore reason unknown code.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "code",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2be18d4c90e015ad02a820e580fcee6c68b1bb1ea2910da4778326fbd899de97",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

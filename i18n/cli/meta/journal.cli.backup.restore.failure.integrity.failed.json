@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for restore failure integrity failed.",
+  "context": "Journal command-line text for restore failure integrity failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "counters",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1500f019c8b868ce3716de3fc4f443fec291d8db9964bb63c1fa46125dd82b1b",
+  "max_length": 161,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

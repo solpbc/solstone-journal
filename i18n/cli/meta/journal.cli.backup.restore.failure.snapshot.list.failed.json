@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for restore failure snapshot list failed.",
+  "context": "Journal command-line text for restore failure snapshot list failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "counters",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "310db8e03e0f8d6d183dce3f5045274d723bdb234cfd7669fe8a4d40603dd2ee",
+  "max_length": 105,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

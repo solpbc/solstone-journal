@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for offload restore reason legacy review held.",
+  "context": "Journal command-line text for offload restore reason legacy review held.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ab97c63be9e9d490636e2c660b6c8d79a8d511bbf029e27166d3e28751066c14",
+  "max_length": 148,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

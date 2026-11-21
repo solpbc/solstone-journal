@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for run partial unconfirmed unmeasured.",
+  "context": "Journal command-line text for run partial unconfirmed unmeasured.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cb28624e1f4aef636b4e78941dc565cbc188f2b0804f6509c5d4cf77b82f5a15",
+  "max_length": 186,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command_run",
+      "kind": "command",
+      "value": "solstone journal backup run"
+    }
+  ]
+}

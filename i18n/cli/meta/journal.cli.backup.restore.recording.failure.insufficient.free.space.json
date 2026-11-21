@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for restore recording failure insufficient free space.",
+  "context": "Journal command-line text for restore recording failure insufficient free space.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d5c30fc8bdf5afe2c0723a9fe06d1ee869514e2c66f2b2d797332b6ecb683ec3",
+  "max_length": 133,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

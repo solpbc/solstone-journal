@@ -4472,12 +4472,16 @@ dependencies = [
  "serde_json",
  "solstone-core-backup",
  "solstone-core-backup-runtime",
+ "solstone-core-cli-copy",
  "solstone-core-installed-payload",
+ "solstone-core-journal-config-write",
+ "solstone-core-journal-io",
  "solstone-core-offload",
  "solstone-core-removals",
  "solstone-core-retention",
  "solstone-core-system-health",
  "solstone-core-time",
+ "solstone-core-window-catalog",
  "tempfile",
 ]
 

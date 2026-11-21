@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for config recovery parse.",
+  "context": "Journal command-line text for config recovery parse.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "55d1f584422c276679321d080152d17427e410546b0120c488998c225c6bb07b",
+  "max_length": 108,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "Crockford",
+      "kind": "accepted-input",
+      "value": "Crockford"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for offload media file overflow.",
+  "context": "Journal command-line text for offload media file overflow.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6e01f12073ac47b8f92c468792e1c697894537d00732d4e4bc630d9d64766a3d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for teardown prelaunch held.",
+  "context": "Journal command-line text for teardown prelaunch held.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7462e814218f2b5ba104e491e04c3c344de003b3baa9ea81e4c3589ce627e701",
+  "max_length": 119,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

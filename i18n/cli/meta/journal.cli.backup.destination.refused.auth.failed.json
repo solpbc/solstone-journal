@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for destination refused auth failed.",
+  "context": "Journal command-line text for destination refused auth failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "07a8910a430d5e6c9cde6926f34d76b657466b6791e906b973374ecea1bde596",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

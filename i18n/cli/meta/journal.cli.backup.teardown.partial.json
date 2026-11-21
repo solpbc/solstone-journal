@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for teardown partial.",
+  "context": "Journal command-line text for teardown partial.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8c95b40c482ef989078a58e560c8ae6d33e04cda0eb3b8aa422f558c2ad960de",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

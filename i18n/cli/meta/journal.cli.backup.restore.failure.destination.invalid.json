@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for restore failure destination invalid.",
+  "context": "Journal command-line text for restore failure destination invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "counters",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f9dab8411935904126d5676f95a9b9a9344f6d377e0d61993ca670798ae25324",
+  "max_length": 98,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

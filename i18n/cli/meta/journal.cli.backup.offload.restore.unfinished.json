@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for offload restore unfinished.",
+  "context": "Journal command-line text for offload restore unfinished.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f2751093f595e46e9d360f7a97c4228fa6177ee7df64bbbaba08fadb1aa5ac78",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

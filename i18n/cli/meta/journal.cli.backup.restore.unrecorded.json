@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for restore unrecorded.",
+  "context": "Journal command-line text for restore unrecorded.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "counters",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "572de455d805d5c8dd29b53904646fdbd6e36e2e930b0034916ffef98c9bbcdc",
+  "max_length": 137,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "restore_record",
+      "kind": "accepted-input",
+      "value": "restore_record_failed"
+    },
+    {
+      "name": "reason_field",
+      "kind": "accepted-input",
+      "value": "reason_code="
+    }
+  ]
+}

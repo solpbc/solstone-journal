@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for restore recording failure unknown code.",
+  "context": "Journal command-line text for restore recording failure unknown code.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "code",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6d9cf4b614e90f940e7f695f6be74d6cbdd02a5b0e59362249b9a920ee032208",
+  "max_length": 103,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

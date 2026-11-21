@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for config invalid destination shape.",
+  "context": "Journal command-line text for config invalid destination shape.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9460e3c84d83c7c9e82e8bcb4964ca243c409fcc656a0428b32747a6ee06eda5",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "JSON",
+      "kind": "accepted-input",
+      "value": "JSON"
+    }
+  ]
+}

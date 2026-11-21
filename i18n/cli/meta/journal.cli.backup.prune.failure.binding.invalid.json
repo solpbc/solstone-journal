@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for prune failure binding invalid.",
+  "context": "Journal command-line text for prune failure binding invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "baf2c5dff03e96c09ea974df2d3bc867cf9915dd1451227cec0ab9f94dd50234",
+  "max_length": 97,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

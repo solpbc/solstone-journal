@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for restore recording failure full scan failed.",
+  "context": "Journal command-line text for restore recording failure full scan failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "87091c6cbb1b11269d9f5345e2b8b33482d05c4425885be3c0382333ac967b2b",
+  "max_length": 109,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

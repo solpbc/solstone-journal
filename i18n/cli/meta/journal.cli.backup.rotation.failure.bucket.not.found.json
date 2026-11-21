@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for rotation failure bucket not found.",
+  "context": "Journal command-line text for rotation failure bucket not found.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "de35b6b8bb06cbe0f8af733110ae8afa25c1e1897e0ab625ca6eca537cd0600d",
+  "max_length": 109,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

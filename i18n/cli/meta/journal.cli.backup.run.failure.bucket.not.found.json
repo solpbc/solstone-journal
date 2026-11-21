@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for run failure bucket not found.",
+  "context": "Journal command-line text for run failure bucket not found.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a91843c89b9a3d9b3d98a76672d4e7e3ad5458a7ef4a6dfe064d4d34eb6c9bcb",
+  "max_length": 107,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

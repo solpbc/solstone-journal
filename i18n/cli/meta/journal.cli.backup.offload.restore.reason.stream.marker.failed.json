@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for offload restore reason stream marker failed.",
+  "context": "Journal command-line text for offload restore reason stream marker failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9e406c880908b6289085871b29681d6aebf168f56a12be5f3e76da918f0723f0",
+  "max_length": 108,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

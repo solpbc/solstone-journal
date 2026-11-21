@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for input io.",
+  "context": "Journal command-line text for input io.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ef1fafabfc5642be4230c2149c1a9c59ba70e4391a8349ec58299dec91485904",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "stdin_stream",
+      "kind": "accepted-input",
+      "value": "stdin"
+    }
+  ]
+}

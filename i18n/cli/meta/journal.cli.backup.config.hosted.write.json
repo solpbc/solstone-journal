@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for config hosted write.",
+  "context": "Journal command-line text for config hosted write.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0d0070ed2cb8464eb4705f36324e28ea88eb85300bc47b80ac0634e96cf08cb3",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

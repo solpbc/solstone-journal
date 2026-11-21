@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for restore failure restic unavailable.",
+  "context": "Journal command-line text for restore failure restic unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "counters",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "38fe0240840872b77582c6883f17a519689a3f1db1ea86d5e8bbfa8af8db73ed",
+  "max_length": 118,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "restic_program",
+      "kind": "accepted-input",
+      "value": "restic"
+    }
+  ]
+}

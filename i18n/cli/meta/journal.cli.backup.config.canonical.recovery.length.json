@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for config canonical recovery length.",
+  "context": "Journal command-line text for config canonical recovery length.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "44d87e4cfefca6a1a883d6fc5cd8796068772dabcdf1c553fad891d6529e19bf",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

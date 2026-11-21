@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for config stored keys.",
+  "context": "Journal command-line text for config stored keys.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0d08e208871e49c831fadc49a159add415d452ce2d209d1d228e6047ebcf7b61",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

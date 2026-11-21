@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for run failure locked.",
+  "context": "Journal command-line text for run failure locked.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0e96236b1c5af5d6028581a6f1388a0c460c5c3951fb5d60a00195a43a5971e3",
+  "max_length": 152,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

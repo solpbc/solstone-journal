@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for offload restore reason rclone unavailable.",
+  "context": "Journal command-line text for offload restore reason rclone unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e7446e1a267ea6d2af2ea618fb68dc33b8408dcbbf9400b7d2861356e69f7a12",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "rclone_program",
+      "kind": "accepted-input",
+      "value": "rclone"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for offload restore reason segment missing.",
+  "context": "Journal command-line text for offload restore reason segment missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d9d8c1cc955726d9295f6a970b9276c431396ef73c21bcd6e3eab91377f917e7",
+  "max_length": 108,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

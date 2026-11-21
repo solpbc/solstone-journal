@@ -121,9 +121,24 @@ pub struct OffloadStatus {
 /// Checked metadata projection. Pending credit awaits an owning current verdict.
 /// Device geometry is supplied separately by the consumer.
 pub fn build_checked_offload_status(journal: &Path) -> Result<OffloadStatus, String> {
+    checked_offload_status(journal).map_err(|error| match error {
+        OffloadStatusError::Config(error) => error.to_string(),
+        OffloadStatusError::Media(error) => error.to_string(),
+        OffloadStatusError::TotalOverflow => "media status total overflow".to_owned(),
+    })
+}
+
+#[derive(Debug)]
+pub enum OffloadStatusError {
+    Config(solstone_core_backup::BackupError),
+    Media(crate::measurement::MediaTotalOverflow),
+    TotalOverflow,
+}
+
+pub fn checked_offload_status(journal: &Path) -> Result<OffloadStatus, OffloadStatusError> {
     let local = measure_local_media(journal);
     let catalog = catalog_journal(journal);
-    let config = get_backup_config(journal).map_err(|error| error.to_string())?;
+    let config = get_backup_config(journal).map_err(OffloadStatusError::Config)?;
     let mut value = checked_media_value(&catalog, &local)?;
     for key in [
         "offload",
@@ -156,18 +171,20 @@ struct CheckedDay {
     unreadable_ledgers: Vec<String>,
 }
 
-fn add_count(total: &mut u64, value: u64) -> Result<(), String> {
+fn add_count(total: &mut u64, value: u64) -> Result<(), OffloadStatusError> {
     *total = total
         .checked_add(value)
-        .ok_or("media status total overflow")?;
+        .ok_or(OffloadStatusError::TotalOverflow)?;
     Ok(())
 }
 
 fn checked_media_value(
     catalog: &JournalCatalog,
     local: &RawMediaPopulation,
-) -> Result<Value, String> {
-    let usage = local.known_usage()?;
+) -> Result<Value, OffloadStatusError> {
+    let usage = local
+        .checked_known_usage()
+        .map_err(OffloadStatusError::Media)?;
     let observed = observe_catalog_media(catalog, local);
     let mut days = BTreeMap::<String, CheckedDay>::new();
     for day in &usage.per_day {

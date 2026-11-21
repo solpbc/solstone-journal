@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for run failure restic unavailable.",
+  "context": "Journal command-line text for run failure restic unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "07fc436ef1256af7075c8db36c432f3ad73bb155dc615040ec00682817c05088",
+  "max_length": 102,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "restic_program",
+      "kind": "accepted-input",
+      "value": "restic"
+    }
+  ]
+}

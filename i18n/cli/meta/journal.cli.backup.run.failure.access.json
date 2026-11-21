@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for run failure access.",
+  "context": "Journal command-line text for run failure access.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8bc90368e3ec0cfad592f23e6eedfdce3d67da26845da588c42d5ec77d04da17",
+  "max_length": 97,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

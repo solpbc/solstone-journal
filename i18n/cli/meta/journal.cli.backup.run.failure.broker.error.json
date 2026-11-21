@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for run failure broker error.",
+  "context": "Journal command-line text for run failure broker error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "49a8471bd9d172d151ef369821f3892db6c71ea80a61f2b49e2a00a158a4c45b",
+  "max_length": 114,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "company",
+      "kind": "mark-word",
+      "value": "sol pbc"
+    }
+  ]
+}

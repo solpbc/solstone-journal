@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for run partial snapshot unmeasured.",
+  "context": "Journal command-line text for run partial snapshot unmeasured.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "snapshot",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7e0c9aad2aabd098306fbde87a71793055eaec279debe144d04fea4143368b23",
+  "max_length": 171,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command_run",
+      "kind": "command",
+      "value": "solstone journal backup run"
+    }
+  ]
+}

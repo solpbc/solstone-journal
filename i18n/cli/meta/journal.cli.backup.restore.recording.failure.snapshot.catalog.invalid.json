@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for restore recording failure snapshot catalog invalid.",
+  "context": "Journal command-line text for restore recording failure snapshot catalog invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fa0e24e6b9b5ad8b040f3dedc78a39812129d67016080133565114e1ee23c89e",
+  "max_length": 97,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

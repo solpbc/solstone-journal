@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for offload use installed.",
+  "context": "Journal command-line text for offload use installed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ecc0b893b50789b9f20d9575aba528cac02c043b75d8dfb7c4c8d0b5d10b6918",
+  "max_length": 103,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command_offload_run",
+      "kind": "command",
+      "value": "solstone journal backup offload run"
+    },
+    {
+      "name": "program",
+      "kind": "accepted-input",
+      "value": "solstone"
+    }
+  ]
+}

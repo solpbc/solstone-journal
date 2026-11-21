@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for run failure binding superseded.",
+  "context": "Journal command-line text for run failure binding superseded.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "861077668746fbba13fa8019629928be18eb4a5ef6b0ec65ba9e36775b414ff5",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for offload restore reason timeout.",
+  "context": "Journal command-line text for offload restore reason timeout.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6b7e9c35c287d6d2ccc5258b26f5a8f1902e0613427d9750ef513f76f2708168",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for restore recording failure recovery confirmation publish failed.",
+  "context": "Journal command-line text for restore recording failure recovery confirmation publish failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "64365fa060ddefa2e3e5b3a23c0d14d24310fb070a4c95b258422ce7a8e1975d",
+  "max_length": 110,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

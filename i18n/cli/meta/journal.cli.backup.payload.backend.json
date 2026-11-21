@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for payload backend.",
+  "context": "Journal command-line text for payload backend.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9b757d0cc0e6a9161f6cb810d3e8a4662ee3084cd1cf614195093922586319dd",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

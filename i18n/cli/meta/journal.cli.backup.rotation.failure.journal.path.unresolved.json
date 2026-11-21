@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for rotation failure journal path unresolved.",
+  "context": "Journal command-line text for rotation failure journal path unresolved.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a815b12d970d5a42dcf62ac7cfab3df9c6cc17f2d45b56b0cb9558fa5b0b8ff5",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

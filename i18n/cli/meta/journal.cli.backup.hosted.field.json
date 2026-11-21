@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for hosted field.",
+  "context": "Journal command-line text for hosted field.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5d40fb774addb13819292cbbaaeb4dca5367db9411525f30da2aeab471d0f5c4",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

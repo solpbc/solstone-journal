@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for prune failure broker unreachable.",
+  "context": "Journal command-line text for prune failure broker unreachable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7ad2cc9f0d80d3224876670ae81e597e47b619ec267513c880bfb125a2f671f8",
+  "max_length": 103,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "company",
+      "kind": "mark-word",
+      "value": "sol pbc"
+    }
+  ]
+}

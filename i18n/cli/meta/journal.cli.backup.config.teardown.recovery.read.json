@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for config teardown recovery read.",
+  "context": "Journal command-line text for config teardown recovery read.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "68cc00096f7f73855139210b971985e3294c87ec66a5acb6f96fdd665ca1843d",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

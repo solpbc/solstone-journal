@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for prune skipped.",
+  "context": "Journal command-line text for prune skipped.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0a7ada9f4016e04b106183fe4a9fda5ce6d2658b9e3d1b823a7e59832f1b697b",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

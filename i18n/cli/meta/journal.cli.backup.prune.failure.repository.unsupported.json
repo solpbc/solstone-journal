@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for prune failure repository unsupported.",
+  "context": "Journal command-line text for prune failure repository unsupported.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "055b2fcc1dea06ba5604a3057858d9e7a0280d0f6ee64f6be754380770a54cc5",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "s3_backend",
+      "kind": "accepted-input",
+      "value": "s3:"
+    },
+    {
+      "name": "b2_backend",
+      "kind": "accepted-input",
+      "value": "b2:"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for offload restore reason restic unavailable.",
+  "context": "Journal command-line text for offload restore reason restic unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6d753af89d985f69a746226fba27aed1208e08119b123ebd5b139e8753ec9d60",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "restic_program",
+      "kind": "accepted-input",
+      "value": "restic"
+    }
+  ]
+}

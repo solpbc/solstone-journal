@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for config canonical recovery characters.",
+  "context": "Journal command-line text for config canonical recovery characters.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6b580c55e6eda959c1d6d1f488fe5a0537bd380482ee25118c593b54d38bdc66",
+  "max_length": 97,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "Crockford",
+      "kind": "accepted-input",
+      "value": "Crockford"
+    }
+  ]
+}

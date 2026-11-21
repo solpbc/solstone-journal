@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for destination setup failed.",
+  "context": "Journal command-line text for destination setup failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9b0f5e3533ddc25e06724f9bacbd1046609442a9e3a26ae3258563f051f7a776",
+  "max_length": 99,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

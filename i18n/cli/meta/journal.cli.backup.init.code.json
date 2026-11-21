@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for init code.",
+  "context": "Journal command-line text for init code.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "returncode",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4b029dc5e913b96dc6b853184083d42874132e346776d31192f89559e12a699a",
+  "max_length": 98,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code_field",
+      "kind": "accepted-input",
+      "value": "code="
+    }
+  ]
+}

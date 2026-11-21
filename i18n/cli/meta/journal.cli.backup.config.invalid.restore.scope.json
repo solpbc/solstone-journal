@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for config invalid restore scope.",
+  "context": "Journal command-line text for config invalid restore scope.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e46c038952e3af3073ed6d4278ffa077f61c7b2646c15b345aa950c91ceff49b",
+  "max_length": 114,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "journal_value",
+      "kind": "accepted-input",
+      "value": "journal"
+    },
+    {
+      "name": "day_value",
+      "kind": "accepted-input",
+      "value": "day"
+    },
+    {
+      "name": "all_value",
+      "kind": "accepted-input",
+      "value": "all"
+    }
+  ]
+}

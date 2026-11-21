@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for run failure journal path unresolved.",
+  "context": "Journal command-line text for run failure journal path unresolved.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "58b56bff7d5b56e5aa824c0c09c52ab77a27dfdac182471f04d3a5b38eab4fda",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

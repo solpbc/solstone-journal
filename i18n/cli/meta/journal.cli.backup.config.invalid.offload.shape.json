@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for config invalid offload shape.",
+  "context": "Journal command-line text for config invalid offload shape.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "75f95669d0a037f74cc7c8f63b6db4ed563516c752bf5ab6c68cf3a1bf55fe9a",
+  "max_length": 109,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "budget_bytes",
+      "kind": "accepted-input",
+      "value": "budget_bytes"
+    },
+    {
+      "name": "floor_bytes",
+      "kind": "accepted-input",
+      "value": "floor_bytes"
+    },
+    {
+      "name": "enabled",
+      "kind": "accepted-input",
+      "value": "enabled"
+    }
+  ]
+}

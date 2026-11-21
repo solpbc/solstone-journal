@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for input limit.",
+  "context": "Journal command-line text for input limit.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "175c8ae4b7555c01f1f9df023e80df6747611f118c5cccdab4365ea79010acd5",
+  "max_length": 99,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "stdin_stream",
+      "kind": "accepted-input",
+      "value": "stdin"
+    },
+    {
+      "name": "json_format",
+      "kind": "accepted-input",
+      "value": "JSON"
+    }
+  ]
+}

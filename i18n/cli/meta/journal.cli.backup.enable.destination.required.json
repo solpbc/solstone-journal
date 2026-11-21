@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for enable destination required.",
+  "context": "Journal command-line text for enable destination required.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "329ce0a7a1d7cca4df62bbc6146b2cef711d40def4f1673994267490cb802a61",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command_destination_set",
+      "kind": "command",
+      "value": "solstone journal backup destination set"
+    }
+  ]
+}

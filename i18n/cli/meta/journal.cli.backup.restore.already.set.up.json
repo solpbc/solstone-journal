@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for restore already set up.",
+  "context": "Journal command-line text for restore already set up.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "78d61f2d5860c99e8f0488d5b0f8962d4a4c70b34b3b098e307907f43f9c17fe",
+  "max_length": 187,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

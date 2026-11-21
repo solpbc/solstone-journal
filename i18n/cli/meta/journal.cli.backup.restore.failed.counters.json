@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for restore failed counters.",
+  "context": "Journal command-line text for restore failed counters.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "counters",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "972d6f87e1ccedd1450acb82ac387cbe25f5211f20a2f5103d15e7e2103b4ee5",
+  "max_length": 62,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

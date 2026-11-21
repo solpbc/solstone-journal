@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for offload restore reason nothing to restore.",
+  "context": "Journal command-line text for offload restore reason nothing to restore.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9138c7b1d4730156f94431db3a7458c7be7586583cbaf9ee7f1ac51669a29e04",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for restore degraded restore summary missing.",
+  "context": "Journal command-line text for restore degraded restore summary missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "counters",
+      "type": "string"
+    },
+    {
+      "name": "code",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5e297b1f3c459e437c12e7fa7c94fa64bedd2057c78c326ca5bc5b994eab7145",
+  "max_length": 150,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "reason_field",
+      "kind": "accepted-input",
+      "value": "reason_code="
+    }
+  ]
+}

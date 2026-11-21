@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for restore recording failure destination admission failed.",
+  "context": "Journal command-line text for restore recording failure destination admission failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "42e8eecdfcd536189fb4fcd00c9b55b6e44b436be9feb13e79f111e64f949d60",
+  "max_length": 109,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

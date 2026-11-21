@@ -14,9 +14,7 @@ use solstone_core_backup::{
     set_enabled, set_recovery_key_confirmed, status_view,
 };
 use solstone_core_backup_runtime::restore::{
-    RESTORE_REASON_INTEGRITY_FAILED, RESTORE_REASON_INTEGRITY_UNVERIFIED,
     RESTORE_REASON_JOURNAL_ALREADY_SET_UP, RESTORE_REASON_RESTORE_RECORD_FAILED,
-    RESTORE_REASON_RESTORE_SUMMARY_MISSING,
 };
 use solstone_core_backup_runtime::{
     BackupResult, BackupServices, Clock, ClosedToolError, DestinationChange,
@@ -26,6 +24,7 @@ use solstone_core_backup_runtime::{
     publish_restore_outcome, resolve_operational_tools, resolve_restic_member, resolve_tools,
     rotate_recovery_key, run_prune, validate_destination,
 };
+use solstone_core_cli_copy as copy;
 use solstone_core_offload::cli_run::{OwnedOffloadCliRun, run_cli_offload};
 use solstone_core_offload::{
     OffloadResult, RestoreResult as OffloadRestoreResult, format_offload_result,
@@ -35,7 +34,10 @@ use solstone_core_offload::{
     measurement::{device_free_bytes, device_total_bytes, suggest_offload_defaults},
     status::build_checked_offload_status,
 };
+use solstone_core_window_catalog as window;
 
+mod error_copy;
+use error_copy::{backup_error, tool_error};
 mod owned_restore;
 mod owned_teardown;
 pub use owned_restore::OwnedRestoreCliOutcome;
@@ -312,9 +314,16 @@ fn format_resolution_error(
     let detail = error.detail();
     let args = normalize_global_flags(args);
     match args.first().map(String::as_str) {
-        Some("prune") => runtime_error(format!(
-            "Prune failed: {}. detail={detail}",
-            backup_failure_reason(&reason)
+        Some("prune") => runtime_error(copy::strings(
+            match error {
+                ClosedToolError::ResticUnavailable { .. } => {
+                    "journal.cli.backup.prune.detail.failure.restic.unavailable"
+                }
+                ClosedToolError::RcloneUnavailable { .. } => {
+                    "journal.cli.backup.prune.detail.failure.rclone.unavailable"
+                }
+            },
+            [("detail", detail)],
         )),
         Some("restore") => {
             let json_output = restore_options(&args[1..]).expect("classified restore options");
@@ -533,22 +542,24 @@ fn run_cli_with(
 ) -> CliRun {
     let args = normalize_global_flags(args);
     if has_help(&args) {
-        return success(usage_for_scope(&args).to_owned());
+        return success(usage_for_scope(&args));
     }
     let Some((command, rest)) = args.split_first() else {
         return usage_error("");
     };
     match command.as_str() {
-        "status" if no_positionals(rest) => render_json(status_view(journal).map(|mut view| {
-            annotate_last_backup(&mut view, Some(executable));
-            // The configured `schedule` is a default nothing runs; report what the
-            // scheduler will actually do, as the owner's server status does.
-            view.insert(
-                "schedule".into(),
-                solstone_core_backup_runtime::effective_backup_schedule(journal),
-            );
-            Value::Object(view)
-        })),
+        "status" if no_positionals(rest) => {
+            render_json(status_view(journal).map_err(backup_error).map(|mut view| {
+                annotate_last_backup(&mut view, Some(executable));
+                // The configured `schedule` is a default nothing runs; report what the
+                // scheduler will actually do, as the owner's server status does.
+                view.insert(
+                    "schedule".into(),
+                    solstone_core_backup_runtime::effective_backup_schedule(journal),
+                );
+                Value::Object(view)
+            }))
+        }
         "destination" => destination_command(rest, journal, services, executable),
         "recovery-key" => recovery_key_command(rest, journal, services),
         "enable" if no_positionals(rest) => enable(journal, services, executable),
@@ -596,12 +607,12 @@ fn has_help(args: &[String]) -> bool {
         .any(|argument| matches!(argument.as_str(), "-h" | "--help"))
 }
 
-fn usage_for_scope(args: &[String]) -> &'static str {
+fn usage_for_scope(args: &[String]) -> String {
     match args.first().map(String::as_str) {
-        Some("destination") => DESTINATION_USAGE,
-        Some("offload") => OFFLOAD_USAGE,
-        Some("recovery-key") => RECOVERY_KEY_USAGE,
-        _ => USAGE,
+        Some("destination") => format!("{}\n", copy::text("journal.cli.backup.help.destination")),
+        Some("offload") => format!("{}\n", copy::text("journal.cli.backup.help.offload")),
+        Some("recovery-key") => format!("{}\n", copy::text("journal.cli.backup.help.recovery.key")),
+        _ => format!("{}\n", copy::text("journal.cli.backup.help.root")),
     }
 }
 
@@ -622,7 +633,7 @@ fn destination_command(
                     .cloned()
                     .expect("status has destination"),
             )),
-            Err(error) => runtime_error(error.to_string()),
+            Err(error) => runtime_error(backup_error(error)),
         },
         [command] if command == "set-hosted" => set_hosted(journal),
         [command] if command == "set" => destination_set(journal, services, executable, false),
@@ -671,12 +682,7 @@ fn enable(journal: &Path, services: &BackupServices<'_>, executable: &Path) -> C
         journal,
         services,
         &entered,
-        || {
-            resolve_restic_member(executable).map_err(|error| {
-                let guidance = error.guidance();
-                format!("{error} detail={} {guidance}", error.detail())
-            })
-        },
+        || resolve_restic_member(executable).map_err(tool_error),
         |destination, daily_key, recovery_key, restic_path| {
             solstone_core_backup_runtime::init_repository(
                 services.runner,
@@ -705,15 +711,13 @@ fn enable_with(
     let destination = match get_destination(journal) {
         Ok(Some(destination)) => destination,
         Ok(None) => {
-            return runtime_error(
-                "Set a destination first: solstone journal backup destination set".into(),
-            );
+            return runtime_error(copy::text("journal.cli.backup.enable.destination.required"));
         }
-        Err(error) => return runtime_error(error.to_string()),
+        Err(error) => return runtime_error(backup_error(error)),
     };
     let config = match get_backup_config(journal) {
         Ok(config) => config,
-        Err(error) => return runtime_error(error.to_string()),
+        Err(error) => return runtime_error(backup_error(error)),
     };
     let daily = config.get("daily_key").and_then(Value::as_str);
     let recovery = config.get("recovery_key").and_then(Value::as_str);
@@ -722,7 +726,7 @@ fn enable_with(
     if confirmed || (daily.is_some() && recovery.is_none()) {
         let keys = match get_keys(journal) {
             Ok(keys) => keys,
-            Err(error) => return runtime_error(error.to_string()),
+            Err(error) => return runtime_error(backup_error(error)),
         };
         let restic_path = match ensure() {
             Ok(path) => path,
@@ -739,10 +743,7 @@ fn enable_with(
             }
         } else {
             let Some(daily) = daily else {
-                return runtime_error(
-                    "Repository not found; pre-initialize it or set backup.recovery_key in config."
-                        .into(),
-                );
+                return runtime_error(copy::text("journal.cli.backup.enable.repository.missing"));
             };
             let status = match validate_destination(
                 services.runner,
@@ -752,41 +753,44 @@ fn enable_with(
                 None,
             ) {
                 Ok(status) => status,
-                Err(error) => return runtime_error(error.to_string()),
+                Err(error) => return runtime_error(backup_error(error)),
             };
             // Deliberately tests only repo_exists: locked/auth_failed still enable daily-only backup.
             if !status.repo_exists {
-                return runtime_error(
-                    "Repository not found; pre-initialize it or set backup.recovery_key in config."
-                        .into(),
-                );
+                return runtime_error(copy::text("journal.cli.backup.enable.repository.missing"));
             }
         }
         return match set_enabled(journal, true) {
-            Ok(()) => success("Backup enabled.\n".into()),
-            Err(error) => runtime_error(error.to_string()),
+            Ok(()) => success(format!(
+                "{}\n",
+                copy::text("journal.cli.backup.enable.complete")
+            )),
+            Err(error) => runtime_error(backup_error(error)),
         };
     }
 
     let keys = match generate_and_store_keys(journal) {
         Ok(keys) => keys,
-        Err(error) => return runtime_error(error.to_string()),
+        Err(error) => return runtime_error(backup_error(error)),
     };
     if entered.is_empty() {
         let display = match format_recovery_key_display(&keys.recovery_key) {
             Ok(display) => display,
-            Err(error) => return runtime_error(error.to_string()),
+            Err(error) => return runtime_error(backup_error(error)),
         };
         return success(format!(
-            "Your recovery key (write it down - it is the only way to restore):\n{}\nConfirm by piping the key back: solstone journal backup enable\n",
-            recovery_key_grid(&display)
+            "{}\n",
+            copy::display(
+                "journal.cli.backup.enable.confirm.key",
+                [("key_grid", &(recovery_key_grid(&display)))]
+            )
         ));
     }
     if !confirm_recovery_key(entered, &keys.recovery_key) {
-        return runtime_error("Recovery key did not match.".into());
+        return runtime_error(copy::text("journal.cli.backup.enable.key.mismatch"));
     }
     if let Err(error) = set_recovery_key_confirmed(journal, true) {
-        return runtime_error(error.to_string());
+        return runtime_error(backup_error(error));
     }
     let restic_path = match ensure() {
         Ok(path) => path,
@@ -801,35 +805,36 @@ fn enable_with(
         return init_error(error);
     }
     if let Err(error) = set_enabled(journal, true) {
-        return runtime_error(error.to_string());
+        return runtime_error(backup_error(error));
     }
     let display = match format_recovery_key_display(&keys.recovery_key) {
         Ok(display) => display,
-        Err(error) => return runtime_error(error.to_string()),
+        Err(error) => return runtime_error(backup_error(error)),
     };
-    success(format!(
-        "Backup enabled. Your recovery key:\n{}",
-        recovery_key_grid(&display)
+    success(copy::display(
+        "journal.cli.backup.enable.complete.key",
+        [("key_grid", &(recovery_key_grid(&display)))],
     ))
 }
 
 fn init_error(error: solstone_core_backup_runtime::repo::RepoError) -> CliRun {
     match error {
         solstone_core_backup_runtime::repo::RepoError::Key(ResticKeyError { returncode }) => {
-            runtime_error(format!(
-                "Repository initialization failed (code={returncode})."
+            runtime_error(copy::display(
+                "journal.cli.backup.init.code",
+                [("returncode", &returncode)],
             ))
         }
         solstone_core_backup_runtime::repo::RepoError::Backup(error) => {
-            runtime_error(error.to_string())
+            runtime_error(backup_error(error))
         }
         solstone_core_backup_runtime::repo::RepoError::Failed => {
-            runtime_error("repository initialization failed.".into())
+            runtime_error(copy::text("journal.cli.backup.init.failed"))
         }
         #[cfg(target_os = "ios")]
-        solstone_core_backup_runtime::repo::RepoError::Callable(_) => runtime_error(
-            "repository initialization failed; retained operation state requires review.".into(),
-        ),
+        solstone_core_backup_runtime::repo::RepoError::Callable(_) => {
+            runtime_error(copy::text("journal.cli.backup.init.retained"))
+        }
     }
 }
 
@@ -844,10 +849,7 @@ fn destination_set(
         Err(message) => return runtime_error(message),
     };
     destination_set_with(journal, services, &payload, confirm_new_repository, || {
-        resolve_restic_member(executable).map_err(|error| {
-            let guidance = error.guidance();
-            format!("{error} detail={} {guidance}", error.detail())
-        })
+        resolve_restic_member(executable).map_err(tool_error)
     })
 }
 
@@ -873,14 +875,19 @@ fn destination_set_with(
         Err(message) => return runtime_error(message),
     };
     if !solstone_core_backup::repository_names_backend(&destination) {
-        return runtime_error(format!(
-            "The repository must start with {}: (for example {}).",
-            destination.backend,
-            if destination.backend == "b2" {
-                "b2:your-bucket:journal"
-            } else {
-                "s3:s3.amazonaws.com/your-bucket"
-            }
+        return runtime_error(copy::display(
+            "journal.cli.backup.destination.backend.prefix",
+            [
+                ("backend", &destination.backend),
+                (
+                    "example",
+                    &(if destination.backend == "b2" {
+                        "b2:your-bucket:journal"
+                    } else {
+                        "s3:s3.amazonaws.com/your-bucket"
+                    }),
+                ),
+            ],
         ));
     }
     // With backup on, this is an edit: checked before anything is saved.
@@ -899,15 +906,15 @@ fn destination_set_with(
         );
     }
     if let Err(error) = set_destination(journal, &destination) {
-        return runtime_error(error.to_string());
+        return runtime_error(backup_error(error));
     }
     let password = match get_keys(journal) {
         Ok(Some(keys)) => keys.daily_key,
         Ok(None) => match generate_daily_key() {
             Ok(key) => key,
-            Err(error) => return runtime_error(error.to_string()),
+            Err(error) => return runtime_error(backup_error(error)),
         },
-        Err(error) => return runtime_error(error.to_string()),
+        Err(error) => return runtime_error(backup_error(error)),
     };
     let restic_path = match ensure() {
         Ok(path) => path,
@@ -916,7 +923,7 @@ fn destination_set_with(
     let status =
         match validate_destination(services.runner, &destination, &password, &restic_path, None) {
             Ok(status) => status,
-            Err(error) => return runtime_error(error.to_string()),
+            Err(error) => return runtime_error(backup_error(error)),
         };
     let mut output = render_json(Ok::<_, String>(json!({
         "reachable": status.reachable,
@@ -942,7 +949,7 @@ fn destination_edit(
     ensure: impl FnOnce() -> Result<std::path::PathBuf, String>,
 ) -> CliRun {
     if config.get("mode").and_then(Value::as_str) != Some("byo") {
-        return runtime_error(DESTINATION_HOSTED.into());
+        return runtime_error(hosted_destination_message());
     }
     let change = get_destination(journal)
         .ok()
@@ -973,56 +980,44 @@ fn destination_edit(
         Err(DestinationEditRefusal::NeedsConfirmation) => {
             runtime_error(new_repository_warning(journal, config))
         }
-        Err(DestinationEditRefusal::Unusable(status)) => runtime_error(format!(
-            "{} {DESTINATION_NOT_SAVED}",
-            destination_reason_text(status.reason_code)
-        )),
-        Err(DestinationEditRefusal::SetupFailed(reason)) => runtime_error(format!(
-            "a backup couldn't be set up there ({reason}). {DESTINATION_NOT_SAVED}"
-        )),
-        Err(DestinationEditRefusal::Unchanged) => {
-            runtime_error("that's already your destination.".into())
+        Err(DestinationEditRefusal::Unusable(status)) => {
+            runtime_error(destination_reason_text(status.reason_code))
         }
-        Err(DestinationEditRefusal::NotEditable) => runtime_error(DESTINATION_HOSTED.into()),
-        Err(DestinationEditRefusal::Config(error)) => runtime_error(error.to_string()),
+        Err(DestinationEditRefusal::SetupFailed(reason)) => runtime_error(copy::display(
+            "journal.cli.backup.destination.setup.failed",
+            [("reason", &reason)],
+        )),
+        Err(DestinationEditRefusal::Unchanged) => runtime_error(window::text(
+            copy::cli_locale(),
+            "journal.window.backup.copy.destination.edit.refusals.destination.unchanged",
+        )),
+        Err(DestinationEditRefusal::NotEditable) => runtime_error(hosted_destination_message()),
+        Err(DestinationEditRefusal::Config(error)) => runtime_error(backup_error(error)),
     }
 }
 
-const DESTINATION_HOSTED: &str = "sol pbc runs your backup storage, so there's no destination to \
-     change here. manage it in the services portal.";
-const DESTINATION_NOT_SAVED: &str = "nothing was saved.";
+fn hosted_destination_message() -> String {
+    copy::text("journal.cli.backup.destination.hosted")
+}
 
-fn destination_reason_text(reason: &str) -> &'static str {
+fn destination_reason_text(reason: &str) -> String {
     match reason {
-        "auth_failed" => "the destination rejected the credentials.",
-        "bucket_not_found" => {
-            "these credentials can't open a bucket by that name. check the bucket name in the \
-             repository."
-        }
+        "auth_failed" => copy::text("journal.cli.backup.destination.refused.auth.failed"),
+        "bucket_not_found" => copy::text("journal.cli.backup.destination.refused.bucket.not.found"),
         "repository_key_refused" => {
-            "there's already a backup there that your recovery key can't open. choose another \
-             destination."
+            copy::text("journal.cli.backup.destination.refused.repository.key.refused")
         }
-        "repo_missing" => "no backup was found there with these credentials.",
-        "locked" => "the backup there is busy. try again shortly.",
-        "timeout" => {
-            "the destination didn't answer in time. check the repository and credentials, then \
-             try again."
-        }
-        _ => {
-            "the destination couldn't be opened. check the repository and credentials, then try \
-             again."
-        }
+        "repo_missing" => copy::text("journal.cli.backup.destination.refused.repo.missing"),
+        "locked" => copy::text("journal.cli.backup.destination.refused.locked"),
+        "timeout" => copy::text("journal.cli.backup.destination.refused.timeout"),
+        _ => copy::text("journal.cli.backup.destination.refused.other"),
     }
 }
 
 /// The different-repository warning, with the days kept only in the current
 /// backup when media offload is on (the same totals turn off & delete shows).
 fn new_repository_warning(journal: &Path, config: &Map<String, Value>) -> String {
-    let mut text = String::from(
-        "that's a different repository. your existing backup stays where it is, untouched, \
-         and your journal won't back up to it or restore from it.",
-    );
+    let mut text = copy::text("!journal.cli.backup.destination.switch.lead");
     // Days offloaded earlier stay only in that backup even after offload is
     // turned off, so the count is read whenever offload has ever run.
     let ever_offloaded = config
@@ -1044,20 +1039,34 @@ fn new_repository_warning(journal: &Path, config: &Map<String, Value>) -> String
                     backup_only.get("total_bytes")?.as_u64()?,
                 ))
             });
-        text.push_str(&match totals {
-            Some((0, 0)) => String::new(),
-            Some((days, bytes)) => format!(
-                " {days} {} of your journal ({}) {} only in that backup.",
-                if days == 1 { "day" } else { "days" },
-                human_bytes(bytes),
-                if days == 1 { "exists" } else { "exist" },
-            ),
-            None => " can't check right now how many days of your journal exist only in that \
-                     backup."
-                .to_owned(),
-        });
+        let caution = match totals {
+            Some((0, 0)) => None,
+            Some((days, bytes)) => Some(window::render(
+                copy::cli_locale(),
+                "!journal.window.backup.consent.destination.backup.only.days",
+                &[
+                    (
+                        "days_quantity",
+                        window::Value::Cardinal(i64::try_from(days).unwrap_or(i64::MAX)),
+                    ),
+                    ("days", window::Value::String(&days.to_string())),
+                    ("backup_size", window::Value::String(&human_bytes(bytes))),
+                ],
+            )),
+            None => Some(window::text(
+                copy::cli_locale(),
+                "!journal.window.backup.copy.destination.edit.confirm.days.unavailable",
+            )),
+        };
+        if let Some(caution) = caution {
+            text.push(' ');
+            text.push_str(&caution);
+        }
     }
-    text.push_str(" to switch, run again with --confirm-new-repository.");
+    text.push(' ');
+    text.push_str(&copy::text(
+        "!journal.cli.backup.destination.switch.confirm",
+    ));
     text
 }
 
@@ -1080,28 +1089,28 @@ fn pause_command(journal: &Path, services: &BackupServices<'_>, pause: bool) -> 
     let config = match get_backup_config(journal) {
         Ok(config) if config.get("enabled") == Some(&Value::Bool(true)) => config,
         Ok(_) if pause => {
-            return runtime_error("backup is off, so there's nothing to pause.".into());
+            return runtime_error(copy::text("journal.cli.backup.pause.off"));
         }
-        Ok(_) => return runtime_error("backup isn't paused.".into()),
-        Err(error) => return runtime_error(error.to_string()),
+        Ok(_) => return runtime_error(copy::text("journal.cli.backup.resume.not.paused")),
+        Err(error) => return runtime_error(backup_error(error)),
     };
     match (pause, backup_paused_at(&config).is_some()) {
-        (true, true) => return runtime_error("backup is already paused.".into()),
-        (false, false) => return runtime_error("backup isn't paused.".into()),
+        (true, true) => return runtime_error(copy::text("journal.cli.backup.pause.already")),
+        (false, false) => return runtime_error(copy::text("journal.cli.backup.resume.not.paused")),
         _ => {}
     }
     let paused_at = pause.then(|| services.clock.now_unix());
     if let Err(error) = set_backup_paused(journal, paused_at) {
-        return runtime_error(error.to_string());
+        return runtime_error(backup_error(error));
     }
     if pause {
         // A pause ends a backup failure notice without a word.
         solstone_core_backup_runtime::owner_notice::observe(journal);
     }
     success(if pause {
-        "backup paused. run `solstone journal backup resume` to start it again.\n".to_owned()
+        format!("{}\n", copy::text("journal.cli.backup.pause.complete"))
     } else {
-        "backup resumed. the next backup runs on its usual schedule.\n".to_owned()
+        format!("{}\n", copy::text("journal.cli.backup.resume.complete"))
     })
 }
 
@@ -1114,17 +1123,19 @@ fn destination_from_payload(payload: &Map<String, Value>) -> Result<Destination,
             .filter(|value| !value.is_empty())
             .map(str::to_owned)
     };
-    let repository = field("repository").ok_or_else(|| "Missing repository.".to_owned())?;
-    let backend = field("backend").ok_or_else(|| "Missing backend.".to_owned())?;
+    let repository =
+        field("repository").ok_or_else(|| copy::text("journal.cli.backup.payload.repository"))?;
+    let backend =
+        field("backend").ok_or_else(|| copy::text("journal.cli.backup.payload.backend"))?;
     let required = match backend.as_str() {
         "s3" => ["access_key_id", "secret_access_key"].as_slice(),
         "b2" => ["account_id", "account_key"].as_slice(),
-        _ => return Err("Unsupported backend.".into()),
+        _ => return Err(copy::text("journal.cli.backup.payload.unsupported")),
     };
     let credentials = payload
         .get("credentials")
         .and_then(Value::as_object)
-        .ok_or_else(|| "Missing credentials.".to_owned())?;
+        .ok_or_else(|| copy::text("journal.cli.backup.payload.credentials"))?;
     let credentials = required
         .iter()
         .map(|key| {
@@ -1134,7 +1145,9 @@ fn destination_from_payload(payload: &Map<String, Value>) -> Result<Destination,
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
                 .map(|value| ((*key).to_owned(), Value::String(value.to_owned())))
-                .ok_or_else(|| format!("Missing credential: {key}."))
+                .ok_or_else(|| {
+                    copy::display("journal.cli.backup.payload.credential", [("key", &key)])
+                })
         })
         .collect::<Result<Map<_, _>, _>>()?;
     Ok(Destination {
@@ -1198,7 +1211,7 @@ fn restore_from_payload(
         .map(str::trim)
         .filter(|value| !value.is_empty());
     let Some(recovery_key) = recovery_key else {
-        return runtime_error("Missing recovery_key.".into());
+        return runtime_error(copy::text("journal.cli.backup.payload.recovery.key"));
     };
     restore_result(restore(destination, recovery_key), json_output)
 }
@@ -1241,54 +1254,80 @@ fn restore_result(result: RestoreOutcome, json_output: bool) -> CliRun {
     let reason = result.reason_code.as_deref();
     match result.status.as_str() {
         "ok" => success(format!(
-            "restore complete: {counters}, integrity_ok={}, resumable={}.\n",
-            python_bool(result.integrity_ok),
-            python_bool(result.resumable),
+            "{}\n",
+            copy::display(
+                "journal.cli.backup.restore.complete",
+                [
+                    ("counters", &counters),
+                    ("integrity", &(python_bool(result.integrity_ok))),
+                    ("resumable", &(python_bool(result.resumable)))
+                ]
+            )
         )),
-        "degraded" => {
-            let detail = match reason {
-                Some(
-                    reason
-                    @ (RESTORE_REASON_INTEGRITY_UNVERIFIED | RESTORE_REASON_INTEGRITY_FAILED),
-                ) => restore_failure_reason(reason),
-                Some(RESTORE_REASON_RESTORE_SUMMARY_MISSING) => {
-                    "restore summary was missing or malformed".to_owned()
-                }
-                _ => "restore completed with degraded evidence".to_owned(),
-            };
-            runtime_error(format!(
-                "restore finished with a problem: {counters}; {detail} (reason_code={}).",
-                reason.unwrap_or("unknown"),
-            ))
-        }
+        "degraded" => runtime_error(match reason {
+            Some("integrity_unverified") => copy::display(
+                "journal.cli.backup.restore.degraded.integrity.unverified",
+                [
+                    ("counters", &counters),
+                    ("code", &(reason.unwrap_or("unknown"))),
+                ],
+            ),
+            Some("integrity_failed") => copy::display(
+                "journal.cli.backup.restore.degraded.integrity.failed",
+                [
+                    ("counters", &counters),
+                    ("code", &(reason.unwrap_or("unknown"))),
+                ],
+            ),
+            Some("restore_summary_missing") => copy::display(
+                "journal.cli.backup.restore.degraded.restore.summary.missing",
+                [
+                    ("counters", &counters),
+                    ("code", &(reason.unwrap_or("unknown"))),
+                ],
+            ),
+            _ => copy::display(
+                "journal.cli.backup.restore.degraded.other",
+                [
+                    ("counters", &counters),
+                    ("code", &(reason.unwrap_or("unknown"))),
+                ],
+            ),
+        }),
         _ if reason == Some(RESTORE_REASON_RESTORE_RECORD_FAILED)
             && result.recording_failure.as_deref()
                 == Some(RESTORE_REASON_RESTORE_RECORD_FAILED) =>
         {
-            runtime_error(format!(
-                "restore completed, but recording the result failed: {counters} (reason_code=restore_record_failed)."
+            runtime_error(copy::display(
+                "journal.cli.backup.restore.unrecorded",
+                [("counters", &counters)],
             ))
         }
         // Nothing started, so there is nothing to count.
-        _ if reason == Some(RESTORE_REASON_JOURNAL_ALREADY_SET_UP) => runtime_error(format!(
-            "restore couldn't start: {}.",
-            restore_failure_reason("journal_already_set_up")
-        )),
+        _ if reason == Some(RESTORE_REASON_JOURNAL_ALREADY_SET_UP) => {
+            runtime_error(copy::text("journal.cli.backup.restore.already.set.up"))
+        }
         _ => match (reason, result.recording_failure.as_deref()) {
             (Some(reason), Some(recording_failure)) => runtime_error(format!(
-                "restore failed: {}; {counters}. Recording the result also failed: {}.",
-                restore_failure_reason(reason),
-                restore_failure_reason(recording_failure)
+                "{} {}",
+                restore_failure(reason, RestoreFailure::Failed, &counters),
+                restore_failure(recording_failure, RestoreFailure::Recording, &counters)
             )),
-            (Some(reason), None) => runtime_error(format!(
-                "restore failed: {}; {counters}.",
-                restore_failure_reason(reason)
-            )),
+            (Some(reason), None) => {
+                runtime_error(restore_failure(reason, RestoreFailure::Failed, &counters))
+            }
             (None, Some(recording_failure)) => runtime_error(format!(
-                "restore failed: {counters}. Recording the result also failed: {}.",
-                restore_failure_reason(recording_failure)
+                "{} {}",
+                copy::display(
+                    "journal.cli.backup.restore.failed.counters",
+                    [("counters", &counters)]
+                ),
+                restore_failure(recording_failure, RestoreFailure::Recording, &counters)
             )),
-            (None, None) => runtime_error(format!("restore failed: {counters}.")),
+            (None, None) => runtime_error(copy::display(
+                "journal.cli.backup.restore.failed.counters",
+                [("counters", &counters)],
+            )),
         },
     }
 }
@@ -1311,9 +1350,23 @@ fn offload_status(args: &[String], journal: &Path) -> CliRun {
         return offload_usage_error(&args.join(" "));
     }
     let json = options.iter().any(|option| option == "--json");
-    let mut value = match build_checked_offload_status(journal) {
+    use solstone_core_offload::status::{OffloadStatusError, checked_offload_status};
+    let mut value = match checked_offload_status(journal) {
         Ok(status) => status.value,
-        Err(error) => return runtime_error(error),
+        Err(OffloadStatusError::Config(error)) => return runtime_error(backup_error(error)),
+        Err(OffloadStatusError::Media(error)) => {
+            return runtime_error(copy::text(match error {
+                solstone_core_offload::measurement::MediaTotalOverflow::Bytes => {
+                    "journal.cli.backup.offload.media.byte.overflow"
+                }
+                solstone_core_offload::measurement::MediaTotalOverflow::Files => {
+                    "journal.cli.backup.offload.media.file.overflow"
+                }
+            }));
+        }
+        Err(OffloadStatusError::TotalOverflow) => {
+            return runtime_error(copy::text("journal.cli.backup.offload.status.overflow"));
+        }
     };
     let free_bytes = device_free_bytes(journal).ok();
     let total_bytes = device_total_bytes(journal).ok();
@@ -1334,12 +1387,12 @@ fn offload_status_line(value: &Value) -> Result<String, String> {
     let field = |path: &[&str]| {
         path.iter()
             .try_fold(value, |current, field| current.get(*field))
-            .ok_or_else(|| "invalid offload status.".to_owned())
+            .ok_or_else(|| copy::text("journal.cli.backup.offload.status.invalid"))
     };
     let flag = |path: &[&str]| {
         field(path)?
             .as_bool()
-            .ok_or_else(|| "invalid offload status.".to_owned())
+            .ok_or_else(|| copy::text("journal.cli.backup.offload.status.invalid"))
     };
     let bytes = |path: &[&str]| -> Result<String, String> {
         let value = field(path)?;
@@ -1349,7 +1402,7 @@ fn offload_status_line(value: &Value) -> Result<String, String> {
         value
             .as_u64()
             .map(|amount| amount.to_string())
-            .ok_or_else(|| "invalid offload status.".to_owned())
+            .ok_or_else(|| copy::text("journal.cli.backup.offload.status.invalid"))
     };
     let enabled = flag(&["offload", "enabled"])?;
     let raw_complete = flag(&["raw_media", "complete"])?;
@@ -1380,11 +1433,12 @@ fn offload_status_line(value: &Value) -> Result<String, String> {
         projected = "unavailable".into();
     }
     Ok(format!(
-        "backup offload: enabled={} raw_media_bytes={raw} pending_release_bytes={pending} backup_only_bytes={backup_only} degraded={} raw_media_known_bytes={known_raw} raw_media_complete={} backup_only_known_bytes={known_backup} backup_only_complete={} proposed_bytes={proposed} eligible_bytes={eligible} projected_local_bytes={projected} device_free_bytes={free} device_total_bytes={total}\n",
+        "{heading} enabled={} raw_media_bytes={raw} pending_release_bytes={pending} backup_only_bytes={backup_only} degraded={} raw_media_known_bytes={known_raw} raw_media_complete={} backup_only_known_bytes={known_backup} backup_only_complete={} proposed_bytes={proposed} eligible_bytes={eligible} projected_local_bytes={projected} device_free_bytes={free} device_total_bytes={total}\n",
         python_bool(enabled),
         python_bool(degraded),
         python_bool(raw_complete),
         python_bool(backup_complete),
+        heading = copy::text("journal.cli.backup.offload.status.heading")
     ))
 }
 
@@ -1408,10 +1462,15 @@ fn offload_run(args: &[String], _journal: &Path, _services: &BackupServices<'_>)
             }
         ),
         stderr: if dry_run {
-            "a read-only offload preview is unavailable. no offload work was started.\n".into()
+            format!(
+                "{}\n",
+                copy::text("journal.cli.backup.offload.preview.held")
+            )
         } else {
-            "run `solstone journal backup offload run` with the installed solstone command.\n"
-                .into()
+            format!(
+                "{}\n",
+                copy::text("journal.cli.backup.offload.use.installed")
+            )
         },
         exit_code: 1,
     }
@@ -1444,16 +1503,18 @@ fn offload_restore(args: &[String], journal: &Path, services: &BackupServices<'_
         }
     }
     if all && day.is_some() {
-        return runtime_error("Use either a day or --all, not both.".into());
+        return runtime_error(copy::text("journal.cli.backup.offload.restore.day.or.all"));
     }
     let result = if all {
         restore_all_offload(journal, services)
     } else {
         let Some(day) = day else {
-            return runtime_error("Provide a day or --all.".into());
+            return runtime_error(copy::text(
+                "journal.cli.backup.offload.restore.day.required",
+            ));
         };
         if !valid_day(day) {
-            return runtime_error("Invalid day.".into());
+            return runtime_error(copy::text("journal.cli.backup.offload.restore.day.invalid"));
         }
         restore_offload_day(journal, services, day)
     };
@@ -1469,7 +1530,7 @@ fn offload_restore_result(result: OffloadRestoreResult, json_output: bool) -> Cl
         render_json(Ok::<_, String>(offload_restore_json(&result)))
     } else {
         success(format!(
-            "backup offload restore: status={} reason={}{} segments_restored={} files_restored={} bytes_restored={}\n",
+            "{heading} status={} reason={}{} segments_restored={} files_restored={} bytes_restored={}\n",
             result.status,
             result
                 .reason
@@ -1484,6 +1545,7 @@ fn offload_restore_result(result: OffloadRestoreResult, json_output: bool) -> Cl
             result.segments_restored,
             result.files_restored,
             result.bytes_restored,
+            heading = copy::text("journal.cli.backup.offload.restore.heading")
         ))
     };
     if matches!(result.status.as_str(), "refused" | "degraded" | "error") {
@@ -1554,10 +1616,19 @@ fn backup_run_result(result: BackupResult) -> CliRun {
             incomplete_backup_message(result.snapshot_id.as_deref(), result.unreadable.as_ref())
         )),
         ("ok", _) => success(format!(
-            "Backup complete (snapshot {}).\n",
-            result.snapshot_id.as_deref().unwrap_or_default()
+            "{}\n",
+            copy::display(
+                "journal.cli.backup.run.complete",
+                [(
+                    "snapshot",
+                    &(result.snapshot_id.as_deref().unwrap_or_default())
+                )]
+            )
         )),
-        ("skipped", _) => success("Backup skipped (not enabled or not configured).\n".into()),
+        ("skipped", _) => success(format!(
+            "{}\n",
+            copy::text("journal.cli.backup.run.skipped")
+        )),
         // `incomplete` is the one failure where the backup partly worked:
         // restic wrote a snapshot and could not read every source file. The
         // owner used to be told only "incomplete", which names neither the
@@ -1569,145 +1640,254 @@ fn backup_run_result(result: BackupResult) -> CliRun {
             result.snapshot_id.as_deref(),
             result.unreadable.as_ref(),
         )),
-        (_, reason) => runtime_error(format!(
-            "Backup failed: {}.",
-            backup_failure_reason(reason.unwrap_or("failed"))
+        (_, reason) => runtime_error(backup_failure(
+            reason.unwrap_or("failed"),
+            BackupFailure::Run,
         )),
     }
 }
 
-/// The owner-facing sentence for a partial backup.
-///
-/// Split out from [`backup_run_result`] so it can be asserted verbatim.
-/// Turn a backup-run reason code into something an owner can read.
-///
-/// 🔴 These codes are internal identifiers and every one of them was reaching
-/// owners verbatim: `Backup failed: restic_unavailable.`,
-/// `Backup failed: journal_path_unresolved.`, `Backup failed: broker_error.`
-/// The set is closed -- every value is a `&'static str` from this crate or
-/// `hosted_runtime` -- so each one gets a sentence.
-///
-/// ⛔ The fallback still prints the code rather than swallowing it. An owner
-/// with an unmapped code and a support request is better off than one told
-/// "something went wrong", and a code that appears here is a missing arm, which
-/// is a thing someone can see and fix.
-///
-/// ⛔ No recovery command is invented: `journal backup enable` and
-/// `journal backup run` are the two this crate documents, and only those appear.
-fn backup_failure_reason(reason: &str) -> String {
-    // ⚠ Written from where the OWNER stands, not from inside the backup
-    // subsystem. The first draft of these said "repository", "couldn't be
-    // resolved", "wasn't reported", "this journal's" and "on this account" --
-    // all the machine describing itself. An owner does not think "the
-    // repository"; they think "my backup". Fix the vantage and the vocabulary
-    // mostly follows.
-    match reason {
-        "repo_missing" => "there's no backup at the destination yet".into(),
-        "repo_exists" => "there's already a backup there".into(),
-        "locked" => {
-            "the backup at the destination is locked, usually by a run that's still going or one \
-             that was interrupted"
-                .into()
-        }
-        // ⚠ These two codes mean different things and must not read alike:
-        // credentials refused, versus credentials accepted without permission.
-        "auth_failed" => "the destination rejected the credentials".into(),
-        "access" => "the destination refused permission for this write".into(),
-        "unreachable" => "the destination couldn't be reached".into(),
-        "bucket_not_found" => "your credentials can't open the bucket the repository names".into(),
-        "timeout" => "it ran too long and stopped".into(),
-        // ✅ restic and rclone are named. Canon bars a third-party brand as a
-        // SERVICE name; these are missing dependencies, and with no recovery
-        // command on offer the tool name is the only actionable token here.
-        "restic_unavailable" => "the restic backup program isn't available".into(),
-        "rclone_unavailable" => "the rclone program isn't available".into(),
-        "journal_path_unresolved" => "couldn't find your journal".into(),
-        // ⛔ Never "solstone's backup service": sol pbc operates, solstone never
-        // hosts, and brand lives at the layer rather than on each service.
-        "broker_unreachable" => "the backup service sol pbc runs couldn't be reached".into(),
-        "broker_error" => "the backup service sol pbc runs couldn't complete the request".into(),
-        // ⛔ Not "operated backup": "operated" is the disclosure clause, never
-        // part of a name. And owners have services, not accounts.
-        "hosted_entitlement_inactive" => "sol pbc isn't running backup for you".into(),
-        // ⛔ "your journal", never "this journal" -- it is the owner's own and
-        // they are sitting at their own terminal.
-        "binding_invalid" => "your journal's backup settings are no longer valid".into(),
-        "binding_superseded" => "newer backup settings replaced these".into(),
-        "repository_unsupported" => {
-            "the repository in your backup settings doesn't start with s3: or b2: to match its \
-             backend"
-                .into()
-        }
-        // ⛔ Not "it didn't finish": the header already said that.
-        "failed" | "unknown" => "no reason was given".into(),
-        other => format!(
-            "stopped without a reason ({})",
-            solstone_core_system_health::sanitize_str_for_terminal_bounded(other)
-        ),
-    }
+#[derive(Clone, Copy)]
+enum BackupFailure {
+    Run,
+    Prune,
+    Rotate,
 }
 
-/// The owner-facing sentence for a restore-run reason code.
-///
-/// Restore has its own vocabulary — `backup_failure_reason` covers the backup
-/// namespace and does not fit here: routing restore through it hits its
-/// fallback for nearly every real restore failure, which is worse than the
-/// raw code on the one operation an owner runs after losing everything. This
-/// covers every `RESTORE_REASON_*` constant in `solstone_core_backup_runtime::restore`.
-fn restore_failure_reason(reason: &str) -> String {
-    match reason {
-        "invalid_key" => "the recovery key entered doesn't match this backup".into(),
-        "restic_unavailable" => "the restic backup program isn't available".into(),
-        "destination_invalid" => "the backup destination isn't valid".into(),
-        "destination_admission_failed" => "the backup destination couldn't be reached".into(),
-        "snapshot_list_io_failed" => "the list of backups couldn't be read".into(),
-        "snapshot_list_failed" => "the list of backups couldn't be retrieved".into(),
-        "snapshot_catalog_invalid" => "the list of backups is invalid".into(),
-        "journal_snapshot_not_found" => "no backup of your journal was found".into(),
-        "snapshot_selection_ambiguous" => {
-            "more than one backup matched and none could be chosen automatically".into()
+fn backup_failure(reason: &str, context: BackupFailure) -> String {
+    let mut args = Vec::new();
+    let code;
+    let ids = match reason {
+        "repo_missing" => [
+            "journal.cli.backup.run.failure.repo.missing",
+            "journal.cli.backup.prune.failure.repo.missing",
+            "journal.cli.backup.rotation.failure.repo.missing",
+        ],
+        "repo_exists" => [
+            "journal.cli.backup.run.failure.repo.exists",
+            "journal.cli.backup.prune.failure.repo.exists",
+            "journal.cli.backup.rotation.failure.repo.exists",
+        ],
+        "locked" => [
+            "journal.cli.backup.run.failure.locked",
+            "journal.cli.backup.prune.failure.locked",
+            "journal.cli.backup.rotation.failure.locked",
+        ],
+        "auth_failed" => [
+            "journal.cli.backup.run.failure.auth.failed",
+            "journal.cli.backup.prune.failure.auth.failed",
+            "journal.cli.backup.rotation.failure.auth.failed",
+        ],
+        "access" => [
+            "journal.cli.backup.run.failure.access",
+            "journal.cli.backup.prune.failure.access",
+            "journal.cli.backup.rotation.failure.access",
+        ],
+        "unreachable" => [
+            "journal.cli.backup.run.failure.unreachable",
+            "journal.cli.backup.prune.failure.unreachable",
+            "journal.cli.backup.rotation.failure.unreachable",
+        ],
+        "bucket_not_found" => [
+            "journal.cli.backup.run.failure.bucket.not.found",
+            "journal.cli.backup.prune.failure.bucket.not.found",
+            "journal.cli.backup.rotation.failure.bucket.not.found",
+        ],
+        "timeout" => [
+            "journal.cli.backup.run.failure.timeout",
+            "journal.cli.backup.prune.failure.timeout",
+            "journal.cli.backup.rotation.failure.timeout",
+        ],
+        "restic_unavailable" => [
+            "journal.cli.backup.run.failure.restic.unavailable",
+            "journal.cli.backup.prune.failure.restic.unavailable",
+            "journal.cli.backup.rotation.failure.restic.unavailable",
+        ],
+        "rclone_unavailable" => [
+            "journal.cli.backup.run.failure.rclone.unavailable",
+            "journal.cli.backup.prune.failure.rclone.unavailable",
+            "journal.cli.backup.rotation.failure.rclone.unavailable",
+        ],
+        "journal_path_unresolved" => [
+            "journal.cli.backup.run.failure.journal.path.unresolved",
+            "journal.cli.backup.prune.failure.journal.path.unresolved",
+            "journal.cli.backup.rotation.failure.journal.path.unresolved",
+        ],
+        "broker_unreachable" => [
+            "journal.cli.backup.run.failure.broker.unreachable",
+            "journal.cli.backup.prune.failure.broker.unreachable",
+            "journal.cli.backup.rotation.failure.broker.unreachable",
+        ],
+        "broker_error" => [
+            "journal.cli.backup.run.failure.broker.error",
+            "journal.cli.backup.prune.failure.broker.error",
+            "journal.cli.backup.rotation.failure.broker.error",
+        ],
+        "hosted_entitlement_inactive" => [
+            "journal.cli.backup.run.failure.hosted.entitlement.inactive",
+            "journal.cli.backup.prune.failure.hosted.entitlement.inactive",
+            "journal.cli.backup.rotation.failure.hosted.entitlement.inactive",
+        ],
+        "binding_invalid" => [
+            "journal.cli.backup.run.failure.binding.invalid",
+            "journal.cli.backup.prune.failure.binding.invalid",
+            "journal.cli.backup.rotation.failure.binding.invalid",
+        ],
+        "binding_superseded" => [
+            "journal.cli.backup.run.failure.binding.superseded",
+            "journal.cli.backup.prune.failure.binding.superseded",
+            "journal.cli.backup.rotation.failure.binding.superseded",
+        ],
+        "repository_unsupported" => [
+            "journal.cli.backup.run.failure.repository.unsupported",
+            "journal.cli.backup.prune.failure.repository.unsupported",
+            "journal.cli.backup.rotation.failure.repository.unsupported",
+        ],
+        "failed" | "unknown" => [
+            "journal.cli.backup.run.failure.failed",
+            "journal.cli.backup.prune.failure.failed",
+            "journal.cli.backup.rotation.failure.failed",
+        ],
+        _ => {
+            code = solstone_core_system_health::sanitize_str_for_terminal_bounded(reason);
+            args.push(("code", copy::Value::String(&code)));
+            [
+                "journal.cli.backup.run.failure.unknown.code",
+                "journal.cli.backup.prune.failure.unknown.code",
+                "journal.cli.backup.rotation.failure.unknown.code",
+            ]
         }
-        "restore_io_failed" => "files couldn't be written during restore".into(),
-        "restore_failed" => "the restore didn't complete".into(),
-        "restore_summary_missing" => "the restore finished but its summary is missing".into(),
-        "integrity_check_io_failed" => "the restored files couldn't be checked".into(),
-        "journal_already_set_up" => {
-            "your journal is already set up, so it can't be restored over. to use a backup, start a new journal and choose restore during setup".into()
+    };
+    let id = ids[context as usize];
+    copy::render(id, &args)
+}
+
+#[derive(Clone, Copy)]
+enum RestoreFailure {
+    Failed,
+    Recording,
+}
+
+fn restore_failure(reason: &str, context: RestoreFailure, counters: &str) -> String {
+    let mut args = Vec::new();
+    let code;
+    let ids = match reason {
+        "invalid_key" => [
+            "journal.cli.backup.restore.failure.invalid.key",
+            "journal.cli.backup.restore.recording.failure.invalid.key",
+        ],
+        "restic_unavailable" => [
+            "journal.cli.backup.restore.failure.restic.unavailable",
+            "journal.cli.backup.restore.recording.failure.restic.unavailable",
+        ],
+        "destination_invalid" => [
+            "journal.cli.backup.restore.failure.destination.invalid",
+            "journal.cli.backup.restore.recording.failure.destination.invalid",
+        ],
+        "destination_admission_failed" => [
+            "journal.cli.backup.restore.failure.destination.admission.failed",
+            "journal.cli.backup.restore.recording.failure.destination.admission.failed",
+        ],
+        "snapshot_list_io_failed" => [
+            "journal.cli.backup.restore.failure.snapshot.list.io.failed",
+            "journal.cli.backup.restore.recording.failure.snapshot.list.io.failed",
+        ],
+        "snapshot_list_failed" => [
+            "journal.cli.backup.restore.failure.snapshot.list.failed",
+            "journal.cli.backup.restore.recording.failure.snapshot.list.failed",
+        ],
+        "snapshot_catalog_invalid" => [
+            "journal.cli.backup.restore.failure.snapshot.catalog.invalid",
+            "journal.cli.backup.restore.recording.failure.snapshot.catalog.invalid",
+        ],
+        "journal_snapshot_not_found" => [
+            "journal.cli.backup.restore.failure.journal.snapshot.not.found",
+            "journal.cli.backup.restore.recording.failure.journal.snapshot.not.found",
+        ],
+        "snapshot_selection_ambiguous" => [
+            "journal.cli.backup.restore.failure.snapshot.selection.ambiguous",
+            "journal.cli.backup.restore.recording.failure.snapshot.selection.ambiguous",
+        ],
+        "restore_io_failed" => [
+            "journal.cli.backup.restore.failure.restore.io.failed",
+            "journal.cli.backup.restore.recording.failure.restore.io.failed",
+        ],
+        "restore_failed" => [
+            "journal.cli.backup.restore.failure.restore.failed",
+            "journal.cli.backup.restore.recording.failure.restore.failed",
+        ],
+        "restore_summary_missing" => [
+            "journal.cli.backup.restore.failure.restore.summary.missing",
+            "journal.cli.backup.restore.recording.failure.restore.summary.missing",
+        ],
+        "integrity_check_io_failed" => [
+            "journal.cli.backup.restore.failure.integrity.check.io.failed",
+            "journal.cli.backup.restore.recording.failure.integrity.check.io.failed",
+        ],
+        "journal_already_set_up" => [
+            "journal.cli.backup.restore.failure.journal.already.set.up",
+            "journal.cli.backup.restore.recording.failure.journal.already.set.up",
+        ],
+        "insufficient_free_space" => [
+            "journal.cli.backup.restore.failure.insufficient.free.space",
+            "journal.cli.backup.restore.recording.failure.insufficient.free.space",
+        ],
+        "integrity_unverified" => [
+            "journal.cli.backup.restore.failure.integrity.unverified",
+            "journal.cli.backup.restore.recording.failure.integrity.unverified",
+        ],
+        "integrity_failed" => [
+            "journal.cli.backup.restore.failure.integrity.failed",
+            "journal.cli.backup.restore.recording.failure.integrity.failed",
+        ],
+        "body_rebuild_failed" => [
+            "journal.cli.backup.restore.failure.body.rebuild.failed",
+            "journal.cli.backup.restore.recording.failure.body.rebuild.failed",
+        ],
+        "destination_publish_failed" => [
+            "journal.cli.backup.restore.failure.destination.publish.failed",
+            "journal.cli.backup.restore.recording.failure.destination.publish.failed",
+        ],
+        "recovery_key_publish_failed" => [
+            "journal.cli.backup.restore.failure.recovery.key.publish.failed",
+            "journal.cli.backup.restore.recording.failure.recovery.key.publish.failed",
+        ],
+        "recovery_confirmation_publish_failed" => [
+            "journal.cli.backup.restore.failure.recovery.confirmation.publish.failed",
+            "journal.cli.backup.restore.recording.failure.recovery.confirmation.publish.failed",
+        ],
+        "full_scan_failed" => [
+            "journal.cli.backup.restore.failure.full.scan.failed",
+            "journal.cli.backup.restore.recording.failure.full.scan.failed",
+        ],
+        "restore_record_failed" => [
+            "journal.cli.backup.restore.failure.restore.record.failed",
+            "journal.cli.backup.restore.recording.failure.restore.record.failed",
+        ],
+        _ => {
+            code = solstone_core_system_health::sanitize_str_for_terminal_bounded(reason);
+            args.push(("code", copy::Value::String(&code)));
+            [
+                "journal.cli.backup.restore.failure.unknown.code",
+                "journal.cli.backup.restore.recording.failure.unknown.code",
+            ]
         }
-        "insufficient_free_space" => {
-            "there isn't enough free space for this restore, so nothing changed".into()
-        }
-        "integrity_unverified" => {
-            "the integrity check couldn't run (the backup was busy or timed out), so your journal isn't set to the backup".into()
-        }
-        "integrity_failed" => {
-            "the backup failed its integrity check and may be damaged, so your journal isn't set to the backup".into()
-        }
-        "body_rebuild_failed" => "your journal couldn't be rebuilt from the restored files".into(),
-        "destination_publish_failed" => {
-            "the restored journal couldn't be saved to its destination".into()
-        }
-        "recovery_key_publish_failed" => "the recovery key couldn't be saved".into(),
-        "recovery_confirmation_publish_failed" => {
-            "the recovery confirmation couldn't be saved".into()
-        }
-        "full_scan_failed" => "a full scan of the restored journal failed".into(),
-        "restore_record_failed" => "the restore's result couldn't be recorded".into(),
-        other => format!(
-            "stopped without a reason ({})",
-            solstone_core_system_health::sanitize_str_for_terminal_bounded(other)
-        ),
+    };
+    let id = ids[context as usize];
+    if matches!(context, RestoreFailure::Failed) {
+        args.push(("counters", copy::Value::String(counters)));
     }
+    copy::render(id, &args)
 }
 
 /// The owner-facing sentence for an offload-restore reason code.
 ///
 /// Offload restore brings back raw media that was previously archived off
-/// this device — a different operation from [`restore_failure_reason`]'s
+/// this device — a different operation from [`restore_failure`]'s
 /// whole-journal restore, with its own closed vocabulary
 /// (`solstone_core_offload::restore::OFFLOAD_RESTORE_REASONS`).
-/// Several codes share a name with `backup_failure_reason`'s or
-/// `restore_failure_reason`'s own arms (`locked`, `auth_failed`,
+/// Several codes share a name with `backup_failure`'s or
+/// `restore_failure`'s own arms (`locked`, `auth_failed`,
 /// `repo_missing`, `restic_unavailable`, `rclone_unavailable`, `timeout`,
 /// `failed`) because they trace back to the same restic return codes
 /// (`reason_for_returncode`) — routing through either of those maps blind
@@ -1715,66 +1895,76 @@ fn restore_failure_reason(reason: &str) -> String {
 fn offload_restore_failure_reason(reason: &str) -> String {
     match reason {
         "archive_unbound" => {
-            "the backup record doesn't identify the archive needed to restore these files".into()
+            copy::text("journal.cli.backup.offload.restore.reason.archive.unbound")
         }
-        "auth_failed" => "the destination rejected the credentials".into(),
+        "auth_failed" => window::text(
+            copy::cli_locale(),
+            "journal.window.backup.response.destination.result.message.the.destination.rejected.the.credentials",
+        ),
         "backup_not_ready" => {
-            "your backup isn't set up, so the offloaded files can't be fetched back".into()
+            copy::text("journal.cli.backup.offload.restore.reason.backup.not.ready")
         }
-        "destination_admission_failed" => "the backup destination couldn't be reached".into(),
-        "failed" => "the restore attempt failed for an unspecified reason".into(),
+        "destination_admission_failed" => {
+            copy::text("journal.cli.backup.offload.restore.reason.destination.admission.failed")
+        }
+        "failed" => copy::text("journal.cli.backup.offload.restore.reason.failed"),
         "insufficient_free_space" => {
-            "there isn't enough free space on this computer to bring the files back".into()
+            copy::text("journal.cli.backup.offload.restore.reason.insufficient.free.space")
         }
         "ledger_degraded" => {
-            "the record of what was offloaded is damaged and can't be used to restore".into()
+            copy::text("journal.cli.backup.offload.restore.reason.ledger.degraded")
         }
-        "legacy_read_failed" => "the backup copy of media offloaded by an earlier version of \
-             your journal couldn't be read, so it wasn't restored"
-            .into(),
-        "legacy_review_held" => "media offloaded by an earlier version of your journal couldn't \
-             be checked against your backup, so it wasn't restored"
-            .into(),
-        "legacy_verification_failed" => "the backup copy of media offloaded by an earlier \
-             version of your journal didn't match its record, so it wasn't restored"
-            .into(),
-        "locked" => {
-            "the backup at the destination is locked, usually by a run that's still going or one \
-             that was interrupted"
-                .into()
+        "legacy_read_failed" => {
+            copy::text("journal.cli.backup.offload.restore.reason.legacy.read.failed")
         }
+        "legacy_review_held" => {
+            copy::text("journal.cli.backup.offload.restore.reason.legacy.review.held")
+        }
+        "legacy_verification_failed" => {
+            copy::text("journal.cli.backup.offload.restore.reason.legacy.verification.failed")
+        }
+        "locked" => copy::text("journal.cli.backup.offload.restore.reason.locked"),
         "missing_file_after_restore" => {
-            "a file that should have come back with the restore is missing".into()
+            copy::text("journal.cli.backup.offload.restore.reason.missing.file.after.restore")
         }
         // Status is "no_op" here, not a failure: nothing offloaded matched
         // what was asked for.
-        "nothing_to_restore" => "there was nothing offloaded to restore".into(),
-        "repo_missing" => "there's no backup at the destination yet".into(),
-        "restic_unavailable" => "the restic backup program isn't available".into(),
-        "restore_conflict" => "a different file is already where at least one of these files \
-             belongs, so the file already there was kept and the backup copy wasn't restored"
-            .into(),
-        "restore_held" => "restoring offloaded files is temporarily unavailable".into(),
-        "restore_not_published" => "at least one file couldn't be put back in your journal this \
-             time and nothing was put in its place, so try again later"
-            .into(),
-        "rclone_unavailable" => "the rclone program isn't available".into(),
-        "segment_identity" => "one of your journal's recordings couldn't be verified against \
-             its own identity record"
-            .into(),
+        "nothing_to_restore" => {
+            copy::text("journal.cli.backup.offload.restore.reason.nothing.to.restore")
+        }
+        "repo_missing" => copy::text("journal.cli.backup.offload.restore.reason.repo.missing"),
+        "restic_unavailable" => {
+            copy::text("journal.cli.backup.offload.restore.reason.restic.unavailable")
+        }
+        "restore_conflict" => {
+            copy::text("journal.cli.backup.offload.restore.reason.restore.conflict")
+        }
+        "restore_held" => copy::text("journal.cli.backup.offload.restore.reason.restore.held"),
+        "restore_not_published" => {
+            copy::text("journal.cli.backup.offload.restore.reason.restore.not.published")
+        }
+        "rclone_unavailable" => {
+            copy::text("journal.cli.backup.offload.restore.reason.rclone.unavailable")
+        }
+        "segment_identity" => {
+            copy::text("journal.cli.backup.offload.restore.reason.segment.identity")
+        }
         "segment_missing" => {
-            "the journal location these files belong to no longer exists on this computer".into()
+            copy::text("journal.cli.backup.offload.restore.reason.segment.missing")
         }
         "stream_marker_failed" => {
-            "the files were restored, but updating the journal's records afterward failed".into()
+            copy::text("journal.cli.backup.offload.restore.reason.stream.marker.failed")
         }
-        "timeout" => "it ran too long and stopped".into(),
+        "timeout" => copy::text("journal.cli.backup.offload.restore.reason.timeout"),
         "verification_failed" => {
-            "a restored file didn't match what it should have been, so it may be damaged".into()
+            copy::text("journal.cli.backup.offload.restore.reason.verification.failed")
         }
-        other => format!(
-            "stopped without a reason ({})",
-            solstone_core_system_health::sanitize_str_for_terminal_bounded(other)
+        other => copy::display(
+            "journal.cli.backup.offload.restore.reason.unknown.code",
+            [(
+                "code",
+                &(solstone_core_system_health::sanitize_str_for_terminal_bounded(other)),
+            )],
         ),
     }
 }
@@ -1783,49 +1973,63 @@ fn incomplete_backup_message(
     snapshot_id: Option<&str>,
     unreadable: Option<&UnreadableSources>,
 ) -> String {
-    // ⛔ The CAUSE is never named here, and that is deliberate. An earlier draft
-    // said "files that are open in another app can't be read" -- true on
-    // Windows, where the running journal holds files open, and false on the two
-    // platforms the journal has shipped on longest, where an open file reads
-    // fine and a partial run is normally a permission denial or a file that
-    // changed mid-run. ✅ restic knows which one it hit and says so per file, so
-    // the line carries what the tool reported instead of guessing.
-    let scale = match unreadable {
-        Some(UnreadableSources { count: 1, .. }) => {
-            "1 file couldn't be read, so it isn't".to_owned()
-        }
-        Some(UnreadableSources { count, .. }) => {
-            format!("{count} files couldn't be read, so they aren't")
-        }
-        None => "some files couldn't be read, so they aren't".to_owned(),
-    };
-    // The reason is restic's text reaching an owner's terminal: bound and
-    // sanitize it the way every other relayed tool reason on this surface is.
     let reason = unreadable
         .and_then(|sources| sources.first_reason.as_deref())
-        .map(|reason| {
-            format!(
-                " The first: {}.",
-                solstone_core_system_health::sanitize_str_for_terminal_bounded(reason)
-            )
-        })
-        .unwrap_or_default();
-    match snapshot_id {
-        // ✅ Opens in the SUCCESS form this surface already uses -- "Backup
-        // complete (snapshot …)" -- because it is one. The colon-and-prose
-        // shape next to it is the failure form, and a line that borrows it
-        // scans as a failure before the owner reaches the snapshot id.
-        Some(id) => format!(
-            "Backup partial (snapshot {id}). {scale} in it.{reason} Run \
-             `solstone journal backup run` again once that's fixed."
+        .map(solstone_core_system_health::sanitize_str_for_terminal_bounded);
+    match (
+        snapshot_id,
+        unreadable.map(|sources| sources.count),
+        reason.as_deref(),
+    ) {
+        (Some(snapshot), Some(count), Some(reason)) => copy::render(
+            "journal.cli.backup.run.partial.snapshot.count.reason",
+            &[
+                (
+                    "quantity",
+                    copy::Value::Cardinal(i64::try_from(count).unwrap_or(i64::MAX)),
+                ),
+                ("count", copy::Value::String(&count.to_string())),
+                ("snapshot", copy::Value::String(snapshot)),
+                ("reason", copy::Value::String(reason)),
+            ],
         ),
-        // ⛔ Never "no snapshot was written". A source-read failure is exactly
-        // the condition that writes one; arriving here means the summary did not
-        // parse, so the id is what is missing, not the snapshot.
-        None => format!(
-            "Backup partial. {scale} in it, and the snapshot couldn't be \
-             confirmed.{reason} Run `solstone journal backup run` again once that's fixed."
+        (Some(snapshot), Some(count), None) => copy::render(
+            "journal.cli.backup.run.partial.snapshot.count",
+            &[
+                (
+                    "quantity",
+                    copy::Value::Cardinal(i64::try_from(count).unwrap_or(i64::MAX)),
+                ),
+                ("count", copy::Value::String(&count.to_string())),
+                ("snapshot", copy::Value::String(snapshot)),
+            ],
         ),
+        (Some(snapshot), None, _) => copy::display(
+            "journal.cli.backup.run.partial.snapshot.unmeasured",
+            [("snapshot", &snapshot)],
+        ),
+        (None, Some(count), Some(reason)) => copy::render(
+            "journal.cli.backup.run.partial.unconfirmed.count.reason",
+            &[
+                (
+                    "quantity",
+                    copy::Value::Cardinal(i64::try_from(count).unwrap_or(i64::MAX)),
+                ),
+                ("count", copy::Value::String(&count.to_string())),
+                ("reason", copy::Value::String(reason)),
+            ],
+        ),
+        (None, Some(count), None) => copy::render(
+            "journal.cli.backup.run.partial.unconfirmed.count",
+            &[
+                (
+                    "quantity",
+                    copy::Value::Cardinal(i64::try_from(count).unwrap_or(i64::MAX)),
+                ),
+                ("count", copy::Value::String(&count.to_string())),
+            ],
+        ),
+        (None, None, _) => copy::text("journal.cli.backup.run.partial.unconfirmed.unmeasured"),
     }
 }
 
@@ -1835,11 +2039,17 @@ fn backup_prune(journal: &Path, services: &BackupServices<'_>) -> CliRun {
 
 fn backup_prune_result(result: PruneResult) -> CliRun {
     match result.status.as_str() {
-        "ok" => success("Retention prune complete.\n".into()),
-        "skipped" => success("Prune skipped (not enabled or not configured).\n".into()),
-        _ => runtime_error(format!(
-            "Prune failed: {}.",
-            backup_failure_reason(result.error_reason.as_deref().unwrap_or("failed"))
+        "ok" => success(format!(
+            "{}\n",
+            copy::text("journal.cli.backup.prune.complete")
+        )),
+        "skipped" => success(format!(
+            "{}\n",
+            copy::text("journal.cli.backup.prune.skipped")
+        )),
+        _ => runtime_error(backup_failure(
+            result.error_reason.as_deref().unwrap_or("failed"),
+            BackupFailure::Prune,
         )),
     }
 }
@@ -1851,28 +2061,29 @@ fn recovery_key_rotate(journal: &Path, services: &BackupServices<'_>) -> CliRun 
 fn recovery_key_rotate_result(result: RotationResult) -> CliRun {
     match result.status.as_str() {
         "ok" => match result.recovery_key_display {
-            Some(display) => success(format!(
-                "New recovery key (write it down):\n{}",
-                recovery_key_grid(&display)
+            Some(display) => success(copy::display(
+                "journal.cli.backup.rotation.key",
+                [("key_grid", &(recovery_key_grid(&display)))],
             )),
-            None => runtime_error("Rotation failed: failed.".into()),
+            None => runtime_error(copy::text("journal.cli.backup.rotation.failed")),
         },
-        "skipped" => success("Recovery key rotation skipped (backup not configured).\n".into()),
-        _ => runtime_error(format!(
-            "Rotation failed: {}.",
-            backup_failure_reason(result.reason_code.as_deref().unwrap_or("failed"))
+        "skipped" => success(format!(
+            "{}\n",
+            copy::text("journal.cli.backup.rotation.skipped")
+        )),
+        _ => runtime_error(backup_failure(
+            result.reason_code.as_deref().unwrap_or("failed"),
+            BackupFailure::Rotate,
         )),
     }
 }
 
 fn turn_off(confirmed: bool, _journal: &Path, _services: &BackupServices<'_>) -> CliRun {
     if !confirmed {
-        return runtime_error(
-            "Refusing to tear down backup without --yes. This forgets all snapshots.".into(),
-        );
+        return runtime_error(copy::text("!journal.cli.backup.teardown.confirm"));
     }
     // Borrowed injected services cannot replace the original owning admission.
-    runtime_error(owned_teardown::PRELAUNCH_HELD.into())
+    runtime_error(owned_teardown::prelaunch_held())
 }
 
 fn set_hosted(journal: &Path) -> CliRun {
@@ -1887,7 +2098,7 @@ fn set_hosted(journal: &Path) -> CliRun {
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_owned)
-            .ok_or_else(|| format!("Missing {name}."))
+            .ok_or_else(|| copy::display("journal.cli.backup.hosted.field", [("name", &name)]))
     };
     let binding = match (
         field("broker_endpoint"),
@@ -1920,7 +2131,7 @@ fn set_hosted(journal: &Path) -> CliRun {
         | (_, _, _, _, _, Err(error)) => return runtime_error(error),
     };
     if let Err(error) = save_hosted_binding(journal, &binding) {
-        return runtime_error(error.to_string());
+        return runtime_error(backup_error(error));
     }
     render_json(Ok::<_, String>(Value::Object(Map::from_iter([
         (
@@ -1937,12 +2148,12 @@ fn set_hosted(journal: &Path) -> CliRun {
 fn recovery_key_show(journal: &Path) -> CliRun {
     let keys = match get_keys(journal) {
         Ok(Some(keys)) => keys,
-        Ok(None) => return runtime_error("No recovery key is set.".to_owned()),
-        Err(error) => return runtime_error(error.to_string()),
+        Ok(None) => return runtime_error(copy::text("journal.cli.backup.recovery.key.missing")),
+        Err(error) => return runtime_error(backup_error(error)),
     };
     let display = match solstone_core_backup::format_recovery_key_display(&keys.recovery_key) {
         Ok(display) => display,
-        Err(error) => return runtime_error(error.to_string()),
+        Err(error) => return runtime_error(backup_error(error)),
     };
     success(recovery_key_grid(&display))
 }
@@ -1961,20 +2172,20 @@ fn read_stdin_json() -> Result<Map<String, Value>, String> {
         .take((MAX_JSON_STDIN_BYTES + 1) as u64)
         .read_to_end(&mut bytes);
     if result.is_err() {
-        return Err("stdin I/O error.".into());
+        return Err(copy::text("journal.cli.backup.input.io"));
     }
     if bytes.len() > MAX_JSON_STDIN_BYTES {
-        return Err("stdin request exceeds the JSON input limit.".into());
+        return Err(copy::text("journal.cli.backup.input.limit"));
     }
     if bytes.iter().all(u8::is_ascii_whitespace) {
-        return Err("expected JSON object on stdin.".into());
+        return Err(copy::text("journal.cli.backup.input.object"));
     }
     let value = serde_json::from_slice::<Value>(&bytes)
-        .map_err(|error| format!("invalid JSON on stdin: {error}"))?;
+        .map_err(|error| copy::display("journal.cli.backup.input.json", [("error", &error)]))?;
     value
         .as_object()
         .cloned()
-        .ok_or_else(|| "expected JSON object on stdin.".into())
+        .ok_or_else(|| copy::text("journal.cli.backup.input.object"))
 }
 fn render_json<E: std::fmt::Display>(result: Result<Value, E>) -> CliRun {
     match result {
@@ -1982,7 +2193,7 @@ fn render_json<E: std::fmt::Display>(result: Result<Value, E>) -> CliRun {
             sort_json_keys(&mut value);
             match serde_json::to_string_pretty(&value) {
                 Ok(rendered) => success(format!("{rendered}\n")),
-                Err(_) => runtime_error("could not render JSON output.".into()),
+                Err(_) => runtime_error(copy::text("journal.cli.backup.output.json")),
             }
         }
         Err(error) => runtime_error(error.to_string()),
@@ -2017,7 +2228,10 @@ fn runtime_error(message: String) -> CliRun {
     // Native backup intentionally normalizes Python's inconsistent error prefix.
     CliRun {
         stdout: String::new(),
-        stderr: format!("Error: {message}\n"),
+        stderr: format!(
+            "{}\n",
+            copy::display("journal.cli.backup.error", [("message", &message)])
+        ),
         exit_code: 1,
     }
 }
@@ -2025,7 +2239,9 @@ fn usage_error(arguments: &str) -> CliRun {
     CliRun {
         stdout: String::new(),
         stderr: format!(
-            "{USAGE}solstone journal backup: error: unrecognized arguments: {arguments}\n"
+            "{}\n{}\n",
+            copy::text("journal.cli.backup.help.root"),
+            copy::display("journal.cli.backup.usage.root", [("arguments", &arguments)])
         ),
         exit_code: 2,
     }
@@ -2035,7 +2251,12 @@ fn offload_usage_error(arguments: &str) -> CliRun {
     CliRun {
         stdout: String::new(),
         stderr: format!(
-            "{OFFLOAD_USAGE}solstone journal backup offload: error: unrecognized arguments: {arguments}\n"
+            "{}\n{}\n",
+            copy::text("journal.cli.backup.help.offload"),
+            copy::display(
+                "journal.cli.backup.usage.offload",
+                [("arguments", &arguments)]
+            )
         ),
         exit_code: 2,
     }
@@ -2045,7 +2266,12 @@ fn destination_usage_error(arguments: &str) -> CliRun {
     CliRun {
         stdout: String::new(),
         stderr: format!(
-            "{DESTINATION_USAGE}solstone journal backup destination: error: unrecognized arguments: {arguments}\n"
+            "{}\n{}\n",
+            copy::text("journal.cli.backup.help.destination"),
+            copy::display(
+                "journal.cli.backup.usage.destination",
+                [("arguments", &arguments)]
+            )
         ),
         exit_code: 2,
     }
@@ -2055,7 +2281,12 @@ fn recovery_key_usage_error(arguments: &str) -> CliRun {
     CliRun {
         stdout: String::new(),
         stderr: format!(
-            "{RECOVERY_KEY_USAGE}solstone journal backup recovery-key: error: unrecognized arguments: {arguments}\n"
+            "{}\n{}\n",
+            copy::text("journal.cli.backup.help.recovery.key"),
+            copy::display(
+                "journal.cli.backup.usage.recovery.key",
+                [("arguments", &arguments)]
+            )
         ),
         exit_code: 2,
     }
@@ -2426,7 +2657,7 @@ mod tests {
             "unknown",
         ];
         for reason in EVERY_REASON {
-            let rendered = backup_failure_reason(reason);
+            let rendered = backup_failure(reason, BackupFailure::Run);
             // ⚠ Not a substring check: "access" and "failed" are ordinary
             // English words and a sentence is allowed to contain them. The
             // identifier tell is the underscore and the bare code standing
@@ -2434,7 +2665,7 @@ mod tests {
             assert_ne!(rendered, *reason, "{reason} reaches the owner verbatim");
         }
         // ⛔ An unmapped code still reaches support rather than being swallowed.
-        let unmapped = backup_failure_reason("some_new_code");
+        let unmapped = backup_failure("some_new_code", BackupFailure::Run);
         assert!(unmapped.contains("some_new_code"), "{unmapped}");
     }
 
@@ -5189,7 +5420,7 @@ mod resolution_tests {
         assert_eq!(classify_tool_resolution(&off), None);
         let held = run_cli_with_deps(&off, journal.path(), &runner, &UnusedHttp, &exe);
         assert_ne!(held.exit_code, 0);
-        assert!(held.stderr.contains(owned_teardown::PRELAUNCH_HELD));
+        assert!(held.stderr.contains("turning off and deleting your backup isn't available here. no backup changes were made."));
         assert!(runner.programs.borrow().is_empty());
 
         configure_offload(journal.path());

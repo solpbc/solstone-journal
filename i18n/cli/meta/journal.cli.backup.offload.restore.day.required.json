@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for offload restore day required.",
+  "context": "Journal command-line text for offload restore day required.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3ea840765e6017a99aeb301ef57f6c899082d906b1a90c510688493b78ab8c65",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "all_flag",
+      "kind": "flag",
+      "value": "--all"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for run failure hosted entitlement inactive.",
+  "context": "Journal command-line text for run failure hosted entitlement inactive.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0ea180ddef43c5259bddfb3a4759c938496cf486101f4190be105d9c77b1c268",
+  "max_length": 89,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "company",
+      "kind": "mark-word",
+      "value": "sol pbc"
+    }
+  ]
+}

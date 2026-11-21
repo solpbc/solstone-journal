@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for run failure unknown code.",
+  "context": "Journal command-line text for run failure unknown code.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "code",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "badcb0abe0a558bb575c50d75b026df8cd73b56cae8786050b5e100acb9fc03c",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

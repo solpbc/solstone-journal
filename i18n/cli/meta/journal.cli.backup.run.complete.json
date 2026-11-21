@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for run complete.",
+  "context": "Journal command-line text for run complete.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "snapshot",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "865788244b134fdb412dd4f4b4bfe1d19d892bb8dad87ae514a072fec0d5bb75",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

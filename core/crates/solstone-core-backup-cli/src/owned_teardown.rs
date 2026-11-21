@@ -11,22 +11,57 @@ use solstone_core_backup_runtime::teardown_admission::{
     TeardownAdmissionRefusal, TeardownCarrierRefusal, TeardownReaderRefusal,
 };
 use solstone_core_offload::teardown::{
-    OwnedTeardownOutcome, TeardownRunRefusal, run_owned_teardown, storage_retention_sentence,
+    OwnedTeardownOutcome, TeardownRunRefusal, run_owned_teardown, storage_retention_message_id,
 };
 
-use super::{CliRun, ProductionClock};
+use super::{CliRun, ProductionClock, copy, window};
 
-pub(super) const PRELAUNCH_HELD: &str =
-    "turning off and deleting your backup isn't available here. no backup changes were made.";
-pub(super) const BACKUP_ONLY_HELD: &str = "your backup holds the only copy of some of your media, so no backup changes were made. restore everything from the backup page first, then try again.";
-pub(super) const DESTINATION_UNSUPPORTED: &str = "your backup's settings are incomplete, so your journal can't reach it, and no backup changes were made.";
-pub(super) const TOOL_UNAVAILABLE: &str =
-    "the backup program that comes with your journal is missing, so no backup changes were made.";
-pub(super) const BACKUP_ONLY_UNPLACED: &str = "your backup holds the only copy of some older media that can't be matched to a recording on this computer, so it can't be restored and no backup changes were made. if your journal was moved or copied, bring back its missing days, then try again.";
-pub(super) const OFFLOAD_RECORD_UNAVAILABLE: &str = "the record of what media offload moved into your backup is missing or can't be read, so no backup changes were made. if your journal was moved or copied, bring back its health folder, then try again.";
-pub(super) const STORAGE_UNREACHED: &str = "turning off and deleting your backup stopped before anything was deleted, so it's safe to try again.";
-pub(super) const NOT_STARTED: &str =
-    "turning off and deleting your backup couldn't start. no backup changes were made.";
+pub(super) fn prelaunch_held() -> String {
+    copy::text("journal.cli.backup.teardown.prelaunch.held")
+}
+
+fn backup_only_held() -> String {
+    copy::text("journal.cli.backup.teardown.backup.only.held")
+}
+
+fn destination_unsupported() -> String {
+    window::text(
+        copy::cli_locale(),
+        "journal.window.backup.copy.operation.reason.labels.destination.unsupported",
+    )
+}
+
+fn tool_unavailable() -> String {
+    window::text(
+        copy::cli_locale(),
+        "journal.window.backup.copy.operation.reason.labels.teardown.tool.unavailable",
+    )
+}
+
+fn backup_only_unplaced() -> String {
+    window::text(
+        copy::cli_locale(),
+        "journal.window.backup.copy.operation.reason.labels.backup.only.unplaced",
+    )
+}
+
+fn offload_record_unavailable() -> String {
+    window::text(
+        copy::cli_locale(),
+        "journal.window.backup.copy.operation.reason.labels.offload.record.unavailable",
+    )
+}
+
+fn storage_unreached() -> String {
+    window::text(
+        copy::cli_locale(),
+        "journal.window.backup.copy.operation.reason.labels.storage.unreached",
+    )
+}
+
+fn not_started() -> String {
+    copy::text("journal.cli.backup.teardown.not.started")
+}
 
 /// The complete native outcome remains alive while output is borrowed.
 #[must_use = "Retain the whole teardown result through printing and exit"]
@@ -79,7 +114,9 @@ pub(super) fn run(journal: &Path) -> OwnedTeardownCliRun {
 }
 
 /// Coverage refusals the owner can act on, with their reason and message.
-fn coverage_refusal(outcome: &OwnedTeardownOutcome) -> Option<(&'static str, &'static str)> {
+type CoverageRefusal = (&'static str, fn() -> String);
+
+fn coverage_refusal(outcome: &OwnedTeardownOutcome) -> Option<CoverageRefusal> {
     let failure = outcome.preparation_failure()?;
     let TeardownCarrierRefusal::Admission(TeardownAdmissionRefusal::Reader(reader)) =
         failure.refusal()
@@ -87,13 +124,17 @@ fn coverage_refusal(outcome: &OwnedTeardownOutcome) -> Option<(&'static str, &'s
         return None;
     };
     match reader {
-        TeardownReaderRefusal::BackupOnlyHeld => Some(("backup_only_held", BACKUP_ONLY_HELD)),
-        TeardownReaderRefusal::BackupOnlyUnplaced => {
-            Some(("backup_only_unplaced", BACKUP_ONLY_UNPLACED))
+        TeardownReaderRefusal::BackupOnlyHeld => {
+            Some(("backup_only_held", backup_only_held as fn() -> String))
         }
-        TeardownReaderRefusal::CatalogUnavailable => {
-            Some(("offload_record_unavailable", OFFLOAD_RECORD_UNAVAILABLE))
-        }
+        TeardownReaderRefusal::BackupOnlyUnplaced => Some((
+            "backup_only_unplaced",
+            backup_only_unplaced as fn() -> String,
+        )),
+        TeardownReaderRefusal::CatalogUnavailable => Some((
+            "offload_record_unavailable",
+            offload_record_unavailable as fn() -> String,
+        )),
         TeardownReaderRefusal::RecoveryUnavailable | TeardownReaderRefusal::RecoveryHeld => None,
     }
 }
@@ -194,29 +235,30 @@ fn render(outcome: &OwnedTeardownOutcome) -> CliRun {
         outcome
             .remote()
             .and_then(|remote| remote.storage_retention())
-            .and_then(storage_retention_sentence)
+            .and_then(storage_retention_message_id)
+            .map(|id| window::text(copy::cli_locale(), id))
             .map(|sentence| format!("{sentence}\n"))
             .unwrap_or_default()
     } else if outcome.phase() == solstone_core_offload::teardown::TeardownRunPhase::Prelaunch {
-        format!("{PRELAUNCH_HELD}\n")
+        format!("{}\n", prelaunch_held())
     } else if outcome.refused_before_effects() {
         let message = if let Some((_, message)) = coverage_refusal(outcome) {
-            message
+            message()
         } else if matches!(
             outcome.refusal(),
             Some(TeardownRunRefusal::UnsupportedDestination)
         ) {
-            DESTINATION_UNSUPPORTED
+            destination_unsupported()
         } else if matches!(outcome.refusal(), Some(TeardownRunRefusal::ToolUnavailable)) {
-            TOOL_UNAVAILABLE
+            tool_unavailable()
         } else {
-            NOT_STARTED
+            not_started()
         };
         format!("{message}\n")
     } else if nothing_deleted(outcome) {
-        format!("{STORAGE_UNREACHED}\n")
+        format!("{}\n", storage_unreached())
     } else {
-        "backup teardown did not finish. keep recovery files and review the recorded effects before retrying.\n".into()
+        format!("{}\n", copy::text("journal.cli.backup.teardown.partial"))
     };
     CliRun {
         stdout,
@@ -228,6 +270,18 @@ fn render(outcome: &OwnedTeardownOutcome) -> CliRun {
 #[cfg(test)]
 mod tests {
     use super::*;
+    const PRELAUNCH_HELD: &str =
+        "turning off and deleting your backup isn't available here. no backup changes were made.";
+    #[cfg(all(feature = "full-tests", any(target_os = "linux", target_os = "macos")))]
+    const BACKUP_ONLY_HELD: &str = "your backup holds the only copy of some of your media, so no backup changes were made. restore everything from the backup page first, then try again.";
+    #[cfg(all(feature = "full-tests", any(target_os = "linux", target_os = "macos")))]
+    const DESTINATION_UNSUPPORTED: &str = "your backup's settings are incomplete, so your journal can't reach it, and no backup changes were made.";
+    #[cfg(all(feature = "full-tests", any(target_os = "linux", target_os = "macos")))]
+    const BACKUP_ONLY_UNPLACED: &str = "your backup holds the only copy of some older media that can't be matched to a recording on this computer, so it can't be restored and no backup changes were made. if your journal was moved or copied, bring back its missing days, then try again.";
+    #[cfg(all(feature = "full-tests", any(target_os = "linux", target_os = "macos")))]
+    const OFFLOAD_RECORD_UNAVAILABLE: &str = "the record of what media offload moved into your backup is missing or can't be read, so no backup changes were made. if your journal was moved or copied, bring back its health folder, then try again.";
+    const NOT_STARTED: &str =
+        "turning off and deleting your backup couldn't start. no backup changes were made.";
     use crate::{CliOutcome, classify_tool_resolution, owned_teardown_options, run_cli};
     use solstone_core_offload::teardown::TeardownRunPhase;
 

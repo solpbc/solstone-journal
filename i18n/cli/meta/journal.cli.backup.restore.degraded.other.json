@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for restore degraded other.",
+  "context": "Journal command-line text for restore degraded other.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "counters",
+      "type": "string"
+    },
+    {
+      "name": "code",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ba335a6560535c42eb524a4a8d549dc305b6766313c1dfafa3e452a5bfd7af8b",
+  "max_length": 150,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "reason_field",
+      "kind": "accepted-input",
+      "value": "reason_code="
+    }
+  ]
+}

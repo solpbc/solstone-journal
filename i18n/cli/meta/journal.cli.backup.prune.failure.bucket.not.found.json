@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for prune failure bucket not found.",
+  "context": "Journal command-line text for prune failure bucket not found.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "342144c4542dcbbc6330b99c1c0773fc9dabbb1f17261d05bc2c0b16d8d62ac9",
+  "max_length": 106,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

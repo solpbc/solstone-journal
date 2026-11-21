@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for rotation failure binding superseded.",
+  "context": "Journal command-line text for rotation failure binding superseded.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "846ecaaaddb51a8c0f2d48e95fa2c57e666552857ff4d05e3882fb05ef4ab485",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

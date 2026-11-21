@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for restore recording failure body rebuild failed.",
+  "context": "Journal command-line text for restore recording failure body rebuild failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e920e416376fe12ae1943ea61c1f8628575684b3f1e5d4e8eb9e2a93bdb3ce96",
+  "max_length": 123,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

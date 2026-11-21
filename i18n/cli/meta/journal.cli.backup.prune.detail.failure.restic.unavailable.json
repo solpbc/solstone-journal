@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for prune detail failure restic unavailable.",
+  "context": "Journal command-line text for prune detail failure restic unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "66054a20096bcc11d51dbcec7da39b61d2ead6a0c6bdd0beb35b21c984daa980",
+  "max_length": 130,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "detail_field",
+      "kind": "accepted-input",
+      "value": "detail="
+    },
+    {
+      "name": "restic_program",
+      "kind": "accepted-input",
+      "value": "restic"
+    }
+  ]
+}

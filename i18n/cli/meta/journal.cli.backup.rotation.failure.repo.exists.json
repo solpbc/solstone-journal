@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for rotation failure repo exists.",
+  "context": "Journal command-line text for rotation failure repo exists.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5186e48b90b7db5d8da2008adc460acd75779dfbf72a286b2e8e877a24914358",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for offload restore reason segment identity.",
+  "context": "Journal command-line text for offload restore reason segment identity.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bdd799098b2c5900ff477b5e1627a316de6fd5886eb2c88747e7307023d8933f",
+  "max_length": 117,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

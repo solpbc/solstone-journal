@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for error.",
+  "context": "Journal command-line text for error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "message",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c5510ddc364d1e68e5404abf0575f03344aa7ca809d2beb9388dc5298d857b71",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

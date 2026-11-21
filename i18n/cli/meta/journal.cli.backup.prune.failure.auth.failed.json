@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for prune failure auth failed.",
+  "context": "Journal command-line text for prune failure auth failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0692f2083aa2f3ca5baa2b9a2bf0755bebf0fd7f6758226427d5b7e759a223fc",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

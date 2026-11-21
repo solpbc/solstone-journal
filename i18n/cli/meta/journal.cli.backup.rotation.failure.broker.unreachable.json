@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for rotation failure broker unreachable.",
+  "context": "Journal command-line text for rotation failure broker unreachable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c9c413d69dc45c59b16782fb4aa6e0180e39a0de6d5247d0b1d59958fb4e45e2",
+  "max_length": 106,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "company",
+      "kind": "mark-word",
+      "value": "sol pbc"
+    }
+  ]
+}

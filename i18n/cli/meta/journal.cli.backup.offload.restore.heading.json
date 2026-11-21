@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for offload restore heading.",
+  "context": "Journal command-line text for offload restore heading.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2195ccfe28a9539bdb6fc8cde9260f5e9a44de675a2c9b0a568ebb77954ad917",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

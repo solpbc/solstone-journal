@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for teardown not started.",
+  "context": "Journal command-line text for teardown not started.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a3d178f5ced6b6c639d6a8181da2ec97246f2e66c6159af5938519e278e0fc6e",
+  "max_length": 113,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

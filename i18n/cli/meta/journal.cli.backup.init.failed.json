@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for init failed.",
+  "context": "Journal command-line text for init failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1b1bce2d4fa43f952e2f5ad1e7d902d7e7f2f4cd4127439be42b99a40068dba2",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

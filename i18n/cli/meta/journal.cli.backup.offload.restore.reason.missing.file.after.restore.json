@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for offload restore reason missing file after restore.",
+  "context": "Journal command-line text for offload restore reason missing file after restore.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1058d35f9156bf5d119d0d748dca22d70e1bf8fc5c433482d352d2374e765af2",
+  "max_length": 93,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

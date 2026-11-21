@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for prune failure repo exists.",
+  "context": "Journal command-line text for prune failure repo exists.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c1c7ed8b54f73eb4cc5b64202916a1fc60719f8ac7a809119c6df1b709b08921",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

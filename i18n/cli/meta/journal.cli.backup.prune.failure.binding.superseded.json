@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for prune failure binding superseded.",
+  "context": "Journal command-line text for prune failure binding superseded.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "967ec7eb85f7bad21d16fe4cb82665c696c6b03e410a398860cb78a361a0fbcd",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for offload restore reason backup not ready.",
+  "context": "Journal command-line text for offload restore reason backup not ready.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "51333b33649bc122513616fc7bfee8a346301935250e1b64b832d03bf7d8e0ee",
+  "max_length": 102,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}
