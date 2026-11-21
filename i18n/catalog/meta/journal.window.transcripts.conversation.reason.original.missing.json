@@ -1,0 +1,16 @@
+{
+  "description": "Reason shown under why: the original imported file is not in the journal.",
+  "context": "Journal window, transcripts view. Only for the original_missing reason.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3332a28d3ba08353dd04e58924eeb0a1f5661cf8f0e9f27660ce4734fd785920",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

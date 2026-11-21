@@ -12,6 +12,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - an agent you've let see your whole journal, with transcripts and summaries, can now read a date range of up to a year as one row per day. each day carries its journal link and, when available, a top memory and quotes with their activity title. it can also include body, places, photos, notes and people for the kinds you've allowed.
 - new imports show where you added them from. when you import from the linux app, you can close the import window while your files are on their way to your journal.
 - when you choose an Obsidian vault, your journal uses the names you gave your paired devices and leaves out devices you removed.
+- on a day with written chats, the transcripts page has a switch at the top: everything, transcripts or messages. what it leaves out stays on the day, drawn faintly. a chat or AI chat you imported reads as messages: who sent each one, who it went to and when it was sent, when the chat says. a search match in a long message opens at the matching passage.
 
 - an agent connected to your journal now gets instructions for showing your photos in something it builds for you, such as a printable book. in apps that let a page reach your journal, the instructions are for a page that loads each photo from your journal when you open it. your journal makes no public link for them.
 - notes shared alongside a photo from the solstone app on android now appear with the photo, separated from your journal's generated description.
@@ -23,6 +24,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - imported conversations that opened to an empty pane now show their text in transcripts.
+- search results from imported captions show the speaker's name instead of caption markup.
 - on windows, setting up a journal could occasionally fail with an access-denied error while saving installation details.
 - on linux, `solstone journal setup` could stop at its first step after you installed solstone with apt, dnf or zypper, with a `disk_space` error in `solstone journal doctor`. that check makes sure there is room to download the next version beside the current one, which a package install doesn't need, because an update replaces it in place. it now skips package installs.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.

@@ -1,0 +1,16 @@
+{
+  "description": "Button that unfolds the earlier text of a message opened at a search match.",
+  "context": "Journal window, transcripts view. Beside the folded word count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "03a0646236c149b4a52db941274df293f2ec0fb4d948d7c90b8c146e67e23cd2",
+  "max_length": 40,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

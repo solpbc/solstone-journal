@@ -1,0 +1,38 @@
+{
+  "description": "Under a day filter, names the conversations the journal can't place and links back to everything.",
+  "context": "Journal window, transcripts view. Shown under the transcripts or messages filter. everything_start and everything_end wrap a link to the unfiltered day.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "conversations_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "conversations",
+      "type": "string"
+    },
+    {
+      "name": "everything_start",
+      "type": "string"
+    },
+    {
+      "name": "everything_end",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "b947fac826bad3153ff032011ef54cf9ccc230464ca7c701423ccaf0a2ccdede",
+  "max_length": 200,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "conversations_quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Search hit line for a message: who wrote it and who it went to.",
+  "context": "Journal window, search view. Beside the kind label of a message hit.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "sender",
+      "type": "string"
+    },
+    {
+      "name": "recipients",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "07de6987900033f917696d1e9e059fabfbb3fa61d68f073bb66c41c961208f43",
+  "max_length": 200,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

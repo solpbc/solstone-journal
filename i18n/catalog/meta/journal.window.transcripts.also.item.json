@@ -1,0 +1,25 @@
+{
+  "description": "One overlapping item: its kind and source label, then its time or date.",
+  "context": "Journal window, transcripts view. A link after 'also at this time:'.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "label",
+      "type": "string"
+    },
+    {
+      "name": "span",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "95e97700f62080119b55dc34344c3622a9be5a83206ae662dc86a97ced3c0d30",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

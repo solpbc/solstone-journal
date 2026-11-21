@@ -1619,6 +1619,20 @@
 /* deleting a stretch of time: the day-level act on the heading row, and the dialog's fields */
 .tr-day-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 20px; }
 .tr-day-head .tr-day-heading { margin-bottom: 0; }
+/* The day switch: everything, transcripts or messages. */
+.tr-show { display: inline-flex; margin-right: auto; border: 1px solid var(--hairline-2); border-radius: var(--radius-sm); overflow: hidden; }
+.tr-show[hidden] { display: none; }
+.tr-show-item { min-height: 44px; padding: 0 16px; display: inline-flex; align-items: center; justify-content: center; color: var(--ink); text-decoration: none; background: var(--cream-bright); }
+.tr-show-item + .tr-show-item { border-left: 1px solid var(--hairline-2); }
+.tr-show-item[aria-current] { background: var(--ink); color: var(--cream-bright); font-weight: 700; }
+.tr-show-item:focus-visible { outline: 2px solid var(--orange-text-aa); outline-offset: -2px; }
+.tr-seg.tr-show-dim, .tr-zoom-pill.tr-show-dim { opacity: 0.28; }
+.tr-day-left-out { margin: 12px 4px 0; color: var(--ink-soft); }
+.tr-day-left-out a { color: var(--orange-text-aa); }
+@media (max-width: 600px) {
+  .tr-show { order: 3; flex: 1 0 100%; margin-right: 0; }
+  .tr-show-item { flex: 1; padding: 0 8px; }
+}
 .tr-stretch-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 14px; background: var(--paper); color: var(--ink-soft); border: 1px solid var(--hairline); border-radius: 9px; font: inherit; font-size: .9em; cursor: pointer; }
 .tr-stretch-btn[hidden] { display: none; }
 .tr-stretch-btn:hover { color: var(--ink); border-color: var(--ink-faint); }
@@ -1928,6 +1942,30 @@
 /* Only the first TR_ENTRY_VISIBLE_MAX entries render on open; this control
    reveals the rest of the block. Full-width and 44px tall so it stays a
    phone-sized target. */
+/* A written message: who, to whom and when, then the words. */
+.tr-msg { padding: 12px 12px 14px; border-radius: 8px; }
+.tr-msg + .tr-msg { border-top: 1px solid var(--hairline); }
+.tr-msg.tr-entry-active { background: var(--orange-wash); }
+.tr-msg-who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.tr-msg-who b { color: var(--ink); }
+.tr-msg-who time { font-size: 12px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.tr-msg-to { font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
+.tr-msg-body { margin-top: 6px; color: var(--ink); line-height: 1.55; overflow-wrap: anywhere; }
+.tr-msg-body p { margin: 0 0 8px; }
+.tr-msg-body p:last-child { margin-bottom: 0; }
+.tr-msg-quote { margin: 0 0 8px; padding: 2px 0 2px 12px; border-left: 3px solid var(--hairline-2); color: var(--ink-soft); }
+.tr-msg-code { margin: 0 0 8px; padding: 8px 10px; background: var(--cream-bright); border: 1px solid var(--hairline); border-radius: var(--radius-sm); overflow-x: auto; font-size: 12px; white-space: pre; }
+.tr-msg-fold { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 0 0 10px; padding: 8px 10px; border: 1px dashed var(--hairline-2); border-radius: var(--radius-sm); color: var(--ink-soft); font-size: 13px; }
+.tr-msg-unfold { min-height: 44px; padding: 0 4px; border: 0; background: none; color: var(--orange-text-aa); font: inherit; text-decoration: underline; cursor: pointer; }
+.tr-msg-cut { margin: 8px 0 0; font-size: 13px; color: var(--ink-soft); font-style: italic; }
+.tr-also { margin: 0 0 12px; font-size: 13px; color: var(--ink-soft); }
+.tr-also a { color: var(--orange-text-aa); }
+.tr-unresolved { margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--hairline-2); border-radius: var(--radius-sm); background: var(--cream-bright); }
+.tr-unresolved > p { margin: 0; color: var(--ink); }
+.tr-unresolved-why { margin-top: 4px; font-size: 13px; color: var(--ink-soft); }
+.tr-unresolved-why summary { cursor: pointer; color: var(--orange-text-aa); min-height: 32px; display: inline-flex; align-items: center; }
+.tr-unresolved-why p { margin: 4px 0 0; }
+
 .tr-entry-more {
   display: block;
   width: 100%;
@@ -2957,7 +2995,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 </style>
 
 <div class="tr-wrap">
-  <div data-date-nav></div>
+  <div data-date-nav data-date-nav-keep-search></div>
   <div class="tr-day-head">
     <h2 class="tr-day-heading" data-date-nav-heading></h2>
     <button type="button" id="trStretchBtn" class="tr-stretch-btn" hidden><span data-stretch-icon aria-hidden="true"></span><span data-stretch-label></span></button>

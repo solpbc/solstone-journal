@@ -1,0 +1,30 @@
+{
+  "description": "When a message opens at a search match, counts the words folded above the passage.",
+  "context": "Journal window, transcripts view. Above a matched passage in a long message.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "words_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "words",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "e8d30a623a72017e6e4bfd715d4fe8bb98b2f7e8c1a8d2f08612130486a48572",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "words_quantity",
+    "type": "cardinal"
+  }
+}

@@ -172,6 +172,8 @@
         // segment holds its screenshot, not audio or frames.
         screenshot: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.screenshot.screenshot'),
         photo: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.photo.photo'),
+        messages: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.messages.messages'),
+        conversation: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.conversation.conversation'),
       },
       buttons: {
         eraseNow: window.JournalI18n.renderEnglish('journal.window.transcripts.consent.trash.copy.erasenow.erase.now'),
@@ -1699,16 +1701,72 @@
       return Boolean(says.what) && says.what === String(typeDesc || '').trim().toLowerCase();
     }
 
+    // A saved conversation says what it is: spoken words (transcripts),
+    // written ones (messages), or a conversation the journal can't place.
+    // The journal decides that per file; the stream name can't.
+    function conversationItem(seg) {
+      const items = Array.isArray(seg?.conversation_items) ? seg.conversation_items : [];
+      return items[0] || null;
+    }
+
+    function conversationKind(seg) {
+      const item = conversationItem(seg);
+      return item ? window.JournalFormat.conversationKind(item) : null;
+    }
+
+    function isWrittenOrUnplaced(seg) {
+      const kind = conversationKind(seg);
+      return kind === 'messages' || kind === 'conversation';
+    }
+
+    // Spoken transcripts keep the registry's label. Messages and a
+    // conversation the journal can't place take their own word.
+    function conversationLabel(seg) {
+      return isWrittenOrUnplaced(seg) ? window.JournalFormat.conversationItem(conversationItem(seg)) : '';
+    }
+
+    // When a written item was sent, from the saved source. An item with no
+    // send time is listed by its date, like a note: the time it was filed is
+    // never shown as a send time.
+    // An instant as this page writes times: the journal's clock, HH:MM.
+    function clockOf(instant) {
+      const when = new Date(instant);
+      if (Number.isNaN(when.getTime())) return '';
+      if (window.JournalClock) {
+        const p = window.JournalClock.parts(when);
+        return `${p.hour}:${p.minute}`;
+      }
+      return `${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}`;
+    }
+
+    function conversationWhen(seg) {
+      if (!isWrittenOrUnplaced(seg)) return null;
+      const item = conversationItem(seg);
+      if (item.untimed) return null;
+      if (item.first_sent_at) {
+        const first = clockOf(item.first_sent_at);
+        const last = item.last_sent_at ? clockOf(item.last_sent_at) : first;
+        return first === last ? first : `${first} – ${last}`;
+      }
+      if (item.shared_at) return clockOf(item.shared_at);
+      return null;
+    }
+
     function importItemLabel(seg) {
+      const label = conversationLabel(seg);
+      if (label) return label;
       return seg?.item ? window.JournalFormat.importItem(seg.item) : '';
     }
 
     function isDateOnlyImport(seg) {
+      if (isWrittenOrUnplaced(seg)) return conversationWhen(seg) === null;
       return Boolean(seg?.item) && window.JournalFormat.isDateOnlyImport(seg.item);
     }
 
     function importItemWhen(seg) {
       if (isDateOnlyImport(seg)) return window.JournalFormat.filedDay(day);
+      const sent = conversationWhen(seg);
+      if (sent) return sent;
       return isMomentSegment(seg) ? seg.start : `${seg.start} – ${seg.end}`;
     }
 
@@ -1725,6 +1783,8 @@
     function segmentRangeLabel(seg) {
       if (seg.locationRow) return seg.start;
       if (isDateOnlyImport(seg)) return window.JournalFormat.filedDay(day);
+      const sent = conversationWhen(seg);
+      if (sent) return sent;
       // A screenshot or photo is a moment, so its time alone.
       const range = isMomentSegment(seg) ? seg.start : `${seg.start} - ${seg.end}`;
       if (!selectedSegmentZone?.differs || !selectedSegmentZone.label) return range;
@@ -1808,6 +1868,15 @@
       return (segments || []).filter(seg => {
         const types = seg.types || [];
         return !isDateOnlyImport(seg) && types.includes('markdown') && !types.includes('audio') && !types.includes('screen');
+      });
+    }
+
+    // Messages and a conversation the journal can't place, at their send
+    // time. One with no send time is listed by date and not drawn here.
+    function writtenSegments(segments) {
+      return (segments || []).filter(seg => {
+        const types = seg.types || [];
+        return isWrittenOrUnplaced(seg) && !isDateOnlyImport(seg) && !types.includes('markdown') && !types.includes('audio') && !types.includes('screen');
       });
     }
 
@@ -1910,6 +1979,7 @@
         }
       });
       segmentsLane.appendChild(el);
+      return el;
     }
 
     function renderBodyEvents(payload) {
@@ -2119,6 +2189,7 @@
         const hasMarkdown = seg.types.includes('markdown');
         const hasBrowser = seg.types.includes('browser');
         const hasImage = seg.types.includes('image');
+        const isWritten = isWrittenOrUnplaced(seg) && !hasAudio && !hasScreen;
         const isPhotoOnly = hasImage && !hasAudio && !hasScreen && !hasMarkdown && !hasBrowser;
         const isShotOnly = seg.item?.kind === 'screen_text' || isScreenshotsStream(seg.stream);
         const isActivityOnly = seg.types.includes('desktop_activity') && !hasAudio && !hasScreen && !hasMarkdown && !hasBrowser && !hasImage;
@@ -2133,7 +2204,7 @@
           pill.classList.add('tr-zoom-pill-both');
         } else if (hasAudio) {
           pill.classList.add('tr-zoom-pill-audio');
-        } else if (hasMarkdown) {
+        } else if (hasMarkdown || isWritten) {
           pill.classList.add('tr-zoom-pill-markdown');
         } else if (hasBrowser) {
           pill.classList.add('tr-zoom-pill-browser');
@@ -2172,7 +2243,7 @@
         pill.style.top = zoomY(visStart) + 'px';
         pill.style.height = Math.max(isMoment ? 18 : 4, zoomY(visEnd) - zoomY(visStart)) + 'px';
         const duration = Math.round(visEnd - visStart);
-        const typeDesc = isShotOnly ? screenshotStreamKind : (hasAudio && hasScreen) ? 'audio + screen' : hasAudio ? 'audio' : hasMarkdown ? 'import' : hasBrowser ? 'pages' : isPhotoOnly ? 'photo' : isActivityOnly ? 'desktop activity' : 'screen';
+        const typeDesc = isShotOnly ? screenshotStreamKind : (hasAudio && hasScreen) ? 'audio + screen' : hasAudio ? 'audio' : (hasMarkdown || isWritten) ? 'import' : hasBrowser ? 'pages' : isPhotoOnly ? 'photo' : isActivityOnly ? 'desktop activity' : 'screen';
         const typeLabel = hasAudio && hasScreen && !isShotOnly
           ? window.JournalI18n.render('journal.window.transcripts.kind.audio.and.screen') : segmentTypeLabel(typeDesc);
         const segmentStatusLabel = hasAnalyzingAdvertised ? window.JournalI18n.render('journal.window.transcripts.analysis.state.analyzing') : hasPendingAdvertised ? window.JournalI18n.render('journal.window.transcripts.analysis.state.pending') : seg.think === 'awaiting' ? AWAITING_THINKING_LABEL : '';
@@ -2192,6 +2263,8 @@
         else pill.setAttribute('aria-label', window.JournalI18n.render('journal.window.transcripts.timeline.segment.accessible', [['details', ariaSpan + typeAriaPart + ', ' + label + ariaStatusSuffix]]));
         pill.dataset.key = seg.key;
         pill.dataset.stream = seg.stream;
+        pill.dataset.showKind = showKind(seg);
+        if (dayShowsSwitch() && showFilter !== 'everything' && !shownUnder(seg)) pill.classList.add('tr-show-dim');
 
         pill.addEventListener('click', () => (segPick.on ? toggleSegPick(seg) : selectSegment(seg)));
         pill.addEventListener('keydown', e => {
@@ -2575,7 +2648,8 @@
         tabsContainer.classList.remove('visible');
         return;
       }
-      addTab('transcript', isDateOnlyImport(selectedSegment) ? importItemLabel(selectedSegment) : window.JournalI18n.render('journal.window.transcripts.tab.transcript'));
+      const readsAsItem = isDateOnlyImport(selectedSegment) || isWrittenOrUnplaced(selectedSegment);
+      addTab('transcript', readsAsItem ? importItemLabel(selectedSegment) : window.JournalI18n.render('journal.window.transcripts.tab.transcript'));
       // A Granola meeting brings words, not sound: there is no audio to show.
       if (dataState.audio && !data.granola) {
         addTab('audio', window.JournalI18n.render('journal.window.transcripts.visible.text.audio'));
@@ -2601,7 +2675,7 @@
         addTab(`md-${stem}`, label);
       });
 
-      if (!isDateOnlyImport(selectedSegment) || tabsContainer.children.length > 1) {
+      if (!readsAsItem || tabsContainer.children.length > 1) {
         tabsContainer.classList.add('visible');
       }
     }
@@ -2635,11 +2709,14 @@
         tabPanes[tabId] = pane;
 
         if (tabId === 'transcript') {
-          if (isDateOnlyImport(selectedSegment)) {
-            if (!tabsContainer.classList.contains('visible')) {
-              pane.removeAttribute('role');
-              pane.removeAttribute('aria-labelledby');
-            }
+          const readsAsItem = isDateOnlyImport(selectedSegment) || isWrittenOrUnplaced(selectedSegment);
+          if (readsAsItem && !tabsContainer.classList.contains('visible')) {
+            pane.removeAttribute('role');
+            pane.removeAttribute('aria-labelledby');
+          }
+          // Messages and an unplaced conversation keep their turns even
+          // when they read by date; a note or document is filed text.
+          if (isDateOnlyImport(selectedSegment) && !isWrittenOrUnplaced(selectedSegment)) {
             renderFiledText(segmentData, pane);
           } else {
             renderSegmentTimeline(segmentData, true, true, pane, true, true);
@@ -3899,6 +3976,191 @@
         + '</section>';
     }
 
+    // ----- Written messages -----
+    // A message shows who sent it, to whom and when, and nothing a spoken
+    // transcript carries. Fields the source didn't establish stay off.
+    let utf8 = null;
+
+    // Block offsets are half-open UTF-8 byte ranges in the message text.
+    function utf8Slice(bytes, start, end) {
+      return utf8.decoder.decode(bytes.subarray(Math.max(0, start), Math.min(bytes.length, end)));
+    }
+
+    function messageBlocks(message, text) {
+      utf8 ??= { encoder: new TextEncoder(), decoder: new TextDecoder() };
+      const bytes = utf8.encoder.encode(text);
+      const blocks = Array.isArray(message.blocks) && message.blocks.length
+        ? message.blocks
+        : [{ kind: 'paragraph', start: 0, end: bytes.length }];
+      return blocks.map(block => ({ kind: block.kind, start: block.start, end: block.end, text: utf8Slice(bytes, block.start, block.end) }));
+    }
+
+    function messageBlockHtml(block) {
+      if (block.kind === 'code') {
+        // A fenced block's fences are its delimiters, not its contents.
+        const lines = block.text.split('\n');
+        if (/^(```|~~~)/.test(lines[0] || '')) {
+          lines.shift();
+          if (/^(```|~~~)\s*$/.test(lines[lines.length - 1] || '')) lines.pop();
+        }
+        return `<pre class="tr-msg-code"><code>${escapeHtml(lines.join('\n'))}</code></pre>`;
+      }
+      const html = escapeHtml(block.text.trim()).replace(/\n/g, '<br>');
+      return block.kind === 'quote' ? `<blockquote class="tr-msg-quote">${html}</blockquote>` : `<p>${html}</p>`;
+    }
+
+    // A message's own send time. On another day than the one shown, its date too.
+    function messageSentLabel(sentAt) {
+      const when = new Date(sentAt);
+      if (Number.isNaN(when.getTime())) return '';
+      const parts = window.JournalClock ? window.JournalClock.parts(when) : null;
+      const sentDay = parts ? `${parts.year}${parts.month}${parts.day}` : '';
+      return sentDay && sentDay !== day ? window.JournalFormat.timestamp(when) : clockOf(when);
+    }
+
+    // Recipients, when the source named them. A message to one person inside
+    // a conversation addressed to everyone went to that person alone.
+    function messageToLine(message, groupAudience) {
+      const to = Array.isArray(message.to) ? message.to.filter(name => typeof name === 'string' && name.trim()) : [];
+      if (!to.length) return '';
+      if (to.length === 1 && to[0].trim().toLowerCase() === 'everyone') {
+        return window.JournalI18n.render('journal.window.transcripts.message.to.everyone');
+      }
+      if (to.length === 1 && groupAudience) {
+        return window.JournalI18n.render('journal.window.transcripts.message.to.only', [['recipient', to[0]]]);
+      }
+      const names = typeof Intl.ListFormat === 'function'
+        ? new Intl.ListFormat(window.JournalI18n.formatLocale, { type: 'conjunction' }).format(to)
+        : to.join(', ');
+      return window.JournalI18n.render('journal.window.transcripts.message.to', [['recipients', names]]);
+    }
+
+    function messageAddressedToEveryone(message) {
+      return Array.isArray(message?.to) && message.to.length === 1 && String(message.to[0]).trim().toLowerCase() === 'everyone';
+    }
+
+    // Where a search opened this item: the matched turn, and the byte offset
+    // of the match inside it when the journal could find one.
+    function linkedPassage() {
+      const params = new URLSearchParams(window.location.search);
+      const turn = params.get('turn');
+      if (!turn) return null;
+      const at = params.get('at');
+      const offset = at !== null && /^\d+$/.test(at) ? Number(at) : null;
+      return { turn, offset };
+    }
+
+    function wordCount(text) {
+      return (text.match(/\S+/g) || []).length;
+    }
+
+    function renderMessageEntry(item, idx, groupAudience, passage) {
+      const message = item.message;
+      const text = String(item.text || '');
+      const who = message.is_owner === true
+        ? window.JournalI18n.render('journal.window.transcripts.message.you')
+        : (message.author || '');
+      const sent = message.sent_at ? messageSentLabel(message.sent_at) : '';
+      const to = messageToLine(message, groupAudience);
+      const blocks = messageBlocks(message, text);
+      let fold = -1;
+      if (passage && passage.turn === message.turn_id && passage.offset !== null && passage.offset > 0) {
+        fold = blocks.findIndex(block => passage.offset >= block.start && passage.offset < block.end);
+        if (fold <= 0) fold = -1;
+      }
+      let html = `<div class="tr-msg" data-idx="${idx}" data-type="message" data-turn-id="${escapeHtml(message.turn_id || '')}" role="listitem" tabindex="0">`;
+      if (who || sent) {
+        html += '<div class="tr-msg-who">';
+        if (who) html += `<b>${escapeHtml(who)}</b>`;
+        if (sent) html += `<time datetime="${escapeHtml(message.sent_at)}">${escapeHtml(sent)}</time>`;
+        html += '</div>';
+      }
+      if (to) html += `<div class="tr-msg-to">${escapeHtml(to)}</div>`;
+      html += '<div class="tr-msg-body">';
+      if (fold > 0) {
+        const before = blocks.slice(0, fold);
+        const words = wordCount(before.map(block => block.text).join(' '));
+        html += '<div class="tr-msg-fold">';
+        html += `<span>${window.JournalI18n.renderHtml('journal.window.transcripts.message.words.before', [['words_quantity', window.JournalI18n.cardinalQuantity(words)], ['words', words.toLocaleString(window.JournalI18n.formatLocale)]])}</span> `;
+        html += `<button type="button" class="tr-msg-unfold">${window.JournalI18n.renderHtml('journal.window.transcripts.message.show.from.start')}</button>`;
+        html += '</div>';
+        html += `<div class="tr-msg-earlier" hidden>${before.map(messageBlockHtml).join('')}</div>`;
+        html += `<div class="tr-msg-passage">${blocks.slice(fold).map(messageBlockHtml).join('')}</div>`;
+      } else {
+        html += blocks.map(messageBlockHtml).join('');
+      }
+      html += '</div>';
+      if (message.truncated === true) {
+        html += `<p class="tr-msg-cut">${window.JournalI18n.renderHtml('journal.window.transcripts.message.truncated')}</p>`;
+      }
+      html += '</div>';
+      return html;
+    }
+
+    // An older conversation the journal can't place says so, and why.
+    function renderUnresolvedNotice(seg) {
+      const item = conversationItem(seg);
+      if (conversationKind(seg) !== 'conversation') return '';
+      const reason = item.reason_code === 'original_missing'
+        ? 'journal.window.transcripts.conversation.reason.original.missing'
+        : 'journal.window.transcripts.conversation.reason.insufficient.evidence';
+      return '<div class="tr-unresolved">'
+        + `<p>${window.JournalI18n.renderHtml('journal.window.transcripts.conversation.unresolved')}</p>`
+        + `<details class="tr-unresolved-why"><summary>${window.JournalI18n.renderHtml('journal.window.transcripts.conversation.why')}</summary>`
+        + `<p>${window.JournalI18n.renderHtml(reason)}</p></details></div>`;
+    }
+
+    // Other saved conversations whose time on the day overlaps this one: a
+    // fact about time, not a claim they are one meeting. An item with no send
+    // time has no time to overlap.
+    function overlappingConversations(seg) {
+      if (!conversationItem(seg) || isDateOnlyImport(seg)) return [];
+      const spanOf = other => [parseTime(other.start), parseTime(other.end)];
+      const [start, end] = spanOf(seg);
+      return allSegments.filter(other => other !== seg
+        && !(other.key === seg.key && other.stream === seg.stream)
+        && conversationItem(other)
+        && !isDateOnlyImport(other)
+        && (() => { const [s0, e0] = spanOf(other); return s0 < end && e0 > start; })());
+    }
+
+    function renderAlsoAtThisTime(seg) {
+      const others = overlappingConversations(seg);
+      if (!others.length) return '';
+      const links = others.map(other => {
+        const label = window.JournalI18n.render('journal.window.transcripts.also.item', [
+          ['label', importItemLabel(other) || humanizeStreamName(other.stream)], ['span', importItemWhen(other)],
+        ]);
+        return `<a href="${escapeHtml(segmentLocation(other, 'transcript'))}" data-also-key="${escapeHtml(other.key)}" data-also-stream="${escapeHtml(other.stream)}">${escapeHtml(label)}</a>`;
+      });
+      return `<p class="tr-also">${window.JournalI18n.renderHtml('journal.window.transcripts.also.at.this.time')} ${links.join(' · ')}</p>`;
+    }
+
+    function wireMessagePane(targetEl) {
+      targetEl.querySelectorAll('.tr-msg-unfold').forEach(button => {
+        button.addEventListener('click', () => {
+          const body = button.closest('.tr-msg-body');
+          body.querySelector('.tr-msg-earlier').hidden = false;
+          button.closest('.tr-msg-fold').remove();
+        });
+      });
+      targetEl.querySelectorAll('.tr-also a').forEach(link => {
+        link.addEventListener('click', event => {
+          const other = allSegments.find(seg => seg.key === link.dataset.alsoKey && seg.stream === link.dataset.alsoStream);
+          if (!other) return;
+          event.preventDefault();
+          selectSegment(other);
+        });
+      });
+      const passage = linkedPassage();
+      if (!passage) return;
+      const entry = [...targetEl.querySelectorAll('.tr-msg[data-turn-id]')].find(el => el.dataset.turnId === passage.turn);
+      if (!entry) return;
+      revealBoundedEntry(targetEl, entry);
+      entry.classList.add('tr-entry-active');
+      (entry.querySelector('.tr-msg-passage') || entry).scrollIntoView?.({ block: 'start' });
+    }
+
     function renderSegmentTimeline(data, showAudio, showScreen, targetEl, showBrowser = true, showImage = false) {
       const browserOnlyView = showBrowser && !showAudio && !showScreen && !showImage;
       const imageOnlyView = showImage && !showAudio && !showScreen && !showBrowser;
@@ -3978,7 +4240,12 @@
       groupEntriesByIdx = new Map();
       setPaneEntryCount(targetEl, displayItems.length);
 
-      let html = renderBodyStrip(data.body_window) + granolaNotes;
+      const conversationHead = selectedSegment && showAudio && showScreen
+        ? renderUnresolvedNotice(selectedSegment) + renderAlsoAtThisTime(selectedSegment)
+        : '';
+      const groupAudience = displayItems.some(item => messageAddressedToEveryone(item.message));
+      const passage = linkedPassage();
+      let html = renderBodyStrip(data.body_window) + granolaNotes + conversationHead;
       html += `<div class="tr-unified" role="list" aria-label="${window.JournalI18n.renderHtml('journal.window.transcripts.entries.quantity', transcriptCount('items', displayItems.length))}">`;
 
       // Audio player section (if we have audio)
@@ -4020,8 +4287,11 @@
           html += `<div class="tr-speaker-slot" data-speaker-slot>${renderSpeakerSlot(item, idx, data)}</div>`;
           html += `<div class="tr-entry-text">${renderAudioText(item)}</div>`;
           html += '</div></div>';
+        } else if (item.type === 'transcript' && item.message) {
+          html += renderMessageEntry(item, idx, groupAudience, passage);
         } else if (item.type === 'markdown' || item.type === 'transcript') {
-          const timeStr = escapeHtml(item.time || '');
+          // A caption cue's clock arrives with milliseconds; the line shows seconds.
+          const timeStr = escapeHtml(String(item.time || '').replace(/^(\d{2}:\d{2}:\d{2})\.\d+$/, '$1'));
           const speaker = item.speaker ? `<strong>${escapeHtml(item.speaker)}:</strong> ` : '';
           const text = item.type === 'transcript'
             ? speaker + escapeHtml(item.text || '').replace(/\n/g, '<br>')
@@ -4076,6 +4346,7 @@
 
       html += '</div>';
       targetEl.innerHTML = html;
+      wireMessagePane(targetEl);
       attachBodyWindowButtons(targetEl);
       attachSpeakerPickerHandlers(targetEl);
       trimHeadingMilliseconds(targetEl);
@@ -5142,27 +5413,33 @@
         renderTimeline();
 
         // Add segment indicators from ranges
+        // Each block says what it is, so the day switch can draw what it
+        // leaves out faintly. A range of audio is spoken words.
+        const kindOf = (el, kind) => { el.dataset.showKind = kind; };
         (data.audio || []).forEach(rg => {
           const s = parseTime(rg.start);
           const e = parseTime(rg.end);
-          addSegmentIndicator('audio', s, e, 0, rg.streams, rg.state || 'analyzed', rg.think);
+          kindOf(addSegmentIndicator('audio', s, e, 0, rg.streams, rg.state || 'analyzed', rg.think), 'transcripts');
         });
         (data.screen || []).forEach(rg => {
           const s = parseTime(rg.start);
           const e = parseTime(rg.end);
-          addSegmentIndicator('screen', s, e, 1, rg.streams, rg.state || 'analyzed', rg.think);
+          kindOf(addSegmentIndicator('screen', s, e, 1, rg.streams, rg.state || 'analyzed', rg.think), 'other');
         });
         markdownOnlySegments(data.segments).forEach(seg => {
-          addSegmentIndicator('markdown', parseTime(seg.start), parseTime(seg.end), 0, [seg.stream], 'analyzed', seg.think, seg);
+          kindOf(addSegmentIndicator('markdown', parseTime(seg.start), parseTime(seg.end), 0, [seg.stream], 'analyzed', seg.think, seg), showKind(seg));
+        });
+        writtenSegments(data.segments).forEach(seg => {
+          kindOf(addSegmentIndicator('markdown', parseTime(seg.start), parseTime(seg.end), 0, [seg.stream], 'analyzed', seg.think, seg), showKind(seg));
         });
         browserOnlySegments(data.segments).forEach(seg => {
-          addSegmentIndicator('browser', parseTime(seg.start), parseTime(seg.end), 1, [seg.stream], 'analyzed', seg.think, seg);
+          kindOf(addSegmentIndicator('browser', parseTime(seg.start), parseTime(seg.end), 1, [seg.stream], 'analyzed', seg.think, seg), 'other');
         });
         desktopActivityOnlySegments(data.segments).forEach(seg => {
-          addSegmentIndicator('desktop_activity', parseTime(seg.start), parseTime(seg.end), 1, [seg.stream], 'analyzed', seg.think, seg);
+          kindOf(addSegmentIndicator('desktop_activity', parseTime(seg.start), parseTime(seg.end), 1, [seg.stream], 'analyzed', seg.think, seg), 'other');
         });
         imageOnlySegments(data.segments).forEach(seg => {
-          addSegmentIndicator('image', parseTime(seg.start), parseTime(seg.end), 1, [seg.stream], 'analyzed', seg.think, seg);
+          kindOf(addSegmentIndicator('image', parseTime(seg.start), parseTime(seg.end), 1, [seg.stream], 'analyzed', seg.think, seg), 'other');
         });
         fetchDayBodyWindow()
           .then(payload => {
@@ -5213,6 +5490,7 @@
           panel.innerHTML = dayInvitationHtml;
         }
         updateZoom();
+        applyShow();
         reportTranscriptsReady(allSegments.length ? 'content' : 'empty');
         refreshUnselectedLocation(null);
 
@@ -5310,9 +5588,12 @@
     }
 
     function renderDayImports(glanceHtml, importsChanged) {
-      const imports = allSegments.filter(seg => seg.item);
-      const existing = panel.querySelector('.tr-day-imports');
-      if (!imports.length) {
+      const listed = allSegments.filter(seg => seg.item || isWrittenOrUnplaced(seg));
+      const filtered = dayShowsSwitch() && showFilter !== 'everything';
+      const imports = filtered ? listed.filter(shownUnder) : listed;
+      const leftOut = filtered ? listed.filter(seg => conversationKind(seg) === 'conversation').length : 0;
+      const existing = panel.querySelector('.tr-day-imports, .tr-day-left-out');
+      if (!imports.length && !leftOut) {
         if (glanceHtml || existing) panel.innerHTML = glanceHtml || dayInvitationHtml;
         return;
       }
@@ -5337,7 +5618,100 @@
         row.append(button);
         list.append(row);
       }
-      panel.replaceChildren(list);
+      const shown = imports.length ? [list] : [];
+      // A conversation the journal can't place belongs to neither filter, so
+      // a filtered day names it rather than hide it, and links back.
+      if (leftOut) {
+        const note = deleteDialogElement('p', 'tr-day-left-out');
+        const everything = document.createElement('a');
+        everything.href = showHref('everything');
+        everything.addEventListener('click', event => {
+          event.preventDefault();
+          chooseShow('everything');
+        });
+        note.append(...window.JournalI18n.renderMarkup('journal.window.transcripts.show.left.out', [
+          ['conversations_quantity', window.JournalI18n.cardinalQuantity(leftOut)],
+          ['conversations', leftOut.toLocaleString(window.JournalI18n.formatLocale)],
+        ], { elements: { everything } }));
+        shown.push(note);
+      }
+      panel.replaceChildren(...shown);
+    }
+
+    // ----- The day switch: everything, transcripts or messages -----
+    // Shown only on a day that holds messages or a conversation. Its state is
+    // the address (?show=), so a day step keeps it and back undoes it.
+    const SHOW_CHOICES = ['everything', 'transcripts', 'messages'];
+    let showFilter = readShow();
+
+    function readShow() {
+      const value = new URLSearchParams(window.location.search).get('show');
+      return SHOW_CHOICES.includes(value) ? value : 'everything';
+    }
+
+    function showHref(choice) {
+      const url = new URL(window.location.href);
+      if (choice === 'everything') url.searchParams.delete('show');
+      else url.searchParams.set('show', choice);
+      return url.pathname + url.search + url.hash;
+    }
+
+    function dayShowsSwitch() {
+      return allSegments.some(isWrittenOrUnplaced);
+    }
+
+    // What an item is, for the switch: spoken, written, a conversation the
+    // journal can't place, or something else (screen, notes, photos…).
+    function showKind(seg) {
+      const kind = conversationKind(seg);
+      if (kind) return kind;
+      if (seg.item) return seg.item.kind === 'transcripts' ? 'transcripts' : 'other';
+      return (seg.types || []).includes('audio') ? 'transcripts' : 'other';
+    }
+
+    function shownUnder(seg) {
+      return showFilter === 'everything' || !dayShowsSwitch() || showKind(seg) === showFilter;
+    }
+
+    const showSwitch = document.createElement('nav');
+    showSwitch.className = 'tr-show';
+    showSwitch.hidden = true;
+    showSwitch.setAttribute('aria-label', window.JournalI18n.render('journal.window.transcripts.show.label'));
+    for (const choice of SHOW_CHOICES) {
+      const link = document.createElement('a');
+      link.className = 'tr-show-item';
+      link.dataset.show = choice;
+      link.textContent = window.JournalI18n.render(`journal.window.transcripts.show.${choice}`);
+      link.addEventListener('click', event => {
+        event.preventDefault();
+        chooseShow(choice);
+      });
+      showSwitch.append(link);
+    }
+    document.querySelector('.tr-day-head')?.insertBefore(showSwitch, document.getElementById('trStretchBtn'));
+
+    function chooseShow(choice) {
+      if (choice === showFilter) return;
+      ctx.history.push(showHref(choice));
+      showFilter = choice;
+      applyShow();
+    }
+
+    // Draw the switch and what it leaves out. Left-out blocks stay on the
+    // day, faint, so the day still reads as the day.
+    function applyShow() {
+      const visible = dayShowsSwitch();
+      showSwitch.hidden = !visible;
+      for (const link of showSwitch.querySelectorAll('.tr-show-item')) {
+        link.href = showHref(link.dataset.show);
+        if (link.dataset.show === showFilter) link.setAttribute('aria-current', 'page');
+        else link.removeAttribute('aria-current');
+      }
+      const active = visible && showFilter !== 'everything';
+      for (const block of [...segmentsLane.querySelectorAll('.tr-seg'), ...zoomSegments.querySelectorAll('.tr-zoom-pill')]) {
+        block.classList.toggle('tr-show-dim', active && block.dataset.showKind !== showFilter);
+      }
+      if (!selectedSegment && dayLoad === 'ready') renderDayImports(null, true);
     }
 
     function refreshUnselectedLocation(glanceHtml = null, importsChanged = false) {
@@ -5468,6 +5842,11 @@
       // of the same segment and tab is already that page. The activeTab == null guard
       // is what stops a stale in-flight record from swallowing a tab change after the tab is shown.
       function restoreHistoryLocation() {
+        const show = readShow();
+        if (show !== showFilter) {
+          showFilter = show;
+          applyShow();
+        }
         const { segKey, tab: tabIdFromHash, moment } = hashLocation();
         if (!segKey) {
           resetSegmentSelection();
@@ -5698,6 +6077,10 @@
       const audio = types.includes('audio');
       const screen = types.includes('screen');
       if (isPhotoSegment(seg)) return { photo: true };
+      // Saved written messages, or a conversation the journal can't place,
+      // are the segment's own: no audio or frames to take.
+      const kind = conversationKind(seg);
+      if (!audio && !screen && (kind === 'messages' || kind === 'conversation')) return { [kind]: true };
       if (!audio && !screen) return null;
       return { audio, screen, transcript: true };
     }
@@ -5716,6 +6099,8 @@
         ...(any('photo') ? ['photo'] : []),
         ...(any('screenshot') ? ['screenshot'] : []),
         ...(any('transcript') ? ['transcript'] : []),
+        ...(any('messages') ? ['messages'] : []),
+        ...(any('conversation') ? ['conversation'] : []),
         'analysis',
         ...(holdsLoc ? ['location'] : []),
       ];
@@ -6711,7 +7096,7 @@
 
     function clearSegmentSelection() {
       resetSegmentSelection();
-      ctx.history.replace(window.location.pathname);
+      ctx.history.replace(window.location.pathname + (showFilter === 'everything' ? '' : `?show=${showFilter}`));
     }
 
     // ----- Select mode: several segments of this range, deleted together -----
