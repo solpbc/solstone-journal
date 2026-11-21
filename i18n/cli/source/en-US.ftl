@@ -1465,3 +1465,51 @@ journal.cli.reprocess.record.invalid = Malformed daily unit record: invalid dail
 journal.cli.reprocess.record.io = I/O error: { $cause }
 
 journal.cli.reprocess.record.mismatch = Malformed daily unit record: identity mismatch in record at { $path }: expected { $expected }, found { $found }
+
+journal.cli.retention.proposal.eligible = policy eligibility: Eligible { $open_brace } anchor: { $anchor }, age_days: { $age_days }, period: Days({ $period_days }) { $close_brace }
+
+journal.cli.retention.proposal.forever = policy eligibility: KeptForever
+
+journal.cli.retention.proposal.no.anchor = policy eligibility: AnchorMissing { $open_brace } anchor: { $anchor } { $close_brace }
+
+journal.cli.retention.proposal.unrecorded = removal failed before a proposal was recorded
+
+journal.cli.retention.proposal.young = policy eligibility: TooYoung { $open_brace } anchor: { $anchor }, age_days: { $age_days }, period: Days({ $period_days }) { $close_brace }
+
+journal.cli.retention.removal.uncertain = deletion couldn't be completed or confirmed. recovery is needed.
+
+journal.cli.retention.recovery.activity.binding = your journal couldn't be checked, so this delete stopped
+
+journal.cli.retention.recovery.activity.busy = your journal is busy with another job
+
+journal.cli.retention.recovery.activity.hold = another journal operation needs attention before this removal can continue
+
+journal.cli.retention.recovery.activity.reserved = this location is reserved for a journal operation and cannot be removed
+
+journal.cli.retention.recovery.path.directory = there is a folder where a recording was expected
+
+journal.cli.retention.recovery.path.invalid = the location does not name a file inside your journal
+
+journal.cli.retention.recovery.path.outside = this is not inside your journal, so it was left alone
+
+journal.cli.retention.recovery.path.permission = the file could not be read or removed, which usually means a permission problem
+
+journal.cli.retention.recovery.path.unavailable = the file could not be removed; the journal was left unchanged
+
+journal.cli.retention.recovery.record.prepare = the record of this removal could not be prepared
+
+journal.cli.retention.recovery.record.write = the record of this removal could not be written
+
+journal.cli.retention.recovery.segment.busy = another process is working on this segment
+
+journal.cli.retention.recovery.segment.gone = this segment has already been removed
+
+journal.cli.retention.recovery.segment.live.occupied = something new was written where this segment was, so it has been left set aside rather than overwritten
+
+journal.cli.retention.recovery.segment.missing = there is no such segment in your journal
+
+journal.cli.retention.recovery.segment.staged = this segment is part-way through removal and is set aside; it is not listed with your other segments until it finishes
+
+journal.cli.retention.recovery.segment.unconfirmed = this could not be confirmed gone, so it is not being reported as removed
+
+journal.cli.retention.recovery.segment.unfinished = a previous removal of this segment did not finish; it needs looking at before this can be retried

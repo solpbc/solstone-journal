@@ -1,0 +1,43 @@
+{
+  "description": "Journal command-line text for proposal eligible.",
+  "context": "Journal command-line text for proposal eligible.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "anchor",
+      "type": "string"
+    },
+    {
+      "name": "age_days",
+      "type": "integer",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "period_days",
+      "type": "integer",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d74c1be20cdd6789729d715165bdd9f25a89017c22a7a7f02df791e53869057a",
+  "max_length": 170,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "open_brace",
+      "kind": "accepted-input",
+      "value": "{"
+    },
+    {
+      "name": "close_brace",
+      "kind": "accepted-input",
+      "value": "}"
+    }
+  ]
+}

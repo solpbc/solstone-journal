@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for recovery activity busy.",
+  "context": "Journal command-line text for recovery activity busy.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f8626be95ed17d2a509b19f5f9f933d328c2f4525da053465e3d4d9e4cb18e53",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

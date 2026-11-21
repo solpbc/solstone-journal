@@ -16,7 +16,7 @@ use solstone_core_retention::door::{
 use solstone_core_retention::logs::{
     Compaction, EntryKind, Kept, LogPlan, LogPolicy, day_key, plan as plan_logs, plan_compactions,
 };
-use solstone_core_retention::marks::{MarkState, Proposal, RemovalClass, load, reconcile_checked};
+use solstone_core_retention::marks::{MarkId, MarkState, RemovalClass, load, reconcile_checked};
 use solstone_core_retention::oplog_retention::{OplogRetentionPlan, plan_oplog_retention};
 use solstone_core_retention::policy::{policy_from_journal_config, policy_would_release};
 use solstone_core_retention::receipt::Outcome;
@@ -118,23 +118,25 @@ fn mark_raw(
     let mut proposals = plan
         .candidates
         .iter()
-        .map(|candidate| {
-            let mut names = candidate
-                .proven
-                .iter()
-                .map(|item| item.name().to_owned())
-                .collect::<Vec<_>>();
-            names.sort();
-            (
-                candidate.target.clone(),
-                Proposal {
-                    bytes: candidate.bytes(),
-                    reason: format!("policy eligibility: {:?}", candidate.eligibility),
-                    names,
-                },
-            )
-        })
+        .map(solstone_core_retention::sweep::Candidate::proposal)
         .collect::<Vec<_>>();
+    // Only this sweep's fresh decisions have known provenance. A carried proposal may
+    // contain caller-supplied English, even when it resembles a policy decision.
+    let locale = solstone_core_cli_copy::cli_locale();
+    let fresh_decisions: BTreeMap<_, _> = if locale == solstone_core_cli_copy::ENGLISH {
+        BTreeMap::new()
+    } else {
+        plan.candidates
+            .iter()
+            .zip(&proposals)
+            .map(|(candidate, (target, proposal))| {
+                (
+                    MarkId::derive(RemovalClass::PolicyRawRelease, target, &proposal.names),
+                    candidate.eligibility,
+                )
+            })
+            .collect()
+    };
     if !plan.unreadable_days.is_empty() {
         proposals.extend(
             before
@@ -170,7 +172,14 @@ fn mark_raw(
     );
     for id in new_ids {
         if let Some(mark) = after.marks.get(&id) {
-            output.push_str(&format!("  {}: {}\n", id.as_str(), mark.proposal.reason));
+            let displayed = fresh_decisions
+                .get(&id)
+                .map(|decision| decision.proposal_reason(locale));
+            output.push_str(&format!(
+                "  {}: {}\n",
+                id.as_str(),
+                displayed.as_deref().unwrap_or(&mark.proposal.reason)
+            ));
         }
     }
     success(output.trim_end().to_owned())

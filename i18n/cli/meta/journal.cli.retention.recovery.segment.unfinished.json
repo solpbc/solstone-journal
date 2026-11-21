@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for recovery segment unfinished.",
+  "context": "Journal command-line text for recovery segment unfinished.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f98b4d9e5adc0abce9dca7aa051ee8c0ee0aaa47e778bfde9e2e94e2d2b9a203",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

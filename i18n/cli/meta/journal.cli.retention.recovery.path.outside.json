@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for recovery path outside.",
+  "context": "Journal command-line text for recovery path outside.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d3592f0d76141d371ee863d9c0a010dde16d7d42ad73a82ec0a1428c9842a471",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

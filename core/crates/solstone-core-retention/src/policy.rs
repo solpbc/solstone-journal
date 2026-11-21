@@ -135,6 +135,48 @@ pub enum Eligibility {
 }
 
 impl Eligibility {
+    /// Describe a fresh decision. Persisted proposals always use source English.
+    pub fn proposal_reason(self, locale: &str) -> String {
+        use solstone_core_cli_copy::{Value, render_for};
+        let anchor_name = |anchor| match anchor {
+            Anchor::Captured => "Captured",
+            Anchor::Processed => "Processed",
+        };
+        match self {
+            Self::Eligible {
+                anchor,
+                age_days,
+                period,
+            }
+            | Self::TooYoung {
+                anchor,
+                age_days,
+                period,
+            } => {
+                let id = if self.is_eligible() {
+                    "journal.cli.retention.proposal.eligible"
+                } else {
+                    "journal.cli.retention.proposal.young"
+                };
+                render_for(
+                    locale,
+                    id,
+                    &[
+                        ("anchor", Value::String(anchor_name(anchor))),
+                        ("age_days", Value::Integer(i64::from(age_days))),
+                        ("period_days", Value::Integer(i64::from(period.0))),
+                    ],
+                )
+            }
+            Self::KeptForever => render_for(locale, "journal.cli.retention.proposal.forever", &[]),
+            Self::AnchorMissing { anchor } => render_for(
+                locale,
+                "journal.cli.retention.proposal.no.anchor",
+                &[("anchor", Value::String(anchor_name(anchor)))],
+            ),
+        }
+    }
+
     pub fn is_eligible(self) -> bool {
         matches!(self, Self::Eligible { .. })
     }

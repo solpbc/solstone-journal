@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for recovery segment busy.",
+  "context": "Journal command-line text for recovery segment busy.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f4112e33e6a16ad84b1c2efda7170684d08060fa3deb33551f071f62a2c9308f",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

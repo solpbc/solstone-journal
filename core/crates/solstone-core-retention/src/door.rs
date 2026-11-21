@@ -260,7 +260,7 @@ fn release_raw_guarded(
         let Some(guard) = guard else {
             row.not_removed.push(NotRemoved {
                 entry: rel,
-                reason: WHOLE_BINDING_HOLD.to_owned(),
+                reason: stored_reason("journal.cli.retention.recovery.activity.binding"),
                 staged: None,
             });
             continue;
@@ -362,6 +362,10 @@ fn release_raw_guarded(
     (outcome, tally)
 }
 
+fn stored_reason(id: &str) -> String {
+    solstone_core_cli_copy::render_for(solstone_core_cli_copy::ENGLISH, id, &[])
+}
+
 /// Turn a path error into something a person can act on.
 ///
 /// ⛔ Never the raw error's `Display`: it carries absolute paths and errno prose,
@@ -369,19 +373,18 @@ fn release_raw_guarded(
 fn owner_reason(error: &solstone_core_journal_io::errors::PathError) -> String {
     use solstone_core_journal_io::errors::PathError;
     match error {
-        PathError::Escape(_) => "this is not inside your journal, so it was left alone".to_owned(),
+        PathError::Escape(_) => stored_reason("journal.cli.retention.recovery.path.outside"),
         PathError::InvalidRelativePath { .. } => {
-            "the location does not name a file inside your journal".to_owned()
+            stored_reason("journal.cli.retention.recovery.path.invalid")
         }
         PathError::Io { source, .. } => match source.kind() {
             std::io::ErrorKind::PermissionDenied => {
-                "the file could not be read or removed, which usually means a permission problem"
-                    .to_owned()
+                stored_reason("journal.cli.retention.recovery.path.permission")
             }
             std::io::ErrorKind::IsADirectory => {
-                "there is a folder where a recording was expected".to_owned()
+                stored_reason("journal.cli.retention.recovery.path.directory")
             }
-            _ => "the file could not be removed; the journal was left unchanged".to_owned(),
+            _ => stored_reason("journal.cli.retention.recovery.path.unavailable"),
         },
     }
 }
@@ -566,7 +569,7 @@ impl SegmentHold {
             }
             locks.push(
                 hold_lock(guard.journal().join(&live), LockOptions::default())
-                    .map_err(|_| "another process is working on this segment".to_owned())?,
+                    .map_err(|_| stored_reason("journal.cli.retention.recovery.segment.busy"))?,
             );
         }
         Ok(Self {
@@ -619,7 +622,7 @@ impl SegmentHold {
                 .map_err(|error| owner_reason(&error))?;
         }
         hold_lock(guard.journal().join(&live), LockOptions::default())
-            .map_err(|_| "another process is working on this segment".to_owned())
+            .map_err(|_| stored_reason("journal.cli.retention.recovery.segment.busy"))
     }
 
     /// Whether the segments may move now: the lease still stands and nothing
@@ -665,7 +668,7 @@ pub fn place_tombstone(
         manifest,
     };
     let bytes = tombstone_bytes(&body)
-        .map_err(|_| "the record of this removal could not be prepared".to_owned())?;
+        .map_err(|_| stored_reason("journal.cli.retention.recovery.record.prepare"))?;
     match write_bytes_exclusive(
         path.join(TOMBSTONE_NAME),
         &bytes,
@@ -674,7 +677,7 @@ pub fn place_tombstone(
         Ok(()) => {}
         Err(solstone_core_journal_io::errors::AtomicWriteError::Io { source, .. })
             if source.kind() == std::io::ErrorKind::AlreadyExists => {}
-        Err(_) => return Err("the record of this removal could not be written".to_owned()),
+        Err(_) => return Err(stored_reason("journal.cli.retention.recovery.record.write")),
     }
     sync_dir(journal, &live).map_err(|error| owner_reason(&error))?;
     sync_dir(journal, &parent_rel(target)).map_err(|error| owner_reason(&error))
@@ -1031,12 +1034,11 @@ pub fn compact_log_checked(
     }
 }
 
+#[cfg(all(test, unix, feature = "full-tests"))]
 const WHOLE_ACTIVITY_HOLD: &str =
     "another journal operation needs attention before this removal can continue";
 pub const WHOLE_BUSY: &str = "your journal is busy with another job";
 pub const WHOLE_BINDING_HOLD: &str = "your journal couldn't be checked, so this delete stopped";
-const WHOLE_RESERVATION_HOLD: &str =
-    "this location is reserved for a journal operation and cannot be removed";
 
 /// How many whole-journal censuses one check may take when new directories keep
 /// appearing, as the restore path allows.
@@ -1045,7 +1047,7 @@ const CENSUS_ATTEMPTS: usize = 3;
 /// A hold the owner reads in one line, with what actually failed kept in the log.
 fn binding_hold(during: &str, cause: impl std::fmt::Display) -> String {
     log::warn!("removal held: the journal check failed during {during}: {cause}");
-    WHOLE_BINDING_HOLD.to_owned()
+    stored_reason("journal.cli.retention.recovery.activity.binding")
 }
 
 /// Repeat a census that saw a new directory arrive (such as the first folder of
@@ -1107,7 +1109,9 @@ fn census_clear_for_exclusive_lease(activity: &Arc<ActivityLease>) -> bool {
 fn admit_whole_segment_activity(journal: &Path) -> Result<AdmittedActivity, String> {
     let root = JournalRoot::open(journal).map_err(|error| binding_hold("open", error))?;
     let activity = ActivityLease::try_acquire(Arc::new(root)).map_err(|error| match error {
-        ActivityAdmissionError::Busy => WHOLE_BUSY.to_owned(),
+        ActivityAdmissionError::Busy => {
+            stored_reason("journal.cli.retention.recovery.activity.busy")
+        }
         error @ ActivityAdmissionError::Unavailable(_) => binding_hold("admission", error),
     })?;
     if census_clear_for_exclusive_lease(&activity) {
@@ -1212,7 +1216,9 @@ impl WholeSegmentActivity<'_> {
         }
         .map_err(|error| binding_hold("census", error))?;
         if !clear {
-            return Err(WHOLE_ACTIVITY_HOLD.to_owned());
+            return Err(stored_reason(
+                "journal.cli.retention.recovery.activity.hold",
+            ));
         }
         self.revalidate()
     }
@@ -1226,14 +1232,18 @@ impl WholeSegmentActivity<'_> {
                 .components()
                 .any(|part| reserved_whole_component(part.as_os_str()))
             {
-                return Err(WHOLE_RESERVATION_HOLD.to_owned());
+                return Err(stored_reason(
+                    "journal.cli.retention.recovery.activity.reserved",
+                ));
             }
             let path =
                 contained_path(self.journal(), relative).map_err(|error| owner_reason(&error))?;
             if let Some(carrier) = self.carrier
                 && carrier.diagnostic_path().starts_with(&path)
             {
-                return Err(WHOLE_RESERVATION_HOLD.to_owned());
+                return Err(stored_reason(
+                    "journal.cli.retention.recovery.activity.reserved",
+                ));
             }
         }
         Ok(())
@@ -1338,7 +1348,7 @@ fn remove_one(
                 refused(
                     target,
                     live,
-                    "there is no such segment in your journal".to_owned(),
+                    stored_reason("journal.cli.retention.recovery.segment.missing"),
                 ),
                 false,
             );
@@ -1361,7 +1371,7 @@ fn remove_one(
                 refused(
                     target,
                     live,
-                    "another process is working on this segment".to_owned(),
+                    stored_reason("journal.cli.retention.recovery.segment.busy"),
                 ),
                 false,
             );
@@ -1380,7 +1390,7 @@ fn remove_one(
                 refused(
                     target,
                     live,
-                    "this segment has already been removed".to_owned(),
+                    stored_reason("journal.cli.retention.recovery.segment.gone"),
                 ),
                 false,
             );
@@ -1393,7 +1403,7 @@ fn remove_one(
             refused(
                 target,
                 live,
-                "there is no such segment in your journal".to_owned(),
+                stored_reason("journal.cli.retention.recovery.segment.missing"),
             ),
             false,
         );
@@ -1405,9 +1415,7 @@ fn remove_one(
             refused_staged(
                 target,
                 staged,
-                "a previous removal of this segment did not finish; \
-                 it needs looking at before this can be retried"
-                    .to_owned(),
+                stored_reason("journal.cli.retention.recovery.segment.unfinished"),
             ),
             false,
         );
@@ -1469,9 +1477,9 @@ fn stage_segment_windows(
         guard.before_phase(target)?;
         // Recheck on each attempt: a retry must never overwrite another claim.
         if !matches!(path_lexists(&guard.journal().join(staged)), Ok(false)) {
-            return Err("a previous removal of this segment did not finish; \
-                        it needs looking at before this can be retried"
-                .to_owned());
+            return Err(stored_reason(
+                "journal.cli.retention.recovery.segment.unfinished",
+            ));
         }
         match rename_within(guard.journal(), live, staged) {
             Ok(()) => return Ok(()),
@@ -1604,7 +1612,7 @@ fn finish_staged(
                 return refused_staged(
                     target,
                     staged.to_owned(),
-                    "the record of this removal could not be prepared".to_owned(),
+                    stored_reason("journal.cli.retention.recovery.record.prepare"),
                 );
             }
         };
@@ -1615,7 +1623,7 @@ fn finish_staged(
             return refused_staged(
                 target,
                 staged.to_owned(),
-                "the record of this removal could not be written".to_owned(),
+                stored_reason("journal.cli.retention.recovery.record.write"),
             );
         }
     }
@@ -1653,9 +1661,7 @@ fn finish_staged(
         // way anyone learns it is there.
         failures.push(NotRemoved {
             entry: staged.to_owned(),
-            reason: "this segment is part-way through removal and is set aside; \
-                     it is not listed with your other segments until it finishes"
-                .to_owned(),
+            reason: stored_reason("journal.cli.retention.recovery.segment.staged"),
             staged: Some(staged.to_owned()),
         });
         return TargetOutcome {
@@ -1685,9 +1691,7 @@ fn finish_staged(
         return refused_staged(
             target,
             staged.to_owned(),
-            "something new was written where this segment was, so it has been \
-             left set aside rather than overwritten"
-                .to_owned(),
+            stored_reason("journal.cli.retention.recovery.segment.live.occupied"),
         );
     }
     if let Err(error) = rename_within(journal, staged, &live) {
@@ -1712,9 +1716,7 @@ fn finish_staged(
             Ok(false) => removed.push(RemovedPath::confirmed(rel.clone())),
             _ => unverified.push(NotRemoved {
                 entry: rel.clone(),
-                reason: "this could not be confirmed gone, so it is not being \
-                         reported as removed"
-                    .to_owned(),
+                reason: stored_reason("journal.cli.retention.recovery.segment.unconfirmed"),
                 staged: None,
             }),
         }
@@ -1891,7 +1893,7 @@ fn recover_segment_guarded(
         return Some(refused_staged(
             target,
             staged,
-            "another process is working on this segment".to_owned(),
+            stored_reason("journal.cli.retention.recovery.segment.busy"),
         ));
     };
     if let Err(reason) = guard.revalidate() {
@@ -2021,8 +2023,7 @@ pub fn confirmed_absent(journal: &Path, target: &Target) -> Outcome {
             Ok(false) => removed.push(RemovedPath::confirmed(rel)),
             _ => not_removed.push(NotRemoved {
                 entry: rel,
-                reason: "this could not be confirmed gone, so it is not being reported as removed"
-                    .to_owned(),
+                reason: stored_reason("journal.cli.retention.recovery.segment.unconfirmed"),
                 staged: None,
             }),
         }

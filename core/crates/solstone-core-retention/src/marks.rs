@@ -25,7 +25,6 @@ use crate::receipt::Target;
 
 const REGISTER_VERSION: u32 = 1;
 const REGISTER_FILE: &str = "retention-marks.json";
-const UNRECORDED_PROPOSAL_REASON: &str = "removal failed before a proposal was recorded";
 
 fn format_marked_at(at: Timestamp) -> String {
     solstone_core_time::utc_z(at, solstone_core_time::Precision::Secs)
@@ -580,7 +579,11 @@ pub fn record_failure(
                         marked_at: format_marked_at(at),
                         proposal: Proposal {
                             bytes: 0,
-                            reason: UNRECORDED_PROPOSAL_REASON.to_owned(),
+                            reason: solstone_core_cli_copy::render_for(
+                                solstone_core_cli_copy::ENGLISH,
+                                "journal.cli.retention.proposal.unrecorded",
+                                &[],
+                            ),
                             names: names.to_vec(),
                         },
                         state: MarkState::Failed(failure),

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for recovery segment staged.",
+  "context": "Journal command-line text for recovery segment staged.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fb363acd971648ccecb45e9d7d555c9fe56349143d195011d74f418dc873a57b",
+  "max_length": 150,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

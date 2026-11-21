@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for proposal unrecorded.",
+  "context": "Journal command-line text for proposal unrecorded.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5f04963e1313f05f5692f88f15a8608eaa12167a31a1b9778fd24e842a6b278d",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}
