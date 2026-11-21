@@ -735,12 +735,14 @@ async function detectedHideCases(workspace, copy) {
   {
     const h = setup({ attached: [], detected: [row('Ada'), row('Bob'), row('Cy')], hidden: [] });
     h.context.api.renderDetectedTable('');
+    check(el(h, 'all-entities-tbody').children.every((r) => !r.children.some((cell) => cell.className === 'entity-type')),
+      'a detected name is shown by name, with no type cell');
     h.answers['POST /app/entities/api/work/detected/hide'] = { success: true, changed: true, search_queued: true };
     hideButtons(h)[1].fire('click');
     await flush();
     const call = h.log.apis.find((c) => c.method === 'POST');
     check(call.url === '/app/entities/api/work/detected/hide' && call.body.name === 'Bob', 'a hide posts the name, with no confirm first');
-    const names = el(h, 'all-entities-tbody').children.map((r) => r.children[2].textContent);
+    const names = el(h, 'all-entities-tbody').children.map((r) => r.children.find((cell) => cell.className === 'entity-name').textContent);
     check(names.length === 2 && !names.some((n) => n.startsWith('Bob')), 'the row leaves the list');
     check(el(h, 'detected-hidden-foot').hidden === false
       && el(h, 'detected-hidden-count').textContent === fill('ENT_DETECTED_HIDDEN_COUNT_ONE', { facet: 'Title of work' }), 'the foot line counts one hidden name');
@@ -1778,7 +1780,7 @@ ${workspace.slice(tidyStart, tidyEnd)}\nthis.tidyClock = tidyClock; this.tidySta
     runWithJournalCatalog(`
       var ENT_COPY = {}, ATTENDANCE_KINDS = new Set(), journalSummary = null, journalSummaryKey = '',
         facetEntityCounts = {}, facetRoster = [], scopeMetadataDirty = true, entitiesInitialized = false,
-        journalEntityPage = 0, journalEntityType = '', journalEntitySearch = '', journalFolder = '';
+        journalEntityPage = 0, journalEntityType = '', journalEntitySearch = '', journalEntitySort = '', journalFolder = '';
       const JOURNAL_ENTITY_PAGE_SIZE = 50;
       function restoreEntityScopeFromLocation() { window.__restoredWith.push(ENT_COPY.mark || null); }
     `, initContext);

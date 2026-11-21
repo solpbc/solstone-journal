@@ -1402,6 +1402,12 @@ journal.window.entities.list.selected.count = { $selected_quantity ->
     } ticked
     }
 
+journal.window.entities.list.sort.name = by name
+
+journal.window.entities.list.sort.recent = recent
+
+journal.window.entities.list.sort.type = by type
+
 journal.window.entities.merge.confirm.selection = { $selected_quantity ->
         [one] merge { $selected }
        *[other] merge { $selected }
@@ -8225,6 +8231,8 @@ journal.window.entities.accessible.name.search.entities = search entities
 
 journal.window.entities.accessible.name.search.entity.cards = search entity cards
 
+journal.window.entities.accessible.name.sort.entities = sort entities
+
 journal.window.entities.button.detail.reattach = re-attach
 
 journal.window.entities.button.label.attach.to.facet = attach to facet
@@ -8244,8 +8252,6 @@ journal.window.entities.button.label.save.changes = save changes
 journal.window.entities.column.heading.description = description
 
 journal.window.entities.column.heading.name = name
-
-journal.window.entities.column.heading.type = type
 
 journal.window.entities.copy.cards.empty = no entities in this facet yet. star anything below you want to keep, or add one yourself.
 

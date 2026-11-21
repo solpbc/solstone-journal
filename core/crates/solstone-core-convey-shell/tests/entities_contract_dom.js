@@ -1292,5 +1292,130 @@ module.exports = async function entitiesContractCases(manifestDir) {
     assert.deepStrictEqual(p.loads, [`${ORIGIN}/app/entities/#p9`]);
   });
 
+  // ---- where a moment, a connection and the list's order lead
+
+  await test('a facet page\'s moment opens the day it came up in transcripts', async () => {
+    const serve = journal(copy);
+    const answers = (url, opts) => {
+      const u = new URL(url, ORIGIN);
+      if (u.pathname === '/app/entities/api/work/entity/w1') {
+        return { entity: { id: 'w1', name: 'Work One', type: 'Person', aka: [], attached: true, detached: false }, observations: [{ id: 1, content: 'met at the lab', source_day: '20261101', observed_at: 0 }], total: 1, has_more: false };
+      }
+      return serve(url, opts);
+    };
+    const p = await boot(env, '/app/entities/?facet=work#w1', { answers });
+    const day = p.byId('detail-observations').querySelector('.observation-meta a');
+    assert.ok(day, 'the moment\'s day is a link');
+    assert.strictEqual(day.getAttribute('href'), '/app/transcripts/20261101');
+  });
+
+  await test('the all-facets page shows moments from every facet, each with its facet, a page at a time', async () => {
+    const serve = journal(copy);
+    const moment = (i) => ({ id: i, facet: i % 2 ? 'work' : 'home', facet_title: i % 2 ? 'Work' : 'Home', facet_color: '#2f6fdd', content: `moment ${i}`, observed_at: 0, source_day: '20261101' });
+    const answers = (url, opts) => {
+      const u = new URL(url, ORIGIN);
+      if (u.pathname === '/app/entities/api/journal/entity/p3/observations') {
+        const offset = Number(u.searchParams.get('offset'));
+        const items = Array.from({ length: Math.max(0, Math.min(50, 60 - offset)) }, (_, i) => moment(offset + i));
+        return { total: 60, offset, limit: 50, has_more: offset + items.length < 60, items };
+      }
+      return serve(url, opts);
+    };
+    const p = await boot(env, '/app/entities/#p3', { answers });
+    const box = p.byId('journal-detail-moments');
+    const items = () => box.querySelectorAll('.observation-item');
+    assert.ok(p.visible('journal-detail-moments-section'), 'the moments are on the page');
+    assert.strictEqual(p.byId('journal-detail-moments-heading').textContent, copy.ENT_OBS_HEADING, 'under the moments heading');
+    assert.strictEqual(items().length, 50, 'the first page');
+    const facet = items()[0].querySelector('.observation-facet');
+    assert.strictEqual(facet.getAttribute('data-facet'), 'home', 'each moment names its facet');
+    assert.ok(facet.textContent.includes('Home'), 'by the facet\'s title');
+    assert.strictEqual(items()[1].querySelector('.observation-facet').getAttribute('data-facet'), 'work');
+    assert.strictEqual(items()[0].querySelector('.observation-meta a').getAttribute('href'), '/app/transcripts/20261101', 'its day opens in transcripts');
+    box.querySelector('.entity-observation-show-all').click();
+    await settle();
+    assert.strictEqual(p.reads('/app/entities/api/journal/entity/p3/observations?offset=50').length, 1, 'the next page is asked for after the first');
+    assert.strictEqual(items().length, 60, 'and added below it');
+    assert.strictEqual(box.querySelector('.entity-observation-show-all'), null, 'nothing more to show');
+    focusIsSomewhere(p, 'show more');
+  });
+
+  await test('a hidden entity\'s all-facets page shows no moments and asks for none', async () => {
+    const serve = journal(copy);
+    const answers = (url, opts) => {
+      if (new URL(url, ORIGIN).pathname === '/app/entities/api/journal/entity/p3') {
+        const body = detail('p3');
+        body.entity.blocked = true;
+        return body;
+      }
+      return serve(url, opts);
+    };
+    const p = await boot(env, '/app/entities/#p3', { answers });
+    assert.ok(!p.visible('journal-detail-moments-section'), 'no moments section');
+    assert.strictEqual(p.reads('/app/entities/api/journal/entity/p3/observations').length, 0, 'no moments read');
+  });
+
+  await test('a connection\'s day opens its recording when the evidence names one, else the day', async () => {
+    const serve = journal(copy);
+    const answers = (url, opts) => {
+      const u = new URL(url, ORIGIN);
+      if (u.pathname === '/app/entities/api/network') return { resolved: 'p3', neighbors: [], reference_day: '20261101' };
+      if (u.pathname === '/app/entities/api/history') {
+        return {
+          total: 3, peer_id: 'me', evidence: [
+            { day: '20261101', kind: 'spoke-with', source: 'speaker', anchor: '20261101/talk/082000_720' },
+            { day: '20261031', kind: 'mentioned', source: 'mention', anchor: '20261031/090000_300' },
+            { day: '20261030', kind: 'attended-with', source: 'participation', anchor: 'call_073000_240' },
+          ],
+        };
+      }
+      return serve(url, opts);
+    };
+    const p = await boot(env, '/app/entities/#p3', { answers });
+    p.byId('journal-detail-connections').querySelector('.entity-conn-with-you-toggle').click();
+    await settle();
+    const days = p.byId('journal-detail-connections').querySelectorAll('a.entity-conn-evidence-date').map((a) => a.getAttribute('href'));
+    assert.deepStrictEqual(days, [
+      '/app/transcripts/20261101?stream=talk#082000_720',
+      '/app/transcripts/20261031?stream=_default#090000_300',
+      '/app/transcripts/20261030',
+    ]);
+  });
+
+  await test('the list\'s sort is in the address: a change is one entry, and back and a reload restore it', async () => {
+    const summaryReads = (page) => page.reads('/app/entities/api/journal/summary').map((c) => new URL(c.url, ORIGIN).searchParams.get('sort'));
+    const p = await boot(env);
+    const sort = p.byId('journal-entity-sort');
+    assert.strictEqual(sort.value, '', 'recent by default');
+    assert.deepStrictEqual(summaryReads(p), [null], 'the default read asks for no sort');
+    const sortWord = (id) => p.window.JournalI18n.render(id);
+    assert.strictEqual(p.byId('journal-entity-sort-default').textContent, sortWord('journal.window.entities.list.sort.type'), 'across every type, the list\'s own order is by type');
+    p.byId('journal-folders').querySelectorAll('button').find((b) => b.getAttribute('data-folder') === 'person').click();
+    await settle();
+    assert.strictEqual(p.byId('journal-entity-sort-default').textContent, sortWord('journal.window.entities.list.sort.recent'), 'inside one type, it is the most recent first');
+    p.window.history.back();
+    await settle();
+    const i = p.index();
+    sort.value = 'name';
+    p.doc.dispatch(sort, { type: 'change' });
+    await settle();
+    assert.strictEqual(p.index(), i + 1, 'a sort is one entry');
+    assert.strictEqual(p.location.search, '?sort=name');
+    assert.strictEqual(summaryReads(p).at(-1), 'name', 'the list is read by name');
+    assert.strictEqual(p.doc.activeElement, sort, 'focus stays on the sort');
+    p.byId('journal-list-pager').querySelectorAll('button')[1].click();
+    await settle();
+    assert.strictEqual(p.location.search, '?sort=name&page=2', 'paging keeps the sort');
+    p.window.history.back();
+    p.window.history.back();
+    await settle();
+    assert.strictEqual(p.location.search, '', 'back to the list\'s own order');
+    assert.strictEqual(sort.value, '');
+    assert.strictEqual(summaryReads(p).at(-1), null);
+    const q = await boot(env, '/app/entities/?sort=name');
+    assert.strictEqual(q.byId('journal-entity-sort').value, 'name', 'a reload keeps the sort');
+    assert.deepStrictEqual(summaryReads(q), ['name']);
+  });
+
   return cases;
 };

@@ -9865,3 +9865,147 @@ async fn a_set_hide_and_its_undo_queue_the_facets_they_reach() {
         );
     }
 }
+
+fn seed_moments(root: &Path, facet: &str, relationship_dir: &str, rows: &[(u64, &str, &str)]) {
+    let contents = rows
+        .iter()
+        .map(|(id, content, day)| {
+            json!({"id": id, "content": content, "source_day": day}).to_string() + "\n"
+        })
+        .collect::<String>();
+    write_raw(
+        root,
+        &format!("facets/{facet}/entities/{relationship_dir}/observations.jsonl"),
+        contents.as_bytes(),
+    );
+}
+
+fn moment_keys(body: &Value) -> Vec<(String, u64)> {
+    body["items"]
+        .as_array()
+        .expect("moment items")
+        .iter()
+        .map(|item| {
+            (
+                item["facet"].as_str().expect("facet").to_owned(),
+                item["id"].as_u64().expect("id"),
+            )
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn journal_moments_gather_every_facet_newest_day_first_in_pages() {
+    let j = Journal::new();
+    let root = j.path();
+    seed_entity(root, "ada", "Ada");
+    write(
+        root,
+        "facets/work/facet.json",
+        json!({"title":"Work","color":"#2f6fdd"}),
+    );
+    write(root, "facets/home/facet.json", json!({"title":"Home"}));
+    seed_facet_entity(root, "work", "ada");
+    seed_facet_entity(root, "home", "ada");
+    seed_moments(
+        root,
+        "work",
+        "ada",
+        &[
+            (1, "met at the lab", "20260105"),
+            (2, "first call", "20260103"),
+        ],
+    );
+    seed_moments(root, "home", "ada", &[(1, "came to dinner", "20260104")]);
+
+    let (status, body) = call(root, "/app/entities/api/journal/entity/ada/observations").await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["total"], 3);
+    assert_eq!(body["has_more"], false);
+    assert_eq!(
+        moment_keys(&body),
+        [
+            ("work".to_owned(), 1),
+            ("home".to_owned(), 1),
+            ("work".to_owned(), 2)
+        ]
+    );
+    let first = &body["items"][0];
+    assert_eq!(first["facet_title"], "Work");
+    assert_eq!(first["facet_color"], "#2f6fdd");
+    assert_eq!(first["source_day"], "20260105");
+    assert_eq!(first["content"], "met at the lab");
+
+    let (status, page) = call(
+        root,
+        "/app/entities/api/journal/entity/ada/observations?offset=1&limit=1",
+    )
+    .await;
+    assert_eq!(status, 200, "{page}");
+    assert_eq!(page["total"], 3);
+    assert_eq!(page["has_more"], true);
+    assert_eq!(moment_keys(&page), [("home".to_owned(), 1)]);
+
+    let (status, refused) = call(
+        root,
+        "/app/entities/api/journal/entity/ada/observations?limit=201",
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert_eq!(refused["reason_code"], "invalid_request_value");
+    let (status, refused) = call(
+        root,
+        "/app/entities/api/journal/entity/ada/observations?offset=-1",
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert_eq!(refused["reason_code"], "invalid_request_value");
+}
+
+#[tokio::test]
+async fn journal_moments_leave_out_muted_and_detached_facets_and_hidden_entities() {
+    let j = Journal::new();
+    let root = j.path();
+    seed_entity(root, "ada", "Ada");
+    write(root, "facets/work/facet.json", json!({"title":"Work"}));
+    write(
+        root,
+        "facets/quiet/facet.json",
+        json!({"title":"Quiet","muted":true}),
+    );
+    write(root, "facets/old/facet.json", json!({"title":"Old"}));
+    seed_facet_entity(root, "work", "ada");
+    seed_facet_entity(root, "quiet", "ada");
+    write(
+        root,
+        "facets/old/entities/ada/entity.json",
+        json!({"entity_id":"ada","detached":true}),
+    );
+    // A facet with no declaration isn't one the view lists.
+    seed_facet_entity(root, "undeclared", "ada");
+    for facet in ["work", "quiet", "old", "undeclared"] {
+        seed_moments(root, facet, "ada", &[(1, "a moment", "20260105")]);
+    }
+
+    let (status, body) = call(root, "/app/entities/api/journal/entity/ada/observations").await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(moment_keys(&body), [("work".to_owned(), 1)]);
+    assert_eq!(body["total"], 1);
+
+    write(
+        root,
+        "entities/ada/entity.json",
+        json!({"id":"ada","name":"Ada","type":"Person","blocked":true}),
+    );
+    let (status, body) = call(root, "/app/entities/api/journal/entity/ada/observations").await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["total"], 0);
+    assert!(
+        moment_keys(&body).is_empty(),
+        "a hidden entity shows no moments"
+    );
+
+    let (status, body) = call(root, "/app/entities/api/journal/entity/nobody/observations").await;
+    assert_eq!(status, 404, "{body}");
+    assert_eq!(body["reason_code"], "entity_not_found");
+}

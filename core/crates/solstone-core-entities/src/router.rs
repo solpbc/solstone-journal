@@ -219,6 +219,10 @@ fn api_router_from_state(state: Arc<RouterState>) -> Router {
             get(history_route),
         )
         .route(
+            "/app/entities/api/journal/entity/{entity_id}/observations",
+            get(journal_observations_route),
+        )
+        .route(
             "/app/entities/api/journal/entity/{entity_id}/restore",
             post(restore_journal_entity_version_route),
         )
@@ -3125,6 +3129,201 @@ async fn journal_entity_route(
                 RefusalDetail::Catalog("journal.window.entities.response.detail.entity.not.found"),
             ),
         },
+        _ => refusal(
+            ReasonCode::EntityOperationFailed,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.read.failed"),
+        ),
+    }
+}
+
+/// A page of journal-wide moments: at most this many unless asked for fewer.
+const JOURNAL_MOMENTS_DEFAULT_LIMIT: usize = 50;
+const JOURNAL_MOMENTS_MAX_LIMIT: usize = 200;
+
+/// One of an entity's moments, with the facet it was noted in.
+struct JournalMoment {
+    day: Option<String>,
+    facet: String,
+    facet_title: String,
+    facet_color: String,
+    item: solstone_core_facets::ObservationPageItem,
+}
+
+/// The day a moment is about: its source day, else the day it was written
+/// in the owner's zone.
+fn journal_moment_day(
+    item: &solstone_core_facets::ObservationPageItem,
+    zone: &solstone_core_journal_config::TimeZone,
+) -> Option<String> {
+    item.source_day
+        .as_deref()
+        .filter(|day| solstone_core_time::parse_day(day).is_some())
+        .map(str::to_owned)
+        .or_else(|| {
+            (item.observed_at > 0)
+                .then(|| solstone_core_entity::last_active_day_for_ts(item.observed_at, zone))
+                .flatten()
+        })
+}
+
+/// One page of an entity's moments from every facet it is in, newest day
+/// first, or `None` when the journal holds no such entity.
+///
+/// A facet counts as the entities view shows it: declared and not muted
+/// (the view's facet list leaves muted facets out), with a link to the entity
+/// the owner hasn't detached. A hidden entity has no moments here, as its
+/// facet rows open nothing.
+fn journal_entity_moments(
+    root: &Path,
+    entity_dir: &str,
+    offset: usize,
+    limit: usize,
+) -> Result<Option<Value>, String> {
+    let Some(identity) =
+        solstone_core_entity::read_entity_identity(root, entity_dir).map_err(|e| e.to_string())?
+    else {
+        return Ok(None);
+    };
+    let mut moments = Vec::new();
+    if !solstone_core_entity::entity_is_hidden(identity.value()) {
+        let groups =
+            solstone_core_entity::read_identity_group_map(root).map_err(|e| e.to_string())?;
+        let resolved: HashMap<String, String> = groups
+            .groups
+            .iter()
+            .filter_map(|(id, dirs)| dirs.first().map(|dir| (id.clone(), dir.clone())))
+            .collect();
+        let zone = solstone_core_journal_config::owner_zone(root);
+        for facet_dir in
+            solstone_core_facets::list_facet_directories(root).map_err(|e| e.to_string())?
+        {
+            let declaration = match solstone_core_facets::read_facet_declaration(root, &facet_dir) {
+                Ok(Some(declaration)) => declaration,
+                Ok(None) | Err(_) => continue,
+            };
+            if declaration.muted == Some(true) {
+                continue;
+            }
+            let links =
+                solstone_core_facets::list_scoped_facet_entities_tolerant_with_resolved_ids(
+                    root, &facet_dir, false, false, &resolved,
+                )
+                .map_err(|e| e.to_string())?;
+            let mut read = HashSet::new();
+            for link in links
+                .into_iter()
+                .filter(|link| link.entity_dir == entity_dir)
+            {
+                if !read.insert(link.relationship_dir.clone()) {
+                    continue;
+                }
+                let page = solstone_core_facets::read_live_observations(
+                    root,
+                    &facet_dir,
+                    &link.relationship_dir,
+                    solstone_core_facets::ObservationReadQuery {
+                        limit: usize::MAX,
+                        ..Default::default()
+                    },
+                )
+                .map_err(|e| e.to_string())?;
+                for item in page.items {
+                    moments.push(JournalMoment {
+                        day: journal_moment_day(&item, &zone),
+                        facet: facet_dir.clone(),
+                        facet_title: if declaration.title.is_empty() {
+                            facet_dir.clone()
+                        } else {
+                            declaration.title.clone()
+                        },
+                        facet_color: declaration.color.clone(),
+                        item,
+                    });
+                }
+            }
+        }
+    }
+    moments.sort_by(|left, right| {
+        right
+            .day
+            .cmp(&left.day)
+            .then_with(|| right.item.observed_at.cmp(&left.item.observed_at))
+            .then_with(|| left.facet.cmp(&right.facet))
+            .then_with(|| right.item.id.cmp(&left.item.id))
+    });
+    let total = moments.len();
+    let items: Vec<Value> = moments
+        .into_iter()
+        .skip(offset)
+        .take(limit)
+        .map(|moment| {
+            json!({
+                "id": moment.item.id,
+                "facet": moment.facet,
+                "facet_title": moment.facet_title,
+                "facet_color": moment.facet_color,
+                "content": moment.item.content,
+                "observed_at": moment.item.observed_at,
+                "source_day": moment.item.source_day,
+            })
+        })
+        .collect();
+    Ok(Some(json!({
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "has_more": offset.saturating_add(items.len()) < total,
+        "items": items,
+    })))
+}
+
+async fn journal_observations_route(
+    Extension(b): Extension<AccessBasis>,
+    State(root): State<Arc<RouterState>>,
+    RoutePath(id): RoutePath<String>,
+    Query(q): Query<std::collections::HashMap<String, String>>,
+) -> Response {
+    if let Some(r) = admitted(&b) {
+        return r;
+    }
+    let limit = match q.get("limit") {
+        Some(s) => match s.parse::<usize>() {
+            Ok(n) if n <= JOURNAL_MOMENTS_MAX_LIMIT => n,
+            _ => {
+                return refusal(
+                    ReasonCode::InvalidRequestValue,
+                    RefusalDetail::Catalog(
+                        "journal.window.entities.response.detail.limit.bounded.two.hundred",
+                    ),
+                );
+            }
+        },
+        None => JOURNAL_MOMENTS_DEFAULT_LIMIT,
+    };
+    let offset = match q.get("offset") {
+        Some(s) => match s.parse::<usize>() {
+            Ok(n) => n,
+            Err(_) => {
+                return refusal(
+                    ReasonCode::InvalidRequestValue,
+                    RefusalDetail::Catalog(
+                        "journal.window.entities.response.detail.offset.must.be.a.non.negative.integer",
+                    ),
+                );
+            }
+        },
+        None => 0,
+    };
+    match solstone_core_serving::seam::run_blocking(move || {
+        journal_entity_moments(&root, &id, offset, limit)
+    })
+    .await
+    {
+        Ok(Ok(Some(page))) => Json(page).into_response(),
+        Ok(Ok(None)) => refusal(
+            ReasonCode::EntityNotFound,
+            RefusalDetail::Catalog("journal.window.entities.response.detail.entity.not.found"),
+        ),
         _ => refusal(
             ReasonCode::EntityOperationFailed,
             RefusalDetail::Catalog("journal.window.entities.response.detail.entity.read.failed"),
