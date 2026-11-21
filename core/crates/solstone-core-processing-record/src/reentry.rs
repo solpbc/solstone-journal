@@ -23,7 +23,11 @@ fn reenters_failed_analysis_record(handler: &str) -> bool {
 
 /// Read one bounded JSONL metadata header (the first row) as an object.
 pub fn read_jsonl_header(path: &Path) -> Option<Value> {
-    let mut file = File::open(path).ok()?;
+    read_jsonl_header_from(&mut File::open(path).ok()?)
+}
+
+/// Read the same bounded metadata from a descriptor already bound by its caller.
+pub fn read_jsonl_header_from(file: &mut impl Read) -> Option<Value> {
     let mut window = Vec::with_capacity(vocab::MAX_FIRST_ROW_BYTES);
     file.by_ref()
         .take(vocab::MAX_FIRST_ROW_BYTES as u64)
@@ -122,6 +126,10 @@ pub fn jsonl_has_row_with_key(path: &Path, row_key: &str) -> bool {
     let Ok(file) = File::open(path) else {
         return false;
     };
+    jsonl_has_row_with_key_from(file, row_key)
+}
+
+pub fn jsonl_has_row_with_key_from(file: impl Read, row_key: &str) -> bool {
     read_leading_rows(BufReader::new(file), Some(row_key)).is_ok_and(|rows| {
         rows.iter()
             .any(|row| matches!(row, LeadingRow::Object { has_key: true, .. }))

@@ -106,6 +106,8 @@ pub(crate) struct SegmentReference {
     pub byte_offset: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub statement_ordinal: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<solstone_core_transcripts::MessageBounds>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -213,6 +215,8 @@ pub(crate) struct SegmentSpanInside {
     pub source_index: usize,
     pub byte_offset: u64,
     pub statement_ordinal: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<solstone_core_transcripts::MessageBounds>,
 }
 
 /// What a day's `list_transcripts` matched, read in time order: the same day,

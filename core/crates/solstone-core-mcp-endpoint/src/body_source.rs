@@ -1288,6 +1288,7 @@ pub(crate) fn list_source(
                 source_index: None,
                 byte_offset: None,
                 statement_ordinal: None,
+                message: None,
             },
         )?;
         targets.push(format!("{day}/{stream}/{}", window.name));

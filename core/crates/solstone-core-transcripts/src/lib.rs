@@ -43,7 +43,7 @@ pub use who_spoke::{
 };
 
 pub use segment_page::{
-    AgentSpeakers, MAX_TRANSCRIPT_PAGE_BYTES, MAX_TRANSCRIPT_PAGE_ITEMS,
+    AgentSpeakers, MAX_TRANSCRIPT_PAGE_BYTES, MAX_TRANSCRIPT_PAGE_ITEMS, MessageBounds,
     POSSIBLE_SPEAKER_CHANGE_WITHIN_SENTENCE, SegmentClock, SegmentTranscriptCursor,
     SegmentTranscriptEntry, SegmentTranscriptPage, SegmentTranscriptReadError,
     SegmentTranscriptVersion, read_segment_transcript_page,

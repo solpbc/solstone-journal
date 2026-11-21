@@ -7417,6 +7417,7 @@ fn removed_segment_marker_matrix_withheld_from_all_read_tools() {
                     source_index: None,
                     byte_offset: None,
                     statement_ordinal: None,
+                    message: None,
                 }),
             )
             .unwrap();
@@ -7924,6 +7925,7 @@ fn door_seam_remove_segments_withholds_retained_references_without_leak() {
                 source_index: None,
                 byte_offset: None,
                 statement_ordinal: None,
+                message: None,
             }),
         )
         .unwrap();
@@ -17590,6 +17592,103 @@ fn imported_material_previews_describe_content_and_photo_fetch_keeps_its_literal
             .contains("pageonlyneedle"),
         "{hit}"
     );
+}
+
+#[test]
+fn long_message_parts_identify_adjacent_turns_across_single_span_and_batch() {
+    let journal = fixture();
+    let root = journal.path();
+    let day = "20260308";
+    let turns = [("a", 75_000), ("b", 70_123), ("c", 2)];
+    let rows = turns
+        .iter()
+        .map(|(word, count)| json!({"start":"00:00:00","text":word.repeat(*count)}).to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+    write_segment_file(
+        root,
+        day,
+        "import.claude",
+        "074500_300",
+        "alpha",
+        "conversation_transcript.jsonl",
+        &format!("{{}}\n{rows}\n"),
+    );
+    PermissionStore::open(root)
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec!["messages".into()],
+                scope: ReadScope::WholeJournal,
+            },
+        )
+        .unwrap();
+    let listed = probe(&journal, "list_transcripts", json!({"day":day,"limit":100})).unwrap();
+    let reference = listed["transcripts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["reference"].as_str().unwrap_or("").contains("074500_300"))
+        .unwrap()["reference"]
+        .clone();
+    let direct = probe(&journal, "get_transcript", json!({"reference":reference})).unwrap();
+    let batch = probe(
+        &journal,
+        "get_transcript",
+        json!({"references":[reference]}),
+    )
+    .unwrap();
+    assert_eq!(
+        direct["turn_parts"],
+        batch["items"][0]["result"]["turn_parts"]
+    );
+    assert_eq!(direct["turn_parts"][0]["part"]["byte_offset"], 0);
+    assert_eq!(direct["turn_parts"][0]["part"]["complete"], false);
+
+    let mut actual = std::collections::BTreeMap::<String, String>::new();
+    let mut complete = std::collections::BTreeSet::new();
+    let mut ordinary = Vec::new();
+    let mut cursor = None::<String>;
+    loop {
+        let mut args = json!({"reference":listed["span_reference"]});
+        if let Some(cursor) = cursor {
+            args["cursor"] = json!(cursor);
+        }
+        let span = probe(&journal, "get_transcript", args).unwrap();
+        for section in span["segments"].as_array().unwrap() {
+            if section["reference"] != reference {
+                continue;
+            }
+            for (index, entry) in section["entries"].as_array().unwrap().iter().enumerate() {
+                let text = entry.as_str().unwrap();
+                let part = section["turn_parts"]
+                    .as_array()
+                    .and_then(|parts| parts.iter().find(|p| p["entry"] == index));
+                if let Some(part) = part {
+                    let id = part["part"]["turn_id"].as_str().unwrap();
+                    let body = actual.entry(id.into()).or_default();
+                    assert_eq!(part["part"]["byte_offset"], body.len());
+                    body.push_str(text);
+                    if part["part"]["complete"] == true {
+                        assert!(complete.insert(id.to_owned()));
+                    }
+                } else {
+                    ordinary.push(text.to_string());
+                }
+            }
+        }
+        cursor = span["next_cursor"].as_str().map(str::to_owned);
+        if cursor.is_none() {
+            break;
+        }
+    }
+    assert_eq!(complete.len(), 2);
+    let bodies: std::collections::BTreeSet<_> = actual.into_values().collect();
+    assert_eq!(
+        bodies,
+        std::collections::BTreeSet::from(["a".repeat(75_000), "b".repeat(70_123)])
+    );
+    assert_eq!(ordinary, ["cc"]);
 }
 
 #[test]

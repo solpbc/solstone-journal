@@ -6,6 +6,9 @@
 //! This module intentionally does not share the broad day-clustering surface:
 //! it has no percept, browser, or talent selection flags.
 
+mod long_message;
+pub use long_message::{MessageBounds, TurnPart};
+
 use std::collections::{BTreeMap, BTreeSet, hash_map::DefaultHasher};
 use std::fs::{self, File};
 use std::hash::{Hash, Hasher};
@@ -35,7 +38,8 @@ pub struct AgentSpeakers {
     pub owner: String,
 }
 
-/// Largest source-byte window parsed for one transcript page.
+/// Ordinary source window. A historical oversized written turn may take one
+/// initial record scan of up to 32 MiB, then 8 KiB per continuation.
 pub const MAX_TRANSCRIPT_PAGE_BYTES: usize = 64 * 1024;
 /// Largest number of transcript entries returned for one transcript page.
 pub const MAX_TRANSCRIPT_PAGE_ITEMS: usize = 100;
@@ -100,12 +104,14 @@ pub struct SegmentTranscriptCursor {
     pub source_index: usize,
     pub byte_offset: u64,
     pub statement_ordinal: u64,
+    pub message: Option<MessageBounds>,
     pub version: SegmentTranscriptVersion,
 }
 
 /// One projected transcript entry.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SegmentTranscriptEntry {
+    pub turn_part: Option<TurnPart>,
     pub text: String,
     /// Channel heading understood by source units. Speech stays `Transcript`.
     /// Chat, markdown, and other imported text use a non-speech channel.
@@ -267,14 +273,75 @@ pub fn read_segment_transcript_page_with_permissions(
         None => (0, 0, 0),
     };
 
+    let mut message = cursor.and_then(|c| c.message);
     let mut entries = Vec::new();
     while source_index < files.len() && entries.len() < MAX_TRANSCRIPT_PAGE_ITEMS {
         let path = &files[source_index];
-        let (window, advanced, exhausted) = read_window(path, byte_offset)?;
         let name = path
             .file_name()
             .and_then(|name| name.to_str())
             .unwrap_or_default();
+        let relative = format!("{segment_origin}/{name}");
+        let medium = media.get(path).copied();
+        let (window, advanced, exhausted) = if message.is_some() {
+            (Vec::new(), 0, false)
+        } else if let Some(medium) = medium.filter(|_| name.ends_with(".jsonl")) {
+            long_message::bound_read(path, &relative, medium, |file, _| {
+                read_window_from(file, byte_offset)
+            })?
+        } else {
+            read_window(path, byte_offset)?
+        };
+        if advanced == 0
+            && !exhausted
+            && matches!(
+                media.get(path),
+                Some(ConversationMedium::Written | ConversationMedium::Unresolved)
+            )
+            && matches!(
+                classify(&format!("{segment_origin}/{name}")),
+                ContentResolution::Indexed(Family::AiChat)
+            )
+        {
+            let passage = long_message::bound_read(
+                path,
+                &relative,
+                medium.ok_or(SegmentTranscriptReadError::Changed)?,
+                |file, version| {
+                    long_message::passage(
+                        file,
+                        version,
+                        byte_offset,
+                        message,
+                        name,
+                        &segment_origin,
+                        untimed_files.contains(path),
+                    )
+                },
+            )?;
+            byte_offset = passage.next_offset;
+            message = passage.bounds;
+            if !passage.text.is_empty() {
+                entries.push(SegmentTranscriptEntry {
+                    channel: source_channel(&segment_origin, name, false, media.get(path).copied()),
+                    text: passage.text,
+                    turn_part: passage.part,
+                });
+            }
+            if message.is_some() {
+                break;
+            }
+            if byte_offset
+                == fs::metadata(path)
+                    .map_err(|_| SegmentTranscriptReadError::Io)?
+                    .len()
+            {
+                source_index += 1;
+                byte_offset = 0;
+                statement_ordinal = 0;
+            }
+            break;
+        }
         let speech = is_speech_transcript_name(name) || is_transcribe_output(path);
         let names = labels
             .as_ref()
@@ -327,6 +394,7 @@ pub fn read_segment_transcript_page_with_permissions(
             };
             if !text.trim().is_empty() {
                 entries.push(SegmentTranscriptEntry {
+                    turn_part: None,
                     channel: source_channel(
                         &segment_origin,
                         name,
@@ -364,6 +432,7 @@ pub fn read_segment_transcript_page_with_permissions(
         byte_offset,
         statement_ordinal,
         version: version.clone(),
+        message,
     });
     Ok(SegmentTranscriptPage {
         entries,
@@ -584,7 +653,17 @@ fn read_window(
         return Err(SegmentTranscriptReadError::Io);
     }
     let mut file = File::open(path).map_err(|_| SegmentTranscriptReadError::Io)?;
-    let length = meta.len();
+    read_window_from(&mut file, offset)
+}
+
+fn read_window_from(
+    file: &mut File,
+    offset: u64,
+) -> Result<(Vec<u8>, usize, bool), SegmentTranscriptReadError> {
+    let length = file
+        .metadata()
+        .map_err(|_| SegmentTranscriptReadError::Io)?
+        .len();
     if offset > length {
         return Err(SegmentTranscriptReadError::Changed);
     }
@@ -802,6 +881,116 @@ mod tests {
         Family, RawPerceptFamily, produce_chunks, produce_raw_percept_chunks,
     };
     use solstone_core_journal_io::paths::{PathOrDay, iter_segments};
+
+    #[test]
+    fn oversized_chat_round_trips_across_utf8_and_escaped_boundaries() {
+        use solstone_core_format::content::AdmittedCategory::{Messages, Transcripts};
+        let root = tempfile::tempdir().unwrap();
+        let dir = root
+            .path()
+            .join("chronicle/20260914/import.claude/090000_300");
+        fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("conversation_transcript.jsonl");
+        let words = "first paragraph\n\n`quoted` \"hello\" \\ café 🦊".repeat(4000);
+        let escaped=serde_json::json!({"start":"00:00:00","text":words,"private_field":"unrelated metadata"}).to_string().replace("🦊","\\ud83e\\udd8a");
+        fs::write(
+            &file,
+            format!("{{}}\n{escaped}\n{{\"start\":\"00:00:01\",\"text\":\"following turn\"}}\n"),
+        )
+        .unwrap();
+        let segment = iter_segments(root.path(), PathOrDay::Day("20260914"))
+            .unwrap()
+            .pop()
+            .unwrap();
+        let read = |cursor: Option<&super::SegmentTranscriptCursor>, permission| {
+            super::read_segment_transcript_page_with_permissions(
+                &segment,
+                cursor,
+                None,
+                None,
+                &BTreeSet::new(),
+                Some(&BTreeSet::from([permission])),
+            )
+        };
+        let mut cursor = None;
+        let mut pieces = Vec::new();
+        let mut saved = None;
+        loop {
+            let page = read(cursor.as_ref(), Messages).unwrap();
+            pieces.extend(page.entries.into_iter().map(|e| e.text));
+            cursor = page.next;
+            if saved.is_none() {
+                saved = cursor.clone()
+            }
+            if cursor.is_none() {
+                break;
+            }
+        }
+        assert_eq!(pieces.pop().as_deref(), Some("following turn"));
+        assert!(pieces.len() > 10);
+        assert_eq!(pieces.concat(), words);
+        assert!(read(saved.as_ref(), Transcripts).is_err());
+        // A same-size edit can preserve mtime. Native identity and change
+        // stamp still prevent the next page from using the original bounds.
+        let modified = fs::metadata(&file).unwrap().modified().unwrap();
+        let original = fs::read_to_string(&file).unwrap();
+        fs::write(&file, original.replace("hello", "world")).unwrap();
+        fs::File::options()
+            .write(true)
+            .open(&file)
+            .unwrap()
+            .set_modified(modified)
+            .unwrap();
+        assert!(read(saved.as_ref(), Messages).is_err());
+        fs::write(&file, b"{}\n").unwrap();
+        assert!(read(saved.as_ref(), Messages).is_err());
+    }
+
+    #[test]
+    fn long_turn_rechecks_its_opened_medium_and_bounds_display_metadata() {
+        use super::long_message;
+        use solstone_core_format::content::conversation::ConversationMedium::{Spoken, Written};
+        let root = tempfile::tempdir().unwrap();
+        let dir = root
+            .path()
+            .join("chronicle/20260914/import.text/090000_300");
+        fs::create_dir_all(&dir).unwrap();
+        let name = "conversation_transcript.jsonl";
+        let path = dir.join(name);
+        let origin = "20260914/import.text/090000_300";
+        let relative = format!("{origin}/{name}");
+        let header = |reason| {
+            serde_json::json!({"imported":{"id":"fixture","triage":{"kind":"transcripts","ruleset_version":7,"reasons":[reason]}}}).to_string()
+        };
+        let row = serde_json::json!({"start":"00:01:02","speaker":"A".repeat(90000),"text":"body","partial_input":{"dropped_entries":3}});
+        let spoken = header("webvtt_cues");
+        fs::write(&path, format!("{spoken}\n{row}\n")).unwrap();
+        assert!(long_message::bound_read(&path, &relative, Written, |_, _| Ok(())).is_err());
+        assert!(long_message::bound_read(&path, &relative, Spoken, |_, _| Ok(())).is_ok());
+        let written = header("zoom_chat");
+        fs::write(&path, format!("{written}\n{row}\n")).unwrap();
+        let result = long_message::bound_read(&path, &relative, Written, |file, version| {
+            long_message::passage(
+                file,
+                version,
+                written.len() as u64 + 1,
+                None,
+                name,
+                origin,
+                false,
+            )
+        })
+        .unwrap();
+        assert_eq!(result.text, "[00:01:02] body");
+        assert!(
+            result
+                .part
+                .unwrap()
+                .source_notice
+                .unwrap()
+                .contains("dropped_entries: 3")
+        );
+    }
 
     #[test]
     fn each_conversation_and_its_neighbors_use_their_own_grants() {
@@ -1109,6 +1298,7 @@ mod tests {
         assert_eq!(
             page.entries,
             vec![super::SegmentTranscriptEntry {
+                turn_part: None,
                 text: "[14:00:00] Maya checked the orchard irrigation pump this morning."
                     .to_owned(),
                 channel: "Transcript",
@@ -1145,10 +1335,12 @@ mod tests {
             page.entries,
             vec![
                 super::SegmentTranscriptEntry {
+                    turn_part: None,
                     text: "[00:00:01] what was said".to_owned(),
                     channel: "Transcript",
                 },
                 super::SegmentTranscriptEntry {
+                    turn_part: None,
                     text: "approved transcript line".to_owned(),
                     channel: "Imported Conversation",
                 },
@@ -1353,6 +1545,7 @@ mod tests {
         assert_eq!(
             pages[0],
             vec![super::SegmentTranscriptEntry {
+                turn_part: None,
                 text: "## Strava workout: Morning Run\nRun\n10.2 km".to_owned(),
                 channel: "Imported Text",
             }]
@@ -1896,6 +2089,7 @@ mod tests {
             source_index: 0,
             byte_offset: 0,
             statement_ordinal: 0,
+            message: None,
             version: labelled.version.clone(),
         };
         assert!(matches!(

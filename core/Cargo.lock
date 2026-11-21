@@ -7193,6 +7193,7 @@ version = "2.0.86"
 dependencies = [
  "jiff 1.0.0",
  "log",
+ "serde",
  "serde_json",
  "sha2 0.10.9",
  "solstone-core-format",

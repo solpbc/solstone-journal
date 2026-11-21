@@ -4129,6 +4129,7 @@ fn list_transcripts(
                     source_index: None,
                     byte_offset: None,
                     statement_ordinal: None,
+                    message: None,
                 },
             )?;
 
@@ -4401,6 +4402,7 @@ pub(crate) fn read_segment(
                 byte_offset: cursor
                     .byte_offset
                     .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?,
+                message: cursor.message,
                 statement_ordinal: cursor
                     .statement_ordinal
                     .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?,
@@ -4499,6 +4501,7 @@ pub(crate) fn read_segment(
                         source_index: Some(next.source_index),
                         byte_offset: Some(next.byte_offset),
                         statement_ordinal: Some(next.statement_ordinal),
+                        message: next.message,
                     }),
                 )
                 .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))
@@ -4508,6 +4511,17 @@ pub(crate) fn read_segment(
         "{}/{}/{}",
         reference.day, reference.stream, reference.segment
     );
+    let parts = page
+        .entries
+        .iter()
+        .enumerate()
+        .filter_map(|(index, entry)| {
+            entry
+                .turn_part
+                .as_ref()
+                .map(|part| json!({"entry":index,"part":part}))
+        })
+        .collect::<Vec<_>>();
     let entries = page
         .entries
         .into_iter()
@@ -4524,6 +4538,9 @@ pub(crate) fn read_segment(
         "content_kinds": content_kinds,
         "next_cursor": next_cursor,
     });
+    if !parts.is_empty() {
+        response_val["turn_parts"] = json!(parts);
+    }
     if page.unresolved_conversation {
         response_val["conversation_state"] = json!("unresolved");
     }

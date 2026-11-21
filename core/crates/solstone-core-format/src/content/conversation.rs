@@ -280,6 +280,21 @@ pub fn unresolved_markdown(relative: &str) -> bool {
 /// Resolve a conversation already offered by the segment reader. The caller
 /// checks ordinary scope and the file's eligibility before using this result.
 pub fn file_medium(path: &Path, relative: &str) -> Option<ConversationMedium> {
+    file_medium_with_header(
+        path,
+        relative,
+        || solstone_core_processing_record::is_transcribe_output(path),
+        || solstone_core_processing_record::read_jsonl_header(path),
+    )
+}
+
+/// Resolve the same permissions while reading the header on a retained file.
+pub fn file_medium_with_header(
+    path: &Path,
+    relative: &str,
+    is_transcribe: impl FnOnce() -> bool,
+    header: impl FnOnce() -> Option<Value>,
+) -> Option<ConversationMedium> {
     use ConversationMedium::{Spoken, Unresolved, Written};
     if unresolved_markdown(relative) {
         return Some(Unresolved);
@@ -298,13 +313,13 @@ pub fn file_medium(path: &Path, relative: &str) -> Option<ConversationMedium> {
     ) {
         return None;
     }
-    if solstone_core_processing_record::is_transcribe_output(path) {
+    if is_transcribe() {
         return Some(Spoken);
     }
     if native_chat {
         return Some(Written);
     }
-    let Some(header) = solstone_core_processing_record::read_jsonl_header(path) else {
+    let Some(header) = header() else {
         return Some(Unresolved);
     };
     if stream == "import.granola"
