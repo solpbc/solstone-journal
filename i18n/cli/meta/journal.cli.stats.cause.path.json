@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for cause path.",
+  "context": "Journal command-line text for cause path.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4484f46c67ee56d10d4c2f82000c2c2f217ef861887cd7d98c131a9e32cd7356",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

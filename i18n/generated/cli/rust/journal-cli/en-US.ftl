@@ -1143,6 +1143,69 @@ m6a6f75726e616c2e636c692e646f63746f722e77696e646f77732e706172616b6565742e726f6f7
 
 m6a6f75726e616c2e636c692e646f63746f722e77696e646f77732e706172616b6565742e766572696669636174696f6e = could not verify the signed { "Parakeet" } app payload: { $error }
 
+m6a6f75726e616c2e636c692e706174682e637265617465 = could not create journal directory ({ $source }): { $path }: { $error }
+
+m6a6f75726e616c2e636c692e706174682e686f6d65 = journal-path failed: could not determine home directory
+
+m6a6f75726e616c2e636c692e706174682e75746638 = journal-path failed: config is not valid { "UTF-8" }
+
+m6a6f75726e616c2e636c692e73746174732e617267756d656e7473 = usage: { "solstone journal journal-stats [-h] [--no-cache] [-v] [-d]" }{ "\u000a" }{ "solstone journal journal-stats" }: error: unrecognized arguments: { $argument }
+
+m6a6f75726e616c2e636c692e73746174732e63617573652e6661636574 = facet store error: { $detail }
+
+m6a6f75726e616c2e636c692e73746174732e63617573652e696e76616c69642e646179 = invalid day { $day }; expected { "YYYYMMDD" } calendar date
+
+m6a6f75726e616c2e636c692e73746174732e63617573652e696f = cannot access { $path }: { $detail }
+
+m6a6f75726e616c2e636c692e73746174732e63617573652e70617468 = journal path error: { $detail }
+
+m6a6f75726e616c2e636c692e73746174732e63617573652e72656164 = journal read error: { $detail }
+
+m6a6f75726e616c2e636c692e73746174732e63617573652e736368656d61 = stats validation failed: { "schema_version" } is { $actual }, expected { $expected }
+
+m6a6f75726e616c2e636c692e73746174732e63617573652e74696d657374616d70 = stats validation failed: { "generated_at" } must be non-empty
+
+m6a6f75726e616c2e636c692e73746174732e63617573652e76616c69646174696f6e = stats validation failed: { $detail }
+
+m6a6f75726e616c2e636c692e73746174732e63617573652e7772697465 = journal atomic-write error: { $detail }
+
+m6a6f75726e616c2e636c692e73746174732e636f6e66696775726174696f6e = Error loading the journal's daily configuration: { $error }
+
+m6a6f75726e616c2e636c692e73746174732e6461792e6361636865 = Day cache save failed for { $day }: { $error }
+
+m6a6f75726e616c2e636c692e73746174732e656e756d6572617465 = Error enumerating journal days: { $error }
+
+m6a6f75726e616c2e636c692e73746174732e68656c70 = usage: { "solstone journal journal-stats [-h] [--no-cache] [-v] [-d]" }{ "\u000a" }{ "\u000a" }Scan a { "solstone" } journal and generate statistics{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "     " }show this help message and exit{ "\u000a" }{ "  " }{ "--no-cache" }{ "     " }Disable per-day caching (force re-scan all days){ "\u000a" }{ "  " }{ "-v, --verbose" }{ "  " }Enable verbose output{ "\u000a" }{ "  " }{ "-d, --debug" }{ "    " }Enable debug logging
+
+m6a6f75726e616c2e636c692e73746174732e6f7665727269646573 = stats validation failed: failed to read talent overrides from { $path }
+
+m6a6f75726e616c2e636c692e73746174732e7075626c69636174696f6e2e64757261626c65 = published; durability uncertain: { $source }
+
+m6a6f75726e616c2e636c692e73746174732e7075626c69636174696f6e2e6f62736572766564 = published; observation uncertain: { $source }
+
+m6a6f75726e616c2e636c692e73746174732e726f6f7473 = journal-stats failed: { $error }
+
+m6a6f75726e616c2e636c692e73746174732e7361766564 = Statistics saved to { $path }
+
+m6a6f75726e616c2e636c692e73746174732e746f6b656e732e6469726563746f7279 = Token directory read failed: { $path }
+
+m6a6f75726e616c2e636c692e73746174732e746f6b656e732e6a736f6e = Invalid token { "JSON" } in { $path }: { $error }
+
+m6a6f75726e616c2e636c692e73746174732e746f6b656e732e6c6f6164 = Token cache load failed for { $path }: { $error }
+
+m6a6f75726e616c2e636c692e73746174732e746f6b656e732e72656164 = Token read failed for { $path }: { $error }
+
+m6a6f75726e616c2e636c692e73746174732e746f6b656e732e73617665 = Token cache save failed for { $path }: { $error }
+
+m6a6f75726e616c2e636c692e73746174732e76616c6964617465 = Error validating { "stats.json" }: { $error }
+
+m6a6f75726e616c2e636c692e73746174732e7772697465 = Error writing { "stats.json" }: { $error }
+
+m6a6f75726e616c2e636c692e73746174732e7772697474656e = { $i18nCategory ->
+    [one] Wrote stats for { NUMBER($days, useGrouping: 0) } day to { $path }
+   *[other] Wrote stats for { NUMBER($days, useGrouping: 0) } day(s) to { $path }
+}
+
 m6a6f75726e616c2e636c692e73747265616d732e617267756d656e7473 = usage: { "solstone journal streams [-h] [--rebuild] [-v] [-d] [name]" }{ "\u000a" }{ "solstone journal streams" }: error: unrecognized arguments: { $arguments }
 
 m6a6f75726e616c2e636c692e73747265616d732e656d707479 = No streams found

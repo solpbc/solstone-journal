@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for cause write.",
+  "context": "Journal command-line text for cause write.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3334e0728e04d5e328ed8996e8e5c89c68da80a9b83b724d4d372c4f24cf1501",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

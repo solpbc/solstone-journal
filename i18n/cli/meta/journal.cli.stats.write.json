@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for write.",
+  "context": "Journal command-line text for write.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6d45c23edd7c449f50e0dcd809415ad57d0df4e314bc11d62e4d81b0e0c25aff",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "filename",
+      "kind": "accepted-input",
+      "value": "stats.json"
+    }
+  ]
+}

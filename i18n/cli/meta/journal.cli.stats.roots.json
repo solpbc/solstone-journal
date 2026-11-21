@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for roots.",
+  "context": "Journal command-line text for roots.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4e5788cfd3ddcbea864e0408cd30224592d5b30ffc86a494a2b60464c8186cfe",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for create.",
+  "context": "Journal command-line text for create.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "76de565fa34e6aae9b7b6cb3ef5e491ac8b3b93047891a72ae2b0f8900f6a20a",
+  "max_length": 103,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

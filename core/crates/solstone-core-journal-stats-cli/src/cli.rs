@@ -3,23 +3,6 @@
 
 use std::ffi::{OsStr, OsString};
 
-pub const USAGE: &str = concat!(
-    "usage: solstone journal journal-stats [-h] [--no-cache] [-v] [-d]",
-    "\n"
-);
-
-pub const HELP: &str = concat!(
-    "usage: solstone journal journal-stats [-h] [--no-cache] [-v] [-d]\n",
-    "\n",
-    "Scan a solstone journal and generate statistics\n",
-    "\n",
-    "options:\n",
-    "  -h, --help     show this help message and exit\n",
-    "  --no-cache     Disable per-day caching (force re-scan all days)\n",
-    "  -v, --verbose  Enable verbose output\n",
-    "  -d, --debug    Enable debug logging\n",
-);
-
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct Options {
     pub(crate) use_cache: bool,
@@ -53,9 +36,9 @@ pub(crate) fn parse(args: &[OsString]) -> Result<ParseResult, String> {
         } else if argument == OsStr::new("-d") || argument == OsStr::new("--debug") {
             options.debug = true;
         } else {
-            return Err(format!(
-                "unrecognized arguments: {}",
-                argument.to_string_lossy()
+            return Err(solstone_core_cli_copy::strings(
+                "journal.cli.stats.arguments",
+                [("argument", &argument.to_string_lossy())],
             ));
         }
     }

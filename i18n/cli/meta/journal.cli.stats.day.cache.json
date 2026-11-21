@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for day cache.",
+  "context": "Journal command-line text for day cache.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "091fa8d6aa904ec4e1bab5bc677c9048264613553d7c2b2dc7c9a60a16130a6e",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

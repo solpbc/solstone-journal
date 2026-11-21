@@ -175,12 +175,19 @@ pub fn read_frontmatter(path: &Path) -> Result<ParsedFrontmatter, String> {
 }
 
 pub fn read_talent_overrides(journal_root: &Path) -> Result<Option<Map<String, Value>>, String> {
+    read_talent_overrides_checked(journal_root)
+        .map_err(|path| format!("failed to read talent overrides from {}", path.display()))
+}
+
+/// The path whose overrides could not be decoded, for callers that present the diagnostic.
+pub fn read_talent_overrides_checked(
+    journal_root: &Path,
+) -> Result<Option<Map<String, Value>>, std::path::PathBuf> {
     let path = journal_root.join("config/journal.json");
     let Ok(text) = fs::read_to_string(&path) else {
         return Ok(None);
     };
-    let config: Value = serde_json::from_str(&text)
-        .map_err(|_| format!("failed to read talent overrides from {}", path.display()))?;
+    let config: Value = serde_json::from_str(&text).map_err(|_| path)?;
     Ok(config
         .get("talent_overrides")
         .and_then(Value::as_object)

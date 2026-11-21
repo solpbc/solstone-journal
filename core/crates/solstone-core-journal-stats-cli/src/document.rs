@@ -40,6 +40,8 @@ pub struct StatsDocument {
 pub struct UnreadableDay {
     pub day: String,
     pub cause: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cause_copy: Option<crate::StatsCause>,
 }
 
 /// Day statistics emitted alongside shared daily coverage.
@@ -191,15 +193,13 @@ pub(crate) fn assemble_document(
 impl StatsDocument {
     pub(crate) fn validate(&self) -> Result<(), JournalStatsError> {
         if self.schema_version != SCHEMA_VERSION {
-            return Err(JournalStatsError::Validation(format!(
-                "schema_version is {}, expected {SCHEMA_VERSION}",
-                self.schema_version
-            )));
+            return Err(JournalStatsError::SchemaVersion {
+                actual: self.schema_version,
+                expected: SCHEMA_VERSION,
+            });
         }
         if self.generated_at.is_empty() {
-            return Err(JournalStatsError::Validation(
-                "generated_at must be non-empty".to_owned(),
-            ));
+            return Err(JournalStatsError::MissingGeneratedAt);
         }
         Ok(())
     }

@@ -36,14 +36,14 @@ fn day_names(value: Option<&Value>, key: Option<&str>) -> Vec<String> {
 
 /// The first recorded cause, so the owner is handed the file to look at rather
 /// than sent somewhere else to find it.
-fn first_cause(value: Option<&Value>) -> Option<(Option<&str>, &str)> {
+fn first_cause(value: Option<&Value>) -> Option<(Option<&str>, &str, Option<&Value>)> {
     let Some(Value::Array(rows)) = value else {
         return None;
     };
     let row = rows.first()?;
     let cause = row.get("cause").and_then(Value::as_str)?;
     let day = row.get("day").and_then(Value::as_str);
-    Some((day, cause))
+    Some((day, cause, row.get("cause_copy")))
 }
 
 fn listed(days: &[String]) -> String {
@@ -155,10 +155,16 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         // Carry the cause.  ⛔ Do not send the owner elsewhere for a reason this
         // line is already holding: the verbose flag unfilters ok and skipped
         // rows, it does not surface a per-day reason.
-        let line = if let Some((day, cause)) = first_cause(document.get("evidence_unreadable_days"))
+        let line = if let Some((day, cause, metadata)) =
+            first_cause(document.get("evidence_unreadable_days"))
         {
-            let cause = truncate(cause, 400);
-            named_a_file = cause.contains(std::path::MAIN_SEPARATOR);
+            named_a_file = truncate(cause, 400).contains(std::path::MAIN_SEPARATOR);
+            let displayed = solstone_core_journal_stats_cli::display_saved_cause(
+                cause,
+                metadata,
+                copy::cli_locale(),
+            );
+            let cause = truncate(&displayed, 400);
             match day {
                 Some(day) => context.report_form.counted(
                     "journal.cli.doctor.sources.unreadable.cause",

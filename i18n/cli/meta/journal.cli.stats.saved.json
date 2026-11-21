@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for saved.",
+  "context": "Journal command-line text for saved.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2187a4bac4a1aab9ab7c48cc5974e4056de030b420f53e36f15a6586bfac1c8f",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

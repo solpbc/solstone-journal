@@ -1184,3 +1184,66 @@ journal.cli.describe.usage.redo.repeated = usage: { $syntax }{ $line_break }{ $c
 journal.cli.describe.usage.registry.extra = usage: { $syntax }{ $line_break }{ $command }: error: { $category_registry_flag } does not accept other arguments
 
 journal.cli.describe.usage.version.extra = usage: { $syntax }{ $line_break }{ $command }: error: { $version_flag } does not accept other arguments
+
+journal.cli.stats.arguments = usage: { $syntax }{ $line_break }{ $command }: error: unrecognized arguments: { $argument }
+
+journal.cli.stats.cause.facet = facet store error: { $detail }
+
+journal.cli.stats.cause.invalid.day = invalid day { $day }; expected { $date_format } calendar date
+
+journal.cli.stats.cause.io = cannot access { $path }: { $detail }
+
+journal.cli.stats.cause.path = journal path error: { $detail }
+
+journal.cli.stats.cause.read = journal read error: { $detail }
+
+journal.cli.stats.cause.schema = stats validation failed: { $schema } is { $actual }, expected { $expected }
+
+journal.cli.stats.cause.timestamp = stats validation failed: { $timestamp } must be non-empty
+
+journal.cli.stats.cause.validation = stats validation failed: { $detail }
+
+journal.cli.stats.cause.write = journal atomic-write error: { $detail }
+
+journal.cli.stats.configuration = Error loading the journal's daily configuration: { $error }
+
+journal.cli.stats.day.cache = Day cache save failed for { $day }: { $error }
+
+journal.cli.stats.enumerate = Error enumerating journal days: { $error }
+
+journal.cli.stats.help = usage: { $syntax }{ $line_break }{ $line_break }Scan a { $brand } journal and generate statistics{ $line_break }{ $line_break }options:{ $line_break }{ $indent_2 }{ $help_option }{ $gap_5 }show this help message and exit{ $line_break }{ $indent_2 }{ $no_cache_option }{ $gap_5 }Disable per-day caching (force re-scan all days){ $line_break }{ $indent_2 }{ $verbose_option }{ $gap_2 }Enable verbose output{ $line_break }{ $indent_2 }{ $debug_option }{ $gap_4 }Enable debug logging
+
+journal.cli.stats.publication.durable = published; durability uncertain: { $source }
+
+journal.cli.stats.publication.observed = published; observation uncertain: { $source }
+
+journal.cli.stats.roots = journal-stats failed: { $error }
+
+journal.cli.stats.saved = Statistics saved to { $path }
+
+journal.cli.stats.tokens.directory = Token directory read failed: { $path }
+
+journal.cli.stats.tokens.json = Invalid token { $json_format } in { $path }: { $error }
+
+journal.cli.stats.tokens.load = Token cache load failed for { $path }: { $error }
+
+journal.cli.stats.tokens.read = Token read failed for { $path }: { $error }
+
+journal.cli.stats.tokens.save = Token cache save failed for { $path }: { $error }
+
+journal.cli.stats.validate = Error validating { $filename }: { $error }
+
+journal.cli.stats.write = Error writing { $filename }: { $error }
+
+journal.cli.stats.written = { $days ->
+    [one] Wrote stats for { $days } day to { $path }
+   *[other] Wrote stats for { $days } day(s) to { $path }
+}
+
+journal.cli.path.home = journal-path failed: could not determine home directory
+
+journal.cli.path.utf8 = journal-path failed: config is not valid { $encoding }
+
+journal.cli.stats.overrides = stats validation failed: failed to read talent overrides from { $path }
+
+journal.cli.path.create = could not create journal directory ({ $source }): { $path }: { $error }

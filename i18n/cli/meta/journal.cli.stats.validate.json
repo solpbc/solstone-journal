@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for validate.",
+  "context": "Journal command-line text for validate.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1f9036ed0343f67d886fb46a49470b45173f461e41ee8fb949fde1d9bc3c85da",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "filename",
+      "kind": "accepted-input",
+      "value": "stats.json"
+    }
+  ]
+}

@@ -11045,6 +11045,763 @@
       "selector": null
     },
     {
+      "id": "journal.cli.path.create",
+      "resource": "m6a6f75726e616c2e636c692e706174682e637265617465",
+      "namespace": "journal.cli.path",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "source",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.path.home",
+      "resource": "m6a6f75726e616c2e636c692e706174682e686f6d65",
+      "namespace": "journal.cli.path",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.path.utf8",
+      "resource": "m6a6f75726e616c2e636c692e706174682e75746638",
+      "namespace": "journal.cli.path",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "encoding",
+          "kind": "accepted-input",
+          "value": "UTF-8"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.stats.arguments",
+      "resource": "m6a6f75726e616c2e636c692e73746174732e617267756d656e7473",
+      "namespace": "journal.cli.stats",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "argument",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "syntax",
+          "kind": "command",
+          "value": "solstone journal journal-stats [-h] [--no-cache] [-v] [-d]"
+        },
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "solstone journal journal-stats"
+        },
+        {
+          "name": "line_break",
+          "kind": "whitespace",
+          "value": "\n"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.stats.cause.facet",
+      "resource": "m6a6f75726e616c2e636c692e73746174732e63617573652e6661636574",
+      "namespace": "journal.cli.stats.cause",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "detail",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.stats.cause.invalid.day",
+      "resource": "m6a6f75726e616c2e636c692e73746174732e63617573652e696e76616c69642e646179",
+      "namespace": "journal.cli.stats.cause.invalid",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "date_format",
+          "kind": "accepted-input",
+          "value": "YYYYMMDD"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.stats.cause.io",
+      "resource": "m6a6f75726e616c2e636c692e73746174732e63617573652e696f",
+      "namespace": "journal.cli.stats.cause",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "detail",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.stats.cause.path",
+      "resource": "m6a6f75726e616c2e636c692e73746174732e63617573652e70617468",
+      "namespace": "journal.cli.stats.cause",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "detail",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.stats.cause.read",
+      "resource": "m6a6f75726e616c2e636c692e73746174732e63617573652e72656164",
+      "namespace": "journal.cli.stats.cause",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "detail",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.stats.cause.schema",
+      "resource": "m6a6f75726e616c2e636c692e73746174732e63617573652e736368656d61",
+      "namespace": "journal.cli.stats.cause",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "actual",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "expected",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "schema",
+          "kind": "accepted-input",
+          "value": "schema_version"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.stats.cause.timestamp",
+      "resource": "m6a6f75726e616c2e636c692e73746174732e63617573652e74696d657374616d70",
+      "namespace": "journal.cli.stats.cause",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "timestamp",
+          "kind": "accepted-input",
+          "value": "generated_at"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.stats.cause.validation",
+      "resource": "m6a6f75726e616c2e636c692e73746174732e63617573652e76616c69646174696f6e",
+      "namespace": "journal.cli.stats.cause",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "detail",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.stats.cause.write",
+      "resource": "m6a6f75726e616c2e636c692e73746174732e63617573652e7772697465",
+      "namespace": "journal.cli.stats.cause",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "detail",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.stats.configuration",
+      "resource": "m6a6f75726e616c2e636c692e73746174732e636f6e66696775726174696f6e",
+      "namespace": "journal.cli.stats",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.stats.day.cache",
+      "resource": "m6a6f75726e616c2e636c692e73746174732e6461792e6361636865",
+      "namespace": "journal.cli.stats.day",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.stats.enumerate",
+      "resource": "m6a6f75726e616c2e636c692e73746174732e656e756d6572617465",
+      "namespace": "journal.cli.stats",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.stats.help",
+      "resource": "m6a6f75726e616c2e636c692e73746174732e68656c70",
+      "namespace": "journal.cli.stats",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "syntax",
+          "kind": "command",
+          "value": "solstone journal journal-stats [-h] [--no-cache] [-v] [-d]"
+        },
+        {
+          "name": "brand",
+          "kind": "mark-word",
+          "value": "solstone"
+        },
+        {
+          "name": "indent_2",
+          "kind": "whitespace",
+          "value": "  "
+        },
+        {
+          "name": "help_option",
+          "kind": "accepted-input",
+          "value": "-h, --help"
+        },
+        {
+          "name": "gap_5",
+          "kind": "whitespace",
+          "value": "     "
+        },
+        {
+          "name": "no_cache_option",
+          "kind": "accepted-input",
+          "value": "--no-cache"
+        },
+        {
+          "name": "verbose_option",
+          "kind": "accepted-input",
+          "value": "-v, --verbose"
+        },
+        {
+          "name": "gap_2",
+          "kind": "whitespace",
+          "value": "  "
+        },
+        {
+          "name": "debug_option",
+          "kind": "accepted-input",
+          "value": "-d, --debug"
+        },
+        {
+          "name": "gap_4",
+          "kind": "whitespace",
+          "value": "    "
+        },
+        {
+          "name": "line_break",
+          "kind": "whitespace",
+          "value": "\n"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.stats.overrides",
+      "resource": "m6a6f75726e616c2e636c692e73746174732e6f7665727269646573",
+      "namespace": "journal.cli.stats",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.stats.publication.durable",
+      "resource": "m6a6f75726e616c2e636c692e73746174732e7075626c69636174696f6e2e64757261626c65",
+      "namespace": "journal.cli.stats.publication",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "source",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.stats.publication.observed",
+      "resource": "m6a6f75726e616c2e636c692e73746174732e7075626c69636174696f6e2e6f62736572766564",
+      "namespace": "journal.cli.stats.publication",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "source",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.stats.roots",
+      "resource": "m6a6f75726e616c2e636c692e73746174732e726f6f7473",
+      "namespace": "journal.cli.stats",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.stats.saved",
+      "resource": "m6a6f75726e616c2e636c692e73746174732e7361766564",
+      "namespace": "journal.cli.stats",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.stats.tokens.directory",
+      "resource": "m6a6f75726e616c2e636c692e73746174732e746f6b656e732e6469726563746f7279",
+      "namespace": "journal.cli.stats.tokens",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.stats.tokens.json",
+      "resource": "m6a6f75726e616c2e636c692e73746174732e746f6b656e732e6a736f6e",
+      "namespace": "journal.cli.stats.tokens",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "json_format",
+          "kind": "accepted-input",
+          "value": "JSON"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.stats.tokens.load",
+      "resource": "m6a6f75726e616c2e636c692e73746174732e746f6b656e732e6c6f6164",
+      "namespace": "journal.cli.stats.tokens",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.stats.tokens.read",
+      "resource": "m6a6f75726e616c2e636c692e73746174732e746f6b656e732e72656164",
+      "namespace": "journal.cli.stats.tokens",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.stats.tokens.save",
+      "resource": "m6a6f75726e616c2e636c692e73746174732e746f6b656e732e73617665",
+      "namespace": "journal.cli.stats.tokens",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.stats.validate",
+      "resource": "m6a6f75726e616c2e636c692e73746174732e76616c6964617465",
+      "namespace": "journal.cli.stats",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "filename",
+          "kind": "accepted-input",
+          "value": "stats.json"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.stats.write",
+      "resource": "m6a6f75726e616c2e636c692e73746174732e7772697465",
+      "namespace": "journal.cli.stats",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "filename",
+          "kind": "accepted-input",
+          "value": "stats.json"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.stats.written",
+      "resource": "m6a6f75726e616c2e636c692e73746174732e7772697474656e",
+      "namespace": "journal.cli.stats",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "days",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "days",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
       "id": "journal.cli.streams.arguments",
       "resource": "m6a6f75726e616c2e636c692e73747265616d732e617267756d656e7473",
       "namespace": "journal.cli.streams",

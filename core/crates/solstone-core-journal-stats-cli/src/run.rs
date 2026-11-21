@@ -4,14 +4,14 @@
 use std::{collections::BTreeMap, ffi::OsString, path::Path};
 
 use jiff::Timestamp;
+use solstone_core_cli_copy as copy;
 use solstone_core_system_health::{FilesystemHealthLogSource, FilesystemSegmentSource};
-use solstone_core_talent_config::read_talent_overrides;
+use solstone_core_talent_config::read_talent_overrides_checked;
 
 use crate::{
     BacklogViewReader, CacheStatus, DayCacheWriter, DayScanRequest, DocumentWriter,
-    FilesystemDayCacheWriter, JournalStatsError, backlog::degraded_backlog_view, cli,
-    document::UnreadableDay, document::assemble_document, scan_day_with_checkpoint,
-    tokens::scan_tokens_with_checkpoint,
+    FilesystemDayCacheWriter, backlog::degraded_backlog_view, cli, document::UnreadableDay,
+    document::assemble_document, scan_day_with_checkpoint, tokens::scan_tokens_with_checkpoint,
 };
 
 /// Observable result of a journal-level CLI invocation.
@@ -108,9 +108,17 @@ fn run_cli_with_admission<W: DayCacheWriter>(
     checkpoint: Option<&dyn Fn() -> Result<(), String>>,
 ) -> CliRun {
     let options = match cli::parse(args) {
-        Ok(cli::ParseResult::Help) => return success(cli::HELP),
+        Ok(cli::ParseResult::Help) => {
+            return success(format!("{}\n", copy::text("journal.cli.stats.help")));
+        }
         Ok(cli::ParseResult::Options(options)) => options,
-        Err(error) => return usage_error(&error),
+        Err(error) => {
+            return CliRun {
+                stdout: String::new(),
+                stderr: format!("{error}\n"),
+                exit_code: 2,
+            };
+        }
     };
 
     match run(
@@ -126,12 +134,11 @@ fn run_cli_with_admission<W: DayCacheWriter>(
         checkpoint,
     ) {
         Ok((day_count, diagnostics)) => {
+            let path = format!("{}/stats.json", journal_root.display());
             let mut stderr = String::new();
             if options.verbose {
-                stderr.push_str(&format!(
-                    "Statistics saved to {}/stats.json\n",
-                    journal_root.display()
-                ));
+                stderr.push_str(&copy::strings("journal.cli.stats.saved", [("path", &path)]));
+                stderr.push('\n');
             }
             if options.debug {
                 for diagnostic in diagnostics {
@@ -140,8 +147,14 @@ fn run_cli_with_admission<W: DayCacheWriter>(
             }
             CliRun {
                 stdout: format!(
-                    "Wrote stats for {day_count} day(s) to {}/stats.json\n",
-                    journal_root.display()
+                    "{}\n",
+                    copy::render(
+                        "journal.cli.stats.written",
+                        &[
+                            ("days", copy::Value::Cardinal(day_count as i64)),
+                            ("path", copy::Value::String(&path))
+                        ]
+                    )
                 ),
                 stderr,
                 exit_code: 0,
@@ -196,14 +209,15 @@ fn run<W: DayCacheWriter>(
     let admit = || checked();
     admit()?;
     let days = solstone_core_journal_io::day_dirs(journal_root)
-        .map_err(|error| format!("Error enumerating journal days: {error}"))?;
+        .map_err(|error| copy::display("journal.cli.stats.enumerate", [("error", &error)]))?;
     let mut days = days.into_iter().collect::<Vec<_>>();
     days.sort_by(|left, right| left.0.cmp(&right.0));
 
     let segments = FilesystemSegmentSource;
     let health = FilesystemHealthLogSource::new(journal_root);
-    let talent_overrides = read_talent_overrides(journal_root)
-        .map_err(|message| JournalStatsError::Validation(message).to_string())?;
+    let talent_overrides = read_talent_overrides_checked(journal_root).map_err(|path| {
+        copy::display("journal.cli.stats.overrides", [("path", &path.display())])
+    })?;
     // Journal-scoped prerequisites are resolved once, before any day is
     // scanned.  Their failure is a property of the journal's configuration,
     // not of whichever day happened to sort first, and it must not be reported
@@ -219,7 +233,7 @@ fn run<W: DayCacheWriter>(
     // an owner-facing vocabulary defect.
     // ⚠ `{message}` is still an upstream `String` and is NOT bounded for
     // vocabulary.
-    .map_err(|message| format!("Error loading the journal's daily configuration: {message}"))?;
+    .map_err(|message| copy::strings("journal.cli.stats.configuration", [("error", &message)]))?;
     let mut scans = BTreeMap::new();
     let mut diagnostics = Vec::new();
     let mut evidence_unreadable_days = Vec::new();
@@ -257,13 +271,17 @@ fn run<W: DayCacheWriter>(
         match outcome {
             Ok(outcome) => {
                 if debug && let CacheStatus::SaveFailed { message } = &outcome.cache_status {
-                    diagnostics.push(format!("Day cache save failed for {day}: {message}"));
+                    diagnostics.push(copy::strings(
+                        "journal.cli.stats.day.cache",
+                        [("day", &day), ("error", message)],
+                    ));
                 }
                 scans.insert(day, outcome.scan);
             }
             Err(error) => evidence_unreadable_days.push(UnreadableDay {
                 day: day.clone(),
                 cause: error.to_string(),
+                cause_copy: error.stored_cause(),
             }),
         }
     }
@@ -276,9 +294,12 @@ fn run<W: DayCacheWriter>(
         scan_tokens_with_checkpoint(journal_root, now, use_cache, &mut diagnostics, checkpoint);
     admit()?;
     let document = assemble_document(&scans, tokens, backlog, now, evidence_unreadable_days);
-    document
-        .validate()
-        .map_err(|error| format!("Error validating stats.json: {error}"))?;
+    document.validate().map_err(|error| {
+        copy::strings(
+            "journal.cli.stats.validate",
+            [("error", &error.render(copy::cli_locale()))],
+        )
+    })?;
     let written = if let Some(checkpoint) = checkpoint {
         document_writer.write_document_checked(
             &journal_root.join("stats.json"),
@@ -288,28 +309,22 @@ fn run<W: DayCacheWriter>(
     } else {
         document_writer.write_document(&journal_root.join("stats.json"), &document)
     };
-    written.map_err(|error| format!("Error writing stats.json: {error}"))?;
+    written.map_err(|error| {
+        copy::strings(
+            "journal.cli.stats.write",
+            [("error", &error.render(copy::cli_locale()))],
+        )
+    })?;
     if !debug {
         diagnostics.clear();
     }
     Ok((document.day_count, diagnostics))
 }
 
-fn success(stdout: &str) -> CliRun {
+fn success(stdout: String) -> CliRun {
     CliRun {
-        stdout: stdout.to_owned(),
+        stdout,
         stderr: String::new(),
         exit_code: 0,
-    }
-}
-
-fn usage_error(error: &str) -> CliRun {
-    CliRun {
-        stdout: String::new(),
-        stderr: format!(
-            "{}solstone journal journal-stats: error: {error}\n",
-            cli::USAGE
-        ),
-        exit_code: 2,
     }
 }

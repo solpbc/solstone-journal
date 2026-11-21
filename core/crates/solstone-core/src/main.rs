@@ -114,7 +114,7 @@ use solstone_core_indexer_store::{
     inspect_path_lookup,
 };
 use solstone_core_journal::{
-    ConfigError, HomeError, Source, describe_package_roots_miss, ensure_journal_dir_with_label,
+    ConfigError, HomeError, Source, describe_package_roots_miss_in, ensure_journal_dir_with_label,
     read_config_journal, resolve_installation_root_from_executable_dir, resolve_journal_path,
 };
 #[cfg(feature = "journal-mcp-endpoint")]
@@ -1605,8 +1605,17 @@ fn run_journal_stats(args: Vec<OsString>) -> ExitCode {
             .and_then(|executable| executable.parent().map(Path::to_path_buf));
         let Some((system_talent_root, apps_root)) = discover_package_roots() else {
             eprintln!(
-                "journal-stats failed: {}",
-                describe_package_roots_miss(executable_dir.as_deref().unwrap_or(Path::new("")))
+                "{}",
+                solstone_core_cli_copy::strings(
+                    "journal.cli.stats.roots",
+                    [(
+                        "error",
+                        &describe_package_roots_miss_in(
+                            executable_dir.as_deref().unwrap_or(Path::new("")),
+                            solstone_core_cli_copy::cli_locale()
+                        )
+                    )]
+                )
             );
             return ExitCode::from(EXIT_TEMPFAIL);
         };
@@ -6587,12 +6596,22 @@ fn discover_package_roots() -> Option<(PathBuf, PathBuf)> {
 fn eprint_journal_path_error(error: JournalPathError) {
     match error {
         JournalPathError::Config(ConfigError::Decode) => {
-            eprintln!("journal-path failed: config is not valid UTF-8")
+            eprintln!("{}", solstone_core_cli_copy::text("journal.cli.path.utf8"))
         }
         JournalPathError::Home(HomeError::Unavailable) => {
-            eprintln!("journal-path failed: could not determine home directory")
+            eprintln!("{}", solstone_core_cli_copy::text("journal.cli.path.home"))
         }
-        JournalPathError::Create(error) => eprintln!("{error}"),
+        JournalPathError::Create(error) => eprintln!(
+            "{}",
+            solstone_core_cli_copy::display(
+                "journal.cli.path.create",
+                [
+                    ("source", &error.source),
+                    ("path", &error.path.display()),
+                    ("error", &error.error)
+                ]
+            )
+        ),
     }
 }
 

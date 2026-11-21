@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for cause validation.",
+  "context": "Journal command-line text for cause validation.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7253f965d43f7f5d560bf7816e48c4bde6be58b38cc94b01428c0d31177b3678",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

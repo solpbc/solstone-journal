@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for tokens save.",
+  "context": "Journal command-line text for tokens save.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c3a2af5f0e4b2e0c81a29b3d1a835760f47aa2d499c76c77280034a103e4cc52",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

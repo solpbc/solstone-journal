@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for cause invalid day.",
+  "context": "Journal command-line text for cause invalid day.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ac70f1cffd9297e2cbe8441b0fb3e2439368fb748e1365c1188dc2147ad66637",
+  "max_length": 93,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "date_format",
+      "kind": "accepted-input",
+      "value": "YYYYMMDD"
+    }
+  ]
+}

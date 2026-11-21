@@ -10,6 +10,7 @@ publish = false
 workspace = true
 
 [dependencies]
+solstone-core-journal-stats-cli.workspace = true
 solstone-core-cli-copy.workspace = true
 solstone-core-window-catalog.workspace = true
 log.workspace = true

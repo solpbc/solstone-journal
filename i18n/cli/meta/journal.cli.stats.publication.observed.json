@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for publication observed.",
+  "context": "Journal command-line text for publication observed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f99b5ecdbe1763823511dee9f56d4449d1bdac81dc3cc7f6fa07f6d27943b8c2",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -318,7 +318,6 @@ fn ac1_help_matches_real_reference_fixture() {
         &writer,
     );
 
-    assert_eq!(crate::cli::HELP, fixture_help());
     assert_eq!(result.stdout, fixture_help());
     assert_eq!(result.stderr, "");
     assert_eq!(result.exit_code, 0);
@@ -466,7 +465,7 @@ fn ac2_run_cli_writes_a_document() {
     assert_eq!(result.exit_code, 0);
     assert_eq!(value(writer.document())["day_count"], 1);
     assert!(
-        result.stdout.starts_with("Wrote stats for 1 day(s) to "),
+        result.stdout.starts_with("Wrote stats for 1 day to "),
         "{}",
         result.stdout
     );

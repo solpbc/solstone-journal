@@ -228,34 +228,47 @@ fn stat_tree(
 }
 
 /// The remembered failure for a day whose inputs are unchanged, if any.
-pub(crate) fn load_unreadable_day(day_dir: &Path, fingerprint: &str) -> Option<String> {
+pub(crate) fn load_unreadable_day(day_dir: &Path, fingerprint: &str) -> Option<JournalStatsError> {
     let text = fs::read_to_string(day_dir.join("stats.json")).ok()?;
-    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
-    if value
+    let cached: serde_json::Value = serde_json::from_str(&text).ok()?;
+    if cached
         .get("schema_version")
         .and_then(serde_json::Value::as_u64)
         != Some(u64::from(SCHEMA_VERSION))
     {
         return None;
     }
-    let unreadable = value.get("unreadable")?;
-    (unreadable.get("inputs").and_then(serde_json::Value::as_str) == Some(fingerprint))
-        .then(|| unreadable.get("cause")?.as_str().map(str::to_owned))
-        .flatten()
+    let unreadable = cached.get("unreadable")?;
+    if unreadable.get("inputs")?.as_str()? != fingerprint {
+        return None;
+    }
+    let cause = unreadable.get("cause")?.as_str()?.to_owned();
+    let copy = unreadable
+        .get("cause_copy")
+        .and_then(|v| <crate::StatsCause as serde::Deserialize>::deserialize(v).ok());
+    Some(match copy {
+        Some(copy) => JournalStatsError::Remembered { cause, copy },
+        None => JournalStatsError::UnchangedUnreadable(cause),
+    })
+}
+
+fn unreadable_record(fingerprint: &str, error: &JournalStatsError) -> serde_json::Value {
+    let mut detail = serde_json::json!({"inputs":fingerprint,"cause":error.to_string()});
+    if let Some(copy) = error.stored_cause() {
+        detail["cause_copy"] = serde_json::json!(copy);
+    }
+    serde_json::json!({"schema_version": SCHEMA_VERSION, "unreadable": detail})
 }
 
 /// Remember a day's scan failure against its input fingerprint.
 pub(crate) fn save_unreadable_day(
     day_dir: &Path,
     fingerprint: &str,
-    cause: &str,
+    error: &JournalStatsError,
 ) -> Result<(), JournalStatsError> {
     solstone_core_journal_io::write_json(
         day_dir.join("stats.json"),
-        &serde_json::json!({
-            "schema_version": SCHEMA_VERSION,
-            "unreadable": {"inputs": fingerprint, "cause": cause},
-        }),
+        &unreadable_record(fingerprint, error),
         solstone_core_journal_io::JsonWriteOptions::default(),
     )?;
     Ok(())
@@ -264,18 +277,12 @@ pub(crate) fn save_unreadable_day(
 pub(crate) fn save_unreadable_day_checked(
     day_dir: &Path,
     fingerprint: &str,
-    cause: &str,
+    error: &JournalStatsError,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<(), JournalStatsError> {
     let publication =
         crate::publication::StatsPublication::open(&day_dir.join("stats.json"), checkpoint)?;
-    publication.json(
-        &serde_json::json!({
-            "schema_version": SCHEMA_VERSION,
-            "unreadable": {"inputs": fingerprint, "cause": cause},
-        }),
-        checkpoint,
-    )
+    publication.json(&unreadable_record(fingerprint, error), checkpoint)
 }
 
 /// Latest mtime among precisely the Python day-cache bounded input set.

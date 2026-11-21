@@ -77,7 +77,11 @@ impl StatsPublication {
                         path: self.path.clone(),
                         source: std::io::Error::new(
                             source.kind(),
-                            format!("published; observation uncertain: {source}"),
+                            solstone_core_cli_copy::display_for(
+                                solstone_core_cli_copy::ENGLISH,
+                                "journal.cli.stats.publication.observed",
+                                [("source", &source)],
+                            ),
                         ),
                     }
                     .into())
@@ -87,7 +91,11 @@ impl StatsPublication {
                         path: self.path.clone(),
                         source: std::io::Error::new(
                             source.kind(),
-                            format!("published; durability uncertain: {source}"),
+                            solstone_core_cli_copy::display_for(
+                                solstone_core_cli_copy::ENGLISH,
+                                "journal.cli.stats.publication.durable",
+                                [("source", &source)],
+                            ),
                         ),
                     }
                     .into())

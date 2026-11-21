@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for tokens json.",
+  "context": "Journal command-line text for tokens json.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5bfa64f2c74d6db0ebdf76bd3be7b5eeb21ebbe8329f1867ea153238b048d474",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "json_format",
+      "kind": "accepted-input",
+      "value": "JSON"
+    }
+  ]
+}

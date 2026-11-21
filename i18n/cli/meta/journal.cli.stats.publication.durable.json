@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for publication durable.",
+  "context": "Journal command-line text for publication durable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "93a3dff0a9526b16f3294d209381615584379dd6faaf6386414633da21540762",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

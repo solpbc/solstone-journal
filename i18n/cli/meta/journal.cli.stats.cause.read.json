@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for cause read.",
+  "context": "Journal command-line text for cause read.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f8f2f5edebcc8546d1b96ff9afd43d554b07391bda1d074ee013e73c07aeed5f",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for cause schema.",
+  "context": "Journal command-line text for cause schema.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "actual",
+      "type": "string"
+    },
+    {
+      "name": "expected",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "14a81012183d41fa55af437d50185620783ea125c09a41a4ad611efe706d37fd",
+  "max_length": 107,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "schema",
+      "kind": "accepted-input",
+      "value": "schema_version"
+    }
+  ]
+}

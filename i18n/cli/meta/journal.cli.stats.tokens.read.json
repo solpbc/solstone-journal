@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for tokens read.",
+  "context": "Journal command-line text for tokens read.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5249ca0164c9a89bec4031f0c0e8acbfc4c04fc831fc53bee1b6aa5e592665fc",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

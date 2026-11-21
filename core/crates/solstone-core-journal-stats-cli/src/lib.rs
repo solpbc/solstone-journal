@@ -39,7 +39,7 @@ pub use cache::{
 };
 pub use document::StatsDocument;
 pub use document_writer::{DocumentWriter, FilesystemDocumentWriter};
-pub use error::JournalStatsError;
+pub use error::{JournalStatsError, StatsCause, display_saved_cause};
 pub use migrations::{StatsTopicMigrationReport, migrate_stats_topic_keys};
 pub use model::{
     ActivityTotals, CacheStatus, DayScan, DayStats, HeatmapData, SCHEMA_VERSION, ScanDayOutcome,
@@ -125,7 +125,7 @@ where
     let unreadable_inputs = if use_cache {
         let fingerprint = cache::unreadable_inputs_fingerprint(request.journal_root, request.day)?;
         if let Some(cause) = cache::load_unreadable_day(&day_dir, &fingerprint) {
-            return Err(JournalStatsError::UnchangedUnreadable(cause));
+            return Err(cause);
         }
         Some(fingerprint)
     } else {
@@ -145,11 +145,11 @@ where
                     let _ = cache::save_unreadable_day_checked(
                         &day_dir,
                         &fingerprint,
-                        &error.to_string(),
+                        &error,
                         checkpoint,
                     );
                 } else {
-                    let _ = cache::save_unreadable_day(&day_dir, &fingerprint, &error.to_string());
+                    let _ = cache::save_unreadable_day(&day_dir, &fingerprint, &error);
                 }
             }
             return Err(error);
@@ -172,7 +172,7 @@ where
     let cache_status = match saved {
         Ok(()) => CacheStatus::Saved,
         Err(error) => CacheStatus::SaveFailed {
-            message: error.to_string(),
+            message: error.render(solstone_core_cli_copy::cli_locale()),
         },
     };
     Ok(ScanDayOutcome { scan, cache_status })

@@ -1,0 +1,38 @@
+{
+  "description": "Journal command-line text for arguments.",
+  "context": "Journal command-line text for arguments.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "argument",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b601548eadbf33a64b58c7b19248a547997dab7dd48a43d77539670ff3520e42",
+  "max_length": 123,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal journal-stats [-h] [--no-cache] [-v] [-d]"
+    },
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal journal-stats"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

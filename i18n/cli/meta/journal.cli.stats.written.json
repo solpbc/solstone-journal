@@ -1,0 +1,30 @@
+{
+  "description": "Journal command-line text for written.",
+  "context": "Journal command-line text for written.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "days",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "2be5c26fc055b63c8f760b26fb9103ab4a7432e40182e2ffce1c2eb7c68cccd9",
+  "max_length": 155,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "days",
+    "type": "cardinal"
+  }
+}

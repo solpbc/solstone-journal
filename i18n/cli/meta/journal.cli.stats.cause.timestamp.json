@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for cause timestamp.",
+  "context": "Journal command-line text for cause timestamp.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "36225df892767b319e8b1ca1fcaa226086863a6cda75f4ec83b4963c13870d8b",
+  "max_length": 89,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "timestamp",
+      "kind": "accepted-input",
+      "value": "generated_at"
+    }
+  ]
+}

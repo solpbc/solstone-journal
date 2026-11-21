@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for enumerate.",
+  "context": "Journal command-line text for enumerate.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3c03d09a5f2532681719b458bbb06f43a9002a76d82413e03881a97cf8bea90c",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

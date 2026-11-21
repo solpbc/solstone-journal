@@ -5,6 +5,7 @@ use std::{fs, path::Path};
 
 use jiff::Timestamp;
 use serde_json::Value;
+use solstone_core_cli_copy as copy;
 
 use crate::document::TokenUsage;
 
@@ -30,9 +31,9 @@ pub(crate) fn scan_tokens_with_checkpoint(
     }
     let today = solstone_core_time::day_key(jiff::tz::Offset::UTC.to_datetime(now).date());
     let Ok(entries) = fs::read_dir(&tokens_dir) else {
-        diagnostics.push(format!(
-            "Token directory read failed: {}",
-            tokens_dir.display()
+        diagnostics.push(copy::display(
+            "journal.cli.stats.tokens.directory",
+            [("path", &tokens_dir.display())],
         ));
         return TokenUsage::default();
     };
@@ -74,17 +75,17 @@ pub(crate) fn scan_tokens_with_checkpoint(
                 {
                     match serde_json::from_str::<Value>(line) {
                         Ok(entry) => process_entry(&entry, &day, &mut usage),
-                        Err(error) => diagnostics.push(format!(
-                            "Invalid token JSON in {}: {error}",
-                            token_file.display()
+                        Err(error) => diagnostics.push(copy::display(
+                            "journal.cli.stats.tokens.json",
+                            [("path", &token_file.display()), ("error", &error)],
                         )),
                     }
                 }
             }
             Err(error) => {
-                diagnostics.push(format!(
-                    "Token read failed for {}: {error}",
-                    token_file.display()
+                diagnostics.push(copy::display(
+                    "journal.cli.stats.tokens.read",
+                    [("path", &token_file.display()), ("error", &error)],
                 ));
                 continue;
             }
@@ -136,9 +137,9 @@ fn try_cache_hit(
             true
         }
         Err(error) => {
-            diagnostics.push(format!(
-                "Token cache load failed for {}: {error}",
-                token_file.display()
+            diagnostics.push(copy::display(
+                "journal.cli.stats.tokens.load",
+                [("path", &token_file.display()), ("error", &error)],
             ));
             false
         }
@@ -159,9 +160,12 @@ fn save_token_cache(
     {
         Some(Ok(publication)) => Some(publication),
         Some(Err(error)) => {
-            diagnostics.push(format!(
-                "Token cache save failed for {}: {error}",
-                token_file.display()
+            diagnostics.push(copy::display(
+                "journal.cli.stats.tokens.save",
+                [
+                    ("path", &token_file.display()),
+                    ("error", &error.render(copy::cli_locale())),
+                ],
             ));
             return;
         }
@@ -180,15 +184,18 @@ fn save_token_cache(
                     .map_err(|error| crate::JournalStatsError::io(cache_file, error))
             };
             if let Err(error) = written {
-                diagnostics.push(format!(
-                    "Token cache save failed for {}: {error}",
-                    token_file.display()
+                diagnostics.push(copy::display(
+                    "journal.cli.stats.tokens.save",
+                    [
+                        ("path", &token_file.display()),
+                        ("error", &error.render(copy::cli_locale())),
+                    ],
                 ));
             }
         }
-        Err(error) => diagnostics.push(format!(
-            "Token cache save failed for {}: {error}",
-            token_file.display()
+        Err(error) => diagnostics.push(copy::display(
+            "journal.cli.stats.tokens.save",
+            [("path", &token_file.display()), ("error", &error)],
         )),
     }
 }

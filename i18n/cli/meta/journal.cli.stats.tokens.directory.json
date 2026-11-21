@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for tokens directory.",
+  "context": "Journal command-line text for tokens directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "92d8a7030429f3a5cdf251c2a8dc71c5005aa712847b0b7a29edf9cb46a267eb",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

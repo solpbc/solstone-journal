@@ -1,0 +1,73 @@
+{
+  "description": "Journal command-line text for help.",
+  "context": "Journal command-line text for help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e034ce17647e98b552ba49fb875b38ebc4ce1f76fbe5dd5fa3c01524c6986291",
+  "max_length": 511,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal journal-stats [-h] [--no-cache] [-v] [-d]"
+    },
+    {
+      "name": "brand",
+      "kind": "mark-word",
+      "value": "solstone"
+    },
+    {
+      "name": "indent_2",
+      "kind": "whitespace",
+      "value": "  "
+    },
+    {
+      "name": "help_option",
+      "kind": "accepted-input",
+      "value": "-h, --help"
+    },
+    {
+      "name": "gap_5",
+      "kind": "whitespace",
+      "value": "     "
+    },
+    {
+      "name": "no_cache_option",
+      "kind": "accepted-input",
+      "value": "--no-cache"
+    },
+    {
+      "name": "verbose_option",
+      "kind": "accepted-input",
+      "value": "-v, --verbose"
+    },
+    {
+      "name": "gap_2",
+      "kind": "whitespace",
+      "value": "  "
+    },
+    {
+      "name": "debug_option",
+      "kind": "accepted-input",
+      "value": "-d, --debug"
+    },
+    {
+      "name": "gap_4",
+      "kind": "whitespace",
+      "value": "    "
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

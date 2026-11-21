@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for cause io.",
+  "context": "Journal command-line text for cause io.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d8ea2716a2672fe3cb16dbbc879b19d06ab7dd111ef253f4af8628f85e05044d",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}
