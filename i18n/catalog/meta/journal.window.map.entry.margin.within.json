@@ -1,0 +1,21 @@
+{
+  "description": "Shows the named area that contains the entire uncertainty circle.",
+  "context": "Journal window. Shows the named area that contains the entire uncertainty circle.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "area",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cc7f038eafb141a260e14bd2cd0fe2dbd0fc6ba07cf1394af1234523a185233b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

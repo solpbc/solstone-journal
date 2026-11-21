@@ -1,0 +1,40 @@
+{
+  "description": "Distance and compass direction from a selected reference area.",
+  "context": "Journal window. Distance and compass direction from a selected reference area.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "direction",
+      "type": "string"
+    },
+    {
+      "name": "distance",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "8b5b40a20ec89a51301104e44ca6b8561dc87254446e9a2fa581eaea97319c36",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "direction",
+    "type": "string",
+    "enum_values": [
+      "east",
+      "north-east",
+      "north",
+      "north-west",
+      "west",
+      "south-west",
+      "south",
+      "south-east"
+    ],
+    "enum_default": "east"
+  }
+}

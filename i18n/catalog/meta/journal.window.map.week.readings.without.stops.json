@@ -1,0 +1,30 @@
+{
+  "description": "A week row with readings but no stops.",
+  "context": "Journal window. A week row with readings but no stops.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "64c85ba8f8161e9c54b525a8f0e1aff2700f1edbdb838967b15f9b3c2a12a5dc",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

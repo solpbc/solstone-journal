@@ -1,0 +1,34 @@
+{
+  "description": "Summary of the number of areas, their grouping and how the area list is ordered.",
+  "context": "Journal window. Summary of the number of areas, their grouping and how the area list is ordered.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "area",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "72ec34052d8c6019118b18505f17f7d350cdfb37e6b4fcf68b38a8be8e743ede",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

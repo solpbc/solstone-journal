@@ -1,0 +1,21 @@
+{
+  "description": "Why a visit has no building or proximity labels with this margin of error.",
+  "context": "Journal window. Why a visit has no building or proximity labels with this margin of error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "margin_meters",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "60eef45af73e8b3986dd9bcebf6dd4b4d852dfbfa62115db37faa21373327e5e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

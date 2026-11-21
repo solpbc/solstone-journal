@@ -1,0 +1,21 @@
+{
+  "description": "Size label in the selected area heading.",
+  "context": "Journal window. Size label in the selected area heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "size",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ed9fafd4345bd8bd628974325600c160c6eb96c7dafe8a3dad2588f74978029b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Location accuracy download refusal with its required size.",
+  "context": "Journal window. Location accuracy download refusal with its required size.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "required_storage",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "eb3bd09ccc8b21ed5eac4e260c8eef689de71512d810b183afde0b4e8d8716df",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

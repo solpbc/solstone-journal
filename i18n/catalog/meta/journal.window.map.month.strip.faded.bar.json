@@ -1,0 +1,16 @@
+{
+  "description": "A separate note about bars with incomplete times.",
+  "context": "Journal window. A separate note about bars with incomplete times.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2da9ef61790b5924c6e61ddc5746b276cf58bb4d59f3f4898c28dd367654f0e2",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

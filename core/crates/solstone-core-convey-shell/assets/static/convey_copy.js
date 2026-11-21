@@ -34,7 +34,7 @@
 
   // The message places named elements or wraps inline text with start/end
   // arguments. Catalog text and argument values stay text nodes.
-  function renderMarkup(id, args, { elements = {}, fixed = {} }) {
+  function renderMarkup(id, args, { elements = {}, fixed = {} }, selected = language) {
     const fence = '\uFDD0';
     const markers = /\uFDD0(?:\uFDD0|([+=-])(\d+)\uFDD1)/gu;
     const pairs = Object.entries(elements);
@@ -49,7 +49,7 @@
         input.push([name, `${fence}=${index}\uFDD1`]);
       }
     }
-    const message = render(id, input);
+    const message = renderMessage(selected, id, input);
     const parts = [];
     const open = [];
     const used = new Set();
@@ -63,7 +63,7 @@
     for (const match of message.matchAll(markers)) {
       const [marker, edge, index] = match;
       const end = match.index + marker.length;
-      const isolated = edge && language !== sourceLocale
+      const isolated = edge && selected !== sourceLocale
         && message[match.index - 1] === '\u2068' && message[end] === '\u2069';
       append(message.slice(position, isolated ? match.index - 1 : match.index));
       position = isolated ? end + 1 : end;
@@ -98,6 +98,7 @@
     render,
     renderEnglish,
     renderMarkup,
+    renderEnglishMarkup: (id, args, bindings) => renderMarkup(id, args, bindings, sourceLocale),
     cardinalQuantity,
     renderHtml: (id, args) => escapeMarkup(render(id, args)),
     renderEnglishHtml: (id, args) => escapeMarkup(renderEnglish(id, args)),

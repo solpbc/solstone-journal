@@ -3013,6 +3013,503 @@ journal.window.local.access.instruction.other = open your journal from the journ
 
 journal.window.local.access.instruction.windows = if this journal is yours, open it from the journal app, or run { $open_command } in a terminal.
 
+journal.window.map.accuracy.download.button = download { $size }
+
+journal.window.map.accuracy.offered.names = with location accuracy, a visit your phone reports is named by the places within your phone's margin of error: "near { $slot1 }".
+
+journal.window.map.accuracy.offered.outlines = with location accuracy, a visit your phone reports is named by the building, park or campus it was in, and by the places within your phone's margin of error: "at { $slot1 }", "near { $slot2 }".
+
+journal.window.map.accuracy.remove.effect = frees { $storage }; names go back to the nearby town.
+
+journal.window.map.accuracy.storage.insufficient = there isn't enough free space: location accuracy needs { $required_storage } free, plus some room to spare.
+
+journal.window.map.accuracy.update.available = location accuracy is on. a newer download is ready from updates.solstone.app: { $size }.
+
+journal.window.map.attribution.base = towns from { $geonames_start }GeoNames{ $geonames_end } ({ $licence_start }CC BY 4.0{ $licence_end }) · borders from Natural Earth
+
+journal.window.map.attribution.outlines = towns from { $geonames_start }GeoNames{ $geonames_end } ({ $licence_start }CC BY 4.0{ $licence_end }) · borders from Natural Earth · places and outlines from { $overture_start }Overture Maps{ $overture_end }
+
+journal.window.map.attribution.places = towns from { $geonames_start }GeoNames{ $geonames_end } ({ $licence_start }CC BY 4.0{ $licence_end }) · borders from Natural Earth · places from { $overture_start }Overture Maps{ $overture_end }
+
+journal.window.map.calendar.day.name = { $state ->
+    [stops] { $date }, stops
+    [elsewhere] { $date }, stops elsewhere: { $places }
+    [no-stops] { $date }, no stops
+    [no-location] { $date }, no location kept
+    [unreadable] { $date }, location couldn't be read
+    [kept] { $date }, location kept
+   *[unknown] { $date }, { $state_label }
+}
+
+journal.window.map.calendar.day.name.selected = { $state ->
+    [stops] { $date }, stops, has a stop in the chosen area
+    [elsewhere] { $date }, stops elsewhere: { $places }, has a stop in the chosen area
+    [no-stops] { $date }, no stops, has a stop in the chosen area
+    [no-location] { $date }, no location kept, has a stop in the chosen area
+    [unreadable] { $date }, location couldn't be read, has a stop in the chosen area
+    [kept] { $date }, location kept, has a stop in the chosen area
+   *[unknown] { $date }, { $state_label }, has a stop in the chosen area
+}
+
+journal.window.map.count.area = { $quantity ->
+    [one] { $count } area
+   *[other] { $count } areas
+}
+
+journal.window.map.count.day = { $quantity ->
+    [one] { $count } day
+   *[other] { $count } days
+}
+
+journal.window.map.count.night = { $quantity ->
+    [one] { $count } night
+   *[other] { $count } nights
+}
+
+journal.window.map.count.reading = { $quantity ->
+    [one] { $count } reading
+   *[other] { $count } readings
+}
+
+journal.window.map.count.record = { $quantity ->
+    [one] { $count } record
+   *[other] { $count } records
+}
+
+journal.window.map.count.visit = { $quantity ->
+    [one] { $count } visit
+   *[other] { $count } visits
+}
+
+journal.window.map.day.location.none = your journal has no location from { $date }. location may have been paused or off, or the phone may not have reached your journal. your journal can't tell which.
+
+journal.window.map.device.detail.tier.balanced = detail level in the solstone app: { $level_start }places + comings and goings{ $level_end }.
+
+journal.window.map.device.detail.tier.full = detail level in the solstone app: { $level_start }the complete picture{ $level_end }.
+
+journal.window.map.device.detail.tier.light = detail level in the solstone app: { $level_start }places only{ $level_end }.
+
+journal.window.map.device.from.android.phone = from your android phone
+
+journal.window.map.device.from.android.phone.named = from your android phone ({ $device_name })
+
+journal.window.map.device.from.android.tablet = from your android tablet
+
+journal.window.map.device.from.android.tablet.named = from your android tablet ({ $device_name })
+
+journal.window.map.device.from.ipad = from your ipad
+
+journal.window.map.device.from.ipad.named = from your ipad ({ $device_name })
+
+journal.window.map.device.from.iphone = from your iphone
+
+journal.window.map.device.from.iphone.named = from your iphone ({ $device_name })
+
+journal.window.map.device.from.phone = from your phone
+
+journal.window.map.device.from.phone.named = from your phone ({ $device_name })
+
+journal.window.map.device.from.tablet = from your tablet
+
+journal.window.map.device.from.tablet.named = from your tablet ({ $device_name })
+
+journal.window.map.device.from.watch = from your watch
+
+journal.window.map.device.from.watch.named = from your watch ({ $device_name })
+
+journal.window.map.device.interrupted.android.phone = { $quantity ->
+    [one] your android phone said location was interrupted once this day.
+   *[other] your android phone said location was interrupted { $count } times this day.
+}
+
+journal.window.map.device.interrupted.android.phone.twice = your android phone said location was interrupted twice this day.
+
+journal.window.map.device.interrupted.android.tablet = { $quantity ->
+    [one] your android tablet said location was interrupted once this day.
+   *[other] your android tablet said location was interrupted { $count } times this day.
+}
+
+journal.window.map.device.interrupted.android.tablet.twice = your android tablet said location was interrupted twice this day.
+
+journal.window.map.device.interrupted.ipad = { $quantity ->
+    [one] your ipad said location was interrupted once this day.
+   *[other] your ipad said location was interrupted { $count } times this day.
+}
+
+journal.window.map.device.interrupted.ipad.twice = your ipad said location was interrupted twice this day.
+
+journal.window.map.device.interrupted.iphone = { $quantity ->
+    [one] your iphone said location was interrupted once this day.
+   *[other] your iphone said location was interrupted { $count } times this day.
+}
+
+journal.window.map.device.interrupted.iphone.twice = your iphone said location was interrupted twice this day.
+
+journal.window.map.device.interrupted.phone = { $quantity ->
+    [one] your phone said location was interrupted once this day.
+   *[other] your phone said location was interrupted { $count } times this day.
+}
+
+journal.window.map.device.interrupted.phone.twice = your phone said location was interrupted twice this day.
+
+journal.window.map.device.interrupted.tablet = { $quantity ->
+    [one] your tablet said location was interrupted once this day.
+   *[other] your tablet said location was interrupted { $count } times this day.
+}
+
+journal.window.map.device.interrupted.tablet.twice = your tablet said location was interrupted twice this day.
+
+journal.window.map.device.interrupted.unknown = { $quantity ->
+    [one] your { $device } said location was interrupted once this day.
+   *[other] your { $device } said location was interrupted { $count } times this day.
+}
+
+journal.window.map.device.interrupted.unknown.twice = your { $device } said location was interrupted twice this day.
+
+journal.window.map.device.interrupted.watch = { $quantity ->
+    [one] your watch said location was interrupted once this day.
+   *[other] your watch said location was interrupted { $count } times this day.
+}
+
+journal.window.map.device.interrupted.watch.twice = your watch said location was interrupted twice this day.
+
+journal.window.map.device.precision.off = precise location is off for solstone on your { $device }, so its readings name the town, not the building.
+
+journal.window.map.device.precision.off.android.phone = precise location is off for solstone on your android phone, so its readings name the town, not the building.
+
+journal.window.map.device.precision.off.android.tablet = precise location is off for solstone on your android tablet, so its readings name the town, not the building.
+
+journal.window.map.device.precision.off.ipad = precise location is off for solstone on your ipad, so its readings name the town, not the building.
+
+journal.window.map.device.precision.off.iphone = precise location is off for solstone on your iphone, so its readings name the town, not the building.
+
+journal.window.map.device.precision.off.phone = precise location is off for solstone on your phone, so its readings name the town, not the building.
+
+journal.window.map.device.precision.off.tablet = precise location is off for solstone on your tablet, so its readings name the town, not the building.
+
+journal.window.map.device.precision.off.watch = precise location is off for solstone on your watch, so its readings name the town, not the building.
+
+journal.window.map.device.stay.android.phone = a stay your journal worked out from readings from your android phone
+
+journal.window.map.device.stay.android.phone.named = a stay your journal worked out from readings from your android phone ({ $device_name })
+
+journal.window.map.device.stay.android.tablet = a stay your journal worked out from readings from your android tablet
+
+journal.window.map.device.stay.android.tablet.named = a stay your journal worked out from readings from your android tablet ({ $device_name })
+
+journal.window.map.device.stay.ipad = a stay your journal worked out from readings from your ipad
+
+journal.window.map.device.stay.ipad.named = a stay your journal worked out from readings from your ipad ({ $device_name })
+
+journal.window.map.device.stay.iphone = a stay your journal worked out from readings from your iphone
+
+journal.window.map.device.stay.iphone.named = a stay your journal worked out from readings from your iphone ({ $device_name })
+
+journal.window.map.device.stay.phone = a stay your journal worked out from readings from your phone
+
+journal.window.map.device.stay.phone.named = a stay your journal worked out from readings from your phone ({ $device_name })
+
+journal.window.map.device.stay.tablet = a stay your journal worked out from readings from your tablet
+
+journal.window.map.device.stay.tablet.named = a stay your journal worked out from readings from your tablet ({ $device_name })
+
+journal.window.map.device.stay.watch = a stay your journal worked out from readings from your watch
+
+journal.window.map.device.stay.watch.named = a stay your journal worked out from readings from your watch ({ $device_name })
+
+journal.window.map.device.visit.android.phone = a visit your android phone reported
+
+journal.window.map.device.visit.android.phone.named = a visit your android phone ({ $device_name }) reported
+
+journal.window.map.device.visit.android.tablet = a visit your android tablet reported
+
+journal.window.map.device.visit.android.tablet.named = a visit your android tablet ({ $device_name }) reported
+
+journal.window.map.device.visit.ipad = a visit your ipad reported
+
+journal.window.map.device.visit.ipad.named = a visit your ipad ({ $device_name }) reported
+
+journal.window.map.device.visit.iphone = a visit your iphone reported
+
+journal.window.map.device.visit.iphone.named = a visit your iphone ({ $device_name }) reported
+
+journal.window.map.device.visit.phone = a visit your phone reported
+
+journal.window.map.device.visit.phone.named = a visit your phone ({ $device_name }) reported
+
+journal.window.map.device.visit.tablet = a visit your tablet reported
+
+journal.window.map.device.visit.tablet.named = a visit your tablet ({ $device_name }) reported
+
+journal.window.map.device.visit.watch = a visit your watch reported
+
+journal.window.map.device.visit.watch.named = a visit your watch ({ $device_name }) reported
+
+journal.window.map.entry.area.town.reason = { $town } is the town that best stands for this area, { $distance_km } km away.
+
+journal.window.map.entry.lines.unreadable = { $quantity ->
+    [one] { $count } line your journal couldn't read
+   *[other] { $count } lines your journal couldn't read
+}
+
+journal.window.map.entry.margin.within = that whole area is inside { $area }.
+
+journal.window.map.entry.open.arrival = until { $departure }, arrival not known
+
+journal.window.map.entry.open.departure = from { $arrival }, no departure reported
+
+journal.window.map.entry.readings.within = every reading here, with its margin of error, is inside { $area }.
+
+journal.window.map.entry.stay.margin.inside.place = these readings, with their margins, all fall within { $margin_meters } m of their centre, and all of that is inside { $place }.
+
+journal.window.map.entry.stay.margin.near.place = { $place } is { $distance_meters } m away; these readings, with their margins, all fall within { $margin_meters } m of their centre.
+
+journal.window.map.entry.stay.margin.near.place.category = { $place } ({ $category }) is { $distance_meters } m away; these readings, with their margins, all fall within { $margin_meters } m of their centre.
+
+journal.window.map.entry.stay.precise.reason = { $quantity ->
+    [one] your journal worked this stay out from { $count } precise readings that stayed within 100 m of the first of them for at least five minutes. its times are the first and last of them.
+   *[other] your journal worked this stay out from { $count } precise readings that stayed within 100 m of the first of them for at least five minutes. its times are the first and last of them.
+}
+
+journal.window.map.entry.stay.recorded.device = a stay your journal worked out from readings from { $device }
+
+journal.window.map.entry.stay.within = these readings, with their margins, all fall inside { $area }.
+
+journal.window.map.entry.transcripts.segments = { $quantity ->
+    [one] open in transcripts: { $count } segments
+   *[other] open in transcripts: { $count } segments
+}
+
+journal.window.map.entry.visit.margin.inside.place = your phone placed you within { $margin_meters } m, and all of that is inside { $place }.
+
+journal.window.map.entry.visit.margin.near.place = { $place } is { $distance_meters } m away; your phone placed you within { $margin_meters } m.
+
+journal.window.map.entry.visit.margin.near.place.category = { $place } ({ $category }) is { $distance_meters } m away; your phone placed you within { $margin_meters } m.
+
+journal.window.map.entry.visit.margin.too.wide = your phone placed you within { $margin_meters } m, too wide to name a building or the places nearby.
+
+journal.window.map.entry.visit.within = your phone's position, with its margin of error, is inside { $area }.
+
+journal.window.map.month.area.clipped = only the part inside { $month } counts.
+
+journal.window.map.month.area.days.in.month = { $quantity ->
+    [one] { $count } day this month
+   *[other] { $count } days this month
+}
+
+journal.window.map.month.area.days.ratio = { $days_with_stops } of { $days_in_month }
+
+journal.window.map.month.area.days.show.all = { $quantity ->
+    [one] show all { $count } days
+   *[other] show all { $count } days
+}
+
+journal.window.map.month.area.distance.first = { $direction ->
+   *[east] { $distance } km east of the first area listed
+    [north-east] { $distance } km north-east of the first area listed
+    [north] { $distance } km north of the first area listed
+    [north-west] { $distance } km north-west of the first area listed
+    [west] { $distance } km west of the first area listed
+    [south-west] { $distance } km south-west of the first area listed
+    [south] { $distance } km south of the first area listed
+    [south-east] { $distance } km south-east of the first area listed
+}
+
+journal.window.map.month.area.distance.month = { $direction ->
+   *[east] { $distance } km east of the busiest area
+    [north-east] { $distance } km north-east of the busiest area
+    [north] { $distance } km north of the busiest area
+    [north-west] { $distance } km north-west of the busiest area
+    [west] { $distance } km west of the busiest area
+    [south-west] { $distance } km south-west of the busiest area
+    [south] { $distance } km south of the busiest area
+    [south-east] { $distance } km south-east of the busiest area
+}
+
+journal.window.map.month.area.distance.trip = { $direction ->
+   *[east] { $distance } km east of this trip's busiest area
+    [north-east] { $distance } km north-east of this trip's busiest area
+    [north] { $distance } km north of this trip's busiest area
+    [north-west] { $distance } km north-west of this trip's busiest area
+    [west] { $distance } km west of this trip's busiest area
+    [south-west] { $distance } km south-west of this trip's busiest area
+    [south] { $distance } km south of this trip's busiest area
+    [south-east] { $distance } km south-east of this trip's busiest area
+}
+
+journal.window.map.month.area.live.days = { $quantity ->
+    [one] { $name }, { $count } day this month
+   *[other] { $name }, { $count } days this month
+}
+
+journal.window.map.month.area.open.stops = { $quantity ->
+    [one] 1 visit is missing its arrival or departure, so its time isn't in the hours or the nights. its day still counts.
+   *[other] { $count } visits are missing an arrival or departure, so their time isn't in the hours or the nights. their days still count.
+}
+
+journal.window.map.month.area.size = an area { $size } across
+
+journal.window.map.month.areas.list.region = { $quantity ->
+    [one] { $count } area { $area }, most days first.
+   *[other] { $count } areas { $area }, most days first.
+}
+
+journal.window.map.month.areas.list.region.home = { $quantity ->
+    [one] { $count } area around { $area }, most days first.
+   *[other] { $count } areas around { $area }, most days first.
+}
+
+journal.window.map.month.areas.list.region.shared = { $quantity ->
+    [one] { $count } area { $area }, all in { $region }, most days first.
+   *[other] { $count } areas { $area }, all in { $region }, most days first.
+}
+
+journal.window.map.month.areas.list.region.shared.home = { $quantity ->
+    [one] { $count } area around { $area }, all in { $region }, most days first.
+   *[other] { $count } areas around { $area }, all in { $region }, most days first.
+}
+
+journal.window.map.month.areas.list.trip = { $quantity ->
+    [one] { $count } area on the { $date } trip, most days first.
+   *[other] { $count } areas on the { $date } trip, most days first.
+}
+
+journal.window.map.month.areas.list.trip.shared = { $quantity ->
+    [one] { $count } area on the { $date } trip, all in { $region }, most days first.
+   *[other] { $count } areas on the { $date } trip, all in { $region }, most days first.
+}
+
+journal.window.map.month.areas.live.zoom = { $quantity ->
+    [one] zoomed in on { $count } area
+   *[other] zoomed in on { $count } areas
+}
+
+journal.window.map.month.areas.outlined = { $quantity ->
+    [one] { $count } area outlined
+   *[other] { $count } areas outlined
+}
+
+journal.window.map.month.areas.outside.show.all = { $quantity ->
+    [one] { $count } area outside the map · show all
+   *[other] { $count } areas outside the map · show all
+}
+
+journal.window.map.month.areas.show.all = { $quantity ->
+    [one] show all { $count } areas
+   *[other] show all { $count } areas
+}
+
+journal.window.map.month.day.stay.readings = { $quantity ->
+    [one] a stay your journal worked out from { $count } of your phone's readings
+   *[other] a stay your journal worked out from { $count } of your phone's readings
+}
+
+journal.window.map.month.live.showing.home = showing around { $area }
+
+journal.window.map.month.location.gaps = { $quantity ->
+    [one] no location was kept on { $count } day.
+   *[other] no location was kept on { $count } days.
+}
+
+journal.window.map.month.map.area.summary = { $shaded_quantity ->
+    [one] map of { $area }: { $shaded_areas } shaded area, each { $size } across. the same areas are listed under areas this month.
+   *[other] map of { $area }: { $shaded_areas } shaded areas, each { $size } across. the same areas are listed under areas this month.
+}
+
+journal.window.map.month.map.area.summary.home = { $shaded_quantity ->
+    [one] map of around { $area }: { $shaded_areas } shaded area, each { $size } across. the same areas are listed under areas this month.
+   *[other] map of around { $area }: { $shaded_areas } shaded areas, each { $size } across. the same areas are listed under areas this month.
+}
+
+journal.window.map.month.map.group.summary = { $shaded_quantity ->
+    [one] { $area_quantity ->
+        [one] map of { $area }: { $shaded_areas } shaded area, each { $size } across, holding the { $areas } area listed under areas this month.
+       *[other] map of { $area }: { $shaded_areas } shaded area, each { $size } across, holding the { $areas } areas listed under areas this month.
+    }
+   *[other] { $area_quantity ->
+        [one] map of { $area }: { $shaded_areas } shaded areas, each { $size } across, holding the { $areas } area listed under areas this month.
+       *[other] map of { $area }: { $shaded_areas } shaded areas, each { $size } across, holding the { $areas } areas listed under areas this month.
+    }
+}
+
+journal.window.map.month.map.group.summary.home = { $shaded_quantity ->
+    [one] { $area_quantity ->
+        [one] map of around { $area }: { $shaded_areas } shaded area, each { $size } across, holding the { $areas } area listed under areas this month.
+       *[other] map of around { $area }: { $shaded_areas } shaded area, each { $size } across, holding the { $areas } areas listed under areas this month.
+    }
+   *[other] { $area_quantity ->
+        [one] map of around { $area }: { $shaded_areas } shaded areas, each { $size } across, holding the { $areas } area listed under areas this month.
+       *[other] map of around { $area }: { $shaded_areas } shaded areas, each { $size } across, holding the { $areas } areas listed under areas this month.
+    }
+}
+
+journal.window.map.month.readings.undrawn = { $quantity ->
+    [one] not drawn: { $count } reading.
+   *[other] not drawn: { $count } readings.
+}
+
+journal.window.map.month.stops.calendar = { $stops_quantity ->
+    [one] { $days_with_stops } of { $days_in_month } days have stops
+   *[other] { $days_with_stops } of { $days_in_month } days have stops
+}
+
+journal.window.map.month.stops.glance = { $stops_quantity ->
+    [one] { $days_with_stops } of { $days_in_month } days have stops.
+   *[other] { $days_with_stops } of { $days_in_month } days have stops.
+}
+
+journal.window.map.month.stops.glance.home = { $days_with_stops } of { $days_in_month } days have stops: { $home_days } around { $home_area }.
+
+journal.window.map.month.stops.glance.trips = { $trip_quantity ->
+    [one] { $days_with_stops } of { $days_in_month } days have stops: { $home_days } around { $home_area }, and { $trips } trip more than 50 km away.
+   *[other] { $days_with_stops } of { $days_in_month } days have stops: { $home_days } around { $home_area }, and { $trips } trips more than 50 km away.
+}
+
+journal.window.map.month.stops.undrawn.hidden = { $quantity ->
+    [one] a place you hid
+   *[other] { $count } places you hid
+}
+
+journal.window.map.month.stops.undrawn.wide = { $quantity ->
+    [one] { $count } stop with a margin of error over 500 m or none reported
+   *[other] { $count } stops with a margin of error over 500 m or none reported
+}
+
+journal.window.map.month.strip.faded.bar = a fading bar is missing its arrival or departure.
+
+journal.window.map.month.zoom.notice = zoomed in.
+
+journal.window.map.navigation.go.day = go to { $date }
+
+journal.window.map.navigation.go.month = go to { $month } { $year }
+
+journal.window.map.place.recorded.dates = { $quantity ->
+    [one] visits or stays here on { $count } date.
+   *[other] visits or stays here on { $count } dates.
+}
+
+journal.window.map.place.recorded.dates.range = { $quantity ->
+    [one] visits or stays here on { $count } date, { $first } to { $last }.
+   *[other] visits or stays here on { $count } dates, { $first } to { $last }.
+}
+
+journal.window.map.place.recorded.dates.single = { $quantity ->
+    [one] visits or stays here on { $count } date, { $date }.
+   *[other] visits or stays here on { $count } dates, { $date }.
+}
+
+journal.window.map.place.recorded.nights = { $quantity ->
+    [one] on { $count } night, a visit or stay here covers at least two hours between 22:00 and 06:00.
+   *[other] on { $count } nights, a visit or stay here covers at least two hours between 22:00 and 06:00.
+}
+
+journal.window.map.place.visibility.hidden = · hidden
+
+journal.window.map.week.readings.without.stops = { $quantity ->
+    [one] { $count } reading, no visits or stays
+   *[other] { $count } readings, no visits or stays
+}
+
 journal.window.more.agents.count = { $quantity ->
         [one] { $count } connected
        *[other] { $count } connected
@@ -9974,8 +10471,6 @@ journal.window.local.access.unavailable = this choice needs your journal's priva
 
 journal.window.map.accessible.name.edit.this.place = edit this place
 
-journal.window.map.accessible.name.from = from
-
 journal.window.map.accessible.name.location.accuracy = location accuracy
 
 journal.window.map.accessible.name.map = map
@@ -10026,8 +10521,6 @@ journal.window.map.area.size = about{ $slot1 }{ $size }{ $slot2 }km
 
 journal.window.map.button.label.clear = clear
 
-journal.window.map.button.label.download = download
-
 journal.window.map.button.label.download.again = download again
 
 journal.window.map.button.label.fit = fit
@@ -10040,8 +10533,6 @@ journal.window.map.button.label.show.on.the.map = show on the map
 
 journal.window.map.button.label.update = update
 
-journal.window.map.calendar.day.accessible.name = { $date },{ $slot1 }{ $state }{ $focus }
-
 journal.window.map.calendar.group.accessible.name = days of{ $slot1 }{ $month }. use the arrow keys to move between days.
 
 journal.window.map.calendar.location.kept = location kept
@@ -10050,71 +10541,9 @@ journal.window.map.calendar.location.none = no location kept
 
 journal.window.map.calendar.stops.elsewhere = stops elsewhere
 
-journal.window.map.calendar.stops.elsewhere.list = stops elsewhere:{ $slot1 }{ $places }
-
 journal.window.map.calendar.stops.here = stops here
 
 journal.window.map.calendar.stops.none = no stops
-
-journal.window.map.compass.east = east
-
-journal.window.map.compass.north = north
-
-journal.window.map.compass.north.east = north-east
-
-journal.window.map.compass.north.west = north-west
-
-journal.window.map.compass.south = south
-
-journal.window.map.compass.south.east = south-east
-
-journal.window.map.compass.south.west = south-west
-
-journal.window.map.compass.west = west
-
-journal.window.map.count.area.one = { $count }{ $slot1 }area
-
-journal.window.map.count.area.other = { $count }{ $slot1 }areas
-
-journal.window.map.count.date.one = { $count }{ $slot1 }date
-
-journal.window.map.count.date.other = { $count }{ $slot1 }dates
-
-journal.window.map.count.day.one = { $count }{ $slot1 }day
-
-journal.window.map.count.day.other = { $count }{ $slot1 }days
-
-journal.window.map.count.line.one = { $count }{ $slot1 }line
-
-journal.window.map.count.line.other = { $count }{ $slot1 }lines
-
-journal.window.map.count.night.one = { $count }{ $slot1 }night
-
-journal.window.map.count.night.other = { $count }{ $slot1 }nights
-
-journal.window.map.count.reading.one = { $count }{ $slot1 }reading
-
-journal.window.map.count.reading.other = { $count }{ $slot1 }readings
-
-journal.window.map.count.record.one = { $count }{ $slot1 }record
-
-journal.window.map.count.record.other = { $count }{ $slot1 }records
-
-journal.window.map.count.shaded.area.one = { $count }{ $slot1 }shaded area
-
-journal.window.map.count.shaded.area.other = { $count }{ $slot1 }shaded areas
-
-journal.window.map.count.stop.one = { $count }{ $slot1 }stop
-
-journal.window.map.count.stop.other = { $count }{ $slot1 }stops
-
-journal.window.map.count.trip.one = { $count }{ $slot1 }trip
-
-journal.window.map.count.trip.other = { $count }{ $slot1 }trips
-
-journal.window.map.count.visit.one = { $count }{ $slot1 }visit
-
-journal.window.map.count.visit.other = { $count }{ $slot1 }visits
 
 journal.window.map.date.long = { $weekday },{ $slot1 }{ $month }{ $slot2 }{ $day }
 
@@ -10142,12 +10571,6 @@ journal.window.map.device.possessive.named = your{ $slot1 }{ $device }{ $slot2 }
 
 journal.window.map.device.tablet = tablet
 
-journal.window.map.device.tier.balanced = places + comings and goings
-
-journal.window.map.device.tier.full = the complete picture
-
-journal.window.map.device.tier.light = places only
-
 journal.window.map.disclosure.label.how.places.are.worked.out = how places are worked out
 
 journal.window.map.disclosure.label.how.the.month.is.drawn = how the month is drawn
@@ -10156,13 +10579,7 @@ journal.window.map.disclosure.label.how.this.is.drawn = how this is drawn
 
 journal.window.map.disclosure.label.licences = licences
 
-journal.window.map.disclosure.label.open.in.transcripts = open in transcripts:
-
-journal.window.map.disclosure.label.segments = segments
-
 journal.window.map.disclosure.label.why.these.words = why these words
-
-journal.window.map.entry.near.reason = { $name }{ $category }{ $slot1 }is{ $slot2 }{ $distance }{ $slot3 }m away;{ $slot4 }{ $margin }.
 
 journal.window.map.entry.precision.approximate = approximate
 
@@ -10188,35 +10605,17 @@ journal.window.map.heading.no.location.in.your.journal.yet = no location in your
 
 journal.window.map.heading.no.location.kept.for.this.day = no location kept for this day
 
-journal.window.map.interruption.many = { $count }{ $slot1 }times
-
-journal.window.map.interruption.once = once
-
-journal.window.map.interruption.twice = twice
-
 journal.window.map.label.about.km = about 1 km
 
 journal.window.map.leaflet.zoom.in = Zoom in
 
 journal.window.map.leaflet.zoom.out = Zoom out
 
-journal.window.map.licence.overture.outlines = places and outlines from
-
-journal.window.map.licence.overture.places = places from
-
-journal.window.map.link.label.cc.by = CC BY 4.0
-
-journal.window.map.link.label.geonames = GeoNames
-
-journal.window.map.link.label.go.to = go to
-
 journal.window.map.link.label.next.month = next month
 
 journal.window.map.link.label.open.in.transcripts = open in transcripts
 
 journal.window.map.link.label.open.the.day = open the day
-
-journal.window.map.link.label.overture.maps = Overture Maps
 
 journal.window.map.link.label.place = place
 
@@ -10238,21 +10637,9 @@ journal.window.map.list.conjunction = { $leading }{ $slot1 }and{ $slot2 }{ $last
 
 journal.window.map.month.area.around = around{ $slot1 }{ $name }
 
-journal.window.map.month.area.distance = { $distance }{ $slot1 }km{ $slot2 }{ $direction }{ $slot3 }of{ $slot4 }{ $reference }
-
-journal.window.map.month.busiest.area = the busiest area
-
-journal.window.map.month.choice.shared.region = , all in{ $slot1 }{ $region }
-
 journal.window.map.month.choice.trip = on the{ $slot1 }{ $date }{ $slot2 }trip
 
 journal.window.map.month.day.location.none = your journal has no location from{ $slot1 }{ $date }. location may have been paused or off, or the phone may not have reached your journal. your journal can't tell which.
-
-journal.window.map.month.day.readings.undrawn = not drawn:{ $slot1 }{ $readings }.
-
-journal.window.map.month.day.stay.explanation = a stay your journal worked out from{ $slot1 }{ $count }{ $slot2 }of your phone's readings
-
-journal.window.map.month.days.show.all = show all{ $slot1 }{ $count }{ $slot2 }days
 
 journal.window.map.month.days.show.fewer = show fewer days
 
@@ -10260,11 +10647,7 @@ journal.window.map.month.explanation.midnight = only time inside{ $slot1 }{ $mon
 
 journal.window.map.month.heading = { $month }{ $slot1 }{ $year }
 
-journal.window.map.month.hidden.places = { $count }{ $slot1 }places you hid
-
 journal.window.map.month.live.areas.all = showing every area
-
-journal.window.map.month.live.choice.days = { $name },{ $slot1 }{ $days }{ $slot2 }this month
 
 journal.window.map.month.live.choice.none = nothing chosen
 
@@ -10274,11 +10657,7 @@ journal.window.map.month.live.showing.choice = showing{ $slot1 }{ $name }
 
 journal.window.map.month.live.zoom.amount = zoomed{ $slot1 }{ $zoom }
 
-journal.window.map.month.live.zoom.areas = zoomed in on{ $slot1 }{ $areas }
-
 journal.window.map.month.map.nothing.drawn = nothing drawn here
-
-journal.window.map.month.map.outlined = { $areas }{ $slot1 }outlined
 
 journal.window.map.month.strip.visits.and.stays = filled bars are visits your phone reported; outlined bars are stays your journal worked out.
 
@@ -10287,8 +10666,6 @@ journal.window.map.month.time.all.day = all day
 journal.window.map.month.time.from = from{ $slot1 }{ $time }
 
 journal.window.map.month.time.until = until{ $slot1 }{ $time }
-
-journal.window.map.month.zoom.suffix = { $slot1 }zoomed in.
 
 journal.window.map.months.label.april = April
 
@@ -10319,12 +10696,6 @@ journal.window.map.option.label.home = home
 journal.window.map.option.label.nothing = nothing
 
 journal.window.map.option.label.work = work
-
-journal.window.map.place.date.range = ,{ $slot1 }{ $first }{ $slot2 }to{ $slot3 }{ $last }
-
-journal.window.map.place.date.single = ,{ $slot1 }{ $date }
-
-journal.window.map.place.hidden.suffix = { $slot1 }· hidden
 
 journal.window.map.place.named.link = a place you named "{ $name }"
 
@@ -10410,21 +10781,13 @@ journal.window.map.visible.text.a.stay.is.worked.out.from = a stay is worked out
 
 journal.window.map.visible.text.a.stop.at.one.of.your = a stop at one of your places is drawn where the place is, so a place is never split between two areas. a stop whose margin of error wasn't reported, or is over 500 m, isn't drawn, and neither is the time between stops.
 
-journal.window.map.visible.text.across = across ·
-
 journal.window.map.visible.text.also.in.this.area = also in this area
-
-journal.window.map.visible.text.an.area = an area
-
-journal.window.map.visible.text.borders.from.natural.earth = ) · borders from Natural Earth
 
 journal.window.map.visible.text.checking.location.accuracy.before.using.it = checking location accuracy before using it. you can keep using your journal.
 
 journal.window.map.visible.text.days.here = days here
 
 journal.window.map.visible.text.days.with.a.stop = days with a stop
-
-journal.window.map.visible.text.detail.level.in.the.solstone.app = detail level in the solstone app:
 
 journal.window.map.visible.text.each.area.is.about.km.across = each area is about 1 km across and holds the stops in it: the visits your phone reported, and any stays your journal worked out.
 
@@ -10434,10 +10797,6 @@ journal.window.map.visible.text.filled.bars.are.visits.your.phone = filled bars 
 
 journal.window.map.visible.text.for.readings.the.times.are.the = for readings, the times are the first and last reading in the row. they don't say how long you were anywhere.
 
-journal.window.map.visible.text.frees = frees
-
-journal.window.map.visible.text.from = from
-
 journal.window.map.visible.text.hidden = hidden
 
 journal.window.map.visible.text.hours.are.shown.for.one.area = hours are shown for one area at a time, and only for time with both ends known. they aren't added up across areas, because two reports can place the same hour in two areas.
@@ -10446,8 +10805,6 @@ journal.window.map.visible.text.hours.with.both.ends.known = hours with both end
 
 journal.window.map.visible.text.location.accuracy.is.on = location accuracy is on.
 
-journal.window.map.visible.text.location.accuracy.is.on.a.newer = location accuracy is on. a newer download is ready from updates.solstone.app:
-
 journal.window.map.visible.text.location.accuracy.is.unavailable = location accuracy is unavailable.
 
 journal.window.map.visible.text.location.may.have.been.paused.or = location may have been paused or off, or the phone may not have reached your journal. your journal can't tell which.
@@ -10455,8 +10812,6 @@ journal.window.map.visible.text.location.may.have.been.paused.or = location may 
 journal.window.map.visible.text.location.was.kept.this.day.but = location was kept this day, but no stops.
 
 journal.window.map.visible.text.named.features.only.streets.not.shown = named features only; streets not shown.
-
-journal.window.map.visible.text.names.go.back.to.the.nearby = ; names go back to the nearby town.
 
 journal.window.map.visible.text.nights = nights
 
@@ -10472,15 +10827,11 @@ journal.window.map.visible.text.not.drawn.here = not drawn here:
 
 journal.window.map.visible.text.nothing.drawn.here = · nothing drawn here
 
-journal.window.map.visible.text.of = of
-
 journal.window.map.visible.text.on.the.map.a.run.of = on the map, a run of precise readings shows as one dot at its middle reading, so a day doesn't read as a route. the list counts every reading.
 
 journal.window.map.visible.text.saved = saved.
 
 journal.window.map.visible.text.shades.run.from.day.lightest.through = shades run from 1 day, lightest, through 2 to 3, 4 to 7 and 8 to 14, to 15 or more days, darkest.
-
-journal.window.map.visible.text.show.all.value1.areas = show all{ $slot1 }{ $value1 }{ $slot2 }areas
 
 journal.window.map.visible.text.show.fewer = show fewer
 
@@ -10498,25 +10849,13 @@ journal.window.map.visible.text.there.s.no.street.map.a = there's no street map.
 
 journal.window.map.visible.text.there.s.no.street.map.the = there's no street map. the names are the ones that came with your journal or that you downloaded, and no map service is asked for anything.
 
-journal.window.map.visible.text.this.month = this month
-
 journal.window.map.visible.text.to.remove.a.visit.or.stay = to remove a visit or stay, open its day and delete its segments in transcripts. a place lasts as long as a segment it came from does.
-
-journal.window.map.visible.text.towns.from = towns from
-
-journal.window.map.visible.text.value1.of.value2.days.have.stops = { $value1 }{ $slot1 }of{ $slot2 }{ $value2 }{ $slot3 }days have stops
-
-journal.window.map.visible.text.value1.outside.the.map.show.all = { $value1 }{ $slot1 }outside the map · show all
-
-journal.window.map.visible.text.value1.value2.value3.most.days.first = { $value1 }{ $slot1 }{ $value2 }{ $value3 }, most days first.
 
 journal.window.map.visible.text.what.you.call.a.place.a = what you call a place, a name or home or work, is used in search and by your journal's own thinking, and an agent that may see transcripts across your whole journal can read it.
 
 journal.window.map.visible.text.where = where
 
 journal.window.map.visible.text.where.starts.around.the.area.with = "where" starts around the area with the most days: every stop within 50 km of it. any run of days with a stop farther away is a trip, named by its dates.
-
-journal.window.map.visible.text.with.location.accuracy = with location accuracy,
 
 journal.window.map.visible.text.with.location.accuracy.a.visit.can = with location accuracy, a visit can say "near" the places within your phone's margin of error. every record says why it reads the way it does.
 
@@ -10536,21 +10875,13 @@ journal.window.map.visible.text.your.phone.often.reports.an.arrival = your phone
 
 journal.window.map.week.heading = the week of{ $slot1 }{ $date }
 
-journal.window.map.window.explanation.a.fading.bar.is.missing.its = { $slot1 }a fading bar is missing its arrival or departure.
-
 journal.window.map.window.explanation.a.place.in.your.journal = a place in your journal
-
-journal.window.map.window.explanation.a.place.you.hid = a place you hid
 
 journal.window.map.window.explanation.a.segment.your.journal.couldn.t = a segment your journal couldn't read
 
 journal.window.map.window.explanation.a.stay.your.journal.worked.out = a stay your journal worked out
 
-journal.window.map.window.explanation.a.stay.your.journal.worked.out.variant2 = a stay your journal worked out from readings from{ $slot1 }{ $value1 }
-
 journal.window.map.window.explanation.a.visit.your.phone.reported = a visit your phone reported
-
-journal.window.map.window.explanation.and.value1.more.than.km.away = , and{ $slot1 }{ $value1 }{ $slot2 }more than 50 km away
 
 journal.window.map.window.explanation.approximate.location.each.reading.is.only = approximate location: each reading is only good to within a few kilometres, which is enough to name the town, not the building.
 
@@ -10559,12 +10890,6 @@ journal.window.map.window.explanation.choose.a.day.in.the.calendar = choose a da
 journal.window.map.window.explanation.choose.an.area.on.the.map = choose an area on the map or in the list, or a day in the calendar.
 
 journal.window.map.window.explanation.each.bar.is.a.visit.your = each bar is a visit your phone reported.
-
-journal.window.map.window.explanation.every.reading.here.with.its.margin = every reading here, with its margin of error, is inside{ $slot1 }{ $value1 }.
-
-journal.window.map.window.explanation.from.value1.no.departure.reported = from{ $slot1 }{ $value1 }, no departure reported
-
-journal.window.map.window.explanation.has.a.stop.in.the.chosen = , has a stop in the chosen area
 
 journal.window.map.window.explanation.hidden.from.the.map = hidden from the map
 
@@ -10582,35 +10907,13 @@ journal.window.map.window.explanation.location.couldn.t.be.read = location could
 
 journal.window.map.window.explanation.map.fitted.to.these.areas = map fitted to these areas
 
-journal.window.map.window.explanation.map.of.value1.value2.each.value3 = map of{ $slot1 }{ $value1 }:{ $slot2 }{ $value2 }, each{ $slot3 }{ $value3 }{ $slot4 }across. the same areas are listed under areas this month.{ $value4 }
-
-journal.window.map.window.explanation.map.of.value1.value2.each.value3.variant2 = map of{ $slot1 }{ $value1 }:{ $slot2 }{ $value2 }, each{ $slot3 }{ $value3 }{ $slot4 }across, holding the{ $slot5 }{ $value4 }{ $slot6 }listed under areas this month.{ $value5 }
-
 journal.window.map.window.explanation.margin.of.error.over.m.or = margin of error over 500 m or not reported
-
-journal.window.map.window.explanation.no.location.was.kept.on.value1 = { $slot1 }no location was kept on{ $slot2 }{ $value1 }.
 
 journal.window.map.window.explanation.no.named.town.nearby = no named town nearby
 
-journal.window.map.window.explanation.on.value1.a.visit.or.stay = on{ $slot1 }{ $value1 }, a visit or stay here covers at least two hours between 22:00 and 06:00.
-
-journal.window.map.window.explanation.only.the.part.inside.value1.counts = only the part inside{ $slot1 }{ $value1 }{ $slot2 }counts.
-
 journal.window.map.window.explanation.open.it.in.transcripts.to.see = open it in transcripts to see or delete it
 
-journal.window.map.window.explanation.precise.location.is.off.for.solstone = precise location is off for solstone on your{ $slot1 }{ $value1 }, so its readings name the town, not the building.
-
-journal.window.map.window.explanation.that.whole.area.is.inside.value1 = that whole area is inside{ $slot1 }{ $value1 }.
-
 journal.window.map.window.explanation.the.area.with.the.most.days = the area with the most days
-
-journal.window.map.window.explanation.the.first.area.listed = the first area listed
-
-journal.window.map.window.explanation.there.isn.t.enough.free.space = there isn't enough free space: location accuracy needs{ $slot1 }{ $value1 }{ $slot2 }free, plus some room to spare.
-
-journal.window.map.window.explanation.these.readings.with.their.margins.all = these readings, with their margins, all fall inside{ $slot1 }{ $value1 }.
-
-journal.window.map.window.explanation.these.readings.with.their.margins.all.variant2 = these readings, with their margins, all fall within{ $slot1 }{ $value1 }{ $slot2 }m of their centre
 
 journal.window.map.window.explanation.this.trip.s.busiest.area = this trip's busiest area
 
@@ -10618,43 +10921,9 @@ journal.window.map.window.explanation.this.version.of.your.journal.has = this ve
 
 journal.window.map.window.explanation.tied.for.the.most.days = tied for the most days
 
-journal.window.map.window.explanation.until.value1.arrival.not.known = until{ $slot1 }{ $value1 }, arrival not known
-
-journal.window.map.window.explanation.value1.and.all.of.that.is = { $value1 }, and all of that is inside{ $slot1 }{ $value2 }.
-
-journal.window.map.window.explanation.value1.is.the.town.that.best = { $value1 }{ $slot1 }is the town that best stands for this area,{ $slot2 }{ $value2 }{ $slot3 }km away.
-
-journal.window.map.window.explanation.value1.no.visits.or.stays = { $value1 }, no visits or stays
-
-journal.window.map.window.explanation.value1.of.value2.days.have.stops = { $value1 }{ $slot1 }of{ $slot2 }{ $value2 }{ $slot3 }days have stops.{ $value3 }
-
-journal.window.map.window.explanation.value1.of.value2.days.have.stops.variant2 = { $value1 }{ $slot1 }of{ $slot2 }{ $value2 }{ $slot3 }days have stops:{ $slot4 }{ $value3 }{ $slot5 }{ $value4 }{ $value5 }.{ $value6 }
-
-journal.window.map.window.explanation.value1.visits.are.missing.an.arrival = { $value1 }{ $slot1 }visits are missing an arrival or departure, so their time isn't in the hours or the nights. their days still count.
-
-journal.window.map.window.explanation.value1.with.a.margin.of.error = { $value1 }{ $slot1 }with a margin of error over 500 m or none reported
-
-journal.window.map.window.explanation.value1.your.journal.couldn.t.read = { $value1 }{ $slot1 }your journal couldn't read
-
-journal.window.map.window.explanation.visit.is.missing.its.arrival.or = 1 visit is missing its arrival or departure, so its time isn't in the hours or the nights. its day still counts.
-
-journal.window.map.window.explanation.visits.or.stays.here.on.value1 = visits or stays here on{ $slot1 }{ $value1 }{ $value2 }.
-
 journal.window.map.window.explanation.where.two.reports.cover.the.same = where two reports cover the same time, the hours count that time once.
 
 journal.window.map.window.explanation.your.journal.couldn.t.read.part = your journal couldn't read part of this day's location.
-
-journal.window.map.window.explanation.your.journal.has.no.location.from = your journal has no location from{ $slot1 }{ $value1 }. location may have been paused or off, or the phone may not have reached your journal. your journal can't tell which.
-
-journal.window.map.window.explanation.your.journal.worked.this.stay.out = your journal worked this stay out from{ $slot1 }{ $value1 }{ $slot2 }precise readings that stayed within 100 m of the first of them for at least five minutes. its times are the first and last of them.
-
-journal.window.map.window.explanation.your.phone.placed.you.within.value1 = your phone placed you within{ $slot1 }{ $value1 }{ $slot2 }m
-
-journal.window.map.window.explanation.your.phone.placed.you.within.value1.variant2 = your phone placed you within{ $slot1 }{ $value1 }{ $slot2 }m, too wide to name a building or the places nearby.
-
-journal.window.map.window.explanation.your.phone.s.position.with.its = your phone's position, with its margin of error, is inside{ $slot1 }{ $value1 }.
-
-journal.window.map.window.explanation.your.value1.said.location.was.interrupted = your{ $slot1 }{ $value1 }{ $slot2 }said location was interrupted{ $slot3 }{ $value2 }{ $slot4 }this day.
 
 journal.window.map.window.explanation.your.watch.gives.only.approximate.location = your watch gives only approximate location, so its readings name the town, not the building.
 
@@ -19368,7 +19637,11 @@ journal.window.thinking.local.download.quantity = { $received }{ $slot1 }{ $slot
 journal.window.thinking.local.status.endpoint = endpoint
 journal.window.import.handoff.origin.browser = from your browser
 journal.window.import.handoff.origin.cli = from the command line
-journal.window.import.handoff.origin.linux = from your linux app
+journal.window.import.handoff.origin.linux = from the solstone app for linux
+journal.window.import.handoff.origin.macos = from the solstone app for mac
+journal.window.import.handoff.origin.windows = from the solstone app for windows
+journal.window.import.handoff.origin.ios = from the solstone app for iphone and ipad
+journal.window.import.handoff.origin.android = from the solstone app for android
 journal.window.import.handoff.origin.desktop = from a computer
 journal.window.import.handoff.origin.mobile = from a mobile device
 journal.window.import.handoff.device = from { $device }

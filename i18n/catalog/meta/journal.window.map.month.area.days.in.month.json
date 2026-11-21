@@ -1,0 +1,30 @@
+{
+  "description": "Selected area day count displayed after its bold name.",
+  "context": "Journal window. Selected area day count displayed after its bold name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "3b48baa233cc4beac64be333926344c77dcd1666eea09dcd4ff6643462fe6f62",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

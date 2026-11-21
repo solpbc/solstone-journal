@@ -1,0 +1,21 @@
+{
+  "description": "Button to download a location accuracy pack of the displayed size.",
+  "context": "Journal window. Button to download a location accuracy pack of the displayed size.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "size",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bbd415d6f1e94c7a3f5bcf6b612afd1fe06439cff42a68e8331347790ceec81a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

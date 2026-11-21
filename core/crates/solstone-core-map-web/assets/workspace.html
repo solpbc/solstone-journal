@@ -616,11 +616,7 @@ button.map-month-row:hover { background: var(--cream); }
     window.JournalI18n.render('journal.window.date.months.short.nov'),
     window.JournalI18n.render('journal.window.date.months.short.dec')
   ];
-  const TIER_NAMES = {
-    light: window.JournalI18n.render('journal.window.map.device.tier.light'),
-    balanced: window.JournalI18n.render('journal.window.map.device.tier.balanced'),
-    full: window.JournalI18n.render('journal.window.map.device.tier.full'),
-  };
+  const DEVICE_TIERS = new Set(['light', 'balanced', 'full']);
   let mapState = null;
   let ctx = null;
   let epoch = 0;
@@ -741,9 +737,12 @@ button.map-month-row:hover { background: var(--cream); }
     return date ? window.JournalI18n.render('journal.window.map.date.short', [['month', String(SHORT_MONTHS[date.getMonth()])], ['day', String(date.getDate())]]) : "";
   }
 
+  function quantityArgs(count, name = 'count', quantity = 'quantity') {
+    return [[quantity, window.JournalI18n.cardinalQuantity(count)], [name, String(count)]];
+  }
+
   function plural(count, kind) {
-    const number = count === 1 ? "one" : "other";
-    return window.JournalI18n.render(`journal.window.map.count.${kind}.${number}`, [["count", String(count)]]);
+    return window.JournalI18n.render(`journal.window.map.count.${kind}`, quantityArgs(count));
   }
 
   // A time on the day being shown reads as its clock; one on another day
@@ -795,7 +794,7 @@ button.map-month-row:hover { background: var(--cream); }
   function placeLink(ref) {
     if (!ref || !ref.id) return "";
     const name = ref.owner_name ? window.JournalI18n.renderHtml('journal.window.map.place.named.link', [['name', String(ref.owner_name)]]) : window.JournalI18n.renderHtml('journal.window.map.window.explanation.a.place.in.your.journal');
-    const hidden = ref.hidden ? window.JournalI18n.renderHtml('journal.window.map.place.hidden.suffix') : "";
+    const hidden = ref.hidden ? ` ${window.JournalI18n.renderHtml('journal.window.map.place.visibility.hidden')}` : "";
     return `<p class="map-muted"><a class="map-link" href="/app/map/place/${encodeURIComponent(ref.id)}">${name}</a>${hidden}</p>`;
   }
 
@@ -841,12 +840,12 @@ button.map-month-row:hover { background: var(--cream); }
     const nearby = data.nearby || {};
     const links = [nearby.previous, nearby.next]
       .filter((value) => DAY_RE.test(String(value || "")))
-      .map((value) => `<a href="/app/map/${escapeHtml(value)}">${window.JournalI18n.renderHtml('journal.window.map.link.label.go.to')} ${escapeHtml(longDay(value))}</a>`)
+      .map((value) => `<a href="/app/map/${escapeHtml(value)}">${window.JournalI18n.renderHtml('journal.window.map.navigation.go.day', [['date', String(longDay(value))]])}</a>`)
       .join("");
     setGate(window.SurfaceState.empty({
       icon: window.ConveyIcons?.svg("map-pin"),
       heading: window.JournalI18n.render('journal.window.map.heading.no.location.kept.for.this.day'),
-      desc: window.JournalI18n.render('journal.window.map.window.explanation.your.journal.has.no.location.from', [['value1', String(longDay(day))]]),
+      desc: window.JournalI18n.render('journal.window.map.day.location.none', [['date', String(longDay(day))]]),
     }));
     if (links) {
       const actions = document.createElement("div");
@@ -856,28 +855,54 @@ button.map-month-row:hover { background: var(--cream); }
     }
   }
 
-  function interruptionCount(count, distinguishTwice = false) {
-    if (count === 1) return window.JournalI18n.render('journal.window.map.interruption.once');
-    if (distinguishTwice && count === 2) return window.JournalI18n.render('journal.window.map.interruption.twice');
-    return window.JournalI18n.render('journal.window.map.interruption.many', [['count', String(count)]]);
+  const deviceKinds = new Set(['iphone', 'ipad', 'watch', 'android phone', 'android tablet', 'tablet', 'phone']);
+
+  function deviceKind(device) {
+    return deviceKinds.has(device.word_key) ? device.word_key.replaceAll(' ', '.') : null;
+  }
+
+  function deviceDescription(usage, device, legacyMessage, phrase = String(device.phrase)) {
+    const kind = deviceKind(device);
+    if (!kind) return window.JournalI18n.render(legacyMessage, [['device', phrase]]);
+    const named = device.visible_name != null;
+    return window.JournalI18n.render(`journal.window.map.device.${usage}.${kind}${named ? '.named' : ''}`,
+      named ? [['device_name', String(device.visible_name)]] : []);
+  }
+
+  function deviceInterruption(device, count, distinguishTwice = false) {
+    const kind = deviceKind(device);
+    const twice = distinguishTwice && count === 2;
+    const args = twice ? [] : quantityArgs(count);
+    if (!kind) args.push(['device', String(device.word)]);
+    return window.JournalI18n.render(`journal.window.map.device.interrupted.${kind || 'unknown'}${twice ? '.twice' : ''}`, args);
+  }
+
+  function markupHtml(parts) {
+    const holder = document.createElement('div');
+    for (const part of parts) {
+      holder.appendChild(typeof part === 'string' ? document.createTextNode(part) : part);
+    }
+    return holder.innerHTML;
   }
 
   function deviceNotes(device) {
     const notes = [];
-    const word = device.word;
-    const tier = TIER_NAMES[device.tier];
     if (device.platform === "android") {
       notes.push(window.JournalI18n.renderHtml('journal.window.map.window.explanation.approximate.location.each.reading.is.only'));
     } else if (device.platform === "watchos") {
       notes.push(window.JournalI18n.renderHtml('journal.window.map.window.explanation.your.watch.gives.only.approximate.location'));
-    } else if (tier) {
-      notes.push(`${window.JournalI18n.renderHtml('journal.window.map.visible.text.detail.level.in.the.solstone.app')} <strong>${escapeHtml(tier)}</strong>.`);
+    } else if (DEVICE_TIERS.has(device.tier)) {
+      notes.push(markupHtml(window.JournalI18n.renderMarkup(`journal.window.map.device.detail.tier.${device.tier}`, [], {
+        elements: { level: document.createElement('strong') },
+      })));
     }
     if (device.precision_reduced) {
-      notes.push(window.JournalI18n.renderHtml('journal.window.map.window.explanation.precise.location.is.off.for.solstone', [['value1', String(word)]]));
+      const kind = deviceKind(device);
+      notes.push(window.JournalI18n.renderHtml(kind ? `journal.window.map.device.precision.off.${kind}` : 'journal.window.map.device.precision.off',
+        kind ? [] : [['device', String(device.word)]]));
     }
     if (device.interrupted_segments > 0) {
-      notes.push(window.JournalI18n.renderHtml('journal.window.map.window.explanation.your.value1.said.location.was.interrupted', [['value1', String(word)], ['value2', String(interruptionCount(device.interrupted_segments))]]));
+      notes.push(escapeHtml(deviceInterruption(device, device.interrupted_segments)));
     }
     return notes;
   }
@@ -890,8 +915,9 @@ button.map-month-row:hover { background: var(--cream); }
       counts.push(window.JournalI18n.render('journal.window.map.date.time.range', [['first', String(moment(device.first, day))], ['last', String(moment(device.last, day))]]));
     }
     const notes = deviceNotes(device).map((note) => `<p class="map-muted">${note}</p>`).join("");
-    return `<section class="map-card" aria-label="${window.JournalI18n.renderHtml('journal.window.map.accessible.name.from')} ${escapeHtml(device.phrase)}">
-      <div class="map-device-head"><strong>${window.JournalI18n.renderHtml('journal.window.map.visible.text.from')} ${escapeHtml(device.phrase)}</strong>
+    const heading = escapeHtml(deviceDescription('from', device, 'journal.window.map.device.from', String(device.phrase ?? '')));
+    return `<section class="map-card" aria-label="${heading}">
+      <div class="map-device-head"><strong>${heading}</strong>
       <span class="map-device-count">${escapeHtml(counts.join(" · "))}</span></div>${notes}</section>`;
   }
 
@@ -899,7 +925,7 @@ button.map-month-row:hover { background: var(--cream); }
     if (entry.kind === "unreadable") {
       return entry.whole_file
         ? window.JournalI18n.render('journal.window.map.window.explanation.a.segment.your.journal.couldn.t')
-        : window.JournalI18n.render('journal.window.map.window.explanation.value1.your.journal.couldn.t.read', [['value1', String(plural(entry.lines, "line"))]]);
+        : window.JournalI18n.render('journal.window.map.entry.lines.unreadable', [...quantityArgs(entry.lines)]);
     }
     if ((entry.kind === "visit" || entry.kind === "stay") && entry.place_ref?.owner_name) {
       return window.JournalI18n.render('journal.window.map.area.label.at.place', [['name', String(entry.place_ref.owner_name)]]);
@@ -934,35 +960,37 @@ button.map-month-row:hover { background: var(--cream); }
       reasons.push(window.JournalI18n.render('journal.window.map.place.named.reason', [['name', String(entry.place_ref.owner_name)]]));
     }
     if (entry.kind === "stay") {
-      reasons.push(window.JournalI18n.render('journal.window.map.window.explanation.your.journal.worked.this.stay.out', [['value1', String(entry.count)]]));
+      reasons.push(window.JournalI18n.render('journal.window.map.entry.stay.precise.reason', [...quantityArgs(entry.count)]));
     }
     // A stay's margin is the journal's circle around its readings, not one
     // the phone reported.
-    const placed = entry.kind === "stay"
-      ? window.JournalI18n.render('journal.window.map.window.explanation.these.readings.with.their.margins.all.variant2', [['value1', String(margin)]])
-      : window.JournalI18n.render('journal.window.map.window.explanation.your.phone.placed.you.within.value1', [['value1', String(margin)]]);
+    const kind = entry.kind === 'stay' ? 'stay' : 'visit';
     if (place?.at) {
-      reasons.push(window.JournalI18n.render('journal.window.map.window.explanation.value1.and.all.of.that.is', [['value1', String(placed)], ['value2', String(place.at.name)]]));
+      reasons.push(window.JournalI18n.render(`journal.window.map.entry.${kind}.margin.inside.place`, [
+        ['margin_meters', String(margin)], ['place', String(place.at.name)],
+      ]));
     }
     asArray(place?.near).forEach((near) => {
-      const what = near.category ? ` (${near.category})` : "";
-      reasons.push(window.JournalI18n.render('journal.window.map.entry.near.reason', [['name', String(near.name)], ['category', String(what)], ['distance', String(near.distance_m)], ['margin', String(placed)]]));
+      const args = [['place', String(near.name)], ['distance_meters', String(near.distance_m)], ['margin_meters', String(margin)]];
+      if (near.category) args.push(['category', String(near.category)]);
+      const category = near.category ? '.category' : '';
+      reasons.push(window.JournalI18n.render(`journal.window.map.entry.${kind}.margin.near.place${category}`, args));
     });
     const within = withinName(entry.area?.within);
     if (within) {
       reasons.push(margin
-        ? window.JournalI18n.render('journal.window.map.window.explanation.that.whole.area.is.inside.value1', [['value1', String(within)]])
+        ? window.JournalI18n.render('journal.window.map.entry.margin.within', [['area', String(within)]])
         : entry.kind === "readings"
-          ? window.JournalI18n.render('journal.window.map.window.explanation.every.reading.here.with.its.margin', [['value1', String(within)]])
+          ? window.JournalI18n.render('journal.window.map.entry.readings.within', [['area', String(within)]])
           : entry.kind === "stay"
-            ? window.JournalI18n.render('journal.window.map.window.explanation.these.readings.with.their.margins.all', [['value1', String(within)]])
-            : window.JournalI18n.render('journal.window.map.window.explanation.your.phone.s.position.with.its', [['value1', String(within)]]));
+            ? window.JournalI18n.render('journal.window.map.entry.stay.within', [['area', String(within)]])
+            : window.JournalI18n.render('journal.window.map.entry.visit.within', [['area', String(within)]]));
     } else if (entry.area?.town && entry.kind !== "unreadable") {
-      reasons.push(window.JournalI18n.render('journal.window.map.window.explanation.value1.is.the.town.that.best', [['value1', String(entry.area.town)], ['value2', String(entry.area.town_km)]]));
+      reasons.push(window.JournalI18n.render('journal.window.map.entry.area.town.reason', [['town', String(entry.area.town)], ['distance_km', String(entry.area.town_km)]]));
     }
     const accuracy = entry.kind === "visit" ? entry.point?.[2] : null;
     if (entry.kind === "visit" && !place && data.accuracy?.installed && Number.isFinite(accuracy) && accuracy > 100) {
-      reasons.push(window.JournalI18n.render('journal.window.map.window.explanation.your.phone.placed.you.within.value1.variant2', [['value1', String(accuracy)]]));
+      reasons.push(window.JournalI18n.render('journal.window.map.entry.visit.margin.too.wide', [['margin_meters', String(accuracy)]]));
     }
     return reasons;
   }
@@ -989,16 +1017,16 @@ button.map-month-row:hover { background: var(--cream); }
     if (entry.kind === "readings") {
       parts.push(plural(entry.count, "reading"));
       if (entry.precision === "approximate" || entry.precision === "reduced") parts.push(window.JournalI18n.render('journal.window.map.entry.precision.approximate'));
-      if (many) parts.push(window.JournalI18n.render('journal.window.map.device.from', [['device', String(device.phrase)]]));
+      if (many) parts.push(deviceDescription('from', device, 'journal.window.map.device.from'));
     } else if (entry.kind === "stay") {
-      parts.push(window.JournalI18n.render('journal.window.map.window.explanation.a.stay.your.journal.worked.out.variant2', [['value1', String(device.phrase)]]));
+      parts.push(deviceDescription('stay', device, 'journal.window.map.entry.stay.recorded.device'));
       parts.push(plural(entry.count, "reading"));
     } else if (entry.kind === "visit") {
-      parts.push(window.JournalI18n.render('journal.window.map.entry.reported.visit', [['device', String(device.phrase)]]));
+      parts.push(deviceDescription('visit', device, 'journal.window.map.entry.reported.visit'));
       parts.push(entry.arrival ? window.JournalI18n.render('journal.window.map.entry.time.arrival', [['time', String(moment(entry.arrival, data.day))]]) : window.JournalI18n.render('journal.window.map.entry.time.missing.arrival'));
       parts.push(entry.departure ? window.JournalI18n.render('journal.window.map.entry.time.departure', [['time', String(moment(entry.departure, data.day))]]) : window.JournalI18n.render('journal.window.map.entry.time.missing.departure'));
     } else {
-      parts.push(window.JournalI18n.render('journal.window.map.device.from', [['device', String(device.phrase)]]));
+      parts.push(deviceDescription('from', device, 'journal.window.map.device.from'));
       parts.push(window.JournalI18n.render('journal.window.map.window.explanation.open.it.in.transcripts.to.see'));
     }
     return parts.join(" · ");
@@ -1021,7 +1049,7 @@ button.map-month-row:hover { background: var(--cream); }
       const items = segments
         .map((segment) => `<li><a class="map-link" href="${escapeHtml(segment.url)}">${escapeHtml(pieceTime(segment.segment))}</a></li>`)
         .join("");
-      pieces = `<details class="map-pieces"><summary>${window.JournalI18n.renderHtml('journal.window.map.disclosure.label.open.in.transcripts')} ${segments.length} ${window.JournalI18n.renderHtml('journal.window.map.disclosure.label.segments')}</summary><ul>${items}</ul></details>`;
+      pieces = `<details class="map-pieces"><summary>${window.JournalI18n.renderHtml('journal.window.map.entry.transcripts.segments', quantityArgs(segments.length))}</summary><ul>${items}</ul></details>`;
     }
     return `<div class="map-row-actions">${actions.join("")}</div>${pieces}`;
   }
@@ -1067,25 +1095,25 @@ button.map-month-row:hover { background: var(--cream); }
     } else if (installed && status.current) {
       body = `<p>${window.JournalI18n.renderHtml('journal.window.map.visible.text.location.accuracy.is.on')} ${escapeHtml(what)}</p>`;
       actions = `<button type="button" data-accuracy="remove">${window.JournalI18n.renderHtml('journal.window.map.button.label.remove.location.accuracy')}</button>
-        <span class="map-muted">${window.JournalI18n.renderHtml('journal.window.map.visible.text.frees')} ${escapeHtml(bytes(installed.size_bytes))}${window.JournalI18n.renderHtml('journal.window.map.visible.text.names.go.back.to.the.nearby')}</span>`;
+        <span class="map-muted">${window.JournalI18n.renderHtml('journal.window.map.accuracy.remove.effect', [['storage', String(bytes(installed.size_bytes))]])}</span>`;
     } else if (installed && job.state === "failed" && !(installed.venues && installed.containment)) {
       body = `<p>${window.JournalI18n.renderHtml('journal.window.map.visible.text.location.accuracy.is.unavailable')}</p>`;
       actions = `${offered ? `<button type="button" data-accuracy="download">${window.JournalI18n.renderHtml('journal.window.map.button.label.download.again')}</button>` : ""}
         <button type="button" data-accuracy="remove">${window.JournalI18n.renderHtml('journal.window.map.button.label.remove.location.accuracy')}</button>`;
     } else if (installed && offered) {
-      body = `<p>${window.JournalI18n.renderHtml('journal.window.map.visible.text.location.accuracy.is.on.a.newer')} ${escapeHtml(bytes(offered.size_bytes))}.</p>`;
+      body = `<p>${window.JournalI18n.renderHtml('journal.window.map.accuracy.update.available', [['size', String(bytes(offered.size_bytes))]])}</p>`;
       actions = `<button type="button" data-accuracy="download">${window.JournalI18n.renderHtml('journal.window.map.button.label.update')}</button>
         <button type="button" data-accuracy="remove">${window.JournalI18n.renderHtml('journal.window.map.button.label.remove.location.accuracy')}</button>`;
     } else if (installed) {
       body = `<p>${window.JournalI18n.renderHtml('journal.window.map.visible.text.location.accuracy.is.on')}</p>`;
       actions = `<button type="button" data-accuracy="remove">${window.JournalI18n.renderHtml('journal.window.map.button.label.remove.location.accuracy')}</button>`;
     } else {
-      body = `<p>${window.JournalI18n.renderHtml('journal.window.map.visible.text.with.location.accuracy')} ${escapeHtml(what)} ${window.JournalI18n.renderHtml('journal.window.map.visible.text.without.it.a.visit.is.named')}</p>
+      body = `<p>${window.JournalI18n.renderHtml(outlines ? 'journal.window.map.accuracy.offered.outlines' : 'journal.window.map.accuracy.offered.names')} ${window.JournalI18n.renderHtml('journal.window.map.visible.text.without.it.a.visit.is.named')}</p>
         <p class="map-muted">${window.JournalI18n.renderHtml('journal.window.map.accuracy.download.explanation', [['size', String(bytes(offered.size_bytes))]])}</p>`;
-      actions = `<button type="button" data-accuracy="download">${window.JournalI18n.renderHtml('journal.window.map.button.label.download')} ${escapeHtml(bytes(offered.size_bytes))}</button>`;
+      actions = `<button type="button" data-accuracy="download">${window.JournalI18n.renderHtml('journal.window.map.accuracy.download.button', [['size', String(bytes(offered.size_bytes))]])}</button>`;
     }
     const failures = {
-      not_enough_space: window.JournalI18n.render('journal.window.map.window.explanation.there.isn.t.enough.free.space', [['value1', String(bytes(offered?.size_bytes))]]),
+      not_enough_space: window.JournalI18n.render('journal.window.map.accuracy.storage.insufficient', [['required_storage', String(bytes(offered?.size_bytes))]]),
       integrity_failed: window.JournalI18n.render('journal.window.map.window.explanation.location.accuracy.failed.its.file.check'),
       download_failed: window.JournalI18n.render('journal.window.map.window.explanation.location.accuracy.couldn.t.be.downloaded'),
       write_failed: window.JournalI18n.render('journal.window.map.window.explanation.location.accuracy.couldn.t.be.saved'),
@@ -1160,6 +1188,23 @@ button.map-month-row:hover { background: var(--cream); }
     }
   }
 
+  function accuracyAttribution(installed) {
+    const link = (href) => {
+      const element = document.createElement('a');
+      element.className = 'map-link';
+      element.setAttribute('href', href);
+      element.setAttribute('rel', 'noopener noreferrer');
+      return element;
+    };
+    const elements = {
+      geonames: link('https://www.geonames.org/'),
+      licence: link('https://creativecommons.org/licenses/by/4.0/'),
+    };
+    const source = installed ? (installed.containment ? 'outlines' : 'places') : 'base';
+    if (installed) elements.overture = link('https://docs.overturemaps.org/attribution/');
+    return markupHtml(window.JournalI18n.renderEnglishMarkup(`journal.window.map.attribution.${source}`, [], { elements }));
+  }
+
   function renderDay(data) {
     const entries = asArray(data.entries);
     const devices = asArray(data.devices);
@@ -1168,7 +1213,7 @@ button.map-month-row:hover { background: var(--cream); }
       ? `<section class="map-card map-figure-card" aria-label="${window.JournalI18n.renderHtml('journal.window.map.accessible.name.map')}">
           <div class="map-canvas" id="map-canvas" role="region" aria-label="${window.JournalI18n.renderHtml('journal.window.map.accessible.name.map.of.the.records.listed.here')}"></div>
           <p class="map-muted">${window.JournalI18n.renderHtml('journal.window.map.visible.text.named.features.only.streets.not.shown')}</p>
-          <p class="map-muted">${window.JournalI18n.renderEnglishHtml('journal.window.map.visible.text.towns.from')} <a class="map-link" href="https://www.geonames.org/" rel="noopener noreferrer">${window.JournalI18n.renderEnglishHtml('journal.window.map.link.label.geonames')}</a> (<a class="map-link" href="https://creativecommons.org/licenses/by/4.0/" rel="noopener noreferrer">${window.JournalI18n.renderEnglishHtml('journal.window.map.link.label.cc.by')}</a>${window.JournalI18n.renderEnglishHtml('journal.window.map.visible.text.borders.from.natural.earth')}${data.accuracy?.installed ? ` · ${data.accuracy.installed.containment ? window.JournalI18n.renderEnglishHtml('journal.window.map.licence.overture.outlines') : window.JournalI18n.renderEnglishHtml('journal.window.map.licence.overture.places')} <a class="map-link" href="https://docs.overturemaps.org/attribution/" rel="noopener noreferrer">${window.JournalI18n.renderEnglishHtml('journal.window.map.link.label.overture.maps')}</a>` : ""}</p>
+          <p class="map-muted">${accuracyAttribution(data.accuracy?.installed)}</p>
         </section>`
       : "";
     const accuracy = accuracyCard(data.accuracy) || "<div data-accuracy-card hidden></div>";
@@ -1348,12 +1393,18 @@ button.map-month-row:hover { background: var(--cream); }
   }
 
   function recorded(place) {
-    const span = place.first && place.last && place.first !== place.last
-      ? window.JournalI18n.render('journal.window.map.place.date.range', [['first', String(shortDay(place.first))], ['last', String(shortDay(place.last))]])
-      : place.first ? window.JournalI18n.render('journal.window.map.place.date.single', [['date', String(shortDay(place.first))]]) : "";
-    const lines = [window.JournalI18n.render('journal.window.map.window.explanation.visits.or.stays.here.on.value1', [['value1', String(plural(place.dates, "date"))], ['value2', String(span)]])];
+    const args = quantityArgs(place.dates);
+    let message = 'journal.window.map.place.recorded.dates';
+    if (place.first && place.last && place.first !== place.last) {
+      message = 'journal.window.map.place.recorded.dates.range';
+      args.push(['first', String(shortDay(place.first))], ['last', String(shortDay(place.last))]);
+    } else if (place.first) {
+      message = 'journal.window.map.place.recorded.dates.single';
+      args.push(['date', String(shortDay(place.first))]);
+    }
+    const lines = [window.JournalI18n.render(message, args)];
     if (place.night_dates) {
-      lines.push(window.JournalI18n.render('journal.window.map.window.explanation.on.value1.a.visit.or.stay', [['value1', String(plural(place.night_dates, "night"))]]));
+      lines.push(window.JournalI18n.render('journal.window.map.place.recorded.nights', [...quantityArgs(place.night_dates)]));
     }
     return lines;
   }
@@ -1463,7 +1514,7 @@ button.map-month-row:hover { background: var(--cream); }
       const rows = items.map((item) => `<li><span class="map-muted">${escapeHtml(entryTime(item, day.day))}</span>
         <span>${escapeHtml(entryTitle(item))}${item.place_ref?.id ? ` · <a class="map-link" href="/app/map/place/${encodeURIComponent(item.place_ref.id)}">${window.JournalI18n.renderHtml('journal.window.map.link.label.place')}</a>` : ""}</span></li>`).join("");
       const quiet = day.readings
-        ? window.JournalI18n.render('journal.window.map.window.explanation.value1.no.visits.or.stays', [['value1', String(plural(day.readings, "reading"))]])
+        ? window.JournalI18n.render('journal.window.map.week.readings.without.stops', [...quantityArgs(day.readings)])
         : window.JournalI18n.render('journal.window.map.calendar.location.none');
       return `<section class="map-week-day" aria-label="${escapeHtml(longDay(day.day))}">
         <p class="map-row-title"><a class="map-link" href="/app/map/${escapeHtml(day.day)}">${escapeHtml(longDay(day.day))}</a></p>
@@ -1529,16 +1580,7 @@ button.map-month-row:hover { background: var(--cream); }
   const MIN_RING_PX = 8;
   const DRAWN_SIZE = [...["2,600", "1,000", "370", "140", "50", "20", "7", "3"].map((size) =>
     window.JournalI18n.render('journal.window.map.area.size', [['size', String(size)]])), SIZE.label];
-  const COMPASS = [
-    window.JournalI18n.render('journal.window.map.compass.east'),
-    window.JournalI18n.render('journal.window.map.compass.north.east'),
-    window.JournalI18n.render('journal.window.map.compass.north'),
-    window.JournalI18n.render('journal.window.map.compass.north.west'),
-    window.JournalI18n.render('journal.window.map.compass.west'),
-    window.JournalI18n.render('journal.window.map.compass.south.west'),
-    window.JournalI18n.render('journal.window.map.compass.south'),
-    window.JournalI18n.render('journal.window.map.compass.south.east')
-  ];
+  const COMPASS = ['east', 'north-east', 'north', 'north-west', 'west', 'south-west', 'south', 'south-east'];
 
   function locationGrid() {
     const grid = window.h3;
@@ -1642,10 +1684,13 @@ button.map-month-row:hover { background: var(--cream); }
     const a = list[0];
     const tie = list.length > 1 && list[1].dayCount === a.dayCount;
     if (c === a) return tie ? window.JournalI18n.render('journal.window.map.window.explanation.tied.for.the.most.days') : isTrip ? window.JournalI18n.render('journal.window.map.window.explanation.this.trip.s.busiest.area') : window.JournalI18n.render('journal.window.map.window.explanation.the.area.with.the.most.days');
-    const ref = tie ? window.JournalI18n.render('journal.window.map.window.explanation.the.first.area.listed') : isTrip ? window.JournalI18n.render('journal.window.map.window.explanation.this.trip.s.busiest.area') : window.JournalI18n.render('journal.window.map.month.busiest.area');
+    const reference = tie ? 'first' : isTrip ? 'trip' : 'month';
     const dx = c.cx - a.cx, dy = c.cy - a.cy, km = Math.hypot(dx, dy) / 1000;
-    const dir = COMPASS[(Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) + 8) % 8];
-    return window.JournalI18n.render('journal.window.map.month.area.distance', [['distance', String(km < 10 ? km.toFixed(1).replace(/\.0$/, "") : Math.round(km))], ['direction', String(dir)], ['reference', String(ref)]]);
+    const direction = COMPASS[(Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) + 8) % 8];
+    const distance = km < 10 ? km.toFixed(1).replace(/\.0$/, '') : Math.round(km);
+    return window.JournalI18n.render(`journal.window.map.month.area.distance.${reference}`, [
+      ['distance', String(distance)], ['direction', direction],
+    ]);
   }
 
   function spanText(s, d) {
@@ -1679,8 +1724,8 @@ button.map-month-row:hover { background: var(--cream); }
       return `${clockStr(a)}–${clockStr(b)}`;
     });
     for (const s of es) {
-      if (s.end == null && s.start != null) parts.push(window.JournalI18n.render('journal.window.map.window.explanation.from.value1.no.departure.reported', [['value1', String(clockStr(s.start))]]));
-      else if (s.start == null && s.end != null) parts.push(window.JournalI18n.render('journal.window.map.window.explanation.until.value1.arrival.not.known', [['value1', String(clockStr(s.end))]]));
+      if (s.end == null && s.start != null) parts.push(window.JournalI18n.render('journal.window.map.entry.open.departure', [['arrival', String(clockStr(s.start))]]));
+      else if (s.start == null && s.end != null) parts.push(window.JournalI18n.render('journal.window.map.entry.open.arrival', [['departure', String(clockStr(s.end))]]));
     }
     return parts.join(" · ");
   }
@@ -1698,7 +1743,7 @@ button.map-month-row:hover { background: var(--cream); }
     }).join("");
     return `<div class="map-month-strip" role="img" aria-label="${window.JournalI18n.renderHtml('journal.window.map.accessible.name.the.stops.across.the.day.shown')}">${bars}</div>
       <div class="map-month-strip-scale" aria-hidden="true"><span>0:00</span><span>6:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
-      <p class="map-month-strip-key">${es.some((s) => s.kind === "stay") ? window.JournalI18n.renderHtml('journal.window.map.month.strip.visits.and.stays') : window.JournalI18n.renderHtml('journal.window.map.window.explanation.each.bar.is.a.visit.your')}${es.some((s) => s.openEnded) ? window.JournalI18n.renderHtml('journal.window.map.window.explanation.a.fading.bar.is.missing.its') : ""}</p>`;
+      <p class="map-month-strip-key">${es.some((s) => s.kind === "stay") ? window.JournalI18n.renderHtml('journal.window.map.month.strip.visits.and.stays') : window.JournalI18n.renderHtml('journal.window.map.window.explanation.each.bar.is.a.visit.your')}${es.some((s) => s.openEnded) ? ` ${window.JournalI18n.renderHtml('journal.window.map.month.strip.faded.bar')}` : ""}</p>`;
   }
 
   function monthModel(data, today) {
@@ -2118,6 +2163,7 @@ button.map-month-row:hover { background: var(--cream); }
         id: "home",
         trip: false,
         name: window.JournalI18n.render('journal.window.map.month.area.around', [['name', String(homePlaceName)]]),
+        placeName: homePlaceName,
         dateLabel: null,
         days: homeDays,
         areas: homeAreas,
@@ -2206,7 +2252,7 @@ button.map-month-row:hover { background: var(--cream); }
         readings,
         unreadable,
         interrupted,
-        interruptions: asArray(backendDay?.devices).filter((dev) => (dev.interrupted_segments || 0) > 0).map((dev) => ({ word: dev.word || "phone", count: dev.interrupted_segments })),
+        interruptions: asArray(backendDay?.devices).filter((dev) => (dev.interrupted_segments || 0) > 0).map((dev) => ({ word: dev.word || "phone", word_key: dev.word_key, count: dev.interrupted_segments })),
         backendDay,
       });
     }
@@ -2268,7 +2314,7 @@ button.map-month-row:hover { background: var(--cream); }
           const nearest = mKeys[0];
           const nYear = parseInt(nearest.slice(0, 4), 10);
           const nMo = parseInt(nearest.slice(4, 6), 10);
-          nearestLink = `<p class="map-empty-actions" data-map-month-nearest><a href="/app/map/month/${escapeHtml(nearest)}">${window.JournalI18n.renderHtml('journal.window.map.link.label.go.to')} ${escapeHtml(MONTHS[nMo - 1])} ${nYear}</a></p>`;
+          nearestLink = `<p class="map-empty-actions" data-map-month-nearest><a href="/app/map/month/${escapeHtml(nearest)}">${window.JournalI18n.renderHtml('journal.window.map.navigation.go.month', [['month', String(MONTHS[nMo - 1])], ['year', String(nYear)]])}</a></p>`;
         }
       } catch (_) {}
       pageShell(window.JournalI18n.render('journal.window.map.month.heading', [['month', String(m.monthName)], ['year', String(m.year)]]), `<div class="map-month">
@@ -2480,10 +2526,10 @@ button.map-month-row:hover { background: var(--cream); }
         const nd = m.notDrawn;
         const items = [];
         if (nd.hiddenPlaces > 0) {
-          items.push(["hidden", nd.hiddenPlaces === 1 ? window.JournalI18n.render('journal.window.map.window.explanation.a.place.you.hid') : window.JournalI18n.render('journal.window.map.month.hidden.places', [['count', String(nd.hiddenPlaces)]])]);
+          items.push(["hidden", window.JournalI18n.render('journal.window.map.month.stops.undrawn.hidden', quantityArgs(nd.hiddenPlaces))]);
         }
         if (nd.wide > 0) {
-          items.push(["wide", window.JournalI18n.render('journal.window.map.window.explanation.value1.with.a.margin.of.error', [['value1', String(plural(nd.wide, "stop"))]])]);
+          items.push(["wide", window.JournalI18n.render('journal.window.map.month.stops.undrawn.wide', [...quantityArgs(nd.wide)])]);
         }
         const notDrawnHtml = items.length
           ? `<div class="map-month-notdrawn" style="padding:0 16px 16px"><span>${window.JournalI18n.renderHtml('journal.window.map.visible.text.not.drawn.here')}</span><ul>${items.map(([r, t]) => `<li data-reason="${r}">${escapeHtml(t)}</li>`).join("")}</ul></div>`
@@ -2534,22 +2580,29 @@ button.map-month-row:hover { background: var(--cream); }
       const bl = nice * k;
       const scale = `<g class="map-month-scale" aria-hidden="true"><line x1="14" y1="${H - 16}" x2="${(14 + bl).toFixed(1)}" y2="${H - 16}"/><line x1="14" y1="${H - 21}" x2="14" y2="${H - 11}"/><line x1="${(14 + bl).toFixed(1)}" y1="${H - 21}" x2="${(14 + bl).toFixed(1)}" y2="${H - 11}"/><text x="14" y="${H - 25}">${nice >= 1000 ? `${nice / 1000} km` : `${nice} m`}</text></g>`;
 
-      const zoomed = view.z > 1 ? window.JournalI18n.render('journal.window.map.month.zoom.suffix') : "";
-      const choiceLabel = activeChoice?.name || "";
-      const summary = groups
-        ? window.JournalI18n.render('journal.window.map.window.explanation.map.of.value1.value2.each.value3.variant2', [['value1', String(choiceLabel)], ['value2', String(plural(groups.length, "shaded.area"))], ['value3', String(DRAWN_SIZE[res])], ['value4', String(plural(list.length, "area"))], ['value5', String(zoomed)]])
-        : window.JournalI18n.render('journal.window.map.window.explanation.map.of.value1.value2.each.value3', [['value1', String(choiceLabel)], ['value2', String(plural(list.length, "shaded.area"))], ['value3', String(SIZE.label)], ['value4', String(zoomed)]]);
+      const home = activeChoice?.id === 'home';
+      const area = ['area', String((home ? activeChoice.placeName : activeChoice?.name) || '')];
+      const suffix = home ? '.home' : '';
+      let summary = groups
+        ? window.JournalI18n.render(`journal.window.map.month.map.group.summary${suffix}`, [area,
+            ...quantityArgs(groups.length, 'shaded_areas', 'shaded_quantity'),
+            ...quantityArgs(list.length, 'areas', 'area_quantity'), ['size', String(DRAWN_SIZE[res])],
+          ])
+        : window.JournalI18n.render(`journal.window.map.month.map.area.summary${suffix}`, [area,
+            ...quantityArgs(list.length, 'shaded_areas', 'shaded_quantity'), ['size', String(SIZE.label)],
+          ]);
+      if (view.z > 1) summary += ' ' + window.JournalI18n.render('journal.window.map.month.zoom.notice');
       const outside = list.filter((c) => !(px(c.cx) > 0 && px(c.cx) < W && py(c.cy) > 0 && py(c.cy) < H - 50)).length;
       outBtn.hidden = !outside;
-      outBtn.textContent = outside ? window.JournalI18n.render('journal.window.map.visible.text.value1.outside.the.map.show.all', [['value1', String(plural(outside, "area"))]]) : "";
+      outBtn.textContent = outside ? window.JournalI18n.render('journal.window.map.month.areas.outside.show.all', [...quantityArgs(outside)]) : "";
       wrap.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${escapeHtml(summary)}">${polys.join("")}${towns.join("")}${scale}</svg>`;
 
       const activeCellObj = activeChoice?.areas.find((c) => c.id === activeCell);
       if (activeCell && activeCellObj) {
-        cap.innerHTML = `<strong>${escapeHtml(activeCellObj.label)}</strong> · ${escapeHtml(plural(activeCellObj.dayCount, "day"))} ${window.JournalI18n.renderHtml('journal.window.map.visible.text.this.month')}`;
+        cap.innerHTML = `<strong>${escapeHtml(activeCellObj.label)}</strong> · ${window.JournalI18n.renderHtml('journal.window.map.month.area.days.in.month', quantityArgs(activeCellObj.dayCount))}`;
       } else if (activeDay) {
         const n = list.filter((c) => c.days.includes(activeDay)).length;
-        cap.innerHTML = `<strong>${escapeHtml(longDay(activeDay))}</strong> · ${n ? window.JournalI18n.renderHtml('journal.window.map.month.map.outlined', [['areas', String(plural(n, "area"))]]) : window.JournalI18n.renderHtml('journal.window.map.month.map.nothing.drawn')}`;
+        cap.innerHTML = `<strong>${escapeHtml(longDay(activeDay))}</strong> · ${n ? window.JournalI18n.renderHtml('journal.window.map.month.areas.outlined', [...quantityArgs(n)]) : window.JournalI18n.renderHtml('journal.window.map.month.map.nothing.drawn')}`;
       } else {
         cap.textContent = "";
       }
@@ -2564,10 +2617,10 @@ button.map-month-row:hover { background: var(--cream); }
       const nd = activeChoice ? activeChoice.notDrawn : m.notDrawn;
       const items = [];
       if (nd.hiddenPlaces > 0) {
-        items.push(["hidden", nd.hiddenPlaces === 1 ? window.JournalI18n.render('journal.window.map.window.explanation.a.place.you.hid') : window.JournalI18n.render('journal.window.map.month.hidden.places', [['count', String(nd.hiddenPlaces)]])]);
+        items.push(["hidden", window.JournalI18n.render('journal.window.map.month.stops.undrawn.hidden', quantityArgs(nd.hiddenPlaces))]);
       }
       if (nd.wide > 0) {
-        items.push(["wide", window.JournalI18n.render('journal.window.map.window.explanation.value1.with.a.margin.of.error', [['value1', String(plural(nd.wide, "stop"))]])]);
+        items.push(["wide", window.JournalI18n.render('journal.window.map.month.stops.undrawn.wide', [...quantityArgs(nd.wide)])]);
       }
       ndEl.innerHTML = items.length ? `<span>${window.JournalI18n.renderHtml('journal.window.map.visible.text.not.drawn.here')}</span><ul>${items.map(([r, t]) => `<li data-reason="${r}">${escapeHtml(t)}</li>`).join("")}</ul>` : "";
     }
@@ -2592,21 +2645,19 @@ button.map-month-row:hover { background: var(--cream); }
           st = "elsewhere";
         }
         const inArea = activeCellObj && activeCellObj.days.includes(dObj.day);
-        const words = {
-          stops: window.JournalI18n.render('journal.window.map.visible.text.stops'),
-          elsewhere: window.JournalI18n.render('journal.window.map.calendar.stops.elsewhere.list', [['places', String(m.choices.filter((c) => c.days.includes(dObj.day)).map((c) => c.name).join(", "))]]),
-          "no-stops": window.JournalI18n.render('journal.window.map.calendar.stops.none'),
-          "no-location": window.JournalI18n.render('journal.window.map.calendar.location.none'),
-          unreadable: window.JournalI18n.render('journal.window.map.window.explanation.location.couldn.t.be.read'),
-          kept: window.JournalI18n.render('journal.window.map.calendar.location.kept'),
-        }[st] || st;
-        const label = window.JournalI18n.render('journal.window.map.calendar.day.accessible.name', [['date', String(longDay(dObj.day))], ['state', String(words)], ['focus', String(inArea ? window.JournalI18n.render('journal.window.map.window.explanation.has.a.stop.in.the.chosen') : "")]]);
+        const places = st === 'elsewhere'
+          ? m.choices.filter((c) => c.days.includes(dObj.day)).map((c) => c.name).join(', ')
+          : '';
+        const message = inArea ? 'journal.window.map.calendar.day.name.selected' : 'journal.window.map.calendar.day.name';
+        const label = window.JournalI18n.render(message, [
+          ['date', String(longDay(dObj.day))], ['state', String(st)], ['places', places], ['state_label', String(st)],
+        ]);
         btns.push(`<button type="button" class="map-month-day${inArea ? " in-area" : ""}" data-day="${dObj.day}" data-state="${st}" aria-pressed="${activeDay === dObj.day}" aria-label="${escapeHtml(label)}" tabindex="${dNum === calFocus ? 0 : -1}"><span aria-hidden="true">${dNum}</span></button>`);
       }
       calEl.innerHTML = heads + blanks + btns.join("");
 
       const stopsDaysCount = m.days.filter((d) => d.state === "stops").length;
-      root.querySelector("[data-map-month-cal-sum]").textContent = window.JournalI18n.render('journal.window.map.visible.text.value1.of.value2.days.have.stops', [['value1', String(stopsDaysCount)], ['value2', String(m.m)]]);
+      root.querySelector("[data-map-month-cal-sum]").textContent = window.JournalI18n.render('journal.window.map.month.stops.calendar', [...quantityArgs(stopsDaysCount, 'days_with_stops', 'stops_quantity'), ['days_in_month', String(m.m)]]);
 
       const present = new Set(m.days.map((d) => d.state === "stops" && !(activeChoice ? activeChoice.days.includes(d.day) : true) ? "elsewhere" : d.state));
       const leg = [
@@ -2633,25 +2684,23 @@ button.map-month-row:hover { background: var(--cream); }
         }
         const notes = [];
         if (activeCellObj.openEnded) {
-          notes.push(activeCellObj.openEnded === 1
-            ? window.JournalI18n.render('journal.window.map.window.explanation.visit.is.missing.its.arrival.or')
-            : window.JournalI18n.render('journal.window.map.window.explanation.value1.visits.are.missing.an.arrival', [['value1', String(activeCellObj.openEnded)]]));
+          notes.push(window.JournalI18n.render('journal.window.map.month.area.open.stops', quantityArgs(activeCellObj.openEnded)));
         }
         if (activeCellObj.overlap) notes.push(window.JournalI18n.render('journal.window.map.window.explanation.where.two.reports.cover.the.same'));
-        if (activeCellObj.clipped) notes.push(window.JournalI18n.render('journal.window.map.window.explanation.only.the.part.inside.value1.counts', [['value1', String(m.monthName)]]));
+        if (activeCellObj.clipped) notes.push(window.JournalI18n.render('journal.window.map.month.area.clipped', [['month', String(m.monthName)]]));
         const others = activeCellObj.names.slice(1).map((p) => `<li>${escapeHtml(p.words)} · ${escapeHtml(plural(p.days, "day"))}</li>`).join("");
 
-        detEl.innerHTML = `<div class="map-month-detail-head"><div class="titles"><h2 id="map-month-detail-h">${escapeHtml(activeCellObj.label)}</h2><p class="map-muted">${window.JournalI18n.renderHtml('journal.window.map.visible.text.an.area')} ${escapeHtml(SIZE.label)} ${window.JournalI18n.renderHtml('journal.window.map.visible.text.across')} ${escapeHtml(fromBusiest(activeCellObj, activeChoice.areas, activeChoice.trip))}</p></div><button class="map-month-btn" type="button" data-map-month-clear>${window.JournalI18n.renderHtml('journal.window.map.button.label.clear')}</button></div>
-          <dl class="map-month-facts"><dt>${window.JournalI18n.renderHtml('journal.window.map.visible.text.days.with.a.stop')}</dt><dd>${activeCellObj.dayCount} ${window.JournalI18n.renderHtml('journal.window.map.visible.text.of')} ${m.m}</dd>${activeCellObj.nights ? `<dt>${window.JournalI18n.renderHtml('journal.window.map.visible.text.nights')}</dt><dd>${activeCellObj.nights}</dd>` : ""}<dt>${window.JournalI18n.renderHtml('journal.window.map.visible.text.stops')}</dt><dd>${activeCellObj.stopCount}</dd><dt>${window.JournalI18n.renderHtml('journal.window.map.visible.text.hours.with.both.ends.known')}</dt><dd>${hoursText(activeCellObj.knownMinutes)}</dd></dl>
+        detEl.innerHTML = `<div class="map-month-detail-head"><div class="titles"><h2 id="map-month-detail-h">${escapeHtml(activeCellObj.label)}</h2><p class="map-muted">${window.JournalI18n.renderHtml('journal.window.map.month.area.size', [['size', String(SIZE.label)]])} · ${escapeHtml(fromBusiest(activeCellObj, activeChoice.areas, activeChoice.trip))}</p></div><button class="map-month-btn" type="button" data-map-month-clear>${window.JournalI18n.renderHtml('journal.window.map.button.label.clear')}</button></div>
+          <dl class="map-month-facts"><dt>${window.JournalI18n.renderHtml('journal.window.map.visible.text.days.with.a.stop')}</dt><dd>${window.JournalI18n.renderHtml('journal.window.map.month.area.days.ratio', [['days_with_stops', String(activeCellObj.dayCount)], ['days_in_month', String(m.m)]])}</dd>${activeCellObj.nights ? `<dt>${window.JournalI18n.renderHtml('journal.window.map.visible.text.nights')}</dt><dd>${activeCellObj.nights}</dd>` : ""}<dt>${window.JournalI18n.renderHtml('journal.window.map.visible.text.stops')}</dt><dd>${activeCellObj.stopCount}</dd><dt>${window.JournalI18n.renderHtml('journal.window.map.visible.text.hours.with.both.ends.known')}</dt><dd>${hoursText(activeCellObj.knownMinutes)}</dd></dl>
           <div class="map-month-notes">${notes.map((n) => `<p class="map-muted">${escapeHtml(n)}</p>`).join("")}</div>
           ${others ? `<p class="map-month-subhead">${window.JournalI18n.renderHtml('journal.window.map.visible.text.also.in.this.area')}</p><ul class="map-muted" style="margin:0;padding-left:18px">${others}</ul>` : ""}
           <p class="map-month-subhead">${window.JournalI18n.renderHtml('journal.window.map.visible.text.days.here')}</p><ul class="map-month-rows">${rows.join("")}</ul>
-          ${byDay.length > 6 ? `<button class="map-month-btn more" type="button" data-map-month-alldays aria-expanded="${showAllDaysInArea}">${showAllDaysInArea ? window.JournalI18n.renderHtml('journal.window.map.month.days.show.fewer') : window.JournalI18n.renderHtml('journal.window.map.month.days.show.all', [['count', String(byDay.length)]])}</button>` : ""}`;
+          ${byDay.length > 6 ? `<button class="map-month-btn more" type="button" data-map-month-alldays aria-expanded="${showAllDaysInArea}">${showAllDaysInArea ? window.JournalI18n.renderHtml('journal.window.map.month.days.show.fewer') : window.JournalI18n.renderHtml('journal.window.map.month.area.days.show.all', quantityArgs(byDay.length))}</button>` : ""}`;
       } else if (activeDay) {
         const dayRecord = m.days.find((d) => d.day === activeDay);
         const head = `<div class="map-month-detail-head"><div class="titles"><h2 id="map-month-detail-h">${escapeHtml(longDay(activeDay))}</h2><p class="map-muted"><a class="map-link" href="/app/map/${escapeHtml(activeDay)}">${window.JournalI18n.renderHtml('journal.window.map.link.label.open.the.day')}</a></p></div><button class="map-month-btn" type="button" data-map-month-clear>${window.JournalI18n.renderHtml('journal.window.map.button.label.clear')}</button></div>`;
         const readingsCount = dayRecord.readings || 0;
-        const readingsLine = readingsCount > 0 ? window.JournalI18n.render('journal.window.map.month.day.readings.undrawn', [['readings', String(plural(readingsCount, "reading"))]]) : "";
+        const readingsLine = readingsCount > 0 ? window.JournalI18n.render('journal.window.map.month.readings.undrawn', [...quantityArgs(readingsCount)]) : "";
 
         if (dayRecord.state === "no-location") {
           detEl.innerHTML = `${head}<p style="margin-top:8px">${window.JournalI18n.renderHtml('journal.window.map.visible.text.no.location.kept.for.this.day')}</p><p class="map-muted" style="margin-top:6px">${window.JournalI18n.renderHtml('journal.window.map.month.day.location.none', [['date', String(longDay(activeDay))]])}</p>`;
@@ -2660,7 +2709,7 @@ button.map-month-row:hover { background: var(--cream); }
         } else if (dayRecord.state === "no-stops" || dayRecord.state === "kept") {
           const quiet = [];
           for (const dev of dayRecord.interruptions || []) {
-            quiet.push(window.JournalI18n.render('journal.window.map.window.explanation.your.value1.said.location.was.interrupted', [['value1', String(dev.word)], ['value2', String(interruptionCount(dev.count, true))]]));
+            quiet.push(deviceInterruption(dev, dev.count, true));
           }
           if (dayRecord.unreadable) quiet.push(window.JournalI18n.render('journal.window.map.window.explanation.your.journal.couldn.t.read.part'));
           if (readingsLine) quiet.push(readingsLine);
@@ -2671,7 +2720,7 @@ button.map-month-row:hover { background: var(--cream); }
             const choiceOfStop = m.choices.find((c) => c.test(s));
             const cellOfStop = choiceOfStop?.areas.find((a) => a.id === s.cellId);
             const bits = [
-              s.kind === "stay" ? window.JournalI18n.render('journal.window.map.month.day.stay.explanation', [['count', String(s.item.count)]]) : window.JournalI18n.render('journal.window.map.window.explanation.a.visit.your.phone.reported'),
+              s.kind === "stay" ? window.JournalI18n.render('journal.window.map.month.day.stay.readings', quantityArgs(s.item.count)) : window.JournalI18n.render('journal.window.map.window.explanation.a.visit.your.phone.reported'),
               s.start == null ? window.JournalI18n.render('journal.window.map.entry.time.missing.arrival') : s.end == null ? window.JournalI18n.render('journal.window.map.entry.time.missing.departure') : "",
             ].filter(Boolean);
             if (!s.onMap) bits.push(window.JournalI18n.render('journal.window.map.window.explanation.hidden.from.the.map'));
@@ -2682,7 +2731,7 @@ button.map-month-row:hover { background: var(--cream); }
           });
           const notes = [];
           for (const dev of dayRecord.interruptions || []) {
-            notes.push(window.JournalI18n.render('journal.window.map.window.explanation.your.value1.said.location.was.interrupted', [['value1', String(dev.word)], ['value2', String(interruptionCount(dev.count, true))]]));
+            notes.push(deviceInterruption(dev, dev.count, true));
           }
           if (dayRecord.unreadable) {
             notes.push(window.JournalI18n.render('journal.window.map.window.explanation.your.journal.couldn.t.read.part'));
@@ -2694,14 +2743,22 @@ button.map-month-row:hover { background: var(--cream); }
         }
       } else {
         const stopsDaysCount = m.days.filter((d) => d.state === "stops").length;
-        const gaps = m.noLocation ? window.JournalI18n.render('journal.window.map.window.explanation.no.location.was.kept.on.value1', [['value1', String(plural(m.noLocation, "day"))]]) : "";
-        let glanceText = "";
+        const dates = [['days_with_stops', String(stopsDaysCount)], ['days_in_month', String(m.m)]];
+        let glanceText;
         if (m.anchorId) {
           const trips = m.choices.filter((c) => c.trip).length;
-          const tripClause = trips ? window.JournalI18n.render('journal.window.map.window.explanation.and.value1.more.than.km.away', [['value1', String(plural(trips, "trip"))]]) : "";
-          glanceText = window.JournalI18n.render('journal.window.map.window.explanation.value1.of.value2.days.have.stops.variant2', [['value1', String(stopsDaysCount)], ['value2', String(m.m)], ['value3', String(m.choices[0].days.length)], ['value4', String(m.choices[0].name)], ['value5', String(tripClause)], ['value6', String(gaps)]]);
+          const home = m.choices[0];
+          const daysInArea = [...dates, ['home_days', String(home.days.length)], ['home_area', String(home.placeName)]];
+          glanceText = trips
+            ? window.JournalI18n.render('journal.window.map.month.stops.glance.trips', [...daysInArea, ...quantityArgs(trips, 'trips', 'trip_quantity')])
+            : window.JournalI18n.render('journal.window.map.month.stops.glance.home', daysInArea);
         } else {
-          glanceText = window.JournalI18n.render('journal.window.map.window.explanation.value1.of.value2.days.have.stops', [['value1', String(stopsDaysCount)], ['value2', String(m.m)], ['value3', String(gaps)]]);
+          glanceText = window.JournalI18n.render('journal.window.map.month.stops.glance', [
+            ...quantityArgs(stopsDaysCount, 'days_with_stops', 'stops_quantity'), ['days_in_month', String(m.m)],
+          ]);
+        }
+        if (m.noLocation) {
+          glanceText += ' ' + window.JournalI18n.render('journal.window.map.month.location.gaps', quantityArgs(m.noLocation));
         }
         detEl.innerHTML = `<h2 id="map-month-detail-h">${window.JournalI18n.renderHtml('journal.window.map.section.heading.the.month.at.a.glance')}</h2>
           <p style="margin-top:6px">${escapeHtml(glanceText)}</p>
@@ -2716,14 +2773,18 @@ button.map-month-row:hover { background: var(--cream); }
       const list = activeChoice ? activeChoice.areas : [];
       const shown = showAllAreas ? list : list.slice(0, 8);
       const shared = activeChoice?.sharedRegion;
-      const choiceLabel = activeChoice ? (activeChoice.trip ? window.JournalI18n.render('journal.window.map.month.choice.trip', [['date', String(activeChoice.dateLabel)]]) : activeChoice.name) : "";
-      sumEl.textContent = window.JournalI18n.render('journal.window.map.visible.text.value1.value2.value3.most.days.first', [['value1', String(plural(list.length, "area"))], ['value2', String(choiceLabel)], ['value3', String(shared ? window.JournalI18n.render('journal.window.map.month.choice.shared.region', [['region', String(shared)]]) : "")]]);
+      const group = activeChoice?.trip ? 'trip' : 'region';
+      const args = quantityArgs(list.length);
+      const home = activeChoice?.id === 'home';
+      args.push(activeChoice?.trip ? ['date', String(activeChoice.dateLabel)] : ['area', String((home ? activeChoice.placeName : activeChoice?.name) || '')]);
+      if (shared) args.push(['region', String(shared)]);
+      sumEl.textContent = window.JournalI18n.render(`journal.window.map.month.areas.list.${group}${shared ? '.shared' : ''}${home ? '.home' : ''}`, args);
       areasEl.innerHTML = shown.map((c) => `<li><button class="map-month-area" type="button" data-cell="${c.id}" aria-pressed="${activeCell === c.id}">
         <i class="map-month-sw" style="background:var(--b${bin(c.dayCount)})" aria-hidden="true"></i>
         <span class="name">${escapeHtml(c.listLabel)}<span class="town">${escapeHtml(fromBusiest(c, list, activeChoice.trip))}${c.nights ? ` · ${escapeHtml(plural(c.nights, "night"))}` : ""}</span></span>
         <span class="n">${escapeHtml(plural(c.dayCount, "day"))}</span></button></li>`).join("");
       moreBtn.hidden = list.length <= 8;
-      moreBtn.textContent = showAllAreas ? window.JournalI18n.render('journal.window.map.visible.text.show.fewer') : window.JournalI18n.render('journal.window.map.visible.text.show.all.value1.areas', [['value1', String(list.length)]]);
+      moreBtn.textContent = showAllAreas ? window.JournalI18n.render('journal.window.map.visible.text.show.fewer') : window.JournalI18n.render('journal.window.map.month.areas.show.all', [...quantityArgs(list.length)]);
       moreBtn.setAttribute("aria-expanded", String(showAllAreas));
     }
 
@@ -2745,7 +2806,9 @@ button.map-month-row:hover { background: var(--cream); }
         view.z = 1; view.dx = 0; view.dy = 0; view.all = false;
         renderChoices();
         renderAll();
-        live(window.JournalI18n.render('journal.window.map.month.live.showing.choice', [['name', String(ch.name)]]));
+        live(ch.trip
+          ? window.JournalI18n.render('journal.window.map.month.live.showing.choice', [['name', String(ch.name)]])
+          : window.JournalI18n.render('journal.window.map.month.live.showing.home', [['area', String(ch.placeName)]]));
       }
     });
 
@@ -2757,7 +2820,7 @@ button.map-month-row:hover { background: var(--cream); }
         if (!g) return;
         if (zoomToParent(g)) {
           renderMapSvg();
-          live(window.JournalI18n.render('journal.window.map.month.live.zoom.areas', [['areas', String(plural(g.kids.length, "area"))]]));
+          live(window.JournalI18n.render('journal.window.map.month.areas.live.zoom', [...quantityArgs(g.kids.length)]));
           return;
         }
         // At the zoom limit, choose the parent's area with the most days.
@@ -2768,7 +2831,7 @@ button.map-month-row:hover { background: var(--cream); }
         activeDay = null;
         renderAll();
         const c = activeChoice?.areas.find((a) => a.id === activeCell);
-        live(c ? window.JournalI18n.render('journal.window.map.month.live.choice.days', [['name', String(c.label)], ['days', String(plural(c.dayCount, "day"))]]) : window.JournalI18n.render('journal.window.map.month.live.choice.none'));
+        live(c ? window.JournalI18n.render('journal.window.map.month.area.live.days', [...quantityArgs(c.dayCount), ['name', String(c.label)]]) : window.JournalI18n.render('journal.window.map.month.live.choice.none'));
       }
     });
 
@@ -2843,7 +2906,7 @@ button.map-month-row:hover { background: var(--cream); }
         activeDay = null;
         renderAll();
         const c = activeChoice?.areas.find((a) => a.id === activeCell);
-        live(c ? window.JournalI18n.render('journal.window.map.month.live.choice.days', [['name', String(c.label)], ['days', String(plural(c.dayCount, "day"))]]) : window.JournalI18n.render('journal.window.map.month.live.choice.none'));
+        live(c ? window.JournalI18n.render('journal.window.map.month.area.live.days', [...quantityArgs(c.dayCount), ['name', String(c.label)]]) : window.JournalI18n.render('journal.window.map.month.live.choice.none'));
       }
     });
 
@@ -2952,7 +3015,7 @@ button.map-month-row:hover { background: var(--cream); }
           activeDay = null;
           renderAll();
           const c = activeChoice?.areas.find((a) => a.id === activeCell);
-          live(c ? window.JournalI18n.render('journal.window.map.month.live.choice.days', [['name', String(c.label)], ['days', String(plural(c.dayCount, "day"))]]) : window.JournalI18n.render('journal.window.map.month.live.choice.none'));
+          live(c ? window.JournalI18n.render('journal.window.map.month.area.live.days', [...quantityArgs(c.dayCount), ['name', String(c.label)]]) : window.JournalI18n.render('journal.window.map.month.live.choice.none'));
           root.querySelector("[data-map-month-detail]").focus();
         }
       }

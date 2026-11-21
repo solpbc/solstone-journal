@@ -1,0 +1,30 @@
+{
+  "description": "How often this known device kind indicated that recording location stopped.",
+  "context": "Journal window. How often this known device kind indicated that recording location stopped.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "a1b3ed7b2162bd07a5ce58e5ef8bc5ddedd116837d37a05ee69475963ce662ff",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

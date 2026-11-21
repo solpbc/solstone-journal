@@ -1,0 +1,33 @@
+{
+  "description": "Fixed English attribution for the map towns and borders.",
+  "context": "Journal window. Fixed English attribution for the map towns and borders.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "geonames_start",
+      "type": "string"
+    },
+    {
+      "name": "geonames_end",
+      "type": "string"
+    },
+    {
+      "name": "licence_start",
+      "type": "string"
+    },
+    {
+      "name": "licence_end",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bc4464e9a2393ecbb905f2598e598a242e37796c185f4c7457bc63822fbefe3d",
+  "max_length": 1000,
+  "risk": "legal",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

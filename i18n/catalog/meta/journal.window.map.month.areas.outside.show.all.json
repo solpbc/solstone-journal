@@ -1,0 +1,30 @@
+{
+  "description": "Show all map areas when the current view leaves some off screen.",
+  "context": "Journal window. Show all map areas when the current view leaves some off screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "495537b68ac04671b23720a78db0dc90008e2d7e00f2b53eb5a33bceb84a093c",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

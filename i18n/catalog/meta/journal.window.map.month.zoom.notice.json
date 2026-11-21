@@ -1,0 +1,16 @@
+{
+  "description": "Additional map accessibility notice while zoomed in.",
+  "context": "Journal window. Additional map accessibility notice while zoomed in.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ccc0d04e9a1416c0ee310d8f31ab96a088718e8ba65f7a0da9b9f290410e22ba",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

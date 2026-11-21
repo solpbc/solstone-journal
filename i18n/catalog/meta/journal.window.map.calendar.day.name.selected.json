@@ -1,0 +1,47 @@
+{
+  "description": "Calendar accessible name with the date, location status and selected area if present.",
+  "context": "Journal window. Calendar accessible name with the date, location status and selected area if present.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "state",
+      "type": "string"
+    },
+    {
+      "name": "date",
+      "type": "string"
+    },
+    {
+      "name": "places",
+      "type": "string"
+    },
+    {
+      "name": "state_label",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "95041160d951fb09fd0fcd40a637e1096451dd81c013600d9f662a203420070b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "state",
+    "type": "string",
+    "enum_values": [
+      "stops",
+      "elsewhere",
+      "no-stops",
+      "no-location",
+      "unreadable",
+      "kept",
+      "unknown"
+    ],
+    "enum_default": "unknown"
+  }
+}

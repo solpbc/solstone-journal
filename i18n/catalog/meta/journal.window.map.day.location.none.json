@@ -1,0 +1,21 @@
+{
+  "description": "Explains a day with no location and the uncertainty about its cause.",
+  "context": "Journal window. Explains a day with no location and the uncertainty about its cause.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "date",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5124a2846750fc562d80585fbddb0ede1aab723c669f0c4aca96686ac0895305",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

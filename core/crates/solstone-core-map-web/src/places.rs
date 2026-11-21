@@ -292,6 +292,7 @@ fn device_month_payload(
     json!({
         "key": hex_key,
         "word": device.word_in(locale),
+        "word_key": device.word,
         "phrase": view.device_phrase_in(index, locale),
         "platform": device.platform.as_str(),
         "readings": device.readings,

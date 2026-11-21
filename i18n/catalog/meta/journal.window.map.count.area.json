@@ -1,0 +1,30 @@
+{
+  "description": "Standalone count of areas in Map.",
+  "context": "Journal window. Standalone count of areas in Map.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "00b5a87835f7c9bc62d5c0e4a02ef257fb0993fdcbca7798fe25fd23f6ec1c16",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

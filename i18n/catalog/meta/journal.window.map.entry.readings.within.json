@@ -1,0 +1,21 @@
+{
+  "description": "Why this group of location readings fits in the named area, including the error margins.",
+  "context": "Journal window. Why this group of location readings fits in the named area, including the error margins.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "area",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d34611d71f50f971967f5f15e518027a0eae4c5b0ee6e33db0163d860732fad4",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

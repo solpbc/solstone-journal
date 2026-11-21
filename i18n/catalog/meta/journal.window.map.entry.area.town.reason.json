@@ -1,0 +1,25 @@
+{
+  "description": "Why a nearby town describes the location when there is no contained named area.",
+  "context": "Journal window. Why a nearby town describes the location when there is no contained named area.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "town",
+      "type": "string"
+    },
+    {
+      "name": "distance_km",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d064e24fe6587f5183041e75015cffde412ab44d7cb98156bfd570d3db64644d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

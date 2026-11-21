@@ -1,0 +1,30 @@
+{
+  "description": "Title of a partly unreadable location segment.",
+  "context": "Journal window. Title of a partly unreadable location segment.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "14d972d817847d2822f1b5ac4efa0a5ef795f7e6b20e0641ffe3321543135884",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "description": "The month view reports two interruptions as twice.",
+  "context": "Journal window. The month view reports two interruptions as twice.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "794c510c486724e96e81cf0e6a324cfa29c90d916222e533e254ec4de625e898",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

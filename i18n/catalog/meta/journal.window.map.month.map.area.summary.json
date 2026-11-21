@@ -1,0 +1,38 @@
+{
+  "description": "Accessible summary of the month map at its detailed scale.",
+  "context": "Journal window. Accessible summary of the month map at its detailed scale.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "shaded_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "area",
+      "type": "string"
+    },
+    {
+      "name": "shaded_areas",
+      "type": "string"
+    },
+    {
+      "name": "size",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "7f77e847f6dbc29e5d9e564d0351831da9ceaf4c25202290e291658e045a3b0d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "shaded_quantity",
+    "type": "cardinal"
+  }
+}

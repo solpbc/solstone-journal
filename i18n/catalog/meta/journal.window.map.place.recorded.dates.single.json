@@ -1,0 +1,34 @@
+{
+  "description": "Number of dates at a place and the recorded dates when available.",
+  "context": "Journal window. Number of dates at a place and the recorded dates when available.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "date",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "234ad9d33a5307e50694b57bc54ac0c6ce11cd9d54efb63defe4dc0bbf67de47",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

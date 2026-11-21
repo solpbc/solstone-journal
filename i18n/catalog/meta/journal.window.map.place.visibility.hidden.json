@@ -1,0 +1,16 @@
+{
+  "description": "Independent status label shown after a hidden place link.",
+  "context": "Journal window. Independent status label shown after a hidden place link.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "79a0361192b8025d8e57bfd0965d46eab2272aaab122b5d26ff8c6c119276f26",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
