@@ -70459,8 +70459,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e627574746f6e2e6c6162656c2e6c6f61642e6d6f7265",
       "namespace": "journal.window.import.button.label.load",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.import.history.load.more.count",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -70483,8 +70483,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e627574746f6e2e6c6162656c2e6f66",
       "namespace": "journal.window.import.button.label",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.import.history.load.more.count",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -70543,8 +70543,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e627574746f6e2e6c6162656c2e73686f776e",
       "namespace": "journal.window.import.button.label",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.import.history.load.more.count",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -71519,6 +71519,45 @@
           "name": "quantity",
           "type": "cardinal",
           "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.import.detail.content.summary.count",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e64657461696c2e636f6e74656e742e73756d6d6172792e636f756e74",
+      "namespace": "journal.window.import.detail.content.summary",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "source_name",
+          "type": "string",
+          "numeric_style": null,
           "min": null,
           "max": null
         },
@@ -73777,6 +73816,26 @@
       "selector": null
     },
     {
+      "id": "journal.window.import.guide.step.number",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e67756964652e737465702e6e756d626572",
+      "namespace": "journal.window.import.guide.step",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "step_number",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.import.guide.strava.line1",
       "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e67756964652e7374726176612e6c696e6531",
       "namespace": "journal.window.import.guide.strava",
@@ -74512,6 +74571,72 @@
         "enum_values": [],
         "enum_default": null
       }
+    },
+    {
+      "id": "journal.window.import.history.load.more.count",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e686973746f72792e6c6f61642e6d6f72652e636f756e74",
+      "namespace": "journal.window.import.history.load.more",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "total_quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "shown_quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total_count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "shown_count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "total_quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.import.history.stalled.import",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e686973746f72792e7374616c6c65642e696d706f7274",
+      "namespace": "journal.window.import.history.stalled",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "import_id",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
     },
     {
       "id": "journal.window.import.import.delete.copy.apple.health.each.apple.health.export.holds.your",
@@ -84650,8 +84775,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e76697369626c652e746578742e656c6170736564",
       "namespace": "journal.window.import.visible.text",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.import.progress.time.elapsed",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -84801,8 +84926,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e76697369626c652e746578742e6974656d73",
       "namespace": "journal.window.import.visible.text",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.import.detail.content.summary.count",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -85119,8 +85244,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e76697369626c652e746578742e7374616c6c65642e6e6f2e757064617465732e696e2e6d696e757465732e696d706f7274",
       "namespace": "journal.window.import.visible.text.stalled.no.updates.in.minutes",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.import.history.stalled.import",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -85167,8 +85292,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e76697369626c652e746578742e73746570",
       "namespace": "journal.window.import.visible.text",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.import.guide.step.number",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -85179,8 +85304,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e76697369626c652e746578742e737465702e76617269616e7432",
       "namespace": "journal.window.import.visible.text.step",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.import.guide.step.number",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -85191,8 +85316,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e76697369626c652e746578742e737465702e76617269616e7433",
       "namespace": "journal.window.import.visible.text.step",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.import.guide.step.number",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],

@@ -3159,6 +3159,11 @@ journal.window.import.detail.content.messages = { $quantity ->
    *[other] { $count } messages
 }
 
+journal.window.import.detail.content.summary.count = { $quantity ->
+    [one] { $source_name }, { $count } items
+   *[other] { $source_name }, { $count } items
+}
+
 journal.window.import.detail.count.entities = { $quantity ->
     [one] { $count } entity
    *[other] { $count } entities
@@ -3296,6 +3301,8 @@ journal.window.import.folder.schedule.active = automatic sync is on: { $cadences
 
 journal.window.import.folder.schedule.conflicts = custom schedules stay unchanged: { $schedule_names }.
 
+journal.window.import.guide.step.number = step { $step_number }
+
 journal.window.import.history.archive.left.out = { $quantity ->
     [one] { $count } members left out
    *[other] { $count } members left out
@@ -3341,6 +3348,19 @@ journal.window.import.history.count.summary = { $import_quantity ->
        *[other] { $imports } imports, { $entries } entries.
     }
 }
+
+journal.window.import.history.load.more.count = { $total_quantity ->
+    [one] { $shown_quantity ->
+        [one] load more ({ $shown_count } of { $total_count } shown)
+       *[other] load more ({ $shown_count } of { $total_count } shown)
+    }
+   *[other] { $shown_quantity ->
+        [one] load more ({ $shown_count } of { $total_count } shown)
+       *[other] load more ({ $shown_count } of { $total_count } shown)
+    }
+}
+
+journal.window.import.history.stalled.import = stalled: no updates in 10 minutes. import id: { $import_id }.
 
 journal.window.import.preview.apple.daily.totals = { $quantity ->
     [one] { $count } daily total
@@ -18848,11 +18868,7 @@ journal.window.import.button.label.connect.folder = connect folder
 
 journal.window.import.button.label.forget.folder = forget folder
 
-journal.window.import.button.label.load.more = load more (
-
 journal.window.import.button.label.next = next
-
-journal.window.import.button.label.of = of
 
 journal.window.import.button.label.prev = prev
 
@@ -18861,8 +18877,6 @@ journal.window.import.button.label.preview.import = preview import
 journal.window.import.button.label.remove.schedule = remove schedule
 
 journal.window.import.button.label.save.schedule = save schedule
-
-journal.window.import.button.label.shown = shown)
 
 journal.window.import.button.label.sync.now = sync now
 
@@ -19794,8 +19808,6 @@ journal.window.import.visible.text.drop.a.file.here.or.choose = drop a file here
 
 journal.window.import.visible.text.duration = duration:
 
-journal.window.import.visible.text.elapsed = elapsed
-
 journal.window.import.visible.text.entities.seeded = entities seeded:
 
 journal.window.import.visible.text.entries.written = entries written:
@@ -19809,8 +19821,6 @@ journal.window.import.visible.text.error.loading.content.variant2 = Error loadin
 journal.window.import.visible.text.folder.saved.but.import.setup.could = folder saved, but import setup could not be confirmed. check your imports before choosing it again.
 
 journal.window.import.visible.text.import.id = import id:
-
-journal.window.import.visible.text.items = items
 
 journal.window.import.visible.text.leave.this.empty.to.use.recording = leave this empty to use recording filenames. a manifest and its recordings must be together in the selected folder. the manifest can specify its own times.
 
@@ -19858,19 +19868,11 @@ journal.window.import.visible.text.stalled = stalled
 
 journal.window.import.visible.text.stalled.no.updates.in.minutes = stalled: no updates in 10 minutes.
 
-journal.window.import.visible.text.stalled.no.updates.in.minutes.import = stalled: no updates in 10 minutes. import id:
-
 journal.window.import.visible.text.start.import = start import
 
 journal.window.import.visible.text.starting = starting
 
 journal.window.import.visible.text.status.unavailable = status unavailable
-
-journal.window.import.visible.text.step = step
-
-journal.window.import.visible.text.step.variant2 = step 1
-
-journal.window.import.visible.text.step.variant3 = step 2
 
 journal.window.import.visible.text.still.working = still working…
 

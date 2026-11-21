@@ -1,0 +1,21 @@
+{
+  "description": "The position of a step in the selected import guide.",
+  "context": "Journal window. The position of a step in the selected import guide.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "step_number",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2947a95ecc838639d084a2409a578ccb566a941d1ed70df6b0ba3ae0ec2ec7e1",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
