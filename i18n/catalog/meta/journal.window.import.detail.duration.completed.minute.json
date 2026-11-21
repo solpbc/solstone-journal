@@ -1,0 +1,30 @@
+{
+  "description": "Import elapsed duration measured in minutes.",
+  "context": "Journal window. Import elapsed duration measured in minutes.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "ac520989a6c78aea948ac3ffb0b73bae9040b725a91c743610a925517a9f0fe9",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

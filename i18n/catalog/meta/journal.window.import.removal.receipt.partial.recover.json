@@ -1,0 +1,39 @@
+{
+  "description": "Counts of completed and requested removals or recoveries.",
+  "context": "Journal window. Counts of completed and requested removals or recoveries.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "completed_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "completed_count",
+      "type": "string"
+    },
+    {
+      "name": "import_count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "6aca51d1482a287deab086965cc0266340a57e1c5d40e11cb953aad7a783b3f9",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

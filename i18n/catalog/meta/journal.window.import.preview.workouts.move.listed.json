@@ -1,0 +1,34 @@
+{
+  "description": "Workouts already listed that would be moved to this import’s facet.",
+  "context": "Journal window. Workouts already listed that would be moved to this import’s facet.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "sources",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "ae6d7cf1d39d3d8946c687d08a9d68aaa271b7095469791039a54bea5c9c78be",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

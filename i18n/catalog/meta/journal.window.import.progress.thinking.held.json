@@ -1,0 +1,38 @@
+{
+  "description": "Search progress for recordings held for review, with a link to Health.",
+  "context": "Journal window. Search progress for recordings held for review, with a link to Health.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "health_link_start",
+      "type": "string"
+    },
+    {
+      "name": "health_link_end",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "e7b680015339c3f5a0e9d21f24484575f4fb1a6f48ff004aa38bd757118d4453",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

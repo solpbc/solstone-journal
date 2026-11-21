@@ -1,0 +1,30 @@
+{
+  "description": "Items still listed when the requested move failed.",
+  "context": "Journal window. Items still listed when the requested move failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "still_listed",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "dbb933b88a4fd0db949e310e8bc6aa08ff49ea3599c83a61a3b5541fe06f6625",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

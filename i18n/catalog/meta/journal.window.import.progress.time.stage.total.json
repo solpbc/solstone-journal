@@ -1,0 +1,25 @@
+{
+  "description": "Stage elapsed time and distinct total time.",
+  "context": "Journal window. Stage elapsed time and distinct total time.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "stage_time",
+      "type": "string"
+    },
+    {
+      "name": "total_time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "27f4ad04f283eeea695d8b5d2c9de2a2c6ca8083cdc111cfe1fec48fe8f95a44",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

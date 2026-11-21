@@ -1,0 +1,25 @@
+{
+  "description": "First and last dates spanned by the import.",
+  "context": "Journal window. First and last dates spanned by the import.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "first_date",
+      "type": "string"
+    },
+    {
+      "name": "last_date",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "75a6aa457b2ea50917be10b7356217a4703715734577e45d4e484eadfa699cc0",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "First date represented in the import progress.",
+  "context": "Journal window. First date represented in the import progress.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "first_date",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8d49ae552beb5e28f1587433f96778a04128fd053684e4045ca41356ab691834",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

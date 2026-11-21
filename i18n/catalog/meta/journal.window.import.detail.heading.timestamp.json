@@ -1,0 +1,25 @@
+{
+  "description": "The import detail heading with its date and clock time.",
+  "context": "Journal window. The import detail heading with its date and clock time.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "date",
+      "type": "string"
+    },
+    {
+      "name": "clock_time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f5edfa8f3e09d107d38ed690d0b0b8912a62dad5550bcc366202fdf1a7239289",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

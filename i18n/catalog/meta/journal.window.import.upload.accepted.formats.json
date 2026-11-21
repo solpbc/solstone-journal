@@ -1,0 +1,21 @@
+{
+  "description": "Accepted file formats supplied by the source metadata.",
+  "context": "Journal window. Accepted file formats supplied by the source metadata.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "formats",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "afb26cac078500e2beca50fb943401b143b4a029be1afcf083aa4f72be10a0e0",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

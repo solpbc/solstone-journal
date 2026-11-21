@@ -1,0 +1,30 @@
+{
+  "description": "Count displayed in the removal control, confirmation or receipt.",
+  "context": "Journal window. Count displayed in the removal control, confirmation or receipt.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "import_count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "ce9eb777ef70cdb72ad3f49e8bbe9f5f2a1c2fb11d12d77826cc728689b31a19",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

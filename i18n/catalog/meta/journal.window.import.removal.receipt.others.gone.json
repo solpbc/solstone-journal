@@ -1,0 +1,26 @@
+{
+  "description": "Remaining failed items no longer listed after a partial move.",
+  "context": "Journal window. Remaining failed items no longer listed after a partial move.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "756b0b03adbe3bd11f29278fd643ef587e2f78910eb26dc03fb9d00232f5e3fa",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

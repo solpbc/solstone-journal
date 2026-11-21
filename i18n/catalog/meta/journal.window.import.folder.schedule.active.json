@@ -1,0 +1,21 @@
+{
+  "description": "Automatic sync with the recorded cadence list. The cadence values are the schedule codes shown by the prior view.",
+  "context": "Journal window. Automatic sync with the recorded cadence list. The cadence values are the schedule codes shown by the prior view.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "cadences",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "55e5c637fa7c4aa10430cb7805faad3c4ddf2677718657825116c648f62cffdf",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

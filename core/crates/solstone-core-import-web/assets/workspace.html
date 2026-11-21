@@ -817,12 +817,140 @@
   let importListHooks = null;
   const IMPORT_RECEIPT_LIFE = 10000;
 
-  function importNoticeFill(template, values = {}) {
-    return Object.entries(values).reduce((text, [key, value]) => text.split(`{${key}}`).join(String(value)), template);
+  function createImportDeleteCopy() {
+    return {
+      select: window.JournalI18n.render('journal.window.import.import.delete.copy.select.select'),
+      selectAll: window.JournalI18n.render('journal.window.import.import.delete.copy.selectall.select.all'),
+      selected: ({ n }) => window.JournalI18n.render('journal.window.import.selection.count', [['quantity', window.JournalI18n.cardinalQuantity(n)], ['selected_count', String(n)]]),
+      delete: window.JournalI18n.render('journal.window.import.import.delete.copy.delete.delete'),
+      done: window.JournalI18n.render('journal.window.import.import.delete.copy.done.done'),
+      pickLabel: ({ name }) => window.JournalI18n.render('journal.window.import.selection.file.name', [['file_name', String(name)]]),
+      meta: ({ day }) => window.JournalI18n.render('journal.window.import.removal.date.imported', [['day', String(day)]]),
+      more: ({ n }) => window.JournalI18n.render('journal.window.import.selection.additional', [['quantity', window.JournalI18n.cardinalQuantity(n)], ['additional_count', String(n)]]),
+      move: {
+        title: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.title.delete.this.import'),
+        titleMany: ({ n }) => window.JournalI18n.renderEnglish('journal.window.import.consent.removal.multiple.move', [['quantity', window.JournalI18n.cardinalQuantity(n)], ['import_count', String(n)]]),
+        reach: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.reach.it.leaves.your.journal.now.and.variant2'),
+        reachMany: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.reachmany.they.leave.your.journal.now.and.variant2'),
+        lead: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.lead.this.moves.the.import.s.own'),
+        ownMany: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.ownmany.this.moves.each.import.s.own'),
+        stays: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.stays.activities.made.from.it.drop.it'),
+        found: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.found.detected.entities.drop.it.too.and'),
+        staysMany: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.staysmany.activities.made.from.them.drop.them'),
+        foundMany: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.foundmany.detected.entities.drop.them.too.and'),
+        staysBody: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.staysbody.activities.summaries.and.entities.made.from.variant2'),
+        staysBodyMany: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.staysbodymany.activities.summaries.and.entities.made.from.variant2'),
+        shared: ({ n }) => window.JournalI18n.renderEnglish('journal.window.import.removal.shared.move', [['quantity', window.JournalI18n.cardinalQuantity(n)], ['shared_days', String(n)]]),
+        sharedUnknown: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.sharedunknown.some.of.what.it.brought.in'),
+        sharedSet: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.sharedset.some.of.what.they.brought.in'),
+        tookNothing: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.tooknothing.everything.it.brought.in.stays.because'),
+        size: ({ size }) => window.JournalI18n.renderEnglish('journal.window.import.consent.removal.storage.total', [['storage', String(size)]]),
+      },
+      erase: {
+        title: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.title.erase.this.import.now'),
+        titleMany: ({ n }) => window.JournalI18n.renderEnglish('journal.window.import.consent.removal.multiple.erase', [['quantity', window.JournalI18n.cardinalQuantity(n)], ['import_count', String(n)]]),
+        reach: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.reach.it.leaves.your.journal.now.and'),
+        reachMany: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.reachmany.they.leave.your.journal.now.and'),
+        lead: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.lead.this.erases.the.import.s.own'),
+        ownMany: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.ownmany.this.erases.each.import.s.own'),
+        stays: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.stays.activities.made.from.it.drop.it'),
+        found: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.found.detected.entities.drop.it.too.and.variant2'),
+        staysMany: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.staysmany.activities.made.from.them.drop.them'),
+        foundMany: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.foundmany.detected.entities.drop.them.too.and.variant2'),
+        staysBody: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.staysbody.activities.summaries.and.entities.made.from'),
+        staysBodyMany: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.staysbodymany.activities.summaries.and.entities.made.from'),
+        shared: ({ n }) => window.JournalI18n.renderEnglish('journal.window.import.removal.shared.erase', [['quantity', window.JournalI18n.cardinalQuantity(n)], ['shared_days', String(n)]]),
+        sharedUnknown: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.sharedunknown.some.of.what.it.brought.in.variant2'),
+        sharedSet: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.sharedset.some.of.what.they.brought.in.variant2'),
+        tookNothing: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.tooknothing.everything.it.brought.in.stays.and'),
+      },
+      // What brings back what a body import deletes or erases ({verb}).
+      again: {
+        apple_health: { move: window.JournalI18n.renderEnglish('journal.window.import.consent.removal.again.apple.health.move'), erase: window.JournalI18n.renderEnglish('journal.window.import.consent.removal.again.apple.health.erase') },
+        strava: { move: window.JournalI18n.renderEnglish('journal.window.import.consent.removal.again.strava.move'), erase: window.JournalI18n.renderEnglish('journal.window.import.consent.removal.again.strava.erase') },
+        oura: { move: window.JournalI18n.renderEnglish('journal.window.import.consent.removal.again.oura.move'), erase: window.JournalI18n.renderEnglish('journal.window.import.consent.removal.again.oura.erase') },
+      },
+      // An import erased now erases its segments waiting in the trash on their own.
+      waiting: {
+        oneImport: ({ w }) => window.JournalI18n.render('journal.window.import.removal.waiting.one.import', [['quantity', window.JournalI18n.cardinalQuantity(w)], ['waiting_segments', String(w)]]),
+        manyImports: ({ w }) => window.JournalI18n.render('journal.window.import.removal.waiting.many.imports', [['quantity', window.JournalI18n.cardinalQuantity(w)], ['waiting_segments', String(w)]]),
+        oneUnknown: window.JournalI18n.render('journal.window.import.import.delete.copy.oneunknown.any.of.its.segments.waiting.in'),
+      },
+      // Said once, after the lines above, whenever the dialog holds a body import.
+      hideDay: window.JournalI18n.render('journal.window.import.import.delete.copy.hideday.a.day.you.hide.on.the'),
+      list: {
+        bodySpan: ({ first, last }) => window.JournalI18n.render('journal.window.import.removal.items.body.span', [['first_day', String(first)], ['last_day', String(last)]]),
+        bodyDay: ({ day }) => window.JournalI18n.render('journal.window.import.removal.items.body.day', [['day', String(day)]]),
+        bodyUnknown: window.JournalI18n.render('journal.window.import.import.delete.copy.bodyunknown.the.body.data.it.brought.in'),
+        workoutSpan: ({ first, last, n }) => window.JournalI18n.render('journal.window.import.removal.items.workout.span', [['first_day', String(first)], ['last_day', String(last)], ['quantity', window.JournalI18n.cardinalQuantity(n)], ['workout_count', String(n)]]),
+        workoutDay: ({ day, n }) => window.JournalI18n.render('journal.window.import.removal.items.workout.day', [['day', String(day)], ['quantity', window.JournalI18n.cardinalQuantity(n)], ['workout_count', String(n)]]),
+        workoutsUnknown: window.JournalI18n.render('journal.window.import.import.delete.copy.workoutsunknown.the.workouts.it.brought.in'),
+        segmentSpan: ({ first, last, n }) => window.JournalI18n.render('journal.window.import.removal.items.segment.span', [['first_day', String(first)], ['last_day', String(last)], ['quantity', window.JournalI18n.cardinalQuantity(n)], ['segment_count', String(n)]]),
+        segmentDay: ({ day, n }) => window.JournalI18n.render('journal.window.import.removal.items.segment.day', [['day', String(day)], ['quantity', window.JournalI18n.cardinalQuantity(n)], ['segment_count', String(n)]]),
+        originals: ({ n }) => window.JournalI18n.render('journal.window.import.removal.items.originals', [['quantity', window.JournalI18n.cardinalQuantity(n)], ['original_count', String(n)]]),
+        row: window.JournalI18n.render('journal.window.import.import.delete.copy.row.its.row.in.your.import.history'),
+        segmentsUnknown: window.JournalI18n.render('journal.window.import.import.delete.copy.segmentsunknown.the.segments.it.brought.in'),
+        originalUnknown: window.JournalI18n.render('journal.window.import.import.delete.copy.originalunknown.any.original.file.it.kept'),
+      },
+      buttons: {
+        eraseNow: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.erasenow.erase.now'),
+        cancel: window.JournalI18n.render('journal.window.import.import.delete.copy.cancel.cancel'),
+        moveToTrash: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.movetotrash.move.to.trash'),
+        back: window.JournalI18n.render('journal.window.import.import.delete.copy.back.back'),
+        recover: window.JournalI18n.render('journal.window.import.import.delete.copy.recover.recover'),
+        openTrash: window.JournalI18n.render('journal.window.import.import.delete.copy.opentrash.open.trash'),
+      },
+      notes: {
+        busy: window.JournalI18n.render('journal.window.import.import.delete.copy.busy.this.is.already.being.moved.or'),
+        importing: window.JournalI18n.render('journal.window.import.import.delete.copy.importing.this.wasn.t.moved.because.it'),
+        other: window.JournalI18n.render('journal.window.import.import.delete.copy.other.this.wasn.t.moved.try.again'),
+        eraseImporting: window.JournalI18n.render('journal.window.import.import.delete.copy.eraseimporting.this.wasn.t.erased.because.it'),
+        eraseOther: window.JournalI18n.render('journal.window.import.import.delete.copy.eraseother.this.wasn.t.erased.try.again'),
+      },
+      receipt: {
+        moved: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.moved.to.the.trash'), message: ({ date }) => window.JournalI18n.render('journal.window.import.removal.receipt.erase.date.one', [['scheduled_erase_day', String(date)]]) },
+        recovered: { title: window.JournalI18n.render('journal.window.import.removal.receipt.recovered.import'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.it.s.back.in.your.journal') },
+        erased: { title: window.JournalI18n.render('journal.window.import.removal.receipt.erased.import') },
+        recoverFailed: { title: window.JournalI18n.render('journal.window.import.removal.receipt.import.recover.failed'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.it.s.still.in.the.trash') },
+        moveRefused: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.couldn.t.move.that.to.the'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.it.s.still.in.your.journal') },
+        eraseRefused: { title: window.JournalI18n.render('journal.window.import.removal.receipt.import.erase.failed'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.it.s.still.in.your.journal') },
+        eraseFailed: { title: window.JournalI18n.render('journal.window.import.removal.receipt.import.erase.failed'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.it.s.in.the.trash.you') },
+        noAnswerMove: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.it.may.already.be.in.the') },
+        noAnswerErase: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.it.may.already.be.erased.reload') },
+        noAnswerRecover: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.it.may.already.be.back.in') },
+      },
+      set: {
+        moved: { title: ({ n }) => window.JournalI18n.render('journal.window.import.removal.receipt.moved.imports', [['quantity', window.JournalI18n.cardinalQuantity(n)], ['import_count', String(n)]]), message: ({ date }) => window.JournalI18n.render('journal.window.import.removal.receipt.erase.date.many', [['scheduled_erase_day', String(date)]]) },
+        partMoved: { title: ({ n, done }) => window.JournalI18n.render('journal.window.import.removal.receipt.partial.move', [['quantity', window.JournalI18n.cardinalQuantity(n)], ['import_count', String(n)], ['completed_quantity', window.JournalI18n.cardinalQuantity(done)], ['completed_count', String(done)]]) },
+        still: ({ k }) => window.JournalI18n.render('journal.window.import.removal.receipt.still', [['quantity', window.JournalI18n.cardinalQuantity(k)], ['still_listed', String(k)]]),
+        marked: ({ k }) => window.JournalI18n.render('journal.window.import.removal.receipt.marked', [['quantity', window.JournalI18n.cardinalQuantity(k)], ['marked_count', String(k)]]),
+        goneMore: ({ g }) => window.JournalI18n.render('journal.window.import.removal.receipt.gone.more', [['quantity', window.JournalI18n.cardinalQuantity(g)], ['no_longer_listed', String(g)]]),
+        othersGone: ({ n }) => window.JournalI18n.render('journal.window.import.removal.receipt.others.gone', [['quantity', window.JournalI18n.cardinalQuantity(n)]]),
+        noneMoved: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.couldn.t.move.those.to.the') },
+        noneStill: ({ k }) => window.JournalI18n.render('journal.window.import.removal.receipt.none.still', [['quantity', window.JournalI18n.cardinalQuantity(k)], ['still_listed', String(k)]]),
+        noneGone: ({ n }) => window.JournalI18n.render('journal.window.import.removal.receipt.none.gone', [['quantity', window.JournalI18n.cardinalQuantity(n)]]),
+        erased: { title: ({ n }) => window.JournalI18n.render('journal.window.import.removal.receipt.erased.imports', [['quantity', window.JournalI18n.cardinalQuantity(n)], ['import_count', String(n)]]) },
+        partErased: { title: ({ n, done }) => window.JournalI18n.render('journal.window.import.removal.receipt.partial.erase', [['quantity', window.JournalI18n.cardinalQuantity(n)], ['import_count', String(n)], ['completed_quantity', window.JournalI18n.cardinalQuantity(done)], ['completed_count', String(done)]]) },
+        partErasedNote: ({ n }) => window.JournalI18n.render('journal.window.import.removal.receipt.part.erased.note', [['quantity', window.JournalI18n.cardinalQuantity(n)]]),
+        noneErased: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.couldn.t.erase.those') },
+        noneErasedNote: ({ n }) => window.JournalI18n.render('journal.window.import.removal.receipt.none.erased.note', [['quantity', window.JournalI18n.cardinalQuantity(n)]]),
+        recovered: { title: ({ n }) => window.JournalI18n.render('journal.window.import.removal.receipt.recovered.imports', [['quantity', window.JournalI18n.cardinalQuantity(n)], ['import_count', String(n)]]), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.they.re.back.in.your.journal') },
+        partRecovered: { title: ({ n, done }) => window.JournalI18n.render('journal.window.import.removal.receipt.partial.recover', [['quantity', window.JournalI18n.cardinalQuantity(n)], ['import_count', String(n)], ['completed_quantity', window.JournalI18n.cardinalQuantity(done)], ['completed_count', String(done)]]) },
+        partRecoveredNote: ({ n }) => window.JournalI18n.render('journal.window.import.removal.receipt.part.recovered.note', [['quantity', window.JournalI18n.cardinalQuantity(n)]]),
+        recoverFailed: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.couldn.t.recover.those'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.they.re.still.in.the.trash') },
+        noAnswerMove: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.they.may.already.be.in.the') },
+        noAnswerErase: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.they.may.already.be.erased.reload') },
+        noAnswerRecover: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.they.may.already.be.back.in') },
+      },
+    };
   }
 
-  function importNotice(copy, card, fill = {}, buttons = [], options = {}) {
-    const put = text => importNoticeFill(text, { noun: copy.noun, things: copy.things, ...fill });
+  function importCopyText(text, values = {}) {
+    return typeof text === 'function' ? text(values) : text;
+  }
+
+  function importNotice(card, fill = {}, buttons = [], options = {}) {
+    const put = text => importCopyText(text, fill);
     const notice = {
       app: 'import',
       icon: options.icon || (options.settled ? 'trash-2' : 'triangle-alert'),
@@ -863,23 +991,23 @@
         body: JSON.stringify({ ids, page: 'import' }),
       });
     } catch (_) {
-      importNotice(copy, one ? R.noAnswerRecover : S.noAnswerRecover);
+      importNotice(one ? R.noAnswerRecover : S.noAnswerRecover);
       return;
     }
     const data = response.ok ? await response.json().catch(() => null) : null;
     if (response.ok && !data) {
-      importNotice(copy, one ? R.noAnswerRecover : S.noAnswerRecover);
+      importNotice(one ? R.noAnswerRecover : S.noAnswerRecover);
       return;
     }
     const done = Array.isArray(data?.done) ? ids.filter(id => data.done.includes(id)) : [];
     if (typeof reload === 'function') await reload();
     if (done.length && done.length === ids.length) {
-      importNotice(copy, one ? R.recovered : S.recovered, { n: ids.length }, [], { settled: true, icon: 'undo-2' });
+      importNotice(one ? R.recovered : S.recovered, { n: ids.length }, [], { settled: true, icon: 'undo-2' });
     } else if (done.length) {
       const others = ids.length - done.length;
-      importNotice(copy, S.partRecovered, { done: done.length, n: ids.length }, [importNoticeTrash(copy)], { message: others === 1 ? S.partRecoveredOne : S.partRecoveredMany });
+      importNotice(S.partRecovered, { done: done.length, n: ids.length }, [importNoticeTrash(copy)], { message: importCopyText(S.partRecoveredNote, { n: others }) });
     } else {
-      importNotice(copy, one ? R.recoverFailed : S.recoverFailed, {}, [importNoticeTrash(copy)]);
+      importNotice(one ? R.recoverFailed : S.recoverFailed, {}, [importNoticeTrash(copy)]);
     }
   }
   // ========== END IMPORT RECEIPTS ==========
@@ -1447,10 +1575,9 @@ function isTerminalDuplicate(data) {
 // on its way in: running, or saved and not yet started.
 function duplicateNoticeText(duplicate = {}, inProgress = false) {
   const importId = duplicate.import_id || '';
-  if (inProgress) {
-    return window.JournalI18n.render('journal.window.import.window.explanation.this.import.is.already.in.progress', [['value1', String(importId ? window.JournalI18n.render('journal.window.import.import.view.as.value1', [['value1', String(importId)]]) : '')]]);
-  }
-  return window.JournalI18n.render('journal.window.import.window.explanation.this.file.was.already.staged.value1', [['value1', String(importId ? window.JournalI18n.render('journal.window.import.import.view.as.value1', [['value1', String(importId)]]) : '')]]);
+  const state = inProgress ? 'running' : 'saved';
+  return window.JournalI18n.render(`journal.window.import.upload.duplicate.${state}${importId ? '.named' : ''}`,
+    importId ? [['import_id', String(importId)]] : []);
 }
 
 const importOriginalsSources = new Set([
@@ -1572,26 +1699,26 @@ function closeDetectModal(restoreFocus = true) {
 }
 
 function formatElapsed(ms) {
-  if (!ms) return '0s';
+  if (!ms) return window.JournalI18n.render('journal.window.import.progress.time.seconds', [['seconds', '0']]);
   const totalSeconds = Math.floor(ms / 1000);
   const hours = Math.floor(totalSeconds / 3600);
   const mins = Math.floor((totalSeconds % 3600) / 60);
   const secs = totalSeconds % 60;
   if (hours > 0) {
-    return window.JournalI18n.render('journal.window.import.import.view.value1.h.value2.m', [['value1', String(hours)], ['value2', String(mins)]]);
+    return window.JournalI18n.render('journal.window.import.progress.time.hours.minutes', [['hours', String(hours)], ['minutes', String(mins)]]);
   }
   if (mins > 0) {
-    return window.JournalI18n.render('journal.window.import.import.view.value1.m.value2.s', [['value1', String(mins)], ['value2', String(secs)]]);
+    return window.JournalI18n.render('journal.window.import.progress.time.minutes.seconds', [['minutes', String(mins)], ['seconds', String(secs)]]);
   }
-  return window.JournalI18n.render('journal.window.import.import.view.value1.s', [['value1', String(secs)]]);
+  return window.JournalI18n.render('journal.window.import.progress.time.seconds', [['seconds', String(secs)]]);
 }
 
 // One stage, or no stage time: the total alone, never the same time twice.
 function statusElapsedDetail(eventData) {
   const totalTime = formatElapsed(eventData.elapsed_ms);
   return eventData.stage_elapsed_ms && eventData.stage_elapsed_ms !== eventData.elapsed_ms
-    ? window.JournalI18n.render('journal.window.import.import.view.value1.value2.total', [['value1', String(formatElapsed(eventData.stage_elapsed_ms))], ['value2', String(totalTime)]])
-    : window.JournalI18n.render('journal.window.import.import.view.value1.elapsed', [['value1', String(totalTime)]]);
+    ? window.JournalI18n.render('journal.window.import.progress.time.stage.total', [['stage_time', String(formatElapsed(eventData.stage_elapsed_ms))], ['total_time', String(totalTime)]])
+    : window.JournalI18n.render('journal.window.import.progress.time.elapsed', [['elapsed_time', String(totalTime)]]);
 }
 
 function capitalizeStage(stage) {
@@ -1601,11 +1728,11 @@ function capitalizeStage(stage) {
 
 function humanStageName(stage, sourceDisplay = '') {
   if (stage === 'saving') {
-    return `${capitalizeStage(window.JournalI18n.render('journal.window.import.body.phase.words.write.saving'))}…`;
+    return window.JournalI18n.render('journal.window.import.progress.stage.saving');
   }
   const fallback = STAGE_NAMES[stage] || `${capitalizeStage(stage)}…`;
   if ((stage === 'importing' || stage === 'execution') && sourceDisplay) {
-    return window.JournalI18n.render('journal.window.import.import.view.reading.value1', [['value1', String(sourceDisplay)]]);
+    return window.JournalI18n.render('journal.window.import.progress.reading.source', [['source', String(sourceDisplay)]]);
   }
   return fallback;
 }
@@ -1622,13 +1749,22 @@ function formatDateRange(dateRange) {
   return `${dateRange[0]} - ${dateRange[1]}`;
 }
 
+function quantityArgs(value, name = 'count', selector = 'quantity', display = String(value)) {
+  return [[selector, window.JournalI18n.cardinalQuantity(value)], [name, display]];
+}
+
+function formattedEntryCount(count) {
+  return window.JournalI18n.render('journal.window.import.progress.count.entries',
+    quantityArgs(count, 'count', 'quantity', count.toLocaleString()));
+}
+
 function formatImportStats(entriesWritten, entitiesSeeded) {
   const parts = [];
   if (typeof entriesWritten === 'number') {
-    parts.push(window.JournalI18n.render('journal.window.import.import.view.value1.value2', [['value1', String(entriesWritten.toLocaleString())], ['value2', String(entriesWritten === 1 ? window.JournalI18n.render('journal.window.import.import.view.entry') : window.JournalI18n.render('journal.window.import.import.view.entries'))]]));
+    parts.push(formattedEntryCount(entriesWritten));
   }
   if (typeof entitiesSeeded === 'number') {
-    parts.push(window.JournalI18n.render('journal.window.import.import.view.value1.entities', [['value1', String(entitiesSeeded)]]));
+    parts.push(window.JournalI18n.render('journal.window.import.progress.count.entities', quantityArgs(entitiesSeeded)));
   }
   return parts.join(' • ') || '—';
 }
@@ -1636,25 +1772,30 @@ function formatImportStats(entriesWritten, entitiesSeeded) {
 function formatProgressStats(eventData) {
   const stats = [];
   if (eventData.items_total) {
-    stats.push(window.JournalI18n.render('journal.window.import.import.view.value1.value2.items', [['value1', String(eventData.items_processed || 0)], ['value2', String(eventData.items_total)]]));
+    stats.push(window.JournalI18n.render('journal.window.import.progress.items.ratio', [['processed', String(eventData.items_processed || 0)], ...quantityArgs(eventData.items_total, 'total', 'total_quantity')]));
   }
   if (eventData.earliest_date) {
-    stats.push(window.JournalI18n.render('journal.window.import.import.view.from.value1', [['value1', String(eventData.earliest_date)]]));
+    stats.push(window.JournalI18n.render('journal.window.import.progress.date.start', [['first_date', String(eventData.earliest_date)]]));
   }
   if (eventData.latest_date && eventData.latest_date !== eventData.earliest_date) {
-    stats.push(window.JournalI18n.render('journal.window.import.import.view.to.value1', [['value1', String(eventData.latest_date)]]));
+    stats.push(window.JournalI18n.render('journal.window.import.progress.date.end', [['last_date', String(eventData.latest_date)]]));
   }
   if (eventData.entities_found) {
-    stats.push(window.JournalI18n.render('journal.window.import.import.view.value1.entities.found', [['value1', String(eventData.entities_found)]]));
+    stats.push(window.JournalI18n.render('journal.window.import.progress.count.entities.found', quantityArgs(eventData.entities_found)));
   }
   return stats;
 }
 
 function renderProgressStats(eventData) {
   if (eventData.source_type === 'audio_archive') {
-    const count = value => Number.isSafeInteger(value) && value >= 0 ? String(value) : '—';
-    const stats = [window.JournalI18n.render('journal.window.import.import.view.value1.audio.value2.saved', [['value1', String(count(eventData.saved_parts))], ['value2', String(eventData.saved_parts === 1 ? window.JournalI18n.render('journal.window.import.import.view.part') : window.JournalI18n.render('journal.window.import.import.view.parts'))]]), window.JournalI18n.render('journal.window.import.import.view.value1.processed', [['value1', String(count(eventData.processed_parts))]]),
-      window.JournalI18n.render('journal.window.import.import.view.value1.waiting.for.processing', [['value1', String(count(eventData.processing))]]), window.JournalI18n.render('journal.window.import.import.view.value1.still.to.save', [['value1', String(count(eventData.remaining))]]), window.JournalI18n.render('journal.window.import.import.view.value1.left.out', [['value1', String(count(eventData.left_out))]])];
+    const quantities = value => quantityArgs(value, 'count', 'quantity', Number.isSafeInteger(value) && value >= 0 ? String(value) : '—');
+    const stats = [
+      window.JournalI18n.render('journal.window.import.progress.archive.saved', quantities(eventData.saved_parts)),
+      window.JournalI18n.render('journal.window.import.progress.archive.processed', quantities(eventData.processed_parts)),
+      window.JournalI18n.render('journal.window.import.progress.archive.processing', quantities(eventData.processing)),
+      window.JournalI18n.render('journal.window.import.progress.archive.remaining', quantities(eventData.remaining)),
+      window.JournalI18n.render('journal.window.import.progress.archive.left.out', quantities(eventData.left_out)),
+    ];
     return `<div class="import-progress-stats">${stats.map(stat => `<div class="import-progress-stat">${escapeHtml(stat)}</div>`).join('')}</div>`;
   }
   const stats = formatProgressStats(eventData);
@@ -1697,11 +1838,12 @@ function buildHistoryHeader(total, totalEntriesWritten) {
   const on = importPick.on;
   const count = importPick.ids.size;
 
-  const importsLabel = total === 1 ? window.JournalI18n.render('journal.window.import.import.view.import') : window.JournalI18n.render('journal.window.import.import.view.imports');
-  const entriesPart = (totalEntriesWritten === null || totalEntriesWritten === undefined)
-    ? '—'
-    : window.JournalI18n.render('journal.window.import.import.view.value1.value2', [['value1', String(totalEntriesWritten.toLocaleString())], ['value2', String(totalEntriesWritten === 1 ? window.JournalI18n.render('journal.window.import.import.view.entry') : window.JournalI18n.render('journal.window.import.import.view.entries'))]]);
-  const summaryText = window.JournalI18n.render('journal.window.import.import.view.value1.value2.value3', [['value1', String(total.toLocaleString())], ['value2', String(importsLabel)], ['value3', String(entriesPart)]]);
+  const imports = quantityArgs(total, 'imports', 'import_quantity', total.toLocaleString());
+  const summaryText = (totalEntriesWritten === null || totalEntriesWritten === undefined)
+    ? window.JournalI18n.render('journal.window.import.history.count.entries.unknown', imports)
+    : window.JournalI18n.render('journal.window.import.history.count.summary', [
+      ...imports, ...quantityArgs(totalEntriesWritten, 'entries', 'entry_quantity', totalEntriesWritten.toLocaleString()),
+    ]);
 
   return `
     <div class="import-history-header">
@@ -1720,7 +1862,7 @@ function buildHistoryHeader(total, totalEntriesWritten) {
         <span class="trash-bar-actions"><button type="button" class="import-secondary-btn" id="importPickDoneIdle">${escapeHtml(C.done)}</button></span>
       </div>
       <div class="trash-bar-group" id="importPickSome"${count === 0 ? ' hidden' : ''}>
-        <span class="trash-count" id="importPickCount">${escapeHtml(importDeleteFill(C.selected, { n: count }))}</span>
+        <span class="trash-count" id="importPickCount">${escapeHtml(importCopyText(C.selected, { n: count }))}</span>
         <span class="trash-bar-actions"><button type="button" class="import-secondary-btn" id="importPickDelete">${escapeHtml(C.delete)}</button><button type="button" class="import-secondary-btn" id="importPickDoneSome">${escapeHtml(C.done)}</button></span>
       </div>
     </div>
@@ -1812,9 +1954,16 @@ function renderImportRow(imp, picking = false) {
     const remaining = imp.remaining ?? 0;
     const processing = imp.processing ?? 0;
     const leftOut = imp.left_out ?? 0;
-    statsText = window.JournalI18n.render('journal.window.import.import.view.value1.parts.saved.value2.left.to', [['value1', String(saved)], ['value2', String(remaining)], ['value3', String(processing)], ['value4', String(imp.processed_parts ?? 0)], ['value5', String(leftOut)]]);
-    if (imp.rejected_parts) statsText += window.JournalI18n.render('journal.window.import.import.view.value1.parts.rejected', [['value1', String(imp.rejected_parts)]]);
-    if (imp.unavailable_parts) statsText += window.JournalI18n.render('journal.window.import.import.view.value1.unavailable', [['value1', String(imp.unavailable_parts)]]);
+    const metrics = [
+      window.JournalI18n.render('journal.window.import.history.archive.saved', quantityArgs(saved)),
+      window.JournalI18n.render('journal.window.import.history.archive.remaining', quantityArgs(remaining)),
+      window.JournalI18n.render('journal.window.import.history.archive.processing', quantityArgs(processing)),
+      window.JournalI18n.render('journal.window.import.progress.archive.processed', quantityArgs(imp.processed_parts ?? 0)),
+      window.JournalI18n.render('journal.window.import.history.archive.left.out', quantityArgs(leftOut)),
+    ];
+    if (imp.rejected_parts) metrics.push(window.JournalI18n.render('journal.window.import.history.archive.rejected', quantityArgs(imp.rejected_parts)));
+    if (imp.unavailable_parts) metrics.push(window.JournalI18n.render('journal.window.import.history.archive.unavailable', quantityArgs(imp.unavailable_parts)));
+    statsText = metrics.join(' · ');
   }
   const encodedId = encodeURIComponent(imp.timestamp);
 
@@ -1857,153 +2006,7 @@ function renderImportRow(imp, picking = false) {
 // Deleting imports: one from its own page or the list, or a set chosen on the
 // list. The dialog, its erase step and the receipts are the trash's own, as the
 // transcripts and settings pages have them; what moves is the import's own.
-const IMPORT_DELETE_COPY = {
-  noun: window.JournalI18n.render('journal.window.import.import.delete.copy.noun.import'),
-  things: window.JournalI18n.render('journal.window.import.import.delete.copy.things.imports'),
-  select: window.JournalI18n.render('journal.window.import.import.delete.copy.select.select'),
-  selectAll: window.JournalI18n.render('journal.window.import.import.delete.copy.selectall.select.all'),
-  selected: window.JournalI18n.render('journal.window.import.import.delete.copy.selected.n.selected'),
-  delete: window.JournalI18n.render('journal.window.import.import.delete.copy.delete.delete'),
-  done: window.JournalI18n.render('journal.window.import.import.delete.copy.done.done'),
-  pickLabel: window.JournalI18n.render('journal.window.import.import.delete.copy.picklabel.select.name'),
-  meta: window.JournalI18n.render('journal.window.import.import.delete.copy.meta.imported.day'),
-  more: window.JournalI18n.render('journal.window.import.import.delete.copy.more.and.n.more'),
-  move: {
-    title: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.title.delete.this.import'),
-    titleMany: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.titlemany.delete.n.imports'),
-    reach: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.reach.it.leaves.your.journal.now.and.variant2'),
-    reachMany: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.reachmany.they.leave.your.journal.now.and.variant2'),
-    lead: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.lead.this.moves.the.import.s.own'),
-    ownMany: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.ownmany.this.moves.each.import.s.own'),
-    stays: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.stays.activities.made.from.it.drop.it'),
-    found: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.found.detected.entities.drop.it.too.and'),
-    staysMany: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.staysmany.activities.made.from.them.drop.them'),
-    foundMany: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.foundmany.detected.entities.drop.them.too.and'),
-    staysBody: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.staysbody.activities.summaries.and.entities.made.from.variant2'),
-    staysBodyMany: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.staysbodymany.activities.summaries.and.entities.made.from.variant2'),
-    sharedOne: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.sharedone.on.day.some.of.what.it'),
-    sharedMany: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.sharedmany.on.n.days.some.of.what'),
-    sharedUnknown: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.sharedunknown.some.of.what.it.brought.in'),
-    sharedSet: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.sharedset.some.of.what.they.brought.in'),
-    tookNothing: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.tooknothing.everything.it.brought.in.stays.because'),
-    verb: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.verb.deletes'),
-    size: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.size.total.size.size'),
-  },
-  erase: {
-    title: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.title.erase.this.import.now'),
-    titleMany: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.titlemany.erase.n.imports.now'),
-    reach: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.reach.it.leaves.your.journal.now.and'),
-    reachMany: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.reachmany.they.leave.your.journal.now.and'),
-    lead: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.lead.this.erases.the.import.s.own'),
-    ownMany: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.ownmany.this.erases.each.import.s.own'),
-    stays: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.stays.activities.made.from.it.drop.it'),
-    found: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.found.detected.entities.drop.it.too.and.variant2'),
-    staysMany: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.staysmany.activities.made.from.them.drop.them'),
-    foundMany: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.foundmany.detected.entities.drop.them.too.and.variant2'),
-    staysBody: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.staysbody.activities.summaries.and.entities.made.from'),
-    staysBodyMany: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.staysbodymany.activities.summaries.and.entities.made.from'),
-    sharedOne: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.sharedone.on.day.some.of.what.it.variant2'),
-    sharedMany: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.sharedmany.on.n.days.some.of.what.variant2'),
-    sharedUnknown: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.sharedunknown.some.of.what.it.brought.in.variant2'),
-    sharedSet: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.sharedset.some.of.what.they.brought.in.variant2'),
-    tookNothing: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.tooknothing.everything.it.brought.in.stays.and'),
-    verb: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.verb.erases'),
-  },
-  // What brings back what a body import deletes or erases ({verb}).
-  again: {
-    apple_health: window.JournalI18n.render('journal.window.import.import.delete.copy.apple.health.each.apple.health.export.holds.your'),
-    strava: window.JournalI18n.render('journal.window.import.import.delete.copy.strava.importing.a.strava.download.again.brings'),
-    oura: window.JournalI18n.render('journal.window.import.import.delete.copy.oura.an.oura.sync.leaves.out.what'),
-  },
-  // An import erased now erases its segments waiting in the trash on their own.
-  waiting: {
-    oneOne: window.JournalI18n.render('journal.window.import.import.delete.copy.oneone.the.segment.from.it.that.waits'),
-    oneMany: window.JournalI18n.render('journal.window.import.import.delete.copy.onemany.the.w.segments.from.it.that'),
-    manyOne: window.JournalI18n.render('journal.window.import.import.delete.copy.manyone.the.segment.from.them.that.waits'),
-    manyMany: window.JournalI18n.render('journal.window.import.import.delete.copy.manymany.the.w.segments.from.them.that'),
-    oneUnknown: window.JournalI18n.render('journal.window.import.import.delete.copy.oneunknown.any.of.its.segments.waiting.in'),
-  },
-  // Said once, after the lines above, whenever the dialog holds a body import.
-  hideDay: window.JournalI18n.render('journal.window.import.import.delete.copy.hideday.a.day.you.hide.on.the'),
-  list: {
-    bodySpan: window.JournalI18n.render('journal.window.import.import.delete.copy.bodyspan.body.data.from.first.to.last'),
-    bodyDay: window.JournalI18n.render('journal.window.import.import.delete.copy.bodyday.body.data.from.day'),
-    bodyUnknown: window.JournalI18n.render('journal.window.import.import.delete.copy.bodyunknown.the.body.data.it.brought.in'),
-    workoutSpanOne: window.JournalI18n.render('journal.window.import.import.delete.copy.workoutspanone.n.workout.from.first.to.last'),
-    workoutSpanMany: window.JournalI18n.render('journal.window.import.import.delete.copy.workoutspanmany.n.workouts.from.first.to.last'),
-    workoutDayOne: window.JournalI18n.render('journal.window.import.import.delete.copy.workoutdayone.n.workout.from.day'),
-    workoutDayMany: window.JournalI18n.render('journal.window.import.import.delete.copy.workoutdaymany.n.workouts.from.day'),
-    workoutsUnknown: window.JournalI18n.render('journal.window.import.import.delete.copy.workoutsunknown.the.workouts.it.brought.in'),
-    spanOne: window.JournalI18n.render('journal.window.import.import.delete.copy.spanone.n.segment.from.first.to.last'),
-    spanMany: window.JournalI18n.render('journal.window.import.import.delete.copy.spanmany.n.segments.from.first.to.last'),
-    dayOne: window.JournalI18n.render('journal.window.import.import.delete.copy.dayone.n.segment.from.day'),
-    dayMany: window.JournalI18n.render('journal.window.import.import.delete.copy.daymany.n.segments.from.day'),
-    originalOne: window.JournalI18n.render('journal.window.import.import.delete.copy.originalone.the.original.file.it.kept'),
-    originalMany: window.JournalI18n.render('journal.window.import.import.delete.copy.originalmany.the.n.original.files.it.kept'),
-    row: window.JournalI18n.render('journal.window.import.import.delete.copy.row.its.row.in.your.import.history'),
-    segmentsUnknown: window.JournalI18n.render('journal.window.import.import.delete.copy.segmentsunknown.the.segments.it.brought.in'),
-    originalUnknown: window.JournalI18n.render('journal.window.import.import.delete.copy.originalunknown.any.original.file.it.kept'),
-  },
-  buttons: {
-    eraseNow: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.erasenow.erase.now'),
-    cancel: window.JournalI18n.render('journal.window.import.import.delete.copy.cancel.cancel'),
-    moveToTrash: window.JournalI18n.renderEnglish('journal.window.import.consent.import.removal.movetotrash.move.to.trash'),
-    back: window.JournalI18n.render('journal.window.import.import.delete.copy.back.back'),
-    recover: window.JournalI18n.render('journal.window.import.import.delete.copy.recover.recover'),
-    openTrash: window.JournalI18n.render('journal.window.import.import.delete.copy.opentrash.open.trash'),
-  },
-  notes: {
-    busy: window.JournalI18n.render('journal.window.import.import.delete.copy.busy.this.is.already.being.moved.or'),
-    importing: window.JournalI18n.render('journal.window.import.import.delete.copy.importing.this.wasn.t.moved.because.it'),
-    other: window.JournalI18n.render('journal.window.import.import.delete.copy.other.this.wasn.t.moved.try.again'),
-    eraseImporting: window.JournalI18n.render('journal.window.import.import.delete.copy.eraseimporting.this.wasn.t.erased.because.it'),
-    eraseOther: window.JournalI18n.render('journal.window.import.import.delete.copy.eraseother.this.wasn.t.erased.try.again'),
-  },
-  receipt: {
-    moved: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.moved.to.the.trash'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.erases.date.unless.you.recover.it') },
-    recovered: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.noun.recovered'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.it.s.back.in.your.journal') },
-    erased: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.noun.erased.from.your.journal') },
-    recoverFailed: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.couldn.t.recover.that.noun'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.it.s.still.in.the.trash') },
-    moveRefused: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.couldn.t.move.that.to.the'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.it.s.still.in.your.journal') },
-    eraseRefused: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.couldn.t.erase.that.noun'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.it.s.still.in.your.journal') },
-    eraseFailed: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.couldn.t.erase.that.noun'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.it.s.in.the.trash.you') },
-    noAnswerMove: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.it.may.already.be.in.the') },
-    noAnswerErase: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.it.may.already.be.erased.reload') },
-    noAnswerRecover: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.it.may.already.be.back.in') },
-  },
-  set: {
-    moved: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.moved.n.things.to.the.trash'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.they.erase.date.unless.you.recover') },
-    partMoved: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.moved.done.of.n.to.the') },
-    stillOne: window.JournalI18n.render('journal.window.import.import.delete.copy.stillone.k.couldn.t.be.moved.and'),
-    stillMany: window.JournalI18n.render('journal.window.import.import.delete.copy.stillmany.k.couldn.t.be.moved.and'),
-    markedOne: window.JournalI18n.render('journal.window.import.import.delete.copy.markedone.k.couldn.t.be.moved.and'),
-    markedMany: window.JournalI18n.render('journal.window.import.import.delete.copy.markedmany.k.couldn.t.be.moved.and'),
-    goneMoreOne: window.JournalI18n.render('journal.window.import.import.delete.copy.gonemoreone.g.more.is.no.longer.listed'),
-    goneMoreMany: window.JournalI18n.render('journal.window.import.import.delete.copy.gonemoremany.g.more.are.no.longer.listed'),
-    othersGoneOne: window.JournalI18n.render('journal.window.import.import.delete.copy.othersgoneone.the.other.is.no.longer.listed'),
-    othersGoneMany: window.JournalI18n.render('journal.window.import.import.delete.copy.othersgonemany.the.others.are.no.longer.listed'),
-    noneMoved: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.couldn.t.move.those.to.the') },
-    noneStillOne: window.JournalI18n.render('journal.window.import.import.delete.copy.nonestillone.k.is.still.in.your.journal'),
-    noneStillMany: window.JournalI18n.render('journal.window.import.import.delete.copy.nonestillmany.k.are.still.in.your.journal'),
-    noneGoneOne: window.JournalI18n.render('journal.window.import.import.delete.copy.nonegoneone.it.s.no.longer.listed.here'),
-    noneGoneMany: window.JournalI18n.render('journal.window.import.import.delete.copy.nonegonemany.they.re.no.longer.listed.here'),
-    erased: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.erased.n.things.from.your.journal') },
-    partErased: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.erased.done.of.n') },
-    partErasedOne: window.JournalI18n.render('journal.window.import.import.delete.copy.parterasedone.the.other.wasn.t.erased.look'),
-    partErasedMany: window.JournalI18n.render('journal.window.import.import.delete.copy.parterasedmany.the.others.weren.t.erased.look'),
-    noneErased: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.couldn.t.erase.those') },
-    noneErasedOne: window.JournalI18n.render('journal.window.import.import.delete.copy.noneerasedone.look.for.it.below.or.in'),
-    noneErasedMany: window.JournalI18n.render('journal.window.import.import.delete.copy.noneerasedmany.look.for.them.below.or.in'),
-    recovered: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.n.things.recovered'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.they.re.back.in.your.journal') },
-    partRecovered: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.recovered.done.of.n') },
-    partRecoveredOne: window.JournalI18n.render('journal.window.import.import.delete.copy.partrecoveredone.the.other.is.still.in.the'),
-    partRecoveredMany: window.JournalI18n.render('journal.window.import.import.delete.copy.partrecoveredmany.the.others.are.still.in.the'),
-    recoverFailed: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.couldn.t.recover.those'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.they.re.still.in.the.trash') },
-    noAnswerMove: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.they.may.already.be.in.the') },
-    noAnswerErase: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.they.may.already.be.erased.reload') },
-    noAnswerRecover: { title: window.JournalI18n.render('journal.window.import.import.delete.copy.title.your.journal.didn.t.answer'), message: window.JournalI18n.render('journal.window.import.import.delete.copy.message.they.may.already.be.back.in') },
-  },
-};
+const IMPORT_DELETE_COPY = createImportDeleteCopy();
 // The Import page's own name for each source, for the page that has not loaded
 // its source cards (an import's own page) and for sources with no card.
 const IMPORT_SOURCE_NAMES = {
@@ -2019,10 +2022,6 @@ const IMPORT_SET_SHOWN = 5;
 const importPick = { on: false, ids: new Set(), notes: new Map() };
 // The open dialog: what it deletes, its step, and where focus goes back to.
 let importDialog = null;
-
-function importDeleteFill(template, values = {}) {
-  return Object.entries(values).reduce((text, [key, value]) => text.split(`{${key}}`).join(String(value)), template);
-}
 
 function importDeleteEl(tag, className, text) {
   const node = document.createElement(tag);
@@ -2080,23 +2079,23 @@ function importOneListLines(preview, kind) {
   const [first, last] = Array.isArray(preview.days) ? preview.days : [];
   if (body) {
     // What an owner knows a body import by: the days of its own it holds.
-    if (first && last && first !== last) lines.push(importDeleteFill(L.bodySpan, { first: importDeleteDay(first), last: importDeleteDay(last) }));
-    else if (first) lines.push(importDeleteFill(L.bodyDay, { day: importDeleteDay(first) }));
+    if (first && last && first !== last) lines.push(importCopyText(L.bodySpan, { first: importDeleteDay(first), last: importDeleteDay(last) }));
+    else if (first) lines.push(importCopyText(L.bodyDay, { day: importDeleteDay(first) }));
   } else if (kind === 'strava') {
     // A Strava import is its workouts; their pieces aren't counted beside them.
     const workouts = Number(preview.workouts) || 0;
     if (workouts > 0 && first && last && first !== last) {
-      lines.push(importDeleteFill(workouts === 1 ? L.workoutSpanOne : L.workoutSpanMany, { n: workouts, first: importDeleteDay(first), last: importDeleteDay(last) }));
+      lines.push(importCopyText(L.workoutSpan, { n: workouts, first: importDeleteDay(first), last: importDeleteDay(last) }));
     } else if (workouts > 0 && first) {
-      lines.push(importDeleteFill(workouts === 1 ? L.workoutDayOne : L.workoutDayMany, { n: workouts, day: importDeleteDay(first) }));
+      lines.push(importCopyText(L.workoutDay, { n: workouts, day: importDeleteDay(first) }));
     }
   } else {
     const segments = Number(preview.segments) || 0;
     if (segments > 0) {
       if (first && last && first !== last) {
-        lines.push(importDeleteFill(segments === 1 ? L.spanOne : L.spanMany, { n: segments, first: importDeleteDay(first), last: importDeleteDay(last) }));
+        lines.push(importCopyText(L.segmentSpan, { n: segments, first: importDeleteDay(first), last: importDeleteDay(last) }));
       } else if (first) {
-        lines.push(importDeleteFill(segments === 1 ? L.dayOne : L.dayMany, { n: segments, day: importDeleteDay(first) }));
+        lines.push(importCopyText(L.segmentDay, { n: segments, day: importDeleteDay(first) }));
       } else {
         lines.push(L.segmentsUnknown);
       }
@@ -2105,8 +2104,7 @@ function importOneListLines(preview, kind) {
   // The files it was given and keeps in its record; its segments' own audio
   // goes under the segment count.
   const kept = Number(preview.kept ?? preview.originals) || 0;
-  if (kept === 1) lines.push(L.originalOne);
-  else if (kept > 1) lines.push(importDeleteFill(L.originalMany, { n: kept }));
+  if (kept >= 1) lines.push(importCopyText(L.originals, { n: kept }));
   lines.push(L.row);
   return lines;
 }
@@ -2134,19 +2132,19 @@ function importBodyLines(step, item, preview, kind) {
       lines.push(copy.tookNothing);
     } else if (preview && Number(preview.shared_days) > 0) {
       const n = Number(preview.shared_days);
-      lines.push(n === 1 ? copy.sharedOne : importDeleteFill(copy.sharedMany, { n }));
+      lines.push(importCopyText(copy.shared, { n }));
     }
   }
   const again = IMPORT_DELETE_COPY.again[kind];
   const strava = kind === 'strava' && (preview === null || Number(preview && preview.workouts) > 0);
-  if (again && (kind !== 'strava' || strava)) lines.push(importDeleteFill(again, { verb: copy.verb }));
+  if (again && (kind !== 'strava' || strava)) lines.push(again[step]);
   return lines;
 }
 
 function importMetaLine(item) {
   const meta = importDeleteEl('p', 'trash-dlg-meta');
   if (item.source) meta.append(importDeleteEl('strong', null, item.source), importDeleteEl('span', null, ' · '));
-  meta.append(importDeleteEl('strong', null, importDeleteFill(IMPORT_DELETE_COPY.meta, { day: importDeleteDay(item.id) })));
+  meta.append(importDeleteEl('strong', null, importCopyText(IMPORT_DELETE_COPY.meta, { day: importDeleteDay(item.id) })));
   return meta;
 }
 
@@ -2166,7 +2164,7 @@ function importOneBody(step, item, preview) {
   if (step === 'erase') {
     const W = IMPORT_DELETE_COPY.waiting;
     const waiting = preview ? Number(preview.waiting) || 0 : null;
-    const line = waiting === null ? W.oneUnknown : waiting === 1 ? W.oneOne : waiting > 1 ? importDeleteFill(W.oneMany, { w: waiting }) : null;
+    const line = waiting === null ? W.oneUnknown : waiting >= 1 ? importCopyText(W.oneImport, { w: waiting }) : null;
     if (line) nodes.push(importDeleteEl('p', 'import-delete-waiting', line));
   }
   nodes.push(importDeleteEl('p', 'import-delete-lead', copy.lead), list);
@@ -2179,7 +2177,7 @@ function importOneBody(step, item, preview) {
   if (again) nodes.push(importDeleteEl('p', 'import-delete-again', again));
   if (importIsBody(kind)) nodes.push(importDeleteEl('p', 'import-delete-hide-day', IMPORT_DELETE_COPY.hideDay));
   const size = step === 'move' && preview ? importDeleteSize(preview.bytes) : '';
-  if (size) nodes.push(importDeleteEl('p', 'import-delete-size', importDeleteFill(copy.size, { size })));
+  if (size) nodes.push(importDeleteEl('p', 'import-delete-size', importCopyText(copy.size, { size })));
   return nodes;
 }
 
@@ -2190,11 +2188,11 @@ function importSetBody(step, items) {
   items.slice(0, IMPORT_SET_SHOWN).forEach(item => {
     const line = importDeleteEl('li');
     if (item.source) line.append(importDeleteEl('strong', null, item.source), importDeleteEl('span', null, ' · '));
-    line.append(importDeleteEl('span', null, importDeleteFill(IMPORT_DELETE_COPY.meta, { day: importDeleteDay(item.id) })));
+    line.append(importDeleteEl('span', null, importCopyText(IMPORT_DELETE_COPY.meta, { day: importDeleteDay(item.id) })));
     list.append(line);
   });
   if (items.length > IMPORT_SET_SHOWN) {
-    list.append(importDeleteEl('li', 'trash-set-more', importDeleteFill(IMPORT_DELETE_COPY.more, { n: items.length - IMPORT_SET_SHOWN })));
+    list.append(importDeleteEl('li', 'trash-set-more', importCopyText(IMPORT_DELETE_COPY.more, { n: items.length - IMPORT_SET_SHOWN })));
   }
   const nodes = [
     list,
@@ -2205,7 +2203,7 @@ function importSetBody(step, items) {
   const waiting = items.reduce((sum, item) => sum + (Number(item.waiting) || 0), 0);
   if (step === 'erase' && waiting > 0) {
     const W = IMPORT_DELETE_COPY.waiting;
-    nodes.push(importDeleteEl('p', 'import-delete-waiting', waiting === 1 ? W.manyOne : importDeleteFill(W.manyMany, { w: waiting })));
+    nodes.push(importDeleteEl('p', 'import-delete-waiting', importCopyText(W.manyImports, { w: waiting })));
   }
   nodes.push(importDeleteEl('p', 'import-delete-own', copy.ownMany));
   // Some of a body import may stay with an earlier one the page lists outside the set.
@@ -2217,7 +2215,7 @@ function importSetBody(step, items) {
   nodes.push(importDeleteEl('p', 'import-delete-stays', remakes ? copy.staysMany : copy.staysBodyMany));
   if (remakes) nodes.push(importDeleteEl('p', 'import-delete-found', copy.foundMany));
   const kinds = [...new Set(items.map(item => item.kind))].filter(kind => IMPORT_DELETE_COPY.again[kind]);
-  kinds.forEach(kind => nodes.push(importDeleteEl('p', 'import-delete-again', importDeleteFill(IMPORT_DELETE_COPY.again[kind], { verb: copy.verb }))));
+  kinds.forEach(kind => nodes.push(importDeleteEl('p', 'import-delete-again', IMPORT_DELETE_COPY.again[kind][step])));
   if (items.some(item => importIsBody(item.kind))) nodes.push(importDeleteEl('p', 'import-delete-hide-day', IMPORT_DELETE_COPY.hideDay));
   return nodes;
 }
@@ -2346,7 +2344,7 @@ function importOneSpec(item, act) {
 
 function importSetSpec(items, act) {
   return {
-    title: step => importDeleteFill(IMPORT_DELETE_COPY[step].titleMany, { n: items.length }),
+    title: step => importCopyText(IMPORT_DELETE_COPY[step].titleMany, { n: items.length }),
     body: step => importSetBody(step, items),
     act,
   };
@@ -2355,7 +2353,7 @@ function importSetSpec(items, act) {
 // The receipts and their buttons are the module's, so one that outlives
 // import keeps no mount.
 function importReceipt(copy, fill = {}, buttons = [], options = {}) {
-  importNotice(IMPORT_DELETE_COPY, copy, fill, buttons, options);
+  importNotice(copy, fill, buttons, options);
 }
 
 function importOpenTrashButton() {
@@ -2421,7 +2419,7 @@ async function recoverImports(trashIds, reload) {
 function importSetOutcome(erase, ids, answer, listed) {
   const S = IMPORT_DELETE_COPY.set;
   const n = ids.length;
-  const fill = (template, values) => importDeleteFill(template, values);
+  const fill = (template, values) => importCopyText(template, values);
   if (!answer || !Array.isArray(answer.done) || !Array.isArray(answer.failed)) {
     return {
       receipt: erase ? S.noAnswerErase : S.noAnswerMove, fill: {}, buttons: [], settled: false,
@@ -2447,24 +2445,24 @@ function importSetOutcome(erase, ids, answer, listed) {
     if (erased) {
       out.receipt = S.partErased;
       out.fill.done = erased;
-      out.message = listed ? (n - erased === 1 ? S.partErasedOne : S.partErasedMany) : '';
+      out.message = listed ? (importCopyText(S.partErasedNote, { n: n - erased })) : '';
     } else {
       out.receipt = S.noneErased;
-      out.message = listed ? (n === 1 ? S.noneErasedOne : S.noneErasedMany) : '';
+      out.message = listed ? (importCopyText(S.noneErasedNote, { n })) : '';
     }
     return out;
   }
   if (!failed.length) {
     return { ...out, receipt: n === 1 ? R.moved : S.moved, buttons: ['recover', 'openTrash'], settled: true, message: out.fill.date ? undefined : '' };
   }
-  const goneMore = g ? ` ${fill(g === 1 ? S.goneMoreOne : S.goneMoreMany, { g })}` : '';
+  const goneMore = g ? ` ${fill(S.goneMore, { g })}` : '';
   if (done.length) {
     out.receipt = S.partMoved;
     out.buttons = ['recover', 'openTrash'];
     if (!listed) out.message = '';
-    else if (k && !g) out.message = fill(k === 1 ? S.stillOne : S.stillMany, { k });
-    else if (k) out.message = fill(k === 1 ? S.markedOne : S.markedMany, { k }) + goneMore;
-    else out.message = failed.length === 1 ? S.othersGoneOne : S.othersGoneMany;
+    else if (k && !g) out.message = fill(S.still, { k });
+    else if (k) out.message = fill(S.marked, { k }) + goneMore;
+    else out.message = importCopyText(S.othersGone, { n: failed.length });
     return out;
   }
   out.receipt = S.noneMoved;
@@ -2472,10 +2470,10 @@ function importSetOutcome(erase, ids, answer, listed) {
     out.message = '';
     out.buttons = ['openTrash'];
   } else if (k) {
-    out.message = fill(k === 1 ? S.noneStillOne : S.noneStillMany, { k }) + goneMore;
+    out.message = fill(S.noneStill, { k }) + goneMore;
     out.buttons = [];
   } else {
-    out.message = failed.length === 1 ? S.noneGoneOne : S.noneGoneMany;
+    out.message = importCopyText(S.noneGone, { n: failed.length });
     out.buttons = ['openTrash'];
   }
   return out;
@@ -2486,7 +2484,7 @@ function importPickHeadHtml() {
 }
 
 function importPickCellHtml(deletable, name) {
-  const label = importDeleteFill(IMPORT_DELETE_COPY.pickLabel, { name: name || '' }).trim();
+  const label = importCopyText(IMPORT_DELETE_COPY.pickLabel, { name: name || '' }).trim();
   return `<td class="import-pick-col">${deletable ? `<input type="checkbox" data-import-pick aria-label="${escapeHtml(label)}">` : ''}</td>`;
 }
 
@@ -2531,11 +2529,11 @@ function paintImportPick() {
     writeHidden(bar, !importPick.on);
     writeHidden(byId('importPickIdle'), count > 0);
     writeHidden(byId('importPickSome'), count === 0);
-    writeText(byId(window.JournalI18n.render('journal.window.import.import.status.or.action.importpickalllabel')), C.selectAll);
+    writeText(byId('importPickAllLabel'), C.selectAll);
     byId('importPickAll').checked = false;
     byId('importPickAll').onchange = selectAllImports;
-    writeText(byId(window.JournalI18n.render('journal.window.import.import.status.or.action.importpickcount')), importDeleteFill(C.selected, { n: count }));
-    writeText(byId(window.JournalI18n.render('journal.window.import.import.status.or.action.importpickdelete')), C.delete);
+    writeText(byId('importPickCount'), importCopyText(C.selected, { n: count }));
+    writeText(byId('importPickDelete'), C.delete);
     byId('importPickDelete').onclick = deleteChosenImports;
     for (const id of ['importPickDoneIdle', 'importPickDoneSome']) {
       writeText(byId(id), C.done);
@@ -3191,7 +3189,7 @@ async function loadGuidedFlow(sourceName) {
           <h4>${window.JournalI18n.renderHtml('journal.window.import.visible.text.upload.your.file')}</h4>
           <div class="import-upload-area" id="guidedDropArea" role="button" tabindex="0" aria-label="${window.JournalI18n.renderHtml('journal.window.import.accessible.name.choose.file.to.upload')}">
             <p>${escapeHtml(source.upload_prompt || window.JournalI18n.render('journal.window.import.status.text.select.a.file.to.import'))}</p>
-            <div class="import-upload-help">${escapeHtml(source.accept ? window.JournalI18n.render('journal.window.import.status.text.accepts.value1', [['value1', String(source.accept)]]) : window.JournalI18n.render('journal.window.import.status.text.any.supported.file'))}</div>
+            <div class="import-upload-help">${escapeHtml(source.accept ? window.JournalI18n.render('journal.window.import.upload.accepted.formats', [['formats', String(source.accept)]]) : window.JournalI18n.render('journal.window.import.status.text.any.supported.file'))}</div>
             <input id="guidedFileInput" type="file" accept="${escapeHtml(source.accept || '')}" style="display:none" />
             <div id="guidedFileLabel" class="import-file-label"></div>
           </div>
@@ -3287,8 +3285,12 @@ async function loadGuidedFlow(sourceName) {
 }
 
 function stravaFacetText(key, facet) {
-  const copy = (stravaFacet && stravaFacet.copy) || {};
-  return String(copy[key] || '').replace('{facet}', facet || '');
+  if (key === 'ask_existing' || key === 'files_earlier') {
+    const source = stravaFacet?.source === 'apple_health' ? 'apple' : 'shared';
+    const message = key === 'ask_existing' ? 'ask.named' : 'files.named';
+    return window.JournalI18n.renderEnglish(`journal.window.import.body.facet.${source}.${message}`, [['facet_name', String(facet || '')]]);
+  }
+  return String(stravaFacet?.copy?.[key] || '');
 }
 
 function stravaFacetTitle(name) {
@@ -3885,11 +3887,11 @@ async function chooseGuidedFolder(source) {
     if (result.state === 'saved' && result.ok && result.value?.path) {
       currentGuidedSaved = result.value;
       folderSelection(source, { client_item_id: reference, import_id: result.import_id });
-      status.textContent = window.JournalI18n.render('journal.window.import.visible.text.value1.saved', [['value1', String(result.folder_name)]]);
+      status.textContent = window.JournalI18n.render('journal.window.import.upload.saved.named', [['name', String(result.folder_name)]]);
     } else if (result.state === 'registration_failed') {
       currentGuidedSaved = null;
       folderSelection(source, { client_item_id: reference, import_id: result.import_id, custody: 'saved' });
-      status.textContent = window.JournalI18n.render('journal.window.import.visible.text.value1.saved.but.import.setup.could', [['value1', String(result.folder_name)]]);
+      status.textContent = window.JournalI18n.render('journal.window.import.upload.saved.setup.unconfirmed', [['name', String(result.folder_name)]]);
     } else {
       await reconcileGuidedFolder(source, true);
       if (live() && !currentGuidedSaved) status.textContent = result.error || window.JournalI18n.render('journal.window.import.visible.text.this.import.could.not.be.confirmed');
@@ -3945,7 +3947,7 @@ async function reconcileGuidedFolder(source, duringReply = false) {
       source_timestamp: metadata.source_timestamp || rows[0].timestamp, client_item_id: retained.client_item_id };
     importDraft.guidedClientItemId = retained.client_item_id;
     clientChoice = retained.client_item_id;
-    status.textContent = window.JournalI18n.render('journal.window.import.visible.text.value1.saved', [['value1', String(metadata.original_filename)]]);
+    status.textContent = window.JournalI18n.render('journal.window.import.upload.saved.named', [['name', String(metadata.original_filename)]]);
   } catch (error) {
     if (live()) {
       currentGuidedSaved = null;
@@ -4031,28 +4033,31 @@ const APPLE_WORDS = {
 
 function applePreviewText(size, space) {
   const held = size.apple_health;
-  const count = (n, one, many) => window.JournalI18n.render('journal.window.import.import.view.value1.value2', [['value1', String(Number(n).toLocaleString())], ['value2', String(n === 1 ? one : many)]]);
+  const tally = (message, value) => window.JournalI18n.render(message,
+    quantityArgs(value, 'count', 'quantity', Number(value).toLocaleString()));
   const parts = [];
-  if (held.span) parts.push(window.JournalI18n.render('journal.window.import.import.view.value1.to.value2', [['value1', String(held.span[0])], ['value2', String(held.span[1])]]));
-  parts.push(count(held.workouts, window.JournalI18n.render('journal.window.import.import.view.workout'), window.JournalI18n.render('journal.window.import.import.view.workouts')));
-  parts.push(window.JournalI18n.render('journal.window.import.window.explanation.value1.put.together.from.sleep.stages', [['value1', String(count(held.nights, window.JournalI18n.render('journal.window.import.unit.night'), window.JournalI18n.render('journal.window.import.unit.nights')))]]));
-  parts.push(count(held.mindful_sessions, window.JournalI18n.render('journal.window.import.import.view.mindful.session'), window.JournalI18n.render('journal.window.import.import.view.mindful.sessions')));
-  parts.push(count(held.readings, window.JournalI18n.render('journal.window.body.count.reading.one'), window.JournalI18n.render('journal.window.body.count.reading.other')));
-  parts.push(count(held.daily_totals, window.JournalI18n.render('journal.window.import.import.view.daily.total'), window.JournalI18n.render('journal.window.import.import.view.daily.totals')));
-  parts.push(count(held.logged, window.JournalI18n.render('journal.window.import.import.view.logged.entry'), window.JournalI18n.render('journal.window.import.import.view.logged.entries')));
+  if (held.span) parts.push(window.JournalI18n.render('journal.window.import.preview.date.range', [['first_date', String(held.span[0])], ['last_date', String(held.span[1])]]));
+  parts.push(
+    tally('journal.window.import.preview.apple.workouts', held.workouts),
+    tally('journal.window.import.preview.apple.nights', held.nights),
+    tally('journal.window.import.preview.apple.mindful', held.mindful_sessions),
+    tally('journal.window.import.preview.apple.readings', held.readings),
+    tally('journal.window.import.preview.apple.daily.totals', held.daily_totals),
+    tally('journal.window.import.preview.apple.logged', held.logged),
+  );
   const left = Object.keys(held.not_read || {}).length;
-  if (left) parts.push(window.JournalI18n.render('journal.window.import.window.explanation.value1.left.out.named.in.the', [['value1', String(count(left, window.JournalI18n.render('journal.window.import.import.view.other.kind'), window.JournalI18n.render('journal.window.import.import.view.other.kinds')))]]));
+  if (left) parts.push(tally('journal.window.import.preview.apple.left.out', left));
   if (size.listed_moves?.count) {
-    parts.push(window.JournalI18n.renderEnglish('journal.window.import.window.explanation.saying.yes.can.move.up.to', [['value1', String(count(size.listed_moves.count, window.JournalI18n.render('journal.window.import.unit.record'), window.JournalI18n.render('journal.window.import.unit.records')))]]));
+    const moved = size.listed_moves.count;
+    parts.push(window.JournalI18n.renderEnglish('journal.window.import.preview.apple.move.listed',
+      quantityArgs(moved, 'count', 'quantity', Number(moved).toLocaleString())));
   }
-  let text = parts.join(' · ');
   if (space) {
-    text += space.fits === false
-      ? ` · ${space.words}`
-      : window.JournalI18n.render('journal.window.import.import.view.needs.about.value1.free.and.value2', [['value1', String(space.need_words)], ['value2', String(space.free_words)]]);
+    parts.push(space.fits === false ? String(space.words)
+      : window.JournalI18n.render('journal.window.import.preview.storage.available', [['needed', String(space.need_words)], ['free', String(space.free_words)]]));
   }
-  if (!size.other_units?.[1]) text += window.JournalI18n.render('journal.window.import.import.view.nothing.to.import');
-  return text;
+  if (!size.other_units?.[1]) parts.push(window.JournalI18n.render('journal.window.import.strings.nothing.to.import.nothing.to.import'));
+  return parts.join(' · ');
 }
 
 function showApplePreviewCancel(controller) {
@@ -4127,10 +4132,15 @@ async function prepareImportPreview(kind, payload, setting, button, sourceName =
     const panel = document.getElementById(`${kind}SizePreview`);
     if (panel) {
       const skipped = Object.values(size.left_out).reduce((total, count) => total + count, 0);
-      panel.textContent = window.JournalI18n.render('journal.window.import.visible.text.value1.source.value2.value3.recording.bytes', [['value1', String(size.members)], ['value2', String(size.members === 1 ? 'file' : 'files')], ['value3', String(size.source_bytes)], ['value4', String(size.days)], ['value5', String(size.days === 1 ? 'day' : 'days')]])
-        + (skipped ? window.JournalI18n.render('journal.window.import.visible.text.value1.left.out', [['value1', String(skipped)]]) : '')
-        + (Number.isSafeInteger(size.saved_parts) ? window.JournalI18n.render('journal.window.import.visible.text.value1.audio.value2.already.saved', [['value1', String(size.saved_parts)], ['value2', String(size.saved_parts === 1 ? 'part' : 'parts')]]) : '')
-        + (!ready ? window.JournalI18n.render('journal.window.import.visible.text.nothing.to.import') : '');
+      const parts = [
+        window.JournalI18n.render('journal.window.import.preview.archive.source.files', quantityArgs(size.members)),
+        window.JournalI18n.render('journal.window.import.preview.archive.recording.bytes', quantityArgs(size.source_bytes)),
+        window.JournalI18n.render('journal.window.import.preview.archive.days', quantityArgs(size.days)),
+      ];
+      if (skipped) parts.push(window.JournalI18n.render('journal.window.import.preview.archive.left.out', quantityArgs(skipped)));
+      if (Number.isSafeInteger(size.saved_parts)) parts.push(window.JournalI18n.render('journal.window.import.preview.archive.saved', quantityArgs(size.saved_parts)));
+      if (!ready) parts.push(window.JournalI18n.render('journal.window.import.strings.nothing.to.import.nothing.to.import'));
+      panel.textContent = parts.join(' · ');
     }
     restoreImportButton(kind, button);
     return null;
@@ -4151,14 +4161,19 @@ async function prepareImportPreview(kind, payload, setting, button, sourceName =
   importPreviews[kind] = { key, token: data.preview_token, ready };
   const panel = document.getElementById(`${kind}SizePreview`);
   if (panel) {
-    panel.textContent = window.JournalI18n.render('journal.window.import.visible.text.value1.value2.across.value3.value4', [['value1', String(size.recordings)], ['value2', String(size.recordings === 1 ? 'recording' : 'recordings')], ['value3', String(size.days)], ['value4', String(size.days === 1 ? 'day' : 'days')]]);
-    if (size.other_units) panel.textContent += ` · ${size.other_units[1]} ${size.other_units[0]}`;
-    if (size.skipped) panel.textContent += window.JournalI18n.render('journal.window.import.visible.text.value1.skipped', [['value1', String(size.skipped)]]);
-    if (size.listed_moves) {
-      panel.textContent += window.JournalI18n.render('journal.window.import.visible.text.value1.value2.already.listed.on.the', [['value1', String(size.listed_moves.count)], ['value2', String(size.listed_moves.count === 1 ? 'workout' : 'workouts')], ['value3', String(size.listed_moves.from.join(', '))]]);
-    }
-    if (data.force_notice) panel.textContent += ` · ${data.force_notice}`;
-    if (!ready) panel.textContent += window.JournalI18n.render('journal.window.import.visible.text.nothing.to.import');
+    const parts = [window.JournalI18n.render('journal.window.import.detail.preview.recordings', [
+      ...quantityArgs(size.recordings, 'recordings', 'recording_quantity'), ...quantityArgs(size.days, 'days', 'day_quantity'),
+    ])];
+    if (size.other_units) parts.push(window.JournalI18n.render('journal.window.import.detail.preview.other.units', [
+      ['count', String(size.other_units[1])], ['unit', String(size.other_units[0])],
+    ]));
+    if (size.skipped) parts.push(window.JournalI18n.render('journal.window.import.preview.skipped', quantityArgs(size.skipped)));
+    if (size.listed_moves) parts.push(window.JournalI18n.render('journal.window.import.preview.workouts.move.listed', [
+      ...quantityArgs(size.listed_moves.count), ['sources', String(size.listed_moves.from.join(', '))],
+    ]));
+    if (data.force_notice) parts.push(String(data.force_notice));
+    if (!ready) parts.push(window.JournalI18n.render('journal.window.import.strings.nothing.to.import.nothing.to.import'));
+    panel.textContent = parts.join(' · ');
   }
   restoreImportButton(kind, button);
   return null;
@@ -4338,15 +4353,28 @@ function renderThinkingProgress(progress) {
     const body = progress.body || {};
     const phase = BODY_PHASE_WORDS[body.phase] || '';
     const days = Number.isSafeInteger(body.days_total) && body.days_total > 0
-      ? window.JournalI18n.render('journal.window.import.import.view.day.value1.of.value2', [['value1', String(body.days_done || 0)], ['value2', String(body.days_total)]]) : '';
+      ? window.JournalI18n.render('journal.window.import.progress.body.days', [['days_done', String(body.days_done || 0)], ['days_total', String(body.days_total)]]) : '';
     return [phase, body.phase === 'write' ? days : ''].filter(Boolean).map(escapeHtml).join(' · ');
   }
   if (!progress || progress.status === 'not_published') return '';
   if (progress.status !== 'current') return window.JournalI18n.renderHtml('journal.window.import.window.explanation.thinking.progress.is.unavailable');
-  return window.JournalI18n.renderHtml('journal.window.import.window.explanation.value1.of.value2.value3.ready.to', [['value1', String(progress.ready)], ['value2', String(progress.recordings)], ['value3', String(window.JournalI18n.render(progress.recordings === 1 ? 'journal.window.import.import.view.recording' : 'journal.window.import.import.view.recordings'))]])
-    + (progress.waiting ? window.JournalI18n.renderHtml('journal.window.import.import.view.value1.waiting', [['value1', String(progress.waiting)]]) : '')
-    + (progress.held ? ` · ${escapeHtml(progress.held)} ${window.JournalI18n.renderHtml('journal.window.import.visible.text.held')} <a href="/app/health/">${window.JournalI18n.renderHtml('journal.window.import.link.label.review.on.health')}</a>` : '')
-    + (progress.unreadable ? window.JournalI18n.renderHtml('journal.window.import.import.view.value1.could.not.be.checked', [['value1', String(progress.unreadable)]]) : '');
+  const parts = [window.JournalI18n.renderHtml('journal.window.import.progress.thinking.ready', [
+    ['ready', String(progress.ready)], ...quantityArgs(progress.recordings, 'total', 'total_quantity'),
+  ])];
+  if (progress.waiting) parts.push(window.JournalI18n.renderHtml('journal.window.import.progress.thinking.waiting', quantityArgs(progress.waiting)));
+  if (progress.held) {
+    const link = document.createElement('a');
+    link.setAttribute('href', '/app/health/');
+    const holder = document.createElement('div');
+    for (const part of window.JournalI18n.renderMarkup('journal.window.import.progress.thinking.held', quantityArgs(progress.held), {
+      elements: { health_link: link },
+    })) {
+      holder.appendChild(typeof part === 'string' ? importPage.createTextNode(part) : part);
+    }
+    parts.push(holder.innerHTML);
+  }
+  if (progress.unreadable) parts.push(window.JournalI18n.renderHtml('journal.window.import.progress.thinking.unreadable', quantityArgs(progress.unreadable)));
+  return parts.join(' · ');
 }
 
 function showProgressView(importId, eventData = null) {
@@ -4413,12 +4441,12 @@ function showProgressView(importId, eventData = null) {
     if (Array.isArray(range) && range[0]) {
       // Anchored both ends: `day` would give a date in the last week as a bare weekday.
       const day = value => window.JournalFormat.dayFull(value);
-      facts.push(range[1] && range[1] !== range[0] ? window.JournalI18n.render('journal.window.import.import.view.value1.to.value2', [['value1', String(day(range[0]))], ['value2', String(day(range[1]))]]) : day(range[0]));
+      facts.push(range[1] && range[1] !== range[0] ? window.JournalI18n.render('journal.window.import.preview.date.range', [['first_date', String(day(range[0]))], ['last_date', String(day(range[1]))]]) : day(range[0]));
     }
     if (entries === 0) facts.push(window.JournalI18n.render('journal.window.import.import.view.nothing.new'));
-    else if (typeof entries === 'number') facts.push(window.JournalI18n.render('journal.window.import.import.view.value1.value2', [['value1', String(entries.toLocaleString())], ['value2', String(entries === 1 ? window.JournalI18n.render('journal.window.import.import.view.entry') : window.JournalI18n.render('journal.window.import.import.view.entries'))]]));
+    else if (typeof entries === 'number') facts.push(formattedEntryCount(entries));
     // Under a second would read "took 0s": say nothing about the time.
-    if (typeof durationMs === 'number' && durationMs >= 1000) facts.push(window.JournalI18n.render('journal.window.import.import.view.took.value1', [['value1', String(formatElapsed(durationMs))]]));
+    if (typeof durationMs === 'number' && durationMs >= 1000) facts.push(window.JournalI18n.render('journal.window.import.progress.completed.time', [['elapsed_time', String(formatElapsed(durationMs))]]));
     completionHtml = `
       <div class="import-completion-summary">
         ${words ? `<div>${escapeHtml(words)}</div>` : ''}
@@ -4454,13 +4482,12 @@ function showProgressView(importId, eventData = null) {
       gapHtml += `<div class="progress-gap-chip" style="margin-top: 0.5rem; color: var(--warn-ink);">${window.JournalI18n.renderHtml('journal.window.import.visible.text.original.saved.description.unavailable')}</div>`;
     }
     if (typeof unavailPages === 'number' && unavailPages > 0) {
-      const pageLabel = unavailPages === 1 ? window.JournalI18n.render('journal.window.import.import.view.page.unavailable') : window.JournalI18n.render('journal.window.import.import.view.value1.pages.unavailable', [['value1', String(unavailPages)]]);
-      gapHtml += `<div class="progress-gap-chip" style="margin-top: 0.5rem; color: var(--warn-ink);">${window.JournalI18n.renderHtml('journal.window.import.visible.text.partially.extracted')}${pageLabel})</div>`;
+      gapHtml += `<div class="progress-gap-chip" style="margin-top: 0.5rem; color: var(--warn-ink);">${window.JournalI18n.renderHtml('journal.window.import.progress.completed.pages', quantityArgs(unavailPages))}</div>`;
     }
     const finish = importInfo?.finish || '';
     const sourceName = currentGuideSource || source?.name || completedInfo.source_type || importInfo?.source_type || '';
     const repeatBtn = ['image', 'document'].includes(sourceName) ? `
-      <button type="button" class="import-primary-btn" data-source="${escapeHtml(sourceName)}">${escapeHtml(['image', 'document'].includes(sourceName) ? window.JournalI18n.render('journal.window.import.status.text.import.another') + (source?.display_name || sourceName) : window.JournalI18n.render('journal.window.import.status.text.import.another.source'))}</button>
+      <button type="button" class="import-primary-btn" data-source="${escapeHtml(sourceName)}">${window.JournalI18n.renderHtml(`journal.window.import.progress.repeat.${sourceName}`)}</button>
     ` : '';
     completionHtml = `
       <div class="import-completion-summary">
@@ -5093,6 +5120,12 @@ function renderContentMonths(months) {
   select.value = current;
 }
 
+function contentCount(message, count) {
+  return window.JournalI18n.renderHtml(message, [
+    ['quantity', window.JournalI18n.cardinalQuantity(count)], ['count', String(count)],
+  ]);
+}
+
 function renderContentItems(items) {
   const el = document.getElementById('contentItems');
   if (!items.length) {
@@ -5152,10 +5185,10 @@ function renderContentItems(items) {
           <span class="import-content-item-date">${date}</span>
         </div>
         <div class="import-content-item-meta">
-          ${item.meta?.message_count ? window.JournalI18n.renderHtml('journal.window.import.import.view.value1.messages', [['value1', String(item.meta.message_count)]]) : ''}
-          ${item.meta?.highlight_count ? window.JournalI18n.renderHtml('journal.window.import.import.view.value1.highlights', [['value1', String(item.meta.highlight_count)]]) : ''}
-          ${item.meta?.time_range ? `${escapeContentHtml(item.meta.time_range)}` : (item.meta?.duration_minutes ? window.JournalI18n.renderHtml('journal.window.import.import.view.value1.min', [['value1', String(item.meta.duration_minutes)]]) : '')}
-          ${item.meta?.attendee_names?.length ? ` · ${item.meta.attendee_names.map(n => escapeContentHtml(n)).join(', ')}` : (item.meta?.attendee_count ? window.JournalI18n.renderHtml('journal.window.import.import.view.value1.attendees', [['value1', String(item.meta.attendee_count)]]) : '')}
+          ${item.meta?.message_count ? contentCount('journal.window.import.detail.content.messages', item.meta.message_count) : ''}
+          ${item.meta?.highlight_count ? contentCount('journal.window.import.detail.content.highlights', item.meta.highlight_count) : ''}
+          ${item.meta?.time_range ? `${escapeContentHtml(item.meta.time_range)}` : (item.meta?.duration_minutes ? window.JournalI18n.renderHtml('journal.window.import.detail.content.duration.minutes', [['minutes', String(item.meta.duration_minutes)]]) : '')}
+          ${item.meta?.attendee_names?.length ? ` · ${item.meta.attendee_names.map(n => escapeContentHtml(n)).join(', ')}` : (item.meta?.attendee_count ? ` · ${contentCount('journal.window.import.detail.content.attendees', item.meta.attendee_count)}` : '')}
           ${item.meta?.location ? ` · ${escapeContentHtml(item.meta.location)}` : ''}
           ${item.meta?.author ? `· ${escapeContentHtml(item.meta.author)}` : ''}
           ${item.meta?.tags?.length ? `· ${item.meta.tags.map(t => escapeContentHtml(t)).join(', ')}` : ''}
@@ -5313,7 +5346,7 @@ function initImportDetail() {
   if (detailView) detailView.style.display = '';
 
   const heading = document.getElementById('importDetailHeading');
-  if (heading) heading.textContent = window.JournalI18n.render('journal.window.import.visible.text.import.value1.value2', [['value1', String(window.JournalFormat.day(importDetailTimestamp.slice(0, 8)))], ['value2', String(window.JournalFormat.segmentTime(importDetailTimestamp.slice(9)))]]);
+  if (heading) heading.textContent = window.JournalI18n.render('journal.window.import.detail.heading.timestamp', [['date', String(window.JournalFormat.day(importDetailTimestamp.slice(0, 8)))], ['clock_time', String(window.JournalFormat.segmentTime(importDetailTimestamp.slice(9)))]]);
 
   loadImportDetail();
 

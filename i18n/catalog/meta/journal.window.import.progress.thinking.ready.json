@@ -1,0 +1,34 @@
+{
+  "description": "Number of imported recordings ready to find, with the total number of recordings.",
+  "context": "Journal window. Number of imported recordings ready to find, with the total number of recordings.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "ready",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "2373e15d96588b50a4dbd79dc4b9b322e0060ac23567ff408ba4702159efb3bd",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "total_quantity",
+    "type": "cardinal"
+  }
+}

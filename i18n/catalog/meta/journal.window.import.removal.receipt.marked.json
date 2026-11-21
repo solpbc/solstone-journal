@@ -1,0 +1,30 @@
+{
+  "description": "Refused moves marked in the history list.",
+  "context": "Journal window. Refused moves marked in the history list.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "marked_count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "4ca83701ade1bb7fe040bd7535766b53c5af4d536e052fdbf6243248ef3a8aeb",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

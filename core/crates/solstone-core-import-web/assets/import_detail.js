@@ -56,9 +56,7 @@
     source: window.JournalI18n.render('journal.window.import.strings.source.source'),
     target_day: window.JournalI18n.render('journal.window.import.strings.target.day.target.day'),
     date_range: window.JournalI18n.render('journal.window.import.strings.date.range.date.range'),
-    entry: window.JournalI18n.render('journal.window.import.strings.entry.entry'),
     entries: window.JournalI18n.render('journal.window.import.strings.entries.entries'),
-    entity: window.JournalI18n.render('journal.window.import.strings.entity.entity'),
     entities: window.JournalI18n.render('journal.window.import.strings.entities.entities'),
     file: window.JournalI18n.render('journal.window.import.strings.file.file'),
     files: window.JournalI18n.render('journal.window.import.strings.files.files'),
@@ -71,7 +69,6 @@
     decisions: window.JournalI18n.render('journal.window.import.strings.decisions.decisions'),
     staging: window.JournalI18n.render('journal.window.import.strings.staging.staging'),
     staged_entities: window.JournalI18n.render('journal.window.import.strings.staged.entities.staged.entities'),
-    more_staged: window.JournalI18n.render('journal.window.import.strings.more.staged.more.staged'),
     summary_errors: window.JournalI18n.render('journal.window.import.strings.summary.errors.summary.errors'),
     raw_payload: window.JournalI18n.render('journal.window.import.strings.raw.payload.raw.payload'),
     drawer_unavailable: window.JournalI18n.render('journal.window.import.strings.drawer.unavailable.drawer.renderer.unavailable'),
@@ -104,39 +101,11 @@
     status_failed: window.JournalI18n.render('journal.window.import.strings.status.failed.couldn.t.load.the.import.s'),
     start_unconfirmed: window.JournalI18n.render('journal.window.import.strings.start.unconfirmed.couldn.t.confirm.whether.the.import'),
     failed_line: window.JournalI18n.render('journal.window.import.strings.failed.line.failed.while.processing'),
-    completed_in: window.JournalI18n.render('journal.window.import.strings.completed.in.completed.in'),
     files_created: window.JournalI18n.render('journal.window.import.strings.files.created.files.created'),
     owner_identity_differs: window.JournalI18n.render('journal.window.import.strings.owner.identity.differs.owner.identity.differs'),
     identity_differs: window.JournalI18n.render('journal.window.import.strings.identity.differs.identity.differs'),
-    under_a_minute: window.JournalI18n.render('journal.window.import.strings.under.a.minute.under.a.minute'),
-    minute: window.JournalI18n.render('journal.window.import.strings.minute.minute'),
-    minutes: window.JournalI18n.render('journal.window.import.strings.minutes.minutes'),
-    hour: window.JournalI18n.render('journal.window.import.strings.hour.hour'),
-    hours: window.JournalI18n.render('journal.window.import.strings.hours.hours'),
-    day: window.JournalI18n.render('journal.window.import.strings.day.day'),
-    days: window.JournalI18n.render('journal.window.import.strings.days.days'),
-    copied: window.JournalI18n.render('journal.window.import.strings.copied.copied'),
-    zone_differs_under: window.JournalI18n.render('journal.window.import.strings.zone.differs.under.less.than.an.hour.of.source'),
-    zone_differs_one: window.JournalI18n.render('journal.window.import.strings.zone.differs.one.hour.of.source.may.show.at'),
-    zone_differs_many: window.JournalI18n.render('journal.window.import.strings.zone.differs.many.hours.hours.of.source.may.show'),
-    body_days_hidden_one: window.JournalI18n.render('journal.window.import.strings.body.days.hidden.one.day.of.body.data.was.hidden'),
-    body_days_hidden_many: window.JournalI18n.render('journal.window.import.strings.body.days.hidden.many.n.days.of.body.data.were'),
-    skipped: window.JournalI18n.render('journal.window.import.strings.skipped.skipped'),
-    errored: window.JournalI18n.render('journal.window.import.strings.errored.errored'),
-    created: window.JournalI18n.render('journal.window.import.strings.created.created'),
-    merged: window.JournalI18n.render('journal.window.import.strings.merged.merged'),
-    staged: window.JournalI18n.render('journal.window.import.strings.staged.staged'),
-    links_left_out: window.JournalI18n.render('journal.window.import.strings.links.left.out.entity.links.left.out'),
-    importer: window.JournalI18n.render('journal.window.import.strings.importer.importer'),
-    processed: window.JournalI18n.render('journal.window.import.strings.processed.processed'),
     profile_link: window.JournalI18n.render('journal.window.import.strings.profile.link.review.profile.settings'),
     collision_title: window.JournalI18n.render('journal.window.import.strings.collision.title.owner.identity.differs.between.journals'),
-    collision_body_before_target: window.JournalI18n.render('journal.window.import.strings.collision.body.before.target.this.journal.belongs.to'),
-    collision_body_between_names: window.JournalI18n.render('journal.window.import.strings.collision.body.between.names.and.the.imported.journal.marks'),
-    collision_body_after_source: window.JournalI18n.render('journal.window.import.strings.collision.body.after.source.as.its.owner.this'),
-    collision_body_journal_entity: window.JournalI18n.render('journal.window.import.detail.collision.journal'),
-    collision_body_after_entity: window.JournalI18n.render('journal.window.import.strings.collision.body.after.entity.owner.is.unchanged.the.other.person'),
-    collision_body_after_entity_staged: window.JournalI18n.render('journal.window.import.strings.collision.body.after.entity.staged.owner.is.unchanged.the.other.person'),
     unavailable_description: window.JournalI18n.render('journal.window.import.strings.unavailable.description.unavailable.description'),
     unavailable_pages: window.JournalI18n.render('journal.window.import.strings.unavailable.pages.unavailable.pages'),
     has_gaps: window.JournalI18n.render('journal.window.import.strings.has.gaps.contains.gaps'),
@@ -178,10 +147,6 @@
     if (!hasValue(value)) return null;
     const number = Number(value);
     return Number.isFinite(number) ? number : null;
-  }
-
-  function plural(count, singular, pluralValue) {
-    return Number(count) === 1 ? singular : pluralValue;
   }
 
   function basename(path) {
@@ -232,10 +197,13 @@
     return `${values[0]} - ${values[1]}`;
   }
 
-  function formatCount(value, singular, pluralValue) {
+  function quantityArgs(count, name = 'count', quantity = 'quantity') {
+    return [[quantity, window.JournalI18n.cardinalQuantity(count)], [name, String(count)]];
+  }
+
+  function formatCount(value, message) {
     const count = numberValue(value);
-    if (count === null) return null;
-    return `${count} ${plural(count, singular, pluralValue)}`;
+    return count === null ? null : window.JournalI18n.render(message, quantityArgs(count));
   }
 
   function formatUnavailablePages(value) {
@@ -251,7 +219,7 @@
     return String(value);
   }
 
-  function formatDuration(startIso, endIso) {
+  function formatDuration(startIso, endIso, display) {
     if (!hasValue(startIso) || !hasValue(endIso)) return null;
     const start = new Date(String(startIso));
     const end = new Date(String(endIso));
@@ -260,21 +228,22 @@
     if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) {
       return null;
     }
-    return formatSeconds((endMs - startMs) / 1000);
+    return formatSeconds((endMs - startMs) / 1000, display);
   }
 
-  function formatSeconds(seconds) {
-    if (seconds < 60) return strings.under_a_minute;
+  function formatSeconds(seconds, display = 'elapsed') {
+    const prefix = `journal.window.import.detail.duration.${display}`;
+    if (seconds < 60) return window.JournalI18n.render(`${prefix}.short`);
     if (seconds < 90 * 60) {
       const minutes = Math.max(1, Math.round(seconds / 60));
-      return `${minutes} ${plural(minutes, strings.minute, strings.minutes)}`;
+      return window.JournalI18n.render(`${prefix}.minute`, quantityArgs(minutes));
     }
     if (seconds < 36 * 60 * 60) {
       const hours = Math.max(1, Math.round(seconds / 3600));
-      return `${hours} ${plural(hours, strings.hour, strings.hours)}`;
+      return window.JournalI18n.render(`${prefix}.hour`, quantityArgs(hours));
     }
     const days = Math.max(1, Math.round(seconds / 86400));
-    return `${days} ${plural(days, strings.day, strings.days)}`;
+    return window.JournalI18n.render(`${prefix}.day`, quantityArgs(days));
   }
 
   function statusClass(code) {
@@ -367,12 +336,10 @@
     // (G3-218). The drawer line carries only what the card does not.
     const clauses = [];
     const durationMs = numberValue(data?.duration_ms);
-    const duration = durationMs !== null
-      ? formatSeconds(durationMs / 1000)
-      : formatDuration(importJson.upload_datetime, data?.finished_at);
-    if (duration) {
-      clauses.push(window.JournalI18n.render('journal.window.import.import.view.value1.value2', [['value1', String(strings.completed_in)], ['value2', String(duration)]]));
-    }
+    const completedIn = durationMs !== null
+      ? formatSeconds(durationMs / 1000, 'completed')
+      : formatDuration(importJson.upload_datetime, data?.finished_at, 'completed');
+    if (completedIn) clauses.push(completedIn);
     if (!clauses.length) {
       clauses.push(strings.completed);
     }
@@ -460,9 +427,9 @@
       derived.status,
       source,
       day ? window.JournalFormat.day(day) : '',
-      formatCount(importedJson.entries_written ?? data?.entries_written, strings.entry, strings.entries),
-      formatCount((importedJson.entities_seeded ?? data?.entities_seeded) ?? null, strings.entity, strings.entities),
-      formatCount(importedJson.total_files_created ?? data?.total_files_created, strings.file, strings.files)
+      formatCount(importedJson.entries_written ?? data?.entries_written, 'journal.window.import.detail.count.entries'),
+      formatCount((importedJson.entities_seeded ?? data?.entities_seeded) ?? null, 'journal.window.import.detail.count.entities'),
+      formatCount(importedJson.total_files_created ?? data?.total_files_created, 'journal.window.import.detail.count.files')
     ].filter(hasValue);
     const encodedDay = day ? encodeURIComponent(day) : '';
     const links = day
@@ -508,9 +475,7 @@
     const source = displaySource(data, importedJson);
     const unavailPages = typeof data?.unavailable_pages === 'number'
       ? (data.unavailable_pages > 0
-          ? (data.unavailable_pages === 1
-              ? window.JournalI18n.render('journal.window.import.window.explanation.page.could.not.be.extracted')
-              : window.JournalI18n.render('journal.window.import.window.explanation.value1.pages.could.not.be.extracted', [['value1', String(data.unavailable_pages)]]))
+          ? window.JournalI18n.render('journal.window.import.detail.preview.pages.unavailable', quantityArgs(data.unavailable_pages))
           : null)
       : formatUnavailablePages(data?.unavailable_pages);
     const unavailDesc = data?.unavailable_description
@@ -530,9 +495,9 @@
       kvRow(strings.source, source),
       kvRow(strings.target_day, importedJson.target_day || data?.target_day),
       kvRow(strings.date_range, formatDateRange(importedJson.date_range || data?.date_range)),
-      kvRow(strings.entries, formatCount(importedJson.entries_written ?? data?.entries_written, strings.entry, strings.entries), { always: countsApply }),
-      kvRow(strings.entities, formatCount((importedJson.entities_seeded ?? data?.entities_seeded) ?? null, strings.entity, strings.entities), { always: countsApply }),
-      kvRow(strings.files, formatCount(importedJson.total_files_created ?? data?.total_files_created, strings.file, strings.files), { always: countsApply }),
+      kvRow(strings.entries, formatCount(importedJson.entries_written ?? data?.entries_written, 'journal.window.import.detail.count.entries'), { always: countsApply }),
+      kvRow(strings.entities, formatCount((importedJson.entities_seeded ?? data?.entities_seeded) ?? null, 'journal.window.import.detail.count.entities'), { always: countsApply }),
+      kvRow(strings.files, formatCount(importedJson.total_files_created ?? data?.total_files_created, 'journal.window.import.detail.count.files'), { always: countsApply }),
       kvRow(strings.unavailable_description, unavailDesc),
       kvRow(strings.unavailable_pages, unavailPages),
       data?.has_gaps ? kvRow(strings.has_gaps, window.JournalI18n.render('journal.window.import.answer.yes')) : '',
@@ -546,9 +511,9 @@
   function renderMergeSummary(data) {
     const summary = asObject(data?.merge_summary);
     if (!summary) return '';
-    const counter = (key, label) => {
+    const counter = (key, message) => {
       const value = numberValue(summary[key]);
-      return value === null ? '' : `${value} ${label}`;
+      return value === null ? '' : window.JournalI18n.render(message, quantityArgs(value));
     };
     const row = (label, clauses) => {
       const kept = clauses.filter(Boolean);
@@ -558,34 +523,34 @@
       row(
         strings.segments,
         [
-          counter('segments_copied', strings.copied),
-          counter('segments_skipped', strings.skipped),
-          counter('segments_errored', strings.errored)
+          counter('segments_copied', 'journal.window.import.detail.merge.copied'),
+          counter('segments_skipped', 'journal.window.import.detail.merge.skipped'),
+          counter('segments_errored', 'journal.window.import.detail.merge.errored')
         ]
       ),
       row(
         strings.entities,
         [
-          counter('entities_created', strings.created),
-          counter('entities_merged', strings.merged),
-          counter('entities_staged', strings.staged)
+          counter('entities_created', 'journal.window.import.detail.merge.created'),
+          counter('entities_merged', 'journal.window.import.detail.merge.merged'),
+          counter('entities_staged', 'journal.window.import.detail.merge.staged')
         ]
       ),
       row(
         strings.facets,
         [
-          counter('facets_created', strings.created),
-          counter('facets_merged', strings.merged),
+          counter('facets_created', 'journal.window.import.detail.merge.created'),
+          counter('facets_merged', 'journal.window.import.detail.merge.merged'),
           numberValue(summary.entity_links_skipped)
-            ? counter('entity_links_skipped', strings.links_left_out)
+            ? counter('entity_links_skipped', 'journal.window.import.detail.merge.links.left.out')
             : ''
         ]
       ),
       row(
         strings.imports,
         [
-          counter('imports_copied', strings.copied),
-          counter('imports_skipped', strings.skipped)
+          counter('imports_copied', 'journal.window.import.detail.merge.copied'),
+          counter('imports_skipped', 'journal.window.import.detail.merge.skipped')
         ]
       ),
       ...asArray(summary.body_zones_differ).map((differs) =>
@@ -598,19 +563,16 @@
   // How many days of body data the archive brought hidden; nothing when none.
   function bodyDaysHiddenLine(days) {
     if (!days) return '';
-    const line = days === 1 ? strings.body_days_hidden_one
-      : strings.body_days_hidden_many.replace('{n}', String(days));
+    const line = window.JournalI18n.render('journal.window.import.detail.merge.body.days.hidden', quantityArgs(days));
     return `<p class="import-zone-differs" data-copy-key="body_days_hidden">${escapeHtml(line)}</p>`;
   }
 
   function zoneDiffersLine(differs) {
     const hours = numberValue(differs?.hours);
     const source = differs?.source || '';
-    const line = hours === 0 ? strings.zone_differs_under
-      : hours === 1 ? strings.zone_differs_one : strings.zone_differs_many;
-    return line
-      .replace('{hours}', String(hours))
-      .replaceAll('{source}', source);
+    return hours === 0
+      ? window.JournalI18n.render('journal.window.import.detail.merge.clock.under.hour', [['source', String(source)]])
+      : window.JournalI18n.render('journal.window.import.detail.merge.clock.hours', [...quantityArgs(hours), ['source', String(source)]]);
   }
 
   function renderCollisionCallout(data) {
@@ -619,7 +581,11 @@
     return `
       <div class="import-collision-callout">
         <h3>${escapeHtml(strings.collision_title)}</h3>
-        <p>${escapeHtml(strings.collision_body_before_target)}${escapeHtml(principalCollision.target_name || '')}${escapeHtml(strings.collision_body_between_names)}${escapeHtml(principalCollision.source_name || '')}${escapeHtml(strings.collision_body_after_source)}${escapeHtml(strings.collision_body_journal_entity)}${escapeHtml(principalCollision.staged ? strings.collision_body_after_entity_staged : strings.collision_body_after_entity)}</p>
+        <p>${window.JournalI18n.renderHtml(principalCollision.staged
+          ? 'journal.window.import.detail.merge.owner.collision.staged'
+          : 'journal.window.import.detail.merge.owner.collision', [
+          ['journal_owner', String(principalCollision.target_name || '')], ['archive_owner', String(principalCollision.source_name || '')],
+        ])}</p>
         <a href="/app/settings#profile">${escapeHtml(strings.profile_link)}</a>
       </div>
     `;
@@ -642,7 +608,7 @@
       return `<li class="drawer-evidence-row"><span class="drawer-evidence-title">${escapeHtml(source)}</span><span class="ev-meta"><code>${escapeHtml(path)}</code></span></li>`;
     });
     if (omittedCount > 0) {
-      staged.push(`<li class="drawer-evidence-row drawer-evidence-omitted" data-omitted="${escapeHtml(String(omittedCount))}"><span class="drawer-evidence-title">${escapeHtml(String(omittedCount))} ${escapeHtml(strings.more_staged)}</span></li>`);
+      staged.push(`<li class="drawer-evidence-row drawer-evidence-omitted" data-omitted="${escapeHtml(String(omittedCount))}"><span class="drawer-evidence-title">${window.JournalI18n.renderHtml('journal.window.import.detail.merge.staged.omitted', quantityArgs(omittedCount))}</span></li>`);
     }
     const summaryErrors = asArray(data?.summary_errors).map((item) => (
       `<li class="drawer-evidence-row"><span class="drawer-evidence-title">${escapeHtml(item || '')}</span></li>`
@@ -677,9 +643,9 @@
   function renderProvenance(data, importedJson) {
     const processedAt = formatDateTime(data?.finished_at);
     const clauses = [];
-    if (processedAt) clauses.push(window.JournalI18n.render('journal.window.import.import.view.value1.value2', [['value1', String(strings.processed)], ['value2', String(processedAt)]]));
+    if (processedAt) clauses.push(window.JournalI18n.render('journal.window.import.detail.provenance.processed', [['finished_at', String(processedAt)]]));
     if (hasValue(importedJson?.source_type)) {
-      clauses.push(window.JournalI18n.render('journal.window.import.import.view.value1.value2', [['value1', String(importedJson.source_type)], ['value2', String(strings.importer)]]));
+      clauses.push(window.JournalI18n.render('journal.window.import.detail.provenance.importer', [['source_type', String(importedJson.source_type)]]));
     }
     if (clauses.length === 0) return '';
     const wallAttr = processedAt ? ' data-wall-time' : '';
@@ -794,8 +760,12 @@
         && (!Array.isArray(other) || typeof other[0] !== 'string'
           || !Number.isSafeInteger(other[1]) || other[1] < 0)) throw new Error('invalid Preview');
     const ready = size.recordings > 0 || (other && other[1] > 0);
-    const summary = window.JournalI18n.render('journal.window.import.import.view.value1.value2.across.value3.value4', [['value1', String(size.recordings)], ['value2', String(plural(size.recordings, window.JournalI18n.render('journal.window.import.import.view.recording'), window.JournalI18n.render('journal.window.import.import.view.recordings')))], ['value3', String(size.days)], ['value4', String(plural(size.days, window.JournalI18n.render('journal.window.import.import.view.day'), window.JournalI18n.render('journal.window.import.import.view.days')))]])
-      + (other ? window.JournalI18n.render('journal.window.import.import.view.value1.value2.variant2', [['value1', String(other[1])], ['value2', String(other[0])]]) : '');
+    const recordings = window.JournalI18n.render('journal.window.import.detail.preview.recordings', [
+      ...quantityArgs(size.recordings, 'recordings', 'recording_quantity'), ...quantityArgs(size.days, 'days', 'day_quantity'),
+    ]);
+    const summary = other ? [recordings, window.JournalI18n.render('journal.window.import.detail.preview.other.units', [
+      ['count', String(other[1])], ['unit', String(other[0])],
+    ])].join(' · ') : recordings;
     return { ready: Boolean(ready), summary: ready ? summary : strings.nothing_to_import };
   }
 

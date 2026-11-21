@@ -1,0 +1,16 @@
+{
+  "description": "Button to repeat the same import type.",
+  "context": "Journal window. Button to repeat the same import type.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "87eec70f803ea65399b625d18057903ccdc44b8595abb23addaff8ab0f8d8868",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Latest date represented in the import progress.",
+  "context": "Journal window. Latest date represented in the import progress.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "last_date",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a4d0ca6a3a8d79215a15e8abebbc28f10e5f099832c34065b0d88b75a3da6ba4",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

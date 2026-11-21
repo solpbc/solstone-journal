@@ -1,0 +1,16 @@
+{
+  "description": "Notice when the upload is already in progress or saved.",
+  "context": "Journal window. Notice when the upload is already in progress or saved.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "68f0c75b251c9dfa18839bf5af7df8aa84b7c5971e6aa6add9106c8fa48a92e6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

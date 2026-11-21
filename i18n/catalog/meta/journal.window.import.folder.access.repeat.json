@@ -1,0 +1,21 @@
+{
+  "description": "The named folder must be chosen again before sync can read it.",
+  "context": "Journal window. The named folder must be chosen again before sync can read it.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "folder",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0ee590b7b17118ed7803cd13dfd2d37c99fd8e951c1c9c3bd50fdced05f78aad",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

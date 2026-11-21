@@ -1,0 +1,21 @@
+{
+  "description": "The recorded source type for this import.",
+  "context": "Journal window. The recorded source type for this import.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "source_type",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1d10b291a655dfe965d3047145917d9f7db7023d116d408308e861eecd570abe",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
