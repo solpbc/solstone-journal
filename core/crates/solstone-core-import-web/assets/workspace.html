@@ -1837,7 +1837,7 @@ function renderImportRow(imp, picking = false) {
   }
   html += '</td>';
   html += `<td class="import-file-cell">${escapeHtml(fileDisplay)}${note ? `<div class="import-row-note">${escapeHtml(IMPORT_DELETE_COPY.notes[note] || IMPORT_DELETE_COPY.notes.other)}</div>` : ''}</td>`;
-  const origins = { browser:'browser', cli:'cli', linux:'linux', desktop:'desktop', mobile:'mobile', mobile_share:'mobile', mobile_photos:'mobile' };
+  const origins = { browser:'browser', cli:'cli', linux:'linux', macos:'macos', windows:'windows', ios:'ios', android:'android', desktop:'desktop', mobile:'mobile', mobile_share:'mobile', mobile_photos:'mobile' };
   const originKey = Object.hasOwn(origins, imp.imported_via) ? origins[imp.imported_via] : null;
   const origin = imp.observer_handle
     ? handoffText('device', [['device', String(imp.observer_handle)]])

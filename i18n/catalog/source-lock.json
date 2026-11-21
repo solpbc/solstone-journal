@@ -24481,6 +24481,13 @@
       "locales": []
     },
     {
+      "id": "journal.window.import.handoff.origin.android",
+      "source": "74886ee341ed7447979a0e7a932bacb09b68ec7eaf368265e5465e8a33e1a16d",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.import.handoff.origin.browser",
       "source": "616c3db3adcadbea91b8dadf87ee6cb8eb651a877e21760f6c21634d662c905f",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
@@ -24502,8 +24509,22 @@
       "locales": []
     },
     {
+      "id": "journal.window.import.handoff.origin.ios",
+      "source": "f66499402a60fca9a0b79644a71362ca9ddd2aa0e0feaca23553f150459c19fa",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.import.handoff.origin.linux",
-      "source": "351773d4db65a41f2d809ed8055cbb93cccfe46b7413f9b720c0d269b9252cce",
+      "source": "6748722fe45caa3e12e04c199c1b8f2e811ea9b271b96e6b2615fbeeff34f32e",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.import.handoff.origin.macos",
+      "source": "295531ac111abaa7ded80fb0cb1763d607ec73f36192e0edf335fd00ea9244de",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
       "locales": []
@@ -24511,6 +24532,13 @@
     {
       "id": "journal.window.import.handoff.origin.mobile",
       "source": "dd5bdc740106a10bca072e514b94d86786de7e60f2bdbaae29c35e48266b066d",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.import.handoff.origin.windows",
+      "source": "6e9df4cf12f57e743529543a5171698971972c10206208bf2203919882591ba7",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
       "locales": []
