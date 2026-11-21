@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for stopped archive journal identity changed.",
+  "context": "Journal command-line text for stopped archive journal identity changed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a0d83481ed74dc418f1e79d55a58c3c0dbda1f22cc7cc066c7db07544e0eacdd",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

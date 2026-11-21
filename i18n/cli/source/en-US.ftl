@@ -2263,3 +2263,125 @@ journal.cli.backup.offload.status.overflow = media status total overflow
 journal.cli.backup.offload.media.byte.overflow = media byte total overflow
 
 journal.cli.backup.offload.media.file.overflow = media file total overflow
+
+journal.cli.offload.guidance.changed.retry = offload stopped because your journal changed while it was running. nothing was removed from this computer. run it again.
+
+journal.cli.offload.guidance.changed.review = offload stopped because your journal changed while it was running. nothing was removed from this computer. keep offload's recovery files and review the recorded effects before retrying.
+
+journal.cli.offload.guidance.clock = the operation clock could not be confirmed.
+
+journal.cli.offload.guidance.journal = your journal could not be confirmed. keep its recovery files for review.
+
+journal.cli.offload.guidance.platform = offload execution is unavailable on this platform.
+
+journal.cli.offload.guidance.start = offload did not start.
+
+journal.cli.offload.guidance.tool = use the installed { $solstone } command with its packaged backup tool.
+
+journal.cli.offload.guidance.unfinished = offload did not finish. keep its recovery files and review the recorded effects before retrying.
+
+journal.cli.offload.result.archive.failed = the archive step of the offload didn't complete
+
+journal.cli.offload.result.backup.failing = your last backup didn't complete successfully
+
+journal.cli.offload.result.backup.not.ready = your backup isn't set up or hasn't completed a successful run yet
+
+journal.cli.offload.result.budget.already.satisfied = the offload budget was already met, so nothing needed to be marked for release
+
+journal.cli.offload.result.budget.satisfied = enough media has been marked for release to meet the offload budget
+
+journal.cli.offload.result.confirm.failed = the offload couldn't confirm the archived files actually reached the backup
+
+journal.cli.offload.result.confirm.tool.failed = the check that confirms an offload archive couldn't complete
+
+journal.cli.offload.result.markable.media.exhausted = every eligible file was already checked; nothing more can be marked for release right now
+
+journal.cli.offload.result.other = stopped without a reason ({ $reason })
+
+journal.cli.offload.result.unexpected.error = something unexpected interrupted the offload
+
+journal.cli.offload.result.verification.failed = the last backup verification found a problem with the backup's integrity
+
+journal.cli.offload.result.verification.missing = no backup verification has completed yet
+
+journal.cli.offload.result.verification.overdue = backup verification hasn't succeeded recently enough
+
+journal.cli.offload.stopped.archive.cancelled = offload stopped: the archive operation was cancelled.
+
+journal.cli.offload.stopped.archive.clock.changed = offload stopped: the archive clock moved backward.
+
+journal.cli.offload.stopped.archive.configuration.changed = offload stopped: archive configuration changed.
+
+journal.cli.offload.stopped.archive.configuration.unavailable = offload stopped: archive configuration could not be read.
+
+journal.cli.offload.stopped.archive.credentials.expired = offload stopped: archive credentials expired.
+
+journal.cli.offload.stopped.archive.deadline.exceeded = offload stopped: the archive operation deadline was reached.
+
+journal.cli.offload.stopped.archive.invalid.credential.expiry = offload stopped: archive credentials have an invalid expiry.
+
+journal.cli.offload.stopped.archive.invalid.selection = offload stopped: archive sources must be a nonempty selection of absolute paths.
+
+journal.cli.offload.stopped.archive.journal.identity.changed = offload stopped: your journal could not be confirmed.
+
+journal.cli.offload.stopped.archive.not.configured = offload stopped: archive backup is not configured.
+
+journal.cli.offload.stopped.archive.repository.identity.changed = offload stopped: the backup no longer matches.
+
+journal.cli.offload.stopped.archive.repository.identity.invalid = offload stopped: the backup could not be identified.
+
+journal.cli.offload.stopped.archive.snapshot.identity.invalid = offload stopped: the archive did not return a full snapshot identity.
+
+journal.cli.offload.stopped.archive.source.unavailable = offload stopped: the prepared archive files could not be confirmed.
+
+journal.cli.offload.stopped.archive.tool.unavailable = offload stopped: an archive tool is unavailable.
+
+journal.cli.offload.stopped.creation = offload stopped: making proposals did not finish.
+
+journal.cli.offload.stopped.inputs.io = offload stopped: a file in your journal couldn't be opened or read.
+
+journal.cli.offload.stopped.inputs.space = offload stopped: not enough free space on this computer ({ $available } free, { $required } needed).
+
+journal.cli.offload.stopped.native.start = offload stopped: archive start refused (status { $status }).
+
+journal.cli.offload.stopped.plan.incomplete = offload stopped: preparing proposals did not finish.
+
+journal.cli.offload.stopped.planning = offload stopped: offload couldn't prepare its proposals.
+
+journal.cli.offload.stopped.readback = offload stopped: reading the copy back from your backup failed.
+
+journal.cli.offload.stopped.readback.credentials.unavailable = offload stopped: archive read credentials are unavailable.
+
+journal.cli.offload.stopped.readback.incomplete.discovery = offload stopped: the archive walk did not account for every node.
+
+journal.cli.offload.stopped.readback.invalid.selection = offload stopped: the selected archive file is invalid.
+
+journal.cli.offload.stopped.readback.native.failure = offload stopped: the archived file could not be prepared.
+
+journal.cli.offload.stopped.readback.not.configured = offload stopped: reading archived files is not configured.
+
+journal.cli.offload.stopped.readback.snapshot.node.unavailable = offload stopped: the archived file could not be confirmed.
+
+journal.cli.offload.stopped.readback.target.root.changed = offload stopped: the file could not be prepared in your journal.
+
+journal.cli.offload.stopped.readback.tool.changed = offload stopped: the installed archive tool changed; try again.
+
+journal.cli.offload.stopped.readback.tool.failed = offload stopped: the archive read command failed.
+
+journal.cli.offload.stopped.readback.tool.unavailable = offload stopped: the installed archive tool is unavailable.
+
+journal.cli.offload.stopped.readback.unsupported = offload stopped: reading archived files is unavailable on this platform.
+
+journal.cli.offload.stopped.readback.unsupported.backend = offload stopped: this backup destination does not support reading archived files.
+
+journal.cli.offload.stopped.readback.unsupported.tool.version = offload stopped: the installed archive tool version is unsupported.
+
+journal.cli.offload.stopped.record = offload stopped: saving offload's record failed.
+
+journal.cli.offload.stopped.selection = offload stopped: the selected recordings could not be confirmed.
+
+journal.cli.offload.stopped.temporary.copy = offload stopped: making a temporary copy failed.
+
+journal.cli.offload.stopped.tool.reason = offload stopped: { $reason }.
+
+journal.cli.offload.stopped.unfinished.work = offload stopped: your journal still has unfinished work.

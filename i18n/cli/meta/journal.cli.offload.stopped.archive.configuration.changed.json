@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for stopped archive configuration changed.",
+  "context": "Journal command-line text for stopped archive configuration changed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ec6bfa32a1f20f294c313840c1d128f34ec26a7546572357a5a71958659da4d8",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

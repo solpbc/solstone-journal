@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for stopped readback unsupported backend.",
+  "context": "Journal command-line text for stopped readback unsupported backend.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "20f441e1b055aa53ed29510fa96c3b399b11aa05292f40d970f0ed832eabea82",
+  "max_length": 113,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

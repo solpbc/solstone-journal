@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for stopped archive invalid selection.",
+  "context": "Journal command-line text for stopped archive invalid selection.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "973a85169010f0210182a110fb118fe092a0bc9a3a0e11b23b30f9a7c8bf0c39",
+  "max_length": 112,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

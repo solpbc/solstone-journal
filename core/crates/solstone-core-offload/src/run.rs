@@ -100,11 +100,13 @@ pub struct OffloadResult {
     pub recording_failure: Option<String>,
 }
 
+use solstone_core_cli_copy as copy;
+
 pub fn format_offload_result(result: &OffloadResult) -> String {
     let line = if result.dry_run {
         if result.status == "stalled" {
             format!(
-                "backup offload: stalled reason={}{} dry_run=true",
+                "{heading} stalled reason={}{} dry_run=true",
                 offload_reason_text(
                     result
                         .reason
@@ -115,23 +117,29 @@ pub fn format_offload_result(result: &OffloadResult) -> String {
                     .reason_detail
                     .as_deref()
                     .map(|detail| format!(" detail={detail}"))
-                    .unwrap_or_default()
+                    .unwrap_or_default(),
+                heading = copy::text("journal.cli.backup.offload.status.heading")
             )
         } else if result.status == "ok" {
             format!(
-                "backup offload: ok reason={} dry_run=true",
+                "{heading} ok reason={} dry_run=true",
                 result
                     .reason
                     .as_deref()
                     .map(offload_reason_text)
-                    .unwrap_or_default()
+                    .unwrap_or_default(),
+                heading = copy::text("journal.cli.backup.offload.status.heading")
             )
         } else {
-            format!("backup offload: {} dry_run=true", result.status)
+            format!(
+                "{heading} {} dry_run=true",
+                result.status,
+                heading = copy::text("journal.cli.backup.offload.status.heading")
+            )
         }
     } else if result.status == "ok" {
         format!(
-            "backup offload: ok reason={} files_marked={} bytes_marked={} files_already_marked={} bytes_already_marked={} bytes_released=0 ran_out_of_markable_media={}",
+            "{heading} ok reason={} files_marked={} bytes_marked={} files_already_marked={} bytes_already_marked={} bytes_released=0 ran_out_of_markable_media={}",
             result
                 .reason
                 .as_deref()
@@ -141,13 +149,17 @@ pub fn format_offload_result(result: &OffloadResult) -> String {
             result.bytes_marked,
             result.files_already_marked,
             result.bytes_already_marked,
-            result.ran_out_of_markable_media
+            result.ran_out_of_markable_media,
+            heading = copy::text("journal.cli.backup.offload.status.heading")
         )
     } else if result.status == "skipped" {
-        "backup offload: skipped".to_owned()
+        format!(
+            "{} skipped",
+            copy::text("journal.cli.backup.offload.status.heading")
+        )
     } else {
         format!(
-            "backup offload: stalled reason={}{} files_marked={} bytes_marked={} bytes_released=0 ran_out_of_markable_media={}",
+            "{heading} stalled reason={}{} files_marked={} bytes_marked={} bytes_released=0 ran_out_of_markable_media={}",
             offload_reason_text(
                 result
                     .reason
@@ -161,7 +173,8 @@ pub fn format_offload_result(result: &OffloadResult) -> String {
                 .unwrap_or_default(),
             result.files_marked,
             result.bytes_marked,
-            result.ran_out_of_markable_media
+            result.ran_out_of_markable_media,
+            heading = copy::text("journal.cli.backup.offload.status.heading")
         )
     };
     let line = match result.recording_failure.as_deref() {
@@ -178,52 +191,46 @@ pub fn format_offload_result(result: &OffloadResult) -> String {
 /// Unknown codes remain visible for diagnostics.
 fn offload_reason_text(reason: &str) -> String {
     match reason {
-        OFFLOAD_STALL_BACKUP_NOT_READY => {
-            "your backup isn't set up or hasn't completed a successful run yet".into()
+        OFFLOAD_STALL_BACKUP_NOT_READY => copy::text("journal.cli.offload.result.backup.not.ready"),
+        OFFLOAD_STALL_BACKUP_FAILING => copy::text("journal.cli.offload.result.backup.failing"),
+        OFFLOAD_STALL_VERIFICATION_MISSING => {
+            copy::text("journal.cli.offload.result.verification.missing")
         }
-        OFFLOAD_STALL_BACKUP_FAILING => "your last backup didn't complete successfully".into(),
-        OFFLOAD_STALL_VERIFICATION_MISSING => "no backup verification has completed yet".into(),
         OFFLOAD_STALL_VERIFICATION_OVERDUE => {
-            "backup verification hasn't succeeded recently enough".into()
+            copy::text("journal.cli.offload.result.verification.overdue")
         }
         OFFLOAD_STALL_VERIFICATION_FAILED => {
-            "the last backup verification found a problem with the backup's integrity".into()
+            copy::text("journal.cli.offload.result.verification.failed")
         }
         // Same wording as `backup_failure_reason`'s "locked" arm in
         // solstone-core-backup-cli, so the two surfaces read alike.
-        OFFLOAD_STALL_LOCKED => {
-            "the backup at the destination is locked, usually by a run that's still going or one \
-             that was interrupted"
-                .into()
-        }
-        OFFLOAD_STALL_ARCHIVE_FAILED => "the archive step of the offload didn't complete".into(),
-        OFFLOAD_STALL_CONFIRM_FAILED => {
-            "the offload couldn't confirm the archived files actually reached the backup".into()
-        }
+        OFFLOAD_STALL_LOCKED => copy::text("journal.cli.backup.offload.restore.reason.locked"),
+        OFFLOAD_STALL_ARCHIVE_FAILED => copy::text("journal.cli.offload.result.archive.failed"),
+        OFFLOAD_STALL_CONFIRM_FAILED => copy::text("journal.cli.offload.result.confirm.failed"),
         OFFLOAD_STALL_CONFIRM_TOOL_FAILED => {
-            "the check that confirms an offload archive couldn't complete".into()
+            copy::text("journal.cli.offload.result.confirm.tool.failed")
         }
-        OFFLOAD_STALL_SEGMENT_IDENTITY => "one of your journal's recordings couldn't be verified \
-             against its own identity record"
-            .into(),
-        OFFLOAD_STALL_UNEXPECTED_ERROR => "something unexpected interrupted the offload".into(),
+        OFFLOAD_STALL_SEGMENT_IDENTITY => {
+            copy::text("journal.cli.backup.offload.restore.reason.segment.identity")
+        }
+        OFFLOAD_STALL_UNEXPECTED_ERROR => copy::text("journal.cli.offload.result.unexpected.error"),
         OFFLOAD_OK_BUDGET_ALREADY_SATISFIED => {
-            "the offload budget was already met, so nothing needed to be marked for release".into()
+            copy::text("journal.cli.offload.result.budget.already.satisfied")
         }
         // ⛔ Never "moved" or "released": offload only marks raw media for a
         // later owner-approved release step and never deletes it itself
         // The CLI line also reports `bytes_released=0`.
-        OFFLOAD_OK_BUDGET_SATISFIED => {
-            "enough media has been marked for release to meet the offload budget".into()
-        }
+        OFFLOAD_OK_BUDGET_SATISFIED => copy::text("journal.cli.offload.result.budget.satisfied"),
         OFFLOAD_OK_MARKABLE_MEDIA_EXHAUSTED => {
-            "every eligible file was already checked; nothing more can be marked for release \
-             right now"
-                .into()
+            copy::text("journal.cli.offload.result.markable.media.exhausted")
         }
-        "restic_unavailable" => "the restic backup program isn't available".into(),
-        "rclone_unavailable" => "the rclone program isn't available".into(),
-        other => format!("stopped without a reason ({other})"),
+        "restic_unavailable" => {
+            copy::text("journal.cli.backup.offload.restore.reason.restic.unavailable")
+        }
+        "rclone_unavailable" => {
+            copy::text("journal.cli.backup.offload.restore.reason.rclone.unavailable")
+        }
+        other => copy::display("journal.cli.offload.result.other", [("reason", &(other))]),
     }
 }
 

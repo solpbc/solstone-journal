@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for stopped archive deadline exceeded.",
+  "context": "Journal command-line text for stopped archive deadline exceeded.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7409ca569d42d409abb6bc745cb4f4dec25d9bb300eec21ad740cbd7f2267e30",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

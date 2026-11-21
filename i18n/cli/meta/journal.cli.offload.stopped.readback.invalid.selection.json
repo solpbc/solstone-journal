@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for stopped readback invalid selection.",
+  "context": "Journal command-line text for stopped readback invalid selection.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9be77615e0c96ccf3b7534407a6e3662e48758c8d36324bc64d6aa8abd89ec15",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

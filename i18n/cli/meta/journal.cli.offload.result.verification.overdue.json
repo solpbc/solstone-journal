@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for result verification overdue.",
+  "context": "Journal command-line text for result verification overdue.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2ce82552c3bf522743b59cceac81da5c1875be8e4e167bea7d42a63930066901",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

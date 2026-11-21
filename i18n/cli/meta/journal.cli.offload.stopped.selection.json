@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for stopped selection.",
+  "context": "Journal command-line text for stopped selection.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d85f23d756ad3936528d5604d3a431f9e17cbee82361872f8446c85a1f121846",
+  "max_length": 96,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

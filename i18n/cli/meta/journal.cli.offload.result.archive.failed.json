@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for result archive failed.",
+  "context": "Journal command-line text for result archive failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7deeeabc91d42dd16239cd7d0ebaabefaa65c797d7af8f5703024b75e3418abf",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

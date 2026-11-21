@@ -13,6 +13,7 @@ use solstone_core_retention::archive_offer::{
 };
 use solstone_core_retention::mark_mutation::{BoundMutationOutcome, MutationStatus};
 
+use super::stopped::{stopped_archive, stopped_readback};
 use super::*;
 use crate::measurement::ProposedRelief;
 use crate::run::{
@@ -21,6 +22,7 @@ use crate::run::{
     OwnedOffloadCreationOwner, OwnedOffloadPlan, OwnedOffloadPlanOwner,
     SettledOffloadCreationReport,
 };
+use solstone_core_cli_copy as copy;
 
 #[derive(Clone, Debug)]
 pub struct CliMutationFact {
@@ -483,41 +485,37 @@ impl OwnedOffloadCliRun {
             String::new()
         } else {
             let guidance = match reason {
-                "dry_run_unavailable" => {
-                    "a read-only offload preview is unavailable. no offload work was started."
-                }
-                "platform_unavailable" => "offload execution is unavailable on this platform.",
-                "installed_tool_unavailable" => {
-                    "use the installed solstone command with its packaged backup tool."
-                }
+                "dry_run_unavailable" => copy::text("journal.cli.backup.offload.preview.held"),
+                "platform_unavailable" => copy::text("journal.cli.offload.guidance.platform"),
+                "installed_tool_unavailable" => copy::text("journal.cli.offload.guidance.tool"),
                 "journal_unavailable" | "original_changed" => {
-                    "your journal could not be confirmed. keep its recovery files for review."
+                    copy::text("journal.cli.offload.guidance.journal")
                 }
                 "deadline_unavailable" | "clock_unavailable" => {
-                    "the operation clock could not be confirmed."
+                    copy::text("journal.cli.offload.guidance.clock")
                 }
                 // Planning refuses before admission: no media has left or been removed.
-                "preparation_refused" | "planning_refused" => "offload did not start.",
+                "preparation_refused" | "planning_refused" => {
+                    copy::text("journal.cli.offload.guidance.start")
+                }
                 // Nothing was proposed. On local storage the next run removes
                 // any copies this one staged before it starts, so a plain
                 // retry is safe; elsewhere those copies stay for review.
                 "plan_held" if journal_changed && retry_clears => {
-                    "offload stopped because your journal changed while it was running. nothing was removed from this computer. run it again."
+                    copy::text("journal.cli.offload.guidance.changed.retry")
                 }
                 "plan_held" if journal_changed => {
-                    "offload stopped because your journal changed while it was running. nothing was removed from this computer. keep offload's recovery files and review the recorded effects before retrying."
+                    copy::text("journal.cli.offload.guidance.changed.review")
                 }
-                _ => {
-                    "offload did not finish. keep its recovery files and review the recorded effects before retrying."
-                }
+                _ => copy::text("journal.cli.offload.guidance.unfinished"),
             };
             match &self.custody {
                 // Name why admission refused; the closed message carries no secret.
                 Custody::AdmissionFailure { failure, .. } => {
-                    format!("offload stopped: {}.\n{guidance}\n", failure.error())
+                    format!("{}\n{guidance}\n", stopped_archive(failure.error()))
                 }
                 Custody::PlanHold { plan, .. } if !journal_changed => match hold_reason(plan) {
-                    Some(why) => format!("offload stopped: {why}.\n{guidance}\n"),
+                    Some(message) => format!("{message}\n{guidance}\n"),
                     None => format!("{guidance}\n"),
                 },
                 _ => format!("{guidance}\n"),
@@ -539,44 +537,41 @@ fn hold_reason(plan: &OwnedOffloadPlanHold) -> Option<String> {
     use crate::run::OwnedOffloadPlanFinishRefusal as Finish;
     use OffloadOfferRefusal as Offer;
     let Some(reason) = plan.reason() else {
-        return plan.finish_refusal().map(|refusal| {
-            match refusal {
-                Finish::IncompletePlan => "preparing proposals did not finish",
-                Finish::Creation => "making proposals did not finish",
-                Finish::Readback(_) => "reading the copy back from your backup failed",
-                Finish::Census(_) | Finish::Obligations(_) => {
-                    "your journal still has unfinished work"
-                }
+        return plan.finish_refusal().map(|refusal| match refusal {
+            Finish::IncompletePlan => copy::text("journal.cli.offload.stopped.plan.incomplete"),
+            Finish::Creation => copy::text("journal.cli.offload.stopped.creation"),
+            Finish::Readback(_) => copy::text("journal.cli.offload.stopped.readback"),
+            Finish::Census(_) | Finish::Obligations(_) => {
+                copy::text("journal.cli.offload.stopped.unfinished.work")
             }
-            .to_owned()
         });
     };
     Some(match reason {
         OffloadCreationRefusal::Inputs(Offer::Io(_)) => {
-            "a file in your journal couldn't be opened or read".into()
+            copy::text("journal.cli.offload.stopped.inputs.io")
         }
         OffloadCreationRefusal::Inputs(Offer::InsufficientSpace {
             available,
             required,
-        }) => format!(
-            "not enough free space on this computer ({} free, {} needed)",
-            size(*available),
-            size(*required)
+        }) => copy::display(
+            "journal.cli.offload.stopped.inputs.space",
+            [
+                ("available", &(size(*available))),
+                ("required", &(size(*required))),
+            ],
         ),
-        OffloadCreationRefusal::Inputs(Offer::Admission(error)) => error.to_string(),
+        OffloadCreationRefusal::Inputs(Offer::Admission(error)) => stopped_archive((*error).into()),
         OffloadCreationRefusal::Inputs(Offer::Readback(error))
-        | OffloadCreationRefusal::Readback(error) => error.to_string(),
-        OffloadCreationRefusal::Archive(error) => error.to_string(),
-        OffloadCreationRefusal::Inputs(_) => {
-            "the selected recordings could not be confirmed".into()
-        }
-        OffloadCreationRefusal::Planning(_) => "offload couldn't prepare its proposals".into(),
-        OffloadCreationRefusal::Native => "making a temporary copy failed".into(),
+        | OffloadCreationRefusal::Readback(error) => stopped_readback(*error),
+        OffloadCreationRefusal::Archive(error) => stopped_archive(*error),
+        OffloadCreationRefusal::Inputs(_) => copy::text("journal.cli.offload.stopped.selection"),
+        OffloadCreationRefusal::Planning(_) => copy::text("journal.cli.offload.stopped.planning"),
+        OffloadCreationRefusal::Native => copy::text("journal.cli.offload.stopped.temporary.copy"),
         OffloadCreationRefusal::Metadata
         | OffloadCreationRefusal::Entropy
         | OffloadCreationRefusal::Ledger
         | OffloadCreationRefusal::Verification
-        | OffloadCreationRefusal::Publication => "saving offload's record failed".into(),
+        | OffloadCreationRefusal::Publication => copy::text("journal.cli.offload.stopped.record"),
     })
 }
 

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for stopped tool reason.",
+  "context": "Journal command-line text for stopped tool reason.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "005852bc8745270d556e6573242e4f70899ff29d52ae7126eab85e5a4ffe7ee1",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

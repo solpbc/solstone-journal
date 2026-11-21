@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for stopped readback incomplete discovery.",
+  "context": "Journal command-line text for stopped readback incomplete discovery.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "73afa8d35cb0a734e952b446ecde59158fc83dd877b691a60737ff6593224635",
+  "max_length": 97,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

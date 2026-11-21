@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for result other.",
+  "context": "Journal command-line text for result other.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "22f8ebabc0ceed499751136ab6774a769f2554698a0953376b40edbb1bc5ce72",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

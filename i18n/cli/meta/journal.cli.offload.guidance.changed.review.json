@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for guidance changed review.",
+  "context": "Journal command-line text for guidance changed review.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "88f1bded60822c86a998c0e820d673b31323d20bad024b63beb9e28aa73abfee",
+  "max_length": 217,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

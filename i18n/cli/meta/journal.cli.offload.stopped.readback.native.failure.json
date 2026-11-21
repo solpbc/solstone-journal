@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for stopped readback native failure.",
+  "context": "Journal command-line text for stopped readback native failure.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6fb36c57d4a7f9279dffd5cd6822cef56975e222f1e5300c0c9a49d653f43202",
+  "max_length": 89,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for stopped archive cancelled.",
+  "context": "Journal command-line text for stopped archive cancelled.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3a7c92b953ab866bca157cab2c97c13b9f977b74c457b60b346b5879f71119a3",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

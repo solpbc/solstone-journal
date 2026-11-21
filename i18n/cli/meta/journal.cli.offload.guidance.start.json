@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for guidance start.",
+  "context": "Journal command-line text for guidance start.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "207d13151767dcaa1ca1d6fb4446d66ef3825721bbc87fd7f0aa6d88179fd193",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

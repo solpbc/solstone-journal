@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for guidance unfinished.",
+  "context": "Journal command-line text for guidance unfinished.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4a555b4e38aab0e357717512d86339af68a08aea89c410500da23c36aa52ba3c",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for stopped archive tool unavailable.",
+  "context": "Journal command-line text for stopped archive tool unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cb0979b90ae9871122c5fe6282657c501dc1f99d02f01a5fbe4a2162be63b030",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

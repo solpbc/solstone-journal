@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for guidance platform.",
+  "context": "Journal command-line text for guidance platform.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a183c7423700b637c5091c630a5dce6063c1a657d8447ea4dcf54e67375cd437",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

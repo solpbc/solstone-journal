@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for stopped readback unsupported.",
+  "context": "Journal command-line text for stopped readback unsupported.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1acd8e9b65b7629aa5fb7b53077bf44ba31b71835710ff2a3f4714f37a8b1081",
+  "max_length": 104,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

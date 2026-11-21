@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for guidance changed retry.",
+  "context": "Journal command-line text for guidance changed retry.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6d28b339bc1120ed523d1f52794190e440a60773bf29e623791983cc99709dd1",
+  "max_length": 152,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for result confirm tool failed.",
+  "context": "Journal command-line text for result confirm tool failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "878ed3e89487dda8c94076996f3a1cc095d81f85bb6f99f657d2f6984bf09c24",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

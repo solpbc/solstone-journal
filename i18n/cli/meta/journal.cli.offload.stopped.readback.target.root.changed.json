@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for stopped readback target root changed.",
+  "context": "Journal command-line text for stopped readback target root changed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4bffb1e5fbf10598963a0a98453fdbe4245e43b9a607c72685e4d10a304066bc",
+  "max_length": 96,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

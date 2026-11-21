@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for result backup failing.",
+  "context": "Journal command-line text for result backup failing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "02ace3a078d5805cea47cdb59db435de07ea3fcb61d77795bbd368910bd0a279",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

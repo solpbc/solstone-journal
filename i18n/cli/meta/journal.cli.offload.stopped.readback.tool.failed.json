@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for stopped readback tool failed.",
+  "context": "Journal command-line text for stopped readback tool failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "92b39c62db3c91446894ba4428bd35e09d318b1906b5a55188697d6ba6fe4ad5",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for stopped inputs io.",
+  "context": "Journal command-line text for stopped inputs io.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "acdbce013d1d26c406863b256e72d99bb6227dbc18f78af9b12fdb73078a8328",
+  "max_length": 99,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

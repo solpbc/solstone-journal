@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for stopped temporary copy.",
+  "context": "Journal command-line text for stopped temporary copy.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "148ba56d1c3cbe1e18ec836bbc5b8a50769611a0cf2069ebda9cfdd241858398",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

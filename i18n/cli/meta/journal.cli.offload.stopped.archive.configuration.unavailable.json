@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for stopped archive configuration unavailable.",
+  "context": "Journal command-line text for stopped archive configuration unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3be31845c8207b8c7e6efc0f58d40f71258ca37e58b7cd4d5539ca43a987cd05",
+  "max_length": 89,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

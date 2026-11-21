@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for stopped unfinished work.",
+  "context": "Journal command-line text for stopped unfinished work.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "146fec4be5162fc402fb587c874cd506edb165c6eded99174e625b2e2fb57800",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

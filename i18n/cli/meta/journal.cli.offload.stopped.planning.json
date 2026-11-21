@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for stopped planning.",
+  "context": "Journal command-line text for stopped planning.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c3adac5def1442df5833903b709312b95685d2ef5c6128997dc713559b902299",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

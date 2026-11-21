@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for result backup not ready.",
+  "context": "Journal command-line text for result backup not ready.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "83abcf7b5d8aada4656aaad89d0fd68af408132e2e4bad3263fb392e0a2ff7d9",
+  "max_length": 97,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

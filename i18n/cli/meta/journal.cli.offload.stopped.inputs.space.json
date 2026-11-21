@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for stopped inputs space.",
+  "context": "Journal command-line text for stopped inputs space.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "available",
+      "type": "string"
+    },
+    {
+      "name": "required",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "056a1bccf5be560eb98831c8d1faa9bf41e8c6e95929defa0ef01de2dadcb322",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

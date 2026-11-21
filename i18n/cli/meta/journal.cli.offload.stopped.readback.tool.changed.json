@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for stopped readback tool changed.",
+  "context": "Journal command-line text for stopped readback tool changed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "27e14d24e48280da9655a64881898561e2f946553d4d8ff9a24ca7e06297c9f5",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

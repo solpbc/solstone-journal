@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for stopped creation.",
+  "context": "Journal command-line text for stopped creation.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "22cd12d02b682f3e311fbadc89a47d86261d5debf898ccecb65c55cec9f30577",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

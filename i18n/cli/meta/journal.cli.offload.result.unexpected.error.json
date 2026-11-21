@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for result unexpected error.",
+  "context": "Journal command-line text for result unexpected error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2e1d0fdeedf9a1a47b32cb335afc672e2f0abd6b68dfb452ab8bf96cb1b3c6cf",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

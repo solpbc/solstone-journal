@@ -34,6 +34,7 @@ use crate::run::{
 };
 
 mod report;
+mod stopped;
 pub use report::{
     CliArchiveFact, CliCopyFact, CliCreationFacts, CliLedgerFact, CliMutationFact,
     CliObservedEffects, CliReconciliationFact,

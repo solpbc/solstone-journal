@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for stopped readback snapshot node unavailable.",
+  "context": "Journal command-line text for stopped readback snapshot node unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9884c81a347dd13e8b9ff8b1eda8f23602126e0ffcf3f589729242336755424c",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

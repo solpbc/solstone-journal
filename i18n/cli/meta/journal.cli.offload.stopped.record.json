@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for stopped record.",
+  "context": "Journal command-line text for stopped record.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4168afd63041e6f31a44666e6ecd3d9929399cf8dfd747430889887bd573a32b",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

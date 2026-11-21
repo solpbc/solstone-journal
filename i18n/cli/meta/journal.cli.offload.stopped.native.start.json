@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for stopped native start.",
+  "context": "Journal command-line text for stopped native start.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "status",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1dcbd9a9935af1f6075cd80361ab133bf3ff8b55bba9659bb8c16d8075e57394",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

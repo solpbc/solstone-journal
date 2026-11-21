@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for guidance tool.",
+  "context": "Journal command-line text for guidance tool.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ebc875704ed4fc7fdc0c0726bffb1c3f0eccb5719350ae96a2e5c8650f72909c",
+  "max_length": 102,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone",
+      "kind": "mark-word",
+      "value": "solstone"
+    }
+  ]
+}

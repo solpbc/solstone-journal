@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for guidance clock.",
+  "context": "Journal command-line text for guidance clock.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a0d411a2f30949bcb92f807b8a8da0bcf87b0e585a93236f904c1f716096818b",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

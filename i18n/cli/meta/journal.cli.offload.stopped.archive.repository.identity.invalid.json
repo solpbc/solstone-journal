@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for stopped archive repository identity invalid.",
+  "context": "Journal command-line text for stopped archive repository identity invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "207fc372d1aca5e6e8c642e47b8456e53567286b0d93202f68fb1f5280156df7",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

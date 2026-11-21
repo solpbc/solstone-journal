@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for stopped archive snapshot identity invalid.",
+  "context": "Journal command-line text for stopped archive snapshot identity invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1138000853213a70fb9fdfe3171ea1c48da19508ba72186ee27f0fe5b62d22f9",
+  "max_length": 101,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

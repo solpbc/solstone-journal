@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for result verification failed.",
+  "context": "Journal command-line text for result verification failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b23a5c869fde52ceeff50e49c9a5dbe037ab8f7b6233a68e71c22d0e46a6ea99",
+  "max_length": 104,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

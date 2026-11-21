@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for stopped plan incomplete.",
+  "context": "Journal command-line text for stopped plan incomplete.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bd0fc2f68e5b703aad044086e9d2fed36e7aabd15c589f0d0e729058d8233984",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

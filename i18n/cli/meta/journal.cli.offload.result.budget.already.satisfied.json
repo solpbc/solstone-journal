@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for result budget already satisfied.",
+  "context": "Journal command-line text for result budget already satisfied.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8c75d70c601e4f8038ab370f70412f0cc8daa18bd6c0af4ed302a44042e337ac",
+  "max_length": 110,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}
