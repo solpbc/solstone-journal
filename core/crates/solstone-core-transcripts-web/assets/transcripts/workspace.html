@@ -97,7 +97,7 @@
   /* The detail rail widens a little for a day with several streams, so each
      stream column has room for its device's label. */
   --tr-zoom-streams: 1;
-  --tr-zoom-col: clamp(120px, calc(72px + var(--tr-zoom-streams) * 68px), max(120px, 24vw));
+  --tr-zoom-col: clamp(120px, calc(72px + var(--tr-zoom-streams) * 104px), max(120px, 24vw));
 }
 
 .tr-card[data-zoom-streams="2"] { --tr-zoom-streams: 2; }
@@ -2860,7 +2860,7 @@
 }
 
 /* ── Presentation mode (?present=1) — back-row legibility on a projector ── */
-body.presentation-mode .tr-card { --tr-day-col: 240px; --tr-zoom-col: clamp(150px, calc(72px + var(--tr-zoom-streams) * 80px), max(150px, 24vw)); }
+body.presentation-mode .tr-card { --tr-day-col: 240px; --tr-zoom-col: clamp(150px, calc(72px + var(--tr-zoom-streams) * 116px), max(150px, 24vw)); }
 body.presentation-mode .tr-zoom-stream { font-size: 14px; color: var(--ink); }
 body.presentation-mode .tr-timeline-label,
 body.presentation-mode .tr-zoom-timeline-label { font-size: 14px; font-weight: 700; }
