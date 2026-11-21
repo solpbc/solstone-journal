@@ -1387,6 +1387,27 @@ module.exports = async function entitiesContractCases(manifestDir) {
       'the header counts what an entity in the unmuted facet alone would show');
   });
 
+  await test('an entity only in muted facets says so instead of saying it is in none', async () => {
+    const page = async (facets) => {
+      const serve = journal(copy);
+      const answers = (url, opts) => {
+        if (new URL(url, ORIGIN).pathname === '/app/entities/api/journal/entity/p3') {
+          const body = detail('p3');
+          body.entity.facets = facets;
+          return body;
+        }
+        return serve(url, opts);
+      };
+      return boot(env, '/app/entities/#p3', { answers });
+    };
+    const quiet = { name: 'quiet', title: 'Quiet', color: '#888888', observation_count: 3, muted: true };
+    const onlyMuted = await page([quiet]);
+    const none = await page([]);
+    const said = (p) => p.byId('journal-detail-facets').querySelector('.no-facet-relationships').textContent;
+    assert.strictEqual(said(onlyMuted), onlyMuted.window.JournalI18n.render('journal.window.entities.visible.text.only.in.facets.you.muted'));
+    assert.strictEqual(said(none), none.window.JournalI18n.render('journal.window.entities.visible.text.not.attached.to.any.facets.yet'));
+  });
+
   await test('a hidden entity\'s all-facets page shows no moments and asks for none', async () => {
     const serve = journal(copy);
     const answers = (url, opts) => {

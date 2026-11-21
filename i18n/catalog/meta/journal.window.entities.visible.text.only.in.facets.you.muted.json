@@ -1,0 +1,16 @@
+{
+  "description": "Shown on an entity's page in the journal's entities view when every facet it belongs to is muted, so none are listed.",
+  "context": "Journal window, entities view, the facets section of one entity's page. Muting a facet hides it from views.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ce1af39c90137d27ef6551e53338159e6268a7ccdd38c59d117baf63f3a607eb",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

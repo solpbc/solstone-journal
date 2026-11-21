@@ -9188,6 +9188,7 @@ journal.window.entities.visible.text.no.entity.matches.that.name = no entity mat
 journal.window.entities.visible.text.not.attached = not attached
 
 journal.window.entities.visible.text.not.attached.to.any.facets.yet = not attached to any facets yet.
+journal.window.entities.visible.text.only.in.facets.you.muted = only in facets you've muted.
 
 journal.window.entities.visible.text.not.now = not now
 

@@ -14212,6 +14212,13 @@
       "locales": []
     },
     {
+      "id": "journal.window.entities.visible.text.only.in.facets.you.muted",
+      "source": "ce1af39c90137d27ef6551e53338159e6268a7ccdd38c59d117baf63f3a607eb",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.entities.visible.text.pairs.that.might.be.the.same",
       "source": "ad1bd5ebc0813a47abbddf9dd92c8f4fa16b6711239abba973bb209d12a8d102",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",

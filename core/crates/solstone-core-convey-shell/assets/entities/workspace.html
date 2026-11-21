@@ -4875,7 +4875,12 @@ function renderJournalDetailView(entity) {
   const facetsContainer = document.getElementById('journal-detail-facets');
 
   if (facets.length === 0) {
-    facetsContainer.innerHTML = `<div class="no-facet-relationships">${window.JournalI18n.renderHtml('journal.window.entities.visible.text.not.attached.to.any.facets.yet')}</div>`;
+    // Muted facets are left out above; an entity only in those is still attached.
+    const onlyMuted = (entity.facets || []).some((facet) => facet?.muted === true);
+    const emptyKey = onlyMuted
+      ? 'journal.window.entities.visible.text.only.in.facets.you.muted'
+      : 'journal.window.entities.visible.text.not.attached.to.any.facets.yet';
+    facetsContainer.innerHTML = `<div class="no-facet-relationships">${window.JournalI18n.renderHtml(emptyKey)}</div>`;
   } else {
     facetsContainer.innerHTML = '<div class="facet-relationships-list"></div>';
     const list = facetsContainer.querySelector('.facet-relationships-list');
