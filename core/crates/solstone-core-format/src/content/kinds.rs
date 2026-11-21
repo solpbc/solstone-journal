@@ -15,6 +15,7 @@ use super::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     Transcripts,
+    Messages,
     Notes,
     Documents,
     Screen,
@@ -58,6 +59,17 @@ pub const KINDS: &[KindSpec] = &[
             description_id: "journal.window.agents.permission.kind.transcripts.description",
         }),
         checked_by_default: true,
+    },
+    KindSpec {
+        kind: Kind::Messages,
+        stored_word: "messages",
+        permission: Some(AdmittedCategory::Messages),
+        query_alias: Some("Messages"),
+        permission_copy: Some(PermissionCopy {
+            label_id: "journal.window.agents.permission.kind.messages.label",
+            description_id: "journal.window.agents.permission.kind.messages.description",
+        }),
+        checked_by_default: false,
     },
     KindSpec {
         kind: Kind::Entities,
@@ -358,6 +370,9 @@ pub fn indexed_permission(
     path: &str,
     stored: AdmittedCategory,
 ) -> AdmittedCategory {
+    if super::conversation::unresolved_markdown(path) {
+        return AdmittedCategory::Transcripts;
+    }
     if body_material::is_body_path(path) {
         return AdmittedCategory::Body;
     }
@@ -383,23 +398,65 @@ pub fn indexed_permission(
         KindAssignment::Settled(kind) | KindAssignment::Legacy(kind) => {
             kind.permission().unwrap_or(stored)
         }
-        KindAssignment::ImportSummary => journal
-            .and_then(|journal| body_material::import_summary_source(journal, path))
-            .map(|source| match source.as_str() {
-                "apple_health" | "oura" | "strava" => AdmittedCategory::Body,
-                "obsidian" | "evernote" | "kindle" | "text" => AdmittedCategory::Notes,
-                "document" => AdmittedCategory::Documents,
-                "ics" => AdmittedCategory::Calendar,
-                "image" => AdmittedCategory::Photos,
-                _ => stored,
-            })
-            .unwrap_or(stored),
+        KindAssignment::ImportSummary => import_summary_permission(journal, path).unwrap_or(stored),
         KindAssignment::NotContent => stored,
     }
 }
 
-/// The weekly reflection includes verbatim passages from transcripts.
+/// A historical index may store every import summary under Transcripts.
+/// Agent queries need the import's actual kind before admitting even a count.
+/// A search hit on a conversation summary uses the Summaries grant. A hit
+/// on the original conversation goes through its own source reader.
+pub fn agent_indexed_permission(
+    journal: Option<&Path>,
+    path: &str,
+    stored: AdmittedCategory,
+) -> Option<AdmittedCategory> {
+    if !(path.starts_with("imports/") && path.ends_with("/summary.md")) {
+        return Some(indexed_permission(journal, path, stored));
+    }
+    import_summary_permission(journal, path)
+}
+
+fn import_summary_permission(journal: Option<&Path>, path: &str) -> Option<AdmittedCategory> {
+    let journal = journal?;
+    let manifest = body_material::import_summary_manifest(journal, path)?;
+    use AdmittedCategory as C;
+    Some(match manifest["source_type"].as_str()? {
+        "apple_health" | "oura" | "strava" => C::Body,
+        "obsidian" | "evernote" | "kindle" => C::Notes,
+        "document" => C::Documents,
+        "ics" => C::Calendar,
+        "image" => C::Photos,
+        "chatgpt" | "claude" | "gemini" => C::Facets,
+        "text" => body_material::text_summary_permission(journal, path, &manifest)?,
+        _ => return None,
+    })
+}
+
+/// Match an indexed passage to the current summary before applying the
+/// current import's grant to it. The index may still contain an earlier job.
+pub fn current_import_summary_chunks(
+    journal: &Path,
+    path: &str,
+) -> Option<Vec<crate::chunker::MarkdownChunk>> {
+    body_material::summary_import_id(path)?;
+    let root = solstone_core_journal_io::JournalRoot::open(journal).ok()?;
+    // Use the same 4 MiB bound as live activity prose reads.
+    let source = solstone_core_journal_io::read_relative_file_bounded(
+        &root,
+        Path::new(path),
+        4 * 1024 * 1024,
+    )
+    .ok()??;
+    Some(crate::chunker::format_markdown(std::str::from_utf8(&source.bytes).ok()?).chunks)
+}
+
+/// Extra access needed in addition to the primary indexed kind.
 pub fn additional_indexed_permission(path: &str) -> Option<AdmittedCategory> {
+    if super::conversation::unresolved_markdown(path) {
+        return Some(AdmittedCategory::Messages);
+    }
     path.strip_prefix("reflections/weekly/")
         .filter(|name| name.ends_with(".md") && !name.contains('/'))
         .map(|_| AdmittedCategory::Transcripts)
@@ -601,6 +658,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             [
                 (Kind::Transcripts, Some("transcripts")),
+                (Kind::Messages, Some("messages")),
                 (Kind::Entities, Some("entities")),
                 (Kind::ProfilePics, Some("profile_pics")),
                 (Kind::Facets, Some("facets")),

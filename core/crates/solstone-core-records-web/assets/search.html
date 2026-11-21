@@ -65,9 +65,22 @@
   if(memoryPath(path))return window.JournalI18n.render('journal.window.search.link.agents');
   return window.JournalI18n.render('journal.window.search.link.transcript');
  }
+ // A spoken line's speaker reads as a name, as in the reader: never as the
+ // stored Markdown (**Name:**) or a caption's voice markup (<v Name>…</v>).
+ function speakerLine(value){
+  let text=String(value||'');let speaker='';
+  const bold=/^\*\*([^*<]{1,100}?):\*\*\s*/.exec(text);
+  const voice=/^&lt;v(?:\.[^\s&]*)?\s+([^&]{1,100}?)&gt;/.exec(text);
+  if(bold){speaker=bold[1];text=text.slice(bold[0].length);}
+  else if(voice){speaker=voice[1];text=text.slice(voice[0].length).replace(/&lt;\/v&gt;/g,'');}
+  if(speaker)speaker=new DOMParser().parseFromString(speaker,'text/html').body.textContent;
+  return {speaker,text};
+ }
  function excerpt(value){
   // The API returns escaped excerpts with strong tags. Keep only text and that emphasis.
-  const doc=new DOMParser().parseFromString(String(value||''),'text/html');const out=document.createDocumentFragment();
+  const line=speakerLine(value);
+  const doc=new DOMParser().parseFromString(line.text,'text/html');const out=document.createDocumentFragment();
+  if(line.speaker)out.append(node('strong','search-speaker',line.speaker+':'),' ');
   function append(n,parent){if(n.nodeType===3){parent.append(document.createTextNode(n.textContent));return;}if(n.nodeType!==1)return;const dest=n.tagName==='STRONG'?node('mark'):parent;if(dest!==parent)parent.append(dest);for(const child of n.childNodes)append(child,dest);}
   for(const child of doc.body.childNodes)append(child,out);return out;
  }
@@ -94,11 +107,42 @@
    ['shown_count', String(shown)], ['match_count', String(total)],
   ]);
  }
+ // A saved conversation's turn: the item and the turn a hit matched.
+ function conversationPath(path){
+  const found=/^(?:chronicle\/)?(\d{8})\/([^/]+)\/([^/]+)\/(conversation_transcript\.jsonl|imported_audio\.jsonl)$/.exec(path);
+  return found?{day:found[1],stream:found[2],segment:found[3]}:null;
+ }
+ // Opens the reader at the matched passage. Without an offset it opens the
+ // turn, promising no passage.
+ function passageLink(hit){
+  const where=conversationPath(String(hit.path||''));const message=hit.message;
+  if(!where||!message||!message.turn_id)return null;
+  const params=new URLSearchParams({stream:where.stream,turn:String(message.turn_id)});
+  if(Number.isInteger(message.offset)&&message.offset>=0)params.set('at',String(message.offset));
+  return '/app/transcripts/'+where.day+'?'+params.toString()+'#'+encodeURIComponent(where.segment)+'/transcript';
+ }
+ // Who wrote a message and who it went to, as far as the source said.
+ function messageMeta(message){
+  if(!message)return '';
+  const sender=message.is_owner===true?window.JournalI18n.render('journal.window.search.message.you'):String(message.author||'');
+  if(!sender)return '';
+  const to=Array.isArray(message.to)?message.to.filter((name)=>typeof name==='string'&&name.trim()):[];
+  if(!to.length)return sender;
+  const everyone=to.length===1&&to[0].trim().toLowerCase()==='everyone';
+  const recipients=everyone?window.JournalI18n.render('journal.window.search.message.everyone'):(typeof Intl.ListFormat==='function'?new Intl.ListFormat(window.JournalI18n.formatLocale,{type:'conjunction'}).format(to):to.join(', '));
+  return window.JournalI18n.render('journal.window.search.message.meta',[['sender',sender],['recipients',recipients]]);
+ }
  function renderHit(hit,dayHref){
   const card=node('article','search-result');const meta=node('div','search-meta');
-  const itemLabel=hit.item?window.JournalFormat.importItem(hit.item):'';
-  const dateOnly=Boolean(itemLabel)&&window.JournalFormat.isDateOnlyImport(hit.item);
-  const recordTime=!dateOnly&&Number.isFinite(hit.ts)&&hit.ts>0?window.JournalFormat.time(hit.ts):'';
+  const conversation=hit.conversation_item;
+  const conversationLabel=conversation?window.JournalFormat.conversationItem(conversation):'';
+  const itemLabel=conversationLabel||(hit.item?window.JournalFormat.importItem(hit.item):'');
+  // Written items carry their own send time; one with none reads by date.
+  const message=conversationLabel?hit.message:null;
+  const sentTime=message&&message.sent_at?window.JournalFormat.time(message.sent_at):'';
+  const untimedWritten=Boolean(conversationLabel)&&!sentTime&&!(conversation.first_sent_at||conversation.shared_at);
+  const dateOnly=untimedWritten||(!conversationLabel&&Boolean(itemLabel)&&window.JournalFormat.isDateOnlyImport(hit.item));
+  const recordTime=sentTime||(!dateOnly&&Number.isFinite(hit.ts)&&hit.ts>0?window.JournalFormat.time(hit.ts):'');
   const rawStream=String(hit.stream||'').trim();
   const memorySource=memoryPath(String(hit.path||''));
   // A memory names the agent that saved it. The name is the agent's own choice; the key tells two apart.
@@ -124,6 +168,8 @@
    if(date)meta.append(node('span','',date));
   }
   if(recordTime)meta.append(node('span','',recordTime));
+  const who=messageMeta(message);
+  if(who)meta.append(node('span','search-message-meta',who));
   // Screen text names when it was on screen; the segment id and its offset stand in only when it can't.
   if(hit.segment&&!dateOnly)meta.append(node('span','search-citation',hit.time?String(hit.time):String(hit.segment)+(hit.minute?' · '+String(hit.minute):'')));
   card.append(meta);const text=node('p','search-excerpt');
@@ -138,7 +184,11 @@
   // it only when the day heading is not already carrying it.
   else if(hit.day){const href='/app/transcripts/'+encodeURIComponent(hit.day);if(href!==dayHref){const a=node('a','search-link',window.JournalI18n.render('journal.window.search.link.day'));a.href=href;actions.append(a);}}
   const path=String(hit.path||'');
-  if(path&&!path.startsWith('entity_search:')&&hit.entry_id){
+  const passage=passageLink(hit);
+  if(passage){
+   // A message opens in the reader at the passage, not as a stored record.
+   const a=node('a','search-link',window.JournalI18n.render('journal.window.search.entry.open'));a.href=passage;actions.append(a);card.append(actions);
+  }else if(path&&!path.startsWith('entity_search:')&&hit.entry_id){
    const button=node('button','',window.JournalI18n.render('journal.window.search.entry.open'));button.type='button';button.setAttribute('aria-expanded','false');const content=node('pre','search-source');content.hidden=true;
    ENTRIES.set(button,{path,idx:String(hit.idx),entry_id:String(hit.entry_id),content});
    actions.append(button);card.append(actions,content);

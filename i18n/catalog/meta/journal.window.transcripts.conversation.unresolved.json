@@ -1,0 +1,16 @@
+{
+  "description": "Top of an older imported conversation the journal can't place as spoken or written.",
+  "context": "Journal window, transcripts view. Above the conversation's lines, with a why disclosure.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fe8672d1dfe5eb40a2836b9a6689e0128082f802038f819409cd3a37578c2b71",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

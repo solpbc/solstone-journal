@@ -213,6 +213,38 @@ pub(crate) fn cases() -> Vec<Value> {
 }
 
 #[test]
+fn dated_native_producer_rows_quote_only_complete_input() {
+    let mut case = cases()
+        .into_iter()
+        .find(|c| c["name"] == "imported_messages_keep_their_authors_and_message_dates")
+        .unwrap();
+    let rows = &mut case["files"]["conversation_transcript.jsonl"];
+    let first = "2026-01-01T09:00:00Z";
+    let last = "2026-01-01T09:00:01Z";
+    rows[0]["first_sent_at"] = json!(first);
+    rows[0]["last_sent_at"] = json!(last);
+    rows[1]["sent_at"] = json!(first);
+    rows[2]["sent_at"] = json!(last);
+    assert_eq!(run(&case).record["story"]["body"], case["expect"]["body"]);
+    case["files"]["conversation_transcript.jsonl"][2]["partial_input"] = json!({});
+    assert_eq!(run(&case).record["story"]["body"], case["response"]["body"]);
+}
+
+#[test]
+fn a_legacy_display_label_cannot_establish_who_wrote_a_message() {
+    let mut case = cases()
+        .into_iter()
+        .find(|c| c["name"] == "imported_messages_keep_their_authors_and_message_dates")
+        .unwrap();
+    case["files"]["conversation_transcript.jsonl"][1]
+        .as_object_mut()
+        .unwrap()
+        .remove("is_owner");
+    let result = run(&case);
+    assert_eq!(result.record["story"]["body"], case["response"]["body"]);
+}
+
+#[test]
 fn every_story_source_case_stores_and_returns_one_story() {
     for case in cases() {
         let name = case["name"].as_str().unwrap();
@@ -330,6 +362,7 @@ fn minimal_source_word_task() -> (
         .clone();
     let chunk = "[00:00:01] Speaker 1: The request remains pending.".to_owned();
     let source = solstone_core_transcripts::EntrySource {
+        conversation_medium: None,
         path: "/invented/chronicle/20260101/desktop/090000_300/audio.jsonl".into(),
         sha256: "invented-source-snapshot".into(),
         rendered_range: 0..chunk.len(),
@@ -560,7 +593,7 @@ fn source_at_reader_boundary(chars: usize) -> (Value, String) {
     assert_eq!(expected.chars().count(), chars);
     let mut rows = vec![json!({"imported":{"id":"invented-boundary"}})];
     rows.extend(texts.iter().enumerate().map(|(i, text)| {
-        json!({"start":format!("00:00:0{i}"),"speaker":if i % 2 == 0 {"You"} else {"Assistant"},"text":text,"source":"import","source_ms":1767258000000_i64+i as i64*1000})
+        json!({"start":format!("00:00:0{i}"),"is_owner": i % 2 == 0,"speaker":if i % 2 == 0 {"You"} else {"Assistant"},"text":text,"source":"import","source_ms":1767258000000_i64+i as i64*1000})
     }));
     case["files"] = json!({"conversation_transcript.jsonl":rows});
     case["response"] = json!({"body":correction,"topics":[],"confidence":0.8,"relations":[]});

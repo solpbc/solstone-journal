@@ -70,7 +70,7 @@ pub fn media_kind(extension: &str) -> Option<MediaKind> {
 }
 
 /// Every extension the journal reads as audio.
-pub(crate) fn audio_extensions() -> impl Iterator<Item = &'static str> {
+pub fn audio_extensions() -> impl Iterator<Item = &'static str> {
     FORMATS
         .iter()
         .filter(|(_, kind)| *kind == MediaKind::Audio)

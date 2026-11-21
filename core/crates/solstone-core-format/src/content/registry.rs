@@ -155,7 +155,6 @@ pub enum SegmentReader {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReaderException {
-    ChatAsSpeechForTalents,
     PhotoAsSpeechForTalents,
 }
 
@@ -179,7 +178,7 @@ pub fn speech_transcript_name(name: &str) -> bool {
 
 /// Select one segment file for a reader. Discovery is deliberately independent
 /// of search classification: custom streams and producer-selected names have
-/// always been readable. The two differing talent projections are explicit.
+/// always been readable. The photo talent projection is explicit.
 pub fn segment_file_offers(
     rel: &str,
     reader: SegmentReader,
@@ -229,18 +228,13 @@ pub fn segment_file_offers(
         }
         let chat = actual.is_some_and(|row| row.format == FileFormat::Content(Family::AiChat));
         let offer = match (reader, row.format) {
-            (SegmentReader::Agent, FileFormat::Raw(RawPerceptFamily::Audio)) if chat => {
-                SegmentOffer {
-                    format: FileFormat::Content(Family::AiChat),
-                    exception: None,
-                }
-            }
-            (SegmentReader::Talents, FileFormat::Raw(RawPerceptFamily::Audio)) if chat => {
-                SegmentOffer {
-                    format: row.format,
-                    exception: Some(ReaderException::ChatAsSpeechForTalents),
-                }
-            }
+            (
+                SegmentReader::Agent | SegmentReader::Talents,
+                FileFormat::Raw(RawPerceptFamily::Audio),
+            ) if chat => SegmentOffer {
+                format: FileFormat::Content(Family::AiChat),
+                exception: None,
+            },
             (SegmentReader::Talents, FileFormat::PhotoDescription) => SegmentOffer {
                 format: FileFormat::Raw(RawPerceptFamily::Audio),
                 exception: Some(ReaderException::PhotoAsSpeechForTalents),
@@ -457,8 +451,8 @@ mod tests {
             assert_eq!(
                 segment_file_offers(&rel, SegmentReader::Talents, facts),
                 [SegmentOffer {
-                    format: audio,
-                    exception: Some(ReaderException::ChatAsSpeechForTalents)
+                    format: chat,
+                    exception: None
                 }]
             );
             assert_eq!(
@@ -536,8 +530,8 @@ mod tests {
             FileFormat::Content(Family::AiChat)
         );
         assert_eq!(
-            segment_file_offers(chat, R::Talents, FileFacts::default())[0].exception,
-            Some(ReaderException::ChatAsSpeechForTalents)
+            segment_file_offers(chat, R::Talents, FileFacts::default())[0].format,
+            FileFormat::Content(Family::AiChat)
         );
         let photo = "20260107/camera/120000_60/photo.jsonl";
         let image = FileFacts {

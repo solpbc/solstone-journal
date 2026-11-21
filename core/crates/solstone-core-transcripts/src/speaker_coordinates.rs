@@ -43,6 +43,21 @@ pub fn next_line_coordinate(record: &Map<String, Value>, ordinal: &mut u64) -> O
     line_coordinate(record, statement)
 }
 
+/// An old chat export can have an audio basename (and stale voice labels).
+/// Keep its authors out of every acoustic-name lookup.
+pub(crate) fn may_have_voice_labels(dir: &Path, stem: &str) -> bool {
+    if stem != "imported_audio" {
+        return true;
+    }
+    use solstone_core_format::content::conversation::{ConversationMedium, file_medium};
+    let name = "imported_audio.jsonl";
+    let origin = solstone_core_journal_io::paths::segment_origin(dir);
+    !matches!(
+        file_medium(&dir.join(name), &format!("{origin}/{name}")),
+        Some(ConversationMedium::Written | ConversationMedium::Unresolved)
+    )
+}
+
 fn audio_sources(dir: &Path) -> Vec<String> {
     let mut values = fs::read_dir(dir)
         .into_iter()
@@ -50,6 +65,9 @@ fn audio_sources(dir: &Path) -> Vec<String> {
         .flatten()
         .filter_map(|entry| {
             let name = entry.file_name().into_string().ok()?;
+            if !may_have_voice_labels(dir, name.trim_end_matches(".jsonl")) {
+                return None;
+            }
             (name.ends_with("audio.jsonl")
                 || solstone_core_format::audio_archive::is_audio_archive_transcript_name(&name))
             .then(|| name.trim_end_matches(".jsonl").into())
@@ -68,6 +86,9 @@ pub fn speaker_label_source(dir: &Path) -> (Option<String>, bool) {
         .filter_map(|entry| {
             let name = entry.file_name().into_string().ok()?;
             let stem = name.strip_suffix(".npz")?;
+            if !may_have_voice_labels(dir, stem) {
+                return None;
+            }
             (stem == "audio"
                 || stem.ends_with("_audio")
                 || solstone_core_format::audio_archive::is_audio_archive_part_stem(stem))

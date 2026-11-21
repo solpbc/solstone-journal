@@ -1,0 +1,16 @@
+{
+  "description": "Introduces links to other items whose time on the day overlaps this one. A fact about time, not a claim they are the same event.",
+  "context": "Journal window, transcripts view. Above an open transcript or messages item.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "80c59f0d9940d0a7e8c399671824ca85da697708d0010a78e40ad10e0063cda3",
+  "max_length": 40,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

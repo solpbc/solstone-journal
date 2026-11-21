@@ -11,6 +11,7 @@ use jiff::civil::{DateTime, Time};
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use solstone_core_format::agent_memory::{Coordinate, Origin, SourceKey};
+use solstone_core_format::content::conversation::{self, ConversationMedium};
 use solstone_core_format::content::strava_body::STRAVA_STREAM;
 use solstone_core_format::content::{
     Family, RawPerceptFamily, iter_talent_text_projections, parse_raw_percept_records,
@@ -43,12 +44,12 @@ pub use who_spoke::{
 };
 
 pub use segment_page::{
-    AgentSpeakers, MAX_TRANSCRIPT_PAGE_BYTES, MAX_TRANSCRIPT_PAGE_ITEMS,
+    AgentSpeakers, MAX_TRANSCRIPT_PAGE_BYTES, MAX_TRANSCRIPT_PAGE_ITEMS, MessageBounds,
     POSSIBLE_SPEAKER_CHANGE_WITHIN_SENTENCE, SegmentClock, SegmentTranscriptCursor,
     SegmentTranscriptEntry, SegmentTranscriptPage, SegmentTranscriptReadError,
-    SegmentTranscriptVersion, read_segment_transcript_page,
+    SegmentTranscriptVersion, TurnPart, read_segment_transcript_page,
     read_segment_transcript_page_leaving_out, read_segment_transcript_page_with_permissions,
-    segment_clock, segment_has_permitted_files,
+    read_spoken_conversation, read_talent_conversation, segment_clock, segment_has_permitted_files,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -210,6 +211,8 @@ const TERMINAL_SOURCE_MAX_BYTES: usize = 8 * 1024 * 1024;
 /// entry was rendered from.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EntrySource {
+    /// Resolved on the same file version as the rendered conversation.
+    pub conversation_medium: Option<ConversationMedium>,
     /// Original producer bytes, before speaker-name projection.
     pub path: PathBuf,
     pub sha256: String,
@@ -247,7 +250,9 @@ impl SourceCounts {
         let mut counts = Self::default();
         for entry in entries {
             match entry.prefix {
-                "transcript" | "memory_original" => counts.transcripts += 1,
+                "transcript" | "spoken" | "memory_original" | "written" | "conversation" => {
+                    counts.transcripts += 1
+                }
                 "percept" | "browser" | "protected_video" | "desktop_activity" => {
                     counts.percepts += 1
                 }
@@ -277,6 +282,26 @@ pub const MIN_INPUT_CHARS: usize = 50;
 /// any other name is known by the processing record transcribe wrote at its
 /// head rather than by its name.
 pub fn is_speech_transcript_file(path: &Path) -> bool {
+    if let Some(rel) = conversation_relative(path) {
+        return conversation::file_medium(path, &rel) == Some(ConversationMedium::Spoken);
+    }
+    ordinary_transcript_file(path)
+}
+
+pub fn conversation_relative(path: &Path) -> Option<String> {
+    let name = path.file_name()?.to_str()?;
+    if !matches!(
+        name,
+        "conversation_transcript.jsonl" | "imported_audio.jsonl"
+    ) {
+        return None;
+    }
+    let origin = solstone_core_journal_io::paths::segment_origin(path.parent()?);
+    let stream = origin.split('/').rev().nth(1).unwrap_or_default();
+    conversation::is_conversation_jsonl(stream, name).then(|| format!("{origin}/{name}"))
+}
+
+fn ordinary_transcript_file(path: &Path) -> bool {
     solstone_core_format::content::segment_file_offers(
         path.file_name()
             .and_then(|name| name.to_str())
@@ -297,6 +322,9 @@ impl EntrySource {
     /// Whether this source is a speech transcript, by name or by the header
     /// transcribe wrote at its head, with or without a processing record.
     pub fn is_speech_transcript(&self) -> bool {
+        if let Some(medium) = self.conversation_medium {
+            return medium == ConversationMedium::Spoken;
+        }
         self.file.ends_with("audio.jsonl")
             || self.records.first().is_some_and(|header| {
                 solstone_core_processing_record::header_names_transcribe(header)
@@ -963,7 +991,7 @@ fn process_segment(
         }
         let mut transcript = files
             .iter()
-            .filter(|path| is_speech_transcript_file(path))
+            .filter(|path| ordinary_transcript_file(path))
             .collect::<Vec<_>>();
         transcript.sort();
         transcript.dedup();
@@ -995,24 +1023,89 @@ fn process_segment(
             let speakers = voiced
                 .as_ref()
                 .and_then(|(source, names)| (stem == Some(source.as_str())).then_some(names));
-            if let Some(content) = raw_content_with_speakers(
-                path,
-                segment,
-                day,
-                RawPerceptFamily::Audio,
-                if projection == PerceptProjection::SpeechEvidence {
-                    projection
-                } else {
-                    PerceptProjection::Generic
-                },
-                stem.and_then(|stem| run_numbers.get(stem)),
-                speakers,
-            ) {
+            let mode = if projection == PerceptProjection::SpeechEvidence {
+                projection
+            } else {
+                PerceptProjection::Generic
+            };
+            let numbers = stem.and_then(|stem| run_numbers.get(stem));
+            let mut prefix = "transcript";
+            let content = if let Some(relative) = conversation_relative(path) {
+                match read_talent_conversation(path, &relative, |file, medium| {
+                    use std::io::Read;
+                    let mut text = String::new();
+                    file.read_to_string(&mut text)?;
+                    Ok((medium, text))
+                }) {
+                    Ok((ConversationMedium::Spoken, text)) => {
+                        prefix = "spoken";
+                        let digest = format!("{:x}", Sha256::digest(text.as_bytes()));
+                        let mut content = raw_content_from_text(
+                            path,
+                            text,
+                            digest,
+                            segment,
+                            day,
+                            RawPerceptFamily::Audio,
+                            mode,
+                            numbers,
+                            speakers,
+                        );
+                        if let Some(source) = content.as_mut().and_then(|c| c.source.as_mut()) {
+                            source.conversation_medium = Some(ConversationMedium::Spoken);
+                        }
+                        content
+                    }
+                    Ok((medium, text)) => {
+                        if projection != PerceptProjection::SpeechEvidence
+                            && let Some(content) = written_or_unresolved_content(
+                                path,
+                                stream.as_deref().unwrap_or_default(),
+                                medium,
+                                &text,
+                            )
+                        {
+                            let prefix = if medium == ConversationMedium::Written {
+                                "written"
+                            } else {
+                                "conversation"
+                            };
+                            let mut item = entry(
+                                start,
+                                end,
+                                segment,
+                                prefix,
+                                content.text,
+                                stream.clone(),
+                                None,
+                            );
+                            item.source = content.source;
+                            entries.push(item);
+                        }
+                        continue;
+                    }
+                    Err(error) => {
+                        log::warn!("unable to read conversation {}: {error:?}", path.display());
+                        None
+                    }
+                }
+            } else {
+                raw_content_with_speakers(
+                    path,
+                    segment,
+                    day,
+                    RawPerceptFamily::Audio,
+                    mode,
+                    numbers,
+                    speakers,
+                )
+            };
+            if let Some(content) = content {
                 let mut transcript = entry(
                     start,
                     end,
                     segment,
-                    "transcript",
+                    prefix,
                     content.text,
                     stream.clone(),
                     None,
@@ -1358,6 +1451,7 @@ fn process_segment(
                                 })
                                 .collect();
                             activity_entry.source = Some(EntrySource {
+                                conversation_medium: None,
                                 path: path.to_owned(),
                                 sha256: format!("{:x}", Sha256::digest(text.as_bytes())),
                                 rendered_range: 0..0,
@@ -1420,6 +1514,103 @@ fn process_segment(
         }
     }
     entries
+}
+
+/// The source words and provenance shown to a local talent. The Story writer
+/// uses the same rendering when checking an exact quoted body.
+pub fn talent_message_turn(
+    stream: &str,
+    file: &str,
+    index: usize,
+    row: &Map<String, Value>,
+    untimed: bool,
+) -> Option<String> {
+    let fields = conversation::message_fields(stream, file, index, row, untimed)?;
+    let mut prefix = Vec::new();
+    if let Some(time) = fields["sent_at"].as_str() {
+        prefix.push(format!("[{time}]"));
+    }
+    if fields["is_owner"].as_bool() == Some(true) {
+        prefix.push(match fields["author"].as_str() {
+            Some(name) => format!("{name} (journal owner)"),
+            None => "Journal owner".to_owned(),
+        });
+    } else if let Some(author) = fields["author"].as_str() {
+        prefix.push(author.to_owned());
+    } else if fields["role"] == "assistant" {
+        prefix.push("Assistant".to_owned());
+    }
+    if let Some(to) = fields["to"].as_array() {
+        let names = to
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>()
+            .join(", ");
+        prefix.push(format!("to {names}"));
+    }
+    let body = row["text"].as_str()?;
+    let turn = if prefix.is_empty() {
+        body.to_owned()
+    } else {
+        format!("{}: {body}", prefix.join(" "))
+    };
+    Some(solstone_core_format::content::with_partial_input_notice(
+        turn, row,
+    ))
+}
+
+/// Preserve the attribution and original row offsets for local thinking. These
+/// chunks never acquire an acoustic speaker name or numeric speech evidence.
+fn written_or_unresolved_content(
+    path: &Path,
+    stream: &str,
+    medium: ConversationMedium,
+    text: &str,
+) -> Option<RawContent> {
+    let file = path.file_name()?.to_str()?;
+    let (records, unparsed_lines) = parse_raw_percept_records(text);
+    let untimed = records
+        .first()
+        .is_some_and(|r| r.get("untimed") == Some(&Value::Bool(true)));
+    let retain_rows = text.len() <= ENTRY_SOURCE_MAX_BYTES;
+    let mut rendered = String::new();
+    let mut chunks = Vec::new();
+    let mut chunk_offsets = Vec::new();
+    for (index, row) in records.iter().enumerate() {
+        let Some(turn) = talent_message_turn(stream, file, index, row, untimed) else {
+            continue;
+        };
+        if !rendered.is_empty() {
+            rendered.push_str("\n\n");
+        }
+        if retain_rows {
+            chunk_offsets.push(rendered.len());
+            chunks.push((turn.clone(), row.clone()));
+        }
+        rendered.push_str(&turn);
+    }
+    if rendered.is_empty() {
+        return None;
+    }
+    let source = retain_rows.then(|| EntrySource {
+        conversation_medium: Some(medium),
+        path: path.into(),
+        sha256: format!("{:x}", Sha256::digest(text.as_bytes())),
+        rendered_range: 0..0,
+        stream: Some(stream.to_owned()),
+        file: file.to_owned(),
+        records,
+        unparsed_lines,
+        chunks,
+        chunk_offsets,
+        voice_named: BTreeSet::new(),
+    });
+    Some(RawContent {
+        text: rendered,
+        source,
+        speech_evidence: None,
+        screen_cuts: Vec::new(),
+    })
 }
 
 fn raw_content(
@@ -1530,6 +1721,7 @@ fn raw_content_from_text(
             if !produced.tmux_chunk_indices.is_empty() && text.len() <= TERMINAL_SOURCE_MAX_BYTES {
                 let (records, unparsed_lines) = parse_raw_percept_records(&text);
                 source = Some(EntrySource {
+                    conversation_medium: None,
                     path: path.to_owned(),
                     sha256: source_sha256.clone(),
                     rendered_range: 0..0,
@@ -1566,6 +1758,7 @@ fn raw_content_from_text(
             };
             if projection != PerceptProjection::SpeechEvidence && text.len() <= source_limit {
                 source = Some(EntrySource {
+                    conversation_medium: None,
                     path: path.to_owned(),
                     sha256: source_sha256,
                     rendered_range: 0..0,
@@ -1699,34 +1892,132 @@ fn heard_owner_voices(
     Some((source, names))
 }
 
-/// What the owner said in a segment: the text of every sentence `VoiceNames`
-/// names as the owner, by recognized voice or the owner's own answer, in
-/// transcript order.
-pub fn owner_voice_lines(dir: &Path, voices: &VoiceNames) -> Vec<String> {
-    let Some((source, names)) = segment_voices(dir, voices) else {
+/// One source sentence attributed to the owner. The file is relative to
+/// the chronicle, so the coordinate survives a moved journal.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OwnerVoiceSentence {
+    pub file: String,
+    pub sentence_id: i64,
+    pub text: String,
+}
+
+/// Find a quoted passage when exactly one full-word occurrence survives.
+pub fn unique_owner_span<'a>(
+    passage: &str,
+    owner_lines: impl Iterator<Item = &'a str>,
+) -> Option<(usize, &'a str)> {
+    if passage.is_empty() {
+        return None;
+    }
+    let mut found = None;
+    for (index, line) in owner_lines.enumerate() {
+        for (start, _) in line.char_indices() {
+            if !line[start..].starts_with(passage) {
+                continue;
+            }
+            let end = start + passage.len();
+            let cuts_first_word = passage.chars().next().is_some_and(char::is_alphanumeric)
+                && line[..start]
+                    .chars()
+                    .next_back()
+                    .is_some_and(char::is_alphanumeric);
+            let cuts_last_word = passage
+                .chars()
+                .next_back()
+                .is_some_and(char::is_alphanumeric)
+                && line[end..]
+                    .chars()
+                    .next()
+                    .is_some_and(char::is_alphanumeric);
+            if cuts_first_word || cuts_last_word {
+                continue;
+            }
+            if found.is_some() {
+                return None;
+            }
+            found = Some((index, &line[start..end]));
+        }
+    }
+    found
+}
+
+pub fn owner_voice_sentences(dir: &Path, voices: &VoiceNames) -> Vec<OwnerVoiceSentence> {
+    let Some(source) = labelled_audio_source(dir) else {
         return Vec::new();
     };
-    let Ok(text) = fs::read_to_string(dir.join(format!("{source}.jsonl"))) else {
+    let labels = load_who_spoke(dir, Some(&source), None);
+    let name = format!("{source}.jsonl");
+    let path = dir.join(&name);
+    if !path.symlink_metadata().is_ok_and(|m| m.is_file()) {
+        return Vec::new();
+    }
+    let Ok(text) = fs::read_to_string(&path) else {
         return Vec::new();
     };
+    identified_owner_sentences(dir, &name, &text, &labels.rows, voices)
+}
+
+/// Check agent-visible evidence only in regular files under the journal root.
+pub fn bounded_owner_voice_sentences(
+    journal: &Path,
+    dir: &Path,
+    voices: &VoiceNames,
+    max_bytes: usize,
+) -> Option<Vec<OwnerVoiceSentence>> {
+    let source = labelled_audio_source(dir)?;
+    let name = format!("{source}.jsonl");
+    let (text, rows) = who_spoke::load_who_spoke_snapshot(journal, dir, &source, max_bytes)?;
+    Some(identified_owner_sentences(dir, &name, &text, &rows, voices))
+}
+
+fn identified_owner_sentences(
+    dir: &Path,
+    name: &str,
+    text: &str,
+    rows: &[Map<String, Value>],
+    voices: &VoiceNames,
+) -> Vec<OwnerVoiceSentence> {
+    // Compare the principal id, since two people may have the same display name.
+    let owners: BTreeMap<_, _> = rows
+        .iter()
+        .filter_map(|row| {
+            let id = row.get("sentence_id")?.as_i64()?;
+            Some((
+                id,
+                row.get("speaker")?.as_str()? == voices.principal && voices.name_for(row).is_some(),
+            ))
+        })
+        .collect();
+    let file = format!(
+        "{}/{name}",
+        solstone_core_journal_io::paths::segment_origin(dir)
+    );
     let mut ordinal = 0;
     text.lines()
-        .filter_map(|line| match serde_json::from_str::<Value>(line.trim()) {
-            Ok(Value::Object(record)) => Some(record),
-            _ => None,
-        })
-        .filter(|record| {
-            next_line_coordinate(record, &mut ordinal)
-                .and_then(|id| names.get(&id))
-                .is_some_and(|name| name == voices.owner_label())
-        })
-        .filter_map(|record| {
-            ["corrected", "text"]
+        .filter_map(|line| {
+            let record: Map<String, Value> = serde_json::from_str(line.trim()).ok()?;
+            let sentence_id = next_line_coordinate(&record, &mut ordinal)?;
+            if owners.get(&sentence_id) != Some(&true) {
+                return None;
+            }
+            let text = ["corrected", "text"]
                 .iter()
                 .filter_map(|key| record.get(*key).and_then(Value::as_str))
-                .find(|text| !text.trim().is_empty())
-                .map(str::to_owned)
+                .find(|text| !text.trim().is_empty())?;
+            Some(OwnerVoiceSentence {
+                file: file.clone(),
+                sentence_id,
+                text: text.to_owned(),
+            })
         })
+        .collect()
+}
+
+/// What the owner said, in transcript order.
+pub fn owner_voice_lines(dir: &Path, voices: &VoiceNames) -> Vec<String> {
+    owner_voice_sentences(dir, voices)
+        .into_iter()
+        .map(|sentence| sentence.text)
         .collect()
 }
 
@@ -1740,11 +2031,13 @@ pub fn labelled_audio_source(dir: &Path) -> Option<String> {
             continue;
         };
         if let Some(stem) = name.strip_suffix(".npz")
+            && speaker_coordinates::may_have_voice_labels(dir, stem)
             && (stem == "audio" || stem.ends_with("_audio"))
         {
             embedded.push(stem.to_owned());
         } else if let Some(stem) = name.strip_suffix(".jsonl")
             && stem.ends_with("audio")
+            && speaker_coordinates::may_have_voice_labels(dir, stem)
         {
             transcripts.push(stem.to_owned());
         }
@@ -1904,6 +2197,9 @@ fn groups_to_markdown(mut entries: Vec<Entry>) -> ScreenTranscript {
                         serde_json::to_string(origin).expect("origin serializes")
                     ));
                 }
+                "spoken" => lines.push("### Transcript".into()),
+                "written" => lines.push("### Written Messages".into()),
+                "conversation" => lines.push("### Imported Conversation".into()),
                 "percept" => lines.push("### Screen Activity".into()),
                 "browser" => lines.push("### Browser Content".into()),
                 "protected_video" => lines.push("### Protected video".into()),
@@ -1916,12 +2212,15 @@ fn groups_to_markdown(mut entries: Vec<Entry>) -> ScreenTranscript {
             }
             entry_lines.push(entry_heading_line);
             sources.push(entry.source);
-            let trimmed = if entry.prefix == "memory_original" {
-                entry.content.as_str()
-            } else {
-                entry.content.trim()
-            };
-            let trimmed_start = entry.content.len() - entry.content.trim_start().len();
+            let (trimmed, trimmed_start) =
+                if matches!(entry.prefix, "memory_original" | "written" | "conversation") {
+                    (entry.content.as_str(), 0)
+                } else {
+                    (
+                        entry.content.trim(),
+                        entry.content.len() - entry.content.trim_start().len(),
+                    )
+                };
             let content_line = lines.len();
             lines.push(trimmed.into());
             source_ranges.push((content_line, trimmed.len(), trimmed_start));
@@ -2196,7 +2495,7 @@ mod tests {
             &sources(true, false, TalentSource::Disabled),
         );
         assert!(
-            talent.contains("[09:00:01] User: the chat words"),
+            talent.contains("### Written Messages\nUser: the chat words"),
             "{talent}"
         );
         assert!(
@@ -2274,6 +2573,91 @@ mod tests {
         assert!(segment.contains("orchard irrigation pump"), "{segment}");
         assert!(!segment.contains("ingest bookkeeping"), "{segment}");
         assert_eq!(counts.total(), 1);
+    }
+
+    #[test]
+    fn anonymous_message_chunk_offsets_keep_indentation_and_trailing_spaces() {
+        let root = TempDir::new().unwrap();
+        let stream = "import.chatgpt";
+        let path = root
+            .path()
+            .join("chronicle")
+            .join(DAY)
+            .join(stream)
+            .join(SEGMENT);
+        fs::create_dir_all(&path).unwrap();
+        let body = "    indented code\n\n    another line    ";
+        fs::write(
+            path.join("conversation_transcript.jsonl"),
+            format!(
+                "{{\"imported\":{{\"id\":\"a\"}}}}\n{}",
+                json!({"text":body})
+            ),
+        )
+        .unwrap();
+        let (rendered, _, _) = cluster_period_with_memory(
+            root.path(),
+            DAY,
+            SEGMENT,
+            &sources(true, false, TalentSource::Disabled),
+            Some(stream),
+        );
+        let source = rendered.sources[0].as_ref().unwrap();
+        let start = source.chunk_offsets[0];
+        assert_eq!(&rendered.text[start..start + body.len()], body);
+        assert_eq!(&rendered.text[source.rendered_range.clone()], body);
+    }
+
+    #[test]
+    fn thinking_keeps_written_authors_without_creating_speech_evidence() {
+        let root = TempDir::new().unwrap();
+        for (stream, file, label) in [
+            ("import.chatgpt", "imported_audio.jsonl", "Written Messages"),
+            (
+                "import.text",
+                "conversation_transcript.jsonl",
+                "Imported Conversation",
+            ),
+        ] {
+            let dir = root
+                .path()
+                .join("chronicle")
+                .join(DAY)
+                .join(stream)
+                .join(SEGMENT);
+            fs::create_dir_all(&dir).unwrap();
+            let path = dir.join(file);
+            fs::write(
+                &path,
+                [
+                    json!({"imported":{"id":"a"}}),
+                    json!({"start":"00:00:00","speaker":"Sam","text":"line one\n\nline two"}),
+                    json!({"start":"00:00:01","speaker":4,"text":"numeric label"}),
+                ]
+                .map(|r| r.to_string())
+                .join("\n"),
+            )
+            .unwrap();
+            let (rendered, counts, _) = cluster_period_with_memory(
+                root.path(),
+                DAY,
+                SEGMENT,
+                &sources(true, false, TalentSource::Disabled),
+                Some(stream),
+            );
+            assert_eq!(counts.transcripts, 1);
+            assert!(rendered.contains(&format!("### {label}")), "{rendered:?}");
+            assert!(rendered.contains("Sam: line one\n\nline two"));
+            let source = rendered.sources[0].as_ref().unwrap();
+            assert!(!source.is_speech_transcript());
+            assert!(!is_speech_transcript_file(&path));
+            assert!(source.voice_named.is_empty());
+            assert!(
+                speech_evidence_for_span(root.path(), DAY, &[SEGMENT], None, Some(stream))
+                    .unwrap()
+                    .is_empty()
+            );
+        }
     }
 
     #[test]

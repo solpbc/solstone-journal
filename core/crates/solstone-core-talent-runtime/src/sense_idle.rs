@@ -91,7 +91,9 @@ fn untouched(directory: &Path, span_ms: u64) -> Option<bool> {
             if !records(&path).is_empty() {
                 return Some(false);
             }
-        } else if solstone_core_transcripts::is_speech_transcript_file(&path) {
+        } else if solstone_core_transcripts::conversation_relative(&path).is_some()
+            || solstone_core_transcripts::is_speech_transcript_file(&path)
+        {
             lines += records(&path)
                 .iter()
                 .filter(|record| {
@@ -252,7 +254,7 @@ mod tests {
         assert!(typed(journal.path()).is_none());
 
         // Idle all the way, but there is something on screen, heard, or shown in a browser.
-        let cases: [(&str, Vec<Value>); 3] = [
+        let cases: [(&str, Vec<Value>); 4] = [
             (
                 "030500_300_display_3_screen.jsonl",
                 vec![
@@ -269,6 +271,15 @@ mod tests {
                     json!({"text": "one"}),
                     json!({"text": "two"}),
                     json!({"text": "three"}),
+                ],
+            ),
+            (
+                "conversation_transcript.jsonl",
+                vec![
+                    json!({"imported":{}}),
+                    json!({"text":"one"}),
+                    json!({"text":"two"}),
+                    json!({"text":"three"}),
                 ],
             ),
             (

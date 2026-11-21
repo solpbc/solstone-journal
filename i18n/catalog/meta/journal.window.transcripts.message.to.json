@@ -1,0 +1,21 @@
+{
+  "description": "Recipients line of a message, naming who it was sent to.",
+  "context": "Journal window, transcripts view. Under a message's sender. recipients is a list of names.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "recipients",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1345ad07166863243c3eb2a6de5c00b440da89b73b3583b7385676c749281b97",
+  "max_length": 200,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

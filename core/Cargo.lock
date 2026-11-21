@@ -5167,6 +5167,7 @@ dependencies = [
  "glob",
  "jiff 1.0.0",
  "pulldown-cmark",
+ "regex",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -7057,6 +7058,7 @@ dependencies = [
  "solstone-core-talent-config",
  "solstone-core-talent-runtime",
  "solstone-core-time",
+ "solstone-core-transcripts",
  "solstone-core-transcripts-web",
  "tempfile",
  "tokio",
@@ -7206,6 +7208,7 @@ version = "2.0.86"
 dependencies = [
  "jiff 1.0.0",
  "log",
+ "serde",
  "serde_json",
  "sha2 0.10.9",
  "solstone-core-format",

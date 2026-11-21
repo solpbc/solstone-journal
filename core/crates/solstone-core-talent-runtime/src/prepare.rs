@@ -138,6 +138,7 @@ pub fn prepare(
     let sources = composed.get("sources").and_then(Value::as_object).cloned();
     let mut entry_sources = Vec::new();
     let mut speaker_count = None;
+    let mut passage_digest = None;
     let mut entry_layout = solstone_core_transcripts::TranscriptLayout::default();
     if composed
         .get("day")
@@ -162,6 +163,22 @@ pub fn prepare(
         let counts = loaded.counts;
         entry_sources = loaded.sources;
         entry_layout = loaded.layout;
+        if mode == PrepareMode::Preview
+            && entry_layout.entries.iter().any(|offset| {
+                transcript
+                    .get(*offset..)
+                    .and_then(|entry| entry.lines().next())
+                    .is_some_and(|heading| {
+                        matches!(
+                            heading,
+                            "### Written Messages" | "### Imported Conversation"
+                        )
+                    })
+            })
+        {
+            use sha2::Digest;
+            passage_digest = Some(sha2::Sha256::digest(transcript.as_bytes()).into());
+        }
         let mut screen_cuts = loaded.screen_cuts;
         composed.insert("transcript".to_owned(), Value::String(transcript.clone()));
         composed.insert("source_counts".to_owned(), Value::from(counts));
@@ -424,6 +441,7 @@ pub fn prepare(
                 crate::browser_reading::floor_reading(&prepared.config, &context.journal);
         }
     }
+    prepared.passage_layout = passage_digest.map(|digest| (digest, entry_layout));
     Ok(prepared)
 }
 

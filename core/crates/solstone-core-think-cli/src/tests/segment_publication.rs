@@ -1177,7 +1177,7 @@ fn topics_malformed_transcript_line_preserves_valid_transcript_quotes() {
 }
 
 #[test]
-fn topics_imported_audio_and_chat_conversations_produce_labeled_quotes() {
+fn topics_keeps_recorded_speech_and_withholds_unresolved_dialogue() {
     let (_journal, context) = fixture_journal();
     solstone_core_facets::create_facet(context.journal.as_path(), "work", "Work", "", "", "", None)
         .unwrap();
@@ -1233,8 +1233,8 @@ fn topics_imported_audio_and_chat_conversations_produce_labeled_quotes() {
 
     let topics_content = fs::read_to_string(segment_dir.join("talents/topics.md")).unwrap();
     assert!(topics_content.contains("- Host: Welcome to our recorded session.\n"));
-    assert!(topics_content.contains("- Human: Can you inspect this log?\n"));
-    assert!(topics_content.contains("- Assistant: The log is clean and valid.\n"));
+    assert!(!topics_content.contains("Can you inspect this log?"));
+    assert!(!topics_content.contains("The log is clean and valid."));
 }
 
 #[test]

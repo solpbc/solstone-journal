@@ -354,7 +354,18 @@ pub(super) fn meeting_kind(lines: &[&str]) -> Option<Kind> {
     })
 }
 
-pub(super) fn whatsapp(lines: &[&str], bracketed: bool) -> bool {
+pub(crate) fn whatsapp_notice(body: &str) -> bool {
+    [
+        "Messages and calls are end-to-end encrypted.",
+        "Berichten en oproepen worden end-to-end versleuteld.",
+        "الرسائل والمكالمات مشفرة تمامًا بين الطرفين",
+        "This business uses a secure service from Meta to manage this chat.",
+    ]
+    .iter()
+    .any(|notice| body.starts_with(notice))
+}
+
+pub(crate) fn whatsapp_row(line: &str, bracketed: bool) -> Option<&str> {
     static BRACKETED: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(concat!(r"^\[(?:\p{Nd}{1,2}[-/.]\p{Nd}{1,2}[-/.]\p{Nd}{2,4}|\p{Nd}{4}[/.]\p{Nd}{1,2}[/.]\p{Nd}{1,2})(?: BE)?[,،]?\s+",
             r"\p{Nd}{1,2}[:.]\p{Nd}{2}(?:[:.]\p{Nd}{2})?(?:\s+(?:[aApP]\.?\s?[mM]\.?|[صم]))?\]\s+(.+)$")).unwrap()
@@ -364,6 +375,10 @@ pub(super) fn whatsapp(lines: &[&str], bracketed: bool) -> bool {
             r"\p{Nd}{1,2}[:.]\p{Nd}{2}(?:[:.]\p{Nd}{2})?(?:\s+[aApP]\.?\s?[mM]\.?)?(?:\s+-\s+|:\s+)(.+)$")).unwrap()
     });
     let stamp = if bracketed { &*BRACKETED } else { &*DASH };
+    stamp.captures(line)?.get(1).map(|m| m.as_str())
+}
+
+pub(super) fn whatsapp(lines: &[&str], bracketed: bool) -> bool {
     let mut speakers = HashSet::new();
     let mut messages = 0;
     let mut body_lines = 0;
@@ -374,25 +389,16 @@ pub(super) fn whatsapp(lines: &[&str], bracketed: bool) -> bool {
         } else {
             Cow::Borrowed(line)
         };
-        let Some(row) = stamp.captures(&line).and_then(|m| m.get(1)) else {
+        let Some(row) = whatsapp_row(&line, bracketed) else {
             if messages == 0 {
                 return false;
             }
             body_lines += 1;
             continue;
         };
-        let row = row.as_str();
         let (label, body) = row.split_once([':', '：']).unwrap_or(("", row));
         let body = body.trim();
-        if [
-            "Messages and calls are end-to-end encrypted.",
-            "Berichten en oproepen worden end-to-end versleuteld.",
-            "الرسائل والمكالمات مشفرة تمامًا بين الطرفين",
-            "This business uses a secure service from Meta to manage this chat.",
-        ]
-        .iter()
-        .any(|notice| body.starts_with(notice))
-        {
+        if whatsapp_notice(body) {
             marked = true;
         } else if let Some(speaker) = speaker_label(label) {
             speakers.insert(speaker.to_lowercase());
@@ -423,7 +429,7 @@ pub(super) fn whatsapp(lines: &[&str], bracketed: bool) -> bool {
         }
 }
 
-const BIDI_MARKS: [char; 11] = [
+pub(crate) const BIDI_MARKS: [char; 11] = [
     '\u{200e}', '\u{200f}', '\u{202a}', '\u{202b}', '\u{202c}', '\u{202d}', '\u{202e}', '\u{2066}',
     '\u{2067}', '\u{2068}', '\u{2069}',
 ];

@@ -1504,6 +1504,7 @@ pub(crate) fn sources_of(
                     segment_version = Some(page.version.fingerprint());
                     for (entry, content_kind) in page.entries_with_content_kind() {
                         segment_lines.push(SourcedLine {
+                            part: entry.turn_part.clone(),
                             channel: entry.channel,
                             content_kind,
                             text: entry.text.clone(),
@@ -1514,6 +1515,11 @@ pub(crate) fn sources_of(
                     } else {
                         break;
                     }
+                }
+                Err(solstone_core_transcripts::SegmentTranscriptReadError::NoPermittedFiles) => {
+                    // A withheld sibling contributes no unit or read failure.
+                    segment_lines.clear();
+                    break;
                 }
                 Err(_) => {
                     read_failed = true;
@@ -1699,8 +1705,12 @@ pub(crate) fn sources_of(
         let mut unit_json = json!({
             "text": unit.text,
             "kind": unit.kind.as_str(),
-            "content_kind": content_kind,
         });
+        if let Some(kind) = content_kind {
+            unit_json["content_kind"] = json!(kind);
+        } else {
+            unit_json["conversation_state"] = json!("unresolved");
+        }
         if let Some(ref ts) = unit.timestamp {
             unit_json["timestamp"] = json!(ts);
         }
@@ -1754,14 +1764,15 @@ pub(crate) fn sources_of(
 }
 
 struct SourcedLine {
+    part: Option<solstone_core_transcripts::TurnPart>,
     channel: &'static str,
-    content_kind: &'static str,
+    content_kind: Option<&'static str>,
     text: String,
 }
 
 struct AdmittedChannel {
     channel: &'static str,
-    content_kind: &'static str,
+    content_kind: Option<&'static str>,
     text: String,
 }
 
@@ -1787,8 +1798,9 @@ fn admitted_source_binding(admitted: &[AdmittedTranscript]) -> String {
         for channel in &source.channels {
             hasher.update((channel.channel.len() as u64).to_le_bytes());
             hasher.update(channel.channel.as_bytes());
-            hasher.update((channel.content_kind.len() as u64).to_le_bytes());
-            hasher.update(channel.content_kind.as_bytes());
+            let kind = channel.content_kind.unwrap_or_default();
+            hasher.update((kind.len() as u64).to_le_bytes());
+            hasher.update(kind.as_bytes());
             hasher.update((channel.text.len() as u64).to_le_bytes());
             hasher.update(channel.text.as_bytes());
         }
@@ -1808,14 +1820,35 @@ fn group_segment_channels(lines: &[SourcedLine]) -> Vec<AdmittedChannel> {
         let content_kind = lines[index].content_kind;
         let mut text = String::new();
         let start = index;
+        let mut notice = None;
         while index < lines.len()
             && lines[index].channel == channel
             && lines[index].content_kind == content_kind
         {
-            if index > start {
+            let line = &lines[index];
+            let part = line.part.as_ref();
+            let continuation = index > start
+                && part.is_some_and(|p| {
+                    p.byte_offset > 0
+                        && lines[index - 1].part.as_ref().is_some_and(|previous| {
+                            !previous.complete && previous.turn_id == p.turn_id
+                        })
+                });
+            if index > start && !continuation {
                 text.push('\n');
             }
-            text.push_str(&lines[index].text);
+            text.push_str(&line.text);
+            if let Some(part) = part {
+                if part.byte_offset == 0 {
+                    notice = part.source_notice.as_deref();
+                }
+                if part.complete
+                    && let Some(suffix) = notice.take()
+                {
+                    text.push('\n');
+                    text.push_str(suffix);
+                }
+            }
             index += 1;
         }
         channels.push(AdmittedChannel {
@@ -1855,6 +1888,30 @@ fn format_segment_timestamp(day: &str, seg_key: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn activity_channels_join_one_turn_verbatim_and_keep_its_source_notice() {
+        let line = |text: &str, id: &str, offset, complete, cap: Option<&str>| SourcedLine {
+            channel: "Imported Messages",
+            content_kind: Some("messages"),
+            text: text.into(),
+            part: Some(solstone_core_transcripts::TurnPart {
+                turn_id: id.into(),
+                byte_offset: offset,
+                complete,
+                source_notice: cap.map(str::to_owned),
+            }),
+        };
+        let lines = [
+            line("booksh", "a", 0, false, Some("partial input")),
+            line("elf", "a", 6, true, None),
+            line("next", "b", 0, true, None),
+        ];
+        assert_eq!(
+            group_segment_channels(&lines)[0].text,
+            "bookshelf\npartial input\nnext"
+        );
+    }
 
     #[test]
     fn an_agent_never_reads_what_the_owner_retracted_or_wrote_over() {

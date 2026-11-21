@@ -785,6 +785,63 @@ async fn reflection_search_hit_includes_week_url_when_page_exists() {
 }
 
 #[tokio::test]
+async fn owner_search_cites_the_current_message_and_utf8_offset() {
+    let fixture = Fixture::new("message-passage");
+    let file = fixture
+        .root
+        .join("chronicle/20260731/import.claude/101300_300/conversation_transcript.jsonl");
+    let source = concat!(
+        "{\"model\":\"test\"}\n",
+        "{\"start\":\"00:00:00\",\"text\":\"\"}\n",
+        "{\"start\":\"00:00:01\",\"speaker\":\"Ari\",\"text\":\"café kestrel\"}\n",
+    );
+    let prefix = format!("kestrelette {}café ", "first paragraph ".repeat(7000));
+    let body = format!("{prefix}kestrel");
+    let source = source.replace("café kestrel", &body);
+    write(&file, &source);
+    solstone_core_indexer_store::scan::scan_journal(&fixture.root, true).unwrap();
+    let search = || async {
+        response_json(
+            request(
+                &fixture.root,
+                "/app/search/api/search?q=kestrel&owner_view=true",
+            )
+            .await,
+        )
+        .await
+    };
+    let data = search().await;
+    let hit = &data["days"][0]["results"][0];
+    assert_eq!(
+        hit["conversation_item"]["content_kind"], "messages",
+        "{data}"
+    );
+    assert_eq!(hit["message"]["offset"], prefix.len());
+    assert_eq!(hit["message"]["author"], "Ari");
+    assert!(
+        hit["text"]
+            .as_str()
+            .unwrap()
+            .contains("<strong>kestrel</strong>")
+    );
+    assert_eq!(
+        hit["message"]["turn_id"],
+        solstone_core_format::content::conversation::turn_id(
+            "conversation_transcript.jsonl",
+            1,
+            &body
+        )
+    );
+    assert!(hit["message"].get("sent_at").is_none());
+    let normal =
+        response_json(request(&fixture.root, "/app/search/api/search?q=kestrel").await).await;
+    assert!(normal["days"][0]["results"][0].get("message").is_none());
+    write(&file, &source.replace("kestrel", "different words"));
+    let stale = search().await;
+    assert!(stale["days"][0]["results"][0].get("message").is_none());
+}
+
+#[tokio::test]
 async fn search_says_it_is_rebuilding_only_while_a_full_pass_works_through_an_unfinished_index() {
     use solstone_core_indexer_todo::{Token, enqueue_token, read_entry, rewrite, root};
     let fixture = Fixture::new("rebuilding-line");

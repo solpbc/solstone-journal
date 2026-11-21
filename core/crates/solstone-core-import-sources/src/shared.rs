@@ -69,6 +69,8 @@ pub struct PlannedSegment {
 /// One rendered entry in a planned segment.
 #[derive(Debug, Eq, PartialEq)]
 pub struct PlannedEntry {
+    /// The provider identified the send time of this individual message.
+    pub sent_at: Option<Timestamp>,
     pub start: String,
     pub speaker: String,
     pub text: String,
@@ -238,6 +240,7 @@ impl std::error::Error for SourceError {
 }
 
 pub(crate) struct ParsedEntry {
+    pub sent_at: Option<Timestamp>,
     pub timestamp: Timestamp,
     pub speaker: String,
     pub text: String,
@@ -282,6 +285,7 @@ pub(crate) fn plan_entries(
                     .items
                     .into_iter()
                     .map(|(timestamp, entry)| PlannedEntry {
+                        sent_at: entry.sent_at,
                         start: clock_offset(timestamp - window.start),
                         speaker: entry.speaker,
                         text: entry.text,

@@ -1,0 +1,16 @@
+{
+  "description": "Day switch choice that shows only spoken words: transcripts.",
+  "context": "Journal window, transcripts view. Day switch choice. Same word as the agent permission label for transcripts.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "661e5bbed08310798815b807e51189de24d40c26b82a979a9f1ff005e6eba0c8",
+  "max_length": 30,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

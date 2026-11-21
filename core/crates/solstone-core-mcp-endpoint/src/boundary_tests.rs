@@ -390,6 +390,125 @@ fn a_named_missing_kind_has_a_closed_permission_refusal() {
 }
 
 #[test]
+fn import_summary_search_and_saved_reference_follow_the_current_source() {
+    let journal = fixture();
+    let root = journal.path();
+    let dir = root.join("imports/20261120_090000");
+    fs::create_dir_all(&dir).unwrap();
+    let manifest = dir.join("manifest.json");
+    let summary = dir.join("summary.md");
+    fs::write(&summary, "summarystamp telescope").unwrap();
+    let file = "chronicle/20261120/import.text/090000_300/document_transcript.md";
+    let tile = root.join(file).parent().unwrap().to_owned();
+    fs::create_dir_all(&tile).unwrap();
+    fs::write(root.join(file), "source document").unwrap();
+    fs::write(
+        tile.join("import_kind.json"),
+        r#"{"kind":"documents","import_id":"20261120_090000"}"#,
+    )
+    .unwrap();
+    fs::write(
+        &manifest,
+        json!({"import_id":"20261120_090000","source_type":"text","files_created":[file]})
+            .to_string(),
+    )
+    .unwrap();
+    solstone_core_indexer_store::scan::scan_journal(root, true).unwrap();
+    let search = || {
+        probe(&journal, "search", json!({"query":"summarystamp"})).unwrap()["results"]
+            .as_array()
+            .unwrap()
+            .clone()
+    };
+    let grant = |word: &str| {
+        PermissionStore::open(root)
+            .set_permission(
+                CONNECTION,
+                ReadPermission {
+                    categories: [word.to_owned()].into_iter().collect(),
+                    scope: ReadScope::WholeJournal,
+                },
+            )
+            .unwrap()
+    };
+    for word in ["notes", "transcripts", "messages"] {
+        grant(word);
+        assert!(search().is_empty(), "{word}");
+    }
+    grant("documents");
+    let hits = search();
+    assert_eq!(hits.len(), 1);
+    let reference = &hits[0]["reference"];
+    assert!(
+        probe(&journal, "fetch", json!({"reference":reference})).unwrap()["text"]
+            .as_str()
+            .unwrap()
+            .contains("summarystamp")
+    );
+    fs::remove_file(root.join(file)).unwrap();
+    assert!(search().is_empty());
+    assert!(probe(&journal, "fetch", json!({"reference":reference})).is_err());
+    fs::write(root.join(file), "source document").unwrap();
+    for (other, kind) in [
+        (
+            "chronicle/20261120/import.strava/090000_300/document_transcript.md",
+            "documents",
+        ),
+        (
+            "chronicle/20261120/import.text/100000_300/note_transcript.md",
+            "notes",
+        ),
+    ] {
+        let path = root.join(other);
+        let dir = path.parent().unwrap();
+        fs::create_dir_all(dir).unwrap();
+        fs::write(&path, "separate source").unwrap();
+        fs::write(
+            dir.join("import_kind.json"),
+            json!({"kind":kind,"import_id":"20261120_090000"}).to_string(),
+        )
+        .unwrap();
+        fs::write(
+            &manifest,
+            json!({"source_type":"text","files_created":[file,other]}).to_string(),
+        )
+        .unwrap();
+        assert!(search().is_empty(), "{other}");
+        assert!(probe(&journal, "fetch", json!({"reference":reference})).is_err());
+    }
+    for source in ["chatgpt", "granola", "unregistered"] {
+        fs::write(&manifest, json!({"source_type":source}).to_string()).unwrap();
+        grant("transcripts");
+        assert!(search().is_empty(), "{source}");
+        grant("messages");
+        assert!(search().is_empty(), "{source}");
+    }
+    for job in [
+        json!({"source_type":"chatgpt"}),
+        json!({"source_type":"claude"}),
+        json!({"source_type":"gemini"}),
+        json!({"source_type":"text","files_created":["chronicle/20261120/import.text/110000_300/conversation_transcript.jsonl"]}),
+    ] {
+        fs::write(&manifest, job.to_string()).unwrap();
+        grant("facets");
+        let hits = search();
+        assert_eq!(hits.len(), 1, "{job}");
+        let summary = probe(&journal, "fetch", json!({"reference":hits[0]["reference"]})).unwrap();
+        assert!(summary["text"].as_str().unwrap().contains("summarystamp"));
+        grant("messages");
+        assert!(search().is_empty());
+    }
+    grant("documents");
+    fs::remove_file(&manifest).unwrap();
+    assert!(search().is_empty());
+    assert!(probe(&journal, "fetch", json!({"reference":reference})).is_err());
+    fs::write(&manifest, r#"{"source_type":"document"}"#).unwrap();
+    fs::write(&summary, "replacement text").unwrap();
+    assert!(search().is_empty());
+    assert!(probe(&journal, "fetch", json!({"reference":reference})).is_err());
+}
+
+#[test]
 fn summaries_only_cannot_search_weekly_passages_and_the_summaries_filter_keeps_both_grants() {
     let journal = fixture();
     let root = journal.path();
@@ -430,6 +549,27 @@ fn summaries_only_cannot_search_weekly_passages_and_the_summaries_filter_keeps_b
             );
         }
     }
+}
+
+// These paging, scope and source-release fixtures use legacy Markdown without
+// a proven medium. Opt the fixture connection into it explicitly. Single-grant
+// access tests use the original default or a source-specific recording.
+fn legacy_markdown_whole_journal() -> ReadPermission {
+    let mut permission = ReadPermission::default_whole_journal();
+    permission.categories.push("messages".into());
+    permission
+}
+
+fn allow_legacy_markdown(journal: &tempfile::TempDir) {
+    let store = PermissionStore::open(journal.path());
+    let mut permission = store
+        .get_permission(CONNECTION)
+        .unwrap()
+        .unwrap()
+        .read
+        .unwrap();
+    permission.categories.push("messages".into());
+    store.set_permission(CONNECTION, permission).unwrap();
 }
 
 fn fixture() -> tempfile::TempDir {
@@ -780,7 +920,7 @@ fn ac25_a_refusal_is_recorded_and_the_owner_can_tell_it_from_a_served_call() {
     assert_eq!(
         reasons,
         [
-            "this connection does not have the transcripts or screen_text or body or facets or notes or documents or calendar or places or photos category",
+            "this connection does not have the transcripts or messages or screen_text or body or facets or notes or documents or calendar or places or photos category",
             "this connection has no read permission",
         ]
     );
@@ -1209,6 +1349,7 @@ fn ac28_generation_recheck_refuses_a_narrowed_permission_before_release() {
 #[test]
 fn ac24_get_transcript_pages_a_huge_segment_without_returning_the_whole_file() {
     let journal = fixture();
+    allow_legacy_markdown(&journal);
     let transcript = journal
         .path()
         .join("chronicle")
@@ -1254,6 +1395,7 @@ fn get_transcript_reads_recorded_speech_from_audio_jsonl() {
 #[test]
 fn legacy_image_markup_is_literal_in_search_and_every_transcript_page() {
     let journal = fixture();
+    allow_legacy_markdown(&journal);
     let payload = "![legacycover](https://example.test/cover.png) <img src=x> &amp; 日本語";
     let index = solstone_core_indexer_store::db::open_index(journal.path()).unwrap();
     index
@@ -2190,7 +2332,7 @@ fn a_summary_hit_links_only_to_its_own_streams_segment() {
         &[FACET_A],
     );
     PermissionStore::open(journal.path())
-        .set_permission(CONNECTION, ReadPermission::default_whole_journal())
+        .set_permission(CONNECTION, legacy_markdown_whole_journal())
         .unwrap();
 
     let search = probe(
@@ -2283,7 +2425,7 @@ fn activity_hits_link_their_segments_within_the_per_result_budget() {
     plant_activity_proof(journal.path(), act_path, 1, false);
 
     PermissionStore::open(journal.path())
-        .set_permission(CONNECTION, ReadPermission::default_whole_journal())
+        .set_permission(CONNECTION, legacy_markdown_whole_journal())
         .unwrap();
 
     let search = probe(
@@ -2417,7 +2559,7 @@ fn activity_links_require_the_live_record_to_match_the_indexed_one() {
     plant_activity_proof(journal.path(), act_path, 2, false);
 
     PermissionStore::open(journal.path())
-        .set_permission(CONNECTION, ReadPermission::default_whole_journal())
+        .set_permission(CONNECTION, legacy_markdown_whole_journal())
         .unwrap();
 
     let search = probe(
@@ -2507,7 +2649,7 @@ fn search_narrowing_does_not_change_which_links_are_issued() {
     plant_activity_proof(journal.path(), act_path, 0, false);
 
     PermissionStore::open(journal.path())
-        .set_permission(CONNECTION, ReadPermission::default_whole_journal())
+        .set_permission(CONNECTION, legacy_markdown_whole_journal())
         .unwrap();
 
     let s1 = probe(
@@ -2604,7 +2746,11 @@ fn chosen_facets_withhold_links_to_segments_partly_outside_scope() {
         .set_permission(
             CONNECTION,
             ReadPermission {
-                categories: vec!["transcripts".to_owned(), "facets".to_owned()],
+                categories: vec![
+                    "transcripts".to_owned(),
+                    "messages".to_owned(),
+                    "facets".to_owned(),
+                ],
                 scope: ReadScope::Facets {
                     ids: vec![FACET_A.to_owned()],
                 },
@@ -2709,7 +2855,7 @@ fn unreadable_or_deleted_segments_get_no_link_and_search_still_succeeds() {
     }
 
     PermissionStore::open(journal.path())
-        .set_permission(CONNECTION, ReadPermission::default_whole_journal())
+        .set_permission(CONNECTION, legacy_markdown_whole_journal())
         .unwrap();
 
     let search = probe(
@@ -2728,7 +2874,7 @@ fn unreadable_or_deleted_segments_get_no_link_and_search_still_succeeds() {
         .unwrap()
         .to_owned();
     PermissionStore::open(journal.path())
-        .set_permission(CONNECTION, ReadPermission::default_whole_journal())
+        .set_permission(CONNECTION, legacy_markdown_whole_journal())
         .unwrap();
     // A link's name outlives a permission set again to the same thing.
     assert!(probe(&journal, "get_transcript", json!({"reference": old_link})).is_ok());
@@ -2824,7 +2970,7 @@ fn list_transcripts_offers_no_cursor_when_only_withheld_segments_remain() {
         .set_permission(
             CONNECTION,
             ReadPermission {
-                categories: vec!["transcripts".to_owned()],
+                categories: vec!["transcripts".to_owned(), "messages".to_owned()],
                 scope: ReadScope::Facets {
                     ids: vec![FACET_A.to_owned()],
                 },
@@ -2879,7 +3025,7 @@ fn list_transcripts_filters_by_time_and_pages_with_a_bound_cursor() {
         .unwrap();
     setup_facets(journal.path());
     PermissionStore::open(journal.path())
-        .set_permission(CONNECTION, ReadPermission::default_whole_journal())
+        .set_permission(CONNECTION, legacy_markdown_whole_journal())
         .unwrap();
 
     let chronicle = journal.path().join("chronicle");
@@ -3073,7 +3219,7 @@ fn list_transcripts_filters_by_time_and_pages_with_a_bound_cursor() {
         .set_permission(
             CONNECTION,
             ReadPermission {
-                categories: vec!["transcripts".to_owned()],
+                categories: vec!["transcripts".to_owned(), "messages".to_owned()],
                 scope: ReadScope::Facets {
                     ids: vec![FACET_A.to_owned()],
                 },
@@ -3086,7 +3232,7 @@ fn list_transcripts_filters_by_time_and_pages_with_a_bound_cursor() {
     assert_eq!(chosen_resp["transcripts"].as_array().unwrap().len(), 1);
 
     PermissionStore::open(journal.path())
-        .set_permission(CONNECTION, ReadPermission::default_whole_journal())
+        .set_permission(CONNECTION, legacy_markdown_whole_journal())
         .unwrap();
     let p_time1 = probe(
         &journal,
@@ -6436,6 +6582,7 @@ fn write_journal_timezone(journal_path: &Path, tz: &str) {
 #[test]
 fn capture_zone_reports_differing_device_clock_across_all_read_surfaces() {
     let journal = fixture();
+    allow_legacy_markdown(&journal);
     write_journal_timezone(journal.path(), "America/Denver");
     let seg_dir = journal
         .path()
@@ -6499,6 +6646,7 @@ fn capture_zone_reports_differing_device_clock_across_all_read_surfaces() {
 #[test]
 fn capture_zone_omitted_when_device_matches_configured_owner_timezone() {
     let journal = fixture();
+    allow_legacy_markdown(&journal);
     write_journal_timezone(journal.path(), "Asia/Tokyo");
     let seg_dir = journal
         .path()
@@ -6548,6 +6696,7 @@ fn capture_zone_omitted_when_device_matches_configured_owner_timezone() {
 #[test]
 fn capture_zone_persists_across_paged_list_transcripts() {
     let journal = fixture();
+    allow_legacy_markdown(&journal);
     write_journal_timezone(journal.path(), "America/Denver");
     let seg_dir1 = journal
         .path()
@@ -6618,6 +6767,7 @@ fn capture_zone_persists_across_paged_list_transcripts() {
 #[test]
 fn capture_zone_omitted_for_home_offset_twin() {
     let journal = fixture();
+    allow_legacy_markdown(&journal);
     write_journal_timezone(journal.path(), "America/Denver");
     let seg_dir = journal
         .path()
@@ -6701,6 +6851,7 @@ fn capture_zone_projects_null_tz_when_iana_name_is_invalid_but_offset_is_valid()
 #[test]
 fn capture_zone_fails_closed_on_malformed_receipts_preserving_transcript_read() {
     let journal = fixture();
+    allow_legacy_markdown(&journal);
     write_journal_timezone(journal.path(), "America/Denver");
     let seg_dir = journal
         .path()
@@ -6792,7 +6943,7 @@ fn same_time_segments_from_two_macs_carry_distinct_sources_and_no_stream_name() 
     );
     plant_activity_proof(journal.path(), act_path, 0, false);
     PermissionStore::open(journal.path())
-        .set_permission(CONNECTION, ReadPermission::default_whole_journal())
+        .set_permission(CONNECTION, legacy_markdown_whole_journal())
         .unwrap();
 
     let mut served = Vec::new();
@@ -6903,7 +7054,7 @@ fn capture_zone_isolates_multi_stream_segments_and_respects_access_grants() {
     );
     plant_activity_proof(journal.path(), act_path, 0, false);
     PermissionStore::open(journal.path())
-        .set_permission(CONNECTION, ReadPermission::default_whole_journal())
+        .set_permission(CONNECTION, legacy_markdown_whole_journal())
         .unwrap();
 
     let tokyo_zone = json!({"tz": "Asia/Tokyo", "utc_offset_seconds": 32400, "label": "Tokyo"});
@@ -6992,7 +7143,11 @@ fn capture_zone_isolates_multi_stream_segments_and_respects_access_grants() {
         .set_permission(
             CONNECTION,
             ReadPermission {
-                categories: vec!["transcripts".to_owned(), "facets".to_owned()],
+                categories: vec![
+                    "transcripts".to_owned(),
+                    "messages".to_owned(),
+                    "facets".to_owned(),
+                ],
                 scope: ReadScope::Facets {
                     ids: vec![FACET_A.to_owned()],
                 },
@@ -7028,7 +7183,7 @@ fn capture_zone_isolates_multi_stream_segments_and_respects_access_grants() {
         .set_permission(
             CONNECTION,
             ReadPermission {
-                categories: vec!["transcripts".to_owned()],
+                categories: vec!["transcripts".to_owned(), "messages".to_owned()],
                 scope: ReadScope::Facets {
                     ids: vec![FACET_B.to_owned()],
                 },
@@ -7050,10 +7205,7 @@ fn capture_zone_isolates_multi_stream_segments_and_respects_access_grants() {
         Err(McpProbeError::Unavailable)
     );
     PermissionStore::open(journal.path())
-        .set_permission(
-            "bearer:other-bearer",
-            ReadPermission::default_whole_journal(),
-        )
+        .set_permission("bearer:other-bearer", legacy_markdown_whole_journal())
         .unwrap();
     // A segment's name is the same for every connection, and each one's own
     // permission decides the read: one that may read it does, one that may
@@ -7071,7 +7223,7 @@ fn capture_zone_isolates_multi_stream_segments_and_respects_access_grants() {
         .set_permission(
             "bearer:other-bearer",
             ReadPermission {
-                categories: vec!["transcripts".to_owned()],
+                categories: vec!["transcripts".to_owned(), "messages".to_owned()],
                 scope: ReadScope::Facets {
                     ids: vec![FACET_B.to_owned()],
                 },
@@ -7093,6 +7245,7 @@ fn capture_zone_isolates_multi_stream_segments_and_respects_access_grants() {
 #[test]
 fn capture_zone_does_not_follow_an_excluded_segments_receipt() {
     let journal = fixture();
+    allow_legacy_markdown(&journal);
     write_journal_timezone(journal.path(), "America/Denver");
     let alpha = journal
         .path()
@@ -7135,7 +7288,7 @@ fn capture_zone_does_not_follow_an_excluded_segments_receipt() {
 fn setup_freeze_barrier_journal() -> tempfile::TempDir {
     let journal = fixture();
     PermissionStore::open(journal.path())
-        .set_permission(CONNECTION, ReadPermission::default_whole_journal())
+        .set_permission(CONNECTION, legacy_markdown_whole_journal())
         .unwrap();
 
     let seg1_name = "100000_300";
@@ -7383,6 +7536,7 @@ fn removed_segment_marker_matrix_withheld_from_all_read_tools() {
                     source_index: None,
                     byte_offset: None,
                     statement_ordinal: None,
+                    message: None,
                 }),
             )
             .unwrap();
@@ -7620,6 +7774,7 @@ fn live_empty_segment_releases_empty_transcript_and_survives_listing() {
 #[test]
 fn raw_media_offload_preserves_derived_fetch_and_transcript() {
     let journal = fixture();
+    allow_legacy_markdown(&journal);
     let seg_dir = journal
         .path()
         .join("chronicle")
@@ -7889,6 +8044,7 @@ fn door_seam_remove_segments_withholds_retained_references_without_leak() {
                 source_index: None,
                 byte_offset: None,
                 statement_ordinal: None,
+                message: None,
             }),
         )
         .unwrap();
@@ -10497,6 +10653,13 @@ fn facets_only_listing_fetches_the_activity_and_refuses_an_entry() {
 #[test]
 fn transcripts_entities_and_paired_listing_grants_round_trip() {
     let transcripts = fixture();
+    fs::write(
+        transcripts
+            .path()
+            .join(format!("chronicle/{DAY}/{STREAM}/{SEGMENT}/audio.jsonl")),
+        "{\"start\":\"00:00:01\",\"text\":\"approved speech\"}\n",
+    )
+    .unwrap();
     let transcript_names = advertised_tool_names(&transcripts);
     assert!(transcript_names.iter().any(|name| name == "fetch"));
     assert!(
@@ -10610,6 +10773,14 @@ fn transcripts_entities_and_paired_listing_grants_round_trip() {
         None,
         None,
     );
+    let speech = paired
+        .path()
+        .join(format!("chronicle/{day}/default/{seg}/audio.jsonl"));
+    fs::write(
+        speech,
+        "{\"start\":\"00:00:01\",\"text\":\"pairedsourceneedle\"}\n",
+    )
+    .unwrap();
     PermissionStore::open(paired.path())
         .set_permission(
             CONNECTION,
@@ -10735,6 +10906,7 @@ fn get_activity_sources_names_speakers_only_through_the_voice_gate() {
 #[test]
 fn get_activity_sources_returns_verbatim_long_unit() {
     let journal = base_activity_journal();
+    allow_legacy_markdown(&journal);
     let day = "20260308";
     let seg = "090000_300";
     let long_unit = format!("startlongneedle {} endlongneedle\n", "word ".repeat(1000));
@@ -10815,6 +10987,7 @@ fn get_activity_sources_returns_verbatim_long_unit() {
 #[test]
 fn get_activity_sources_pagination_over_max_bytes() {
     let journal = base_activity_journal();
+    allow_legacy_markdown(&journal);
     let day = "20260308";
     let seg = "090000_300";
     let mut large_transcript = String::new();
@@ -11003,8 +11176,84 @@ fn write_segment_file(
 }
 
 #[test]
+fn an_activity_can_quote_a_message_while_the_original_is_private() {
+    let journal = base_activity_journal();
+    let root = journal.path();
+    let day = "20260308";
+    let stream = "import.chatgpt";
+    let segment = "090000_300";
+    let quote = "Meet at the north gate";
+    write_segment_file(
+        root,
+        day,
+        stream,
+        segment,
+        "alpha",
+        "conversation_transcript.jsonl",
+        &format!(
+            "{}\n{}\n",
+            json!({"untimed":true,"imported":{}}),
+            json!({"start":"00:00:00","speaker":"Ana","text":format!("{quote}. Take the spare key.")})
+        ),
+    );
+    write_activity_line(
+        root,
+        "alpha",
+        day,
+        "gate",
+        quote,
+        100,
+        Some("import"),
+        Some(&[segment]),
+        None,
+        None,
+        Some(stream),
+        None,
+        None,
+    );
+    for can_open in [false, true] {
+        let mut grant = ReadPermission::default_whole_journal();
+        if can_open {
+            grant.categories.push("messages".into());
+        }
+        PermissionStore::open(root)
+            .set_permission(CONNECTION, grant)
+            .unwrap();
+        let listed = probe(&journal, "list_activities", json!({"day":day})).unwrap();
+        let activity = listed["activities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["title"] == quote)
+            .unwrap();
+        let source = probe(
+            &journal,
+            "get_activity_sources",
+            json!({"reference":activity["reference"]}),
+        )
+        .unwrap();
+        assert_eq!(
+            source["units"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|unit| unit["text"]
+                    .as_str()
+                    .is_some_and(|s| literal_display_text(s).contains("Take the spare key"))),
+            can_open,
+            "{source}"
+        );
+    }
+}
+
+#[test]
 fn get_activity_sources_keeps_family_and_omits_untimed_clocks() {
     let journal = base_activity_journal();
+    let mut permission = ReadPermission::default_whole_journal();
+    permission.categories.push("messages".into());
+    PermissionStore::open(journal.path())
+        .set_permission(CONNECTION, permission)
+        .unwrap();
     let day = "20260308";
     write_segment_file(
         journal.path(),
@@ -11078,9 +11327,16 @@ fn get_activity_sources_keeps_family_and_omits_untimed_clocks() {
     assert_eq!(chat_unit["untimed"], true);
     assert!(chat_unit.get("timestamp").is_none());
     let chat_text = literal_display_text(chat_unit["text"].as_str().unwrap());
-    assert!(chat_text.contains("[00:00:00] **Ana:** untimedchatneedle"));
+    assert!(chat_text.contains("Ana: untimedchatneedle"), "{chat_text}");
+    assert!(!chat_text.contains("[00:00:00]"));
+    assert_eq!(chat_unit["content_kind"], "messages");
     assert!(chat_text.contains("ChatGPT Conversation"));
-    assert!(!chat_text.contains("### Transcript"));
+    assert!(
+        !chat_unit["text"]
+            .as_str()
+            .unwrap()
+            .contains("### Transcript")
+    );
 
     let audio = probe(
         &journal,
@@ -11094,7 +11350,11 @@ fn get_activity_sources_keeps_family_and_omits_untimed_clocks() {
     assert_eq!(audio_unit["timestamp"], "2026-03-08 10:00:00 - 10:05:00");
     let audio_text = literal_display_text(audio_unit["text"].as_str().unwrap());
     assert!(audio_text.contains("spokenaudioneedle"));
-    assert!(audio_text.contains("### Transcript"));
+    assert_eq!(audio_unit["content_kind"], "transcripts");
+    assert!(
+        audio_text.contains("Source channel: Transcript"),
+        "{audio_text}"
+    );
 
     let markdown = probe(
         &journal,
@@ -11106,15 +11366,21 @@ fn get_activity_sources_keeps_family_and_omits_untimed_clocks() {
     assert_eq!(markdown_unit["kind"], "import");
     assert!(markdown_unit.get("untimed").is_none());
     assert_eq!(markdown_unit["timestamp"], "2026-03-08 11:00:00 - 11:05:00");
-    let markdown_text = markdown_unit["text"].as_str().unwrap();
+    let markdown_text = literal_display_text(markdown_unit["text"].as_str().unwrap());
     assert!(markdown_text.contains("markdownneedlenotspeech"));
-    assert!(markdown_text.contains("### Imported Transcript"));
-    assert!(!markdown_text.contains("### Transcript"));
+    assert!(markdown_text.contains("Source channel: Imported Conversation"));
+    assert_eq!(markdown_unit["conversation_state"], "unresolved");
+    assert!(markdown_unit.get("content_kind").is_none());
 }
 
 #[test]
 fn get_activity_sources_untimed_qualifier_survives_continuation() {
     let journal = base_activity_journal();
+    let mut permission = ReadPermission::default_whole_journal();
+    permission.categories.push("messages".into());
+    PermissionStore::open(journal.path())
+        .set_permission(CONNECTION, permission)
+        .unwrap();
     let day = "20260308";
     let mut chat = String::from("{\"untimed\":true,\"imported\":{}}\n");
     chat.push_str("{\"start\":\"00:00:00\",\"speaker\":\"Ana\",\"text\":\"pagestartuntimed\"}\n");
@@ -11228,7 +11494,7 @@ fn assert_untimed_source_page(page: &serde_json::Value, needle: &str) {
         assert!(unit.get("timestamp").is_none());
         assert_eq!(unit["kind"], "import");
         let text = literal_display_text(unit["text"].as_str().unwrap());
-        assert!(text.contains("[00:00:00]"));
+        assert!(!text.contains("[00:00:00]"));
         saw_needle |= text.contains(needle);
     }
     assert!(saw_needle);
@@ -11250,6 +11516,7 @@ fn assert_timed_speech_page(page: &serde_json::Value, needle: &str) {
 #[test]
 fn get_activity_sources_cursor_rejects_a_changed_transcript() {
     let journal = base_activity_journal();
+    allow_legacy_markdown(&journal);
     let day = "20260308";
     let seg = "090000_300";
     let mut large_transcript = String::from("firstpageblockneedle paragraph 0\n\n");
@@ -11382,6 +11649,7 @@ fn get_activity_sources_staged_marker_is_unavailable() {
 #[test]
 fn get_activity_sources_cross_facet_permissions() {
     let journal = base_activity_journal();
+    allow_legacy_markdown(&journal);
     let day = "20260308";
     let seg_b = "090000_300";
     write_segment_transcript(
@@ -11418,7 +11686,11 @@ fn get_activity_sources_cross_facet_permissions() {
         .set_permission(
             CONNECTION,
             ReadPermission {
-                categories: vec!["facets".to_owned(), "transcripts".to_owned()],
+                categories: vec![
+                    "facets".to_owned(),
+                    "transcripts".to_owned(),
+                    "messages".to_owned(),
+                ],
                 scope: ReadScope::Facets {
                     ids: vec![FACET_A.to_owned()],
                 },
@@ -11524,6 +11796,7 @@ fn segment_scope_with_an_unreadable_facet_is_undecided() {
 #[test]
 fn get_activity_sources_omits_desktop_activity_notes() {
     let journal = base_activity_journal();
+    allow_legacy_markdown(&journal);
     let day = "20260308";
     let seg = "090000_300";
     let seg_dir = journal
@@ -11886,6 +12159,7 @@ fn fetch_hidden_activity_and_stale_file() {
 #[test]
 fn fetch_source_links_scoped_by_facet() {
     let journal = base_activity_journal();
+    allow_legacy_markdown(&journal);
     let day = "20260308";
     let seg_a = "090000_300";
     write_segment_transcript(
@@ -11968,7 +12242,11 @@ fn fetch_source_links_scoped_by_facet() {
         .set_permission(
             CONNECTION,
             ReadPermission {
-                categories: vec!["facets".to_owned(), "transcripts".to_owned()],
+                categories: vec![
+                    "facets".to_owned(),
+                    "transcripts".to_owned(),
+                    "messages".to_owned(),
+                ],
                 scope: ReadScope::Facets {
                     ids: vec![FACET_A.to_owned()],
                 },
@@ -11997,6 +12275,7 @@ fn fetch_source_links_scoped_by_facet() {
 #[test]
 fn fetch_same_key_links_stay_on_the_admitted_stream() {
     let journal = base_activity_journal();
+    allow_legacy_markdown(&journal);
     let day = "20260308";
     let key = "090000_300";
     write_segment_transcript(
@@ -12121,6 +12400,7 @@ fn assert_stream_link_words(
 #[test]
 fn get_activity_sources_streamless_direct_and_named_stay_isolated() {
     let journal = base_activity_journal();
+    allow_legacy_markdown(&journal);
     let day = "20260308";
     write_direct_segment_file(
         journal.path(),
@@ -13368,14 +13648,35 @@ fn get_week_trusted_page_and_left_out() {
         "My Trusted Activity",
         100,
         None,
+        Some(&["090000_300"]),
         None,
         None,
-        None,
-        None,
+        Some("mic"),
         None,
         None,
     );
 
+    let source = journal.path().join("chronicle/20260308/mic/090000_300");
+    fs::create_dir_all(source.join("talents")).unwrap();
+    fs::write(
+        source.join("audio.jsonl"),
+        json!({"sentence_id":1,"start":"00:00:01","speaker":1,"text":"Quote text from meeting"})
+            .to_string(),
+    )
+    .unwrap();
+    fs::write(
+        source.join("talents/speaker_labels.json"),
+        json!({"labels":[{"sentence_id":1,"speaker":"owner","method":"user_confirmed"}]})
+            .to_string(),
+    )
+    .unwrap();
+    let owner = journal.path().join("entities/owner");
+    fs::create_dir_all(&owner).unwrap();
+    fs::write(
+        owner.join("entity.json"),
+        json!({"id":"owner","type":"Person","name":"Ari","is_principal":true}).to_string(),
+    )
+    .unwrap();
     let refl_dir = journal.path().join("reflections/weekly");
     fs::create_dir_all(&refl_dir).unwrap();
     let trusted_json = json!({
@@ -13399,9 +13700,9 @@ fn get_week_trusted_page_and_left_out() {
         "said": [{
             "id": "s0",
             "key": "said-key-quote1",
-            "day": "20260309",
+            "day": "20260308",
             "quote": "Quote text from meeting",
-            "source": {"kind":"activity","uri":"sol://facets/alpha/activities/20260309#quote1"}
+            "source": {"kind":"activity","uri":"sol://facets/alpha/activities/20260308#act_trusted"}
         }]
     });
     fs::write(
@@ -13418,12 +13719,12 @@ fn get_week_trusted_page_and_left_out() {
     assert_eq!(said[0]["quote"], "Quote text from meeting");
     assert_eq!(
         said[0]["uri"],
-        "sol://facets/alpha/activities/20260309#quote1"
+        "sol://facets/alpha/activities/20260308#act_trusted"
     );
 
     let mems = res["memories"].as_array().unwrap();
     assert_eq!(mems.len(), 1);
-    assert_eq!(mems[0]["text"], "My Trusted Activity");
+    assert_eq!(mems[0]["text"], "My Trusted Activity (09:00:00 - 09:05:00)");
 
     let health_dir = journal.path().join("health");
     fs::create_dir_all(&health_dir).unwrap();
@@ -13493,6 +13794,7 @@ fn get_activity_sources_empty_segment_returns_empty_units_without_unreadable() {
 #[test]
 fn get_activity_sources_malformed_leaf_is_unavailable() {
     let journal = base_activity_journal();
+    allow_legacy_markdown(&journal);
     let day = "20260308";
     let seg = "090000_300";
     let seg_dir = journal
@@ -13540,6 +13842,7 @@ fn get_activity_sources_malformed_leaf_is_unavailable() {
 #[test]
 fn get_activity_sources_mixed_coverage_partial_units_and_unreadable_flag() {
     let journal = base_activity_journal();
+    allow_legacy_markdown(&journal);
     let day = "20260308";
     let seg1 = "090000_300";
     let seg2 = "090500_300";
@@ -15702,10 +16005,10 @@ fn span_journal(scope: Option<ReadScope>) -> tempfile::TempDir {
     setup_facets(journal.path());
     let permission = match scope {
         Some(scope) => ReadPermission {
-            categories: vec!["transcripts".to_owned()],
+            categories: vec!["transcripts".to_owned(), "messages".to_owned()],
             scope,
         },
-        None => ReadPermission::default_whole_journal(),
+        None => legacy_markdown_whole_journal(),
     };
     PermissionStore::open(journal.path())
         .set_permission(CONNECTION, permission)
@@ -16031,10 +16334,7 @@ fn a_span_read_serves_only_what_the_connection_may_read_when_it_is_read() {
 
     // A span is bound to the connection it was given to.
     PermissionStore::open(journal.path())
-        .set_permission(
-            "bearer:someone-else",
-            ReadPermission::default_whole_journal(),
-        )
+        .set_permission("bearer:someone-else", legacy_markdown_whole_journal())
         .unwrap();
     assert_eq!(
         run_mcp_probe(
@@ -17251,6 +17551,7 @@ fn week_summaries_and_typed_find_share_the_live_kind_and_facet_boundary() {
 #[test]
 fn batched_reference_reads_match_single_pages_and_keep_individual_failures() {
     let journal = body_record_journal(true);
+    allow_legacy_markdown(&journal);
     let day = "20260308";
     let segment = journal.path().join("chronicle/20260308/default/090000_300");
     fs::create_dir_all(segment.join("talents")).unwrap();
@@ -17308,7 +17609,12 @@ fn batched_reference_reads_match_single_pages_and_keep_individual_failures() {
         .set_permission(
             CONNECTION,
             ReadPermission {
-                categories: vec!["transcripts".into(), "facets".into(), "body".into()],
+                categories: vec![
+                    "transcripts".into(),
+                    "messages".to_owned(),
+                    "facets".into(),
+                    "body".into(),
+                ],
                 scope: ReadScope::Facets {
                     ids: vec![FACET_A.into()],
                 },
@@ -17479,6 +17785,356 @@ fn imported_material_previews_describe_content_and_photo_fetch_keeps_its_literal
 }
 
 #[test]
+fn long_message_parts_identify_adjacent_turns_across_single_span_and_batch() {
+    let journal = fixture();
+    let root = journal.path();
+    let day = "20260308";
+    let turns = [("a", 75_000), ("b", 70_123), ("c", 2)];
+    let rows = turns
+        .iter()
+        .map(|(word, count)| json!({"start":"00:00:00","text":word.repeat(*count)}).to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+    write_segment_file(
+        root,
+        day,
+        "import.claude",
+        "074500_300",
+        "alpha",
+        "conversation_transcript.jsonl",
+        &format!("{{}}\n{rows}\n"),
+    );
+    PermissionStore::open(root)
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec!["messages".into()],
+                scope: ReadScope::WholeJournal,
+            },
+        )
+        .unwrap();
+    let listed = probe(&journal, "list_transcripts", json!({"day":day,"limit":100})).unwrap();
+    let reference = listed["transcripts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["reference"].as_str().unwrap_or("").contains("074500_300"))
+        .unwrap()["reference"]
+        .clone();
+    let direct = probe(&journal, "get_transcript", json!({"reference":reference})).unwrap();
+    let batch = probe(
+        &journal,
+        "get_transcript",
+        json!({"references":[reference]}),
+    )
+    .unwrap();
+    assert_eq!(
+        direct["turn_parts"],
+        batch["items"][0]["result"]["turn_parts"]
+    );
+    assert_eq!(direct["turn_parts"][0]["part"]["byte_offset"], 0);
+    assert_eq!(direct["turn_parts"][0]["part"]["complete"], false);
+
+    let mut actual = std::collections::BTreeMap::<String, String>::new();
+    let mut complete = std::collections::BTreeSet::new();
+    let mut ordinary = Vec::new();
+    let mut cursor = None::<String>;
+    loop {
+        let mut args = json!({"reference":listed["span_reference"]});
+        if let Some(cursor) = cursor {
+            args["cursor"] = json!(cursor);
+        }
+        let span = probe(&journal, "get_transcript", args).unwrap();
+        for section in span["segments"].as_array().unwrap() {
+            if section["reference"] != reference {
+                continue;
+            }
+            for (index, entry) in section["entries"].as_array().unwrap().iter().enumerate() {
+                let text = entry.as_str().unwrap();
+                let part = section["turn_parts"]
+                    .as_array()
+                    .and_then(|parts| parts.iter().find(|p| p["entry"] == index));
+                if let Some(part) = part {
+                    let id = part["part"]["turn_id"].as_str().unwrap();
+                    let body = actual.entry(id.into()).or_default();
+                    assert_eq!(part["part"]["byte_offset"], body.len());
+                    body.push_str(text);
+                    if part["part"]["complete"] == true {
+                        assert!(complete.insert(id.to_owned()));
+                    }
+                } else {
+                    ordinary.push(text.to_string());
+                }
+            }
+        }
+        cursor = span["next_cursor"].as_str().map(str::to_owned);
+        if cursor.is_none() {
+            break;
+        }
+    }
+    assert_eq!(complete.len(), 2);
+    let bodies: std::collections::BTreeSet<_> = actual.into_values().collect();
+    assert_eq!(
+        bodies,
+        std::collections::BTreeSet::from(["a".repeat(75_000), "b".repeat(70_123)])
+    );
+    assert_eq!(ordinary, ["cc"]);
+}
+
+#[test]
+fn conversation_grants_agree_across_listing_direct_batch_and_search() {
+    use solstone_core_indexer_query::{Order, OwnerBoundary, SearchRequest, search};
+    let journal = fixture();
+    let root = journal.path();
+    let day = "20260308";
+    let cases = [
+        (
+            "import.chatgpt",
+            "090000_300",
+            "conversation_transcript.jsonl",
+            None,
+            "amberchat",
+        ),
+        (
+            "import.claude",
+            "100000_300",
+            "imported_audio.jsonl",
+            None,
+            "legacychat",
+        ),
+        (
+            "import.text",
+            "110000_300",
+            "conversation_transcript.jsonl",
+            None,
+            "neutralturn",
+        ),
+        (
+            "import.text",
+            "120000_300",
+            "conversation_transcript.jsonl",
+            Some("webvtt_cues"),
+            "cobaltcaption",
+        ),
+        (
+            "import.text",
+            "130000_300",
+            "conversation_transcript.jsonl",
+            Some("zoom_chat"),
+            "quartzwritten",
+        ),
+    ];
+    for (stream, segment, file, reason, word) in cases {
+        let mut header = json!({"imported":{"id":"synthetic"}});
+        if let Some(reason) = reason {
+            header["imported"]["triage"] =
+                json!({"kind":"transcripts","ruleset_version":7,"reasons":[reason]});
+        }
+        let row = json!({"start":"00:00:00","speaker":"Rae","text":word});
+        write_segment_file(
+            root,
+            day,
+            stream,
+            segment,
+            "alpha",
+            file,
+            &format!("{header}\n{row}\n"),
+        );
+    }
+    write_segment_file(
+        root,
+        day,
+        "import.text",
+        "110000_300",
+        "alpha",
+        "note_transcript.md",
+        "adjacentnote",
+    );
+    write_segment_file(
+        root,
+        day,
+        "import.text",
+        "140000_300",
+        "alpha",
+        "imported.md",
+        "oldneutralmarkdown",
+    );
+    solstone_core_indexer_store::scan::scan_journal(root, true).unwrap();
+    for (_, _, _, _, word) in cases {
+        let hits = search(
+            root,
+            OwnerBoundary,
+            &SearchRequest::new(word, Order::Recency),
+            jiff::civil::date(2026, 3, 8),
+        )
+        .unwrap();
+        assert!(!hits.results.is_empty(), "{word}");
+    }
+    // Reopen the permission record a pre-Messages Journal wrote for its
+    // default connection. Exercise the upgrade without rewriting the grant.
+    let old_grant = json!({"schema":1,"permissions":[{
+        "connection":CONNECTION, "schema":1, "generation":7, "evaluation":"enforce",
+        "read":{"scope":{"kind":"whole_journal"},
+                "categories":["transcripts","entities","profile_pics","facets","screen_text","body"]}
+    }]}).to_string();
+    let path = PermissionStore::open(root).permissions_path();
+    fs::write(&path, &old_grant).unwrap();
+    let listing = probe(&journal, "list_transcripts", json!({"day":day,"limit":100})).unwrap();
+    let span = probe(
+        &journal,
+        "get_transcript",
+        json!({"reference":listing["span_reference"]}),
+    )
+    .unwrap();
+    let entries = span["segments"].to_string();
+    assert!(entries.contains("cobaltcaption"));
+    for withheld in ["amberchat", "legacychat", "neutralturn", "quartzwritten"] {
+        assert!(!entries.contains(withheld), "{withheld}");
+    }
+    assert_eq!(fs::read_to_string(&path).unwrap(), old_grant);
+    assert!(
+        !ReadPermission::default_whole_journal()
+            .categories
+            .iter()
+            .any(|word| word == "messages")
+    );
+    for (kinds, visible) in [
+        (
+            vec!["messages"],
+            vec!["amberchat", "legacychat", "quartzwritten"],
+        ),
+        (vec!["transcripts"], vec!["cobaltcaption"]),
+        (
+            vec!["transcripts", "messages"],
+            vec![
+                "cobaltcaption",
+                "amberchat",
+                "legacychat",
+                "quartzwritten",
+                "neutralturn",
+            ],
+        ),
+        (
+            vec!["transcripts", "messages", "notes"],
+            vec![
+                "cobaltcaption",
+                "amberchat",
+                "legacychat",
+                "quartzwritten",
+                "neutralturn",
+                "adjacentnote",
+            ],
+        ),
+        (vec!["notes"], vec!["adjacentnote"]),
+    ] {
+        PermissionStore::open(root)
+            .set_permission(
+                CONNECTION,
+                ReadPermission {
+                    categories: kinds.iter().map(|kind| String::from(*kind)).collect(),
+                    scope: ReadScope::WholeJournal,
+                },
+            )
+            .unwrap();
+        let list = probe(&journal, "list_transcripts", json!({"day":day,"limit":100})).unwrap();
+        let span = probe(
+            &journal,
+            "get_transcript",
+            json!({"reference":list["span_reference"]}),
+        )
+        .unwrap();
+        let mut direct_text = String::new();
+        for row in list["transcripts"].as_array().unwrap() {
+            let reference = &row["reference"];
+            let direct = probe(&journal, "get_transcript", json!({"reference":reference})).unwrap();
+            let batch = probe(
+                &journal,
+                "get_transcript",
+                json!({"references":[reference]}),
+            )
+            .unwrap();
+            assert_eq!(direct["entries"], batch["items"][0]["result"]["entries"]);
+            let entries = direct["entries"].to_string();
+            let (expected, unresolved) =
+                if entries.contains("neutralturn") || entries.contains("oldneutralmarkdown") {
+                    (
+                        if entries.contains("adjacentnote") {
+                            json!(["notes"])
+                        } else {
+                            json!([])
+                        },
+                        true,
+                    )
+                } else if entries.contains("adjacentnote") {
+                    (json!(["notes"]), false)
+                } else if entries.contains("cobaltcaption") {
+                    (json!(["transcripts"]), false)
+                } else if ["amberchat", "legacychat", "quartzwritten"]
+                    .iter()
+                    .any(|word| entries.contains(word))
+                {
+                    (json!(["messages"]), false)
+                } else {
+                    direct_text.push_str(&entries);
+                    continue;
+                };
+            let section = span["segments"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|section| section["entries"] == direct["entries"])
+                .unwrap();
+            for result in [row, &direct, &batch["items"][0]["result"], section] {
+                assert_eq!(result["content_kinds"], expected, "{result}");
+                assert_eq!(
+                    result.get("conversation_state").and_then(Value::as_str),
+                    unresolved.then_some("unresolved"),
+                    "{result}"
+                );
+            }
+            direct_text.push_str(&direct["entries"].to_string());
+        }
+        let both = kinds.contains(&"messages") && kinds.contains(&"transcripts");
+        assert_eq!(direct_text.contains("oldneutralmarkdown"), both);
+        let legacy = probe(&journal, "search", json!({"query":"oldneutralmarkdown"})).unwrap();
+        assert_eq!(
+            !legacy["results"].as_array().unwrap().is_empty(),
+            both,
+            "{kinds:?}"
+        );
+        if both {
+            let hit = &legacy["results"][0];
+            let fetched = probe(&journal, "fetch", json!({"reference":hit["reference"]})).unwrap();
+            for row in [hit, &fetched] {
+                assert_eq!(row["conversation_state"], "unresolved");
+                assert!(row.get("content_kind").is_none());
+            }
+            for kind in ["messages", "transcripts"] {
+                let filtered = probe(
+                    &journal,
+                    "search",
+                    json!({"query":"oldneutralmarkdown","kind":kind}),
+                )
+                .unwrap();
+                assert!(filtered["results"].as_array().unwrap().is_empty());
+            }
+        }
+        for word in cases.iter().map(|case| case.4).chain(["adjacentnote"]) {
+            assert_eq!(
+                direct_text.contains(word),
+                visible.contains(&word),
+                "{kinds:?}: {word}"
+            );
+            let hits = probe(&journal, "search", json!({"query":word})).unwrap();
+            assert_eq!(
+                !hits["results"].as_array().unwrap().is_empty(),
+                kinds.contains(&"notes") && word == "adjacentnote"
+            );
+        }
+    }
+}
+
+#[test]
 fn agent_rows_report_source_and_content_kind_across_materials() {
     use solstone_core_format::content::body_records::{BodyRow, RowKind, encode_rows, recorder_id};
 
@@ -17605,7 +18261,7 @@ fn agent_rows_report_source_and_content_kind_across_materials() {
         "import.text",
         "092000_300",
         "conversation_transcript.jsonl",
-        "{\"untimed\":true,\"imported\":{}}\n{\"start\":\"00:00:00\",\"speaker\":\"Nora\",\"text\":\"Order sparegasketneedle next week.\"}\n",
+        "{\"untimed\":true,\"imported\":{\"id\":\"example\",\"triage\":{\"kind\":\"transcripts\",\"ruleset_version\":7,\"reasons\":[\"webvtt_cues\"]}}}\n{\"start\":\"00:00:00\",\"speaker\":\"Nora\",\"text\":\"Order sparegasketneedle next week.\"}\n",
     );
     seed_seg(
         "import.image",
@@ -18770,6 +19426,25 @@ fn get_activity_sources_keeps_embedded_headings_in_one_unit_and_splits_real_kind
             },
         )
         .unwrap();
+    let withheld = probe(
+        &journal,
+        "get_activity_sources",
+        json!({"reference": format!("{day}/alpha/act_chat")}),
+    )
+    .unwrap();
+    assert!(
+        withheld["units"].as_array().unwrap().is_empty(),
+        "{withheld}"
+    );
+    let store = PermissionStore::open(root);
+    let mut approved = store
+        .get_permission(CONNECTION)
+        .unwrap()
+        .unwrap()
+        .read
+        .unwrap();
+    approved.categories.push("messages".into());
+    store.set_permission(CONNECTION, approved).unwrap();
     let chat = probe(
         &journal,
         "get_activity_sources",
@@ -18780,7 +19455,7 @@ fn get_activity_sources_keeps_embedded_headings_in_one_unit_and_splits_real_kind
     let chat_units = chat["units"].as_array().unwrap();
     assert_eq!(chat_units.len(), 1, "{chat}");
     assert_eq!(chat_units[0]["kind"], "import");
-    assert_eq!(chat_units[0]["content_kind"], "transcripts");
+    assert_eq!(chat_units[0]["content_kind"], "messages");
     assert_eq!(chat_units[0]["untimed"], true);
     assert!(chat_units[0].get("timestamp").is_none());
     let chat_text = literal_display_text(chat_units[0]["text"].as_str().unwrap());
