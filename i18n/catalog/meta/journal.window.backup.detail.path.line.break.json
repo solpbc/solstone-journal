@@ -1,0 +1,16 @@
+{
+  "description": "Reason recorded when a journal backup path cannot be represented in the backup tool input.",
+  "context": "Reason recorded when a journal backup path cannot be represented in the backup tool input.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a9cbb6ea40febafeb40295a30a951082aeea1efe759aa5e1f87d8742d5c7e326",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

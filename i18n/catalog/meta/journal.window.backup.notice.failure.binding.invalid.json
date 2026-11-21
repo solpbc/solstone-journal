@@ -1,0 +1,16 @@
+{
+  "description": "Notification about repeated attempts to back up the journal. The latest attempt reported binding_invalid.",
+  "context": "Notification about repeated attempts to back up the journal. The latest attempt reported binding_invalid.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "17c4c0091631673fa8f9c448e23983ef04282388cc63e2fdcb015fa58aa24647",
+  "max_length": 109,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

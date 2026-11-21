@@ -1,0 +1,16 @@
+{
+  "description": "Notification about repeated attempts to back up the journal. The latest attempt reported broker_unreachable.",
+  "context": "Notification about repeated attempts to back up the journal. The latest attempt reported broker_unreachable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "08de71b3430a74e6b949775015de2c0eb11aa14c6e681ad53d7e41657bcece02",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

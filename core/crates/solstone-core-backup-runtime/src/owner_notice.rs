@@ -8,6 +8,7 @@
 //! never raises it. A pause, backup turned off, or a setup that was replaced
 //! ends it without a word.
 
+use solstone_core_window_catalog as copy;
 use std::path::Path;
 use std::time::Duration;
 
@@ -28,8 +29,8 @@ const FAILING_ATTEMPTS: u64 = 3;
 /// latest. Two days rides out a network outage, a trip or a weekend offline.
 const FAILING_SECONDS: i64 = 2 * 24 * 60 * 60;
 
-const TITLE_FAILING: &str = "backup has been failing";
-const TITLE_WORKING: &str = "backup is working again";
+const FAILING_TITLE_ID: &str = "journal.window.backup.notice.title.raised";
+const WORKING_TITLE_ID: &str = "journal.window.backup.notice.title.cleared";
 const ACTION: &str = "/app/backup/";
 const SEND_TIMEOUT: Duration = Duration::from_secs(2);
 
@@ -37,7 +38,7 @@ const SEND_TIMEOUT: Duration = Duration::from_secs(2);
 enum Notice {
     Raise {
         setup: String,
-        message: &'static str,
+        message_id: &'static str,
     },
     Clear {
         setup: String,
@@ -102,11 +103,11 @@ fn assess(config: &Map<String, Value>, current: Option<&str>) -> Vec<Notice> {
     match latest.get("status").and_then(Value::as_str) {
         Some("ok") => vec![Notice::Clear {
             setup: current.to_owned(),
-            worded: Some(working_message(latest)),
+            worded: Some(working_message_id(latest)),
         }],
         Some("error") if persistently_failing(latest) => vec![Notice::Raise {
             setup: current.to_owned(),
-            message: failing_message(latest.get("error_reason").and_then(Value::as_str)),
+            message_id: failing_message_id(latest.get("error_reason").and_then(Value::as_str)),
         }],
         _ => Vec::new(),
     }
@@ -128,7 +129,7 @@ fn replaced(
                 && attempted == current
                 && latest.get("status").and_then(Value::as_str) == Some("ok")
         })
-        .map(working_message);
+        .map(working_message_id);
     let mut notices = Vec::new();
     for setup in [prior, attempted].into_iter().flatten() {
         if Some(setup) == current || notices.iter().any(|notice| notice_setup(notice) == setup) {
@@ -161,45 +162,31 @@ fn persistently_failing(latest: &Map<String, Value>) -> bool {
 }
 
 /// The cause from the latest failed attempt, then one action.
-fn failing_message(reason: Option<&str>) -> &'static str {
+fn failing_message_id(reason: Option<&str>) -> &'static str {
     match reason {
-        Some("auth_failed") => {
-            "your journal's key couldn't unlock the backup at your backup destination. open backup to check it."
-        }
-        Some("repo_missing") => {
-            "no backup was found at your backup destination. open backup to check it."
-        }
-        Some("broker_unreachable") => {
-            "encrypted backup couldn't be reached. open backup for details."
-        }
-        Some("rclone_unavailable") => {
-            "encrypted backup is missing a part it needs where your journal runs. open backup for details."
-        }
-        Some("restic_unavailable") => {
-            "encrypted backup can't run where your journal runs. open backup for details."
-        }
+        Some("auth_failed") => "journal.window.backup.notice.failure.auth.failed",
+        Some("repo_missing") => "journal.window.backup.notice.failure.repo.missing",
+        Some("broker_unreachable") => "journal.window.backup.notice.failure.broker.unreachable",
+        Some("rclone_unavailable") => "journal.window.backup.notice.failure.rclone.unavailable",
+        Some("restic_unavailable") => "journal.window.backup.notice.failure.restic.unavailable",
         Some("hosted_entitlement_inactive") => {
-            "encrypted backup isn't turned on in the services portal. open backup for details."
+            "journal.window.backup.notice.failure.hosted.entitlement.inactive"
         }
-        Some("binding_invalid") => {
-            "your journal's link to encrypted backup was refused. open backup for details."
-        }
+        Some("binding_invalid") => "journal.window.backup.notice.failure.binding.invalid",
         Some("repository_unsupported") => {
-            "the repository in your backup settings doesn't match its storage. open backup to change it."
+            "journal.window.backup.notice.failure.repository.unsupported"
         }
-        Some("timeout") => "the latest attempt ran out of time. open backup for details.",
-        Some("locked") => {
-            "your backup destination was busy with backup maintenance. open backup for details."
-        }
-        _ => "the latest attempt stopped with an error. open backup for details.",
+        Some("timeout") => "journal.window.backup.notice.failure.timeout",
+        Some("locked") => "journal.window.backup.notice.failure.locked",
+        _ => "journal.window.backup.notice.failure.unknown",
     }
 }
 
-fn working_message(latest: &Map<String, Value>) -> &'static str {
+fn working_message_id(latest: &Map<String, Value>) -> &'static str {
     if latest.get("error_reason").and_then(Value::as_str) == Some("incomplete") {
-        "the latest backup attempt finished, but some of your journal couldn't be read. open backup for details."
+        "journal.window.backup.notice.recovery.incomplete"
     } else {
-        "the latest backup attempt finished. open backup for details."
+        "journal.window.backup.notice.recovery.complete"
     }
 }
 
@@ -213,23 +200,23 @@ fn key(setup: &str) -> String {
 
 fn line(notice: &Notice) -> Value {
     match notice {
-        Notice::Raise { setup, message } => json!({
+        Notice::Raise { setup, message_id } => json!({
             "tract": "owner_notice",
             "event": "raise",
             "key": key(setup),
-            "title": TITLE_FAILING,
-            "message": message,
+            "title": copy::text(copy::ENGLISH, FAILING_TITLE_ID),
+            "message": copy::text(copy::ENGLISH, message_id),
             "action": ACTION,
         }),
         Notice::Clear {
             setup,
-            worded: Some(message),
+            worded: Some(message_id),
         } => json!({
             "tract": "owner_notice",
             "event": "clear",
             "key": key(setup),
-            "title": TITLE_WORKING,
-            "message": message,
+            "title": copy::text(copy::ENGLISH, WORKING_TITLE_ID),
+            "message": copy::text(copy::ENGLISH, message_id),
             "action": ACTION,
         }),
         Notice::Clear {
@@ -334,7 +321,7 @@ mod tests {
             notices,
             vec![Notice::Raise {
                 setup: setup.clone(),
-                message: failing_message(Some("auth_failed")),
+                message_id: failing_message_id(Some("auth_failed")),
             }]
         );
         let line = line(&notices[0]);
@@ -357,7 +344,7 @@ mod tests {
             now(journal.path()),
             vec![Notice::Raise {
                 setup,
-                message: failing_message(Some("repo_missing")),
+                message_id: failing_message_id(Some("repo_missing")),
             }]
         );
     }
@@ -429,7 +416,7 @@ mod tests {
             notices,
             vec![Notice::Clear {
                 setup: setup.clone(),
-                worded: Some(working_message(&Map::new())),
+                worded: Some(working_message_id(&Map::new())),
             }]
         );
         let line = line(&notices[0]);
@@ -446,8 +433,8 @@ mod tests {
         );
         let latest = get_backup_config(journal.path()).unwrap()["last_backup"].clone();
         assert_ne!(
-            working_message(latest.as_object().unwrap()),
-            working_message(&Map::new())
+            working_message_id(latest.as_object().unwrap()),
+            working_message_id(&Map::new())
         );
     }
 
@@ -542,7 +529,7 @@ mod tests {
             replaced(&config, Some(&new), Some(&old), Some(&new)),
             vec![Notice::Clear {
                 setup: old,
-                worded: Some(working_message(&Map::new())),
+                worded: Some(working_message_id(&Map::new())),
             }]
         );
     }
@@ -590,7 +577,7 @@ mod tests {
         ] {
             let line = line(&Notice::Raise {
                 setup: "f".repeat(64),
-                message: failing_message(reason),
+                message_id: failing_message_id(reason),
             });
             assert!(!line["message"].as_str().unwrap().is_empty(), "{reason:?}");
             let action = line["action"].as_str().unwrap();

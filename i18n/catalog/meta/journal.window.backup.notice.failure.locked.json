@@ -1,0 +1,16 @@
+{
+  "description": "Notification about repeated attempts to back up the journal. The latest attempt reported locked.",
+  "context": "Notification about repeated attempts to back up the journal. The latest attempt reported locked.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4b31fd8a3f4d0675d881ddce97d7bf4ea6a2b7d7a8b1a77d9d3fa5a8f5a2445c",
+  "max_length": 114,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

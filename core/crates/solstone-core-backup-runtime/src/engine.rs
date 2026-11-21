@@ -3,6 +3,7 @@
 
 //! Backup, prune, verification, and archive operations.
 
+use solstone_core_window_catalog as copy;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::fs;
@@ -677,7 +678,10 @@ fn prepare_backup_args(root: &Path) -> std::io::Result<PreparedBackup> {
                 if pattern.contains(['\r', '\n']) {
                     return Err(std::io::Error::new(
                         std::io::ErrorKind::InvalidInput,
-                        "journal path contains a line break",
+                        copy::text(
+                            copy::ENGLISH,
+                            "journal.window.backup.detail.path.line.break",
+                        ),
                     ));
                 }
                 // restic expands environment variables in exclude files.
@@ -707,7 +711,10 @@ fn prepare_backup_args(root: &Path) -> std::io::Result<PreparedBackup> {
     for member in body_card_downloads(root)? {
         let pattern = crate::restic_paths::rooted_exclude(root, &member);
         if pattern.contains(['\r', '\n']) {
-            return Err(std::io::Error::other("journal path contains a line break"));
+            return Err(std::io::Error::other(copy::text(
+                copy::ENGLISH,
+                "journal.window.backup.detail.path.line.break",
+            )));
         }
         writeln!(excludes, "{}", pattern.replace('$', "$$"))?;
     }
@@ -720,7 +727,10 @@ fn prepare_backup_args(root: &Path) -> std::io::Result<PreparedBackup> {
         |relative| {
             let pattern = crate::restic_paths::rooted_exclude(root, relative);
             if pattern.contains(['\r', '\n']) {
-                return Err(std::io::Error::other("journal path contains a line break"));
+                return Err(std::io::Error::other(copy::text(
+                    copy::ENGLISH,
+                    "journal.window.backup.detail.path.line.break",
+                )));
             }
             writeln!(excludes, "{}", pattern.replace('$', "$$"))
         },

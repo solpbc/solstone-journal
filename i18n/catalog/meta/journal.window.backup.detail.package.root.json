@@ -1,0 +1,16 @@
+{
+  "description": "Backup worker discovery on Windows. The installed package has no root directory.",
+  "context": "Backup worker discovery on Windows. The installed package has no root directory.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "379abeb6ed5f03f0564beb73d97d4e1890910865fc266c6a9da3b5e5250e77ef",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

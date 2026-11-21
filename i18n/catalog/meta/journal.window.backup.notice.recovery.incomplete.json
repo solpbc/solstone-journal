@@ -1,0 +1,16 @@
+{
+  "description": "Notification about repeated attempts to back up the journal. Recovery after a incomplete backup.",
+  "context": "Notification about repeated attempts to back up the journal. Recovery after a incomplete backup.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "eac7718cbd2f482298ce23407011576835ba7a43a0730e9176a2cd9b70dac07b",
+  "max_length": 135,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

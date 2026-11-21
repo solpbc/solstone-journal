@@ -1,0 +1,16 @@
+{
+  "description": "Notification about repeated attempts to back up the journal. The latest attempt reported auth_failed.",
+  "context": "Notification about repeated attempts to back up the journal. The latest attempt reported auth_failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a1faff8e7d7dd91090b6a536baa1e64686073395cd427c4de6be531d648f3882",
+  "max_length": 130,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
