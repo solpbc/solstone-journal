@@ -39300,6 +39300,13 @@
       "locales": []
     },
     {
+      "id": "journal.window.settings.settings.feedback.not.one.emoji",
+      "source": "794ce5efa0c3c9b4b587f7dcac045ebca05f94143cbf9015d1073ef0ca9b90a5",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.settings.settings.feedback.nothing.in.your.journal.was.changed",
       "source": "198ad333e26fb4adeae45cf027a5ade0f5ebdbe8e674b4edae7c57c54aa84c4a",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",

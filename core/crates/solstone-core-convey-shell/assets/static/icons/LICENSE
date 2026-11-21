@@ -54,6 +54,3 @@ Icons inherited from Feather — MIT License
 Copyright (c) 2013-present Cole Bemis
 Source: https://github.com/feathericons/feather
 ================================================================
-
-emoji keyword data used to build emoji-lucide.json: emojibase-data (MIT),
-https://github.com/milesj/emojibase ; CLDR annotations (Unicode License v3).

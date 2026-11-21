@@ -3183,7 +3183,7 @@ button:focus:not(:focus-visible) {
       <div class="settings-field">
         <label for="emojiInput">{{journal.window.settings.field.label.icon}}</label>
         <div class="emoji-display" id="emojiDisplay" tabindex="0" role="button">&#128230;</div>
-        <input type="text" id="emojiInput" class="emoji-input" maxlength="4" placeholder="{{journal.window.settings.field.placeholder.paste.emoji}}" style="display:none">
+        <input type="text" id="emojiInput" class="emoji-input" placeholder="{{journal.window.settings.field.placeholder.paste.emoji}}" style="display:none">
         <small>{{journal.window.settings.visible.text.click.to.change.emoji}}</small>
       </div>
 
@@ -3258,7 +3258,7 @@ button:focus:not(:focus-visible) {
         </div>
         <div class="settings-field">
           <label for="customActivityIcon">{{journal.window.settings.field.label.icon.emoji}}</label>
-          <input type="text" id="customActivityIcon" placeholder="{{journal.window.settings.activity.icon.placeholder}}" maxlength="4" style="max-width: 100px;">
+          <input type="text" id="customActivityIcon" placeholder="{{journal.window.settings.activity.icon.placeholder}}" style="max-width: 100px;">
         </div>
         <div class="settings-field">
           <label for="customActivityInstructions">{{journal.window.settings.field.label.instructions}} <span style="font-weight:normal;color:var(--ink-faint);">{{journal.window.settings.visible.text.optional}}</span></label>
@@ -4844,19 +4844,35 @@ function setupEmojiPicker() {
     display.onclick();
   };
 
+  let cancelled = false;
   input.onblur = () => {
     const value = input.value.trim();
-    if (value && /\p{Emoji}/u.test(value)) {
-      display.textContent = value;
-      saveFacetField('emoji', value, input);
+    if (!cancelled && value) {
+      if (isOneEmoji(value)) {
+        display.textContent = value;
+        saveFacetField('emoji', value, input);
+      } else {
+        showFieldStatus(input, 'error', window.JournalI18n.render('journal.window.settings.settings.feedback.not.one.emoji'));
+      }
     }
+    cancelled = false;
     input.style.display = 'none';
     input.value = '';
   };
 
   input.onkeydown = (e) => {
     if (e.key === 'Enter') { e.preventDefault(); input.blur(); settingsLand(input, [display]); }
+    // Escape leaves the emoji as it was.
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancelled = true; input.blur(); settingsLand(input, [display]); }
   };
+}
+
+// One emoji as a person sees it: a single character that is a pictograph, a
+// keycap or a flag. A joined emoji such as 🧑‍💻 is one; a digit, a word, or a
+// word with an emoji in it is not.
+function isOneEmoji(value) {
+  const characters = [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(value)];
+  return characters.length === 1 && /\p{Extended_Pictographic}|\p{Regional_Indicator}|\u20E3/u.test(value);
 }
 
 function setIconSvg(element, svg) {
@@ -7552,6 +7568,10 @@ document.getElementById('saveCustomActivityBtn').addEventListener('click', async
 
   if (!name) {
     notifyError(window.JournalI18n.render('journal.window.settings.settings.feedback.validation.error'), window.JournalI18n.render('journal.window.settings.settings.feedback.name.is.required'));
+    return;
+  }
+  if (emoji && !isOneEmoji(emoji)) {
+    notifyError(window.JournalI18n.render('journal.window.settings.settings.feedback.validation.error'), window.JournalI18n.render('journal.window.settings.settings.feedback.not.one.emoji'));
     return;
   }
 

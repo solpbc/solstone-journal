@@ -136,6 +136,33 @@ pub fn permanent_custom_add_keeps_shown_defaults(path: &str, expected: &str) -> 
     format!("{bare}{expected}")
 }
 
+/// Permanent narrow divergence introduced 2026-11-21: a facet's emoji is no
+/// longer guessed into a Lucide icon. The frozen corpus captured the muted
+/// facet (🔇, no icon chosen) with a guessed `icon_svg` in exactly two
+/// listings; a facet with no chosen icon now reads `icon_svg: null`. Facets
+/// with a chosen icon keep theirs. Never generalize this rule.
+pub fn apply_permanent_facet_emoji_icon_divergence(expected: &mut Value) {
+    let phase = &mut expected["phases"]["populated"];
+    let mut changed = 0;
+    for case in ["GET api/facets/muted", "GET api/facets?all=true"] {
+        let facets = phase[case]["normalized"]["facets"]
+            .as_array_mut()
+            .expect("captured facet listing");
+        for facet in facets {
+            if facet["icon"] == "" && facet["icon_svg"].is_string() {
+                assert_eq!(
+                    facet["emoji"], "🔇",
+                    "{case} guessed only the muted facet's icon"
+                );
+                facet["icon_svg"] = Value::Null;
+                changed += 1;
+            }
+        }
+    }
+    assert_eq!(changed, 2, "frozen settings corpus guessed two facet icons");
+    recompute_case_digests(expected);
+}
+
 fn update_empty_journal_name_probes(value: &mut Value) {
     match value {
         Value::Object(map) => {

@@ -117703,6 +117703,18 @@
       "selector": null
     },
     {
+      "id": "journal.window.settings.settings.feedback.not.one.emoji",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e73657474696e67732e666565646261636b2e6e6f742e6f6e652e656d6f6a69",
+      "namespace": "journal.window.settings.settings.feedback.not.one",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.settings.settings.feedback.nothing.in.your.journal.was.changed",
       "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e73657474696e67732e666565646261636b2e6e6f7468696e672e696e2e796f75722e6a6f75726e616c2e7761732e6368616e676564",
       "namespace": "journal.window.settings.settings.feedback.nothing.in.your.journal.was",

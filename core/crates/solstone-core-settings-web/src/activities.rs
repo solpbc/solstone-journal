@@ -123,8 +123,7 @@ pub async fn add(
     }
     if let Some(icon) = data.get("icon")
         && (!icon.is_string()
-            || (!icon.as_str().is_some_and(str::is_empty)
-                && icons::svg(icon.as_str(), "").is_none()))
+            || (!icon.as_str().is_some_and(str::is_empty) && icons::svg(icon.as_str()).is_none()))
     {
         return invalid_config_value(
             locale,
@@ -241,8 +240,7 @@ pub async fn update(
     }
     if let Some(icon) = data.get("icon")
         && (!icon.is_string()
-            || (!icon.as_str().is_some_and(str::is_empty)
-                && icons::svg(icon.as_str(), "").is_none()))
+            || (!icon.as_str().is_some_and(str::is_empty) && icons::svg(icon.as_str()).is_none()))
     {
         return invalid_config_value(
             locale,
@@ -479,13 +477,12 @@ fn public_record(mut record: Value) -> Value {
         .get("icon")
         .and_then(Value::as_str)
         .map(ToOwned::to_owned);
-    // Python's public activity projection deliberately does not use emoji fallback.
     record
         .as_object_mut()
         .expect("activity record object")
         .insert(
             "icon_svg".to_owned(),
-            icons::svg(icon.as_deref(), "")
+            icons::svg(icon.as_deref())
                 .map(Value::String)
                 .unwrap_or(Value::Null),
         );

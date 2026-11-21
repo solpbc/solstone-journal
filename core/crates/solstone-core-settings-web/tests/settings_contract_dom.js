@@ -2128,6 +2128,31 @@ module.exports = async function settingsContractCases(crateDir) {
     assert.deepStrictEqual(p.shownModals(), ['colorPickerModal']);
   });
 
+  await test("a facet's emoji takes one emoji whole, refuses a digit or a word, and Escape keeps it", async () => {
+    const p = await boot(env, FP, { answers: journal({ [`/app/settings/api/facet/${SLUG}#PUT`]: { success: true, config: { title: 'Work', color: '#cc0000', emoji: '🧑‍💻', muted: false } } }) });
+    const emoji = p.byId('emojiDisplay');
+    const input = p.byId('emojiInput');
+    blurFires(p, input);
+    for (const refused of ['2', 'hat 🎩']) {
+      p.key(emoji, 'Enter');
+      input.value = refused;
+      p.key(input, 'Enter');
+      await settle();
+      assert.ok(facetPuts(p).length === 0, `${refused} is not saved`);
+    }
+    p.key(emoji, 'Enter');
+    input.value = '🎩';
+    p.key(input, 'Escape');
+    await settle();
+    assert.ok(facetPuts(p).length === 0 && p.doc.activeElement === emoji, `Escape saves nothing: ${at(p)}`);
+    p.key(emoji, 'Enter');
+    input.value = '🧑‍💻';
+    p.key(input, 'Enter');
+    await settle();
+    const puts = facetPuts(p);
+    assert.ok(puts.length === 1 && JSON.parse(puts[0].body).emoji === '🧑‍💻', `a joined emoji is saved whole: ${puts.map((c) => c.body)}`);
+  });
+
   await test("an activity's remove stays busy while it is out and sends one; its answer lands on the next row's priority, else the one before, else the heading", async () => {
     const p = await activitiesPage();
     const held = holdGranola(p, 'DELETE', `/app/settings/api/facet/${SLUG}/activities/a2`);

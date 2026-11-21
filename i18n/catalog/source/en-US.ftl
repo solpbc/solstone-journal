@@ -17272,6 +17272,8 @@ journal.window.settings.settings.feedback.no.icons.available = no icons availabl
 
 journal.window.settings.settings.feedback.no.icons.match = no icons match
 
+journal.window.settings.settings.feedback.not.one.emoji = that's not a single emoji, so it wasn't saved
+
 journal.window.settings.settings.feedback.nothing.in.your.journal.was.changed = nothing in your journal was changed.
 
 journal.window.settings.settings.feedback.paste.your.personal.api.key.from = paste your personal API key from { $slot1 } first.

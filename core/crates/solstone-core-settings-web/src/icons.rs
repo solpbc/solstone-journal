@@ -21,19 +21,10 @@ static TAGS: LazyLock<HashMap<String, Vec<String>>> = LazyLock::new(|| {
     ))
     .expect("embedded Lucide tags")
 });
-static EMOJI: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
-    serde_json::from_str(include_str!(
-        "../../solstone-core-convey-shell/assets/static/icons/emoji-lucide.json"
-    ))
-    .expect("embedded emoji icon map")
-});
-
-pub fn svg(name: Option<&str>, emoji: &str) -> Option<String> {
-    name.and_then(|name| ICONS.get(name)).cloned().or_else(|| {
-        (!emoji.is_empty())
-            .then(|| EMOJI.get(emoji).and_then(|name| ICONS.get(name)).cloned())
-            .flatten()
-    })
+/// The named Lucide icon's SVG. An emoji is never turned into an icon: it is
+/// shown as the owner chose it.
+pub fn svg(name: Option<&str>) -> Option<String> {
+    name.and_then(|name| ICONS.get(name)).cloned()
 }
 
 pub async fn search(Query(query): Query<HashMap<String, String>>) -> Response {

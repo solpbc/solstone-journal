@@ -1,0 +1,16 @@
+{
+  "description": "Shown under a facet's emoji, and in an error notice when adding a custom activity, when what the owner entered is not one emoji. Nothing is saved.",
+  "context": "Journal window, settings view. Settings feedback.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "794ce5efa0c3c9b4b587f7dcac045ebca05f94143cbf9015d1073ef0ca9b90a5",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

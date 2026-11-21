@@ -175,7 +175,7 @@ pub async fn create(locale: &str, journal_root: PathBuf, body: Bytes) -> Respons
     let icon = data.get("icon").and_then(Value::as_str).map(str::trim);
     if data.get("icon").is_some()
         && (icon.is_none()
-            || icon.is_some_and(|icon| !icon.is_empty() && icons::svg(Some(icon), "").is_none()))
+            || icon.is_some_and(|icon| !icon.is_empty() && icons::svg(Some(icon)).is_none()))
     {
         return invalid_request_value(
             locale,
@@ -298,7 +298,7 @@ pub async fn update(
             || data
                 .get("icon")
                 .and_then(Value::as_str)
-                .is_some_and(|icon| !icon.is_empty() && icons::svg(Some(icon), "").is_none()))
+                .is_some_and(|icon| !icon.is_empty() && icons::svg(Some(icon)).is_none()))
     {
         return invalid_request_value(
             locale,
@@ -665,7 +665,7 @@ fn public_record(name: &str, config: &Value) -> Value {
         "color": values.get("color").and_then(Value::as_str).unwrap_or(""),
         "emoji": emoji,
         "icon": icon.unwrap_or(""),
-        "icon_svg": icons::svg(icon, emoji),
+        "icon_svg": icons::svg(icon),
         "muted": values.get("muted").and_then(Value::as_bool).unwrap_or(false),
     })
 }

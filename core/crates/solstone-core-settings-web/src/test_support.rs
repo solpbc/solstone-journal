@@ -25,6 +25,7 @@ static CORPUS: LazyLock<Value> = LazyLock::new(|| {
     crate::settings_corpus_divergence::apply_permanent_processing_default_gate_divergence(
         &mut corpus,
     );
+    crate::settings_corpus_divergence::apply_permanent_facet_emoji_icon_divergence(&mut corpus);
     corpus
 });
 
