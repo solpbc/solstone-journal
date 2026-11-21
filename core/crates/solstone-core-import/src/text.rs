@@ -789,12 +789,28 @@ struct StatedClock {
     seconds: u64,
 }
 
+mod export_turns;
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+enum ExportTime {
+    #[default]
+    Unspecified,
+    Sent(Timestamp),
+    NoSendInstant,
+    Caption {
+        start: String,
+        end: String,
+    },
+}
+
 /// One entry of the transcript as the file gives it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Turn {
     /// Seconds from the start of the import.
     offset: u64,
     speaker: Option<String>,
+    exporter_notice: bool,
+    export_time: ExportTime,
     recipient: Option<String>,
     text: String,
     stated: Option<StatedClock>,
@@ -873,6 +889,7 @@ fn zoom_chat_turns(text: &str) -> Option<Vec<Turn>> {
             .expect("Zoom saved chat header")
     });
     let mut turns: Vec<Turn> = Vec::new();
+    let mut block_body = false;
     for line in text.trim_start_matches('\u{feff}').lines() {
         let header_line = crate::triage::strip_direction_marks(line);
         // A standalone CR is a line boundary in the classifier. Preserve such
@@ -882,6 +899,7 @@ fn zoom_chat_turns(text: &str) -> Option<Vec<Turn>> {
         }
         if let Some(parts) = HEADER.captures(header_line) {
             let body = header_line.get(parts.get(0)?.end()..)?;
+            block_body = body.is_empty();
             let speaker = parts.name("speaker")?.as_str().trim();
             if speaker.is_empty() {
                 return None;
@@ -889,6 +907,8 @@ fn zoom_chat_turns(text: &str) -> Option<Vec<Turn>> {
             turns.push(Turn {
                 offset: 0,
                 speaker: Some(speaker.to_owned()),
+                exporter_notice: false,
+                export_time: ExportTime::Unspecified,
                 recipient: parts
                     .name("recipient")
                     .map(|name| name.as_str().trim().to_owned()),
@@ -899,7 +919,11 @@ fn zoom_chat_turns(text: &str) -> Option<Vec<Turn>> {
             if !turn.text.is_empty() {
                 turn.text.push('\n')
             }
-            turn.text.push_str(line);
+            turn.text.push_str(if block_body {
+                line.strip_prefix('\t').unwrap_or(line)
+            } else {
+                line
+            });
         } else if !line.trim().is_empty() {
             return None;
         }
@@ -913,6 +937,11 @@ fn zoom_chat_turns(text: &str) -> Option<Vec<Turn>> {
 }
 
 fn reading_for(text: &str, verdict: &Verdict) -> Reading {
+    if verdict.kind == ContentKind::Transcripts
+        && let Some(reading) = export_turns::read(text, &verdict.reasons)
+    {
+        return reading;
+    }
     if verdict.kind == ContentKind::Transcripts
         && verdict.reasons.contains(&"zoom_chat")
         && let Some(turns) = zoom_chat_turns(text)
@@ -1027,6 +1056,8 @@ fn inline_turns(text: &str) -> Option<Reading> {
                 Turn {
                     offset: 0,
                     speaker: Some(speaker.to_owned()),
+                    exporter_notice: false,
+                    export_time: ExportTime::Unspecified,
                     recipient: None,
                     text: said.to_owned(),
                     stated: None,
@@ -1055,6 +1086,8 @@ fn inline_turns(text: &str) -> Option<Reading> {
                     Turn {
                         offset: 0,
                         speaker: None,
+                        exporter_notice: false,
+                        export_time: ExportTime::Unspecified,
                         recipient: None,
                         text: line.to_owned(),
                         stated: None,
@@ -1152,6 +1185,8 @@ fn untimed_turns(text: &str) -> Vec<Turn> {
             turns.push(Turn {
                 offset: 0,
                 speaker: None,
+                exporter_notice: false,
+                export_time: ExportTime::Unspecified,
                 recipient: None,
                 text: text.to_owned(),
                 stated: None,
@@ -1194,6 +1229,8 @@ fn timed_turns(text: &str) -> Option<Vec<Turn>> {
                 turns.push(Turn {
                     offset: at,
                     speaker: Some(speaker.to_owned()),
+                    exporter_notice: false,
+                    export_time: ExportTime::Unspecified,
                     recipient: None,
                     text: said.to_owned(),
                     stated: None,
@@ -1217,6 +1254,8 @@ fn timed_turns(text: &str) -> Option<Vec<Turn>> {
                 turns.push(Turn {
                     offset: at,
                     speaker: None,
+                    exporter_notice: false,
+                    export_time: ExportTime::Unspecified,
                     recipient: None,
                     text: line.to_owned(),
                     stated: None,
@@ -1538,6 +1577,14 @@ fn jsonl_rows(
     // Keep the source-format evidence with this import's rows. A neighboring
     // note, attachment or earlier sidecar may have a different origin.
     imported.insert("triage".to_owned(), serde_json::json!(verdict));
+    if verdict
+        .reasons
+        .iter()
+        .any(|r| matches!(*r, "whatsapp_bracketed" | "whatsapp_dash"))
+        && turns.iter().any(|t| t.exporter_notice)
+    {
+        imported.insert("whatsapp_export_notice".into(), Value::Bool(true));
+    }
     if let Some(facet) = facet.filter(|value| !value.is_empty()) {
         imported.insert("facet".to_owned(), Value::String(facet.to_owned()));
     }
@@ -1553,6 +1600,14 @@ fn jsonl_rows(
     );
     // Every entry still needs a `start` to render and be searched, so an untimed file's
     // entries sit at `00:00:00`; this tells any reader that none of them is a real time.
+    let sent = turns.iter().filter_map(|turn| match turn.export_time {
+        ExportTime::Sent(instant) => Some(instant),
+        _ => None,
+    });
+    if let (Some(first), Some(last)) = (sent.clone().min(), sent.max()) {
+        header.insert("first_sent_at".into(), Value::String(first.to_string()));
+        header.insert("last_sent_at".into(), Value::String(last.to_string()));
+    }
     if untimed {
         header.insert("untimed".to_owned(), Value::Bool(true));
     }
@@ -1573,8 +1628,24 @@ fn jsonl_rows(
             "start".to_owned(),
             Value::String(clock_text(turn.offset - tile_offset)),
         );
-        let source_ms = crate::timestamp::epoch_millis(after(origin, turn.offset));
+        let source_ms = match turn.export_time {
+            ExportTime::Sent(instant) => instant.as_millisecond(),
+            _ => crate::timestamp::epoch_millis(after(origin, turn.offset)),
+        };
         entry.insert("source_ms".to_owned(), Value::Number(source_ms.into()));
+        match &turn.export_time {
+            ExportTime::Sent(instant) => {
+                entry.insert("sent_at".into(), Value::String(instant.to_string()));
+            }
+            ExportTime::Caption { start, end } => {
+                entry.insert("cue_start".into(), Value::String(start.clone()));
+                entry.insert("cue_end".into(), Value::String(end.clone()));
+            }
+            ExportTime::NoSendInstant => {
+                entry.insert("sent_at".into(), Value::Null);
+            }
+            ExportTime::Unspecified => {}
+        }
         if let Some(speaker) = &turn.speaker {
             entry.insert("speaker".to_owned(), Value::String(speaker.clone()));
         }
@@ -1629,6 +1700,8 @@ mod tests {
         Turn {
             offset,
             speaker: speaker.map(str::to_owned),
+            exporter_notice: false,
+            export_time: ExportTime::Unspecified,
             recipient: None,
             text: text.to_owned(),
             stated: None,
@@ -1645,6 +1718,8 @@ mod tests {
         Turn {
             offset,
             speaker: speaker.map(str::to_owned),
+            exporter_notice: false,
+            export_time: ExportTime::Unspecified,
             recipient: None,
             text: text.to_owned(),
             stated: Some(StatedClock { day_shift, seconds }),

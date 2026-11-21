@@ -17,6 +17,7 @@ pub use solstone_core_format::content::kinds::Kind;
 
 mod image;
 mod rules;
+pub(crate) use rules::{BIDI_MARKS, whatsapp_notice, whatsapp_row};
 use rules::{Evidence, RULES, Rule, Stage};
 
 pub const RULESET_VERSION: u32 = 7;
