@@ -3123,7 +3123,7 @@ pub enum MessageId {
     m6a6f75726e616c2e77696e646f772e686f6d652e6c696e6b2e6c6162656c2e6f746865722e6167656e74732e616e642e70616972696e672e636f646573,
     m6a6f75726e616c2e77696e646f772e686f6d652e6c696e6b2e6c6162656c2e706169722e612e646576696365,
     m6a6f75726e616c2e77696e646f772e686f6d652e6c696e6b2e6c6162656c2e7472792e616761696e2e6f6e2e7468652e7468696e6b696e672e70616765,
-    m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e6261746368,
+    m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e62617463682e636f756e7473,
     m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e636c6f636b,
     m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e6f7665726c6170,
     m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e73746172746564,
@@ -11379,7 +11379,7 @@ pub fn render_dotted_with_options(locale: &str, dotted_id: &str, args: &[(&str, 
         ("journal.window.home.link.label.other.agents.and.pairing.codes", MessageId::m6a6f75726e616c2e77696e646f772e686f6d652e6c696e6b2e6c6162656c2e6f746865722e6167656e74732e616e642e70616972696e672e636f646573),
         ("journal.window.home.link.label.pair.a.device", MessageId::m6a6f75726e616c2e77696e646f772e686f6d652e6c696e6b2e6c6162656c2e706169722e612e646576696365),
         ("journal.window.home.link.label.try.again.on.the.thinking.page", MessageId::m6a6f75726e616c2e77696e646f772e686f6d652e6c696e6b2e6c6162656c2e7472792e616761696e2e6f6e2e7468652e7468696e6b696e672e70616765),
-        ("journal.window.home.narrative.coverage.batch", MessageId::m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e6261746368),
+        ("journal.window.home.narrative.coverage.batch.counts", MessageId::m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e62617463682e636f756e7473),
         ("journal.window.home.narrative.coverage.clock", MessageId::m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e636c6f636b),
         ("journal.window.home.narrative.coverage.overlap", MessageId::m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e6f7665726c6170),
         ("journal.window.home.narrative.coverage.started", MessageId::m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e73746172746564),
@@ -19663,7 +19663,7 @@ static MESSAGES: &[(&str, Prepare)] = &[
     ("m6a6f75726e616c2e77696e646f772e686f6d652e6c696e6b2e6c6162656c2e6f746865722e6167656e74732e616e642e70616972696e672e636f646573", no_arguments),
     ("m6a6f75726e616c2e77696e646f772e686f6d652e6c696e6b2e6c6162656c2e706169722e612e646576696365", no_arguments),
     ("m6a6f75726e616c2e77696e646f772e686f6d652e6c696e6b2e6c6162656c2e7472792e616761696e2e6f6e2e7468652e7468696e6b696e672e70616765", no_arguments),
-    ("m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e6261746368", prepare_m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e6261746368),
+    ("m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e62617463682e636f756e7473", prepare_m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e62617463682e636f756e7473),
     ("m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e636c6f636b", no_arguments),
     ("m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e6f7665726c6170", no_arguments),
     ("m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e73746172746564", prepare_m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e73746172746564),
@@ -41836,8 +41836,8 @@ fn prepare_m6a6f75726e616c2e77696e646f772e686f6d652e6865616c74682e75706c6f61642e
     Ok((_resource_key, f_args))
 }
 
-fn prepare_m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e6261746368(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
-    const DECLARED: &[&str] = &["processed_segments", "batch_segments", "processed_activities", "batch_activities"];
+fn prepare_m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e62617463682e636f756e7473(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["processed_segments", "batch_segments", "processed_activities", "batch_activities", "segment_quantity", "activity_quantity"];
     for (name, _) in args {
         if !DECLARED.contains(name) {
             return Err(RenderError::UnknownArgument((*name).to_string()));
@@ -41869,6 +41869,22 @@ fn prepare_m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665
         _ => return Err(RenderError::InvalidArgumentType("batch_activities".to_string())),
     };
     f_args.set("batch_activities", FluentValue::from(v3.clone()));
+    let val_v4 = args.iter().find(|(n, _)| *n == "segment_quantity").ok_or_else(|| RenderError::MissingArgument("segment_quantity".to_string()))?.1.clone();
+    let v4 = match val_v4 {
+        Value::Cardinal(c) => c,
+        _ => return Err(RenderError::InvalidArgumentType("segment_quantity".to_string())),
+    };
+    if v4 < -2147483648_i64 || v4 > 2147483647_i64 { return Err(RenderError::OutOfRange("segment_quantity".to_string())); }
+    f_args.set("segment_quantity", FluentValue::from(v4));
+    let val_v5 = args.iter().find(|(n, _)| *n == "activity_quantity").ok_or_else(|| RenderError::MissingArgument("activity_quantity".to_string()))?.1.clone();
+    let v5 = match val_v5 {
+        Value::Cardinal(c) => c,
+        _ => return Err(RenderError::InvalidArgumentType("activity_quantity".to_string())),
+    };
+    if v5 < -2147483648_i64 || v5 > 2147483647_i64 { return Err(RenderError::OutOfRange("activity_quantity".to_string())); }
+    f_args.set("activity_quantity", FluentValue::from(v5));
+    f_args.set("i18nCategory", plural_category(_cardinal_rule, v4));
+    f_args.set("i18nCategory-activity_quantity", plural_category(_cardinal_rule, v5));
     Ok((_resource_key, f_args))
 }
 

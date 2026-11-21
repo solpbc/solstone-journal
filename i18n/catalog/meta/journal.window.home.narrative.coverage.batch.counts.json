@@ -20,14 +20,28 @@
     {
       "name": "batch_activities",
       "type": "string"
+    },
+    {
+      "name": "segment_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "activity_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
     }
   ],
-  "format_intent": "text",
-  "source_revision": "a2e7d25bc2f442efcf7161b00c9da5b1f5620b582145950a8d8889f167a21d33",
+  "format_intent": "cardinal",
+  "source_revision": "4c898e2aa745bb34240c8e56d169e22eb8fc954ce398c43c77a91f55a82104e2",
   "max_length": 1000,
   "risk": "routine",
   "auto_merge": true,
   "surfaces": [
     "journal-window"
-  ]
+  ],
+  "selector": {
+    "name": "segment_quantity",
+    "type": "cardinal"
+  }
 }

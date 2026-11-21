@@ -1023,7 +1023,9 @@
         return `<p class="pulse-narrative-meta" data-narrative-scope="unknown">${window.JournalI18n.renderHtml('journal.window.home.visible.text.what.this.summary.covers.wasn.t')}</p>`;
       }
       const sentences = [
-        window.JournalI18n.render('journal.window.home.narrative.coverage.batch', [
+        window.JournalI18n.render('journal.window.home.narrative.coverage.batch.counts', [
+          ['segment_quantity', window.JournalI18n.cardinalQuantity(scope.input_segments)],
+          ['activity_quantity', window.JournalI18n.cardinalQuantity(scope.input_activities)],
           ['processed_segments', String(scope.segments)], ['batch_segments', String(scope.input_segments)],
           ['processed_activities', String(scope.activities)], ['batch_activities', String(scope.input_activities)]
         ]),

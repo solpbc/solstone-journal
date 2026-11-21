@@ -21667,9 +21667,9 @@
       "locales": []
     },
     {
-      "id": "journal.window.home.narrative.coverage.batch",
-      "source": "a2e7d25bc2f442efcf7161b00c9da5b1f5620b582145950a8d8889f167a21d33",
-      "contract": "f53d8cf33064a62909ba83e436a02709c97a25d4eab217deaff67f8ea5351d57",
+      "id": "journal.window.home.narrative.coverage.batch.counts",
+      "source": "4c898e2aa745bb34240c8e56d169e22eb8fc954ce398c43c77a91f55a82104e2",
+      "contract": "1f9fec220b20e880662d3345ef5726252325ec371cf86efa10ff1bd95a5f1f90",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
       "locales": []
     },

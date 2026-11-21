@@ -63700,8 +63700,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e6261746368",
       "namespace": "journal.window.home.narrative.coverage",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.home.narrative.coverage.batch.counts",
       "format_intent": "text",
       "arguments": [
         {
@@ -63735,6 +63735,66 @@
       ],
       "protected_slots": [],
       "selector": null
+    },
+    {
+      "id": "journal.window.home.narrative.coverage.batch.counts",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e62617463682e636f756e7473",
+      "namespace": "journal.window.home.narrative.coverage.batch",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "processed_segments",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "batch_segments",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "processed_activities",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "batch_activities",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "segment_quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "activity_quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "segment_quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
     },
     {
       "id": "journal.window.home.narrative.coverage.clock",

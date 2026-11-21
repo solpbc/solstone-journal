@@ -108081,37 +108081,185 @@
             "name": "batch_activities",
             "type": "string",
             "value": "sample"
+          },
+          {
+            "name": "segment_quantity",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "activity_quantity",
+            "type": "cardinal",
+            "value": 0
           }
         ],
         "bundle": "journal-window",
         "entry": "render(locale, dotted_id, named_args)",
         "enum_argument": null,
         "format_passes": 1,
-        "gettext_lookup_key": "journal.window.home.narrative.coverage.batch\u0004m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e6261746368",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e6261746368_plural",
-        "gettext_unsigned_quantity": null,
+        "gettext_lookup_key": "journal.window.home.narrative.coverage.batch.counts\u0004m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e62617463682e636f756e7473",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e62617463682e636f756e7473_plural",
+        "gettext_unsigned_quantity": 0,
         "locale": "en-US",
-        "message_id": "journal.window.home.narrative.coverage.batch",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e6261746368",
-        "signed_quantity": null
+        "message_id": "journal.window.home.narrative.coverage.batch.counts",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e62617463682e636f756e7473",
+        "signed_quantity": 0
       },
       "cardinal": "en",
       "expectation_kind": "native-reader-required",
       "expected": null,
       "folder": null,
       "inputs": {
+        "activity_quantity": 0,
         "batch_activities": "sample",
         "batch_segments": "sample",
         "processed_activities": "sample",
-        "processed_segments": "sample"
+        "processed_segments": "sample",
+        "segment_quantity": 0
       },
       "locale": "en-US",
       "logical_expected": "based on ⁨sample⁩ of ⁨sample⁩ processed segments and ⁨sample⁩ of ⁨sample⁩ activity entries in this batch.",
-      "message_id": "journal.window.home.narrative.coverage.batch",
+      "message_id": "journal.window.home.narrative.coverage.batch.counts",
       "own_reader": "fluent-js",
-      "own_reader_call": "render(\"en-US\", \"journal.window.home.narrative.coverage.batch\", [[\"batch_activities\", \"sample\"], [\"batch_segments\", \"sample\"], [\"processed_activities\", \"sample\"], [\"processed_segments\", \"sample\"]])",
+      "own_reader_call": "render(\"en-US\", \"journal.window.home.narrative.coverage.batch.counts\", [[\"activity_quantity\", 0], [\"batch_activities\", \"sample\"], [\"batch_segments\", \"sample\"], [\"processed_activities\", \"sample\"], [\"processed_segments\", \"sample\"], [\"segment_quantity\", 0]])",
       "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e6261746368",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e62617463682e636f756e7473",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "processed_segments",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "batch_segments",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "processed_activities",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "batch_activities",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "segment_quantity",
+            "type": "cardinal",
+            "value": 1
+          },
+          {
+            "name": "activity_quantity",
+            "type": "cardinal",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.home.narrative.coverage.batch.counts\u0004m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e62617463682e636f756e7473",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e62617463682e636f756e7473_plural",
+        "gettext_unsigned_quantity": 1,
+        "locale": "en-US",
+        "message_id": "journal.window.home.narrative.coverage.batch.counts",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e62617463682e636f756e7473",
+        "signed_quantity": 1
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "activity_quantity": 0,
+        "batch_activities": "sample",
+        "batch_segments": "sample",
+        "processed_activities": "sample",
+        "processed_segments": "sample",
+        "segment_quantity": 1
+      },
+      "locale": "en-US",
+      "logical_expected": "based on ⁨sample⁩ of ⁨sample⁩ processed segment and ⁨sample⁩ of ⁨sample⁩ activity entries in this batch.",
+      "message_id": "journal.window.home.narrative.coverage.batch.counts",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.home.narrative.coverage.batch.counts\", [[\"activity_quantity\", 0], [\"batch_activities\", \"sample\"], [\"batch_segments\", \"sample\"], [\"processed_activities\", \"sample\"], [\"processed_segments\", \"sample\"], [\"segment_quantity\", 1]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e62617463682e636f756e7473",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "processed_segments",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "batch_segments",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "processed_activities",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "batch_activities",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "segment_quantity",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "activity_quantity",
+            "type": "cardinal",
+            "value": 1
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.home.narrative.coverage.batch.counts\u0004m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e62617463682e636f756e7473",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e62617463682e636f756e7473_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.home.narrative.coverage.batch.counts",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e62617463682e636f756e7473",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "activity_quantity": 1,
+        "batch_activities": "sample",
+        "batch_segments": "sample",
+        "processed_activities": "sample",
+        "processed_segments": "sample",
+        "segment_quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "based on ⁨sample⁩ of ⁨sample⁩ processed segments and ⁨sample⁩ of ⁨sample⁩ activity entry in this batch.",
+      "message_id": "journal.window.home.narrative.coverage.batch.counts",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.home.narrative.coverage.batch.counts\", [[\"activity_quantity\", 1], [\"batch_activities\", \"sample\"], [\"batch_segments\", \"sample\"], [\"processed_activities\", \"sample\"], [\"processed_segments\", \"sample\"], [\"segment_quantity\", 0]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e62617463682e636f756e7473",
       "target": "classic"
     },
     {
@@ -389057,37 +389205,185 @@
             "name": "batch_activities",
             "type": "string",
             "value": "sample"
+          },
+          {
+            "name": "segment_quantity",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "activity_quantity",
+            "type": "cardinal",
+            "value": 0
           }
         ],
         "bundle": "journal-window",
         "entry": "render(locale, MessageId, named_args)",
         "enum_argument": null,
         "format_passes": 1,
-        "gettext_lookup_key": "journal.window.home.narrative.coverage.batch\u0004m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e6261746368",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e6261746368_plural",
-        "gettext_unsigned_quantity": null,
+        "gettext_lookup_key": "journal.window.home.narrative.coverage.batch.counts\u0004m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e62617463682e636f756e7473",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e62617463682e636f756e7473_plural",
+        "gettext_unsigned_quantity": 0,
         "locale": "en-US",
-        "message_id": "journal.window.home.narrative.coverage.batch",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e6261746368",
-        "signed_quantity": null
+        "message_id": "journal.window.home.narrative.coverage.batch.counts",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e62617463682e636f756e7473",
+        "signed_quantity": 0
       },
       "cardinal": "en",
       "expectation_kind": "resource-golden",
-      "expected": "based on ⁨sample⁩ of ⁨sample⁩ processed segments and ⁨sample⁩ of ⁨sample⁩ activity entries in this batch.",
+      "expected": "based on ⁨sample⁩ of ⁨sample⁩ processed segments and ⁨sample⁩ of ⁨sample⁩ ⁨activity entries⁩ in this batch.",
       "folder": null,
       "inputs": {
+        "activity_quantity": 0,
         "batch_activities": "sample",
         "batch_segments": "sample",
         "processed_activities": "sample",
-        "processed_segments": "sample"
+        "processed_segments": "sample",
+        "segment_quantity": 0
       },
       "locale": "en-US",
-      "logical_expected": "based on ⁨sample⁩ of ⁨sample⁩ processed segments and ⁨sample⁩ of ⁨sample⁩ activity entries in this batch.",
-      "message_id": "journal.window.home.narrative.coverage.batch",
+      "logical_expected": "based on ⁨sample⁩ of ⁨sample⁩ processed segments and ⁨sample⁩ of ⁨sample⁩ ⁨activity entries⁩ in this batch.",
+      "message_id": "journal.window.home.narrative.coverage.batch.counts",
       "own_reader": "rust-api",
-      "own_reader_call": "render(\"en-US\", \"journal.window.home.narrative.coverage.batch\", &[(\"batch_activities\", Value::String(\"sample\")), (\"batch_segments\", Value::String(\"sample\")), (\"processed_activities\", Value::String(\"sample\")), (\"processed_segments\", Value::String(\"sample\"))])",
+      "own_reader_call": "render(\"en-US\", \"journal.window.home.narrative.coverage.batch.counts\", &[(\"activity_quantity\", Value::Cardinal(0)), (\"batch_activities\", Value::String(\"sample\")), (\"batch_segments\", Value::String(\"sample\")), (\"processed_activities\", Value::String(\"sample\")), (\"processed_segments\", Value::String(\"sample\")), (\"segment_quantity\", Value::Cardinal(0))])",
       "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e6261746368",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e62617463682e636f756e7473",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "processed_segments",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "batch_segments",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "processed_activities",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "batch_activities",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "segment_quantity",
+            "type": "cardinal",
+            "value": 1
+          },
+          {
+            "name": "activity_quantity",
+            "type": "cardinal",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.home.narrative.coverage.batch.counts\u0004m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e62617463682e636f756e7473",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e62617463682e636f756e7473_plural",
+        "gettext_unsigned_quantity": 1,
+        "locale": "en-US",
+        "message_id": "journal.window.home.narrative.coverage.batch.counts",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e62617463682e636f756e7473",
+        "signed_quantity": 1
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "based on ⁨sample⁩ of ⁨sample⁩ processed segment and ⁨sample⁩ of ⁨sample⁩ ⁨activity entries⁩ in this batch.",
+      "folder": null,
+      "inputs": {
+        "activity_quantity": 0,
+        "batch_activities": "sample",
+        "batch_segments": "sample",
+        "processed_activities": "sample",
+        "processed_segments": "sample",
+        "segment_quantity": 1
+      },
+      "locale": "en-US",
+      "logical_expected": "based on ⁨sample⁩ of ⁨sample⁩ processed segment and ⁨sample⁩ of ⁨sample⁩ ⁨activity entries⁩ in this batch.",
+      "message_id": "journal.window.home.narrative.coverage.batch.counts",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.home.narrative.coverage.batch.counts\", &[(\"activity_quantity\", Value::Cardinal(0)), (\"batch_activities\", Value::String(\"sample\")), (\"batch_segments\", Value::String(\"sample\")), (\"processed_activities\", Value::String(\"sample\")), (\"processed_segments\", Value::String(\"sample\")), (\"segment_quantity\", Value::Cardinal(1))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e62617463682e636f756e7473",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "processed_segments",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "batch_segments",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "processed_activities",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "batch_activities",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "segment_quantity",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "activity_quantity",
+            "type": "cardinal",
+            "value": 1
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.home.narrative.coverage.batch.counts\u0004m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e62617463682e636f756e7473",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e62617463682e636f756e7473_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.home.narrative.coverage.batch.counts",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e62617463682e636f756e7473",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "based on ⁨sample⁩ of ⁨sample⁩ processed segments and ⁨sample⁩ of ⁨sample⁩ ⁨activity entry⁩ in this batch.",
+      "folder": null,
+      "inputs": {
+        "activity_quantity": 1,
+        "batch_activities": "sample",
+        "batch_segments": "sample",
+        "processed_activities": "sample",
+        "processed_segments": "sample",
+        "segment_quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "based on ⁨sample⁩ of ⁨sample⁩ processed segments and ⁨sample⁩ of ⁨sample⁩ ⁨activity entry⁩ in this batch.",
+      "message_id": "journal.window.home.narrative.coverage.batch.counts",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.home.narrative.coverage.batch.counts\", &[(\"activity_quantity\", Value::Cardinal(1)), (\"batch_activities\", Value::String(\"sample\")), (\"batch_segments\", Value::String(\"sample\")), (\"processed_activities\", Value::String(\"sample\")), (\"processed_segments\", Value::String(\"sample\")), (\"segment_quantity\", Value::Cardinal(0))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e62617463682e636f756e7473",
       "target": "rust"
     },
     {

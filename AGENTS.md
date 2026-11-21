@@ -475,7 +475,7 @@ or `JournalI18n.renderEnglishHtml`.
 Keep each sentence whole in one catalog message. Pass named arguments directly
 and describe them in the message's sidecar. Use Fluent cardinal selectors for
 plural forms. Check that the noun, verb and pronouns agree when the count is one.
-When two counts affect the wording, pass both quantities and select each form independently.
+When two counts affect the wording, [pass both quantities](core/crates/solstone-core-home-web/assets/home.js) and select each form independently.
 Keep punctuation and word order in the catalog. A render call
 supplies the whole sentence without joining rendered messages, appending
 literal fragments, or filling tokens afterward.

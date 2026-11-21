@@ -2723,7 +2723,16 @@ journal.window.home.held.segment.safety.check = segment processing is on hold fo
 
 journal.window.home.held.weekly.safety.check = weekly reflection is on hold for a safety check.
 
-journal.window.home.narrative.coverage.batch = based on { $processed_segments } of { $batch_segments } processed segments and { $processed_activities } of { $batch_activities } activity entries in this batch.
+journal.window.home.narrative.coverage.batch.counts = { $segment_quantity ->
+    [one] based on { $processed_segments } of { $batch_segments } processed segment and { $processed_activities } of { $batch_activities } { $activity_quantity ->
+        [one] activity entry
+       *[other] activity entries
+    } in this batch.
+   *[other] based on { $processed_segments } of { $batch_segments } processed segments and { $processed_activities } of { $batch_activities } { $activity_quantity ->
+        [one] activity entry
+       *[other] activity entries
+    } in this batch.
+}
 
 journal.window.home.narrative.coverage.clock = this is processing time, not when the activity happened.
 

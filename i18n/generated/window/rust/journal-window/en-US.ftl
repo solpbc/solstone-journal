@@ -7614,7 +7614,16 @@ m6a6f75726e616c2e77696e646f772e686f6d652e6c696e6b2e6c6162656c2e706169722e612e646
 
 m6a6f75726e616c2e77696e646f772e686f6d652e6c696e6b2e6c6162656c2e7472792e616761696e2e6f6e2e7468652e7468696e6b696e672e70616765 = try again on the thinking page →
 
-m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e6261746368 = based on { $processed_segments } of { $batch_segments } processed segments and { $processed_activities } of { $batch_activities } activity entries in this batch.
+m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e62617463682e636f756e7473 = { $i18nCategory ->
+    [one] based on { $processed_segments } of { $batch_segments } processed segment and { $processed_activities } of { $batch_activities } { $i18nCategory-activity_quantity ->
+        [one] activity entry
+       *[other] activity entries
+    } in this batch.
+   *[other] based on { $processed_segments } of { $batch_segments } processed segments and { $processed_activities } of { $batch_activities } { $i18nCategory-activity_quantity ->
+        [one] activity entry
+       *[other] activity entries
+    } in this batch.
+}
 
 m6a6f75726e616c2e77696e646f772e686f6d652e6e61727261746976652e636f7665726167652e636c6f636b = this is processing time, not when the activity happened.
 
