@@ -1816,10 +1816,82 @@ mod tests {
             assert_eq!(
                 detail["chunks"],
                 json!([
-                    {"type":"transcript","time":"10:13:05","timestamp":1785492785000_i64,"speaker":"Human","text":"Can you help?"}
+                    {"type":"transcript","time":(source == "chatgpt").then_some("10:13:05"),"timestamp":(source == "chatgpt").then_some(1785492785000_i64),"speaker":"Human","text":"Can you help?"}
                 ]),
                 "{stream}"
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn conversation_detail_uses_the_turns_own_send_time() {
+        let root = TempDir::new().unwrap();
+        write(
+            root.path(),
+            "config/journal.json",
+            br#"{"identity":{"timezone":"UTC"}}"#,
+        );
+        let key = "101300_300";
+        let stamp = "2026-07-31T00:00:00Z";
+        for (stream, rows, expected) in [
+            (
+                "import.claude",
+                vec![
+                    json!({"start":"00:00:00","source_ms":1785492785000_i64,"sent_at":stamp,"text":"Midnight"}),
+                    json!({"start":"00:00:01","source_ms":1785492785000_i64,"sent_at":null,"text":"Thread time only"}),
+                    json!({"start":"00:00:02","source_ms":1785492785000_i64,"sent_at":"invalid","text":"Damaged send time"}),
+                ],
+                vec![Some("00:00:00"), None, None],
+            ),
+            (
+                "import.text",
+                vec![
+                    json!({"start":"00:00:00","source":"import","text":"First cue"}),
+                    json!({"start":"00:00:05","source":"import","text":"Next cue"}),
+                ],
+                vec![Some("10:13:00"), Some("10:13:05")],
+            ),
+            (
+                "import.gemini",
+                vec![
+                    json!({"start":"00:00:05","source_ms":1785492785000_i64,"text":"Prompt"}),
+                    json!({"start":"00:00:05","source_ms":1785492785000_i64,"text":"Reply"}),
+                ],
+                vec![None, None],
+            ),
+        ] {
+            let data = std::iter::once(json!({"imported":{"id":"fixture"}}))
+                .chain(rows)
+                .map(|row| row.to_string())
+                .collect::<Vec<_>>()
+                .join("\n");
+            segment(
+                root.path(),
+                DAY,
+                stream,
+                key,
+                &[("conversation_transcript.jsonl", data.as_bytes())],
+            );
+            let (status, _, bytes) = response(
+                app(root.path()),
+                &format!("/app/transcripts/api/segment/{DAY}/{stream}/{key}"),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK);
+            let value: Value = serde_json::from_slice(&bytes).unwrap();
+            let chunks = value["chunks"].as_array().unwrap();
+            assert_eq!(chunks.len(), expected.len());
+            for (chunk, time) in chunks.iter().zip(expected) {
+                assert_eq!(chunk["type"], "transcript");
+                assert_eq!(chunk["time"].as_str(), time);
+                let expected_ms = time.map(|clock| {
+                    format!("2026-07-31T{clock}Z")
+                        .parse::<jiff::Timestamp>()
+                        .unwrap()
+                        .as_millisecond()
+                });
+                assert_eq!(chunk["timestamp"].as_i64(), expected_ms);
+            }
         }
     }
 

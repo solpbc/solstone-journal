@@ -3548,6 +3548,112 @@ mod tests {
         assert_save_tmp_clean(root.path());
     }
 
+    #[tokio::test]
+    async fn unhinted_meeting_uploads_keep_caption_and_chat_evidence() {
+        use solstone_core_generate::{ClientError, GenerateRequest, GenerateResponse};
+        use solstone_core_import::{TextImportOutcome, WireClient, process_transcript_with_wire};
+
+        struct Offline;
+        impl WireClient for Offline {
+            fn execute(&self, _: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
+                Err(ClientError::Io {
+                    primary: "offline test journal".into(),
+                    cleanup: None,
+                })
+            }
+        }
+
+        for (text, reason) in [
+            (
+                "WEBVTT\n\n00:01.000 --> 00:03.000\nA bell rings.\n",
+                "webvtt_cues",
+            ),
+            (
+                "10:07:10 From Ivo : Hold it.\n10:07:12 From Pia to Everyone : Holding.\n",
+                "zoom_chat",
+            ),
+        ] {
+            let root = TempDir::new().unwrap();
+            let boundary = "meeting";
+            let body = format!(
+                "--{boundary}\r\nContent-Disposition: form-data; name=\"client_item_id\"\r\n\r\n{reason}\r\n\
+                 --{boundary}\r\nContent-Disposition: form-data; name=\"area\"\r\n\r\nquick\r\n\
+                 --{boundary}\r\nContent-Disposition: form-data; name=\"context\"\r\n\r\n{{\"setting\":\"studio\",\"collection\":\"meetings\"}}\r\n\
+                 --{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"meeting.txt\"\r\nContent-Type: text/plain\r\n\r\n{text}\r\n--{boundary}--\r\n"
+            );
+            let response = crate::routes(root.path().to_path_buf())
+                .oneshot(multipart_save(body, boundary))
+                .await
+                .unwrap();
+            let (status, saved) = response_json(response).await;
+            assert_eq!(status, StatusCode::OK, "{saved}");
+            let id = saved["timestamp"].as_str().unwrap();
+            let meta = read_import_metadata(root.path(), id).unwrap();
+            assert_eq!(meta["source"], "text");
+            assert!(meta.get("source_hint").is_none_or(Value::is_null));
+            assert_eq!(meta["context"]["collection"], "meetings");
+            let path = Path::new(meta["file_path"].as_str().unwrap());
+            assert!(
+                path.canonicalize()
+                    .unwrap()
+                    .starts_with(root.path().canonicalize().unwrap())
+            );
+            assert_eq!(fs::read_to_string(path).unwrap(), text);
+
+            let mut command = Vec::new();
+            let started = start_with(
+                root.path(),
+                &json!({"path":path,"timestamp":id}),
+                |_, _, args| {
+                    command = args.to_vec();
+                    Ok(())
+                },
+                write_import_metadata,
+                |_, _, _, _, _, _| panic!("text belongs to the file importer"),
+                |_, _| {},
+                None,
+            );
+            assert_eq!(started.status(), StatusCode::OK);
+            assert_eq!(&command[..3], ["solstone", "journal", "importer"]);
+            let path = Path::new(&command[3]);
+            assert_eq!(Some(path), meta["file_path"].as_str().map(Path::new));
+            assert!(
+                command
+                    .windows(2)
+                    .any(|args| args == ["--setting", "studio"])
+            );
+            assert!(!command.iter().any(|arg| arg == "--source"));
+            let day = root.path().join("chronicle/20261120");
+            fs::create_dir_all(&day).unwrap();
+            let result = process_transcript_with_wire(
+                path,
+                &day,
+                "10:00:00",
+                id,
+                "import.text",
+                None,
+                meta["setting"].as_str(),
+                &Offline,
+                None,
+            );
+            let TextImportOutcome::Success(work) = result else {
+                panic!("{result:?}")
+            };
+            assert_eq!(work.created.len(), 1);
+            let bytes = fs::read_to_string(&work.created[0].path).unwrap();
+            let header: Value = serde_json::from_str(bytes.lines().next().unwrap()).unwrap();
+            assert_eq!(header["imported"]["id"], id);
+            assert_eq!(header["imported"]["setting"], "studio");
+            assert!(
+                header["imported"]["triage"]["reasons"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|v| v == reason)
+            );
+        }
+    }
+
     #[cfg(all(test, feature = "full-tests"))]
     #[tokio::test]
     async fn save_replays_same_second_same_name_without_replacing_staged_bytes() {

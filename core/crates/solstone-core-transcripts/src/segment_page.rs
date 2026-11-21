@@ -645,14 +645,8 @@ fn project_line(
         ContentResolution::Indexed(Family::AiChat) => {
             let produced = produce_chunks(Family::AiChat, &rel, line);
             let start = serde_json::from_str::<Value>(line).ok().and_then(|row| {
-                // Native exports may only know a thread or activity time.
-                // Their segment offset is then a filing coordinate. A legacy
-                // Claude or Gemini row cannot distinguish the two cases.
-                let stream = stream_name(segment_origin);
-                if row.get("sent_at").is_some_and(Value::is_null)
-                    || (row.get("sent_at").is_none()
-                        && matches!(stream, Some("import.claude" | "import.gemini")))
-                {
+                use solstone_core_format::content::conversation::{TurnTime, turn_time};
+                if turn_time(stream_name(segment_origin), row.as_object()?) == TurnTime::Unknown {
                     return None;
                 }
                 row.get("start")?.as_str().map(str::to_owned)

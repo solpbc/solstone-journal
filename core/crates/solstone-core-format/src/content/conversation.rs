@@ -12,6 +12,28 @@ use serde_json::Value;
 
 use super::{AdmittedCategory, IMPORT_KIND_FILENAME};
 
+/// Timing available for one imported conversation turn. Older chat writers
+/// sometimes used the thread or activity time to file both sides of an exchange.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TurnTime {
+    Sent(jiff::Timestamp),
+    Recorded,
+    Unknown,
+}
+
+pub fn turn_time(stream: Option<&str>, row: &super::JsonObject) -> TurnTime {
+    if let Some(sent) = row.get("sent_at") {
+        return sent
+            .as_str()
+            .and_then(|value| value.parse().ok())
+            .map_or(TurnTime::Unknown, TurnTime::Sent);
+    }
+    match stream {
+        Some("import.claude" | "import.gemini") => TurnTime::Unknown,
+        _ => TurnTime::Recorded,
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ConversationMedium {
     Written,

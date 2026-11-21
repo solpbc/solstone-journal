@@ -1058,13 +1058,16 @@ fn imported_conversation_turns<'a>(
         .and_then(|header| header.get("untimed"))
         .and_then(Value::as_bool)
         .unwrap_or_else(|| {
-            // Early text imports put every untimed line at zero and recorded
-            // no speaker or source instant. An explicit header wins.
+            // Older generic imports could file each untimed line at the same
+            // offset. A source instant, a timed-speaker layout, or distinct
+            // recorded offsets establishes timing independently of any clock value.
+            let first_offset = turns.clone().next().and_then(|row| row.get("start"));
             context.stream == "import.text"
                 && turns.clone().all(|row| {
-                    row.get("start").and_then(Value::as_str) == Some("00:00:00")
-                        && !row.contains_key("speaker")
-                        && !row.contains_key("source_ms")
+                    row.get("speaker").and_then(Value::as_str).is_none()
+                        && row.get("source_ms").and_then(Value::as_i64).is_none()
+                        && !row.contains_key("sent_at")
+                        && row.get("start") == first_offset
                 })
         });
     let segment_start = Timestamp::from_millisecond(day_timestamp(
@@ -1078,10 +1081,13 @@ fn imported_conversation_turns<'a>(
     turns.filter_map(move |row| {
         let text = row.get("text")?.as_str().filter(|text| !text.is_empty())?;
         let speaker = row.get("speaker").and_then(Value::as_str);
-        let timestamp = if untimed {
-            None
-        } else {
-            row.get("source_ms")
+        use solstone_core_format::content::conversation::{TurnTime, turn_time};
+        let timestamp = match turn_time(Some(context.stream), row) {
+            _ if untimed => None,
+            TurnTime::Unknown => None,
+            TurnTime::Sent(instant) => Some(instant),
+            TurnTime::Recorded => row
+                .get("source_ms")
                 .and_then(Value::as_i64)
                 .and_then(|millis| Timestamp::from_millisecond(millis).ok())
                 .or_else(|| {
@@ -1093,7 +1099,7 @@ fn imported_conversation_turns<'a>(
                     segment_start?
                         .checked_add(elapsed.duration_since(jiff::civil::Time::MIN))
                         .ok()
-                })
+                }),
         };
         let time = timestamp.map(|instant| {
             instant
