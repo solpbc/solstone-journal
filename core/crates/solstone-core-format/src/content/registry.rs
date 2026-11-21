@@ -254,6 +254,19 @@ pub fn segment_file_offers(
             offers.push(offer);
         }
     }
+    // Only registered conversation imports have a dashboard transcript view.
+    // The basename rules above still supply the legacy audio and talent views.
+    if reader == SegmentReader::Dashboard
+        && name == "conversation_transcript.jsonl"
+        && let Some(row) = actual
+        && row.format == FileFormat::Content(Family::AiChat)
+        && row.offered_to.contains(Reader::Dashboard)
+    {
+        offers.push(SegmentOffer {
+            format: row.format,
+            exception: None,
+        });
+    }
     // Placement, rather than a filename convention, identifies archive parts
     // for this reader. The caller obtained this fact from placement.json.
     if reader == SegmentReader::Dashboard && facts.archive_part {
@@ -420,6 +433,52 @@ mod tests {
                 row.pattern
             );
         }
+    }
+
+    #[test]
+    fn imported_conversation_adds_only_a_dashboard_segment_offer() {
+        let facts = FileFacts::default();
+        let chat = FileFormat::Content(Family::AiChat);
+        let audio = FileFormat::Raw(RawPerceptFamily::Audio);
+        for source in ["text", "chatgpt", "claude", "gemini"] {
+            let rel = format!("20260107/import.{source}/120000_60/conversation_transcript.jsonl");
+            assert_eq!(
+                super::super::classify(&rel),
+                ContentResolution::Indexed(Family::AiChat)
+            );
+            assert!(file_spec(&rel).unwrap().offered_to.contains(Reader::Search));
+            assert_eq!(
+                segment_file_offers(&rel, SegmentReader::Agent, facts),
+                [SegmentOffer {
+                    format: chat,
+                    exception: None
+                }]
+            );
+            assert_eq!(
+                segment_file_offers(&rel, SegmentReader::Talents, facts),
+                [SegmentOffer {
+                    format: audio,
+                    exception: Some(ReaderException::ChatAsSpeechForTalents)
+                }]
+            );
+            assert_eq!(
+                segment_file_offers(&rel, SegmentReader::Dashboard, facts),
+                [SegmentOffer {
+                    format: chat,
+                    exception: None
+                }]
+            );
+        }
+        let unregistered = "20260107/custom/120000_60/conversation_transcript.jsonl";
+        assert!(segment_file_offers(unregistered, SegmentReader::Dashboard, facts).is_empty());
+        let legacy = "20260107/import.claude/120000_60/imported_audio.jsonl";
+        assert_eq!(
+            segment_file_offers(legacy, SegmentReader::Dashboard, facts),
+            [SegmentOffer {
+                format: audio,
+                exception: None
+            }]
+        );
     }
 
     #[test]

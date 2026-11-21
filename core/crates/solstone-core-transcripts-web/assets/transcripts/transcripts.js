@@ -3905,6 +3905,7 @@
       const chunks = (data.chunks || []).filter(c => {
         if (browserOnlyView && c.type !== 'browser') return false;
         if (imageOnlyView && c.type !== 'image') return false;
+        if (c.type === 'transcript' && (!showAudio || !showScreen)) return false;
         if (c.type === 'audio' && !showAudio) return false;
         if (c.type === 'screen' && !showScreen) return false;
         if (c.type === 'browser' && !showBrowser) return false;
@@ -4020,12 +4021,15 @@
           html += `<div class="tr-entry-text">${renderAudioText(item)}</div>`;
           html += '</div></div>';
         } else if (item.type === 'markdown' || item.type === 'transcript') {
-          const timeStr = item.time || '';
-          const markdown = window.AppServices.renderMarkdown(item.markdown) || '';
-          html += `<div class="tr-entry tr-entry-transcript" data-idx="${idx}" data-type="${escapeHtml(item.type)}" data-timestamp="${item.timestamp}" role="listitem" tabindex="0">`;
+          const timeStr = escapeHtml(item.time || '');
+          const speaker = item.speaker ? `<strong>${escapeHtml(item.speaker)}:</strong> ` : '';
+          const text = item.type === 'transcript'
+            ? speaker + escapeHtml(item.text || '').replace(/\n/g, '<br>')
+            : window.AppServices.renderMarkdown(item.markdown) || '';
+          html += `<div class="tr-entry tr-entry-transcript" data-idx="${idx}" data-type="${escapeHtml(item.type)}" data-timestamp="${item.timestamp ?? ''}" role="listitem" tabindex="0">`;
           html += `<div class="tr-entry-time">${timeStr}</div>`;
           html += '<div class="tr-entry-content">';
-          html += `<div class="tr-entry-text">${markdown}</div>`;
+          html += `<div class="tr-entry-text">${text}</div>`;
           html += '</div></div>';
         } else if (item.type === 'calendar') {
           // A calendar note reads as plain text, one field per line.
