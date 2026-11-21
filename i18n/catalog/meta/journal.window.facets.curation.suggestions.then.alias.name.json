@@ -1,0 +1,21 @@
+{
+  "description": "Effect of accepting an alias suggestion. $new_name is the alias to add.",
+  "context": "Journal window. Effect of accepting an alias suggestion. $new_name is the alias to add.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "new_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a5d86752ae483c4d7c76d8942f23891a161eee5bb2688b6c610192151a672c3d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

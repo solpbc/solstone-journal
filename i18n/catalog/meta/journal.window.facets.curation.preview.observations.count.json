@@ -1,0 +1,30 @@
+{
+  "description": "Merge preview row. $count is the number for this effect.",
+  "context": "Journal window. Merge preview row. $count is the number for this effect.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "4a933c3bc7431457711711005e6d695ea1fc35868e72047fe5eb2ac7f7fc12cd",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Drawer summary counting other spoken lines.",
+  "context": "Journal window. Drawer summary counting other spoken lines.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "c71971fefdf7c60013cde084ebc88ce8afcbb54867178d73f406a811e2b7c681",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

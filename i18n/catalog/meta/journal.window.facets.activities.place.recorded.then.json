@@ -1,0 +1,25 @@
+{
+  "description": "Label of the recorded place link. $device_name is the recorded device, and $place is its displayed location.",
+  "context": "Journal window. Label of the recorded place link. $device_name is the recorded device, and $place is its displayed location.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "device_name",
+      "type": "string"
+    },
+    {
+      "name": "place",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2e019aea03b83da30d75ba2502f36620c6af774cff510fd23110fa85e69bb7bb",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

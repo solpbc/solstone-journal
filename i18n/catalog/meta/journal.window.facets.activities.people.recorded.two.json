@@ -1,0 +1,25 @@
+{
+  "description": "Activity participant label for two people. Names are recorded values.",
+  "context": "Journal window. Activity participant label for two people. Names are recorded values.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "first_person",
+      "type": "string"
+    },
+    {
+      "name": "second_person",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "52855820abb9dd0061b1e22e4275d6cffc70c3930ffa6580dabd8f4219245c64",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

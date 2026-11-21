@@ -6,10 +6,6 @@
 
   // --- owner-facing strings ---
   const DRAWER_LABEL = window.JournalI18n.render('journal.window.facets.curation.evidence.drawer.title');
-  const PIECE_SINGULAR = window.JournalI18n.render('journal.window.facets.curation.evidence.piece.one');
-  const PIECE_PLURAL = window.JournalI18n.render('journal.window.facets.curation.evidence.piece.many');
-  const COUNT_SHOWING = window.JournalI18n.render('journal.window.facets.curation.evidence.part.showing');
-  const COUNT_OF = window.JournalI18n.render('journal.window.facets.curation.evidence.part.of');
   const META_SEPARATOR = ' · ';
   // --- end owner-facing strings ---
 
@@ -28,13 +24,16 @@
   function formatEvidenceLine(displayedCount, totalCount) {
     // G2-B08: a bare "3 of 29" beside the word "evidence" reads as an id or a
     // rank. Say what the two numbers are.
+    const total = window.JournalI18n.cardinalQuantity(totalCount);
     if (displayedCount < totalCount) {
-      return `${COUNT_SHOWING} ${displayedCount} ${COUNT_OF} ${totalCount}`;
+      return window.JournalI18n.render('journal.window.facets.curation.evidence.showing.partial', [
+        ['shown_quantity', window.JournalI18n.cardinalQuantity(displayedCount)], ['shown', String(displayedCount)],
+        ['total_quantity', total], ['total', String(totalCount)],
+      ]);
     }
-    if (totalCount === 1) {
-      return `1 ${PIECE_SINGULAR}`;
-    }
-    return `${totalCount} ${PIECE_PLURAL}`;
+    return window.JournalI18n.render('journal.window.facets.curation.evidence.total.pieces', [
+      ['quantity', total], ['count', String(totalCount)],
+    ]);
   }
 
   function sampleFields(sample) {

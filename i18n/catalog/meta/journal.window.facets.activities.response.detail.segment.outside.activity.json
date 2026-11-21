@@ -1,0 +1,21 @@
+{
+  "description": "The technical stream and segment identifier that the activity does not include.",
+  "context": "Journal window. The technical stream and segment identifier that the activity does not include.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "segment_path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9cdfe9489a0b9ac401db794ea5107dfef1d683ddfb5924376c3986644b430f2e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

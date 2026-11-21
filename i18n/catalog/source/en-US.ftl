@@ -1576,6 +1576,309 @@ journal.window.entities.voice.sample.sentence = sentence { $sentence_id }
 
 journal.window.entities.window.explanation.look.like.an.id = look like an ID
 
+journal.window.facets.activities.calendar.scheduled.title = on your calendar then: { $meeting_title }
+
+journal.window.facets.activities.empty.facet.day = nothing in { $facet_name } on this day
+
+journal.window.facets.activities.evidence.duration.minutes = { $quantity ->
+        [one] { $count } min
+       *[other] { $count } min
+    }
+
+journal.window.facets.activities.evidence.segments.mixed = { $quantity ->
+        [one] 1 segment from more than one source, { $time_range }
+       *[other] { $count } segments from more than one source, { $time_range }
+    }
+
+journal.window.facets.activities.evidence.segments.named = { $quantity ->
+        [one] 1 segment from { $stream_name }, { $time_range }
+       *[other] { $count } segments from { $stream_name }, { $time_range }
+    }
+
+journal.window.facets.activities.evidence.segments.unknown = { $quantity ->
+        [one] 1 segment from an unknown source, { $time_range }
+       *[other] { $count } segments from an unknown source, { $time_range }
+    }
+
+journal.window.facets.activities.evidence.show.all.count = { $quantity ->
+        [one] show all { $count } segments
+       *[other] show all { $count } segments
+    }
+
+journal.window.facets.activities.hidden.footer.count = { $quantity ->
+        [one] { $count } hidden on this day
+       *[other] { $count } hidden on this day
+    }
+
+journal.window.facets.activities.hidden.showing.count = { $quantity ->
+        [one] showing { $count } hidden
+       *[other] showing { $count } hidden
+    }
+
+journal.window.facets.activities.history.changed.fields = { $field_group ->
+        *[title] you changed the title
+         [description] you changed the description
+         [details] you changed your account of it
+         [title-description] you changed the title and description
+         [title-details] you changed the title and your account of it
+         [description-details] you changed the description and your account of it
+         [title-description-details] you changed the title, the description and your account of it
+    }
+
+journal.window.facets.activities.history.changed.unclassified = you changed{ $slot1 }
+
+journal.window.facets.activities.history.corrected.lines = { $quantity ->
+        [one] you fixed who said 1 line
+       *[other] you fixed who said { $count } lines
+    }
+
+journal.window.facets.activities.history.found.stream = found in segments from { $stream_name }
+
+journal.window.facets.activities.history.remove.description = remove: { $recorded_change }
+
+journal.window.facets.activities.history.suggested.agent = suggested by { $agent }
+
+journal.window.facets.activities.line.correction.help = your answer is for the lines you tick, not their voices. to teach your journal a voice, or tidy up the voices it knows, go to { $speakers_start }speakers{ $speakers_end }.
+
+journal.window.facets.activities.line.drawer.count = { $quantity ->
+        [one] 1 line
+       *[other] { $count } lines
+    }
+
+journal.window.facets.activities.line.play.time = play the line at { $time }
+
+journal.window.facets.activities.line.question.selected = { $quantity ->
+        [one] who said the line you ticked?
+       *[other] who said the { $count } lines you ticked?
+    }
+
+journal.window.facets.activities.people.recorded.more = { $quantity ->
+        [one] with { $first_person }, { $second_person } and 1 other
+       *[other] with { $first_person }, { $second_person } and { $others } others
+    }
+
+journal.window.facets.activities.people.recorded.one = with { $person }
+
+journal.window.facets.activities.people.recorded.two = with { $first_person } and { $second_person }
+
+journal.window.facets.activities.place.recorded.then = { $device_name } was { $place } then
+
+journal.window.facets.activities.response.detail.disallowed.fields = patch contains disallowed fields: { $field_list }
+
+journal.window.facets.activities.response.detail.previous.answer.unreadable = the answer this edit replaced can't be read: { $read_error }
+
+journal.window.facets.activities.response.detail.segment.outside.activity = { $segment_path } isn't a segment of this activity
+
+journal.window.facets.activities.scope.selected.facet = showing { $facet_name }
+
+journal.window.facets.activities.timeline.item.hidden = { $time_range }, { $facet_name }, hidden: { $activity_title }
+
+journal.window.facets.activities.timeline.item.hidden.source = { $time_range }, { $facet_name }, { $stream_name }, hidden: { $activity_title }
+
+journal.window.facets.activities.timeline.item.visible = { $time_range }, { $facet_name }: { $activity_title }
+
+journal.window.facets.activities.timeline.item.visible.source = { $time_range }, { $facet_name }, { $stream_name }: { $activity_title }
+
+journal.window.facets.awareness.response.detail.multiple.import.answers = provide exactly one of { $slot1 }; got { $answer_list }
+
+journal.window.facets.awareness.response.detail.unknown.section = no awareness section named '{ $section_name }'
+
+journal.window.facets.awareness.response.detail.unreadable.settings = your settings file at { $settings_path } couldn't be read. your settings were not changed. repair the file or restore { $slot3 } from a backup, then try again.
+
+journal.window.facets.curation.ambiguity.choose.name = choose { $candidate_name }
+
+journal.window.facets.curation.ambiguity.member.occurrences = { $quantity ->
+        [one] { $count } occurrences
+       *[other] { $count } occurrences
+    }
+
+journal.window.facets.curation.ambiguity.occurrences = { $quantity ->
+        [one] { $count } occurrence
+       *[other] { $count } occurrences
+    }
+
+journal.window.facets.curation.ambiguity.question = which entry matches "{ $ambiguous_name }"?
+
+journal.window.facets.curation.evidence.showing.partial = { $shown_quantity ->
+        [one] showing { $shown } of { $total_quantity ->
+            [one] { $total }
+           *[other] { $total }
+        }
+       *[other] showing { $shown } of { $total_quantity ->
+            [one] { $total }
+           *[other] { $total }
+        }
+    }
+
+journal.window.facets.curation.evidence.total.pieces = { $quantity ->
+        [one] 1 piece
+       *[other] { $count } pieces
+    }
+
+journal.window.facets.curation.facet.additional.names = also seen as { $alias_list }.
+
+journal.window.facets.curation.facet.create.question = journal activity doesn't fit your facets well. create the "{ $facet_name }" facet?
+
+journal.window.facets.curation.list.items = { $preceding_items } and { $last_item }
+
+journal.window.facets.curation.preview.activities.count = { $quantity ->
+        [one] activity records changed: { $count }
+       *[other] activity records changed: { $count }
+    }
+
+journal.window.facets.curation.preview.aliases = aliases added: { $aliases }
+
+journal.window.facets.curation.preview.emails.count = { $quantity ->
+        [one] emails added: { $count }
+       *[other] emails added: { $count }
+    }
+
+journal.window.facets.curation.preview.facet.links = { $moved_quantity ->
+        [one] facet links: { $moved } moved, { $merged_quantity ->
+            [one] { $merged } merged
+           *[other] { $merged } merged
+        }
+       *[other] facet links: { $moved } moved, { $merged_quantity ->
+            [one] { $merged } merged
+           *[other] { $merged } merged
+        }
+    }
+
+journal.window.facets.curation.preview.notes.count = { $quantity ->
+        [one] notes under the name being merged: { $count }
+       *[other] notes under the name being merged: { $count }
+    }
+
+journal.window.facets.curation.preview.observations.count = { $quantity ->
+        [one] notes moved: { $count }
+       *[other] notes moved: { $count }
+    }
+
+journal.window.facets.curation.preview.speaker.labels.count = { $quantity ->
+        [one] speaker labels changed: { $count }
+       *[other] speaker labels changed: { $count }
+    }
+
+journal.window.facets.curation.preview.speaker.segments = { $labels_quantity ->
+        [one] speaker labels updated: { $labels } labels, { $corrections_quantity ->
+            [one] { $corrections } corrections
+           *[other] { $corrections } corrections
+        }
+       *[other] speaker labels updated: { $labels } labels, { $corrections_quantity ->
+            [one] { $corrections } corrections
+           *[other] { $corrections } corrections
+        }
+    }
+
+journal.window.facets.curation.preview.voice.samples = { $added_quantity ->
+        [one] voice samples moved: { $added } added, { $total_quantity ->
+            [one] { $total } total
+           *[other] { $total } total
+        }
+       *[other] voice samples moved: { $added } added, { $total_quantity ->
+            [one] { $total } total
+           *[other] { $total } total
+        }
+    }
+
+journal.window.facets.curation.response.detail.missing.field = Missing { $field_name }
+
+journal.window.facets.curation.response.detail.unknown.group = unknown curation group: { $group }
+
+journal.window.facets.curation.response.detail.unreadable.settings = your settings file at { $settings_path } couldn't be read. your settings were not changed. repair the file or restore { $slot3 } from a backup, then try again.
+
+journal.window.facets.curation.review.total = { $quantity ->
+        [one] { $count } suggestions to review. choose a group to begin.
+       *[other] { $count } suggestions to review. choose a group to begin.
+    }
+
+journal.window.facets.curation.speaker.merge.question = "{ $source_name }" and "{ $target_name }" may be the same speaker. merge them?
+
+journal.window.facets.curation.suggestions.account.attributed.agent = your account, as { $agent_name } wrote it
+
+journal.window.facets.curation.suggestions.basis.agent.journal.shows = { $agent_name } says it noticed this in your journal
+
+journal.window.facets.curation.suggestions.basis.agent.my.own.work = { $agent_name } says it knows this firsthand
+
+journal.window.facets.curation.suggestions.basis.agent.outside.source = { $agent_name } says it found this outside your journal
+
+journal.window.facets.curation.suggestions.basis.agent.owner.said = { $agent_name } says you told it
+
+journal.window.facets.curation.suggestions.filter.empty.agent = nothing from { $agent_name } is waiting.
+
+journal.window.facets.curation.suggestions.filter.only.agent = only from { $agent_name }.
+
+journal.window.facets.curation.suggestions.lines.assigned.named = { $quantity ->
+        [one] this line was said by { $speaker }
+       *[other] these { $count } lines were said by { $speaker }
+    }
+
+journal.window.facets.curation.suggestions.lines.assigned.owner = { $quantity ->
+        [one] this line was said by { $speaker_start }you{ $speaker_end }
+       *[other] these { $count } lines were said by { $speaker_start }you{ $speaker_end }
+    }
+
+journal.window.facets.curation.suggestions.lines.assigned.unknown = { $quantity ->
+        [one] this line was said by { $speaker_start }someone you don't know{ $speaker_end }
+       *[other] these { $count } lines were said by { $speaker_start }someone you don't know{ $speaker_end }
+    }
+
+journal.window.facets.curation.suggestions.name.alias = { $former_name }, also known as { $new_name }
+
+journal.window.facets.curation.suggestions.name.change = { $former_name } → { $new_name }
+
+journal.window.facets.curation.suggestions.open.person.name = open { $person_name }
+
+journal.window.facets.curation.suggestions.person.facet.membership = in { $facet_list }
+
+journal.window.facets.curation.suggestions.person.notes.count = { $quantity ->
+        [one] 1 note
+       *[other] { $count } notes
+    }
+
+journal.window.facets.curation.suggestions.receipt.accepted.alias = accepted { $agent_name }'s suggestion. { $former_name } is also called { $new_name } now.
+
+journal.window.facets.curation.suggestions.receipt.accepted.ask = accepted { $agent_name }'s suggestion. your journal will think about this again.
+
+journal.window.facets.curation.suggestions.receipt.accepted.ask.unconfirmed = accepted { $agent_name }'s suggestion and saved it, but your journal couldn't confirm that it will think about it again.
+
+journal.window.facets.curation.suggestions.receipt.accepted.merged.people = accepted { $agent_name }'s suggestion. { $merged_name } and { $kept_name } are one person now, called { $kept_name }.
+
+journal.window.facets.curation.suggestions.receipt.accepted.partial = accepted { $agent_name }'s suggestion for this activity. some other activities couldn't be updated.
+
+journal.window.facets.curation.suggestions.receipt.accepted.rename = accepted { $agent_name }'s suggestion. { $former_name } is now { $new_name }.
+
+journal.window.facets.curation.suggestions.receipt.accepted.simple = accepted { $agent_name }'s suggestion.
+
+journal.window.facets.curation.suggestions.receipt.dismissed.agent = dismissed. if { $agent_name } suggests this again, { $agent_name } is told you already said no.
+
+journal.window.facets.curation.suggestions.receipt.undone.alias = undone. { $new_name } is no longer another name for { $former_name }.
+
+journal.window.facets.curation.suggestions.receipt.undone.rename = undone. { $new_name } is { $former_name } again.
+
+journal.window.facets.curation.suggestions.stale.changed.after.agent = this changed after { $agent_name } suggested it, so there's nothing to accept. here's how it stands now:
+
+journal.window.facets.curation.suggestions.stale.pair.changed.after.agent = { $first_name } or { $second_name } changed after { $agent_name } suggested this, so there's nothing to accept.
+
+journal.window.facets.curation.suggestions.stale.pair.journal.candidate = your journal is already asking whether { $first_name } and { $second_name } are the same person. you can answer it in possible duplicates.
+
+journal.window.facets.curation.suggestions.stale.pair.journal.question = your journal has its own question about { $first_name } and { $second_name }, so there's nothing to accept here.
+
+journal.window.facets.curation.suggestions.stale.pair.owner.answered = you already kept { $first_name } and { $second_name } separate, so there's nothing to accept.
+
+journal.window.facets.curation.suggestions.then.account.days = your journal thinks about this activity again with your account, and about { $affected_days }.
+
+journal.window.facets.curation.suggestions.then.activities.days = { $quantity ->
+        [one] your journal thinks about this activity again, and about { $affected_days }.
+       *[other] your journal thinks about these { $count } activities again, and about { $affected_days }.
+    }
+
+journal.window.facets.curation.suggestions.then.alias.name = your journal also calls this person { $new_name }. the earlier version stays in the version history, where you can restore it.
+
+journal.window.facets.curation.suggestions.then.merge.people = your journal keeps one person called { $kept_name }, also called { $merged_name }, and moves everything attached to { $merged_name } onto them. a merge can't be undone.
+
+journal.window.facets.curation.suggestions.then.retain.previous.name = your journal calls this person { $new_name } from now on. { $former_name } stays in the version history, where you can restore it.
+
 journal.window.handoff.spl.relay.rejected.with.status = the relay couldn't finish setting up your private network (error { $http_status }).
 
 journal.window.health.backlog.catching.up.day = { $day } is still catching up →
@@ -7735,8 +8038,6 @@ journal.window.facets.activities.copy.action.unhide = unhide
 
 journal.window.facets.activities.copy.back = back
 
-journal.window.facets.activities.copy.calendar.then = on your calendar then: { $slot1 }
-
 journal.window.facets.activities.copy.cancel = cancel
 
 journal.window.facets.activities.copy.correct.title = that's not right
@@ -7749,8 +8050,6 @@ journal.window.facets.activities.copy.corrected.by.you = corrected by you
 
 journal.window.facets.activities.copy.cue.edited = edited by you
 
-journal.window.facets.activities.copy.empty.facet.heading = nothing in { $slot1 } on this day
-
 journal.window.facets.activities.copy.empty.facet.show.all = show all facets
 
 journal.window.facets.activities.copy.empty.today.heading = nothing yet today
@@ -7758,12 +8057,6 @@ journal.window.facets.activities.copy.empty.today.heading = nothing yet today
 journal.window.facets.activities.copy.evidence.open = open in transcripts ›
 
 journal.window.facets.activities.copy.evidence.open.narrow = open ›
-
-journal.window.facets.activities.copy.evidence.show.all = show all { $slot1 } segments
-
-journal.window.facets.activities.copy.fields.description = the description
-
-journal.window.facets.activities.copy.fields.title = the title
 
 journal.window.facets.activities.copy.heading.accounts = what recorded it
 
@@ -7773,25 +8066,13 @@ journal.window.facets.activities.copy.heading.history = history
 
 journal.window.facets.activities.copy.heading.summary = summary
 
-journal.window.facets.activities.copy.hidden.footer = { $slot1 } hidden on this day
-
 journal.window.facets.activities.copy.hidden.outline = hidden
-
-journal.window.facets.activities.copy.history.found = found in segments from { $slot1 }
 
 journal.window.facets.activities.copy.history.remove = remove
 
-journal.window.facets.activities.copy.history.remove.label = remove: { $slot1 }
-
 journal.window.facets.activities.copy.history.removed = removed
 
-journal.window.facets.activities.copy.history.suggested.by = suggested by { $slot1 }
-
-journal.window.facets.activities.copy.history.you.changed = you changed { $slot1 }
-
 journal.window.facets.activities.copy.history.you.hid = you hid it
-
-journal.window.facets.activities.copy.history.you.lines.many = you fixed who said { $slot1 } lines
 
 journal.window.facets.activities.copy.history.you.unhid = you unhid it
 
@@ -7801,23 +8082,11 @@ journal.window.facets.activities.copy.label.description = description
 
 journal.window.facets.activities.copy.label.title = title
 
-journal.window.facets.activities.copy.line.play.at = play the line at { $slot1 }
-
-journal.window.facets.activities.copy.lines.count = { $slot1 } lines
-
-journal.window.facets.activities.copy.lines.count.one = 1 line
-
 journal.window.facets.activities.copy.lines.loading = finding the spoken lines…
 
 journal.window.facets.activities.copy.lines.only = these lines only
 
-journal.window.facets.activities.copy.lines.only.body = your answer is for the lines you tick, not their voices. to teach your journal a voice, or tidy up the voices it knows, go to { $slot1 }.
-
-journal.window.facets.activities.copy.lines.only.link = speakers
-
 journal.window.facets.activities.copy.lines.others = other spoken lines
-
-journal.window.facets.activities.copy.lines.question.n = who said the { $slot1 } lines you ticked?
 
 journal.window.facets.activities.copy.load.error = couldn't load activities
 
@@ -7827,17 +8096,7 @@ journal.window.facets.activities.copy.now = now
 
 journal.window.facets.activities.copy.people.loading = loading the people in your journal…
 
-journal.window.facets.activities.copy.people.many = with { $slot1 }, { $slot2 } and { $slot3 } others
-
-journal.window.facets.activities.copy.people.many.one = with { $slot1 }, { $slot2 } and 1 other
-
-journal.window.facets.activities.copy.people.one = with { $slot1 }
-
-journal.window.facets.activities.copy.people.two = with { $slot1 } and { $slot2 }
-
 journal.window.facets.activities.copy.person.search = find a person
-
-journal.window.facets.activities.copy.place.then = { $slot1 } was { $slot2 } then
 
 journal.window.facets.activities.copy.reason.other = hidden
 
@@ -7849,23 +8108,11 @@ journal.window.facets.activities.copy.scope.all = showing all facets
 
 journal.window.facets.activities.copy.scope.all.option = all facets
 
-journal.window.facets.activities.copy.scope.facet = showing { $slot1 }
-
-journal.window.facets.activities.copy.segment.minutes = { $slot1 } min
-
-journal.window.facets.activities.copy.segments.many = { $slot1 } segments from { $slot2 }, { $slot3 }
-
-journal.window.facets.activities.copy.segments.one = 1 segment from { $slot1 }, { $slot2 }
-
 journal.window.facets.activities.copy.sheet.close = close
 
 journal.window.facets.activities.copy.show.hidden = show hidden
 
-journal.window.facets.activities.copy.showing.hidden = showing { $slot1 } hidden
-
 journal.window.facets.activities.copy.source.unknown = source unknown
-
-journal.window.facets.activities.copy.source.unknown.phrase = an unknown source
 
 journal.window.facets.activities.copy.speaker.me = me
 
@@ -7937,8 +8184,6 @@ journal.window.facets.activities.response.error.detail.lines.must.be.a.list.of =
 
 journal.window.facets.activities.response.error.detail.only.a.record.in.a.group = only a record in a group of two or more can be separated
 
-journal.window.facets.activities.response.error.detail.patch.contains.disallowed.fields.value = patch contains disallowed fields:{ $slot1 }{ $value }
-
 journal.window.facets.activities.response.error.detail.patch.must.be.a.non.empty = patch must be a non-empty object
 
 journal.window.facets.activities.response.error.detail.patch.must.not.be.empty = patch must not be empty
@@ -7957,11 +8202,7 @@ journal.window.facets.activities.response.error.detail.source.must.be.user = sou
 
 journal.window.facets.activities.response.error.detail.speaker.is.kind.owner.kind.person = speaker is { $slot1 }, { $slot2 } or { $slot3 }
 
-journal.window.facets.activities.response.error.detail.the.answer.this.edit.replaced.can = the answer this edit replaced can't be read:{ $slot1 }{ $value }
-
 journal.window.facets.activities.response.error.detail.title.must.not.be.empty = title must not be empty
-
-journal.window.facets.activities.response.error.detail.value.isn.t.a.segment.of = { $value }{ $slot1 }isn't a segment of this activity
 
 journal.window.facets.activities.response.error.message.activities.couldn.t.be.updated.right = activities couldn't be updated right now because they were busy. try again in a moment.
 
@@ -8055,15 +8296,7 @@ journal.window.facets.activities.window.explanation.that.changed.since.it.was.sh
 
 journal.window.facets.activities.window.explanation.that.person.can.t.be.chosen = that person can't be chosen. pick someone else, or someone you don't know.
 
-journal.window.facets.activities.window.explanation.the.description.and.your.account.of = the description and your account of it
-
 journal.window.facets.activities.window.explanation.the.journal.adds.activities.as.it = the journal adds activities as it works through what you've shared.
-
-journal.window.facets.activities.window.explanation.the.title.and.description = the title and description
-
-journal.window.facets.activities.window.explanation.the.title.and.your.account.of = the title and your account of it
-
-journal.window.facets.activities.window.explanation.the.title.the.description.and.your = the title, the description and your account of it
 
 journal.window.facets.activities.window.explanation.these.lines.can.t.take.an = these lines can't take an answer about who said them. you can tell your journal what happened instead.
 
@@ -8079,13 +8312,9 @@ journal.window.facets.activities.window.explanation.unhide.the.day.on.the.body =
 
 journal.window.facets.activities.window.explanation.what.it.s.based.on = what it's based on
 
-journal.window.facets.activities.window.explanation.who.said.the.line.you.ticked = who said the line you ticked?
-
 journal.window.facets.activities.window.explanation.who.said.the.lines.you.ticked = who said the lines you ticked?
 
 journal.window.facets.activities.window.explanation.yes.it.was.playing = yes, it was playing
-
-journal.window.facets.activities.window.explanation.you.fixed.who.said.line = you fixed who said 1 line
 
 journal.window.facets.activities.window.explanation.you.hid.this.day.s.body = you hid this day's body data
 
@@ -8103,13 +8332,9 @@ journal.window.facets.activities.window.explanation.your.journal.will.think.this
 
 journal.window.facets.awareness.response.error.detail.kind.is.required = kind is required
 
-journal.window.facets.awareness.response.error.detail.no.awareness.section.named.value = no awareness section named '{ $value }'
-
 journal.window.facets.awareness.response.error.detail.no.request.body = no request body
 
 journal.window.facets.awareness.response.error.detail.request.body.must.be.a.json = request body must be a { $slot1 } object
-
-journal.window.facets.awareness.response.error.detail.your.settings.file.at.value.couldn = your settings file at{ $slot1 }{ $value }{ $slot2 }couldn't be read. your settings were not changed. repair the file or restore { $slot3 } from a backup, then try again.
 
 journal.window.facets.awareness.response.error.message.a.required.field.is.missing = a required field is missing.
 
@@ -8131,8 +8356,6 @@ journal.window.facets.awareness.response.imports.busy.detail = imports are busy;
 
 journal.window.facets.awareness.response.one.import.answer = provide exactly one of { $slot1 }
 
-journal.window.facets.awareness.response.too.many.import.answers = provide exactly one of { $slot1 }; got{ $slot2 }{ $value }
-
 journal.window.facets.curation.button.label.try.again = try again
 
 journal.window.facets.curation.disclosure.label.individual.questions.and.sources = individual questions and sources
@@ -8144,14 +8367,6 @@ journal.window.facets.curation.disclosure.label.source.identifiers = source iden
 journal.window.facets.curation.disclosure.label.technical.details = technical details
 
 journal.window.facets.curation.evidence.drawer.title = evidence
-
-journal.window.facets.curation.evidence.part.of = of
-
-journal.window.facets.curation.evidence.part.showing = showing
-
-journal.window.facets.curation.evidence.piece.many = pieces
-
-journal.window.facets.curation.evidence.piece.one = piece
 
 journal.window.facets.curation.placeholder.this.is.a.speaker.label.not = this is a speaker label, not a name
 
@@ -8283,10 +8498,6 @@ journal.window.facets.curation.response.error.detail.key.does.not.match.anchor.a
 
 journal.window.facets.curation.response.error.detail.key.does.not.match.source.id = key does not match { $slot1 }
 
-journal.window.facets.curation.response.error.detail.missing.value = Missing{ $slot1 }{ $value }
-
-journal.window.facets.curation.response.error.detail.your.settings.file.at.value.couldn = your settings file at{ $slot1 }{ $value }{ $slot2 }couldn't be read. your settings were not changed. repair the file or restore { $slot3 } from a backup, then try again.
-
 journal.window.facets.curation.response.error.message.a.required.field.is.missing = a required field is missing.
 
 journal.window.facets.curation.response.error.message.one.of.those.values.couldn.t = one of those values couldn't be used.
@@ -8329,57 +8540,17 @@ journal.window.facets.curation.suggestion.display.text.facet.suggestions = facet
 
 journal.window.facets.curation.suggestion.display.text.names.to.clarify = names to clarify
 
-journal.window.facets.curation.suggestion.display.text.occurrence = occurrence
-
-journal.window.facets.curation.suggestion.display.text.occurrences = occurrences
-
 journal.window.facets.curation.suggestion.display.text.possible.duplicate.voices = possible duplicate voices
 
 journal.window.facets.curation.suggestion.display.text.show.more = show more
 
 journal.window.facets.curation.suggestion.display.text.this.suggestion.or.one.of.its = this suggestion or one of its matches is no longer available. refresh suggestions.
 
-journal.window.facets.curation.suggestion.display.text.value1.and.value2 = { $value1 }{ $slot1 }and{ $slot2 }{ $value2 }
-
-journal.window.facets.curation.suggestion.display.text.value1.value2.added.value3.total = { $value1 }:{ $slot1 }{ $value2 }{ $slot2 }added,{ $slot3 }{ $value3 }{ $slot4 }total
-
-journal.window.facets.curation.suggestion.display.text.value1.value2.labels.value3.corrections = { $value1 }:{ $slot1 }{ $value2 }{ $slot2 }labels,{ $slot3 }{ $value3 }{ $slot4 }corrections
-
-journal.window.facets.curation.suggestion.display.text.value1.value2.moved.value3.merged = { $value1 }:{ $slot1 }{ $value2 }{ $slot2 }moved,{ $slot3 }{ $value3 }{ $slot4 }merged
-
 journal.window.facets.curation.suggestions.accept = accept
-
-journal.window.facets.curation.suggestions.accepted = accepted { $slot1 }'s suggestion. your journal will think about this again.
-
-journal.window.facets.curation.suggestions.accepted.also.known.as = accepted { $slot1 }'s suggestion. { $slot2 } is also called { $slot3 } now.
-
-journal.window.facets.curation.suggestions.accepted.not.asked = accepted { $slot1 }'s suggestion and saved it, but your journal couldn't confirm that it will think about it again.
-
-journal.window.facets.curation.suggestions.accepted.partial = accepted { $slot1 }'s suggestion for this activity. some other activities couldn't be updated.
-
-journal.window.facets.curation.suggestions.accepted.plain = accepted { $slot1 }'s suggestion.
-
-journal.window.facets.curation.suggestions.accepted.rename = accepted { $slot1 }'s suggestion. { $slot2 } is now { $slot3 }.
-
-journal.window.facets.curation.suggestions.accepted.same.person = accepted { $slot1 }'s suggestion. { $slot2 } and { $slot3 } are one person now, called { $slot4 }.
-
-journal.window.facets.curation.suggestions.account.as.written = your account, as { $slot1 } wrote it
-
-journal.window.facets.curation.suggestions.also.known.as = { $slot1 }, also known as { $slot2 }
-
-journal.window.facets.curation.suggestions.basis.journal.shows = { $slot1 } says it noticed this in your journal
-
-journal.window.facets.curation.suggestions.basis.my.own.work = { $slot1 } says it knows this firsthand
-
-journal.window.facets.curation.suggestions.basis.outside.source = { $slot1 } says it found this outside your journal
-
-journal.window.facets.curation.suggestions.basis.owner.said = { $slot1 } says you told it
 
 journal.window.facets.curation.suggestions.cancel = cancel
 
 journal.window.facets.curation.suggestions.dismiss = dismiss
-
-journal.window.facets.curation.suggestions.dismissed = dismissed. if { $slot1 } suggests this again, { $slot2 } is told you already said no.
 
 journal.window.facets.curation.suggestions.earlier.accepted = you accepted it
 
@@ -8409,23 +8580,11 @@ journal.window.facets.curation.suggestions.kind.what.happened = what actually ha
 
 journal.window.facets.curation.suggestions.kind.who.said.it = who said it
 
-journal.window.facets.curation.suggestions.lines.many = these { $slot1 } lines were said by { $slot2 }
-
-journal.window.facets.curation.suggestions.lines.one = this line was said by { $slot1 }
-
-journal.window.facets.curation.suggestions.none.from = nothing from { $slot1 } is waiting.
-
-journal.window.facets.curation.suggestions.notes.many = { $slot1 } notes
-
-journal.window.facets.curation.suggestions.notes.one = 1 note
-
 journal.window.facets.curation.suggestions.now = your journal says
 
 journal.window.facets.curation.suggestions.now.people = your journal has
 
 journal.window.facets.curation.suggestions.ok = ok
-
-journal.window.facets.curation.suggestions.only.from = only from { $slot1 }.
 
 journal.window.facets.curation.suggestions.open = open
 
@@ -8435,55 +8594,21 @@ journal.window.facets.curation.suggestions.open.duplicates = open possible dupli
 
 journal.window.facets.curation.suggestions.open.lines = open the lines
 
-journal.window.facets.curation.suggestions.open.named = open { $slot1 }
-
-journal.window.facets.curation.suggestions.person.in = in { $slot1 }
-
-journal.window.facets.curation.suggestions.rename = { $slot1 } → { $slot2 }
-
 journal.window.facets.curation.suggestions.retry = try again
 
 journal.window.facets.curation.suggestions.show.all = show every agent
 
 journal.window.facets.curation.suggestions.show.more = show more
 
-journal.window.facets.curation.suggestions.speaker.owner = you
-
-journal.window.facets.curation.suggestions.stale = this changed after { $slot1 } suggested it, so there's nothing to accept. here's how it stands now:
-
 journal.window.facets.curation.suggestions.stale.chip = already changed
-
-journal.window.facets.curation.suggestions.stale.same.person.changed = { $slot1 } or { $slot2 } changed after { $slot3 } suggested this, so there's nothing to accept.
-
-journal.window.facets.curation.suggestions.stale.same.person.journal.candidate = your journal is already asking whether { $slot1 } and { $slot2 } are the same person. you can answer it in possible duplicates.
-
-journal.window.facets.curation.suggestions.stale.same.person.journal.question = your journal has its own question about { $slot1 } and { $slot2 }, so there's nothing to accept here.
-
-journal.window.facets.curation.suggestions.stale.same.person.owner.answered = you already kept { $slot1 } and { $slot2 } separate, so there's nothing to accept.
 
 journal.window.facets.curation.suggestions.suggested = suggested
 
 journal.window.facets.curation.suggestions.then = if you accept
 
-journal.window.facets.curation.suggestions.then.account = your journal thinks about this activity again with your account, and about { $slot1 }.
-
-journal.window.facets.curation.suggestions.then.activities = your journal thinks about these { $slot1 } activities again, and about { $slot2 }.
-
-journal.window.facets.curation.suggestions.then.activity = your journal thinks about this activity again, and about { $slot1 }.
-
-journal.window.facets.curation.suggestions.then.also.known.as = your journal also calls this person { $slot1 }. the earlier version stays in the version history, where you can restore it.
-
-journal.window.facets.curation.suggestions.then.rename = your journal calls this person { $slot1 } from now on. { $slot2 } stays in the version history, where you can restore it.
-
-journal.window.facets.curation.suggestions.then.same.person = your journal keeps one person called { $slot1 }, also called { $slot2 }, and moves everything attached to { $slot3 } onto them. a merge can't be undone.
-
 journal.window.facets.curation.suggestions.undo = undo
 
-journal.window.facets.curation.suggestions.undone.also.known.as = undone. { $slot1 } is no longer another name for { $slot2 }.
-
 journal.window.facets.curation.suggestions.undone.plain = undone.
-
-journal.window.facets.curation.suggestions.undone.rename = undone. { $slot1 } is { $slot2 } again.
 
 journal.window.facets.curation.suggestions.updating = updating…
 
@@ -8499,19 +8624,13 @@ journal.window.facets.curation.visible.text.day = day:
 
 journal.window.facets.curation.visible.text.loading.suggestions = loading suggestions…
 
-journal.window.facets.curation.visible.text.occurrences = occurrences
-
 journal.window.facets.curation.visible.text.segment = segment:
 
 journal.window.facets.curation.visible.text.source = source:
 
 journal.window.facets.curation.visible.text.stream = stream:
 
-journal.window.facets.curation.visible.text.value1.suggestions.to.review.choose.a = { $value1 }{ $slot1 }suggestions to review. choose a group to begin.
-
 journal.window.facets.curation.window.explanation.a.close.spelling.match.was.chosen = a close spelling match was chosen automatically
-
-journal.window.facets.curation.window.explanation.also.seen.as.value1 = { $slot1 }also seen as{ $slot2 }{ $value1 }.
 
 journal.window.facets.curation.window.explanation.couldn.t.accept.that.so.nothing = couldn't accept that, so nothing changed. try again in a moment.
 
@@ -8526,8 +8645,6 @@ journal.window.facets.curation.window.explanation.merge.them.into.one.person = m
 journal.window.facets.curation.window.explanation.possible.duplicate.speaker.names = possible duplicate speaker names
 
 journal.window.facets.curation.window.explanation.saved.for.some.activities = saved for some activities
-
-journal.window.facets.curation.window.explanation.someone.you.don.t.know = someone you don't know
 
 journal.window.facets.curation.window.explanation.that.didn.t.go.through.try = that didn't go through. try again.
 

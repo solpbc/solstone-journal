@@ -1,0 +1,21 @@
+{
+  "description": "The requested awareness section name.",
+  "context": "Journal window. The requested awareness section name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "section_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "370f73e1e4d236a99710348e68f59bad9754e5341f0ef8f189ea07849107f52e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

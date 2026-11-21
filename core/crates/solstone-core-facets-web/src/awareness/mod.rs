@@ -45,7 +45,7 @@ async fn state(State((root, _)): State<(PathBuf, Clock)>, RawQuery(query): RawQu
                     http::error(
                         "awareness_section_not_found",
                         "journal.window.facets.awareness.response.error.message.that.part.of.your.journal.couldn",
-                        http::Detail::with_value("journal.window.facets.awareness.response.error.detail.no.awareness.section.named.value", section.to_string()),
+                        http::Detail::with_arg("journal.window.facets.awareness.response.detail.unknown.section", "section_name", section.to_string()),
                         StatusCode::NOT_FOUND,
                     )
                 }),
@@ -116,8 +116,9 @@ async fn update_imports(State((root, clock)): State<(PathBuf, Clock)>, body: Byt
         let detail = if active.is_empty() {
             http::Detail::catalog("journal.window.facets.awareness.response.one.import.answer")
         } else {
-            http::Detail::with_value(
-                "journal.window.facets.awareness.response.too.many.import.answers",
+            http::Detail::with_arg(
+                "journal.window.facets.awareness.response.detail.multiple.import.answers",
+                "answer_list",
                 active.join(", "),
             )
         };
@@ -285,7 +286,7 @@ fn session_response(root: &std::path::Path) -> Option<Response> {
             http::error(
                 "corrupt_config",
                 "journal.window.facets.awareness.response.error.message.your.settings.couldn.t.be.read",
-                http::Detail::with_value("journal.window.facets.awareness.response.error.detail.your.settings.file.at.value.couldn", path.display().to_string()),
+                http::Detail::with_arg("journal.window.facets.awareness.response.detail.unreadable.settings", "settings_path", path.display().to_string()),
                 StatusCode::INTERNAL_SERVER_ERROR,
             )
         })

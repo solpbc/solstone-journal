@@ -1,0 +1,25 @@
+{
+  "description": "Name change preview. $former_name is the previous name and $new_name is the emphasized proposed name.",
+  "context": "Journal window. Name change preview. $former_name is the previous name and $new_name is the emphasized proposed name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "former_name",
+      "type": "string"
+    },
+    {
+      "name": "new_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a7377716364fba02f34f5d67aa2c43f45b965b58d4a698bfd8160c2088a1af18",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

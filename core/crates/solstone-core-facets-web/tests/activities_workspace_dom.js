@@ -158,6 +158,9 @@ class Element {
   hasAttribute(name) { return Object.prototype.hasOwnProperty.call(this.attributes, name); }
   removeAttribute(name) { delete this.attributes[name]; if (name === 'class') this.classList.setFromString(''); }
   appendChild(child) { child.parentElement = this; this.children.push(child); return child; }
+  append(...children) {
+    for (const child of children) this.appendChild(typeof child === 'string' ? this.ownerDocument.createTextNode(child) : child);
+  }
   remove() {
     if (!this.parentElement) return;
     this.parentElement.children.splice(this.parentElement.children.indexOf(this), 1);
@@ -207,6 +210,11 @@ class Document {
     this.hidden = false;
   }
   createElement(tag) { return new Element(tag, this); }
+  createTextNode(value) {
+    const node = new Element('#text', this);
+    node.textContent = value;
+    return node;
+  }
   querySelector(sel) { return this.documentElement.querySelector(sel); }
   querySelectorAll(sel) { return this.documentElement.querySelectorAll(sel); }
   getElementById(id) { return this.querySelector('#' + id); }

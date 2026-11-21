@@ -1,0 +1,25 @@
+{
+  "description": "Speaker correction disclosure. The speakers arguments wrap the link to the Speakers page.",
+  "context": "Journal window. Speaker correction disclosure. The speakers arguments wrap the link to the Speakers page.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "speakers_start",
+      "type": "string"
+    },
+    {
+      "name": "speakers_end",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9d8d44e2b7490a7d3be1028b77c907672ce8b2bc59432543d5e43940276dec34",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

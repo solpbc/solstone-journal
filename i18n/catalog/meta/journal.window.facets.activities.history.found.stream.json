@@ -1,0 +1,21 @@
+{
+  "description": "Activity history line. $stream_name is the displayed name of the recorded stream.",
+  "context": "Journal window. Activity history line. $stream_name is the displayed name of the recorded stream.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "stream_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4d26b94fba419049234e361f17b9d057e2f4e3d5d51a3ea1cce02becc40bdb8d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

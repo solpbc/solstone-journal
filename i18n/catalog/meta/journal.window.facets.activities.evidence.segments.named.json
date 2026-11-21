@@ -1,0 +1,38 @@
+{
+  "description": "Evidence summary. $count is the number of segments and $time_range is the displayed clock label. $stream_name is the recorded stream label.",
+  "context": "Journal window. Evidence summary. $count is the number of segments and $time_range is the displayed clock label. $stream_name is the recorded stream label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "stream_name",
+      "type": "string"
+    },
+    {
+      "name": "time_range",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "8c498236d4598713d8a4a97dff7d8e5584d1fa5f16120efef754688b01f0af62",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

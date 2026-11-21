@@ -1,0 +1,21 @@
+{
+  "description": "Refusal detail for an unrecognized suggestions page group. $group is the requested route key.",
+  "context": "Journal window. Refusal detail for an unrecognized suggestions page group. $group is the requested route key.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "group",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7bb14659e00cc7614fcb8c12b56ac15a9ca10771e63f2e5ef58ed59ab7aad220",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

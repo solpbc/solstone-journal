@@ -1,0 +1,21 @@
+{
+  "description": "Accessible name for a spoken line playback button. $time is the recorded clock label.",
+  "context": "Journal window. Accessible name for a spoken line playback button. $time is the recorded clock label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5e075b2b33ebe93a6db22f48c0a4d0c1efe66a0f6c34598bc6a17810a8d53f06",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

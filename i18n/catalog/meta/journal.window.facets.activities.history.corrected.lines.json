@@ -1,0 +1,30 @@
+{
+  "description": "History label for corrected speaker assignments. $count is the recorded number of lines.",
+  "context": "Journal window. History label for corrected speaker assignments. $count is the recorded number of lines.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "dba750af41d6b7a7ebd74dccb2e37cb1e5e2a1960309dbb86a589298292f832f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "description": "Receipt after accepting a rename. The values are the agent, previous and current names.",
+  "context": "Journal window. Receipt after accepting a rename. The values are the agent, previous and current names.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    },
+    {
+      "name": "former_name",
+      "type": "string"
+    },
+    {
+      "name": "new_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e07cf02d866b8a4c6f3af8a4fa616de3755ebf2b6de2cc166dca500d7fa68553",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

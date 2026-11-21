@@ -1,0 +1,29 @@
+{
+  "description": "Receipt after accepting an alias. The values are the agent, name and alias.",
+  "context": "Journal window. Receipt after accepting an alias. The values are the agent, name and alias.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    },
+    {
+      "name": "former_name",
+      "type": "string"
+    },
+    {
+      "name": "new_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8a8f134f9f651b697908437851e1d4f43b79cd968890f1cd5d5cb48f14889695",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

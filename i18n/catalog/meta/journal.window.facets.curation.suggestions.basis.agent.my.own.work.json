@@ -1,0 +1,21 @@
+{
+  "description": "Attribution for the agent’s claimed basis. $agent_name is its displayed name.",
+  "context": "Journal window. Attribution for the agent’s claimed basis. $agent_name is its displayed name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e6ed4e705ea0b323c95ed38d1b33712b798c3489be626bfa4fb576f86cc7d330",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Number of occurrences covered by a set of ambiguity questions.",
+  "context": "Journal window. Number of occurrences covered by a set of ambiguity questions.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "138505711390dd5bb57fdb8d2b04685d10a75075c144dceceec7e971600c26c2",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Empty-activity heading for the selected facet. $facet_name is its displayed title.",
+  "context": "Journal window. Empty-activity heading for the selected facet. $facet_name is its displayed title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "facet_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6eb29f77e7e78b55ced85de53ee7eac10fea7fcb439faa31bce229799affc55d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

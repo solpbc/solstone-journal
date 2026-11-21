@@ -1,0 +1,21 @@
+{
+  "description": "Question identifying the recorded name that needs clarification.",
+  "context": "Journal window. Question identifying the recorded name that needs clarification.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "ambiguous_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a32c44053a331d657bd795af8c55e661608145a188ada1d9230b241bb5302a19",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "description": "Suggestion for the speaker of selected lines. The speaker arguments wrap the emphasized words.",
+  "context": "Journal window. Suggestion for the speaker of selected lines. The speaker arguments wrap the emphasized words.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "speaker_start",
+      "type": "string"
+    },
+    {
+      "name": "speaker_end",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "0a35eb5a393593495336453ea62d96ee0ce61674f76a4dbcf9a5fb3180a3011a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

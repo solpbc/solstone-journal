@@ -1,0 +1,35 @@
+{
+  "description": "Activity history for a change to one or more recorded fields. $field_group indicates the title, description and account fields that changed.",
+  "context": "Journal window. Activity history for a change to one or more recorded fields. $field_group indicates the title, description and account fields that changed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "field_group",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "caa7a01974ac952a2d5a7dba889b56a4fe4d893949331d3085e46844271a12da",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "field_group",
+    "type": "string",
+    "enum_values": [
+      "title",
+      "description",
+      "details",
+      "title-description",
+      "title-details",
+      "description-details",
+      "title-description-details"
+    ],
+    "enum_default": "title"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "description": "The missing request field name.",
+  "context": "Journal window. The missing request field name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "field_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8ff16e5223c14107b506da4ed68ad9ff62c9f1e9bcfbdf9060e568abd50d1780",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

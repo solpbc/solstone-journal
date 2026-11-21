@@ -1,0 +1,30 @@
+{
+  "description": "Recorded count for a single ambiguity question in an expanded group.",
+  "context": "Journal window. Recorded count for a single ambiguity question in an expanded group.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "40acb48daa66c08e73d3a2d148221bbbc5868992b17d5304d284011507783383",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

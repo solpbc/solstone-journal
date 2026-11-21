@@ -332,15 +332,16 @@ window.CUR_COPY = CUR_COPY;
     return name.replace(/[_-]+/g, ' ').trim();
   }
 
-  // The replacement is a function, not a string: a value carrying $&, $` or $'
-  // is a substitution pattern to String.replace, and a facet or entity named
-  // with one came back mangled. A function replacement is taken literally.
-  function copyFormat(template, values) {
-    let result = String(template || '');
-    Object.entries(values).forEach(([key, value]) => {
-      result = result.replace(new RegExp(`\\{${key}\\}`, 'g'), () => String(value ?? ''));
-    });
-    return result;
+  function curationCount(value, displayed = String(value), name = 'count') {
+    return [[name === 'count' ? 'quantity' : `${name}_quantity`, window.JournalI18n.cardinalQuantity(Number(value))],
+      [name, displayed]];
+  }
+
+  function formatReviewList(items) {
+    if (items.length <= 1) return items.join('');
+    return window.JournalI18n.render('journal.window.facets.curation.list.items', [
+      ['preceding_items', items.slice(0, -1).join(', ')], ['last_item', String(items.at(-1))],
+    ]);
   }
 
   function formatSimilarity(value) {
@@ -476,20 +477,18 @@ window.CUR_COPY = CUR_COPY;
     const others = (Array.isArray(names) ? names : []).slice(1)
       .map((name) => `"${name}"`);
     if (!others.length) return '';
-    const list = others.length === 1
-      ? others[0]
-      : others.length === 2
-        ? window.JournalI18n.render('journal.window.facets.curation.suggestion.display.text.value1.and.value2', [['value1', String(others[0])], ['value2', String(others[1])]])
-        : window.JournalI18n.render('journal.window.facets.curation.suggestion.display.text.value1.and.value2', [['value1', String(others.slice(0, -1).join(', '))], ['value2', String(others[others.length - 1])]]);
-    return window.JournalI18n.renderHtml('journal.window.facets.curation.window.explanation.also.seen.as.value1', [['value1', String(list)]]);
+    return window.JournalI18n.renderHtml('journal.window.facets.curation.facet.additional.names', [
+      ['alias_list', formatReviewList(others)],
+    ]);
   }
 
   function facetItemHtml(group) {
     const evidenceProps = window.CurationEvidence.buildEvidenceDrawerProps(group);
     const evidenceHtml = evidenceProps ? window.Drawer.render(evidenceProps) : '';
+    const additionalNames = facetAlsoSeenAsHtml(group.names);
     return `
       <article class="curation-item" data-curation-item data-kind="facet_candidate" data-name-key="${escapeHtml(group.key)}" data-name-keys="${escapeHtml(JSON.stringify(group.keys))}">
-        <p class="curation-body">${escapeHtml(copyFormat(CUR_COPY.CUR_FACET_BODY, {name: group.display}))}${facetAlsoSeenAsHtml(group.names)}</p>
+        <p class="curation-body">${window.JournalI18n.renderHtml('journal.window.facets.curation.facet.create.question', [['facet_name', String(group.display ?? '')]])}${additionalNames ? ` ${additionalNames}` : ''}</p>
         <div class="curation-actions">
           <button class="curation-button curation-button-primary" type="button" data-action="facet-accept" data-name-key="${escapeHtml(group.key)}">${escapeHtml(CUR_COPY.CUR_FACET_CREATE_ACTION)}</button>
           <button class="curation-button" type="button" data-action="facet-dismiss" data-name-key="${escapeHtml(group.key)}">${escapeHtml(CUR_COPY.CUR_FACET_DISMISS_ACTION)}</button>
@@ -501,10 +500,7 @@ window.CUR_COPY = CUR_COPY;
   }
 
   function formatFacetList(facets) {
-    const names = facets.map(facetDisplayName);
-    if (names.length <= 1) return names.join('');
-    if (names.length === 2) return window.JournalI18n.render('journal.window.facets.curation.suggestion.display.text.value1.and.value2', [['value1', String(names[0])], ['value2', String(names[1])]]);
-    return window.JournalI18n.render('journal.window.facets.curation.suggestion.display.text.value1.and.value2', [['value1', String(names.slice(0, -1).join(', '))], ['value2', String(names[names.length - 1])]]);
+    return formatReviewList(facets.map(facetDisplayName));
   }
 
   function ambiguityItemHtml(item) {
@@ -519,11 +515,11 @@ window.CUR_COPY = CUR_COPY;
     const candidates = item?.evidence?.ranked_candidates || [];
     return `
       <article class="curation-item" data-curation-item data-kind="entity_ambiguity" data-ambiguity-id="${escapeHtml(item.key)}">
-        <p class="curation-body">${escapeHtml(copyFormat(CUR_COPY.CUR_AMBIGUITY_BODY, {query: item.name || item.source}))}</p>
+        <p class="curation-body">${window.JournalI18n.renderHtml('journal.window.facets.curation.ambiguity.question', [['ambiguous_name', String(item.name || item.source || '')]])}</p>
         <div class="curation-actions">
           ${candidates.map((candidate) => `
             <button class="curation-button curation-button-primary" type="button" data-action="ambiguity-resolve" data-ambiguity-id="${escapeHtml(item.key)}" data-entity-id="${escapeHtml(candidate.id)}">
-              ${escapeHtml(copyFormat(CUR_COPY.CUR_AMBIGUITY_CHOOSE_ACTION, {name: candidate.name}))}
+              ${window.JournalI18n.renderHtml('journal.window.facets.curation.ambiguity.choose.name', [['candidate_name', String(candidate.name ?? '')]])}
             </button>
           `).join('')}
           <button class="curation-button" type="button" data-action="ambiguity-dismiss" data-ambiguity-id="${escapeHtml(item.key)}">${escapeHtml(CUR_COPY.CUR_AMBIGUITY_DISMISS_ACTION)}</button>
@@ -552,7 +548,7 @@ window.CUR_COPY = CUR_COPY;
       return `
         <label class="curation-select">
           <span class="curation-tap-target"><input type="checkbox" data-action="ambiguity-family-select" data-member-ids='${escapeHtml(JSON.stringify(memberIds))}' checked></span>
-          <span class="curation-body">${escapeHtml(copyFormat(CUR_COPY.CUR_AMBIGUITY_BODY, {query: displayQuery}))}<span class="curation-item-facets"> · ${count} ${count === 1 ? window.JournalI18n.render('journal.window.facets.curation.suggestion.display.text.occurrence') : window.JournalI18n.render('journal.window.facets.curation.suggestion.display.text.occurrences')} · ${escapeHtml(facets.length ? formatFacetList(facets) : window.JournalI18n.render('journal.window.facets.curation.status.text.journal'))}</span></span>
+          <span class="curation-body">${window.JournalI18n.renderHtml('journal.window.facets.curation.ambiguity.question', [['ambiguous_name', String(displayQuery)]])}<span class="curation-item-facets"> · ${window.JournalI18n.renderHtml('journal.window.facets.curation.ambiguity.occurrences', curationCount(count))} · ${escapeHtml(facets.length ? formatFacetList(facets) : window.JournalI18n.render('journal.window.facets.curation.status.text.journal'))}</span></span>
         </label>
       `;
     }).join('');
@@ -565,12 +561,12 @@ window.CUR_COPY = CUR_COPY;
         <div class="curation-actions">
           ${candidates.map((candidate) => `
             <button class="curation-button curation-button-primary" type="button" data-action="ambiguity-group-resolve" data-entity-id="${escapeHtml(candidate.id)}">
-              ${escapeHtml(copyFormat(CUR_COPY.CUR_AMBIGUITY_CHOOSE_ACTION, {name: candidate.name}))}
+              ${window.JournalI18n.renderHtml('journal.window.facets.curation.ambiguity.choose.name', [['candidate_name', String(candidate.name ?? '')]])}
             </button>
           `).join('')}
         </div>
         <details class="curation-origin-details"><summary>${window.JournalI18n.renderHtml('journal.window.facets.curation.disclosure.label.individual.questions.and.sources')}</summary>
-          ${members.map(m => `<div><p>${escapeHtml(m.query)} · ${escapeHtml(m.scope?.facet ? formatFacetList([m.scope.facet]) : window.JournalI18n.render('journal.window.facets.curation.status.text.journal'))} · ${m.occurrence_count} ${window.JournalI18n.renderHtml('journal.window.facets.curation.visible.text.occurrences')}</p>
+          ${members.map(m => `<div><p>${escapeHtml(m.query)} · ${escapeHtml(m.scope?.facet ? formatFacetList([m.scope.facet]) : window.JournalI18n.render('journal.window.facets.curation.status.text.journal'))} · ${window.JournalI18n.renderHtml('journal.window.facets.curation.ambiguity.member.occurrences', curationCount(m.occurrence_count))}</p>
             <button class="curation-button" type="button" data-action="ambiguity-dismiss" data-ambiguity-id="${escapeHtml(m.ambiguity_id)}">${escapeHtml(CUR_COPY.CUR_AMBIGUITY_DISMISS_ACTION)}</button>
             <ul>${(m.origins || []).map(o => `<li>${escapeHtml([o.day, o.facet, o.lane, o.field].filter(Boolean).join(' · '))}</li>`).join('')}</ul></div>`).join('')}
         </details>
@@ -591,7 +587,7 @@ window.CUR_COPY = CUR_COPY;
     const target = item.target || (item.kind === 'entity_merge_set_aside' ? 'merge_candidate' : 'ambiguity');
     const label = target === 'ambiguity'
       ? (item.query || item.name || item.key)
-      : window.JournalI18n.render('journal.window.facets.curation.suggestion.display.text.value1.and.value2', [['value1', String(item.source || item.source_slug)], ['value2', String(item.target_name || item.target_slug)]]);
+      : formatReviewList([String(item.source || item.source_slug), String(item.target_name || item.target_slug)]);
     const reasons = {
       stale: window.JournalI18n.render('journal.window.facets.curation.window.explanation.the.suggested.entity.is.no.longer'),
       speaker_type: window.JournalI18n.render('journal.window.facets.curation.window.explanation.the.suggested.entity.is.not.a'),
@@ -616,7 +612,7 @@ window.CUR_COPY = CUR_COPY;
   function speakerItemHtml(item) {
     return `
       <article class="curation-item" data-curation-item data-kind="speaker_name_variant" data-key="${escapeHtml(item.key)}" data-source-id="${escapeHtml(item.source_slug)}" data-target-id="${escapeHtml(item.target_slug)}">
-        <p class="curation-body">${escapeHtml(copyFormat(CUR_COPY.CUR_SPEAKER_BODY, {source: item.source, target: item.target}))}</p>
+        <p class="curation-body">${window.JournalI18n.renderHtml('journal.window.facets.curation.speaker.merge.question', [['source_name', String(item.source ?? '')], ['target_name', String(item.target ?? '')]])}</p>
         <div class="curation-actions">
           <button class="curation-button curation-button-primary" type="button" data-action="speaker-preview">${escapeHtml(CUR_COPY.CUR_SPEAKER_MERGE_ACTION)}</button>
           <button class="curation-button" type="button" data-action="speaker-dismiss">${escapeHtml(CUR_COPY.CUR_SPEAKER_DISMISS_ACTION)}</button>
@@ -699,7 +695,7 @@ window.CUR_COPY = CUR_COPY;
     const agentCount = root.querySelector('[data-agent-count]');
     if (agentCount) agentCount.textContent = agentWaiting == null ? '' : `(${agentWaiting})`;
     const total = agentWaiting == null ? null : root.querySelectorAll('[data-curation-item]').length + unloaded + agentWaiting;
-    if (count) count.textContent = total ? window.JournalI18n.render('journal.window.facets.curation.visible.text.value1.suggestions.to.review.choose.a', [['value1', String(total.toLocaleString(window.JournalI18n.formatLocale))]]) : '';
+    if (count) count.textContent = total ? window.JournalI18n.render('journal.window.facets.curation.review.total', curationCount(total, total.toLocaleString(window.JournalI18n.formatLocale))) : '';
   }
   function renderState(payload, preserveOutcomes = false) {
     const savedOutcomes = preserveOutcomes
@@ -862,10 +858,8 @@ window.CUR_COPY = CUR_COPY;
 
   function mutationErrorMessage(err, fallback) {
     if (repairRequired(err)) {
-      return copyFormat(CUR_COPY.CUR_REPAIR_REQUIRED, {
-        detail: err.rawDetail || err.serverMessage || fallback,
-        remediation: err.payload.safe_remediation || ''
-      }).trim();
+      const detail = err.rawDetail || err.serverMessage || fallback;
+      return [detail, err.payload.safe_remediation].join(' ').trim();
     }
     return err?.rawDetail || window.SurfaceState?.serverMessageFrom(err) || fallback;
   }
@@ -934,25 +928,40 @@ window.CUR_COPY = CUR_COPY;
     const rows = [];
     const aliases = preview.akas_added;
     if (Array.isArray(aliases) ? aliases.length : aliases) {
-      rows.push(`${CUR_COPY.CUR_PREVIEW_AKAS_LABEL}: ${Array.isArray(aliases) ? aliases.join(', ') : aliases}`);
+      rows.push(window.JournalI18n.render('journal.window.facets.curation.preview.aliases', [
+        ['aliases', Array.isArray(aliases) ? aliases.join(', ') : String(aliases)],
+      ]));
     }
     if (preview.emails_added_count) {
-      rows.push(`${CUR_COPY.CUR_PREVIEW_EMAILS_LABEL}: ${preview.emails_added_count}`);
+      rows.push(window.JournalI18n.render('journal.window.facets.curation.preview.emails.count', curationCount(preview.emails_added_count)));
     }
     if (preview.facet_moved_count || preview.facet_merged_count) {
-      rows.push(window.JournalI18n.render('journal.window.facets.curation.suggestion.display.text.value1.value2.moved.value3.merged', [['value1', String(CUR_COPY.CUR_PREVIEW_FACETS_LABEL)], ['value2', String(preview.facet_moved_count || 0)], ['value3', String(preview.facet_merged_count || 0)]]));
+      rows.push(window.JournalI18n.render('journal.window.facets.curation.preview.facet.links', [
+        ...curationCount(preview.facet_moved_count || 0, undefined, 'moved'),
+        ...curationCount(preview.facet_merged_count || 0, undefined, 'merged'),
+      ]));
     }
     if (preview.observations_appended) {
-      rows.push(`${CUR_COPY.CUR_PREVIEW_OBSERVATIONS_LABEL}: ${preview.observations_appended}`);
+      rows.push(window.JournalI18n.render('journal.window.facets.curation.preview.observations.count', curationCount(preview.observations_appended)));
     }
     if (preview.labels_rewritten || preview.corrections_rewritten) {
-      rows.push(window.JournalI18n.render('journal.window.facets.curation.suggestion.display.text.value1.value2.labels.value3.corrections', [['value1', String(CUR_COPY.CUR_PREVIEW_SEGMENTS_LABEL)], ['value2', String(preview.labels_rewritten || 0)], ['value3', String(preview.corrections_rewritten || 0)]]));
+      rows.push(window.JournalI18n.render('journal.window.facets.curation.preview.speaker.segments', [
+        ...curationCount(preview.labels_rewritten || 0, undefined, 'labels'),
+        ...curationCount(preview.corrections_rewritten || 0, undefined, 'corrections'),
+      ]));
     }
     if (typeof preview.voiceprints_added === 'number') {
-      rows.push(window.JournalI18n.render('journal.window.facets.curation.suggestion.display.text.value1.value2.added.value3.total', [['value1', String(CUR_COPY.CUR_PREVIEW_VOICEPRINTS_LABEL)], ['value2', String(preview.voiceprints_added || 0)], ['value3', String(preview.voiceprints_target_total || 0)]]));
+      rows.push(window.JournalI18n.render('journal.window.facets.curation.preview.voice.samples', [
+        ...curationCount(preview.voiceprints_added || 0, undefined, 'added'),
+        ...curationCount(preview.voiceprints_target_total || 0, undefined, 'total'),
+      ]));
     }
-    for (const [field, label] of [['notes_on_source', 'CUR_PREVIEW_NOTES_SOURCE'], ['speaker_labels', 'CUR_PREVIEW_LABELS'], ['activity_records', 'CUR_PREVIEW_ACTIVITIES']]) {
-      if (typeof preview[field] === 'number') rows.push(`${CUR_COPY[label]}: ${preview[field]}`);
+    for (const [field, message] of [
+      ['notes_on_source', 'journal.window.facets.curation.preview.notes.count'],
+      ['speaker_labels', 'journal.window.facets.curation.preview.speaker.labels.count'],
+      ['activity_records', 'journal.window.facets.curation.preview.activities.count'],
+    ]) {
+      if (typeof preview[field] === 'number') rows.push(window.JournalI18n.render(message, curationCount(preview[field])));
     }
     if (preview.other_changes_not_previewed) {
       rows.push(CUR_COPY.CUR_PREVIEW_PARTIAL);

@@ -12,8 +12,8 @@
   const S = {
     group: window.JournalI18n.render('journal.window.facets.curation.suggestions.group'),
     earlier: window.JournalI18n.render('journal.window.facets.curation.window.explanation.earlier.from.your.agents'),
-    onlyFrom: window.JournalI18n.render('journal.window.facets.curation.suggestions.only.from'),
-    noneFrom: window.JournalI18n.render('journal.window.facets.curation.suggestions.none.from'),
+    onlyFrom: agent => window.JournalI18n.render('journal.window.facets.curation.suggestions.filter.only.agent', [['agent_name', String(agent ?? '')]]),
+    noneFrom: agent => window.JournalI18n.render('journal.window.facets.curation.suggestions.filter.empty.agent', [['agent_name', String(agent ?? '')]]),
     showAll: window.JournalI18n.render('journal.window.facets.curation.suggestions.show.all'),
     loadFailed: window.JournalI18n.render('journal.window.facets.curation.window.explanation.couldn.t.load.what.your.agents'),
     retry: window.JournalI18n.render('journal.window.facets.curation.suggestions.retry'),
@@ -26,35 +26,25 @@
     },
     now: window.JournalI18n.render('journal.window.facets.curation.suggestions.now'),
     nowPeople: window.JournalI18n.render('journal.window.facets.curation.suggestions.now.people'),
-    personIn: window.JournalI18n.render('journal.window.facets.curation.suggestions.person.in'),
-    notesOne: window.JournalI18n.render('journal.window.facets.curation.suggestions.notes.one'),
-    notesMany: window.JournalI18n.render('journal.window.facets.curation.suggestions.notes.many'),
+    personIn: facets => window.JournalI18n.render('journal.window.facets.curation.suggestions.person.facet.membership', [['facet_list', String(facets ?? '')]]),
     samePersonChange: window.JournalI18n.render('journal.window.facets.curation.window.explanation.merge.them.into.one.person'),
     keepName: window.JournalI18n.render('journal.window.facets.curation.suggestions.keep.name'),
     suggested: window.JournalI18n.render('journal.window.facets.curation.suggestions.suggested'),
     why: window.JournalI18n.render('journal.window.facets.curation.suggestions.why'),
     then: window.JournalI18n.render('journal.window.facets.curation.suggestions.then'),
     basis: {
-      owner_said: window.JournalI18n.render('journal.window.facets.curation.suggestions.basis.owner.said'),
-      my_own_work: window.JournalI18n.render('journal.window.facets.curation.suggestions.basis.my.own.work'),
-      journal_shows: window.JournalI18n.render('journal.window.facets.curation.suggestions.basis.journal.shows'),
-      outside_source: window.JournalI18n.render('journal.window.facets.curation.suggestions.basis.outside.source')
+      owner_said: agent => window.JournalI18n.render('journal.window.facets.curation.suggestions.basis.agent.owner.said', [['agent_name', String(agent ?? '')]]),
+      my_own_work: agent => window.JournalI18n.render('journal.window.facets.curation.suggestions.basis.agent.my.own.work', [['agent_name', String(agent ?? '')]]),
+      journal_shows: agent => window.JournalI18n.render('journal.window.facets.curation.suggestions.basis.agent.journal.shows', [['agent_name', String(agent ?? '')]]),
+      outside_source: agent => window.JournalI18n.render('journal.window.facets.curation.suggestions.basis.agent.outside.source', [['agent_name', String(agent ?? '')]])
     },
-    accountAsWritten: window.JournalI18n.render('journal.window.facets.curation.suggestions.account.as.written'),
-    linesOne: window.JournalI18n.render('journal.window.facets.curation.suggestions.lines.one'),
-    linesMany: window.JournalI18n.render('journal.window.facets.curation.suggestions.lines.many'),
-    speakerOwner: window.JournalI18n.render('journal.window.facets.curation.suggestions.speaker.owner'),
-    speakerSomeoneElse: window.JournalI18n.render('journal.window.facets.curation.window.explanation.someone.you.don.t.know'),
+    accountAsWritten: agent => window.JournalI18n.render('journal.window.facets.curation.suggestions.account.attributed.agent', [['agent_name', String(agent ?? '')]]),
     recordingChange: window.JournalI18n.render('journal.window.facets.curation.window.explanation.this.was.a.recording.or.video'),
-    rename: window.JournalI18n.render('journal.window.facets.curation.suggestions.rename'),
-    alsoKnownAs: window.JournalI18n.render('journal.window.facets.curation.suggestions.also.known.as'),
-    thenActivity: window.JournalI18n.render('journal.window.facets.curation.suggestions.then.activity'),
-    thenActivities: window.JournalI18n.render('journal.window.facets.curation.suggestions.then.activities'),
-    thenAccount: window.JournalI18n.render('journal.window.facets.curation.suggestions.then.account'),
+    thenAccount: days => window.JournalI18n.render('journal.window.facets.curation.suggestions.then.account.days', [['affected_days', String(days ?? '')]]),
     thenRecording: window.JournalI18n.render('journal.window.facets.curation.window.explanation.your.journal.will.think.this.through'),
-    thenRename: window.JournalI18n.render('journal.window.facets.curation.suggestions.then.rename'),
-    thenAlsoKnownAs: window.JournalI18n.render('journal.window.facets.curation.suggestions.then.also.known.as'),
-    thenSamePerson: window.JournalI18n.renderEnglish('journal.window.facets.curation.suggestions.then.same.person'),
+    thenRename: (from, to) => window.JournalI18n.render('journal.window.facets.curation.suggestions.then.retain.previous.name', [['former_name', String(from ?? '')], ['new_name', String(to ?? '')]]),
+    thenAlsoKnownAs: to => window.JournalI18n.render('journal.window.facets.curation.suggestions.then.alias.name', [['new_name', String(to ?? '')]]),
+    thenSamePerson: (kept, other) => window.JournalI18n.renderEnglish('journal.window.facets.curation.suggestions.then.merge.people', [['kept_name', String(kept ?? '')], ['merged_name', String(other ?? '')]]),
     accept: window.JournalI18n.render('journal.window.facets.curation.suggestions.accept'),
     edit: window.JournalI18n.render('journal.window.facets.curation.suggestions.edit'),
     dismiss: window.JournalI18n.render('journal.window.facets.curation.suggestions.dismiss'),
@@ -63,34 +53,34 @@
     ok: window.JournalI18n.render('journal.window.facets.curation.suggestions.ok'),
     openActivity: window.JournalI18n.render('journal.window.facets.curation.suggestions.open.activity'),
     openLines: window.JournalI18n.render('journal.window.facets.curation.suggestions.open.lines'),
-    openNamed: window.JournalI18n.render('journal.window.facets.curation.suggestions.open.named'),
+    openNamed: name => window.JournalI18n.render('journal.window.facets.curation.suggestions.open.person.name', [['person_name', String(name ?? '')]]),
     editAccountLabel: window.JournalI18n.render('journal.window.facets.curation.window.explanation.your.account.of.it'),
     editAccountHint: window.JournalI18n.renderEnglish('journal.window.facets.curation.window.explanation.what.you.accept.is.kept.as'),
     editNameLabel: window.JournalI18n.render('journal.window.facets.curation.suggestions.edit.name.label'),
     updating: window.JournalI18n.render('journal.window.facets.curation.suggestions.updating'),
-    accepted: window.JournalI18n.render('journal.window.facets.curation.suggestions.accepted'),
-    acceptedNotAsked: window.JournalI18n.render('journal.window.facets.curation.suggestions.accepted.not.asked'),
-    acceptedPartial: window.JournalI18n.render('journal.window.facets.curation.suggestions.accepted.partial'),
-    acceptedRename: window.JournalI18n.render('journal.window.facets.curation.suggestions.accepted.rename'),
-    acceptedAlsoKnownAs: window.JournalI18n.render('journal.window.facets.curation.suggestions.accepted.also.known.as'),
-    acceptedSamePerson: window.JournalI18n.render('journal.window.facets.curation.suggestions.accepted.same.person'),
+    accepted: agent => window.JournalI18n.render('journal.window.facets.curation.suggestions.receipt.accepted.ask', [['agent_name', String(agent ?? '')]]),
+    acceptedNotAsked: agent => window.JournalI18n.render('journal.window.facets.curation.suggestions.receipt.accepted.ask.unconfirmed', [['agent_name', String(agent ?? '')]]),
+    acceptedPartial: agent => window.JournalI18n.render('journal.window.facets.curation.suggestions.receipt.accepted.partial', [['agent_name', String(agent ?? '')]]),
+    acceptedRename: (agent, from, to) => window.JournalI18n.render('journal.window.facets.curation.suggestions.receipt.accepted.rename', [['agent_name', String(agent ?? '')], ['former_name', String(from ?? '')], ['new_name', String(to ?? '')]]),
+    acceptedAlsoKnownAs: (agent, from, to) => window.JournalI18n.render('journal.window.facets.curation.suggestions.receipt.accepted.alias', [['agent_name', String(agent ?? '')], ['former_name', String(from ?? '')], ['new_name', String(to ?? '')]]),
+    acceptedSamePerson: (agent, kept, other) => window.JournalI18n.render('journal.window.facets.curation.suggestions.receipt.accepted.merged.people', [['agent_name', String(agent ?? '')], ['kept_name', String(kept ?? '')], ['merged_name', String(other ?? '')]]),
     undone: window.JournalI18n.render('journal.window.facets.curation.window.explanation.undone.your.journal.will.think.about'),
-    acceptedPlain: window.JournalI18n.render('journal.window.facets.curation.suggestions.accepted.plain'),
+    acceptedPlain: agent => window.JournalI18n.render('journal.window.facets.curation.suggestions.receipt.accepted.simple', [['agent_name', String(agent ?? '')]]),
     undonePlain: window.JournalI18n.render('journal.window.facets.curation.suggestions.undone.plain'),
     earlierAgent: window.JournalI18n.render('journal.window.facets.curation.suggestions.earlier.agent'),
     undoneNotAsked: window.JournalI18n.render('journal.window.facets.curation.window.explanation.undone.but.your.journal.couldn.t'),
-    undoneRename: window.JournalI18n.render('journal.window.facets.curation.suggestions.undone.rename'),
-    undoneAlsoKnownAs: window.JournalI18n.render('journal.window.facets.curation.suggestions.undone.also.known.as'),
+    undoneRename: (from, to) => window.JournalI18n.render('journal.window.facets.curation.suggestions.receipt.undone.rename', [['former_name', String(from ?? '')], ['new_name', String(to ?? '')]]),
+    undoneAlsoKnownAs: (from, to) => window.JournalI18n.render('journal.window.facets.curation.suggestions.receipt.undone.alias', [['former_name', String(from ?? '')], ['new_name', String(to ?? '')]]),
     undoRefused: window.JournalI18n.render('journal.window.facets.curation.window.explanation.couldn.t.undo.that.because.you'),
-    dismissed: window.JournalI18n.render('journal.window.facets.curation.suggestions.dismissed'),
-    stale: window.JournalI18n.render('journal.window.facets.curation.suggestions.stale'),
+    dismissed: agent => window.JournalI18n.render('journal.window.facets.curation.suggestions.receipt.dismissed.agent', [['agent_name', String(agent ?? '')]]),
+    stale: agent => window.JournalI18n.render('journal.window.facets.curation.suggestions.stale.changed.after.agent', [['agent_name', String(agent ?? '')]]),
     staleChip: window.JournalI18n.render('journal.window.facets.curation.suggestions.stale.chip'),
     staleSamePerson: {
-      journal_candidate: window.JournalI18n.render('journal.window.facets.curation.suggestions.stale.same.person.journal.candidate'),
-      owner_answered: window.JournalI18n.render('journal.window.facets.curation.suggestions.stale.same.person.owner.answered'),
-      journal_question: window.JournalI18n.render('journal.window.facets.curation.suggestions.stale.same.person.journal.question'),
-      changed: window.JournalI18n.render('journal.window.facets.curation.suggestions.stale.same.person.changed'),
-      busy: window.JournalI18n.render('journal.window.facets.curation.window.explanation.this.can.t.be.accepted.right')
+      journal_candidate: (first, second) => window.JournalI18n.render('journal.window.facets.curation.suggestions.stale.pair.journal.candidate', [['first_name', String(first ?? '')], ['second_name', String(second ?? '')]]),
+      owner_answered: (first, second) => window.JournalI18n.render('journal.window.facets.curation.suggestions.stale.pair.owner.answered', [['first_name', String(first ?? '')], ['second_name', String(second ?? '')]]),
+      journal_question: (first, second) => window.JournalI18n.render('journal.window.facets.curation.suggestions.stale.pair.journal.question', [['first_name', String(first ?? '')], ['second_name', String(second ?? '')]]),
+      changed: (first, second, agent) => window.JournalI18n.render('journal.window.facets.curation.suggestions.stale.pair.changed.after.agent', [['first_name', String(first ?? '')], ['second_name', String(second ?? '')], ['agent_name', String(agent ?? '')]]),
+      busy: () => window.JournalI18n.render('journal.window.facets.curation.window.explanation.this.can.t.be.accepted.right')
     },
     openDuplicates: window.JournalI18n.render('journal.window.facets.curation.suggestions.open.duplicates'),
     earlierInDuplicates: window.JournalI18n.render('journal.window.facets.curation.suggestions.earlier.in.duplicates'),
@@ -118,23 +108,13 @@
 
   const escapeHtml = global.AppServices.escapeHtml;
 
-  // The replacement is a function so a value carrying $& or $' is literal.
-  function fmt(template, values) {
-    let out = String(template || '');
-    Object.entries(values || {}).forEach(([key, value]) => {
-      out = out.replace(new RegExp(`\\{${key}\\}`, 'g'), () => String(value ?? ''));
-    });
-    return out;
+  function suggestionCount(value) {
+    return [['quantity', window.JournalI18n.cardinalQuantity(value)], ['count', String(value)]];
   }
 
-  // Each value is escaped before it enters the template; the template itself
-  // is ours. Used where a value is wrapped in markup (the agent's name, bold).
-  function fmtHtml(template, values) {
-    let out = escapeHtml(String(template || ''));
-    Object.entries(values || {}).forEach(([key, value]) => {
-      out = out.replace(new RegExp(`\\{${key}\\}`, 'g'), () => String(value ?? ''));
-    });
-    return out;
+  function inlineSuggestion(id, args, elements) {
+    return window.JournalI18n.renderMarkup(id, args, elements)
+      .map(part => typeof part === 'string' ? escapeHtml(part) : part.outerHTML).join('');
   }
 
   function agentFilter() {
@@ -175,10 +155,7 @@
   }
 
   function dayList(days) {
-    const names = (Array.isArray(days) ? days : []).filter(Boolean).map(dayInSentence);
-    if (names.length <= 1) return names.join('');
-    if (names.length === 2) return window.JournalI18n.render('journal.window.facets.curation.suggestion.display.text.value1.and.value2', [['value1', String(names[0])], ['value2', String(names[1])]]);
-    return window.JournalI18n.render('journal.window.facets.curation.suggestion.display.text.value1.and.value2', [['value1', String(names.slice(0, -1).join(', '))], ['value2', String(names[names.length - 1])]]);
+    return namesList((Array.isArray(days) ? days : []).filter(Boolean).map(dayInSentence));
   }
 
   function clock(value) {
@@ -204,12 +181,6 @@
     return [place.title, when].filter(Boolean).join(SEP);
   }
 
-  function speakerText(speaker) {
-    if (speaker?.kind === 'owner') return S.speakerOwner;
-    if (speaker?.kind === 'someone_else') return S.speakerSomeoneElse;
-    return String(speaker?.label || '');
-  }
-
   // --- the same person ---------------------------------------------------------
   // Both people come from the journal (`change_parts.people`, in the order the
   // agent named them); the agent supplies only which two, and why. The owner
@@ -228,8 +199,9 @@
 
   function namesList(names) {
     if (names.length <= 1) return names.join('');
-    if (names.length === 2) return window.JournalI18n.render('journal.window.facets.curation.suggestion.display.text.value1.and.value2', [['value1', String(names[0])], ['value2', String(names[1])]]);
-    return window.JournalI18n.render('journal.window.facets.curation.suggestion.display.text.value1.and.value2', [['value1', String(names.slice(0, -1).join(', '))], ['value2', String(names[names.length - 1])]]);
+    return window.JournalI18n.render('journal.window.facets.curation.list.items', [
+      ['preceding_items', names.slice(0, -1).join(', ')], ['last_item', String(names.at(-1))],
+    ]);
   }
 
   function people(card) {
@@ -266,8 +238,8 @@
     const facets = [...new Set(slugs)].map(facetName).filter(Boolean);
     const notes = attachments.reduce((sum, item) => sum + (Number(item?.notes) || 0), 0);
     const parts = [];
-    if (facets.length) parts.push(fmt(S.personIn, {facets: namesList(facets)}));
-    if (notes) parts.push(notes === 1 ? S.notesOne : fmt(S.notesMany, {n: notes}));
+    if (facets.length) parts.push(S.personIn(namesList(facets)));
+    if (notes) parts.push(window.JournalI18n.render('journal.window.facets.curation.suggestions.person.notes.count', suggestionCount(notes)));
     return parts.join(SEP);
   }
 
@@ -313,16 +285,26 @@
     const parts = card.change_parts || {};
     if (card.kind === 'same_person') return escapeHtml(S.samePersonChange);
     if (card.kind === 'who_said_it') {
-      const n = Number(parts.line_count) || 0;
-      const speaker = `<strong>${escapeHtml(speakerText(parts.speaker))}</strong>`;
-      return n === 1 ? fmtHtml(S.linesOne, {speaker}) : fmtHtml(S.linesMany, {n: escapeHtml(n), speaker});
+      const args = suggestionCount(Number(parts.line_count) || 0);
+      const speaker = document.createElement('strong');
+      if (parts.speaker?.kind === 'owner') {
+        return inlineSuggestion('journal.window.facets.curation.suggestions.lines.assigned.owner', args, { elements: { speaker } });
+      }
+      if (parts.speaker?.kind === 'someone_else') {
+        return inlineSuggestion('journal.window.facets.curation.suggestions.lines.assigned.unknown', args, { elements: { speaker } });
+      }
+      speaker.textContent = String(parts.speaker?.label || '');
+      return inlineSuggestion('journal.window.facets.curation.suggestions.lines.assigned.named', args, { fixed: { speaker } });
     }
     if (card.kind === 'what_happened') {
-      return `<span class="sg-whoby">${escapeHtml(fmt(S.accountAsWritten, {agent: agentName(card.agent)}))}</span><span class="sg-account">${escapeHtml(parts.text || '')}</span>`;
+      return `<span class="sg-whoby">${escapeHtml(S.accountAsWritten(agentName(card.agent)))}</span><span class="sg-account">${escapeHtml(parts.text || '')}</span>`;
     }
     if (card.kind === 'name') {
-      const template = parts.mode === 'also_known_as' ? S.alsoKnownAs : S.rename;
-      return fmtHtml(template, {from: escapeHtml(parts.from || ''), to: `<strong>${escapeHtml(parts.to || '')}</strong>`});
+      const id = parts.mode === 'also_known_as' ? 'journal.window.facets.curation.suggestions.name.alias'
+        : 'journal.window.facets.curation.suggestions.name.change';
+      const name = document.createElement('strong');
+      name.textContent = String(parts.to || '');
+      return inlineSuggestion(id, [['former_name', String(parts.from || '')]], { fixed: { new_name: name } });
     }
     return escapeHtml(S.recordingChange);
   }
@@ -333,25 +315,25 @@
     const parts = card.change_parts || {};
     if (card.kind === 'same_person') {
       const {kept, other} = pairOf(card);
-      return kept.name && other.name ? fmt(S.thenSamePerson, {kept: kept.name, other: other.name}) : '';
+      return kept.name && other.name ? S.thenSamePerson(kept.name, other.name) : '';
     }
     if (card.kind === 'name') {
-      return fmt(parts.mode === 'also_known_as' ? S.thenAlsoKnownAs : S.thenRename, {from: parts.from || '', to: parts.to || ''});
+      return parts.mode === 'also_known_as' ? S.thenAlsoKnownAs(parts.to || '') : S.thenRename(parts.from || '', parts.to || '');
     }
     const impact = card.impact || {};
     const activities = Array.isArray(impact.activities) ? impact.activities : [];
     const days = dayList(impact.days);
     if (!activities.length || !days) return '';
     if (card.kind === 'recording') return S.thenRecording;
-    if (card.kind === 'what_happened') return fmt(S.thenAccount, {days});
-    return activities.length === 1
-      ? fmt(S.thenActivity, {days})
-      : fmt(S.thenActivities, {n: activities.length, days});
+    if (card.kind === 'what_happened') return S.thenAccount(days);
+    return window.JournalI18n.render('journal.window.facets.curation.suggestions.then.activities.days', [
+      ...suggestionCount(activities.length), ['affected_days', days],
+    ]);
   }
 
   function openLabel(card) {
-    if (card.kind === 'same_person') return fmt(S.openNamed, {name: pairOf(card).kept.name || ''});
-    if (card.kind === 'name') return fmt(S.openNamed, {name: card.place?.name || card.change_parts?.from || ''});
+    if (card.kind === 'same_person') return S.openNamed(pairOf(card).kept.name || '');
+    if (card.kind === 'name') return S.openNamed(card.place?.name || card.change_parts?.from || '');
     if (card.kind === 'who_said_it') return S.openLines;
     return S.openActivity;
   }
@@ -387,7 +369,7 @@
         ${nowRow(card)}
         <dt>${escapeHtml(S.suggested)}</dt><dd class="sg-change">${changeHtml(card)}</dd>
         ${card.kind === 'same_person' ? keepRow(card) : ''}
-        ${card.reason ? `<dt>${escapeHtml(S.why)}</dt><dd>${basis ? `<span class="sg-whoby">${escapeHtml(fmt(basis, {agent: agentName(card.agent)}))}</span>` : ''}<p class="sg-quote">"${escapeHtml(card.reason)}"</p></dd>` : ''}
+        ${card.reason ? `<dt>${escapeHtml(S.why)}</dt><dd>${basis ? `<span class="sg-whoby">${escapeHtml(basis(agentName(card.agent)))}</span>` : ''}<p class="sg-quote">"${escapeHtml(card.reason)}"</p></dd>` : ''}
         ${then ? `<dt>${escapeHtml(S.then)}</dt><dd class="sg-then">${escapeHtml(then)}</dd>` : ''}
       </dl>
       <div class="curation-actions">
@@ -414,7 +396,7 @@
     const chip = reason === 'changed' ? `<span class="sg-chip">${escapeHtml(S.staleChip)}</span>` : '';
     return `<article class="sg-card sg-stale" ${attrs(card)}>
       ${headHtml(card, chip)}
-      <p class="sg-stale-lead">${escapeHtml(fmt(S.staleSamePerson[reason], {a: names[0] || '', b: names[1] || '', agent: agentName(card.agent)}))}</p>
+      <p class="sg-stale-lead">${escapeHtml(S.staleSamePerson[reason](names[0] || '', names[1] || '', agentName(card.agent)))}</p>
       <div class="curation-actions">
         <button class="curation-button" type="button" data-action="agent-stale-ok">${escapeHtml(S.ok)}</button>
         ${open}
@@ -426,7 +408,7 @@
     if (card.kind === 'same_person') return staleSamePersonHtml(card);
     return `<article class="sg-card sg-stale" ${attrs(card)}>
       ${headHtml(card, `<span class="sg-chip">${escapeHtml(S.staleChip)}</span>`)}
-      <p class="sg-stale-lead">${escapeHtml(fmt(S.stale, {agent: agentName(card.agent)}))}</p>
+      <p class="sg-stale-lead">${escapeHtml(S.stale(agentName(card.agent)))}</p>
       ${nowRow(card) ? `<dl class="sg-grid">${nowRow(card)}</dl>` : ''}
       <div class="curation-actions">
         <button class="curation-button" type="button" data-action="agent-stale-ok">${escapeHtml(S.ok)}</button>
@@ -459,21 +441,21 @@
     const parts = card.change_parts || {};
     const aka = card.kind === 'name' && parts.mode === 'also_known_as';
     const failedAsk = card.asked === false && Boolean(card.ask_reason);
-    if (phase === 'dismissed') return fmt(S.dismissed, {agent});
+    if (phase === 'dismissed') return S.dismissed(agent);
     if (phase === 'undone') {
-      if (card.kind === 'name') return fmt(aka ? S.undoneAlsoKnownAs : S.undoneRename, {from: parts.from || '', to: parts.to || ''});
+      if (card.kind === 'name') return (aka ? S.undoneAlsoKnownAs : S.undoneRename)(parts.from || '', parts.to || '');
       if (failedAsk) return S.undoneNotAsked;
       return card.asked === true ? S.undone : S.undonePlain;
     }
-    if (card.incomplete) return fmt(S.acceptedPartial, {agent});
-    if (card.kind === 'name') return fmt(aka ? S.acceptedAlsoKnownAs : S.acceptedRename, {agent, from: parts.from || '', to: parts.to || ''});
+    if (card.incomplete) return S.acceptedPartial(agent);
+    if (card.kind === 'name') return (aka ? S.acceptedAlsoKnownAs : S.acceptedRename)(agent, parts.from || '', parts.to || '');
     if (card.kind === 'same_person') {
       const {kept, other} = pairOf(card);
-      return kept.name && other.name ? fmt(S.acceptedSamePerson, {agent, kept: kept.name, other: other.name}) : fmt(S.acceptedPlain, {agent});
+      return kept.name && other.name ? S.acceptedSamePerson(agent, kept.name, other.name) : S.acceptedPlain(agent);
     }
     // Thinking again is claimed only when the journal reports it asked.
-    if (failedAsk) return fmt(S.acceptedNotAsked, {agent});
-    return fmt(card.asked === true ? S.accepted : S.acceptedPlain, {agent});
+    if (failedAsk) return S.acceptedNotAsked(agent);
+    return (card.asked === true ? S.accepted : S.acceptedPlain)(agent);
   }
 
   function receiptHtml(card, phase, note = '') {
@@ -635,7 +617,7 @@
     if (!state.failed && !state.pending.length && !state.earlier.length && !filtered) return '';
     const cards = state.pending.map((card) => (card.status === 'stale' ? staleCardHtml(card) : pendingCardHtml(card))).join('');
     const filterLine = filtered
-      ? `<p class="sg-filter">${escapeHtml(fmt(state.failed || state.pending.length ? S.onlyFrom : S.noneFrom, {agent: agentText(filtered)}))} <a href="${escapeHtml(showAllHref())}" data-agent-show-all>${escapeHtml(S.showAll)}</a></p>`
+      ? `<p class="sg-filter">${escapeHtml((state.failed || state.pending.length ? S.onlyFrom : S.noneFrom)(agentText(filtered)))} <a href="${escapeHtml(showAllHref())}" data-agent-show-all>${escapeHtml(S.showAll)}</a></p>`
       : '';
     const failed = state.failed
       ? `<p class="curation-item-error">${escapeHtml(S.loadFailed)}</p><div class="curation-actions"><button class="curation-button" type="button" data-action="agent-reload">${escapeHtml(S.retry)}</button></div>`

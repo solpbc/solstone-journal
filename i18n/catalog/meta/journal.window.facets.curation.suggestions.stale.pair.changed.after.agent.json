@@ -1,0 +1,29 @@
+{
+  "description": "Stale pair notice. The values name both people and the displayed agent.",
+  "context": "Journal window. Stale pair notice. The values name both people and the displayed agent.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "first_name",
+      "type": "string"
+    },
+    {
+      "name": "second_name",
+      "type": "string"
+    },
+    {
+      "name": "agent_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ffc08d60a6c5b11b41821c5284d69c621404515106a67a29374b21f480e5e012",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

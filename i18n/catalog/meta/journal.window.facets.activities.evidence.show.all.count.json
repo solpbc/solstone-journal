@@ -1,0 +1,30 @@
+{
+  "description": "Button label for showing all evidence segments. $count includes rows already visible.",
+  "context": "Journal window. Button label for showing all evidence segments. $count includes rows already visible.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "b550e12bf8c6aeafaace08a9e39585683d58b1be309be9e96a06fe4fa2bbe268",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

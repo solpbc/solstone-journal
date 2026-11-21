@@ -1,0 +1,25 @@
+{
+  "description": "Effect of a rename suggestion. $former_name and $new_name are the displayed names.",
+  "context": "Journal window. Effect of a rename suggestion. $former_name and $new_name are the displayed names.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "former_name",
+      "type": "string"
+    },
+    {
+      "name": "new_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bafdd5375c56482c5505f7b134ef31a0b644d98d9e82d3462af11b8257f17ccd",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

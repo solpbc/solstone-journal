@@ -1,0 +1,21 @@
+{
+  "description": "Activity participant label. $person is the recorded person name.",
+  "context": "Journal window. Activity participant label. $person is the recorded person name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "person",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e38a0fbf01a1c50a8c15674847015792c9d49d7b2d6d48acfa3a34c1498c2f24",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

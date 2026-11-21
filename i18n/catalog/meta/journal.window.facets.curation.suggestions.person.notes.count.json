@@ -1,0 +1,30 @@
+{
+  "description": "Number of journal notes associated with a suggested person.",
+  "context": "Journal window. Number of journal notes associated with a suggested person.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "94b498c267e701e399af3422f7fc732edde9062e4ab163c602f9274d1dba703a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

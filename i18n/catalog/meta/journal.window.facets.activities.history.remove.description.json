@@ -1,0 +1,21 @@
+{
+  "description": "Accessible name for an edit removal button. $recorded_change is the complete history label of the recorded edit.",
+  "context": "Journal window. Accessible name for an edit removal button. $recorded_change is the complete history label of the recorded edit.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "recorded_change",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "056b1384231e6081b6f8950b03e67f85f0705745022d15effc9f54e5e6d1e2df",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Drawer summary when the full evidence is shown.",
+  "context": "Journal window. Drawer summary when the full evidence is shown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "9cfc8d4f4211449b88b564dc2a65a8d15c98a76ef5d95b3dd4d88da06bab87dd",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

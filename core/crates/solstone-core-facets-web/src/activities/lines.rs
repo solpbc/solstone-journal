@@ -251,8 +251,9 @@ pub(super) fn set_lines_checked(
     }) {
         return refused(
             "owner_line_outside_activity",
-            http::Detail::with_value(
-                "journal.window.facets.activities.response.error.detail.value.isn.t.a.segment.of",
+            http::Detail::with_arg(
+                "journal.window.facets.activities.response.detail.segment.outside.activity",
+                "segment_path",
                 format!("{}/{}", line.stream, line.segment),
             ),
             StatusCode::BAD_REQUEST,
@@ -426,8 +427,9 @@ pub(super) fn remove_lines_edit(
                 Err(detail) => {
                     return Some(refused(
                         "owner_line_edit_unreadable",
-                        http::Detail::with_value(
-                            "journal.window.facets.activities.response.error.detail.the.answer.this.edit.replaced.can",
+                        http::Detail::with_arg(
+                            "journal.window.facets.activities.response.detail.previous.answer.unreadable",
+                            "read_error",
                             detail.to_string(),
                         ),
                         StatusCode::CONFLICT,

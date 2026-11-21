@@ -1,0 +1,25 @@
+{
+  "description": "Stale pair notice. The values are the displayed names of the two people.",
+  "context": "Journal window. Stale pair notice. The values are the displayed names of the two people.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "first_name",
+      "type": "string"
+    },
+    {
+      "name": "second_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bdd666a843b6fb4e08cb5dbbc822074dd7f637fcb967f61b9f322c24cfc44f54",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

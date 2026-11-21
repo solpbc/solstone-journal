@@ -1,0 +1,21 @@
+{
+  "description": "Effect of accepting an account suggestion. $affected_days is a display list of journal days.",
+  "context": "Journal window. Effect of accepting an account suggestion. $affected_days is a display list of journal days.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "affected_days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "376d869ceb6eaa90ac13b9a84334a08eb2f8b4e299e85ddaae6a0108d78c8347",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

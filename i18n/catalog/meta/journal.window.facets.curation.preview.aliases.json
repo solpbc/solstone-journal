@@ -1,0 +1,21 @@
+{
+  "description": "Preview row listing aliases that would be added. $aliases is a display list of recorded spellings.",
+  "context": "Journal window. Preview row listing aliases that would be added. $aliases is a display list of recorded spellings.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "aliases",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "393034e7935380f8d84e0daff7f03f60a53f5b538104fabe42dca391a738dc16",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Timeline footer when hidden entries are excluded. $count is the hidden activity count.",
+  "context": "Journal window. Timeline footer when hidden entries are excluded. $count is the hidden activity count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "ffdd053d1b9419fdfc457971899af92c8dc09edd68a7009b1d8e1b67f387ae10",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

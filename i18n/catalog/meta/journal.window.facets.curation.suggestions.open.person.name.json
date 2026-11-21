@@ -1,0 +1,21 @@
+{
+  "description": "Action label for opening the displayed person.",
+  "context": "Journal window. Action label for opening the displayed person.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "person_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2007e76af66f0e0ab6d7dadf2d8552258cac56b72e7e39b83063bf3eecaf484a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

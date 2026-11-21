@@ -1,0 +1,39 @@
+{
+  "description": "Merge preview with voice samples $added and the resulting $total.",
+  "context": "Journal window. Merge preview with voice samples $added and the resulting $total.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "added_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "added",
+      "type": "string"
+    },
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "1ce0a5da6247ac0ef5e630cc3d0104adc6c66cec3d8903b4982058c576b40848",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "added_quantity",
+    "type": "cardinal"
+  }
+}
