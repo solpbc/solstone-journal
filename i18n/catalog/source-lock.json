@@ -31579,6 +31579,13 @@
       "locales": []
     },
     {
+      "id": "journal.window.network.client.last.added.at",
+      "source": "f3258edfbe3dc056c69fc300638d0923993b4299e1bfceeb266b7a75e39925b5",
+      "contract": "8f5196b9abd71431264637415413f60534663e1e3e1a44f9a8524f962e35a4c6",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.network.computer.linux.note",
       "source": "f7da7f5be2d0799352d1735a08f7be46354451b184b80c3917bd7e5997bf003c",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
@@ -41750,16 +41757,16 @@
       "locales": []
     },
     {
-      "id": "journal.window.shared.gate.drawer.audio.recordings",
-      "source": "e3889df777f1d876009377a14d2f47cfae305cf206b775043bdf969bd4299a7b",
-      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "id": "journal.window.shared.gate.drawer.audio.recordings.count",
+      "source": "1574eadd7eef9eccb3d0be6c7b5b57e91d2b4d4cdc7b4cec6a34e900ad4eaedc",
+      "contract": "2af6f19db876cf36cedf0ae79d90ffc9f45ee06246f391e88f7fbb0807a436fe",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
       "locales": []
     },
     {
-      "id": "journal.window.shared.gate.drawer.manual.tags",
-      "source": "ce0d76c6ca6f53578707625c24793f62864b392597473c0be546957caaaa5158",
-      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "id": "journal.window.shared.gate.drawer.manual.tags.count",
+      "source": "af939ea3a68a1b44150984e49e2f802ea5508587ee4f8e50f226e607f5fef645",
+      "contract": "2af6f19db876cf36cedf0ae79d90ffc9f45ee06246f391e88f7fbb0807a436fe",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
       "locales": []
     },
@@ -41820,9 +41827,9 @@
       "locales": []
     },
     {
-      "id": "journal.window.shared.gate.drawer.visible.text.needs",
-      "source": "169e35485a2fe79ef88b5c1ab37aed5528237e22bc19f8b5c37ccad885f0a16d",
-      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "id": "journal.window.shared.gate.drawer.threshold",
+      "source": "896a5d3d73aba835062eba52f6c491fb1056fc5af5ea0223193c95fa2364cbdf",
+      "contract": "33029ede47deff7159007bff39ada56f2e454f317ec288be0671ebf70b688474",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
       "locales": []
     },
@@ -43332,13 +43339,6 @@
       "locales": []
     },
     {
-      "id": "journal.window.speakers.accessible.name.confidence",
-      "source": "6042beaef008c9e2c9527f434777dd1bea68799295aa89ad84863fef4fb93783",
-      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
-      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
-    },
-    {
       "id": "journal.window.speakers.accessible.name.correct.attribution",
       "source": "d8f2970eaeab113602199cd3f961feaad29681f361ab7f0aaf7071356164f225",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
@@ -43727,6 +43727,20 @@
       "id": "journal.window.speakers.button.label.show.sentences.and.details",
       "source": "8047c02fd54546a184e71fd69f368edb63975849908ae343e795c013e8262c75",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.confidence.accessible",
+      "source": "25de9a9d0839521bba3c303f823cbf7cf47586137ee5ef6eb909c672291cb51e",
+      "contract": "8be6c2a8564de481c68488d5904b2cc8e9b78036e3e9fef222686349d4f7eac8",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.speakers.confidence.label",
+      "source": "8e30ae8d795357d5f0b15fafaa5e9d56f7ea97f3b6b7647c361f4ef52b780a88",
+      "contract": "8be6c2a8564de481c68488d5904b2cc8e9b78036e3e9fef222686349d4f7eac8",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
       "locales": []
     },

@@ -1,0 +1,30 @@
+{
+  "description": "Count of owner-taught statements in the setup drawer.",
+  "context": "Journal window. Count of owner-taught statements in the setup drawer.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "af939ea3a68a1b44150984e49e2f802ea5508587ee4f8e50f226e607f5fef645",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Count of available audio recordings in the setup drawer.",
+  "context": "Journal window. Count of available audio recordings in the setup drawer.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "1574eadd7eef9eccb3d0be6c7b5b57e91d2b4d4cdc7b4cec6a34e900ad4eaedc",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

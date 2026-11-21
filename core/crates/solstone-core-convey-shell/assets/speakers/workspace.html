@@ -4102,8 +4102,9 @@ function runDay(ctx, page) {
 
     let html = '';
     if (dotClass) {
-      html += `<span class="spk-confidence-dot${dotClass}" aria-label="${sentence.confidence} ${window.JournalI18n.renderHtml('journal.window.speakers.accessible.name.confidence')}"></span>`;
-      html += `<span class="spk-confidence-label">${escapeHtml(sentence.confidence)}</span>`;
+      const confidence = [['confidence', sentence.confidence]];
+      html += `<span class="spk-confidence-dot${dotClass}" aria-label="${window.JournalI18n.renderHtml('journal.window.speakers.confidence.accessible', confidence)}"></span>`;
+      html += `<span class="spk-confidence-label">${window.JournalI18n.renderHtml('journal.window.speakers.confidence.label', confidence)}</span>`;
     }
 
     if (sentence.is_correction && sentence.original_speaker_name) {

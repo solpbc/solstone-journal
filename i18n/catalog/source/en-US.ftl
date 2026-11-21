@@ -4272,6 +4272,8 @@ journal.window.more.review.count = { $quantity ->
 
 journal.window.network.address.home.invalid.port = use the address your journal is reachable at, with port { $port }: either one on your own network, like 192.168.1.44:{ $port }, or a public address you've exported.
 
+journal.window.network.client.last.added.at = last added { $timestamp }
+
 journal.window.network.delivery.checkin.never = never
 
 journal.window.network.delivery.elapsed.day = { $quantity ->
@@ -5839,6 +5841,16 @@ journal.window.shared.day.grid.range.anchor = finishes the range from{ $slot1 }{
 
 journal.window.shared.day.grid.range.start = range starts{ $slot1 }{ $start_day }. pick the last day.
 
+journal.window.shared.gate.drawer.audio.recordings.count = { $quantity ->
+    [one] recordings with audio: { $count }
+   *[other] recordings with audio: { $count }
+}
+
+journal.window.shared.gate.drawer.manual.tags.count = { $quantity ->
+    [one] statements you taught: { $count }
+   *[other] statements you taught: { $count }
+}
+
 journal.window.shared.gate.drawer.statement.median.required.seconds = median statement length { $observed }s, needs { $minimum }s
 
 journal.window.shared.gate.drawer.statement.median.seconds = median statement length { $observed }s
@@ -5862,6 +5874,8 @@ journal.window.shared.gate.drawer.statements.observed.count = { $quantity ->
         [one] { $observed } longer statements so far
        *[other] { $observed } longer statements so far
     }
+
+journal.window.shared.gate.drawer.threshold = needs { $threshold }
 
 journal.window.shared.report.error.journal.version = journal{ $slot1 }{ $version }
 
@@ -12209,15 +12223,9 @@ journal.window.shared.error.handler.window.explanation.navigation.aborted.a.read
 
 journal.window.shared.error.handler.window.explanation.something.on.this.page.didn.t = something on this page didn't work.
 
-journal.window.shared.gate.drawer.audio.recordings = recordings with audio:
-
-journal.window.shared.gate.drawer.manual.tags = statements you taught:
-
 journal.window.shared.gate.drawer.median.length = median length
 
 journal.window.shared.gate.drawer.open.label = why not yet?
-
-journal.window.shared.gate.drawer.visible.text.needs = needs
 
 journal.window.shared.gate.drawer.window.explanation.pick.longer.statements.when.you.teach = pick longer statements when you teach your voice.
 
@@ -12505,8 +12513,6 @@ journal.window.speakers.accessible.name.apply.correction = apply correction
 
 journal.window.speakers.accessible.name.assign.speaker = assign speaker
 
-journal.window.speakers.accessible.name.confidence = confidence
-
 journal.window.speakers.accessible.name.correct.attribution = correct attribution
 
 journal.window.speakers.accessible.name.dismiss = dismiss
@@ -12618,6 +12624,16 @@ journal.window.speakers.button.label.look.for.new.voices = look for new voices
 journal.window.speakers.button.label.needs.review = needs review
 
 journal.window.speakers.button.label.show.sentences.and.details = show sentences and details
+
+journal.window.speakers.confidence.accessible = { $confidence ->
+    [high] high confidence
+   *[medium] medium confidence
+}
+
+journal.window.speakers.confidence.label = { $confidence ->
+    [high] high
+   *[medium] medium
+}
 
 journal.window.speakers.copy.action.not.now = not now
 

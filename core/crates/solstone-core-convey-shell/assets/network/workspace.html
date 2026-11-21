@@ -2240,7 +2240,7 @@ systemctl --user start solstone-linux</code></div>
       const render = window.NetworkRender;
       const { displayName, deliveryLabel, deliveryGroup, ariaLabel } = cardFacts(client);
       const lastAdded = client.last_accepted_ingest_at
-        ? `<p class="client-last-material">${window.JournalI18n.renderHtml('journal.window.network.visible.text.last.added')} ${escapeHtml(window.JournalFormat.timestamp(client.last_accepted_ingest_at))}</p>`
+        ? `<p class="client-last-material">${window.JournalI18n.renderHtml('journal.window.network.client.last.added.at', [['timestamp', window.JournalFormat.timestamp(client.last_accepted_ingest_at)]])}</p>`
         : '';
       const pairedDay = render.dayKeyFor(client.paired_at);
       const pairedLabel = pairedDay ? window.JournalI18n.render('journal.window.network.paired.day', [['date', String(window.JournalFormat.day(pairedDay))]]) : '';

@@ -11,8 +11,6 @@
   const copy = Object.freeze({
     drawer_label: window.JournalI18n.render('journal.window.shared.gate.drawer.open.label'),
     na: 'n/a',
-    manual_tags_label: window.JournalI18n.render('journal.window.shared.gate.drawer.manual.tags'),
-    segments_label: window.JournalI18n.render('journal.window.shared.gate.drawer.audio.recordings'),
     reasons: Object.freeze({
       too_few_stmts: Object.freeze({
         row_label: 'statements',
@@ -63,8 +61,9 @@
     return text === copy.na ? text : `${text}${unit}`;
   }
 
-  function countText(value) {
-    return String(value || 0);
+  function countArgs(value) {
+    const count = value || 0;
+    return [['quantity', window.JournalI18n.cardinalQuantity(count)], ['count', String(count)]];
   }
 
   function reasonConfig(reason) {
@@ -111,7 +110,7 @@
     if (!config) return '';
     const values = metricValueFor(reason, observed, threshold);
     const needHtml = values.threshold
-      ? ` <span class="gate-need">${window.JournalI18n.renderHtml('journal.window.shared.gate.drawer.visible.text.needs')} ${escapeHtml(values.threshold)}</span>`
+      ? ` <span class="gate-need">${window.JournalI18n.renderHtml('journal.window.shared.gate.drawer.threshold', [['threshold', values.threshold]])}</span>`
       : '';
     return '<div class="gate-row">' +
       `<span>${escapeHtml(config.row_label)}</span>` +
@@ -136,8 +135,8 @@
   function bodyHtml(data, reason, observed, threshold, actionHtml) {
     return gateRowHtml(reason, observed, threshold) +
       barHtml(observed, threshold) +
-      `<div class="spk-owner-diagnostics-line">${escapeHtml(copy.manual_tags_label)} ${escapeHtml(countText(data.manual_tags_count))}</div>` +
-      `<div class="spk-owner-diagnostics-line">${escapeHtml(copy.segments_label)} ${escapeHtml(countText(data.segments_available))}</div>` +
+      `<div class="spk-owner-diagnostics-line">${window.JournalI18n.renderHtml('journal.window.shared.gate.drawer.manual.tags.count', countArgs(data.manual_tags_count))}</div>` +
+      `<div class="spk-owner-diagnostics-line">${window.JournalI18n.renderHtml('journal.window.shared.gate.drawer.audio.recordings.count', countArgs(data.segments_available))}</div>` +
       nextLineHtml(reason, data.can_build_from_tags) +
       (actionHtml || '');
   }

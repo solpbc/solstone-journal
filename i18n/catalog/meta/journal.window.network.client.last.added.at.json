@@ -1,0 +1,21 @@
+{
+  "description": "A client activity line with the time it last added to the journal.",
+  "context": "Journal window. A client activity line with the time it last added to the journal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "timestamp",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f3258edfbe3dc056c69fc300638d0923993b4299e1bfceeb266b7a75e39925b5",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

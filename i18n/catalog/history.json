@@ -97789,6 +97789,26 @@
       "selector": null
     },
     {
+      "id": "journal.window.network.client.last.added.at",
+      "resource": "m6a6f75726e616c2e77696e646f772e6e6574776f726b2e636c69656e742e6c6173742e61646465642e6174",
+      "namespace": "journal.window.network.client.last.added",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "timestamp",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.network.computer.linux.note",
       "resource": "m6a6f75726e616c2e77696e646f772e6e6574776f726b2e636f6d70757465722e6c696e75782e6e6f7465",
       "namespace": "journal.window.network.computer.linux",
@@ -124900,24 +124920,88 @@
       "resource": "m6a6f75726e616c2e77696e646f772e7368617265642e676174652e6472617765722e617564696f2e7265636f7264696e6773",
       "namespace": "journal.window.shared.gate.drawer.audio",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.shared.gate.drawer.audio.recordings.count",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
       "selector": null
     },
     {
+      "id": "journal.window.shared.gate.drawer.audio.recordings.count",
+      "resource": "m6a6f75726e616c2e77696e646f772e7368617265642e676174652e6472617765722e617564696f2e7265636f7264696e67732e636f756e74",
+      "namespace": "journal.window.shared.gate.drawer.audio.recordings",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
       "id": "journal.window.shared.gate.drawer.manual.tags",
       "resource": "m6a6f75726e616c2e77696e646f772e7368617265642e676174652e6472617765722e6d616e75616c2e74616773",
       "namespace": "journal.window.shared.gate.drawer.manual",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.shared.gate.drawer.manual.tags.count",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
       "selector": null
+    },
+    {
+      "id": "journal.window.shared.gate.drawer.manual.tags.count",
+      "resource": "m6a6f75726e616c2e77696e646f772e7368617265642e676174652e6472617765722e6d616e75616c2e746167732e636f756e74",
+      "namespace": "journal.window.shared.gate.drawer.manual.tags",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
     },
     {
       "id": "journal.window.shared.gate.drawer.median.length",
@@ -125101,12 +125185,32 @@
       }
     },
     {
+      "id": "journal.window.shared.gate.drawer.threshold",
+      "resource": "m6a6f75726e616c2e77696e646f772e7368617265642e676174652e6472617765722e7468726573686f6c64",
+      "namespace": "journal.window.shared.gate.drawer",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "threshold",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.shared.gate.drawer.visible.text.needs",
       "resource": "m6a6f75726e616c2e77696e646f772e7368617265642e676174652e6472617765722e76697369626c652e746578742e6e65656473",
       "namespace": "journal.window.shared.gate.drawer.visible.text",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.shared.gate.drawer.threshold",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -129114,8 +129218,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e737065616b6572732e61636365737369626c652e6e616d652e636f6e666964656e6365",
       "namespace": "journal.window.speakers.accessible.name",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.speakers.confidence.accessible",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -129866,6 +129970,62 @@
       "arguments": [],
       "protected_slots": [],
       "selector": null
+    },
+    {
+      "id": "journal.window.speakers.confidence.accessible",
+      "resource": "m6a6f75726e616c2e77696e646f772e737065616b6572732e636f6e666964656e63652e61636365737369626c65",
+      "namespace": "journal.window.speakers.confidence",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "enum",
+      "arguments": [
+        {
+          "name": "confidence",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "confidence",
+        "type": "string",
+        "enum_values": [
+          "high",
+          "medium"
+        ],
+        "enum_default": "medium"
+      }
+    },
+    {
+      "id": "journal.window.speakers.confidence.label",
+      "resource": "m6a6f75726e616c2e77696e646f772e737065616b6572732e636f6e666964656e63652e6c6162656c",
+      "namespace": "journal.window.speakers.confidence",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "enum",
+      "arguments": [
+        {
+          "name": "confidence",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "confidence",
+        "type": "string",
+        "enum_values": [
+          "high",
+          "medium"
+        ],
+        "enum_default": "medium"
+      }
     },
     {
       "id": "journal.window.speakers.copy.action.not.now",
