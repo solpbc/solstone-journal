@@ -662,6 +662,7 @@ fn public_record(name: &str, config: &Value) -> Value {
     json!({
         "name": name,
         "title": values.get("title").and_then(Value::as_str).unwrap_or(name),
+        "description": values.get("description").and_then(Value::as_str).unwrap_or(""),
         "color": values.get("color").and_then(Value::as_str).unwrap_or(""),
         "emoji": emoji,
         "icon": icon.unwrap_or(""),

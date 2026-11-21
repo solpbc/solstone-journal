@@ -19,6 +19,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- facets now have one picker for icons, emoji, or a color dot only, replacing the separate emoji and icon settings in facet appearance. the emoji tab includes a paste box that keeps joined emoji such as 🧑‍💻 whole and rejects digits or mixed text. adding a facet and adding a custom activity use the same picker. thanks @dvanduzer for the report and feedback (#427).
+- a facet's chosen icon or emoji now shows across settings, activities, entities, agents, and home. on home, facet titles and icons show on the time-in-each-facet chips, and on today's activity rows when you have more than one active facet.
+- adding a facet now includes an optional description field explaining how your journal uses it to tell facets apart. when you have more than one active facet, settings shows a note on any active facet missing a description.
 - on the transcripts page, each column under "detail" is headed by the device that added it. audio, screen, imports, pages and photos each keep one color under "day" and under "detail", and a key above them lists the kinds that day has. when you're viewing today, a line by the date says which device last added something to your journal and when, and anything new appears while the page is open. long messages and transcript lines now wrap at a comfortable reading width.
 - the sources page now links to the import page, for files and exports from other apps. the import page links to the sources page. the close button in dialogs is easier to hit, and on a phone so is a notification's. small text in notifications and the navigation labels is a little larger.
 - recordings from your Plaud sync, and files from a phone journal's audio folder, no longer appear in import history or in the import list an agent can read, so history shows what you chose to import. you can still delete them from transcripts. Oura's syncs still appear in import history for now.
@@ -27,7 +30,6 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- in a facet's settings, an emoji made of several joined together, such as 🧑‍💻, is no longer cut short; a digit, or text with an emoji in it, is no longer taken as the emoji; and pressing escape leaves the emoji as it was. the editor now says when what you entered isn't one emoji. the emoji box for a new custom activity also keeps joined emoji whole and takes only one emoji. thanks @dvanduzer for the report (#427).
 - work an agent does on its own in a tmux session you've listed in `output_sessions` is now usually described as the agent's, such as "the agent in qa ran the tests", so your journal is less likely to credit it to you. thanks @dvanduzer for the report (#424).
 - search results from imported captions show the speaker's name instead of caption markup.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.

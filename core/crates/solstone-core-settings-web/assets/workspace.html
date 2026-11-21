@@ -566,48 +566,30 @@ input:checked + .slider:before {
   text-align: center;
 }
 
-/* Lucide icon picker */
+/* Unified icon & emoji picker */
 .icon-picker-trigger {
   display: inline-flex;
   align-items: center;
-  gap: 0.75em;
+  gap: 0.65em;
+  min-height: 44px;
   cursor: pointer;
-  padding: 0.6em 0.75em;
-  border: 2px solid var(--hairline-2);
+  padding: 0.45em 0.85em 0.45em 0.55em;
+  border: 1.5px solid var(--hairline-2);
   border-radius: 8px;
   background: var(--paper);
-  color: var(--orange-text-aa);
-  transition: all 0.2s;
+  color: var(--ink);
+  font: inherit;
+  transition: background 0.15s, border-color 0.15s;
 }
 
 .icon-picker-trigger:hover {
   background: var(--cream-bright);
-  border-color: var(--hairline-2);
+  border-color: var(--ink-faint);
 }
 
 .icon-picker-trigger:focus-visible {
-  outline: 2px solid var(--facet-color, var(--orange));
+  outline: 2px solid var(--focus, var(--orange-ink));
   outline-offset: 2px;
-}
-
-.icon-picker-preview,
-.icon-modal-preview-glyph {
-  --pill-color: var(--facet-color, var(--orange));
-  width: 32px;
-  height: 32px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--pill-color, var(--facet-color, var(--orange)));
-}
-
-.icon-picker-preview svg,
-.icon-modal-preview-glyph svg,
-.icon-result-btn svg {
-  width: 24px;
-  height: 24px;
-  stroke-width: 1.5;
-  color: currentColor;
 }
 
 .icon-picker-name {
@@ -615,35 +597,98 @@ input:checked + .slider:before {
   font-weight: 600;
 }
 
+.icon-picker-change {
+  color: var(--orange-text-aa);
+  font-size: 0.85em;
+  font-weight: 600;
+  margin-left: 0.25em;
+}
+
+#iconPickerModal {
+  z-index: 1020;
+}
+
+.icon-picker-tabs {
+  display: flex;
+  width: fit-content;
+  border: 1px solid var(--hairline-2);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 0.85em;
+}
+
+#iconSearchLabel {
+  display: block;
+  margin-bottom: 0.35em;
+}
+
+.icon-picker-tab {
+  font: inherit;
+  font-size: 0.9em;
+  font-weight: 500;
+  min-height: 38px;
+  padding: 0 1em;
+  border: 0;
+  background: var(--cream-bright);
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.icon-picker-tab + .icon-picker-tab {
+  border-left: 1px solid var(--hairline-2);
+}
+
+.icon-picker-tab[aria-selected="true"] {
+  background: var(--orange-wash);
+  color: var(--ink);
+  font-weight: 600;
+}
+
 .icon-search-input {
   width: 100%;
   padding: 0.65em 0.75em;
-  border: 2px solid var(--hairline-2);
+  border: 1.5px solid var(--hairline-2);
   border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
   font: inherit;
-  margin-bottom: 1em;
+  margin-bottom: 0.85em;
 }
 
 .icon-results-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
-  gap: 0.6em;
-  max-height: 280px;
+  grid-template-columns: repeat(auto-fill, minmax(48px, 1fr));
+  gap: 0.5em;
+  max-height: 240px;
   overflow: auto;
-  margin-bottom: 1em;
+  margin-bottom: 0.85em;
 }
 
 .icon-result-btn {
   aspect-ratio: 1;
-  border: 2px solid var(--hairline-2);
+  min-width: 44px;
+  min-height: 44px;
+  border: 1.5px solid var(--hairline);
   border-radius: 8px;
   background: var(--paper);
-  color: var(--pill-color, var(--facet-color, var(--orange)));
+  color: var(--ink);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.icon-result-btn svg {
+  width: 20px;
+  height: 20px;
+  stroke-width: 1.75;
+  color: currentColor;
+}
+
+.icon-result-btn--emoji {
+  font-size: 1.35rem;
+  line-height: 1;
 }
 
 .icon-result-btn:hover {
@@ -656,8 +701,48 @@ input:checked + .slider:before {
 }
 
 .icon-result-btn.selected {
-  border-color: var(--facet-color, var(--orange));
-  box-shadow: 0 0 0 2px var(--ink-on-dark), 0 0 0 5px var(--facet-color, var(--orange));
+  border-color: var(--orange-ink);
+  background: var(--orange-wash);
+}
+
+.icon-emoji-paste-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5em 0.75em;
+  margin-bottom: 0.85em;
+  font-size: 0.9em;
+  color: var(--ink-soft);
+}
+
+.icon-emoji-paste-row[hidden] {
+  display: none;
+}
+
+.icon-emoji-paste-row label {
+  margin: 0;
+  font-weight: 500;
+}
+
+.icon-emoji-paste-input {
+  width: 9.5em;
+  padding: 0.35em 0.55em;
+  border: 1.5px solid var(--hairline-2);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  text-align: center;
+}
+
+.icon-paste-feedback {
+  width: 100%;
+  font-size: 0.85em;
+  color: var(--danger);
+}
+
+.icon-paste-feedback[hidden] {
+  display: none;
 }
 
 .icon-picker-message {
@@ -665,7 +750,7 @@ input:checked + .slider:before {
   border-radius: 8px;
   background: var(--cream-bright);
   color: var(--ink-soft);
-  margin-bottom: 1em;
+  margin-bottom: 0.85em;
 }
 
 .icon-picker-message.error {
@@ -684,19 +769,39 @@ input:checked + .slider:before {
 
 .icon-clear-btn {
   flex: 1;
-  padding: 0.75em 1.5em;
+  padding: 0.75em 1.25em;
   background: var(--paper);
   color: var(--ink);
-  border: 2px solid var(--hairline-2);
+  border: 1.5px solid var(--hairline-2);
   border-radius: 8px;
-  font-size: 1em;
+  font-size: 0.95em;
   font-weight: 600;
   cursor: pointer;
 }
 
 .icon-clear-btn:hover {
   background: var(--cream-bright);
-  border-color: var(--hairline-2);
+  border-color: var(--ink-faint);
+}
+
+.settings-optional {
+  font-weight: normal;
+  color: var(--ink-faint);
+}
+
+.facet-desc-missing-note {
+  margin-top: 0.65rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--hairline-2));
+  background: var(--warn-wash);
+  color: var(--ink);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.facet-desc-missing-note[hidden] {
+  display: none;
 }
 
 /* Color picker */
@@ -867,12 +972,13 @@ input:checked + .slider:before {
 .modal-preview-pill {
   display: inline-flex;
   align-items: center;
-  gap: 0.5em;
-  padding: 0.6em 1.2em;
-  border-radius: 20px;
-  border: 2px solid var(--hairline-2);
-  background: color-mix(in srgb, var(--focus) 10%, transparent);
-  font-weight: 500;
+  gap: 0.55em;
+  padding: 0.55em 0.9em;
+  border-radius: 8px;
+  border: 1px solid var(--hairline-2);
+  background: var(--paper);
+  color: var(--ink);
+  font-weight: 600;
 }
 
 .modal-preview-emoji {
@@ -2019,7 +2125,7 @@ button:focus:not(:focus-visible) {
   margin: 0;
 }
 
-.facet-detail-swatch {
+.facet-detail-swatch:not(.facet-mark) {
   flex: none;
   border: 1px solid color-mix(in srgb, var(--ink) 16%, transparent);
   border-radius: 50%;
@@ -2041,6 +2147,7 @@ button:focus:not(:focus-visible) {
 
 .facets-list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.75rem;
 }
 
@@ -2053,6 +2160,7 @@ button:focus:not(:focus-visible) {
   gap: 0.75rem;
   justify-content: space-between;
   min-height: 44px;
+  min-width: 0;
   padding: 0.85rem 1rem;
   text-decoration: none;
 }
@@ -2062,14 +2170,48 @@ button:focus:not(:focus-visible) {
 }
 
 .facet-list-row-main {
-  align-items: center;
+  align-items: flex-start;
   display: flex;
-  gap: 0.55rem;
+  gap: 0.65rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.facet-list-row-main > .facet-mark {
+  margin-top: 0.1rem;
+}
+
+.facet-list-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.15rem;
   min-width: 0;
 }
 
 .facet-list-title {
   font-weight: 600;
+  color: var(--ink);
+}
+
+.facet-list-desc {
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 480px) {
+  .facet-list-desc {
+    white-space: normal;
+  }
+}
+
+.facet-list-desc--missing {
+  color: var(--ink-faint);
+  font-style: italic;
 }
 
 .facet-list-swatch {
@@ -2079,6 +2221,10 @@ button:focus:not(:focus-visible) {
   flex: 0 0 auto;
   height: 0.85rem;
   width: 0.85rem;
+}
+
+.facet-list-swatch[hidden] {
+  display: none;
 }
 
 .facet-list-muted {
@@ -3177,23 +3323,18 @@ button:focus:not(:focus-visible) {
           <span class="field-display" id="facetDescDisplay">{{journal.window.settings.visible.text.no.description.set}}</span>
           <textarea class="field-input" id="facetDescInput" rows="3" style="display:none"></textarea>
         </div>
-        <small id="facetDescField-hint">{{journal.window.settings.visible.text.double.click.or.press.enter.to}}</small>
+        <small id="facetDescField-hint">{{journal.window.settings.visible.text.facet.description.appearance.hint}}</small>
+        <div class="facet-desc-missing-note" id="facetDescMissingNote" hidden></div>
       </div>
 
       <div class="settings-field">
-        <label for="emojiInput">{{journal.window.settings.field.label.icon}}</label>
-        <div class="emoji-display" id="emojiDisplay" tabindex="0" role="button">&#128230;</div>
-        <input type="text" id="emojiInput" class="emoji-input" placeholder="{{journal.window.settings.field.placeholder.paste.emoji}}" style="display:none">
-        <small>{{journal.window.settings.visible.text.click.to.change.emoji}}</small>
-      </div>
-
-      <div class="settings-field">
-        <label for="iconTrigger">{{journal.window.settings.field.label.lucide.icon}}</label>
+        <label for="iconTrigger">{{journal.window.settings.field.label.icon}}</label>
         <button type="button" class="icon-picker-trigger" id="iconTrigger">
-          <span class="icon-picker-preview" id="iconPreview" aria-hidden="true">—</span>
-          <span class="icon-picker-name" id="iconNameDisplay">{{journal.window.settings.visible.text.use.emoji}}</span>
+          <span class="facet-mark facet-mark--lg facet-mark--dot" id="iconPreview" aria-hidden="true"></span>
+          <span class="icon-picker-name" id="iconNameDisplay">{{journal.window.settings.visible.text.no.icon}}</span>
+          <span class="icon-picker-change">{{journal.window.settings.button.label.change}}</span>
         </button>
-        <small>{{journal.window.settings.visible.text.choose.a.lucide.override.or.keep}}</small>
+        <small>{{journal.window.settings.visible.text.facet.icon.hint}}</small>
       </div>
 
     </section>
@@ -3257,8 +3398,12 @@ button:focus:not(:focus-visible) {
           <textarea id="customActivityDesc" rows="2" placeholder="{{journal.window.settings.field.placeholder.brief.description.of.this.activity}}"></textarea>
         </div>
         <div class="settings-field">
-          <label for="customActivityIcon">{{journal.window.settings.field.label.icon.emoji}}</label>
-          <input type="text" id="customActivityIcon" placeholder="{{journal.window.settings.activity.icon.placeholder}}" style="max-width: 100px;">
+          <label for="customActivityIconTrigger">{{journal.window.settings.field.label.icon}} <span class="settings-optional">{{journal.window.settings.visible.text.optional}}</span></label>
+          <button type="button" class="icon-picker-trigger" id="customActivityIconTrigger">
+            <span class="facet-mark facet-mark--md facet-mark--dot" id="customActivityIconPreview" aria-hidden="true"></span>
+            <span class="icon-picker-name" id="customActivityIconName">{{journal.window.settings.visible.text.no.icon}}</span>
+            <span class="icon-picker-change">{{journal.window.settings.button.label.change}}</span>
+          </button>
         </div>
         <div class="settings-field">
           <label for="customActivityInstructions">{{journal.window.settings.field.label.instructions}} <span style="font-weight:normal;color:var(--ink-faint);">{{journal.window.settings.visible.text.optional}}</span></label>
@@ -3268,29 +3413,6 @@ button:focus:not(:focus-visible) {
       </div>
     </div>
   </section>
-</div>
-
-<!-- Icon Picker Modal -->
-<div id="iconPickerModal" class="color-modal" role="dialog" aria-modal="true" aria-labelledby="iconPickerHeading">
-  <div class="color-modal-content">
-    <span class="color-close" id="iconPickerClose">&times;</span>
-    <h3 id="iconPickerHeading">{{journal.window.settings.section.heading.choose.lucide.icon}}</h3>
-    <label for="iconSearchInput">{{journal.window.settings.field.label.search.icons}}</label>
-    <input type="search" id="iconSearchInput" class="icon-search-input" placeholder="{{journal.window.settings.field.placeholder.search.by.name.or.tag}}" autocomplete="off">
-    <div class="icon-picker-message" id="iconPickerMessage" role="status" aria-live="polite" style="display:none"></div>
-    <div class="icon-results-grid" id="iconResultsGrid"></div>
-    <div class="color-preview-section">
-      <h4>{{journal.window.settings.visible.text.preview}}</h4>
-      <div class="modal-preview-pill" id="iconModalPreview">
-        <span class="icon-modal-preview-glyph" id="iconModalPreviewGlyph" aria-hidden="true">—</span>
-        <span class="modal-preview-title" id="iconModalPreviewTitle">{{journal.window.settings.visible.text.facet}}</span>
-      </div>
-    </div>
-    <div class="icon-picker-actions">
-      <button class="save-color-btn" id="applyIconBtn">{{journal.window.settings.button.label.apply.icon}}</button>
-      <button class="icon-clear-btn" id="clearIconBtn">{{journal.window.settings.button.label.use.emoji.instead}}</button>
-    </div>
-  </div>
 </div>
 
 <!-- Color Picker Modal -->
@@ -3309,7 +3431,7 @@ button:focus:not(:focus-visible) {
     <div class="color-preview-section">
       <h4>{{journal.window.settings.visible.text.preview}}</h4>
       <div class="modal-preview-pill" id="modalPreview">
-        <span class="modal-preview-emoji" id="modalPreviewEmoji">&#128230;</span>
+        <span class="facet-mark facet-mark--md facet-mark--dot" id="modalPreviewEmoji" aria-hidden="true"></span>
         <span class="modal-preview-title" id="modalPreviewTitle">{{journal.window.settings.visible.text.facet}}</span>
       </div>
     </div>
@@ -3417,15 +3539,60 @@ button:focus:not(:focus-visible) {
       <input type="text" id="facetCreateName" autocomplete="off" required>
     </div>
     <div class="settings-field">
+      <label for="facetCreateDesc">{{journal.window.settings.field.label.description}} <span class="settings-optional">{{journal.window.settings.visible.text.optional}}</span></label>
+      <textarea id="facetCreateDesc" rows="2" placeholder="{{journal.window.settings.field.placeholder.facet.description.example}}"></textarea>
+      <small>{{journal.window.settings.visible.text.facet.description.hint}}</small>
+    </div>
+    <div class="settings-field">
       <span class="settings-field-label" id="facetCreateColorLabel">{{journal.window.settings.visible.text.color}}</span>
       <div class="color-swatches" id="facetCreateColors" role="group" aria-labelledby="facetCreateColorLabel"></div>
     </div>
-    <p class="facet-create-reassurance">{{journal.window.settings.visible.text.you.can.change.both.later}}</p>
+    <div class="settings-field">
+      <label for="facetCreateIconTrigger">{{journal.window.settings.field.label.icon}} <span class="settings-optional">{{journal.window.settings.visible.text.optional}}</span></label>
+      <button type="button" class="icon-picker-trigger" id="facetCreateIconTrigger">
+        <span class="facet-mark facet-mark--md facet-mark--dot" id="facetCreateIconPreview" aria-hidden="true"></span>
+        <span class="icon-picker-name" id="facetCreateIconName">{{journal.window.settings.visible.text.no.icon}}</span>
+        <span class="icon-picker-change">{{journal.window.settings.button.label.change}}</span>
+      </button>
+    </div>
+    <p class="facet-create-reassurance">{{journal.window.settings.visible.text.you.can.change.all.of.these.later}}</p>
     <div class="facet-create-actions">
       <button type="button" class="btn-secondary" id="facetCreateCancel">{{journal.window.settings.button.label.cancel}}</button>
       <button type="submit" class="save-color-btn" id="facetCreateSubmit">{{journal.window.settings.button.label.add.variant2}}</button>
     </div>
   </form>
+</div>
+
+<!-- Unified Icon & Emoji Picker Modal (placed last in document order so modal_layer activates it above facetCreateModal and customActivityModal) -->
+<div id="iconPickerModal" class="color-modal" role="dialog" aria-modal="true" aria-labelledby="iconPickerHeading">
+  <div class="color-modal-content">
+    <button type="button" class="color-close" id="iconPickerClose" aria-label="{{journal.window.settings.accessible.name.close}}">&times;</button>
+    <h3 id="iconPickerHeading">{{journal.window.settings.section.heading.choose.an.icon}}</h3>
+    <div class="icon-picker-tabs" role="tablist" aria-label="{{journal.window.settings.accessible.name.icon.picker.tabs}}">
+      <button type="button" class="icon-picker-tab" id="iconTabIcons" role="tab" aria-selected="true" data-icon-tab="icons">{{journal.window.settings.button.label.icons}}</button>
+      <button type="button" class="icon-picker-tab" id="iconTabEmoji" role="tab" aria-selected="false" data-icon-tab="emoji">{{journal.window.settings.button.label.emoji}}</button>
+    </div>
+    <label id="iconSearchLabel" for="iconSearchInput">{{journal.window.settings.field.label.search.icons}}</label>
+    <input type="search" id="iconSearchInput" class="icon-search-input" placeholder="{{journal.window.settings.field.placeholder.search.icons.by.name.or.topic}}" autocomplete="off">
+    <div class="icon-picker-message" id="iconPickerMessage" role="status" aria-live="polite" style="display:none"></div>
+    <div class="icon-results-grid" id="iconResultsGrid"></div>
+    <div class="icon-emoji-paste-row" id="emojiPasteRow" hidden>
+      <label for="emojiPasteInput">{{journal.window.settings.field.label.or.paste.any.emoji}}</label>
+      <input type="text" id="emojiPasteInput" class="icon-emoji-paste-input" placeholder="{{journal.window.settings.field.placeholder.paste.emoji}}" autocomplete="off">
+      <div class="icon-paste-feedback" id="emojiPasteFeedback" role="status" aria-live="polite" hidden></div>
+    </div>
+    <div class="color-preview-section">
+      <h4>{{journal.window.settings.visible.text.preview}}</h4>
+      <div class="modal-preview-pill" id="iconModalPreview">
+        <span class="facet-mark facet-mark--md facet-mark--dot" id="iconModalPreviewGlyph" aria-hidden="true"></span>
+        <span class="modal-preview-title" id="iconModalPreviewTitle">{{journal.window.settings.visible.text.facet}}</span>
+      </div>
+    </div>
+    <div class="icon-picker-actions">
+      <button type="button" class="save-color-btn" id="applyIconBtn">{{journal.window.settings.button.label.apply}}</button>
+      <button type="button" class="icon-clear-btn" id="clearIconBtn">{{journal.window.settings.button.label.no.icon.dot.only}}</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -3848,6 +4015,8 @@ const FACET_COLORS = [
   'color-mix(in srgb, var(--gold) 50%, var(--warn))'
 ];
 const iconSvgCache = new Map();
+const emojiLabelCache = new Map();
+let openUnifiedIconPicker = () => {};
 const escapeHtml = (value) => window.AppServices.escapeHtml(value);
 // ========== TAB ATTENTION ==========
 
@@ -4102,6 +4271,8 @@ function renderFacetsList(facets) {
     return;
   }
 
+  const enabledCount = facets.filter(f => f && !f.muted).length;
+
   facets.forEach(facet => {
     const row = document.createElement('a');
     row.className = 'facet-list-row';
@@ -4109,15 +4280,37 @@ function renderFacetsList(facets) {
 
     const main = document.createElement('span');
     main.className = 'facet-list-row-main';
+    if (window.ConveyFacetMark) {
+      const mark = window.ConveyFacetMark.node(facet, 'md');
+      if (mark) main.appendChild(mark);
+    } else if (facet.color) {
+      const swatch = document.createElement('span');
+      swatch.className = 'facet-list-swatch';
+      swatch.setAttribute('aria-hidden', 'true');
+      swatch.style.backgroundColor = facet.color;
+      main.appendChild(swatch);
+    }
+
+    const textCol = document.createElement('span');
+    textCol.className = 'facet-list-text';
     const title = document.createElement('span');
     title.className = 'facet-list-title';
     title.textContent = facet.title || facet.name;
-    const swatch = document.createElement('span');
-    swatch.className = 'facet-list-swatch';
-    swatch.setAttribute('aria-hidden', 'true');
-    swatch.style.backgroundColor = facet.color || '';
-    swatch.hidden = !facet.color;
-    main.append(swatch, title);
+    textCol.appendChild(title);
+
+    const descText = String(facet.description || '').trim();
+    if (descText) {
+      const desc = document.createElement('span');
+      desc.className = 'facet-list-desc';
+      desc.textContent = descText;
+      textCol.appendChild(desc);
+    } else if (!facet.muted && enabledCount > 1) {
+      const missing = document.createElement('span');
+      missing.className = 'facet-list-desc facet-list-desc--missing';
+      missing.textContent = window.JournalI18n.render('journal.window.settings.visible.text.facet.no.description.list.hint');
+      textCol.appendChild(missing);
+    }
+    main.appendChild(textCol);
     row.appendChild(main);
 
     const end = document.createElement('span');
@@ -4141,6 +4334,17 @@ function renderFacetsList(facets) {
 }
 
 let facetCreateColor = FACET_COLORS[0];
+let facetCreateIcon = { kind: 'none', icon: '', emoji: '', label: '', svg: '' };
+
+function updateFacetCreateIconPreview() {
+  renderMarkTrigger(
+    document.getElementById('facetCreateIconPreview'),
+    document.getElementById('facetCreateIconName'),
+    facetCreateIcon,
+    facetCreateColor,
+    'md'
+  );
+}
 
 function updateFacetCreateColors() {
   document.querySelectorAll('#facetCreateColors .color-swatch').forEach(swatch => {
@@ -4148,13 +4352,17 @@ function updateFacetCreateColors() {
     swatch.classList.toggle('selected', selected);
     swatch.setAttribute('aria-pressed', selected ? 'true' : 'false');
   });
+  updateFacetCreateIconPreview();
 }
 
 function openFacetCreateModal(trigger) {
   const modal = document.getElementById('facetCreateModal');
   const name = document.getElementById('facetCreateName');
+  const desc = document.getElementById('facetCreateDesc');
   facetCreateColor = FACET_COLORS[0];
+  facetCreateIcon = { kind: 'none', icon: '', emoji: '', label: '', svg: '' };
   name.value = '';
+  if (desc) desc.value = '';
   updateFacetCreateColors();
   modal.style.display = 'block';
   modal._openAccessible(trigger);
@@ -4165,7 +4373,9 @@ function setupFacetCreateModal() {
   const modal = document.getElementById('facetCreateModal');
   const form = document.getElementById('facetCreateForm');
   const name = document.getElementById('facetCreateName');
+  const desc = document.getElementById('facetCreateDesc');
   const colors = document.getElementById('facetCreateColors');
+  const iconTrigger = document.getElementById('facetCreateIconTrigger');
   const close = document.getElementById('facetCreateClose');
   const cancel = document.getElementById('facetCreateCancel');
   const submit = document.getElementById('facetCreateSubmit');
@@ -4182,6 +4392,25 @@ function setupFacetCreateModal() {
     facetCreateColor = swatch.dataset.color;
     updateFacetCreateColors();
   });
+  if (iconTrigger) {
+    iconTrigger.addEventListener('click', () => {
+      openUnifiedIconPicker({
+        mode: 'create',
+        trigger: iconTrigger,
+        color: facetCreateColor,
+        title: name.value.trim() || window.JournalI18n.render('journal.window.settings.visible.text.facet'),
+        initial: { ...facetCreateIcon },
+        onApply: (picked) => {
+          facetCreateIcon = picked;
+          updateFacetCreateIconPreview();
+        },
+        onClear: () => {
+          facetCreateIcon = { kind: 'none', icon: '', emoji: '', label: '', svg: '' };
+          updateFacetCreateIconPreview();
+        },
+      });
+    });
+  }
   close.addEventListener('click', () => modal._closeAccessible());
   cancel.addEventListener('click', () => modal._closeAccessible());
   modal.addEventListener('click', (event) => {
@@ -4197,12 +4426,23 @@ function setupFacetCreateModal() {
       name.focus();
       return;
     }
+    const description = desc ? desc.value.trim() : '';
+    const payload = { title, color: facetCreateColor };
+    if (description) payload.description = description;
+    if (facetCreateIcon.kind === 'icon' && facetCreateIcon.icon) {
+      payload.icon = facetCreateIcon.icon;
+      payload.emoji = '';
+    } else if (facetCreateIcon.kind === 'emoji' && facetCreateIcon.emoji) {
+      payload.emoji = facetCreateIcon.emoji;
+    } else {
+      payload.emoji = '';
+    }
     window.SolFocus.setBusy(submit, true);
     try {
       const response = await settingsFetch('/app/settings/api/facet', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, color: facetCreateColor })
+        body: JSON.stringify(payload)
       });
       const result = await response.json();
       if (!response.ok || !result.success || !result.facet) {
@@ -4738,10 +4978,76 @@ function hydrateFacetDetail(facet) {
 }
 
 function refreshFacetDetailHeader() {
-  if (!ctx.disposed) window.SettingsRender.renderFacetDetailPage(settingsPage, {
+  if (ctx.disposed) return;
+  const config = facetConfig ? { ...facetConfig } : {};
+  if (config.icon && iconSvgCache.has(config.icon)) {
+    config.icon_svg = iconSvgCache.get(config.icon);
+  }
+  window.SettingsRender.renderFacetDetailPage(settingsPage, {
     facet: facetDetailSlugState,
-    config: facetConfig || {}
+    config,
   });
+}
+
+function renderMarkTrigger(previewEl, nameEl, state, color, size) {
+  const icon = state?.icon || '';
+  const emoji = state?.emoji || '';
+  const svg = state?.svg || (icon ? (iconSvgCache.get(icon) || '') : '');
+  const resolvedColor = color || 'var(--orange)';
+  if (previewEl) {
+    if (window.ConveyFacetMark) {
+      window.ConveyFacetMark.apply(previewEl, { color: resolvedColor, icon, icon_svg: svg, emoji }, size);
+    } else if (icon && svg) {
+      setIconSvg(previewEl, svg);
+    } else if (emoji) {
+      previewEl.textContent = emoji;
+    } else {
+      previewEl.textContent = '';
+      if (previewEl.style) previewEl.style.backgroundColor = resolvedColor;
+    }
+  }
+  if (nameEl) {
+    if (icon) {
+      nameEl.textContent = icon;
+    } else if (emoji) {
+      nameEl.textContent = state?.label || emojiLabelCache.get(emoji) || window.JournalI18n.render('journal.window.settings.visible.text.emoji');
+    } else {
+      nameEl.textContent = window.JournalI18n.render('journal.window.settings.visible.text.no.icon');
+    }
+  }
+}
+
+function renderFacetDescMissingNote() {
+  const note = document.getElementById('facetDescMissingNote');
+  if (!note) return;
+  const hasDesc = Boolean(String(facetConfig?.description || '').trim());
+  const show = !hasDesc
+    && !facetConfig?.muted
+    && Array.isArray(facetDeleteRoster)
+    && !facetIsLastUnmuted(facetDetailSlugState, facetConfig, facetDeleteRoster);
+  if (show) {
+    const title = facetConfig?.title || facetDetailSlugState || '';
+    note.textContent = window.JournalI18n.render(
+      'journal.window.settings.visible.text.facet.no.description.detail.note',
+      [['facet_name', String(title)]]
+    );
+    note.hidden = false;
+  } else {
+    note.hidden = true;
+    note.textContent = '';
+  }
+}
+
+function currentFacetMarkState() {
+  const icon = facetConfig?.icon || '';
+  const emoji = !icon ? (facetConfig?.emoji || '') : '';
+  if (icon) {
+    return { kind: 'icon', icon, emoji: '', label: icon, svg: iconSvgCache.get(icon) || '' };
+  }
+  if (emoji) {
+    return { kind: 'emoji', icon: '', emoji, label: emojiLabelCache.get(emoji) || '', svg: '' };
+  }
+  return { kind: 'none', icon: '', emoji: '', label: '', svg: '' };
 }
 
 function populateFacetForm(facetName, config) {
@@ -4752,24 +5058,43 @@ function populateFacetForm(facetName, config) {
   const desc = config.description || window.JournalI18n.render('journal.window.settings.settings.content.no.description.set');
   document.getElementById('facetDescDisplay').textContent = desc;
   document.getElementById('facetDescInput').value = config.description || '';
-
-  document.getElementById('emojiDisplay').textContent = config.emoji || '\uD83D\uDCE6';
-  updateIconDisplay(config.icon || '', null);
-  if (config.icon) {
-    loadIconDisplaySvg(config.icon);
-  }
+  renderFacetDescMissingNote();
 
   const color = config.color || 'var(--orange)';
   document.getElementById('colorPreview').style.backgroundColor = color;
   document.getElementById('colorHexDisplay').textContent = colorName(color);
 
+  updateIconDisplay();
+  if (config.icon) {
+    loadIconDisplaySvg(config.icon);
+  }
 }
 
 function setupFacetEditing() {
   setupDoubleTapEdit('facetTitleField', 'facetTitleDisplay', 'facetTitleInput', 'title');
   setupDoubleTapEdit('facetDescField', 'facetDescDisplay', 'facetDescInput', 'description');
-  setupEmojiPicker();
-  setupIconPicker();
+  const iconTrigger = document.getElementById('iconTrigger');
+  if (iconTrigger) {
+    iconTrigger.onclick = () => {
+      openUnifiedIconPicker({
+        mode: 'facet',
+        trigger: iconTrigger,
+        color: facetConfig?.color || 'var(--orange)',
+        title: document.getElementById('facetTitleDisplay')?.textContent || facetConfig?.title || facetDetailSlugState || '',
+        initial: currentFacetMarkState(),
+        onApply: (picked) => {
+          if (picked.kind === 'icon' && picked.icon) {
+            saveFacetFields('icon', { icon: picked.icon, emoji: '' }, iconTrigger);
+          } else if (picked.kind === 'emoji' && picked.emoji) {
+            saveFacetFields('icon', { icon: '', emoji: picked.emoji }, iconTrigger);
+          }
+        },
+        onClear: () => {
+          saveFacetFields('icon', { icon: '', emoji: '' }, iconTrigger);
+        },
+      });
+    };
+  }
   setupColorPicker();
   setupMutedAction();
 }
@@ -4829,44 +5154,6 @@ function setupDoubleTapEdit(fieldId, displayId, inputId, configKey) {
   }
 }
 
-function setupEmojiPicker() {
-  const display = document.getElementById('emojiDisplay');
-  const input = document.getElementById('emojiInput');
-
-  display.onclick = () => {
-    input.style.display = 'block';
-    input.focus();
-  };
-  // It's a button: Enter and Space press it, as a click does.
-  display.onkeydown = (e) => {
-    if (e.key !== 'Enter' && e.key !== ' ') return;
-    e.preventDefault();
-    display.onclick();
-  };
-
-  let cancelled = false;
-  input.onblur = () => {
-    const value = input.value.trim();
-    if (!cancelled && value) {
-      if (isOneEmoji(value)) {
-        display.textContent = value;
-        saveFacetField('emoji', value, input);
-      } else {
-        showFieldStatus(input, 'error', window.JournalI18n.render('journal.window.settings.settings.feedback.not.one.emoji'));
-      }
-    }
-    cancelled = false;
-    input.style.display = 'none';
-    input.value = '';
-  };
-
-  input.onkeydown = (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); input.blur(); settingsLand(input, [display]); }
-    // Escape leaves the emoji as it was.
-    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancelled = true; input.blur(); settingsLand(input, [display]); }
-  };
-}
-
 // One emoji as a person sees it: a single character that is a pictograph, a
 // keycap or a flag. A joined emoji such as 🧑‍💻 is one; a digit, a word, or a
 // word with an emoji in it is not.
@@ -4879,33 +5166,27 @@ function setIconSvg(element, svg) {
   element.innerHTML = svg;
   const svgEl = element.querySelector('svg');
   if (svgEl) {
-    svgEl.setAttribute('stroke-width', '1.5');
+    svgEl.setAttribute('stroke-width', '1.75');
     svgEl.setAttribute('aria-hidden', 'true');
     svgEl.style.color = 'currentColor';
   }
 }
 
-function updateIconDisplay(iconName, svg) {
-  const preview = document.getElementById('iconPreview');
-  const nameDisplay = document.getElementById('iconNameDisplay');
-  if (!preview || !nameDisplay) return;
-
-  if (iconName && svg) {
-    setIconSvg(preview, svg);
-    nameDisplay.textContent = iconName;
-  } else if (iconName) {
-    preview.textContent = '?';
-    nameDisplay.textContent = iconName;
-  } else {
-    preview.textContent = '—';
-    nameDisplay.textContent = window.JournalI18n.render('journal.window.settings.visible.text.use.emoji');
-  }
+function updateIconDisplay() {
+  renderMarkTrigger(
+    document.getElementById('iconPreview'),
+    document.getElementById('iconNameDisplay'),
+    currentFacetMarkState(),
+    facetConfig?.color || 'var(--orange)',
+    'lg'
+  );
 }
 
 async function loadIconDisplaySvg(iconName) {
   if (!iconName) return;
   if (iconSvgCache.has(iconName)) {
-    updateIconDisplay(iconName, iconSvgCache.get(iconName));
+    updateIconDisplay();
+    refreshFacetDetailHeader();
     return;
   }
 
@@ -4917,7 +5198,8 @@ async function loadIconDisplaySvg(iconName) {
     if (match) {
       iconSvgCache.set(match.name, match.svg);
       if (facetConfig?.icon === iconName) {
-        updateIconDisplay(iconName, match.svg);
+        updateIconDisplay();
+        refreshFacetDetailHeader();
       }
     }
   } catch (err) {
@@ -4927,22 +5209,37 @@ async function loadIconDisplaySvg(iconName) {
 
 function setupIconPicker() {
   const modal = document.getElementById('iconPickerModal');
-  const trigger = document.getElementById('iconTrigger');
   const closeBtn = document.getElementById('iconPickerClose');
+  const tabIcons = document.getElementById('iconTabIcons');
+  const tabEmoji = document.getElementById('iconTabEmoji');
+  const searchLabel = document.getElementById('iconSearchLabel');
   const searchInput = document.getElementById('iconSearchInput');
   const grid = document.getElementById('iconResultsGrid');
   const message = document.getElementById('iconPickerMessage');
+  const pasteRow = document.getElementById('emojiPasteRow');
+  const pasteInput = document.getElementById('emojiPasteInput');
+  const pasteFeedback = document.getElementById('emojiPasteFeedback');
   const applyBtn = document.getElementById('applyIconBtn');
   const clearBtn = document.getElementById('clearIconBtn');
   const previewGlyph = document.getElementById('iconModalPreviewGlyph');
   const previewTitle = document.getElementById('iconModalPreviewTitle');
-  const previewPill = document.getElementById('iconModalPreview');
-  if (!modal || !trigger || !closeBtn || !searchInput || !grid || !message || !applyBtn || !clearBtn || !previewGlyph || !previewTitle || !previewPill) return;
+  if (!modal || !closeBtn || !tabIcons || !tabEmoji || !searchLabel || !searchInput || !grid || !message || !pasteRow || !pasteInput || !pasteFeedback || !applyBtn || !clearBtn || !previewGlyph || !previewTitle) return;
 
-  let selectedIcon = '';
-  let selectedSvg = null;
+  let activeTab = 'icons';
+  let activeSession = null;
+  let picked = { kind: 'none', icon: '', emoji: '', label: '', svg: '' };
   let searchTimer = null;
   let searchRequestId = 0;
+
+  function clearPasteFeedback() {
+    pasteFeedback.hidden = true;
+    pasteFeedback.textContent = '';
+  }
+
+  function showPasteError() {
+    pasteFeedback.textContent = window.JournalI18n.render('journal.window.settings.settings.feedback.not.one.emoji');
+    pasteFeedback.hidden = false;
+  }
 
   function clearIconMessage() {
     message.style.display = 'none';
@@ -4961,7 +5258,7 @@ function setupIconPicker() {
       retry.className = 'icon-clear-btn';
       retry.textContent = window.JournalI18n.render('journal.window.settings.visible.text.retry');
       retry.style.marginTop = '0.75em';
-      retry.addEventListener('click', () => fetchIcons(retryQuery));
+      retry.addEventListener('click', () => fetchResults(retryQuery));
       message.appendChild(retry);
     }
     message.style.display = 'block';
@@ -4970,37 +5267,48 @@ function setupIconPicker() {
   }
 
   function updateIconPreview() {
-    const color = facetConfig?.color || 'var(--orange)';
-    previewPill.style.borderColor = color;
-    previewPill.style.backgroundColor = `color-mix(in srgb, ${color} 10%, transparent)`;
-    previewGlyph.style.setProperty('--pill-color', color);
-    previewTitle.style.color = color;
-    previewTitle.textContent = document.getElementById('facetTitleDisplay').textContent;
-    if (selectedIcon && selectedSvg) {
-      setIconSvg(previewGlyph, selectedSvg);
+    const color = activeSession?.color || facetConfig?.color || 'var(--orange)';
+    previewTitle.textContent = activeSession?.title || window.JournalI18n.render('journal.window.settings.visible.text.facet');
+    if (window.ConveyFacetMark) {
+      window.ConveyFacetMark.apply(
+        previewGlyph,
+        {
+          color,
+          icon: picked.kind === 'icon' ? picked.icon : '',
+          icon_svg: picked.kind === 'icon' ? picked.svg : '',
+          emoji: picked.kind === 'emoji' ? picked.emoji : '',
+        },
+        'md'
+      );
+    } else if (picked.kind === 'icon' && picked.svg) {
+      setIconSvg(previewGlyph, picked.svg);
+    } else if (picked.kind === 'emoji' && picked.emoji) {
+      previewGlyph.textContent = picked.emoji;
     } else {
-      previewGlyph.textContent = document.getElementById('emojiDisplay').textContent || '—';
+      previewGlyph.textContent = '';
     }
-    applyBtn.disabled = !selectedIcon;
+    const valid = (picked.kind === 'icon' && Boolean(picked.icon))
+      || (picked.kind === 'emoji' && Boolean(picked.emoji) && isOneEmoji(picked.emoji));
+    applyBtn.disabled = !valid || !pasteFeedback.hidden;
     refreshModalFocusables(modal);
   }
 
-  function setSelectedIcon(name, svg) {
-    selectedIcon = name;
-    selectedSvg = svg;
+  function syncSelectedInGrid() {
     grid.querySelectorAll('.icon-result-btn').forEach(btn => {
-      btn.classList.toggle('selected', btn.dataset.iconName === name);
+      const match = (picked.kind === 'icon' && btn.dataset.iconName === picked.icon)
+        || (picked.kind === 'emoji' && btn.dataset.emoji === picked.emoji);
+      btn.classList.toggle('selected', match);
     });
-    updateIconPreview();
   }
 
   function renderIconResults(icons, query) {
     grid.replaceChildren();
     if (!icons.length) {
-      showIconMessage(query ? window.JournalI18n.render('journal.window.settings.settings.feedback.no.icons.match') : window.JournalI18n.render('journal.window.settings.settings.feedback.no.icons.available'));
+      showIconMessage(query
+        ? window.JournalI18n.render('journal.window.settings.settings.feedback.no.icons.match')
+        : window.JournalI18n.render('journal.window.settings.settings.feedback.no.icons.available'));
       return;
     }
-
     clearIconMessage();
     icons.forEach(icon => {
       iconSvgCache.set(icon.name, icon.svg);
@@ -5011,39 +5319,152 @@ function setupIconPicker() {
       button.setAttribute('aria-label', icon.name);
       button.title = icon.name;
       setIconSvg(button, icon.svg);
-      if (icon.name === selectedIcon) {
+      if (picked.kind === 'icon' && icon.name === picked.icon) {
         button.classList.add('selected');
       }
-      button.addEventListener('click', () => setSelectedIcon(icon.name, icon.svg));
+      button.addEventListener('click', () => {
+        clearPasteFeedback();
+        picked = { kind: 'icon', icon: icon.name, emoji: '', label: icon.name, svg: icon.svg };
+        syncSelectedInGrid();
+        updateIconPreview();
+      });
       grid.appendChild(button);
     });
     refreshModalFocusables(modal);
   }
 
-  async function fetchIcons(query) {
-    const requestId = ++searchRequestId;
-    showIconMessage(window.JournalI18n.render('journal.window.settings.settings.feedback.loading.icons'));
-    try {
-      const response = await settingsFetch(`/app/settings/api/icons?q=${encodeURIComponent(query)}`);
-      const data = await response.json();
-      if (requestId !== searchRequestId) return;
-      if (!response.ok || data.error) throw new Error(data.error || 'icon search failed');
-      renderIconResults(data.icons || [], query);
-      if (selectedIcon && !selectedSvg && iconSvgCache.has(selectedIcon)) {
-        selectedSvg = iconSvgCache.get(selectedIcon);
+  function renderEmojiResults(emojis, query) {
+    grid.replaceChildren();
+    if (!emojis.length) {
+      showIconMessage(query
+        ? window.JournalI18n.render('journal.window.settings.settings.feedback.no.emoji.match')
+        : window.JournalI18n.render('journal.window.settings.settings.feedback.no.emoji.available'));
+      return;
+    }
+    clearIconMessage();
+    emojis.forEach(item => {
+      if (item.emoji && item.label) emojiLabelCache.set(item.emoji, item.label);
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'icon-result-btn icon-result-btn--emoji';
+      button.dataset.emoji = item.emoji;
+      button.setAttribute('aria-label', item.label || item.emoji);
+      button.title = item.label || item.emoji;
+      button.textContent = item.emoji;
+      if (picked.kind === 'emoji' && item.emoji === picked.emoji) {
+        button.classList.add('selected');
+      }
+      button.addEventListener('click', () => {
+        clearPasteFeedback();
+        pasteInput.value = '';
+        picked = { kind: 'emoji', icon: '', emoji: item.emoji, label: item.label || '', svg: '' };
+        syncSelectedInGrid();
         updateIconPreview();
+      });
+      grid.appendChild(button);
+    });
+    refreshModalFocusables(modal);
+  }
+
+  async function fetchResults(query) {
+    const requestId = ++searchRequestId;
+    const tab = activeTab;
+    showIconMessage(window.JournalI18n.render(
+      tab === 'emoji'
+        ? 'journal.window.settings.settings.feedback.loading.emoji'
+        : 'journal.window.settings.settings.feedback.loading.icons'
+    ));
+    try {
+      const endpoint = tab === 'emoji' ? '/app/settings/api/emojis' : '/app/settings/api/icons';
+      const response = await settingsFetch(`${endpoint}?q=${encodeURIComponent(query)}`);
+      const data = await response.json();
+      if (requestId !== searchRequestId || tab !== activeTab) return;
+      if (!response.ok || data.error) throw new Error(data.error || 'search failed');
+      if (tab === 'emoji') {
+        renderEmojiResults(data.emojis || [], query);
+      } else {
+        renderIconResults(data.icons || [], query);
+        if (picked.kind === 'icon' && picked.icon && !picked.svg && iconSvgCache.has(picked.icon)) {
+          picked.svg = iconSvgCache.get(picked.icon);
+          updateIconPreview();
+        }
       }
     } catch (err) {
-      if (requestId !== searchRequestId) return;
+      if (requestId !== searchRequestId || tab !== activeTab) return;
       console.error('Icon search error:', err);
-      showIconMessage(window.JournalI18n.render('journal.window.settings.settings.feedback.icon.search.failed'), true, query);
+      showIconMessage(
+        window.JournalI18n.render(
+          tab === 'emoji'
+            ? 'journal.window.settings.settings.feedback.emoji.search.failed'
+            : 'journal.window.settings.settings.feedback.icon.search.failed'
+        ),
+        true,
+        query
+      );
     }
   }
 
-  function queueIconSearch() {
+  function setTab(nextTab, initialQuery = '') {
+    activeTab = nextTab === 'emoji' ? 'emoji' : 'icons';
+    tabIcons.setAttribute('aria-selected', String(activeTab === 'icons'));
+    tabEmoji.setAttribute('aria-selected', String(activeTab === 'emoji'));
+    pasteRow.hidden = activeTab !== 'emoji';
+    if (activeTab === 'emoji') {
+      searchLabel.textContent = window.JournalI18n.render('journal.window.settings.field.label.search.emoji');
+      searchInput.placeholder = window.JournalI18n.render('journal.window.settings.field.placeholder.search.emoji.by.keyword');
+    } else {
+      searchLabel.textContent = window.JournalI18n.render('journal.window.settings.field.label.search.icons');
+      searchInput.placeholder = window.JournalI18n.render('journal.window.settings.field.placeholder.search.icons.by.name.or.topic');
+      clearPasteFeedback();
+    }
+    searchInput.value = initialQuery;
     clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => fetchIcons(searchInput.value), 200);
+    fetchResults(searchInput.value);
+    updateIconPreview();
   }
+
+  function queueSearch() {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => fetchResults(searchInput.value), 200);
+  }
+
+  tabIcons.onclick = () => setTab('icons', '');
+  tabEmoji.onclick = () => setTab('emoji', '');
+  searchInput.oninput = queueSearch;
+
+  pasteInput.oninput = () => {
+    const val = pasteInput.value.trim();
+    if (!val) {
+      clearPasteFeedback();
+      updateIconPreview();
+      return;
+    }
+    if (isOneEmoji(val)) {
+      clearPasteFeedback();
+      picked = { kind: 'emoji', icon: '', emoji: val, label: emojiLabelCache.get(val) || '', svg: '' };
+      syncSelectedInGrid();
+      updateIconPreview();
+    } else {
+      showPasteError();
+      updateIconPreview();
+    }
+  };
+
+  pasteInput.onkeydown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const val = pasteInput.value.trim();
+      if (!val) return;
+      if (isOneEmoji(val)) {
+        clearPasteFeedback();
+        picked = { kind: 'emoji', icon: '', emoji: val, label: emojiLabelCache.get(val) || '', svg: '' };
+        applyBtn.click();
+      } else {
+        showPasteError();
+        updateIconPreview();
+      }
+    }
+  };
 
   grid.onkeydown = (e) => {
     const target = e.target.closest('.icon-result-btn');
@@ -5052,11 +5473,11 @@ function setupIconPicker() {
       e.preventDefault();
       target.click();
     }
-    if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)) {
+    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
       e.preventDefault();
       const all = [...grid.querySelectorAll('.icon-result-btn')];
       const idx = all.indexOf(target);
-      const cols = Math.floor(grid.clientWidth / all[0].offsetWidth) || 4;
+      const cols = Math.floor(grid.clientWidth / (all[0]?.offsetWidth || 48)) || 4;
       let next = idx;
       if (e.key === 'ArrowRight') next = Math.min(idx + 1, all.length - 1);
       if (e.key === 'ArrowLeft') next = Math.max(idx - 1, 0);
@@ -5066,35 +5487,49 @@ function setupIconPicker() {
     }
   };
 
-  trigger.onclick = () => {
-    selectedIcon = facetConfig?.icon || '';
-    selectedSvg = selectedIcon && iconSvgCache.has(selectedIcon) ? iconSvgCache.get(selectedIcon) : null;
-    searchInput.value = selectedIcon;
-    updateIconPreview();
+  openUnifiedIconPicker = (session) => {
+    activeSession = session;
+    const init = session?.initial || { kind: 'none', icon: '', emoji: '', label: '', svg: '' };
+    picked = {
+      kind: init.kind || (init.icon ? 'icon' : (init.emoji ? 'emoji' : 'none')),
+      icon: init.icon || '',
+      emoji: init.emoji || '',
+      label: init.label || '',
+      svg: init.svg || (init.icon ? (iconSvgCache.get(init.icon) || '') : ''),
+    };
+    pasteInput.value = '';
+    clearPasteFeedback();
+    clearBtn.textContent = window.JournalI18n.render(
+      session?.mode === 'activity'
+        ? 'journal.window.settings.button.label.no.icon'
+        : 'journal.window.settings.button.label.no.icon.dot.only'
+    );
+    const startTab = picked.kind === 'emoji' ? 'emoji' : 'icons';
     modal.style.display = 'block';
-    modal._openAccessible(trigger);
-    fetchIcons(searchInput.value);
+    modal._openAccessible(session?.trigger);
+    setTab(startTab, startTab === 'icons' ? picked.icon : '');
   };
 
   closeBtn.onclick = () => modal._closeAccessible();
   modal.onclick = (e) => { if (e.target === modal) modal._closeAccessible(); };
-  searchInput.oninput = queueIconSearch;
 
   applyBtn.onclick = () => {
-    if (!selectedIcon) return;
-    updateIconDisplay(selectedIcon, selectedSvg);
-    saveFacetField('icon', selectedIcon, null);
+    if (applyBtn.disabled || !activeSession) return;
+    const result = { ...picked };
+    const handler = activeSession.onApply;
     modal._closeAccessible();
+    if (handler) handler(result);
   };
 
   clearBtn.onclick = () => {
-    selectedIcon = '';
-    selectedSvg = null;
-    updateIconDisplay('', null);
-    saveFacetField('icon', '', null);
+    const handler = activeSession?.onClear;
+    picked = { kind: 'none', icon: '', emoji: '', label: '', svg: '' };
     modal._closeAccessible();
+    if (handler) handler();
   };
 }
+
+setupIconPicker();
 
 function colorName(color) {
   const names = {
@@ -5215,9 +5650,17 @@ function setupColorPicker() {
     swatches.querySelectorAll('.color-swatch').forEach(s => {
       s.classList.toggle('selected', s.dataset.color.toLowerCase() === color.toLowerCase());
     });
-    preview.style.backgroundColor = `color-mix(in srgb, ${color} 10%, transparent)`;
-    document.getElementById('modalPreviewTitle').style.color = color;
-    document.getElementById('modalPreviewEmoji').textContent = document.getElementById('emojiDisplay').textContent;
+    const markEl = document.getElementById('modalPreviewEmoji');
+    const state = currentFacetMarkState();
+    if (markEl && window.ConveyFacetMark) {
+      window.ConveyFacetMark.apply(
+        markEl,
+        { color, icon: state.icon, icon_svg: state.svg, emoji: state.emoji },
+        'md'
+      );
+    } else if (markEl) {
+      markEl.textContent = state.emoji || '';
+    }
     document.getElementById('modalPreviewTitle').textContent = document.getElementById('facetTitleDisplay').textContent;
   }
 }
@@ -5241,30 +5684,30 @@ function setupMutedAction() {
 // Each facet field's value while its save is out, as JSON.
 const facetSending = new Map();
 
-async function saveFacetField(field, value, triggerEl) {
-  if (!facetDetailSlugState) return;
-
-  // Skip save if value unchanged
-  if (JSON.stringify(facetConfig?.[field]) === JSON.stringify(value)) {
-    return;
-  }
-  // Nor the value already on its way.
-  const sending = JSON.stringify(value);
-  if (facetSending.get(field) === sending) return;
-  facetSending.set(field, sending);
+async function saveFacetFields(key, patch, triggerEl) {
+  if (!facetDetailSlugState || !patch || typeof patch !== 'object') return;
+  const entries = Object.entries(patch);
+  if (!entries.length) return;
+  const unchanged = entries.every(([field, value]) => {
+    const current = facetConfig?.[field] ?? '';
+    return JSON.stringify(current) === JSON.stringify(value);
+  });
+  if (unchanged) return;
+  const sending = JSON.stringify(patch);
+  if (facetSending.get(key) === sending) return;
+  facetSending.set(key, sending);
 
   try {
     const response = await settingsFetch(`/app/settings/api/facet/${encodeURIComponent(facetDetailSlugState)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ [field]: value })
+      body: JSON.stringify(patch)
     });
     const result = await response.json();
     if (result.success) {
       facetConfig = result.config;
       populateFacetForm(facetDetailSlugState, facetConfig);
       refreshFacetDetailHeader();
-      // Show inline status if we have a trigger element
       if (triggerEl) {
         showFieldStatus(triggerEl, 'saved');
       }
@@ -5273,11 +5716,14 @@ async function saveFacetField(field, value, triggerEl) {
     }
   } catch (err) {
     console.error('Save error:', err);
-    // For errors, use notification since they need attention and page won't reload
-    notifyError( window.JournalI18n.render('journal.window.settings.settings.feedback.save.failed'), err.message);
+    notifyError(window.JournalI18n.render('journal.window.settings.settings.feedback.save.failed'), err.message);
   } finally {
-    if (facetSending.get(field) === sending) facetSending.delete(field);
+    if (facetSending.get(key) === sending) facetSending.delete(key);
   }
+}
+
+async function saveFacetField(field, value, triggerEl) {
+  return saveFacetFields(field, { [field]: value }, triggerEl);
 }
 
 // ========== FACET DELETE ==========
@@ -5320,6 +5766,7 @@ function renderFacetDeleteFoot() {
   note.textContent = FACET_DELETE_COPY.last;
   note.hidden = !last;
   foot.hidden = false;
+  renderFacetDescMissingNote();
 }
 
 // A failed read leaves the button: the journal still refuses the last one.
@@ -7540,12 +7987,47 @@ async function removeActivity(activityId) {
 }
 
 // Custom activity modal
+let customActivityIconState = { kind: 'none', icon: '', emoji: '', label: '', svg: '' };
+
+function updateCustomActivityIconPreview() {
+  renderMarkTrigger(
+    document.getElementById('customActivityIconPreview'),
+    document.getElementById('customActivityIconName'),
+    customActivityIconState,
+    facetConfig?.color || 'var(--orange)',
+    'md'
+  );
+}
+
+const customActivityIconTrigger = document.getElementById('customActivityIconTrigger');
+if (customActivityIconTrigger) {
+  customActivityIconTrigger.addEventListener('click', () => {
+    openUnifiedIconPicker({
+      mode: 'activity',
+      trigger: customActivityIconTrigger,
+      color: facetConfig?.color || 'var(--orange)',
+      title: document.getElementById('customActivityName')?.value.trim()
+        || window.JournalI18n.render('journal.window.settings.section.heading.add.custom.activity'),
+      initial: { ...customActivityIconState },
+      onApply: (picked) => {
+        customActivityIconState = picked;
+        updateCustomActivityIconPreview();
+      },
+      onClear: () => {
+        customActivityIconState = { kind: 'none', icon: '', emoji: '', label: '', svg: '' };
+        updateCustomActivityIconPreview();
+      },
+    });
+  });
+}
+
 document.getElementById('addCustomActivityBtn').addEventListener('click', () => {
+  customActivityIconState = { kind: 'none', icon: '', emoji: '', label: '', svg: '' };
+  updateCustomActivityIconPreview();
   document.getElementById('customActivityModal').style.display = 'block';
   document.getElementById('customActivityModal')._openAccessible(document.getElementById('addCustomActivityBtn'));
   document.getElementById('customActivityName').value = '';
   document.getElementById('customActivityDesc').value = '';
-  document.getElementById('customActivityIcon').value = '';
   document.getElementById('customActivityInstructions').value = '';
 });
 
@@ -7563,13 +8045,14 @@ document.getElementById('saveCustomActivityBtn').addEventListener('click', async
   if (window.SolFocus.isBusy(save)) return;
   const name = document.getElementById('customActivityName').value.trim();
   const description = document.getElementById('customActivityDesc').value.trim();
-  const emoji = document.getElementById('customActivityIcon').value.trim();
   const instructions = document.getElementById('customActivityInstructions').value.trim();
 
   if (!name) {
     notifyError(window.JournalI18n.render('journal.window.settings.settings.feedback.validation.error'), window.JournalI18n.render('journal.window.settings.settings.feedback.name.is.required'));
     return;
   }
+  const icon = customActivityIconState.kind === 'icon' ? customActivityIconState.icon : '';
+  const emoji = customActivityIconState.kind === 'emoji' ? customActivityIconState.emoji : '';
   if (emoji && !isOneEmoji(emoji)) {
     notifyError(window.JournalI18n.render('journal.window.settings.settings.feedback.validation.error'), window.JournalI18n.render('journal.window.settings.settings.feedback.not.one.emoji'));
     return;
@@ -7582,7 +8065,13 @@ document.getElementById('saveCustomActivityBtn').addEventListener('click', async
     const response = await settingsFetch(`/app/settings/api/facet/${encodeURIComponent(facetDetailSlugState)}/activities`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, description, emoji: emoji || undefined, instructions: instructions || undefined })
+      body: JSON.stringify({
+        name,
+        description,
+        icon: icon || undefined,
+        emoji: emoji || undefined,
+        instructions: instructions || undefined,
+      })
     });
     const result = await response.json();
     if (result.error) throw new Error(result.error);

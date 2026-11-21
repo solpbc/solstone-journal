@@ -1115,7 +1115,7 @@ tr:hover .entity-delete-btn {
 .entities-scope-option {
   display: flex;
   width: 100%;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 1rem;
   border: 0;
@@ -1126,6 +1126,13 @@ tr:hover .entity-delete-btn {
   font: inherit;
   text-align: left;
   cursor: pointer;
+}
+
+.entities-scope-option-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
 }
 
 .entities-scope-option:hover,
@@ -4380,7 +4387,7 @@ function renderScopeControl() {
   listbox.className = 'entities-scope-menu';
   listbox.setAttribute('role', 'listbox');
 
-  const addOption = (name, title, count) => {
+  const addOption = (name, title, count, facetObj = null) => {
     const option = document.createElement('button');
     option.type = 'button';
     option.className = 'entities-scope-option';
@@ -4388,7 +4395,16 @@ function renderScopeControl() {
     option.setAttribute('aria-selected', String(name === currentFacet));
     option.tabIndex = name === currentFacet ? 0 : -1;
     const label = document.createElement('span');
-    label.textContent = title;
+    label.className = 'entities-scope-option-label';
+    const mark = facetObj && window.ConveyFacetMark ? window.ConveyFacetMark.node(facetObj, 'sm') : null;
+    if (mark) {
+      label.appendChild(mark);
+      const labelText = document.createElement('span');
+      labelText.textContent = title;
+      label.appendChild(labelText);
+    } else {
+      label.textContent = title;
+    }
     option.appendChild(label);
     if (count !== null) {
       const countLabel = document.createElement('span');
@@ -4415,8 +4431,8 @@ function renderScopeControl() {
     listbox.appendChild(option);
   };
 
-  addOption(null, ENT_COPY.ENT_SCOPE_WHOLE_JOURNAL || '', null);
-  facetRoster.forEach((facet) => addOption(facet.name, facet.title || facet.name, facetCount(facet.name)));
+  addOption(null, ENT_COPY.ENT_SCOPE_WHOLE_JOURNAL || '', null, null);
+  facetRoster.forEach((facet) => addOption(facet.name, facet.title || facet.name, facetCount(facet.name), facet));
   trigger.addEventListener('click', () => {
     if (layer.hidden) openScopeMenu();
     else closeScopeMenu();
@@ -4945,7 +4961,10 @@ function renderJournalDetailView(entity) {
       const header = document.createElement('div');
       header.className = 'facet-rel-header';
 
-      if (facet.emoji) {
+      const facetMark = window.ConveyFacetMark ? window.ConveyFacetMark.node(facet, 'md') : null;
+      if (facetMark) {
+        header.appendChild(facetMark);
+      } else if (facet.emoji) {
         const emoji = document.createElement('span');
         emoji.className = 'facet-rel-emoji';
         emoji.textContent = facet.emoji;

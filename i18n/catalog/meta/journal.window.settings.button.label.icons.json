@@ -1,0 +1,16 @@
+{
+  "description": "Tab label for monochrome icons in the unified icon picker dialog.",
+  "context": "Journal window, settings view. Button label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dced09fb0e04e1c0ff7a487fcb45d633b72f2f60e623af29e74f10c251c16237",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

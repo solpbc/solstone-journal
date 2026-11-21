@@ -1,0 +1,16 @@
+{
+  "description": "Primary confirm button in the unified icon picker dialog.",
+  "context": "Journal window, settings view. Button label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8e8285056c013d5364efc209b845c14bdb88578817370e7a024b6df70b579c5f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

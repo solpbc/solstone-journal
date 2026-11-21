@@ -274,10 +274,14 @@ pub(crate) fn state_value_with_iface(
             let declaration = solstone_core_facets::read_facet_declaration(root, &name)
                 .map_err(|error| error.to_string())?
                 .ok_or_else(|| format!("facet {name:?} has no declaration"))?;
+            let icon = declaration.icon.as_deref().unwrap_or("");
             Ok(json!({
                 "name": name,
                 "title": if declaration.title.is_empty() { &name } else { &declaration.title },
                 "color": declaration.color,
+                "emoji": declaration.emoji,
+                "icon": icon,
+                "icon_svg": solstone_core_convey_http::icons::svg(declaration.icon.as_deref()),
                 "id": declaration.value().get("id").and_then(Value::as_str),
             }))
         })

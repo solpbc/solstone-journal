@@ -2011,3 +2011,48 @@ label.backup-erase-choice { display: flex; align-items: flex-start; gap: .6rem; 
 .backup-erase-choice-hint { display: block; margin-top: .15rem; color: var(--ink-soft); font-size: .88em; line-height: 1.45; }
 p.backup-erase-unchecked { margin: .75rem 0 0; text-align: left; }
 @media (max-width: 480px) { label.backup-erase-choice { min-height: 44px; } .backup-erase-choice input { width: 20px; height: 20px; } }
+
+/* Shared facet mark: icon SVG, emoji, or color dot in a soft facet-color chip
+   so monochrome ink stays legible across every facet color in light and dark. */
+.facet-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  vertical-align: middle;
+  line-height: 1;
+  border-radius: 6px;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--fc, var(--orange)) 18%, var(--paper));
+  border: 1px solid color-mix(in srgb, var(--fc, var(--orange)) 45%, var(--hairline-2));
+}
+.facet-mark[hidden] { display: none; }
+.facet-mark--sm { width: 18px; height: 18px; border-radius: 5px; font-size: 11px; }
+.facet-mark--md { width: 22px; height: 22px; border-radius: 6px; font-size: 13px; }
+.facet-mark--lg { width: 28px; height: 28px; border-radius: 7px; font-size: 16px; }
+.facet-mark svg {
+  display: block;
+  width: 13px;
+  height: 13px;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  fill: none;
+}
+.facet-mark--sm svg { width: 11.5px; height: 11.5px; }
+.facet-mark--md svg { width: 13.5px; height: 13.5px; }
+.facet-mark--lg svg { width: 16px; height: 16px; }
+.facet-mark--dot {
+  border-radius: 50%;
+  border: 0;
+  background: var(--fc, var(--orange));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 18%, transparent);
+}
+.facet-mark--dot.facet-mark--sm { width: 8px; height: 8px; }
+.facet-mark--dot.facet-mark--md { width: 10px; height: 10px; }
+.facet-mark--dot.facet-mark--lg { width: 12px; height: 12px; }
+@media (prefers-color-scheme: dark) {
+  .facet-mark:not(.facet-mark--dot) {
+    background: color-mix(in srgb, var(--fc, var(--orange)) 24%, var(--paper));
+    border-color: color-mix(in srgb, var(--fc, var(--orange)) 52%, var(--hairline-2));
+  }
+}

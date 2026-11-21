@@ -1,0 +1,21 @@
+{
+  "description": "Gentle inline note shown on a facet detail page when its description is empty and another enabled facet exists.",
+  "context": "Journal window, settings view. Visible text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "facet_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9286baddb2f632ab255bf825bc0464d93aee65c1d94c21ce8a253d909fb6e245",
+  "max_length": 131,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Accessible name for the icons/emoji tablist in the unified icon picker.",
+  "context": "Journal window, settings view. Accessible name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8b442368510b0dc319d9410aafa46d0d2010b442126168790a6145fb1c0a8d6f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

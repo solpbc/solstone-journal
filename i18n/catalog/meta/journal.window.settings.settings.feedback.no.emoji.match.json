@@ -1,0 +1,16 @@
+{
+  "description": "Empty message shown in the icon picker when an emoji search query has no results.",
+  "context": "Journal window, settings view. Settings feedback.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2b01932c807e0c7c2ba834f6e0b9cc877eda32c029e59d7914d37d502471bf89",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

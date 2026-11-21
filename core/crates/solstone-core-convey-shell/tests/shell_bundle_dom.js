@@ -337,6 +337,44 @@ check('an error before the diagnostic console loads is shown once the console lo
   assert.strictEqual(sandbox.convey.pendingDiagnostics.length, 0);
 });
 
+check('ConveyFacetMark renders icon, emoji, dot, empty, and escaped marks via AppServices', () => {
+  const sandbox = host();
+  sandbox.ConveyIcons = { svg: () => '<svg></svg>' };
+  sandbox.navigator = { userAgent: '' };
+  sandbox.matchMedia = () => ({ matches: false, addEventListener() {} });
+  sandbox.localStorage = { getItem() { return null; }, setItem() {} };
+  sandbox.EventSource = function () { this.close = () => {}; };
+  sandbox.setInterval = () => 0;
+  sandbox.clearInterval = () => {};
+  sandbox.document.documentElement = { setAttribute() {}, dataset: {} };
+  sandbox.document.body = { classList: { add() {}, remove() {}, toggle() {} } };
+  sandbox.document.querySelectorAll = () => [];
+  vm.runInContext(
+    fs.readFileSync(path.join(staticDir, 'app.js'), 'utf8'),
+    sandbox,
+    { filename: '/static/app.js' }
+  );
+  const mark = sandbox.ConveyFacetMark;
+  assert.strictEqual(mark.kind({ icon_svg: '<svg><path/></svg>', emoji: '🏰', color: 'var(--gold)' }), 'icon');
+  assert.strictEqual(mark.kind({ emoji: '🏰', color: '#dc143c' }), 'emoji');
+  assert.strictEqual(mark.kind({ color: '#28a745' }), 'dot');
+  assert.strictEqual(mark.kind({}), 'none');
+
+  const iconHtml = mark.html(
+    { color: 'var(--gold)', icon_svg: '<svg width="24" height="24"><rect width="20" height="14" x="2" y="6"/></svg>' },
+    'sm'
+  );
+  assert.ok(
+    iconHtml.includes('facet-mark--icon')
+      && iconHtml.includes('--fc:var(--gold)')
+      && !iconHtml.includes('<svg width="24"')
+      && iconHtml.includes('<rect width="20" height="14" x="2" y="6"/>')
+  );
+  assert.strictEqual(mark.html({}, 'sm'), '');
+  const escaped = mark.html({ color: '"onmouseover=x', emoji: '<b>' }, 'md', 'a"b');
+  assert.ok(escaped.includes('&lt;b&gt;') && escaped.includes('&quot;onmouseover=x') && escaped.includes('a&quot;b'));
+});
+
 async function staleAssetCase() {
   const sandbox = host();
   const url = 'http://journal.test/static/0123456789abcdef/shell-rest.js';

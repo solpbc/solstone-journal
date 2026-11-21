@@ -1,0 +1,16 @@
+{
+  "description": "Fallback label shown on the icon trigger when a custom pasted emoji has no catalog label.",
+  "context": "Journal window, settings view. Visible text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "51b8a5d37d4d0f2ebf4d88dae030a24204b7fe019d3e7ec3314247adec7b3347",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

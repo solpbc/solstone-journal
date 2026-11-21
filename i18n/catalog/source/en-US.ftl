@@ -4422,6 +4422,20 @@ journal.window.search.status.failure.index.unreadable = couldn't search your jou
 
 journal.window.search.status.failure.retry = couldn't search your journal. try again.
 
+journal.window.settings.accessible.name.icon.picker.tabs = icon type
+
+journal.window.settings.button.label.apply = apply
+
+journal.window.settings.button.label.change = change
+
+journal.window.settings.button.label.emoji = emoji
+
+journal.window.settings.button.label.icons = icons
+
+journal.window.settings.button.label.no.icon = no icon
+
+journal.window.settings.button.label.no.icon.dot.only = no icon (dot only)
+
 journal.window.settings.credentials.environment.unconfigured = { $environment_variable }{ $slot1 }not configured.
 
 journal.window.settings.facet.receipt.erase.date = erases { $erase_day } unless you recover it.
@@ -4433,6 +4447,16 @@ journal.window.settings.facet.receipt.erased = facet erased from your journal
 journal.window.settings.facet.receipt.recover.failed = couldn't recover that facet
 
 journal.window.settings.facet.receipt.recovered = facet recovered
+
+journal.window.settings.field.label.or.paste.any.emoji = or paste any emoji
+
+journal.window.settings.field.label.search.emoji = search emoji
+
+journal.window.settings.field.placeholder.facet.description.example = e.g. client work for acme: meetings, code review, invoices; not personal email
+
+journal.window.settings.field.placeholder.search.emoji.by.keyword = search emoji by keyword...
+
+journal.window.settings.field.placeholder.search.icons.by.name.or.topic = search icons by name or topic...
 
 journal.window.settings.granola.attention.meeting.count = { $quantity ->
         [one] the 1 meeting already in your journal stays.
@@ -5431,6 +5455,16 @@ journal.window.settings.retention.originals.after.days.include.silent.audio = { 
        *[other] currently: list originals for removal after { $days } days, and audio with no speech after processing.
     }
 
+journal.window.settings.section.heading.choose.an.icon = choose an icon
+
+journal.window.settings.settings.feedback.emoji.search.failed = couldn't load emoji
+
+journal.window.settings.settings.feedback.loading.emoji = loading emoji...
+
+journal.window.settings.settings.feedback.no.emoji.available = no emoji available
+
+journal.window.settings.settings.feedback.no.emoji.match = no emoji match
+
 journal.window.settings.speech.left.out.recording.count = { $quantity ->
         [one] speech left out today: { $duration } across 1 recording
        *[other] speech left out today: { $duration } across { $recordings } recordings
@@ -5811,6 +5845,22 @@ journal.window.settings.trash.selection.count = { $quantity ->
         [one] { $selected } selected
        *[other] { $selected } selected
     }
+
+journal.window.settings.visible.text.emoji = emoji
+
+journal.window.settings.visible.text.facet.description.appearance.hint = tells your journal what belongs here and what doesn't, so it can sort your day between facets. double-click or press enter to edit.
+
+journal.window.settings.visible.text.facet.description.hint = tells your journal what belongs here and what doesn't, so it can sort your day between facets.
+
+journal.window.settings.visible.text.facet.icon.hint = shown in settings, activities, home, entities, and agents.
+
+journal.window.settings.visible.text.facet.no.description.detail.note = add a description to help your journal tell "{ $facet_name }" apart from your other facets.
+
+journal.window.settings.visible.text.facet.no.description.list.hint = no description yet. add one to help your journal tell this facet apart.
+
+journal.window.settings.visible.text.no.icon = no icon
+
+journal.window.settings.visible.text.you.can.change.all.of.these.later = you can change all of these later.
 
 journal.window.shared.api.request.failed.http = Request failed (HTTP{ $slot1 }{ $http_status })
 

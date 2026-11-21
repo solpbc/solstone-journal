@@ -2763,6 +2763,8 @@ async fn journal_entity_assembly_matches_the_recorded_oracle() {
         "title",
         "color",
         "emoji",
+        "icon",
+        "icon_svg",
         "description",
         "last_seen",
         "attached_at",

@@ -1,0 +1,16 @@
+{
+  "description": "Helper text under a facet description in Appearance settings.",
+  "context": "Journal window, settings view. Visible text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "431ed0fe9a010da011af2742e7ace4d40e49f6bcc0cbf13c4fcad964ab1d910a",
+  "max_length": 171,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

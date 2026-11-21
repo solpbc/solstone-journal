@@ -1,0 +1,16 @@
+{
+  "description": "Placeholder in the icon picker search box when the emoji tab is active.",
+  "context": "Journal window, settings view. Field placeholder.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "07124d5918a9c23487a2e69a2ce1795a530bbc2cc5e853865174c368940d20a6",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Quiet secondary line shown under a facet in Settings > Facets when its description is empty and 2+ enabled facets exist.",
+  "context": "Journal window, settings view. Visible text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "04bf15eb2475564da617e15d7a9481195a4a96eddc9fdd1c11ffc630ee564340",
+  "max_length": 111,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
