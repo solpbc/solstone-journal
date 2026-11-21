@@ -7359,6 +7359,7 @@ dependencies = [
  "solstone-core-talent-config",
  "solstone-core-talent-runtime",
  "solstone-core-time",
+ "solstone-core-transcripts",
  "tokio",
 ]
 
