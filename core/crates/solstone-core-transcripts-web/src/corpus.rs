@@ -1664,6 +1664,199 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn timed_imported_turns_open_in_file_order_without_audio() {
+        let root = TempDir::new().unwrap();
+        write(
+            root.path(),
+            "config/journal.json",
+            br#"{"identity":{"timezone":"America/Denver"}}"#,
+        );
+        let key = "041300_300";
+        segment(
+            root.path(),
+            DAY,
+            "import.text",
+            key,
+            &[(
+                "conversation_transcript.jsonl",
+                br#"
+{"raw":"../../../imports/example/missing.wav","imported":{"id":"example"}}
+{"start":"00:00:08","source_ms":1785492788000,"speaker":"Lena","text":"First in the file."}
+{"start":"00:00:02","source_ms":1785492782000,"speaker":"Ari","text":"Second in the file."}
+"#,
+            )],
+        );
+        let (status, _, body) = response(
+            app(root.path()),
+            &format!("/app/transcripts/api/segment/{DAY}/import.text/{key}"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let detail: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            detail["item"],
+            json!({"kind": "transcripts", "source": "imported"})
+        );
+        assert!(detail["audio_file"].is_null());
+        assert_eq!(detail["media_purged"]["audio"], false);
+        assert!(detail["data_state"].get("audio").is_none());
+        assert_eq!(
+            detail["chunks"],
+            json!([
+                {"type":"transcript","time":"04:13:08","timestamp":1785492788000_i64,"speaker":"Lena","text":"First in the file."},
+                {"type":"transcript","time":"04:13:02","timestamp":1785492782000_i64,"speaker":"Ari","text":"Second in the file."}
+            ])
+        );
+    }
+
+    #[tokio::test]
+    async fn untimed_imported_turns_open_without_placement_times() {
+        let root = TempDir::new().unwrap();
+        config(root.path());
+        let key = "101300_300";
+        segment(
+            root.path(),
+            DAY,
+            "import.text",
+            key,
+            &[(
+                "conversation_transcript.jsonl",
+                br#"
+{"untimed":true,"imported":{"id":"example"}}
+{"start":"00:00:00","source_ms":1785492780000,"speaker":"Lena","text":"The lanterns are ready."}
+{"start":"00:00:00","source_ms":1785492780000,"text":"Ari: I'll bring the matches."}
+"#,
+            )],
+        );
+        let (status, _, body) = response(
+            app(root.path()),
+            &format!("/app/transcripts/api/segment/{DAY}/import.text/{key}"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let detail: Value = serde_json::from_slice(&body).unwrap();
+        assert!(detail["data_state"].get("audio").is_none());
+        assert_eq!(
+            detail["chunks"],
+            json!([
+                {"type":"transcript","time":null,"timestamp":null,"speaker":"Lena","text":"The lanterns are ready."},
+                {"type":"transcript","time":null,"timestamp":null,"speaker":null,"text":"Ari: I'll bring the matches."}
+            ])
+        );
+    }
+
+    #[tokio::test]
+    async fn early_untimed_text_imports_open_without_placement_times() {
+        let root = TempDir::new().unwrap();
+        config(root.path());
+        let key = "101300_300";
+        segment(
+            root.path(),
+            DAY,
+            "import.text",
+            key,
+            &[(
+                "conversation_transcript.jsonl",
+                br#"
+{"imported":{"id":"early-text"},"raw":"../../../imports/early-text/transcript.txt"}
+{"start":"00:00:00","text":"Lena: The lanterns are ready.","source":"import"}
+{"start":"00:00:00","text":"Ari: I'll bring the matches.","source":"import"}
+"#,
+            )],
+        );
+        let (status, _, body) = response(
+            app(root.path()),
+            &format!("/app/transcripts/api/segment/{DAY}/import.text/{key}"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let detail: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            detail["chunks"],
+            json!([
+                {"type":"transcript","time":null,"timestamp":null,"speaker":null,"text":"Lena: The lanterns are ready."},
+                {"type":"transcript","time":null,"timestamp":null,"speaker":null,"text":"Ari: I'll bring the matches."}
+            ])
+        );
+    }
+
+    #[tokio::test]
+    async fn current_ai_imports_open_as_transcript_turns() {
+        let root = TempDir::new().unwrap();
+        write(
+            root.path(),
+            "config/journal.json",
+            br#"{"identity":{"timezone":"UTC"}}"#,
+        );
+        for source in ["chatgpt", "claude", "gemini"] {
+            let stream = format!("import.{source}");
+            let key = "101300_300";
+            segment(
+                root.path(),
+                DAY,
+                &stream,
+                key,
+                &[(
+                    "conversation_transcript.jsonl",
+                    br#"
+{"imported":{"id":"example"}}
+{"start":"00:00:05","speaker":"Human","text":"Can you help?"}
+"#,
+                )],
+            );
+            let (status, _, body) = response(
+                app(root.path()),
+                &format!("/app/transcripts/api/segment/{DAY}/{stream}/{key}"),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK);
+            let detail: Value = serde_json::from_slice(&body).unwrap();
+            assert!(detail["data_state"].get("audio").is_none(), "{stream}");
+            assert_eq!(
+                detail["chunks"],
+                json!([
+                    {"type":"transcript","time":"10:13:05","timestamp":1785492785000_i64,"speaker":"Human","text":"Can you help?"}
+                ]),
+                "{stream}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn legacy_ai_imports_still_open_through_the_audio_reader() {
+        let root = TempDir::new().unwrap();
+        config(root.path());
+        for source in ["chatgpt", "claude", "gemini"] {
+            let stream = format!("import.{source}");
+            let key = "101300_300";
+            segment(
+                root.path(),
+                DAY,
+                &stream,
+                key,
+                &[(
+                    "imported_audio.jsonl",
+                    br#"
+{"imported":{"id":"example"}}
+{"start":"00:00:05","speaker":"Human","text":"Can you help?"}
+"#,
+                )],
+            );
+            let (status, _, body) = response(
+                app(root.path()),
+                &format!("/app/transcripts/api/segment/{DAY}/{stream}/{key}"),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK);
+            let detail: Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(detail["chunks"].as_array().unwrap().len(), 1, "{stream}");
+            assert_eq!(detail["chunks"][0]["type"], "audio", "{stream}");
+            assert_eq!(detail["chunks"][0]["markdown"], "Can you help?", "{stream}");
+            assert_eq!(detail["data_state"]["audio"], "analyzed", "{stream}");
+        }
+    }
+
     #[test]
     fn segment_ending_at_slot_boundary_does_not_attach_to_next_range() {
         let segment = TranscriptSegment {

@@ -276,6 +276,7 @@ fn prepare_segment_localized(
         warnings.extend(crate::audio_capture::warnings(locale, capture, now));
     }
     let mut chunks = Vec::<Value>::new();
+    let mut conversation_turns = Vec::new();
     let mut has_jsonl = BTreeMap::from([("audio".to_owned(), false), ("screen".to_owned(), false)]);
     let mut records: BTreeMap<String, Option<Value>> =
         BTreeMap::from([("audio".to_owned(), None), ("screen".to_owned(), None)]);
@@ -317,6 +318,13 @@ fn prepare_segment_localized(
                     );
                 }
                 Err(error) => warnings.push(warning("audio", path, error, now)),
+            }
+        } else if offered_format == Some(FileFormat::Content(Family::AiChat)) {
+            match read_entries(path) {
+                Ok(entries) => {
+                    conversation_turns.extend(imported_conversation_turns(&context, &entries))
+                }
+                Err(error) => warnings.push(warning("transcript", path, error, now)),
             }
         } else if offered_format == Some(FileFormat::Raw(RawPerceptFamily::RawScreen)) {
             has_jsonl.insert("screen".into(), true);
@@ -504,6 +512,8 @@ fn prepare_segment_localized(
         }
     }
     chunks.sort_by_key(|chunk| chunk.get("timestamp").and_then(Value::as_i64).unwrap_or(0));
+    // A conversation reads in the order its turns were written.
+    chunks.extend(conversation_turns);
     let warning_types = warnings
         .iter()
         .filter_map(|warning| {
@@ -1036,6 +1046,69 @@ fn extract_modality_reason_codes(
         }
     }
     if map.is_empty() { None } else { Some(map) }
+}
+
+fn imported_conversation_turns<'a>(
+    context: &'a SegmentContext<'_>,
+    entries: &'a [Map<String, Value>],
+) -> impl Iterator<Item = Value> + 'a {
+    let turns = entries.iter().filter(|row| row.contains_key("start"));
+    let untimed = entries
+        .first()
+        .and_then(|header| header.get("untimed"))
+        .and_then(Value::as_bool)
+        .unwrap_or_else(|| {
+            // Early text imports put every untimed line at zero and recorded
+            // no speaker or source instant. An explicit header wins.
+            context.stream == "import.text"
+                && turns.clone().all(|row| {
+                    row.get("start").and_then(Value::as_str) == Some("00:00:00")
+                        && !row.contains_key("speaker")
+                        && !row.contains_key("source_ms")
+                })
+        });
+    let segment_start = Timestamp::from_millisecond(day_timestamp(
+        &context.zone,
+        context.day,
+        &wall_time(context.key, 0.0),
+        i64::MIN,
+    ))
+    .ok();
+
+    turns.filter_map(move |row| {
+        let text = row.get("text")?.as_str().filter(|text| !text.is_empty())?;
+        let speaker = row.get("speaker").and_then(Value::as_str);
+        let timestamp = if untimed {
+            None
+        } else {
+            row.get("source_ms")
+                .and_then(Value::as_i64)
+                .and_then(|millis| Timestamp::from_millisecond(millis).ok())
+                .or_else(|| {
+                    let elapsed = row
+                        .get("start")?
+                        .as_str()?
+                        .parse::<jiff::civil::Time>()
+                        .ok()?;
+                    segment_start?
+                        .checked_add(elapsed.duration_since(jiff::civil::Time::MIN))
+                        .ok()
+                })
+        };
+        let time = timestamp.map(|instant| {
+            instant
+                .to_zoned_datetime(context.zone.clone())
+                .strftime("%H:%M:%S")
+                .to_string()
+        });
+        Some(json!({
+            "type": "transcript",
+            "time": time,
+            "timestamp": timestamp.map(|instant| instant.as_millisecond()),
+            "speaker": speaker,
+            "text": text,
+        }))
+    })
 }
 
 fn audio_chunks(
