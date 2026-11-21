@@ -1826,7 +1826,7 @@ mod tests {
             (
                 "102300_300",
                 None,
-                json!({"file":file,"day":DAY,"source":"imported","conversation_state":"unresolved","reason_code":"insufficient_evidence"}),
+                json!({"file":file,"day":DAY,"source":"imported","conversation_state":"unresolved","reason_code":"origin_unknown"}),
             ),
         ] {
             let mut header = json!({"imported":{"id":"fixture"}});

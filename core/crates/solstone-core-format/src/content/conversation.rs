@@ -409,23 +409,22 @@ fn original_locator(header: &Value) -> Option<(&str, &str)> {
 }
 
 fn unresolved_reason(root: &Path, path: &Path) -> &'static str {
-    use solstone_core_journal_io::{JournalRoot, read_relative_file_bounded};
-    let missing_original = || {
-        let header = solstone_core_processing_record::read_jsonl_header(path)?;
-        let (id, name) = original_locator(&header)?;
-        let original = Path::new("imports").join(id).join(name);
-        // A zero-byte budget can establish absence without reading the original.
-        let journal = JournalRoot::open(root).ok()?;
-        Some(
-            read_relative_file_bounded(&journal, &original, 0)
-                .ok()?
-                .is_none(),
-        )
+    use solstone_core_journal_io::{JournalRoot, media::MediaDirectory};
+    let Some(header) = solstone_core_processing_record::read_jsonl_header(path) else {
+        return "origin_unknown";
     };
-    if missing_original() == Some(true) {
-        "original_missing"
-    } else {
-        "insufficient_evidence"
+    let Some((id, name)) = original_locator(&header) else {
+        return "origin_unknown";
+    };
+    let Ok(root) = JournalRoot::open(root) else {
+        return "origin_unknown";
+    };
+    let located = MediaDirectory::open(std::sync::Arc::new(root), &Path::new("imports").join(id))
+        .and_then(|dir| dir.read_versioned(name.as_ref(), |_, _| ()));
+    match located {
+        Ok(()) => "insufficient_evidence",
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => "original_missing",
+        Err(_) => "origin_unknown",
     }
 }
 
@@ -708,8 +707,17 @@ mod tests {
         assert_eq!(reason(), Some("original_missing"));
         std::fs::write(raw, "ambiguous text").unwrap();
         assert_eq!(reason(), Some("insufficient_evidence"));
-        std::fs::write(path, "{}\n").unwrap();
-        assert_eq!(reason(), Some("insufficient_evidence"));
+        std::fs::write(&path, "{}\n").unwrap();
+        assert_eq!(reason(), Some("origin_unknown"));
+        std::fs::write(
+            &path,
+            format!(
+                "{}\n",
+                json!({"imported":{"id":"old"},"raw":"../../../imports/another/sample.txt"})
+            ),
+        )
+        .unwrap();
+        assert_eq!(reason(), Some("origin_unknown"));
     }
 
     #[test]

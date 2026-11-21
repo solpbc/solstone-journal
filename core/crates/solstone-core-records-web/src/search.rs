@@ -1122,14 +1122,7 @@ fn owner_conversation_hits(
                     .then_some(start..end)
             }) {
                 message["offset"] = json!(span.start);
-                let start = original.ceil_char_boundary(span.start.saturating_sub(100));
-                let end = original.floor_char_boundary((span.end + 180).min(original.len()));
-                message["snippet"] = Value::from(format!(
-                    "{}<strong>{}</strong>{}",
-                    html_escape(&original[start..span.start]),
-                    html_escape(&original[span.clone()]),
-                    html_escape(&original[span.end..end])
-                ));
+                message["snippet"] = Value::from(message_excerpt(original, span));
             }
             result.insert(hit.row_id, (descriptor.clone(), Some(message)));
             if wanted.is_empty() {
@@ -1138,6 +1131,35 @@ fn owner_conversation_hits(
         }
     }
     result
+}
+
+/// Keep the matched byte range intact. Prefer whole surrounding words inside
+/// the context budget, leaving a clipped unbroken string visibly abbreviated.
+fn message_excerpt(original: &str, span: std::ops::Range<usize>) -> String {
+    let mut start = original.ceil_char_boundary(span.start.saturating_sub(100));
+    let mut end = original.floor_char_boundary(span.end.saturating_add(180).min(original.len()));
+    if start > 0
+        && !original[..start].ends_with(char::is_whitespace)
+        && let Some((at, space)) = original[start..span.start]
+            .char_indices()
+            .find(|(_, c)| c.is_whitespace())
+    {
+        start += at + space.len_utf8();
+    }
+    if end < original.len()
+        && !original[end..].starts_with(char::is_whitespace)
+        && let Some(at) = original[span.end..end].rfind(char::is_whitespace)
+    {
+        end = span.end + at;
+    }
+    format!(
+        "{}{}<strong>{}</strong>{}{}",
+        if start == 0 { "" } else { "… " },
+        html_escape(&original[start..span.start]),
+        html_escape(&original[span.clone()]),
+        html_escape(&original[span.end..end]),
+        if end == original.len() { "" } else { " …" }
+    )
 }
 
 fn highlight(text: &str, query: &str) -> String {
@@ -1418,6 +1440,25 @@ mod search_failure_detail_tests {
 #[cfg(test)]
 mod highlight_phrase_tests {
     use super::*;
+
+    #[test]
+    fn a_message_excerpt_keeps_its_hit_and_trims_partial_context_words() {
+        let text = format!(
+            "{}For {}shelves {}afternoon",
+            "é".repeat(80),
+            "w ".repeat(49),
+            "m ".repeat(88)
+        );
+        let start = text.find("shelves").unwrap();
+        let excerpt = message_excerpt(&text, start..start + 7);
+        assert!(excerpt.starts_with("… w "), "{excerpt}");
+        assert!(excerpt.contains("<strong>shelves</strong>"));
+        assert!(excerpt.ends_with("m …"), "{excerpt}");
+        assert_eq!(
+            message_excerpt("é <wood>", 3..9),
+            "é <strong>&lt;wood&gt;</strong>"
+        );
+    }
 
     #[test]
     fn screen_text_excerpts_decode_one_literal_layer_before_html_escaping() {
