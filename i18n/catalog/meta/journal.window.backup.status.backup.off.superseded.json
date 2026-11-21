@@ -1,0 +1,16 @@
+{
+  "description": "Backup is off because another copy of this journal assumed responsibility for its encrypted backup.",
+  "context": "Journal window. Backup is off because another copy of this journal assumed responsibility for its encrypted backup.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "99929705461e357f841427f931945deb2790f3d1b5fc37aa53cbe217b81efc8e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

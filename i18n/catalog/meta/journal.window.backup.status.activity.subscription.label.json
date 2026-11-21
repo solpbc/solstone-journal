@@ -1,0 +1,34 @@
+{
+  "description": "Display of the subscription phase of a backup operation, as a label.",
+  "context": "Journal window. Display of the subscription phase of a backup operation, as a label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "operation_kind",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "f58242c170425253bd36a517e10399de4bb2805e9645bc94e0c510e98d9a5133",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "operation_kind",
+    "type": "string",
+    "enum_values": [
+      "setup",
+      "rotate",
+      "stop",
+      "restore",
+      "prepare",
+      "approve"
+    ],
+    "enum_default": "approve"
+  }
+}

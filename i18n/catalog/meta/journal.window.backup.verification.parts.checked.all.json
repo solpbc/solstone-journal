@@ -1,0 +1,16 @@
+{
+  "description": "Recorded verification read all data parts because the set has exactly one part.",
+  "context": "Journal window. Recorded verification read all data parts because the set has exactly one part.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2533015debaa4755265ac1696b872467aff341d28a4614daa17a43a5a28c4d14",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

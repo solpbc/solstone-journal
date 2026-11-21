@@ -1,0 +1,34 @@
+{
+  "description": "Display of the refused phase of a backup operation, as a label.",
+  "context": "Journal window. Display of the refused phase of a backup operation, as a label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "operation_kind",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "e89e10a0c5e5e93cf064dbf3e8832a6eb5204a9c882b34fcc9e444a4f7f1e376",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "operation_kind",
+    "type": "string",
+    "enum_values": [
+      "setup",
+      "rotate",
+      "stop",
+      "restore",
+      "prepare",
+      "approve"
+    ],
+    "enum_default": "approve"
+  }
+}

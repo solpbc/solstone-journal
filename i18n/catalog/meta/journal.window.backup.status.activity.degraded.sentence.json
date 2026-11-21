@@ -1,0 +1,34 @@
+{
+  "description": "Display of the degraded phase of a backup operation, as a sentence.",
+  "context": "Journal window. Display of the degraded phase of a backup operation, as a sentence.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "operation_kind",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "fa2aa3e0bceab6f7b91214c3b4fe2360b79a5be544583929c7a075b609bcb422",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "operation_kind",
+    "type": "string",
+    "enum_values": [
+      "setup",
+      "rotate",
+      "stop",
+      "restore",
+      "prepare",
+      "approve"
+    ],
+    "enum_default": "approve"
+  }
+}

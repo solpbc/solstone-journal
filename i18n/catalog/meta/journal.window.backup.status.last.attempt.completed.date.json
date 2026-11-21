@@ -1,0 +1,21 @@
+{
+  "description": "Backup status with the recorded date of the latest completed attempt.",
+  "context": "Journal window. Backup status with the recorded date of the latest completed attempt.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "completed_at",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c9cfde0db298ece0c86919d7f5b3a5d6523a1b4d340ef136c9aac41104699a93",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "description": "Recorded backup or verification result with a known time, as a sentence.",
+  "context": "Journal window. Recorded backup or verification result with a known time, as a sentence.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "outcome",
+      "type": "string"
+    },
+    {
+      "name": "recorded_at",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "094b9b42d549c5d90b96b0ba75813e374ed43abcacc2f7d825c45bff95a565a0",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "outcome",
+    "type": "string",
+    "enum_values": [
+      "completed",
+      "failed",
+      "never-recorded",
+      "could-not-run"
+    ],
+    "enum_default": "could-not-run"
+  }
+}

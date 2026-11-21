@@ -1,0 +1,21 @@
+{
+  "description": "Backup window label with restore size.",
+  "context": "Journal window. Backup window label with restore size.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "restore_size",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5a4505ee96d88a91ab67c79be76e0a05f97f148e3b50ea6f0c77c17f39c23e4e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -306,6 +306,372 @@ journal.window.agents.suggestions.waiting.count = { $quantity ->
        *[other] { $count } suggestions from { $agent_name } are waiting
     }
 
+journal.window.backup.age.backup.failed.clock = backup attempt failed { $recorded_at } ago
+
+journal.window.backup.age.backup.failed.day = { $quantity ->
+        [one] backup attempt failed { $count } day ago
+       *[other] backup attempt failed { $count } days ago
+    }
+
+journal.window.backup.age.backup.failed.hour = { $quantity ->
+        [one] backup attempt failed { $count } hour ago
+       *[other] backup attempt failed { $count } hours ago
+    }
+
+journal.window.backup.age.backup.failed.minute = { $quantity ->
+        [one] backup attempt failed { $count } minute ago
+       *[other] backup attempt failed { $count } minutes ago
+    }
+
+journal.window.backup.age.backup.failed.month = { $quantity ->
+        [one] backup attempt failed { $count } month ago
+       *[other] backup attempt failed { $count } months ago
+    }
+
+journal.window.backup.age.backup.failed.second = { $quantity ->
+        [one] backup attempt failed { $count } second ago
+       *[other] backup attempt failed { $count } seconds ago
+    }
+
+journal.window.backup.age.backup.failed.week = { $quantity ->
+        [one] backup attempt failed { $count } week ago
+       *[other] backup attempt failed { $count } weeks ago
+    }
+
+journal.window.backup.age.check.failed.clock = spot-check failed { $recorded_at } ago
+
+journal.window.backup.age.check.failed.day = { $quantity ->
+        [one] spot-check failed { $count } day ago
+       *[other] spot-check failed { $count } days ago
+    }
+
+journal.window.backup.age.check.failed.hour = { $quantity ->
+        [one] spot-check failed { $count } hour ago
+       *[other] spot-check failed { $count } hours ago
+    }
+
+journal.window.backup.age.check.failed.minute = { $quantity ->
+        [one] spot-check failed { $count } minute ago
+       *[other] spot-check failed { $count } minutes ago
+    }
+
+journal.window.backup.age.check.failed.month = { $quantity ->
+        [one] spot-check failed { $count } month ago
+       *[other] spot-check failed { $count } months ago
+    }
+
+journal.window.backup.age.check.failed.second = { $quantity ->
+        [one] spot-check failed { $count } second ago
+       *[other] spot-check failed { $count } seconds ago
+    }
+
+journal.window.backup.age.check.failed.week = { $quantity ->
+        [one] spot-check failed { $count } week ago
+       *[other] spot-check failed { $count } weeks ago
+    }
+
+journal.window.backup.age.check.skipped.clock = spot-check couldn't run { $recorded_at } ago
+
+journal.window.backup.age.check.skipped.day = { $quantity ->
+        [one] spot-check couldn't run { $count } day ago
+       *[other] spot-check couldn't run { $count } days ago
+    }
+
+journal.window.backup.age.check.skipped.hour = { $quantity ->
+        [one] spot-check couldn't run { $count } hour ago
+       *[other] spot-check couldn't run { $count } hours ago
+    }
+
+journal.window.backup.age.check.skipped.minute = { $quantity ->
+        [one] spot-check couldn't run { $count } minute ago
+       *[other] spot-check couldn't run { $count } minutes ago
+    }
+
+journal.window.backup.age.check.skipped.month = { $quantity ->
+        [one] spot-check couldn't run { $count } month ago
+       *[other] spot-check couldn't run { $count } months ago
+    }
+
+journal.window.backup.age.check.skipped.second = { $quantity ->
+        [one] spot-check couldn't run { $count } second ago
+       *[other] spot-check couldn't run { $count } seconds ago
+    }
+
+journal.window.backup.age.check.skipped.week = { $quantity ->
+        [one] spot-check couldn't run { $count } week ago
+       *[other] spot-check couldn't run { $count } weeks ago
+    }
+
+journal.window.backup.age.elapsed.clock = { $recorded_at } ago
+
+journal.window.backup.age.elapsed.day = { $quantity ->
+        [one] { $count } day ago
+       *[other] { $count } days ago
+    }
+
+journal.window.backup.age.elapsed.hour = { $quantity ->
+        [one] { $count } hour ago
+       *[other] { $count } hours ago
+    }
+
+journal.window.backup.age.elapsed.minute = { $quantity ->
+        [one] { $count } minute ago
+       *[other] { $count } minutes ago
+    }
+
+journal.window.backup.age.elapsed.month = { $quantity ->
+        [one] { $count } month ago
+       *[other] { $count } months ago
+    }
+
+journal.window.backup.age.elapsed.second = { $quantity ->
+        [one] { $count } second ago
+       *[other] { $count } seconds ago
+    }
+
+journal.window.backup.age.elapsed.week = { $quantity ->
+        [one] { $count } week ago
+       *[other] { $count } weeks ago
+    }
+
+journal.window.backup.capacity.gib = { $amount } { $unit }
+
+journal.window.backup.capacity.mib = { $amount } { $unit }
+
+journal.window.backup.consent.destination.backup.only.days = { $days_quantity ->
+        [one] 1 day of your journal ({ $backup_size }) exists only in that backup.
+       *[other] { $days } days of your journal ({ $backup_size }) exist only in that backup.
+    }
+
+journal.window.backup.consent.teardown.backup.only.days = { $days_quantity ->
+        [one] { $days } days of your journal ({ $backup_size }) exist only in this backup. deleting the backup deletes them everywhere, forever.
+       *[other] { $days } days of your journal ({ $backup_size }) exist only in this backup. deleting the backup deletes them everywhere, forever.
+    }
+
+journal.window.backup.erasure.paused.count = { $things_quantity ->
+        [one] 1 erased thing waits to be removed from your backups until you resume.
+       *[other] { $things } erased things wait to be removed from your backups until you resume.
+    }
+
+journal.window.backup.erasure.running.count = { $things_quantity ->
+        [one] removing 1 erased thing from your backups…
+       *[other] removing { $things } erased things from your backups…
+    }
+
+journal.window.backup.offload.capacity.suggested = suggested: { $suggested_size }
+
+journal.window.backup.offload.days.show.all = { $days_quantity ->
+        [one] show all { $days } days
+       *[other] show all { $days } days
+    }
+
+journal.window.backup.offload.restore.capacity.expectation = restoring { $restore_size } from your backup. a large restore can take a while.
+
+journal.window.backup.offload.restore.day.accessible.name = restore this day: { $day }
+
+journal.window.backup.offload.restore.effects = { $files_quantity ->
+        [one] files restored: { $files } · added to this computer: { $size }
+       *[other] files restored: { $files } · added to this computer: { $size }
+    }
+
+journal.window.backup.status.activity.active.label = { $operation_kind ->
+        [setup] backup setup: in progress
+        [rotate] recovery key change: in progress
+        [stop] turning backup off: in progress
+        [restore] restore: in progress
+        [prepare] copy preparation: in progress
+       *[approve] archive approval: in progress
+    }
+
+journal.window.backup.status.activity.active.sentence = { $operation_kind ->
+        [setup] backup setup: in progress.
+        [rotate] recovery key change: in progress.
+        [stop] turning backup off: in progress.
+        [restore] restore: in progress.
+        [prepare] copy preparation: in progress.
+       *[approve] archive approval: in progress.
+    }
+
+journal.window.backup.status.activity.cancelled.label = { $operation_kind ->
+        [setup] backup setup: cancelled
+        [rotate] recovery key change: cancelled
+        [stop] turning backup off: cancelled
+        [restore] restore: cancelled
+        [prepare] copy preparation: cancelled
+       *[approve] archive approval: cancelled
+    }
+
+journal.window.backup.status.activity.cancelled.sentence = { $operation_kind ->
+        [setup] backup setup: cancelled.
+        [rotate] recovery key change: cancelled.
+        [stop] turning backup off: cancelled.
+        [restore] restore: cancelled.
+        [prepare] copy preparation: cancelled.
+       *[approve] archive approval: cancelled.
+    }
+
+journal.window.backup.status.activity.cancelling.label = { $operation_kind ->
+        [setup] backup setup: cancelling
+        [rotate] recovery key change: cancelling
+        [stop] turning backup off: cancelling
+        [restore] restore: cancelling
+        [prepare] copy preparation: cancelling
+       *[approve] archive approval: cancelling
+    }
+
+journal.window.backup.status.activity.cancelling.sentence = { $operation_kind ->
+        [setup] backup setup: cancelling.
+        [rotate] recovery key change: cancelling.
+        [stop] turning backup off: cancelling.
+        [restore] restore: cancelling.
+        [prepare] copy preparation: cancelling.
+       *[approve] archive approval: cancelling.
+    }
+
+journal.window.backup.status.activity.cleanup.label = { $operation_kind ->
+        [setup] backup setup: waiting for cleanup
+        [rotate] recovery key change: waiting for cleanup
+        [stop] turning backup off: waiting for cleanup
+        [restore] restore: waiting for cleanup
+        [prepare] copy preparation: waiting for cleanup
+       *[approve] archive approval: waiting for cleanup
+    }
+
+journal.window.backup.status.activity.cleanup.sentence = { $operation_kind ->
+        [setup] backup setup: waiting for cleanup.
+        [rotate] recovery key change: waiting for cleanup.
+        [stop] turning backup off: waiting for cleanup.
+        [restore] restore: waiting for cleanup.
+        [prepare] copy preparation: waiting for cleanup.
+       *[approve] archive approval: waiting for cleanup.
+    }
+
+journal.window.backup.status.activity.completed.label = { $operation_kind ->
+        [setup] backup setup: completed
+        [rotate] recovery key change: completed
+        [stop] turning backup off: completed
+        [restore] restore: completed
+        [prepare] copy preparation: completed
+       *[approve] archive approval: completed
+    }
+
+journal.window.backup.status.activity.degraded.label = { $operation_kind ->
+        [setup] backup setup: completed with problems
+        [rotate] recovery key change: completed with problems
+        [stop] turning backup off: completed with problems
+        [restore] restore: completed with problems
+        [prepare] copy preparation: completed with problems
+       *[approve] archive approval: completed with problems
+    }
+
+journal.window.backup.status.activity.degraded.sentence = { $operation_kind ->
+        [setup] backup setup: completed with problems.
+        [rotate] recovery key change: completed with problems.
+        [stop] turning backup off: completed with problems.
+        [restore] restore: completed with problems.
+        [prepare] copy preparation: completed with problems.
+       *[approve] archive approval: completed with problems.
+    }
+
+journal.window.backup.status.activity.failed.label = { $operation_kind ->
+        [setup] backup setup: couldn't finish
+        [rotate] recovery key change: couldn't finish
+        [stop] turning backup off: couldn't finish
+        [restore] restore: couldn't finish
+        [prepare] copy preparation: couldn't finish
+       *[approve] archive approval: couldn't finish
+    }
+
+journal.window.backup.status.activity.failed.sentence = { $operation_kind ->
+        [setup] backup setup: couldn't finish.
+        [rotate] recovery key change: couldn't finish.
+        [stop] turning backup off: couldn't finish.
+        [restore] restore: couldn't finish.
+        [prepare] copy preparation: couldn't finish.
+       *[approve] archive approval: couldn't finish.
+    }
+
+journal.window.backup.status.activity.refused.label = { $operation_kind ->
+        [setup] backup setup: couldn't start
+        [rotate] recovery key change: couldn't start
+        [stop] turning backup off: couldn't start
+        [restore] restore: couldn't start
+        [prepare] copy preparation: couldn't start
+       *[approve] archive approval: couldn't start
+    }
+
+journal.window.backup.status.activity.refused.sentence = { $operation_kind ->
+        [setup] backup setup: couldn't start.
+        [rotate] recovery key change: couldn't start.
+        [stop] turning backup off: couldn't start.
+        [restore] restore: couldn't start.
+        [prepare] copy preparation: couldn't start.
+       *[approve] archive approval: couldn't start.
+    }
+
+journal.window.backup.status.activity.subscription.label = { $operation_kind ->
+        [setup] backup setup: waiting to finish in the services portal
+        [rotate] recovery key change: waiting to finish in the services portal
+        [stop] turning backup off: waiting to finish in the services portal
+        [restore] restore: waiting to finish in the services portal
+        [prepare] copy preparation: waiting to finish in the services portal
+       *[approve] archive approval: waiting to finish in the services portal
+    }
+
+journal.window.backup.status.activity.subscription.sentence = { $operation_kind ->
+        [setup] backup setup: waiting to finish in the services portal.
+        [rotate] recovery key change: waiting to finish in the services portal.
+        [stop] turning backup off: waiting to finish in the services portal.
+        [restore] restore: waiting to finish in the services portal.
+        [prepare] copy preparation: waiting to finish in the services portal.
+       *[approve] archive approval: waiting to finish in the services portal.
+    }
+
+journal.window.backup.status.backup.off.superseded = backup is off. another copy of your journal took over encrypted backup.
+
+journal.window.backup.status.check.result.date.known.label = { $outcome ->
+        [completed] completed, { $recorded_at }
+        [failed] failed, { $recorded_at }
+        [never-recorded] no completed attempt recorded, { $recorded_at }
+       *[could-not-run] couldn't run, { $recorded_at }
+    }
+
+journal.window.backup.status.check.result.date.known.sentence = { $outcome ->
+        [completed] completed, { $recorded_at }.
+        [failed] failed, { $recorded_at }.
+        [never-recorded] no completed attempt recorded, { $recorded_at }.
+       *[could-not-run] couldn't run, { $recorded_at }.
+    }
+
+journal.window.backup.status.check.result.date.unknown.label = { $outcome ->
+        [completed] completed, date isn't known
+        [failed] failed, date isn't known
+        [never-recorded] no completed attempt recorded, date isn't known
+       *[could-not-run] couldn't run, date isn't known
+    }
+
+journal.window.backup.status.check.result.date.unknown.sentence = { $outcome ->
+        [completed] completed, date isn't known.
+        [failed] failed, date isn't known.
+        [never-recorded] no completed attempt recorded, date isn't known.
+       *[could-not-run] couldn't run, date isn't known.
+    }
+
+journal.window.backup.status.last.attempt.completed.date = the latest backup attempt completed, { $completed_at }.
+
+journal.window.backup.status.paused.label.date = paused by you, { $paused_at }
+
+journal.window.backup.status.paused.on.date = you paused backup on { $paused_at }.
+
+journal.window.backup.storage.user.backend = your own storage · { $storage_backend }
+
+journal.window.backup.verification.parts.checked = { $parts_quantity ->
+        [one] checked 1 of { $parts } parts of your backup.
+       *[other] checked 1 of { $parts } parts of your backup.
+    }
+
+journal.window.backup.verification.parts.checked.all = checked all of your backup this week.
+
 journal.window.body.day.nearby.with.data = nearby days with data: { $nearby_days }
 
 journal.window.body.empty.workouts.import = nothing here yet. bring in your workouts from a Strava download on the { $import_link_start }import page{ $import_link_end }.
@@ -5235,10 +5601,6 @@ journal.window.backup.copy.destination.edit.checking = checking the destination�
 
 journal.window.backup.copy.destination.edit.confirm.action = use the new destination
 
-journal.window.backup.copy.destination.edit.confirm.day = 1 day of your journal ({ $slot1 }) exists only in that backup.
-
-journal.window.backup.copy.destination.edit.confirm.days = { $slot1 } days of your journal ({ $slot2 }) exist only in that backup.
-
 journal.window.backup.copy.destination.edit.confirm.days.unavailable = can't check right now how many days of your journal exist only in that backup.
 
 journal.window.backup.copy.destination.edit.confirm.lead = your existing backup stays where it is, untouched. once you switch, your journal won't back up to it or restore from it.
@@ -5365,8 +5727,6 @@ journal.window.backup.copy.management.destructive.action = turn off & delete bac
 
 journal.window.backup.copy.management.destructive.caption = this deletes your whole backup. no new backups will be created.
 
-journal.window.backup.copy.management.location.meta = your own storage · { $slot1 }
-
 journal.window.backup.copy.management.pause.caption = stops backups, spot-checks, cleanup and media offload until you resume. your backup, keys and history stay as they are.
 
 journal.window.backup.copy.management.pause.title = pause backup
@@ -5390,8 +5750,6 @@ journal.window.backup.copy.management.retention.labels.weekly = weekly
 journal.window.backup.copy.management.rotate.key.caption = this replaces your recovery key. the old key stops working, so every copy of it you saved becomes useless. write the new one down before you leave this page.
 
 journal.window.backup.copy.management.rotate.key.summary = replace your recovery key
-
-journal.window.backup.copy.management.status.labels.ago = { $slot1 } ago
 
 journal.window.backup.copy.management.status.labels.backup.attempt.unknown = the latest backup attempt isn't known.
 
@@ -5422,8 +5780,6 @@ journal.window.backup.copy.management.status.labels.retention = retention
 journal.window.backup.copy.management.status.labels.setup = set up your recovery key
 
 journal.window.backup.copy.management.teardown.confirm.prompt = type delete to confirm
-
-journal.window.backup.copy.management.teardown.gate.lead = { $slot1 } days of your journal ({ $slot2 }) exist only in this backup. deleting the backup deletes them everywhere, forever.
 
 journal.window.backup.copy.management.teardown.gate.unavailable.lead = can't verify what exists only in this backup right now. deleting the backup may destroy days of your journal that exist nowhere else.
 
@@ -5487,8 +5843,6 @@ journal.window.backup.copy.offload.labels.proposed = proposed to leave this comp
 
 journal.window.backup.copy.offload.labels.raw.media = on this computer
 
-journal.window.backup.copy.offload.labels.suggested = suggested: { $slot1 }
-
 journal.window.backup.copy.offload.labels.under.one.mib = under 1 { $slot1 }
 
 journal.window.backup.copy.offload.messages.degraded = some of the record of what's in your backup couldn't be read. these days may hold more than shown.
@@ -5498,8 +5852,6 @@ journal.window.backup.copy.offload.messages.empty.days = no offloaded media yet.
 journal.window.backup.copy.offload.messages.incomplete = some media totals aren't available.
 
 journal.window.backup.copy.offload.messages.saved = saved
-
-journal.window.backup.copy.offload.messages.show.all.days = show all { $slot1 } days
 
 journal.window.backup.copy.offload.not.ready = turn on encrypted backup and confirm your recovery key before using media offload.
 
@@ -5520,8 +5872,6 @@ journal.window.backup.copy.offload.preparation.unavailable = can't confirm prepa
 journal.window.backup.copy.offload.prepare.hint = prepare encrypted copies for review. choose which originals to remove on the originals page.
 
 journal.window.backup.copy.offload.reason.unavailable = the reason isn't available here.
-
-journal.window.backup.copy.offload.restore.expectation = restoring { $slot1 } from your backup. a large restore can take a while.
 
 journal.window.backup.copy.offload.restore.reason.labels.archive.unbound = the backup record doesn't identify the archive needed to restore these files.
 
@@ -5570,8 +5920,6 @@ journal.window.backup.copy.offload.restore.report.dispositions.published = resto
 journal.window.backup.copy.offload.restore.report.dispositions.unattempted = not attempted
 
 journal.window.backup.copy.offload.restore.report.dispositions.unverified = result not confirmed
-
-journal.window.backup.copy.offload.restore.report.effects = files restored: { $slot1 } · added to this computer: { $slot2 }
 
 journal.window.backup.copy.offload.restore.report.files = file results
 
@@ -5751,21 +6099,7 @@ journal.window.backup.copy.restore.hosted.status.retryable = something went wron
 
 journal.window.backup.copy.service.name = encrypted backup
 
-journal.window.backup.copy.status.last.backup.failed = backup attempt failed { $slot1 } ago
-
 journal.window.backup.copy.status.last.backup.never.run = no completed backup recorded on this computer
-
-journal.window.backup.copy.status.last.verification.failed = spot-check failed { $slot1 } ago
-
-journal.window.backup.copy.status.last.verification.ok = { $slot1 } ago
-
-journal.window.backup.copy.status.last.verification.skipped = spot-check couldn't run { $slot1 } ago
-
-journal.window.backup.erasure.paused.many = { $slot1 } erased things wait to be removed from your backups until you resume.
-
-journal.window.backup.erasure.running.many = removing { $slot1 } erased things from your backups…
-
-journal.window.backup.erasure.running.one = removing 1 erased thing from your backups…
 
 journal.window.backup.link.label.backup.details.in.health = backup details in health →
 
@@ -5911,89 +6245,7 @@ journal.window.backup.status.fact.on = on
 
 journal.window.backup.status.fact.operation = operation
 
-journal.window.backup.status.kind.enable = backup setup
-
-journal.window.backup.status.kind.enable.hosted = backup setup
-
-journal.window.backup.status.kind.offload = copy preparation
-
-journal.window.backup.status.kind.offload.approve = archive approval
-
-journal.window.backup.status.kind.offload.restore = restore
-
-journal.window.backup.status.kind.restore = restore
-
-journal.window.backup.status.kind.restore.hosted = restore
-
-journal.window.backup.status.kind.restore.recovery = restore
-
-journal.window.backup.status.kind.rotate = recovery key change
-
-journal.window.backup.status.kind.teardown = turning backup off
-
-journal.window.backup.status.operation.status.value1.value2 = { $value1 },{ $slot1 }{ $value2 }
-
-journal.window.backup.status.operation.status.value1.value2.variant2 = { $value1 }{ $slot1 }{ $value2 }
-
-journal.window.backup.status.operation.status.value1.value2.variant3 = { $value1 }:{ $slot1 }{ $value2 }.
-
-journal.window.backup.status.outcome.completed = completed
-
-journal.window.backup.status.outcome.couldnt.run = couldn't run
-
-journal.window.backup.status.outcome.failed = failed
-
 journal.window.backup.status.outcome.unknown = isn't known
-
-journal.window.backup.status.phase.cancelled = cancelled
-
-journal.window.backup.status.phase.cancelling = cancelling
-
-journal.window.backup.status.phase.cleanup.pending = waiting for cleanup
-
-journal.window.backup.status.phase.degraded = completed with problems
-
-journal.window.backup.status.phase.done = completed
-
-journal.window.backup.status.phase.error = couldn't finish
-
-journal.window.backup.status.phase.refused = couldn't start
-
-journal.window.backup.status.phase.restoring = in progress
-
-journal.window.backup.status.phase.rotating = in progress
-
-journal.window.backup.status.phase.setting.up = in progress
-
-journal.window.backup.status.phase.tearing.down = in progress
-
-journal.window.backup.status.status.text.backup.is.off.value1 = backup is off.{ $slot1 }{ $value1 }
-
-journal.window.backup.status.status.text.paused.by.you.value1 = paused by you,{ $slot1 }{ $value1 }
-
-journal.window.backup.status.text.data.byo.location.status = [data-byo-location-status]
-
-journal.window.backup.status.text.data.confirm.error = [data-confirm-error]
-
-journal.window.backup.status.text.data.destination.status = [data-destination-status]
-
-journal.window.backup.status.text.data.offload.config.status = [data-offload-config-status]
-
-journal.window.backup.status.text.data.offload.restore.status = [data-offload-restore-status]
-
-journal.window.backup.status.text.data.operation.error = [data-operation-error]
-
-journal.window.backup.status.text.data.recovery.error = [data-recovery-error]
-
-journal.window.backup.status.text.data.restore.status = [data-restore-status]
-
-journal.window.backup.status.text.data.retention.status = [data-retention-status]
-
-journal.window.backup.status.text.data.switch.days = [data-switch-days]
-
-journal.window.backup.status.text.data.teardown.status = [data-teardown-status]
-
-journal.window.backup.status.verification.part = checked 1 of { $slot1 } parts of your backup.
 
 journal.window.backup.status.visible.text.technical.details = technical details
 
@@ -6002,8 +6254,6 @@ journal.window.backup.status.window.explanation.another.copy.of.your.journal.too
 journal.window.backup.status.window.explanation.backup.is.on.the.latest.attempt = backup is on. the latest attempt isn't known.
 
 journal.window.backup.status.window.explanation.backup.status.is.unavailable.right.now = backup status is unavailable right now.
-
-journal.window.backup.status.window.explanation.checked.all.of.your.backup.this = checked all of your backup this week.
 
 journal.window.backup.status.window.explanation.encrypted.backup.can.t.reach.storage = encrypted backup can't reach storage from this computer.
 
@@ -6016,8 +6266,6 @@ journal.window.backup.status.window.explanation.encrypted.backup.didn.t.return.u
 journal.window.backup.status.window.explanation.encrypted.backup.isn.t.turned.on = encrypted backup isn't turned on in the services portal.
 
 journal.window.backup.status.window.explanation.it.ran.out.of.time = it ran out of time.
-
-journal.window.backup.status.window.explanation.no.completed.attempt.recorded = no completed attempt recorded
 
 journal.window.backup.status.window.explanation.paused.by.you.date.isn.t = paused by you, date isn't known
 
@@ -6033,8 +6281,6 @@ journal.window.backup.status.window.explanation.the.backup.tool.stopped.with.an 
 
 journal.window.backup.status.window.explanation.the.last.recorded.backup.spot.check = the last recorded backup spot-check failed.
 
-journal.window.backup.status.window.explanation.the.latest.backup.attempt.completed.value1 = the latest backup attempt completed,{ $slot1 }{ $value1 }.
-
 journal.window.backup.status.window.explanation.the.latest.recorded.backup.attempt.failed = the latest recorded backup attempt failed.
 
 journal.window.backup.status.window.explanation.the.latest.recorded.backup.copy.is = the latest recorded backup copy is incomplete.
@@ -6049,12 +6295,6 @@ journal.window.backup.status.window.explanation.this.computer.can.t.set.up = thi
 
 journal.window.backup.status.window.explanation.this.computer.s.link.to.encrypted = this computer's link to encrypted backup was refused.
 
-journal.window.backup.status.window.explanation.value1.date.isn.t.known = { $value1 }, date isn't known
-
-journal.window.backup.status.window.explanation.waiting.to.finish.in.the.services = waiting to finish in the services portal
-
-journal.window.backup.status.window.explanation.you.paused.backup.on.value1 = you paused backup on{ $slot1 }{ $value1 }.
-
 journal.window.backup.status.window.explanation.you.paused.backup.the.date.isn = you paused backup. the date isn't known.
 
 journal.window.backup.status.window.explanation.your.backup.destination.couldn.t.be = your backup destination couldn't be found.
@@ -6068,8 +6308,6 @@ journal.window.backup.visible.text.loading.backup.settings = loading backup sett
 journal.window.backup.visible.text.older.files.moved.off.this.computer = older files moved off this computer. your full backup also includes files still here.
 
 journal.window.backup.window.explanation.a.backup.waits.until.this.finishes = a backup waits until this finishes. you can leave this page.
-
-journal.window.backup.window.explanation.erased.thing.waits.to.be.removed = 1 erased thing waits to be removed from your backups until you resume.
 
 journal.window.body.accessible.name.body.views = body views
 

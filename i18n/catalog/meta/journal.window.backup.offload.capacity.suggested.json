@@ -1,0 +1,21 @@
+{
+  "description": "Backup window label with suggested size.",
+  "context": "Journal window. Backup window label with suggested size.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "suggested_size",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8887867d64620542f1cbf1ba42e386356c90c791d490e665938fe6663f49aece",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

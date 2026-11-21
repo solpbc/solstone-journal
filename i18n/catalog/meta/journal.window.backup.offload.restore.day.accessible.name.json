@@ -1,0 +1,21 @@
+{
+  "description": "Accessible name of the restore button in a dated offload row. $day is the displayed journal date.",
+  "context": "Journal window. Accessible name of the restore button in a dated offload row. $day is the displayed journal date.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4451413016ba35d22ad8eeb498ef00d4465e4dd870de7a2c42b37828279a2f2c",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

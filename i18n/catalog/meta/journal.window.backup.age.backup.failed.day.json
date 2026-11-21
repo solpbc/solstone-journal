@@ -1,0 +1,30 @@
+{
+  "description": "Backup or verification history with its elapsed time in days.",
+  "context": "Journal window. Backup or verification history with its elapsed time in days.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "5a9bebce108cf6bedc1ff8d4f156f80f4ec2563b1f58f2f111988769e351350a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}
