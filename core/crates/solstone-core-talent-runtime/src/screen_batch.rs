@@ -139,9 +139,15 @@ where
                 ))));
             }
         };
-        let response = match super::execute_bounded_attempts(
+        if prepared.log_generate_input
+            && let Some(writer) = writer.as_deref_mut()
+        {
+            super::emit_generate_input(writer, &request, Some(batch_idx));
+        }
+        let response = match super::execute_logged_attempts(
             &request,
             Some(batch_idx),
+            prepared.log_generate_input,
             |_attempt, request| {
                 client.execute(request).map_err(|error| {
                     stage_error("generate", "screen_batch", prepared, format!("{error}"))

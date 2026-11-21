@@ -100,6 +100,9 @@ pub struct PreparedTalent {
     pub(crate) floor_reading: Option<floor_reading::FloorReading>,
     /// Set only by a stage's prompt override; a request cannot supply it.
     pub(crate) framed_request: Option<FramedRequest>,
+    /// The owner turned on `debug.log_talent_requests`, so every generate
+    /// request this run sends is logged. Pulse logs its request regardless.
+    pub(crate) log_generate_input: bool,
 }
 
 impl PreparedTalent {
@@ -116,6 +119,7 @@ impl PreparedTalent {
             story_input_fitted: false,
             floor_reading: None,
             framed_request: None,
+            log_generate_input: false,
         }
     }
 }
@@ -981,9 +985,26 @@ fn emit_start(writer: &mut impl Write, prepared: &PreparedTalent) {
     emit(writer, Value::Object(event));
 }
 
+#[cfg(test)]
 pub(crate) fn execute_bounded_attempts<F, E>(
     request: &GenerateRequest,
     batch: Option<usize>,
+    execute: F,
+    emit_attempt: E,
+) -> Result<GenerateResponse, RuntimeOutcome>
+where
+    F: FnMut(usize, &GenerateRequest) -> Result<GenerateResponse, StageError>,
+    E: FnMut(Value),
+{
+    execute_logged_attempts(request, batch, false, execute, emit_attempt)
+}
+
+/// Bounded attempts. With `log_input`, a retry that sends a different request
+/// than the one already logged (the compact screen retry) logs that request too.
+pub(crate) fn execute_logged_attempts<F, E>(
+    request: &GenerateRequest,
+    batch: Option<usize>,
+    log_input: bool,
     mut execute: F,
     mut emit_attempt: E,
 ) -> Result<GenerateResponse, RuntimeOutcome>
@@ -1039,7 +1060,12 @@ where
         let is_eligible = is_bounded_retry_eligible(&response, schema_checked);
         if is_eligible && ordinal < VALIDATION_RETRY_ATTEMPTS {
             if request.context == "screen" && cause == Some("incomplete_json_length") {
-                retry_request = Some(compact_screen_retry(request));
+                let retry = compact_screen_retry(request);
+                if log_input && let Some(mut event) = generate_input_event(&retry, batch) {
+                    event["ordinal"] = json!(ordinal + 1);
+                    emit_attempt(event);
+                }
+                retry_request = Some(retry);
             }
             emit_attempt(json!({
                 "event": "generate_attempt",
@@ -1312,12 +1338,14 @@ fn native_generate_response(
             let request = generate_request(prepared).map_err(|detail| {
                 RuntimeOutcome::StageFailed(stage_error("generate", "runtime", prepared, detail))
             })?;
-            if prepared.name == "pulse" {
-                emit_generate_input(writer, &request);
+            let log_input = prepared.name == "pulse" || prepared.log_generate_input;
+            if log_input {
+                emit_generate_input(writer, &request, None);
             }
-            let response = execute_bounded_attempts(
+            let response = execute_logged_attempts(
                 &request,
                 None,
+                log_input,
                 |_attempt, request| {
                     let response = generate.execute(request).map_err(|error| {
                         stage_error("generate", "runtime", prepared, format!("{error}"))
@@ -1762,15 +1790,25 @@ pub(crate) fn generate_contents(prepared: &PreparedTalent) -> Vec<ContentPart> {
 
 // Persist the assembled talent input alongside this run. The generate worker may
 // subsequently fit the request to a provider's limits; this is not a wire trace.
-fn emit_generate_input(writer: &mut impl Write, request: &GenerateRequest) {
-    if let Ok(encoded) = solstone_core_generate::encode_one_shot_request(request)
-        && let Ok(input) = serde_json::from_str::<Value>(&encoded)
-    {
-        emit(
-            writer,
-            json!({"event": "generate_input", "boundary": "talent_to_generate", "input": input}),
-        );
+pub(crate) fn emit_generate_input(
+    writer: &mut (impl Write + ?Sized),
+    request: &GenerateRequest,
+    batch: Option<usize>,
+) {
+    if let Some(event) = generate_input_event(request, batch) {
+        emit(writer, event);
     }
+}
+
+fn generate_input_event(request: &GenerateRequest, batch: Option<usize>) -> Option<Value> {
+    let encoded = solstone_core_generate::encode_one_shot_request(request).ok()?;
+    let input = serde_json::from_str::<Value>(&encoded).ok()?;
+    let mut event =
+        json!({"event": "generate_input", "boundary": "talent_to_generate", "input": input});
+    if let Some(batch) = batch {
+        event["batch"] = json!(batch);
+    }
+    Some(event)
 }
 
 /// The generate request for a talent. Its output budget is the talent's own
@@ -2410,7 +2448,7 @@ mod tests {
         );
         let request = generate_request(&prepared).unwrap();
         let mut events = Vec::new();
-        emit_generate_input(&mut events, &request);
+        emit_generate_input(&mut events, &request, None);
         let event: Value = serde_json::from_slice(&events).unwrap();
         let encoded = solstone_core_generate::encode_one_shot_request(&request).unwrap();
         assert_eq!(
@@ -4457,6 +4495,52 @@ mod tests {
     }
 
     #[test]
+    fn a_talent_logs_the_request_it_sent_only_when_logging_is_on() {
+        use solstone_core_generate::{ClientError, GenerateExecutor};
+        use std::sync::Mutex;
+        #[derive(Default)]
+        struct Capture(Mutex<Vec<GenerateRequest>>);
+        impl GenerateExecutor for Capture {
+            fn execute(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
+                self.0.lock().unwrap().push(request.clone());
+                Ok(solstone_core_generate::decode_one_shot_response(
+                    &test_support::generated_response_value("{}", json!({"valid":true}))
+                        .to_string(),
+                )
+                .unwrap())
+            }
+        }
+        for enabled in [false, true] {
+            let mut prepared = PreparedTalent::new(
+                "declared".into(),
+                json!({"max_output_tokens":512,"prompt":"literal source"})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            );
+            prepared.log_generate_input = enabled;
+            let capture = Capture::default();
+            let mut output = Vec::new();
+            generate_response(&mut prepared, &capture, &mut output).unwrap();
+            let logged: Vec<_> = events(&output)
+                .into_iter()
+                .filter(|event| event["event"] == "generate_input")
+                .collect();
+            if !enabled {
+                assert!(logged.is_empty(), "{logged:?}");
+                continue;
+            }
+            let sent = capture.0.lock().unwrap();
+            assert_eq!(sent.len(), 1);
+            assert_eq!(logged.len(), 1);
+            let replayed =
+                solstone_core_generate::decode_one_shot_request(&logged[0]["input"].to_string())
+                    .unwrap();
+            assert_eq!(replayed, sent[0], "the log replays the exact request");
+        }
+    }
+
+    #[test]
     fn runtime_only_forwards_the_talent_allowance_on_mobile() {
         use solstone_core_generate::{ClientError, GenerateExecutor};
         use std::sync::Mutex;
@@ -4496,6 +4580,59 @@ mod tests {
             *capture.0.lock().unwrap(),
             vec![cfg!(any(target_os = "android", target_os = "ios"))]
         );
+    }
+
+    #[test]
+    fn a_compact_screen_retry_logs_the_request_it_sends_when_logging_is_on() {
+        for log_input in [false, true] {
+            let request = retry_test_request("screen");
+            let mut calls = Vec::new();
+            let mut events = Vec::new();
+            execute_logged_attempts(
+                &request,
+                Some(2),
+                log_input,
+                |ordinal, attempt| {
+                    calls.push(attempt.clone());
+                    let response = if ordinal == 0 {
+                        test_support::refused_response_value(
+                            Some("incomplete_json_length"),
+                            true,
+                            false,
+                            "test",
+                            "refused",
+                        )
+                    } else {
+                        test_support::generated_response_value("{}", json!({"valid":true}))
+                    };
+                    Ok(
+                        solstone_core_generate::decode_one_shot_response(&response.to_string())
+                            .unwrap(),
+                    )
+                },
+                |event| events.push(event),
+            )
+            .unwrap();
+            assert_eq!(calls.len(), 2);
+            assert_ne!(calls[1], request, "the retry is compacted");
+            let logged: Vec<_> = events
+                .iter()
+                .filter(|event| event["event"] == "generate_input")
+                .collect();
+            if !log_input {
+                assert!(logged.is_empty(), "{logged:?}");
+                continue;
+            }
+            assert_eq!(logged.len(), 1);
+            assert_eq!(
+                (&logged[0]["ordinal"], &logged[0]["batch"]),
+                (&json!(1), &json!(2))
+            );
+            let replayed =
+                solstone_core_generate::decode_one_shot_request(&logged[0]["input"].to_string())
+                    .unwrap();
+            assert_eq!(replayed, calls[1]);
+        }
     }
 
     #[test]

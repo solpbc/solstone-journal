@@ -193,6 +193,9 @@ pub(crate) fn execute_with_paths(
     if prepared.name != name {
         return RuntimeOutcome::StageFailed(failure(name, "daily packet talent mismatch"));
     }
+    // The owner's logging choice is read when the unit runs, never frozen into
+    // its packet, so turning it on reaches daily talents already prepared.
+    prepared.log_generate_input = crate::prepare::logs_talent_requests(&context.journal);
     if (name != "daily_schedule" && prepared.config.get("day").and_then(Value::as_str) != Some(day))
         || prepared.config.get("facet").and_then(Value::as_str)
             != request.get("facet").and_then(Value::as_str)
@@ -3432,6 +3435,58 @@ mod tests {
         assert!(record.frozen_packet.is_none());
         assert!(record.generated_result.is_none());
     }
+    #[test]
+    fn a_frozen_daily_talent_logs_its_request_when_the_owner_turns_logging_on() {
+        use solstone_core_generate::{
+            ClientError, GenerateExecutor, GenerateRequest, GenerateResponse,
+        };
+        use std::sync::Mutex;
+        #[derive(Default)]
+        struct Capture(Mutex<Vec<GenerateRequest>>);
+        impl GenerateExecutor for Capture {
+            fn execute(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
+                self.0.lock().unwrap().push(request.clone());
+                Ok(solstone_core_generate::decode_one_shot_response(
+                    &crate::test_support::generated_response_value(
+                        r#"{"needs_attention":[]}"#,
+                        Value::Null,
+                    )
+                    .to_string(),
+                )
+                .unwrap())
+            }
+        }
+        for enabled in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let (context, _, request) = fixture(root.path(), false);
+            fs::create_dir_all(context.journal.join("config")).unwrap();
+            fs::write(
+                context.journal.join("config/journal.json"),
+                json!({"debug":{"log_talent_requests":enabled}}).to_string(),
+            )
+            .unwrap();
+            let capture = Capture::default();
+            let mut output = Vec::new();
+            execute(request, &context, &capture, &mut output);
+            let sent = capture.0.lock().unwrap();
+            assert_eq!(sent.len(), 1, "the frozen briefing reached the model");
+            let logged: Vec<Value> = output
+                .split(|byte| *byte == b'\n')
+                .filter_map(|line| serde_json::from_slice::<Value>(line).ok())
+                .filter(|event| event["event"] == "generate_input")
+                .collect();
+            if !enabled {
+                assert!(logged.is_empty(), "{logged:?}");
+                continue;
+            }
+            assert_eq!(logged.len(), 1);
+            let replayed =
+                solstone_core_generate::decode_one_shot_request(&logged[0]["input"].to_string())
+                    .unwrap();
+            assert_eq!(replayed, sent[0]);
+        }
+    }
+
     #[test]
     fn stale_before_generation_does_not_call_the_model() {
         let root = tempfile::tempdir().unwrap();

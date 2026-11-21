@@ -378,6 +378,7 @@ pub fn prepare(
     crate::product_names::prepare(&context.journal, &name, &mut composed, &entry_sources);
     let mut prepared = PreparedTalent::new(name, composed);
     prepared.participation_floor = participation_floor;
+    prepared.log_generate_input = logs_talent_requests(&context.journal);
     // Work's message notes read the raw request, before any floor packet.
     if prepared.name == "work" {
         prepared.entry_sources = std::mem::take(&mut entry_sources);
@@ -540,6 +541,14 @@ fn talent_overrides(journal: &Path) -> Option<Map<String, Value>> {
     read_journal_config(journal)
         .and_then(|configured| configured.get("talent_overrides").cloned())
         .and_then(|overrides| overrides.as_object().cloned())
+}
+
+/// Whether the owner asked for every talent's generate request in its run log.
+/// Off unless `debug.log_talent_requests` is exactly `true`.
+pub(crate) fn logs_talent_requests(journal: &Path) -> bool {
+    read_journal_config(journal)
+        .and_then(|configured| configured.pointer("/debug/log_talent_requests").cloned())
+        == Some(Value::Bool(true))
 }
 
 fn read_journal_config(journal: &Path) -> Option<Value> {
@@ -910,6 +919,22 @@ mod tests {
         ] {
             fs::write(journal.path().join("config").join("journal.json"), &config).unwrap();
             assert_eq!(configured_brain(journal.path()).1, expected, "{config}");
+        }
+    }
+
+    #[test]
+    fn talent_request_logging_is_on_only_when_the_owner_sets_it_true() {
+        let journal = tempfile::tempdir().unwrap();
+        assert!(!logs_talent_requests(journal.path()));
+        fs::create_dir_all(journal.path().join("config")).unwrap();
+        for (config, expected) in [
+            (r#"{}"#, false),
+            (r#"{"debug":{"log_talent_requests":false}}"#, false),
+            (r#"{"debug":{"log_talent_requests":"true"}}"#, false),
+            (r#"{"debug":{"log_talent_requests":true}}"#, true),
+        ] {
+            fs::write(journal.path().join("config").join("journal.json"), config).unwrap();
+            assert_eq!(logs_talent_requests(journal.path()), expected, "{config}");
         }
     }
 

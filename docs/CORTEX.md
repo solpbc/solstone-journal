@@ -127,6 +127,34 @@ Emitted when a talent run begins.
 }
 ```
 
+### generate_input
+The exact request a talent sent to generate, so the run can be sent again as it
+ran. Pulse writes one on every run that calls the model. Every other talent
+writes one only when the journal config sets `debug.log_talent_requests` to
+`true`; it is off by default. A screen run split into batches writes one per
+batch, with its `batch` index, and a screen retry after an answer cut off at its
+length limit writes the retry request it sends, which asks for a shorter answer,
+with its `ordinal`.
+`input` is the one-shot request: contents, `system_instruction`, `temperature`,
+`max_output_tokens`, `json_schema` and the rest. A talent that declares no
+`temperature` asks for 0.3. The generate worker may still fit the request to a
+provider's limits, so this is the talent's request, not a wire trace.
+
+These lines hold a copy of what the talent read, including transcripts and
+screen text, so a busy journal can grow by tens of megabytes a day while
+the setting is on. They are run logs: journal-log retention removes them with the
+rest of the run (`retention.journal_logs`, 30 days by default), and deleting a
+segment, or erasing it from the trash, does not remove them sooner.
+```json
+{
+  "event": "generate_input",
+  "ts": 1234567890123,
+  "use_id": "1234567890123",
+  "boundary": "talent_to_generate",
+  "input": {"contents": [{"type": "text", "text": "..."}], "temperature": 0.3, "max_output_tokens": 4096}
+}
+```
+
 ### tool_start
 Historical Cogitate event marking the start of a tool execution.
 ```json

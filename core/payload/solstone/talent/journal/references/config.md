@@ -255,6 +255,10 @@ Optional local endpoint fields:
 
 `talent_overrides.<talent>.disabled` is optional talent metadata. Provider and model overrides are rejected.
 
+## Debug configuration
+
+- `debug.log_talent_requests` (boolean) – Off by default; only `true` turns it on. While it is on, every talent writes the exact request it sent to its run log as a `generate_input` event, so a run can be sent again exactly as it ran. Pulse writes one whatever this says. The logs then hold another copy of what each talent read, transcripts and screen text included, and a busy journal can grow by tens of megabytes a day. Journal-log retention (`retention.journal_logs`) removes them with the rest of the run log, after 30 days by default, and deleting a segment, or erasing it from the trash, does not remove them sooner. Backups keep them as long as they keep the rest of the journal, and erasing a segment from backups doesn't reach them. Turn it on only when the owner asks for it, and off again when they're done.
+
 ## `faces`
 
 - `enabled` (boolean) – "suggest profile pics from your meetings". on by default: absent or `true` is on, `false` is off, and any other value is off. on desktop journals, faces in meeting frames are read on the owner's computer and kept privately in the journal, past meetings with recordings still in the journal are read gradually, and a person's page offers photos for the owner to choose. a connected agent can receive a person's photo, labelled `suggested` or `confirmed`. phone journals don't read faces and don't offer the switch. turning it off or on is the owner's own choice, in the journal's settings, vision: an agent must not change it either way, through the settings API or by editing `config/journal.json`, and should send the owner there. erasing face data is also there, and works only while this is off.
