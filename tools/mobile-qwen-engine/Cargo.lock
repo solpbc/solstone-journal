@@ -1072,7 +1072,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-artifact-download"
-version = "2.0.86"
+version = "2.0.87"
 dependencies = [
  "log",
  "serde",
@@ -1086,7 +1086,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-assets"
-version = "2.0.86"
+version = "2.0.87"
 dependencies = [
  "serde",
  "serde_json",
@@ -1095,7 +1095,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-auth-flow"
-version = "2.0.86"
+version = "2.0.87"
 dependencies = [
  "getrandom 0.3.4",
  "sha2 0.10.9",
@@ -1103,7 +1103,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-brain"
-version = "2.0.86"
+version = "2.0.87"
 dependencies = [
  "getrandom 0.3.4",
  "hmac",
@@ -1126,7 +1126,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-callosum"
-version = "2.0.86"
+version = "2.0.87"
 dependencies = [
  "getrandom 0.3.4",
  "hmac",
@@ -1148,7 +1148,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-chatgpt-auth"
-version = "2.0.86"
+version = "2.0.87"
 dependencies = [
  "getrandom 0.3.4",
  "serde",
@@ -1162,7 +1162,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-distribution"
-version = "2.0.86"
+version = "2.0.87"
 dependencies = [
  "bzip2-rs",
  "flate2",
@@ -1187,14 +1187,14 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-ffmpeg-build-support"
-version = "2.0.86"
+version = "2.0.87"
 dependencies = [
  "sha2 0.10.9",
 ]
 
 [[package]]
 name = "solstone-core-installation-identity"
-version = "2.0.86"
+version = "2.0.87"
 dependencies = [
  "getrandom 0.3.4",
  "nix 0.30.1",
@@ -1204,7 +1204,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-installed-payload"
-version = "2.0.86"
+version = "2.0.87"
 dependencies = [
  "minisign",
  "serde",
@@ -1215,14 +1215,14 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-journal"
-version = "2.0.86"
+version = "2.0.87"
 dependencies = [
  "toml_edit",
 ]
 
 [[package]]
 name = "solstone-core-journal-config"
-version = "2.0.86"
+version = "2.0.87"
 dependencies = [
  "iana-time-zone",
  "jiff",
@@ -1237,7 +1237,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-journal-config-write"
-version = "2.0.86"
+version = "2.0.87"
 dependencies = [
  "serde_json",
  "solstone-core-journal-config",
@@ -1247,7 +1247,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-journal-io"
-version = "2.0.86"
+version = "2.0.87"
 dependencies = [
  "getrandom 0.3.4",
  "jiff",
@@ -1264,7 +1264,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-local"
-version = "2.0.86"
+version = "2.0.87"
 dependencies = [
  "flate2",
  "hmac",
@@ -1293,7 +1293,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-local-endpoint"
-version = "2.0.86"
+version = "2.0.87"
 dependencies = [
  "libc",
  "nix 0.30.1",
@@ -1308,7 +1308,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-nvattest-authority"
-version = "2.0.86"
+version = "2.0.87"
 dependencies = [
  "serde",
  "serde_json",
@@ -1316,7 +1316,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-time"
-version = "2.0.86"
+version = "2.0.87"
 dependencies = [
  "jiff",
  "serde",
@@ -1324,7 +1324,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-tokens"
-version = "2.0.86"
+version = "2.0.87"
 dependencies = [
  "fancy-regex",
  "flate2",
@@ -1332,7 +1332,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-window-catalog"
-version = "2.0.86"
+version = "2.0.87"
 dependencies = [
  "fluent-bundle",
  "serde_json",
