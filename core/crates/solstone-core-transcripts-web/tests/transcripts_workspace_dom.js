@@ -575,6 +575,27 @@ const drawerSource = fs.readFileSync(path.join(crateDir, '../solstone-core-conve
 function createTranscriptsDOM() {
   const doc = new Document();
 
+  // The page's key, as workspace.html lays it out: one item per kind, hidden
+  // until the day draws that kind.
+  const legend = doc.createElement('div');
+  legend.id = 'trLegend';
+  for (const kind of ['audio', 'screen', 'both', 'markdown', 'browser', 'image', 'sleep', 'workout']) {
+    const item = doc.createElement('span');
+    item.setAttribute('data-legend-kind', kind);
+    item.hidden = true;
+    legend.appendChild(item);
+  }
+  doc.body.appendChild(legend);
+
+  const latest = doc.createElement('p');
+  latest.id = 'trDayLatest';
+  latest.hidden = true;
+  doc.body.appendChild(latest);
+
+  const card = doc.createElement('div');
+  card.className = 'tr-card';
+  doc.body.appendChild(card);
+
   const timeline = doc.createElement('div');
   timeline.id = 'trTimeline';
   timeline.clientHeight = 800;
@@ -615,6 +636,10 @@ function createTranscriptsDOM() {
   zoom.clientHeight = 800;
   zoom.clientWidth = 1000;
   doc.body.appendChild(zoom);
+
+  const zoomStreams = doc.createElement('div');
+  zoomStreams.id = 'trZoomStreams';
+  zoom.appendChild(zoomStreams);
 
   const zoomGrid = doc.createElement('div');
   zoomGrid.id = 'trZoomGrid';
@@ -4123,6 +4148,148 @@ test('also at this time links timed overlapping items, and never an item with no
   assert.deepStrictEqual(links.map(link => link.dataset.alsoKey), ['100100_300'], 'the untimed sidebar has no time to overlap');
   assert.ok(links[0].textContent.includes('10:01 – 10:03'), links[0].textContent);
   assert.ok(env.doc.querySelector('#tr-tabpanel-transcript').innerHTML.includes('>00:00:02<'), 'a cue clock shows seconds');
+});
+
+// Devices on the detail rail, the key above the rails, and today kept live.
+
+const DEVICE_LABELS = {
+  room: 'LABEL-A · audio', desk: 'LABEL-B', phone: 'LABEL-C', watch: 'LABEL-D', 'import.audio': 'LABEL-E',
+};
+const deviceFormat = () => seededJournalFormat(DEVICE_LABELS, { 'import.audio': { what: 'audio', imported: true } });
+const streamHeads = (doc) => doc.querySelectorAll('#trZoomStreams .tr-zoom-stream');
+const shownKinds = (doc) => doc.querySelectorAll('#trLegend [data-legend-kind]')
+  .filter((item) => !item.hidden).map((item) => item.dataset.legendKind);
+const audioAt = (stream, key, start, end, types = ['audio']) => (
+  { key, stream, start, end, types, data_state: Object.fromEntries(types.map((type) => [type, 'analyzed'])) }
+);
+
+// The journal's clock with 2020-01-15 12:30 as its now, so the harness day is today.
+function clockAt(day = 15) {
+  const clock = seededJournalClock('UTC');
+  clock.setNow(() => Date.UTC(2020, 0, day, 12, 30));
+  return clock;
+}
+
+const TODAY_SEGMENTS = [
+  audioAt('room', '120000_300', '12:00', '12:05'),
+  audioAt('desk', '121000_300', '12:10', '12:15', ['audio', 'screen']),
+  // An import dated later today is not a device capturing.
+  audioAt('import.audio', '124000_300', '12:40', '12:45'),
+];
+
+test('the detail rail heads each stream column with its device, and the stream name stays on hover', async () => {
+  const format = deviceFormat();
+  const env = await createEnvironment(undefined, 'analyzed', false, null, { journalFormat: format });
+  const heads = streamHeads(env.doc);
+  assert.deepStrictEqual(heads.map((head) => head.dataset.streamHead), ['desk', 'room']);
+  for (const head of heads) {
+    const label = format.stream(head.dataset.streamHead);
+    assert.strictEqual(head.textContent, label);
+    assert.ok(head.title.includes(label) && head.title.includes(head.dataset.streamHead), head.title);
+  }
+  assert.notStrictEqual(heads[0].style.left, heads[1].style.left, 'each heading sits over its own column');
+  assert.strictEqual(env.doc.querySelector('.tr-card').getAttribute('data-zoom-streams'), '2');
+});
+
+test('one stream is headed across the rail, four streams get four headings', async () => {
+  const format = deviceFormat();
+  const one = await createEnvironment(undefined, 'analyzed', false, [audioAt('room', '114500_300', '11:45', '11:50')], { journalFormat: format });
+  const oneHead = streamHeads(one.doc);
+  assert.deepStrictEqual(oneHead.map((head) => head.dataset.streamHead), ['room']);
+  assert.strictEqual(oneHead[0].style.left, undefined, 'a lone heading spans the rail');
+  assert.strictEqual(one.doc.querySelector('.tr-card').getAttribute('data-zoom-streams'), '1');
+
+  const four = await createEnvironment(undefined, 'analyzed', false,
+    ['room', 'desk', 'phone', 'watch'].map((stream) => audioAt(stream, '114500_300', '11:45', '11:50')),
+    { journalFormat: format });
+  assert.deepStrictEqual(streamHeads(four.doc).map((head) => head.dataset.streamHead), ['desk', 'phone', 'room', 'watch']);
+  assert.strictEqual(four.doc.querySelector('.tr-card').getAttribute('data-zoom-streams'), '4');
+});
+
+test('the key shows only the kinds the day draws, on either rail', async () => {
+  const plain = await createEnvironment(undefined, 'analyzed', false, null, { journalFormat: deviceFormat() });
+  assert.deepStrictEqual(shownKinds(plain.doc), ['audio']);
+
+  const mixed = await createEnvironment(undefined, 'analyzed', false, [
+    audioAt('desk', '114500_300', '11:45', '11:50', ['audio', 'screen']),
+    audioAt('phone', '115000_300', '11:50', '11:55', ['browser']),
+    audioAt('phone', '115500_0', '11:55', '11:55', ['image']),
+    audioAt('watch', '120000_300', '12:00', '12:05', ['markdown']),
+  ], { journalFormat: deviceFormat() });
+  assert.deepStrictEqual(shownKinds(mixed.doc), ['audio', 'both', 'markdown', 'browser', 'image']);
+});
+
+test('on today the latest line names the device with the newest capture, and keeps its stream on hover', async () => {
+  const format = deviceFormat();
+  const env = await createEnvironment(undefined, 'analyzed', false, TODAY_SEGMENTS, { journalFormat: format, journalClock: clockAt() });
+  const line = env.doc.getElementById('trDayLatest');
+  assert.strictEqual(line.hidden, false);
+  assert.strictEqual(line.title, 'desk');
+  assert.strictEqual(line.textContent, env.context.window.JournalI18n.render('journal.window.transcripts.day.latest', [
+    ['device', format.stream('desk')], ['time', format.segmentTimeOfDay('121500')],
+  ]));
+});
+
+test('the latest line says nothing on another day, or on a today with nothing captured', async () => {
+  const past = await createEnvironment(undefined, 'analyzed', false, TODAY_SEGMENTS, { journalFormat: deviceFormat(), journalClock: clockAt(16) });
+  assert.strictEqual(past.doc.getElementById('trDayLatest').hidden, true);
+  const quiet = await createEnvironment(undefined, 'analyzed', false, [TODAY_SEGMENTS[2]], { journalFormat: deviceFormat(), journalClock: clockAt() });
+  assert.strictEqual(quiet.doc.getElementById('trDayLatest').hidden, true);
+});
+
+async function liveToday() {
+  const live = { audio: [{ start: '00:30', end: '23:30', streams: ['room', 'desk'], state: 'analyzed' }], screen: [], segments: [...TODAY_SEGMENTS] };
+  const env = await createEnvironment(undefined, 'analyzed', false, TODAY_SEGMENTS, {
+    journalFormat: deviceFormat(),
+    journalClock: clockAt(),
+    dayAnswer: () => Promise.resolve({ ok: true, status: 200, json: async () => JSON.parse(JSON.stringify(live)) }),
+  });
+  const tick = async () => {
+    for (const callback of env.intervals.values()) callback();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  };
+  const dayReads = () => env.requested.filter((url) => url === '/app/transcripts/api/day/20200115').length;
+  return { env, live, tick, dayReads };
+}
+
+test('on today a tick reads the day again and draws what arrived, keeping the range, the open segment and the focus', async () => {
+  const { env, live, tick, dayReads } = await liveToday();
+  const pill = (stream) => getZoomPills(env.doc).find((item) => item.dataset.stream === stream);
+  pill('room').dispatchEvent({ type: 'click' });
+  await env.releasePendingSegmentGets();
+  pill('desk').focus();
+  const selWrap = env.doc.getElementById('trSelWrap');
+  const before = { top: selWrap.style.top, height: selWrap.style.height, gets: env.segmentGetRequests.length, history: env.history.length, reads: dayReads() };
+
+  live.segments.push(audioAt('phone', '122000_300', '12:20', '12:25', ['screen']));
+  live.screen.push({ start: '12:20', end: '12:25', streams: ['phone'], state: 'analyzed' });
+  await tick();
+
+  assert.strictEqual(dayReads(), before.reads + 1);
+  assert.ok(pill('phone'), 'what arrived is on the detail rail');
+  assert.ok(streamHeads(env.doc).some((head) => head.dataset.streamHead === 'phone'));
+  assert.ok(shownKinds(env.doc).includes('screen'));
+  assert.strictEqual(env.doc.getElementById('trDayLatest').title, 'phone');
+  assert.ok(pill('room').classList.contains('tr-active'), 'the open segment stays open');
+  assert.strictEqual(env.segmentGetRequests.length, before.gets, 'the open segment is not read again');
+  assert.strictEqual(env.history.length, before.history);
+  assert.strictEqual(selWrap.style.top, before.top);
+  assert.strictEqual(selWrap.style.height, before.height);
+  assert.strictEqual(env.doc.activeElement.dataset.stream, 'desk', 'the focus stays on the block it was on');
+  assert.notStrictEqual(env.doc.activeElement, env.doc.body);
+});
+
+test('a tick on an unchanged today redraws nothing, and a hidden page does not read', async () => {
+  const { env, tick, dayReads } = await liveToday();
+  const pills = getZoomPills(env.doc);
+  const reads = dayReads();
+  await tick();
+  assert.strictEqual(dayReads(), reads + 1);
+  assert.ok(getZoomPills(env.doc).every((pill, idx) => pill === pills[idx]), 'the same day keeps its blocks');
+
+  env.doc.hidden = true;
+  await tick();
+  assert.strictEqual(dayReads(), reads + 1, 'a hidden page is not read again');
 });
 
 async function run() {

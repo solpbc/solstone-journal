@@ -158054,6 +158054,33 @@
       "selector": null
     },
     {
+      "id": "journal.window.transcripts.day.latest",
+      "resource": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6461792e6c6174657374",
+      "namespace": "journal.window.transcripts.day",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "time",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.transcripts.day.load.error.status",
       "resource": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6461792e6c6f61642e6572726f722e737461747573",
       "namespace": "journal.window.transcripts.day.load.error",

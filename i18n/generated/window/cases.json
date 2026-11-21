@@ -264623,6 +264623,50 @@
       "call_contract": {
         "arguments": [
           {
+            "name": "device",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "time",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.transcripts.day.latest\u0004m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6461792e6c6174657374",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6461792e6c6174657374_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.transcripts.day.latest",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6461792e6c6174657374",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "device": "sample",
+        "time": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "latest from ⁨sample⁩ at ⁨sample⁩",
+      "message_id": "journal.window.transcripts.day.latest",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.transcripts.day.latest\", [[\"device\", \"sample\"], [\"time\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6461792e6c6174657374",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
             "name": "status",
             "type": "string",
             "value": "sample"
@@ -547000,6 +547044,50 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.transcripts.date.yesterday\", &[])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e646174652e796573746572646179",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "device",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "time",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.transcripts.day.latest\u0004m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6461792e6c6174657374",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6461792e6c6174657374_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.transcripts.day.latest",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6461792e6c6174657374",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "latest from ⁨sample⁩ at ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "device": "sample",
+        "time": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "latest from ⁨sample⁩ at ⁨sample⁩",
+      "message_id": "journal.window.transcripts.day.latest",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.transcripts.day.latest\", &[(\"device\", Value::String(\"sample\")), (\"time\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6461792e6c6174657374",
       "target": "rust"
     },
     {

@@ -54238,6 +54238,13 @@
       "locales": []
     },
     {
+      "id": "journal.window.transcripts.day.latest",
+      "source": "35d6f7a18d7cbb6ea0e4b210623d5bee4246bb7550e0d752d37d361348fc808f",
+      "contract": "c33d37e7dad84826b40e26edf361c7ad80e7591f2dabf6bf26a61d7f34cf705c",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.transcripts.day.load.error.status",
       "source": "b697936f5c9de04e92d01d547f2020fe3f0d8f97181bc0ebb2e418447afc1984",
       "contract": "632d2ec147898b3d85161a426ae9dda5ecd965642bb199d0f8d9cdbbd0379482",

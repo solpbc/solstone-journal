@@ -1,0 +1,25 @@
+{
+  "description": "One quiet line beside the date heading on the transcripts page, shown only on today and only once a device has captured something today. It states which device added the newest capture and the time it ends. It is a fact, not a verdict on whether capture is working. $device is the device's label as the journal names it elsewhere, such as \"your phone · audio\". $time is a time of day already formatted for the owner's locale, such as \"2:14 PM\".",
+  "context": "Journal window, transcripts view. Beside the day heading, today only.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "device",
+      "type": "string"
+    },
+    {
+      "name": "time",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "35d6f7a18d7cbb6ea0e4b210623d5bee4246bb7550e0d752d37d361348fc808f",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
