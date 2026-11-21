@@ -15209,6 +15209,11 @@ journal.window.transcripts.body.hours.remaining = { $hours_quantity ->
        *[other] and { $hours } more hours
     }
 
+journal.window.transcripts.body.panel.more.count = { $quantity ->
+    [one] +{ $count } more in body
+   *[other] +{ $count } more in body
+}
+
 journal.window.transcripts.body.sleep.count = { $sessions_quantity ->
         [one] 1 sleep session
        *[other] { $sessions } sleep sessions
@@ -15368,6 +15373,11 @@ journal.window.transcripts.segment.range.entries = { $entries_quantity ->
         [one] { $range } · { $entries } entry
        *[other] { $range } · { $entries } entries
     }
+
+journal.window.transcripts.signals.calendar.hidden.count = { $quantity ->
+    [one] { $count } more deduped calendar events hidden in this compact view
+   *[other] { $count } more deduped calendar events hidden in this compact view
+}
 
 journal.window.transcripts.signals.calendar.repeated = { $visits_quantity ->
         [one] { $range } · seen { $visits }x
@@ -18056,8 +18066,6 @@ journal.window.transcripts.kind.pages = pages
 
 journal.window.transcripts.kind.photos = photos
 
-journal.window.transcripts.link.label.more.in.body = more in body
-
 journal.window.transcripts.link.label.open.full.body.day = open full body day
 
 journal.window.transcripts.media.audio.duration = segment audio ·{ $slot1 }{ $duration }
@@ -18617,8 +18625,6 @@ journal.window.transcripts.visible.text.loading.screen.entries = loading screen 
 journal.window.transcripts.visible.text.loading.this.day = loading this day…
 
 journal.window.transcripts.visible.text.location.for.this.day.couldn.t = location for this day couldn't be loaded.
-
-journal.window.transcripts.visible.text.more.deduped.calendar.events.hidden.in = more deduped calendar events hidden in this compact view
 
 journal.window.transcripts.visible.text.no.body.context.in.this.window = no body context in this window.
 

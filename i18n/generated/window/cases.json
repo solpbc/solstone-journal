@@ -255085,6 +255085,50 @@
     {
       "bundle": "journal-window",
       "call_contract": {
+        "arguments": [
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "count",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.transcripts.body.panel.more.count\u0004m6a6f75726e616c2e77696e646f772e7472616e736372697074732e626f64792e70616e656c2e6d6f72652e636f756e74",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e626f64792e70616e656c2e6d6f72652e636f756e74_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.transcripts.body.panel.more.count",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e626f64792e70616e656c2e6d6f72652e636f756e74",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "count": "sample",
+        "quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "+⁨sample⁩ more in body",
+      "message_id": "journal.window.transcripts.body.panel.more.count",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.transcripts.body.panel.more.count\", [[\"count\", \"sample\"], [\"quantity\", 0]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e626f64792e70616e656c2e6d6f72652e636f756e74",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
         "arguments": [],
         "bundle": "journal-window",
         "entry": "render(locale, dotted_id, named_args)",
@@ -260008,36 +260052,6 @@
         "entry": "render(locale, dotted_id, named_args)",
         "enum_argument": null,
         "format_passes": 1,
-        "gettext_lookup_key": "journal.window.transcripts.link.label.more.in.body\u0004m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6c696e6b2e6c6162656c2e6d6f72652e696e2e626f6479",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6c696e6b2e6c6162656c2e6d6f72652e696e2e626f6479_plural",
-        "gettext_unsigned_quantity": null,
-        "locale": "en-US",
-        "message_id": "journal.window.transcripts.link.label.more.in.body",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6c696e6b2e6c6162656c2e6d6f72652e696e2e626f6479",
-        "signed_quantity": null
-      },
-      "cardinal": "en",
-      "expectation_kind": "native-reader-required",
-      "expected": null,
-      "folder": null,
-      "inputs": {},
-      "locale": "en-US",
-      "logical_expected": "more in body",
-      "message_id": "journal.window.transcripts.link.label.more.in.body",
-      "own_reader": "fluent-js",
-      "own_reader_call": "render(\"en-US\", \"journal.window.transcripts.link.label.more.in.body\", [])",
-      "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6c696e6b2e6c6162656c2e6d6f72652e696e2e626f6479",
-      "target": "classic"
-    },
-    {
-      "bundle": "journal-window",
-      "call_contract": {
-        "arguments": [],
-        "bundle": "journal-window",
-        "entry": "render(locale, dotted_id, named_args)",
-        "enum_argument": null,
-        "format_passes": 1,
         "gettext_lookup_key": "journal.window.transcripts.link.label.open.full.body.day\u0004m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6c696e6b2e6c6162656c2e6f70656e2e66756c6c2e626f64792e646179",
         "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6c696e6b2e6c6162656c2e6f70656e2e66756c6c2e626f64792e646179_plural",
         "gettext_unsigned_quantity": null,
@@ -264416,6 +264430,50 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.transcripts.segment.range.entries\", [[\"entries\", \"sample\"], [\"entries_quantity\", 0], [\"range\", \"sample\"]])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e7365676d656e742e72616e67652e656e7472696573",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "count",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.transcripts.signals.calendar.hidden.count\u0004m6a6f75726e616c2e77696e646f772e7472616e736372697074732e7369676e616c732e63616c656e6461722e68696464656e2e636f756e74",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e7369676e616c732e63616c656e6461722e68696464656e2e636f756e74_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.transcripts.signals.calendar.hidden.count",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e7369676e616c732e63616c656e6461722e68696464656e2e636f756e74",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "count": "sample",
+        "quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ more deduped calendar events hidden in this compact view",
+      "message_id": "journal.window.transcripts.signals.calendar.hidden.count",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.transcripts.signals.calendar.hidden.count\", [[\"count\", \"sample\"], [\"quantity\", 0]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e7369676e616c732e63616c656e6461722e68696464656e2e636f756e74",
       "target": "classic"
     },
     {
@@ -270920,36 +270978,6 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.transcripts.visible.text.location.for.this.day.couldn.t\", [])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e76697369626c652e746578742e6c6f636174696f6e2e666f722e746869732e6461792e636f756c646e2e74",
-      "target": "classic"
-    },
-    {
-      "bundle": "journal-window",
-      "call_contract": {
-        "arguments": [],
-        "bundle": "journal-window",
-        "entry": "render(locale, dotted_id, named_args)",
-        "enum_argument": null,
-        "format_passes": 1,
-        "gettext_lookup_key": "journal.window.transcripts.visible.text.more.deduped.calendar.events.hidden.in\u0004m6a6f75726e616c2e77696e646f772e7472616e736372697074732e76697369626c652e746578742e6d6f72652e646564757065642e63616c656e6461722e6576656e74732e68696464656e2e696e",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e76697369626c652e746578742e6d6f72652e646564757065642e63616c656e6461722e6576656e74732e68696464656e2e696e_plural",
-        "gettext_unsigned_quantity": null,
-        "locale": "en-US",
-        "message_id": "journal.window.transcripts.visible.text.more.deduped.calendar.events.hidden.in",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e76697369626c652e746578742e6d6f72652e646564757065642e63616c656e6461722e6576656e74732e68696464656e2e696e",
-        "signed_quantity": null
-      },
-      "cardinal": "en",
-      "expectation_kind": "native-reader-required",
-      "expected": null,
-      "folder": null,
-      "inputs": {},
-      "locale": "en-US",
-      "logical_expected": "more deduped calendar events hidden in this compact view",
-      "message_id": "journal.window.transcripts.visible.text.more.deduped.calendar.events.hidden.in",
-      "own_reader": "fluent-js",
-      "own_reader_call": "render(\"en-US\", \"journal.window.transcripts.visible.text.more.deduped.calendar.events.hidden.in\", [])",
-      "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e76697369626c652e746578742e6d6f72652e646564757065642e63616c656e6461722e6576656e74732e68696464656e2e696e",
       "target": "classic"
     },
     {
@@ -531571,6 +531599,50 @@
     {
       "bundle": "journal-window",
       "call_contract": {
+        "arguments": [
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "count",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.transcripts.body.panel.more.count\u0004m6a6f75726e616c2e77696e646f772e7472616e736372697074732e626f64792e70616e656c2e6d6f72652e636f756e74",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e626f64792e70616e656c2e6d6f72652e636f756e74_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.transcripts.body.panel.more.count",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e626f64792e70616e656c2e6d6f72652e636f756e74",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "+⁨sample⁩ more in body",
+      "folder": null,
+      "inputs": {
+        "count": "sample",
+        "quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "+⁨sample⁩ more in body",
+      "message_id": "journal.window.transcripts.body.panel.more.count",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.transcripts.body.panel.more.count\", &[(\"count\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e626f64792e70616e656c2e6d6f72652e636f756e74",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
         "arguments": [],
         "bundle": "journal-window",
         "entry": "render(locale, MessageId, named_args)",
@@ -536494,36 +536566,6 @@
         "entry": "render(locale, MessageId, named_args)",
         "enum_argument": null,
         "format_passes": 1,
-        "gettext_lookup_key": "journal.window.transcripts.link.label.more.in.body\u0004m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6c696e6b2e6c6162656c2e6d6f72652e696e2e626f6479",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6c696e6b2e6c6162656c2e6d6f72652e696e2e626f6479_plural",
-        "gettext_unsigned_quantity": null,
-        "locale": "en-US",
-        "message_id": "journal.window.transcripts.link.label.more.in.body",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6c696e6b2e6c6162656c2e6d6f72652e696e2e626f6479",
-        "signed_quantity": null
-      },
-      "cardinal": "en",
-      "expectation_kind": "resource-golden",
-      "expected": "more in body",
-      "folder": null,
-      "inputs": {},
-      "locale": "en-US",
-      "logical_expected": "more in body",
-      "message_id": "journal.window.transcripts.link.label.more.in.body",
-      "own_reader": "rust-api",
-      "own_reader_call": "render(\"en-US\", \"journal.window.transcripts.link.label.more.in.body\", &[])",
-      "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6c696e6b2e6c6162656c2e6d6f72652e696e2e626f6479",
-      "target": "rust"
-    },
-    {
-      "bundle": "journal-window",
-      "call_contract": {
-        "arguments": [],
-        "bundle": "journal-window",
-        "entry": "render(locale, MessageId, named_args)",
-        "enum_argument": null,
-        "format_passes": 1,
         "gettext_lookup_key": "journal.window.transcripts.link.label.open.full.body.day\u0004m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6c696e6b2e6c6162656c2e6f70656e2e66756c6c2e626f64792e646179",
         "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6c696e6b2e6c6162656c2e6f70656e2e66756c6c2e626f64792e646179_plural",
         "gettext_unsigned_quantity": null,
@@ -540902,6 +540944,50 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.transcripts.segment.range.entries\", &[(\"entries\", Value::String(\"sample\")), (\"entries_quantity\", Value::Cardinal(0)), (\"range\", Value::String(\"sample\"))])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e7365676d656e742e72616e67652e656e7472696573",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "count",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.transcripts.signals.calendar.hidden.count\u0004m6a6f75726e616c2e77696e646f772e7472616e736372697074732e7369676e616c732e63616c656e6461722e68696464656e2e636f756e74",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e7369676e616c732e63616c656e6461722e68696464656e2e636f756e74_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.transcripts.signals.calendar.hidden.count",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e7369676e616c732e63616c656e6461722e68696464656e2e636f756e74",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "⁨sample⁩ more deduped calendar events hidden in this compact view",
+      "folder": null,
+      "inputs": {
+        "count": "sample",
+        "quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ more deduped calendar events hidden in this compact view",
+      "message_id": "journal.window.transcripts.signals.calendar.hidden.count",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.transcripts.signals.calendar.hidden.count\", &[(\"count\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e7369676e616c732e63616c656e6461722e68696464656e2e636f756e74",
       "target": "rust"
     },
     {
@@ -547406,36 +547492,6 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.transcripts.visible.text.location.for.this.day.couldn.t\", &[])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e76697369626c652e746578742e6c6f636174696f6e2e666f722e746869732e6461792e636f756c646e2e74",
-      "target": "rust"
-    },
-    {
-      "bundle": "journal-window",
-      "call_contract": {
-        "arguments": [],
-        "bundle": "journal-window",
-        "entry": "render(locale, MessageId, named_args)",
-        "enum_argument": null,
-        "format_passes": 1,
-        "gettext_lookup_key": "journal.window.transcripts.visible.text.more.deduped.calendar.events.hidden.in\u0004m6a6f75726e616c2e77696e646f772e7472616e736372697074732e76697369626c652e746578742e6d6f72652e646564757065642e63616c656e6461722e6576656e74732e68696464656e2e696e",
-        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e76697369626c652e746578742e6d6f72652e646564757065642e63616c656e6461722e6576656e74732e68696464656e2e696e_plural",
-        "gettext_unsigned_quantity": null,
-        "locale": "en-US",
-        "message_id": "journal.window.transcripts.visible.text.more.deduped.calendar.events.hidden.in",
-        "resource_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e76697369626c652e746578742e6d6f72652e646564757065642e63616c656e6461722e6576656e74732e68696464656e2e696e",
-        "signed_quantity": null
-      },
-      "cardinal": "en",
-      "expectation_kind": "resource-golden",
-      "expected": "more deduped calendar events hidden in this compact view",
-      "folder": null,
-      "inputs": {},
-      "locale": "en-US",
-      "logical_expected": "more deduped calendar events hidden in this compact view",
-      "message_id": "journal.window.transcripts.visible.text.more.deduped.calendar.events.hidden.in",
-      "own_reader": "rust-api",
-      "own_reader_call": "render(\"en-US\", \"journal.window.transcripts.visible.text.more.deduped.calendar.events.hidden.in\", &[])",
-      "platform_reader": "pending",
-      "resource_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e76697369626c652e746578742e6d6f72652e646564757065642e63616c656e6461722e6576656e74732e68696464656e2e696e",
       "target": "rust"
     },
     {

@@ -152715,6 +152715,38 @@
       "selector": null
     },
     {
+      "id": "journal.window.transcripts.body.panel.more.count",
+      "resource": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e626f64792e70616e656c2e6d6f72652e636f756e74",
+      "namespace": "journal.window.transcripts.body.panel.more",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
       "id": "journal.window.transcripts.body.section.brief",
       "resource": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e626f64792e73656374696f6e2e6272696566",
       "namespace": "journal.window.transcripts.body.section",
@@ -155569,8 +155601,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6c696e6b2e6c6162656c2e6d6f72652e696e2e626f6479",
       "namespace": "journal.window.transcripts.link.label.more.in",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.transcripts.body.panel.more.count",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
@@ -157721,6 +157753,38 @@
       "protected_slots": [],
       "selector": {
         "name": "entries_quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.transcripts.signals.calendar.hidden.count",
+      "resource": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e7369676e616c732e63616c656e6461722e68696464656e2e636f756e74",
+      "namespace": "journal.window.transcripts.signals.calendar.hidden",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
         "type": "cardinal",
         "enum_values": [],
         "enum_default": null
@@ -161295,8 +161359,8 @@
       "resource": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e76697369626c652e746578742e6d6f72652e646564757065642e63616c656e6461722e6576656e74732e68696464656e2e696e",
       "namespace": "journal.window.transcripts.visible.text.more.deduped.calendar.events.hidden",
       "owner": "journal",
-      "tombstone": false,
-      "replacement": null,
+      "tombstone": true,
+      "replacement": "journal.window.transcripts.signals.calendar.hidden.count",
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
