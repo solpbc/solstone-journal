@@ -552,6 +552,7 @@ pub(crate) fn body_activity(
         "title": title,
         "facet": facet_title,
         "day": day,
+        "content_kind": "body",
         "source": "body",
         "kind": face.get("activity").cloned().unwrap_or(Value::Null),
         "start": first.get("start").cloned().unwrap_or(Value::Null),
@@ -1149,10 +1150,17 @@ pub(crate) fn execute_list(
         let entities = activity_entities(&item.record);
         let title = activity_title(&item.record);
 
+        let activity_content_kind =
+            if solstone_core_format::content::is_strava_reading(&item.record) {
+                "body"
+            } else {
+                "facets"
+            };
         let mut activity = json!({
             "title": title,
             "facet": item.facet_title,
             "day": item.day,
+            "content_kind": activity_content_kind,
             "start": start,
             "end": end,
             "duration": duration,
@@ -1351,10 +1359,17 @@ pub(crate) fn sources_of(
                 return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
             }
             let item = solstone_core_location::body_records::face_json(&face);
-            let units = item
+            let mut units = item
                 .get("accounts")
                 .cloned()
                 .unwrap_or(Value::Array(Vec::new()));
+            if let Some(items) = units.as_array_mut() {
+                for unit in items {
+                    if let Some(obj) = unit.as_object_mut() {
+                        obj.insert("content_kind".to_owned(), json!("body"));
+                    }
+                }
+            }
             let mut targets = vec![rel_path];
             crate::body_source::name_windows(&mut targets, crate::body_source::face_windows(&face));
             return Ok(Prepared::new(json!({ "units": units }), 1, targets));
@@ -1663,11 +1678,15 @@ pub(crate) fn sources_of(
         }
 
         let source_link = segment_link_map.get(segment_index).cloned();
+        let content_kind = unit_channel_name(&unit.text).and_then(channel_content_kind);
 
         let mut unit_json = json!({
             "text": unit.text,
             "kind": unit.kind.as_str(),
         });
+        if let Some(kind) = content_kind {
+            unit_json["content_kind"] = json!(kind);
+        }
         if let Some(ref ts) = unit.timestamp {
             unit_json["timestamp"] = json!(ts);
         }
@@ -1729,6 +1748,29 @@ struct AdmittedTranscript {
     version: u64,
     formatted: String,
     untimed: bool,
+}
+
+fn unit_channel_name(text: &str) -> Option<&str> {
+    text.lines()
+        .find_map(|line| line.strip_prefix("Source channel: "))
+}
+
+fn channel_content_kind(channel: &str) -> Option<&'static str> {
+    match channel {
+        "Transcript"
+        | "Imported Transcript"
+        | "ChatGPT Conversation"
+        | "Claude Conversation"
+        | "Gemini Conversation"
+        | "Imported Text" => Some("transcripts"),
+        "Note" | "Highlights" => Some("notes"),
+        "Document" => Some("documents"),
+        "Screenshot" | "Screen Activity" | "Browser Content" => Some("screen_text"),
+        "Photo" => Some("photos"),
+        "Calendar Event" => Some("calendar"),
+        "Body Records" => Some("body"),
+        _ => None,
+    }
 }
 
 fn admitted_source_binding(admitted: &[AdmittedTranscript]) -> String {

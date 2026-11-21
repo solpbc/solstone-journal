@@ -2353,7 +2353,13 @@ mod tests {
         .0;
         assert_eq!(
             fetch["result"]["structuredContent"],
-            json!({"title": "journal entry from 20260831", "date": "20260831", "text": "MCP fixture search needle"})
+            json!({
+                "title": "journal entry from 20260831",
+                "date": "20260831",
+                "text": "MCP fixture search needle",
+                "content_kind": "facets",
+                "source": "source unknown"
+            })
         );
         client.shutdown().await.expect("client closes TLS");
         drop(client);
@@ -2422,7 +2428,13 @@ mod tests {
         .await;
         assert_eq!(
             fetch["result"]["structuredContent"],
-            json!({"title": "journal entry from 20260831", "date": "20260831", "text": "MCP fixture search needle"})
+            json!({
+                "title": "journal entry from 20260831",
+                "date": "20260831",
+                "text": "MCP fixture search needle",
+                "content_kind": "facets",
+                "source": "source unknown"
+            })
         );
         client.shutdown().await.expect("client closes TLS");
         drop(client);
@@ -3598,7 +3610,13 @@ mod tests {
         .0;
         assert_eq!(
             fetch["result"]["structuredContent"],
-            json!({"title": "journal entry from 20260831", "date": "20260831", "text": "MCP fixture search needle"})
+            json!({
+                "title": "journal entry from 20260831",
+                "date": "20260831",
+                "text": "MCP fixture search needle",
+                "content_kind": "facets",
+                "source": "source unknown"
+            })
         );
         assert_eq!(audit_record_count(server.journal.path()), 2);
         exercise_memory_postures(&server, &mut client, &access, &verified_oauth.id).await;

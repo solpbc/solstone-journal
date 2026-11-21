@@ -569,10 +569,17 @@ fn project_sunday(
         let entities = crate::tools::activities::activity_entities(&rep.record);
         let title = crate::tools::activities::activity_title(&rep.record);
 
+        let activity_content_kind = if solstone_core_format::content::is_strava_reading(&rep.record)
+        {
+            "body"
+        } else {
+            "facets"
+        };
         let mut activity = json!({
             "title": title,
             "facet": rep.facet_title,
             "day": rep.day,
+            "content_kind": activity_content_kind,
             "start": start,
             "end": end,
             "duration": duration,

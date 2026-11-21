@@ -1296,6 +1296,7 @@ pub(crate) fn list_source(
             "date": day,
             "time": window.label,
             "source": source,
+            "content_kinds": [AdmittedCategory::Body.as_str()],
             "reference": reference,
         }));
     }
@@ -1595,6 +1596,7 @@ pub(crate) fn read_source_span(
     let mut response = json!({
         "entries": entries,
         "source": crate::dispatch::source_label(&labels, &reference.stream),
+        "content_kinds": [AdmittedCategory::Body.as_str()],
         "next_cursor": next_cursor,
     });
     if unreadable > 0 {

@@ -118,6 +118,10 @@ pub struct SegmentTranscriptPage {
     pub next: Option<SegmentTranscriptCursor>,
     pub version: SegmentTranscriptVersion,
     pub untimed: bool,
+    /// Kinds of material served to this reader from this segment, in order of
+    /// appearance and deduplicated. Never names a kind the connection was not
+    /// permitted to read from the segment.
+    pub content_kinds: Vec<&'static str>,
 }
 
 /// Failure while reading a bounded transcript page.
@@ -206,7 +210,7 @@ pub fn read_segment_transcript_page_with_permissions(
     left_out: &BTreeSet<String>,
     permissions: Option<&BTreeSet<solstone_core_format::content::AdmittedCategory>>,
 ) -> Result<SegmentTranscriptPage, SegmentTranscriptReadError> {
-    let files = permitted_transcript_files(segment, permissions)?;
+    let (files, content_kinds) = permitted_transcript_files(segment, permissions)?;
     let segment_origin = segment_origin(segment.path());
     let labels = speakers.and_then(|speakers| local_speaker_names(segment.path(), speakers));
     // An agent read keeps one number on one voice through a continuous recording.
@@ -331,6 +335,7 @@ pub fn read_segment_transcript_page_with_permissions(
         next,
         version,
         untimed,
+        content_kinds,
     })
 }
 
@@ -351,15 +356,33 @@ pub fn segment_has_permitted_files(
     permitted_transcript_files(segment, Some(permissions)).is_ok()
 }
 
+fn has_screen_media(segment: &Path, origin: &str) -> Result<bool, SegmentTranscriptReadError> {
+    Ok(has_screen_description(segment)
+        || fs::read_dir(segment)
+            .map_err(|_| SegmentTranscriptReadError::Io)?
+            .filter_map(Result::ok)
+            .any(|entry| {
+                entry.file_type().is_ok_and(|kind| kind.is_file())
+                    && entry
+                        .file_name()
+                        .to_str()
+                        .and_then(|name| {
+                            solstone_core_format::screenshots::screen_media_stem(origin, name)
+                        })
+                        .is_some()
+            }))
+}
+
 fn permitted_transcript_files(
     segment: &Segment,
     permissions: Option<&BTreeSet<solstone_core_format::content::AdmittedCategory>>,
-) -> Result<Vec<PathBuf>, SegmentTranscriptReadError> {
+) -> Result<(Vec<PathBuf>, Vec<&'static str>), SegmentTranscriptReadError> {
     use solstone_core_format::content::{AdmittedCategory, kinds::segment_file_permission};
     let mut files = transcript_files(segment.path())?;
+    let origin = segment_origin(segment.path());
+    let mut screen_only = false;
     if let Some(permissions) = permissions {
         let was_empty = files.is_empty();
-        let origin = segment_origin(segment.path());
         files.retain(|path| {
             let name = path
                 .file_name()
@@ -372,28 +395,33 @@ fn permitted_transcript_files(
             // A permitted screen can have only media and its description, or
             // share a segment with speech this connection cannot read.
             let screen = permissions.contains(&AdmittedCategory::Screenshots)
-                && (has_screen_description(segment.path())
-                    || fs::read_dir(segment.path())
-                        .map_err(|_| SegmentTranscriptReadError::Io)?
-                        .filter_map(Result::ok)
-                        .any(|entry| {
-                            entry.file_type().is_ok_and(|kind| kind.is_file())
-                                && entry
-                                    .file_name()
-                                    .to_str()
-                                    .and_then(|name| {
-                                        solstone_core_format::screenshots::screen_media_stem(
-                                            &origin, name,
-                                        )
-                                    })
-                                    .is_some()
-                        }));
+                && has_screen_media(segment.path(), &origin)?;
             if !screen {
                 return Err(SegmentTranscriptReadError::NoPermittedFiles);
             }
+            screen_only = true;
+        } else if files.is_empty()
+            && permissions.contains(&AdmittedCategory::Screenshots)
+            && has_screen_media(segment.path(), &origin)?
+        {
+            screen_only = true;
         }
     }
-    Ok(files)
+    let mut content_kinds = Vec::new();
+    for path in &files {
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default();
+        let kind = segment_file_permission(&format!("{origin}/{name}")).as_str();
+        if !content_kinds.contains(&kind) {
+            content_kinds.push(kind);
+        }
+    }
+    if screen_only && !content_kinds.contains(&AdmittedCategory::ScreenText.as_str()) {
+        content_kinds.push(AdmittedCategory::ScreenText.as_str());
+    }
+    Ok((files, content_kinds))
 }
 
 fn has_screen_description(segment: &Path) -> bool {
@@ -562,6 +590,7 @@ fn is_speech_transcript_name(name: &str) -> bool {
 /// The source-unit channel for one approved transcript file. Classification is
 /// the same path `project_line` already resolves; this does not open another file.
 fn source_channel(segment_origin: &str, name: &str, speech: bool) -> &'static str {
+    use solstone_core_format::content::{AdmittedCategory, kinds::segment_file_permission};
     let rel = format!("{segment_origin}/{name}");
     let stream = stream_name(segment_origin);
     match classify(&rel) {
@@ -569,6 +598,7 @@ fn source_channel(segment_origin: &str, name: &str, speech: bool) -> &'static st
             Some("import.chatgpt") => "ChatGPT Conversation",
             Some("import.claude") => "Claude Conversation",
             Some("import.gemini") => "Gemini Conversation",
+            Some("import.text") => "Imported Transcript",
             _ => "Imported Text",
         },
         ContentResolution::Unindexed(RawPerceptFamily::Audio) => "Transcript",
@@ -581,7 +611,19 @@ fn source_channel(segment_origin: &str, name: &str, speech: bool) -> &'static st
             Some(stream) if solstone_core_format::obsidian::is_obsidian_stream_name(stream) => {
                 "Note"
             }
-            _ => "Imported Text",
+            _ => match segment_file_permission(&rel) {
+                AdmittedCategory::Notes => "Note",
+                AdmittedCategory::Documents => "Document",
+                AdmittedCategory::ScreenText => "Screenshot",
+                AdmittedCategory::Photos => "Photo",
+                AdmittedCategory::Calendar => "Calendar Event",
+                AdmittedCategory::Transcripts
+                    if stream.is_some_and(|stream| stream.starts_with("import.")) =>
+                {
+                    "Imported Transcript"
+                }
+                _ => "Imported Text",
+            },
         },
     }
 }
@@ -938,7 +980,7 @@ mod tests {
         let first = read_segment_transcript_page(&segment, None, None, None).unwrap();
         assert!(first.untimed);
         assert_eq!(first.entries.len(), MAX_TRANSCRIPT_PAGE_ITEMS);
-        assert_eq!(first.entries[0].channel, "Imported Text");
+        assert_eq!(first.entries[0].channel, "Imported Transcript");
         assert_eq!(first.entries[0].text, "[00:00:00] **User:** turn 1");
         assert!(first.next.is_some());
 
@@ -1549,5 +1591,196 @@ mod tests {
         let labels = possible_names("imported_audio.jsonl", &[(1, 11, "Friar")]);
         let page = read_segment_transcript_page(&segment, None, None, Some(&labels)).unwrap();
         assert_eq!(page.entries[0].text, "[00:00:00] **User:** hello Fryer");
+    }
+
+    #[test]
+    fn imported_channels_follow_their_kind_and_content_kinds_respect_permissions() {
+        use super::read_segment_transcript_page_with_permissions;
+        use solstone_core_format::content::AdmittedCategory;
+
+        let root = tempfile::tempdir().unwrap();
+        for (seg_key, stream, file, body, expected_channel, expected_kind) in [
+            (
+                "090000_300",
+                "import.text",
+                "note_transcript.md",
+                "field note\n",
+                "Note",
+                "notes",
+            ),
+            (
+                "090500_300",
+                "import.text",
+                "document_transcript.md",
+                "manual text\n",
+                "Document",
+                "documents",
+            ),
+            (
+                "091000_300",
+                "import.document",
+                "document_transcript.md",
+                "pdf manual\n",
+                "Document",
+                "documents",
+            ),
+            (
+                "091500_300",
+                "import.text",
+                "conversation_transcript.jsonl",
+                "{\"imported\":{}}\n{\"start\":\"00:00:00\",\"speaker\":\"Ana\",\"text\":\"hello\"}\n",
+                "Imported Transcript",
+                "transcripts",
+            ),
+            (
+                "092000_300",
+                "import.text",
+                "imported.md",
+                "pre-triage text\n",
+                "Imported Transcript",
+                "transcripts",
+            ),
+            (
+                "092500_300",
+                "import.image",
+                "screenshot_transcript.md",
+                "receipt text\n",
+                "Screenshot",
+                "screen_text",
+            ),
+            (
+                "093000_300",
+                "import.image",
+                "image_transcript.md",
+                "garden bench\n",
+                "Photo",
+                "photos",
+            ),
+            (
+                "093500_300",
+                "import.obsidian",
+                "note_transcript.md",
+                "vault note\n",
+                "Note",
+                "notes",
+            ),
+            (
+                "094000_300",
+                "import.evernote",
+                "note_transcript.md",
+                "evernote note\n",
+                "Note",
+                "notes",
+            ),
+            (
+                "094500_300",
+                "import.kindle",
+                "book_transcript.md",
+                "highlight line\n",
+                "Highlights",
+                "notes",
+            ),
+            (
+                "095000_300",
+                "import.ics",
+                "event_transcript.md",
+                "event summary\n",
+                "Calendar Event",
+                "calendar",
+            ),
+        ] {
+            let dir = root
+                .path()
+                .join(format!("chronicle/20260407/{stream}/{seg_key}"));
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join(file), body).unwrap();
+            let segment = iter_segments(root.path(), PathOrDay::Day("20260407"))
+                .unwrap()
+                .into_iter()
+                .find(|seg| seg.path() == dir)
+                .unwrap();
+            let page = read_segment_transcript_page(&segment, None, None, None).unwrap();
+            assert_eq!(page.entries[0].channel, expected_channel, "{stream}/{file}");
+            assert_eq!(page.content_kinds, vec![expected_kind], "{stream}/{file}");
+        }
+
+        // Mixed segment: a transcripts-only connection sees only transcripts, never notes.
+        let mixed = root.path().join("chronicle/20260407/mixed/100000_300");
+        fs::create_dir_all(&mixed).unwrap();
+        fs::write(
+            mixed.join("audio.jsonl"),
+            "{\"source\":\"recording\"}\n{\"start\":\"10:00:01\",\"text\":\"spoken line\"}\n",
+        )
+        .unwrap();
+        fs::write(mixed.join("note_transcript.md"), "private note\n").unwrap();
+        let segment = iter_segments(root.path(), PathOrDay::Day("20260407"))
+            .unwrap()
+            .into_iter()
+            .find(|seg| seg.path() == mixed)
+            .unwrap();
+
+        let tx_only = BTreeSet::from([AdmittedCategory::Transcripts]);
+        let page = read_segment_transcript_page_with_permissions(
+            &segment,
+            None,
+            None,
+            None,
+            &BTreeSet::new(),
+            Some(&tx_only),
+        )
+        .unwrap();
+        assert_eq!(page.content_kinds, vec!["transcripts"]);
+        assert_eq!(page.entries.len(), 1);
+        assert_eq!(page.entries[0].channel, "Transcript");
+
+        let both = BTreeSet::from([AdmittedCategory::Transcripts, AdmittedCategory::Notes]);
+        let page = read_segment_transcript_page_with_permissions(
+            &segment,
+            None,
+            None,
+            None,
+            &BTreeSet::new(),
+            Some(&both),
+        )
+        .unwrap();
+        assert_eq!(page.content_kinds, vec!["transcripts", "notes"]);
+        assert_eq!(page.entries.len(), 2);
+
+        // Screen-only segment: reports screen_text only when screenshots is held.
+        let screen = root
+            .path()
+            .join("chronicle/20260407/macos_screen/110000_300");
+        fs::create_dir_all(screen.join("talents")).unwrap();
+        fs::write(screen.join("talents/screen_text.md"), "editor text\n").unwrap();
+        let segment = iter_segments(root.path(), PathOrDay::Day("20260407"))
+            .unwrap()
+            .into_iter()
+            .find(|seg| seg.path() == screen)
+            .unwrap();
+        let with_screen = BTreeSet::from([
+            AdmittedCategory::Transcripts,
+            AdmittedCategory::ScreenText,
+            AdmittedCategory::Screenshots,
+        ]);
+        let page = read_segment_transcript_page_with_permissions(
+            &segment,
+            None,
+            None,
+            None,
+            &BTreeSet::new(),
+            Some(&with_screen),
+        )
+        .unwrap();
+        assert_eq!(page.content_kinds, vec!["screen_text"]);
+        let without_screen = read_segment_transcript_page_with_permissions(
+            &segment,
+            None,
+            None,
+            None,
+            &BTreeSet::new(),
+            Some(&tx_only),
+        )
+        .unwrap();
+        assert!(without_screen.content_kinds.is_empty());
     }
 }
