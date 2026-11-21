@@ -1,0 +1,21 @@
+{
+  "description": "Journal streams command: inspect malformed.",
+  "context": "Journal streams command: inspect malformed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d57af5af9fd9e8677c808206ca0900e715167ff38332f96a1e2bb4a64f163bd2",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

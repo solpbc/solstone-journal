@@ -1,0 +1,25 @@
+{
+  "description": "Journal streams command: repair write failed.",
+  "context": "Journal streams command: repair write failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "stream",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2480e32184d8001f6509926265e9addb91f7e3460072ee4506124588fbbb9756",
+  "max_length": 98,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

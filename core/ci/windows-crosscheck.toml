@@ -37,8 +37,10 @@ target = "x86_64-pc-windows-msvc"
 # solstone-core-window-catalog adds one member and one library
 # (143/136 -> 144/137). It is plain cross-platform Rust over fluent-bundle
 # with no cfg(target_os) gate.
-workspace_packages = 144
-library_packages = 137
+# The CLI copy reader adds one cross-platform Rust library over the shared
+# process-locale selector and Fluent.
+workspace_packages = 145
+library_packages = 138
 
 [[exclusions]]
 package = "ring"

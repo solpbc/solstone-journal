@@ -485,6 +485,15 @@ Follow the [catalog compiler guide](tools/i18n/README.md) to refresh source
 revisions. Run
 `make journal-window-catalog` and commit the generated resources.
 
+### Journal command-line strings
+
+Put command-line help, progress and human-readable errors in
+`i18n/cli/source/en-US.ftl`. Use the existing window message when the command
+shows the same copy. Keep machine output stable, including JSON keys, codes
+and values. Run `make journal-cli-catalog` after changing the CLI catalog.
+
+Converted crates: `solstone-core-streams-cli`.
+
 ## 9. File headers, naming, dependencies
 
 - **SPDX header** as above — mandatory on source code files.

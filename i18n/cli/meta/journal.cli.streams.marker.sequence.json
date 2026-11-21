@@ -1,0 +1,21 @@
+{
+  "description": "Journal streams command: marker sequence.",
+  "context": "Journal streams command: marker sequence.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2bebdd888ad34be6bb83b721858f3880d3075080fd9ed1151f3be0406a994493",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

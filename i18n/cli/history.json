@@ -1,0 +1,560 @@
+{
+  "history_version": 1,
+  "records": [
+    {
+      "id": "journal.cli.streams.arguments",
+      "resource": "m6a6f75726e616c2e636c692e73747265616d732e617267756d656e7473",
+      "namespace": "journal.cli.streams",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "arguments",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "syntax",
+          "kind": "command",
+          "value": "solstone journal streams [-h] [--rebuild] [-v] [-d] [name]"
+        },
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "solstone journal streams"
+        },
+        {
+          "name": "break",
+          "kind": "whitespace",
+          "value": "\n"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.streams.empty",
+      "resource": "m6a6f75726e616c2e636c692e73747265616d732e656d707479",
+      "namespace": "journal.cli.streams",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.streams.header.day",
+      "resource": "m6a6f75726e616c2e636c692e73747265616d732e6865616465722e646179",
+      "namespace": "journal.cli.streams.header",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.streams.header.name",
+      "resource": "m6a6f75726e616c2e636c692e73747265616d732e6865616465722e6e616d65",
+      "namespace": "journal.cli.streams.header",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.streams.header.segment",
+      "resource": "m6a6f75726e616c2e636c692e73747265616d732e6865616465722e7365676d656e74",
+      "namespace": "journal.cli.streams.header",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.streams.header.sequence",
+      "resource": "m6a6f75726e616c2e636c692e73747265616d732e6865616465722e73657175656e6365",
+      "namespace": "journal.cli.streams.header",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.streams.header.type",
+      "resource": "m6a6f75726e616c2e636c692e73747265616d732e6865616465722e74797065",
+      "namespace": "journal.cli.streams.header",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.streams.help",
+      "resource": "m6a6f75726e616c2e636c692e73747265616d732e68656c70",
+      "namespace": "journal.cli.streams",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "syntax",
+          "kind": "command",
+          "value": "solstone journal streams [-h] [--rebuild] [-v] [-d] [name]"
+        },
+        {
+          "name": "break",
+          "kind": "whitespace",
+          "value": "\n"
+        },
+        {
+          "name": "paragraph",
+          "kind": "whitespace",
+          "value": "\n\n"
+        },
+        {
+          "name": "indent",
+          "kind": "whitespace",
+          "value": "  "
+        },
+        {
+          "name": "name_input",
+          "kind": "accepted-input",
+          "value": "name"
+        },
+        {
+          "name": "name_space",
+          "kind": "whitespace",
+          "value": "           "
+        },
+        {
+          "name": "help_input",
+          "kind": "accepted-input",
+          "value": "-h, --help"
+        },
+        {
+          "name": "help_space",
+          "kind": "whitespace",
+          "value": "     "
+        },
+        {
+          "name": "rebuild_input",
+          "kind": "accepted-input",
+          "value": "--rebuild"
+        },
+        {
+          "name": "rebuild_space",
+          "kind": "whitespace",
+          "value": "      "
+        },
+        {
+          "name": "verbose_input",
+          "kind": "accepted-input",
+          "value": "-v, --verbose"
+        },
+        {
+          "name": "verbose_space",
+          "kind": "whitespace",
+          "value": "  "
+        },
+        {
+          "name": "debug_input",
+          "kind": "accepted-input",
+          "value": "-d, --debug"
+        },
+        {
+          "name": "debug_space",
+          "kind": "whitespace",
+          "value": "    "
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.streams.inspect.malformed",
+      "resource": "m6a6f75726e616c2e636c692e73747265616d732e696e73706563742e6d616c666f726d6564",
+      "namespace": "journal.cli.streams.inspect",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.streams.inspect.not.found",
+      "resource": "m6a6f75726e616c2e636c692e73747265616d732e696e73706563742e6e6f742e666f756e64",
+      "namespace": "journal.cli.streams.inspect.not",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.streams.list.error",
+      "resource": "m6a6f75726e616c2e636c692e73747265616d732e6c6973742e6572726f72",
+      "namespace": "journal.cli.streams.list",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.streams.marker.sequence",
+      "resource": "m6a6f75726e616c2e636c692e73747265616d732e6d61726b65722e73657175656e6365",
+      "namespace": "journal.cli.streams.marker",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.streams.marker.unreadable",
+      "resource": "m6a6f75726e616c2e636c692e73747265616d732e6d61726b65722e756e7265616461626c65",
+      "namespace": "journal.cli.streams.marker",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.streams.rebuild.empty",
+      "resource": "m6a6f75726e616c2e636c692e73747265616d732e72656275696c642e656d707479",
+      "namespace": "journal.cli.streams.rebuild",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "segment_quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "segments",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "segment_quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.streams.rebuild.result",
+      "resource": "m6a6f75726e616c2e636c692e73747265616d732e72656275696c642e726573756c74",
+      "namespace": "journal.cli.streams.rebuild",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "stream_quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "segment_quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "streams",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "segments",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "stream_quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.streams.record.malformed",
+      "resource": "m6a6f75726e616c2e636c692e73747265616d732e7265636f72642e6d616c666f726d6564",
+      "namespace": "journal.cli.streams.record",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.streams.repair.ahead",
+      "resource": "m6a6f75726e616c2e636c692e73747265616d732e7265706169722e6168656164",
+      "namespace": "journal.cli.streams.repair",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "stream",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.streams.repair.locked",
+      "resource": "m6a6f75726e616c2e636c692e73747265616d732e7265706169722e6c6f636b6564",
+      "namespace": "journal.cli.streams.repair",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "stream",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.streams.repair.malformed",
+      "resource": "m6a6f75726e616c2e636c692e73747265616d732e7265706169722e6d616c666f726d6564",
+      "namespace": "journal.cli.streams.repair",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "stream",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.streams.repair.missing",
+      "resource": "m6a6f75726e616c2e636c692e73747265616d732e7265706169722e6d697373696e67",
+      "namespace": "journal.cli.streams.repair",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "stream",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.streams.repair.write.failed",
+      "resource": "m6a6f75726e616c2e636c692e73747265616d732e7265706169722e77726974652e6661696c6564",
+      "namespace": "journal.cli.streams.repair.write",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "stream",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.streams.segments.error",
+      "resource": "m6a6f75726e616c2e636c692e73747265616d732e7365676d656e74732e6572726f72",
+      "namespace": "journal.cli.streams.segments",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.streams.supervisor",
+      "resource": "m6a6f75726e616c2e636c692e73747265616d732e73757065727669736f72",
+      "namespace": "journal.cli.streams",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "command",
+          "kind": "command",
+          "value": "solstone journal up"
+        }
+      ],
+      "selector": null
+    }
+  ]
+}

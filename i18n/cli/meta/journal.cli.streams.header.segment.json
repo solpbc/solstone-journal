@@ -1,0 +1,16 @@
+{
+  "description": "Journal streams command: header segment.",
+  "context": "Journal streams command: header segment.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b4456e55ba265037265484e12d525cea275bbb670c47820c2d9208716d2394d1",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

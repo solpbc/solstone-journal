@@ -1,0 +1,16 @@
+{
+  "description": "Journal streams command: header name.",
+  "context": "Journal streams command: header name.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e2acdcb4fa1b4cbed111f4581f2a72ae43c75976e40a63e67d4f8b5208436728",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

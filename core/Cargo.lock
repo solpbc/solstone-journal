@@ -4703,6 +4703,14 @@ name = "solstone-core-cli-boundary"
 version = "2.0.86"
 
 [[package]]
+name = "solstone-core-cli-copy"
+version = "2.0.86"
+dependencies = [
+ "fluent-bundle",
+ "solstone-core-window-catalog",
+]
+
+[[package]]
 name = "solstone-core-convey-body"
 version = "2.0.86"
 dependencies = [
@@ -6830,6 +6838,7 @@ name = "solstone-core-streams-cli"
 version = "2.0.86"
 dependencies = [
  "serde_json",
+ "solstone-core-cli-copy",
  "solstone-core-segment",
  "tempfile",
 ]

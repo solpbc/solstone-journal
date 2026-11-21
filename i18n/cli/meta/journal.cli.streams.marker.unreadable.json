@@ -1,0 +1,21 @@
+{
+  "description": "Journal streams command: marker unreadable.",
+  "context": "Journal streams command: marker unreadable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3824ab0b7264bda711d62733a76d672d91315685abddb5b051ea29fc01d1a747",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

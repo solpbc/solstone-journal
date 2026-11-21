@@ -1,0 +1,16 @@
+{
+  "description": "Journal streams command: header sequence.",
+  "context": "Journal streams command: header sequence.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ccbad8fb65646edf3c331164fe6ca21f0b83f7891ea574e47c585fff471c18ab",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

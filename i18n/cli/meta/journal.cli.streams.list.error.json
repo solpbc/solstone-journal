@@ -1,0 +1,21 @@
+{
+  "description": "Journal streams command: list error.",
+  "context": "Journal streams command: list error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6eea5e65816a728093f0f7f753029c4b089cdc28d686502741b12afd0421819e",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

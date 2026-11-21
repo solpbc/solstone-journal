@@ -1,0 +1,39 @@
+{
+  "description": "Journal streams command: rebuild result.",
+  "context": "Journal streams command: rebuild result.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "stream_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "segment_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "streams",
+      "type": "string"
+    },
+    {
+      "name": "segments",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "9988e08705ae9458b8f51ef089e278c497c869a30600b055ac4992fc8b008e2f",
+  "max_length": 358,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "stream_quantity",
+    "type": "cardinal"
+  }
+}

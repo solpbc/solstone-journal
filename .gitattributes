@@ -23,6 +23,8 @@ core/crates/solstone-core-convey-shell/assets/static/vendor/leaflet/* -text -whi
 
 i18n/generated/window/** -text
 i18n/generated/window/rust/journal-window/*.ftl whitespace=-blank-at-eof
+i18n/generated/cli/** -text
+i18n/generated/cli/rust/journal-cli/*.ftl whitespace=-blank-at-eof
 
 # A staged page is hashed by its index, so its bytes stay as written.
 tests/fixtures/importers/health/oura_pages/** -text

@@ -1,0 +1,21 @@
+{
+  "description": "Journal streams command: inspect not found.",
+  "context": "Journal streams command: inspect not found.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "301a3d6ee6ad9b735f369c5c23ad473d1aca0fd6847ababad80c94dbb5bfae2c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

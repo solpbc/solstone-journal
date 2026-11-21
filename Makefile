@@ -1545,6 +1545,7 @@ ci-under-poison:
 	fi
 	@$(MAKE) check-standalone-lockfiles
 	@$(MAKE) check-journal-window-catalog
+	@$(MAKE) check-journal-cli-catalog
 	@$(MAKE) check-windows-app-catalog
 	@$(MAKE) check-rust-fmt
 	@$(MAKE) check-rust-ci-topology
@@ -1719,6 +1720,23 @@ check-journal-window-catalog:
 	if ! $(JOURNAL_WINDOW_CATALOG) --out "$$check_dir/window" || \
 	   ! diff -qr i18n/generated/window "$$check_dir/window"; then \
 		echo "Journal window catalog is stale. Refresh source revisions if needed, then run make journal-window-catalog." >&2; \
+		exit 1; \
+	fi
+
+JOURNAL_CLI_CATALOG = CARGO_TARGET_DIR="$(RUST_TARGET_DIR)/i18n-catalog" cargo run --quiet --manifest-path tools/i18n/Cargo.toml --locked --offline -- targets i18n/cli --channel production --target rust
+
+.PHONY: journal-cli-catalog check-journal-cli-catalog
+journal-cli-catalog:
+	$(JOURNAL_CLI_CATALOG) --out i18n/generated/cli
+
+check-journal-cli-catalog:
+	@set -eu; \
+	mkdir -p "$(RUST_TARGET_DIR)"; \
+	check_dir=$$(mktemp -d "$(RUST_TARGET_DIR)/journal-catalog.XXXXXX"); \
+	trap 'rm -rf "$$check_dir"' 0 1 2 15; \
+	if ! $(JOURNAL_CLI_CATALOG) --out "$$check_dir/cli" || \
+	   ! diff -qr i18n/generated/cli "$$check_dir/cli"; then \
+		echo "Journal CLI catalog is stale. Refresh source revisions if needed, then run make journal-cli-catalog." >&2; \
 		exit 1; \
 	fi
 

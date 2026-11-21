@@ -1,0 +1,23 @@
+{
+  "description": "Journal streams command: supervisor.",
+  "context": "Journal streams command: supervisor.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4d1d286cb89a690e53e1c321bcd98dc33e18ba14e9435a1bff936441f81215f5",
+  "max_length": 94,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal up"
+    }
+  ]
+}

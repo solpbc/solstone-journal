@@ -1,0 +1,88 @@
+{
+  "description": "Journal streams command: help.",
+  "context": "Journal streams command: help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4f6a07109cdfbdcc7ee71505adf9da3430178bd5da5d5904dcd0032ac477a7ea",
+  "max_length": 594,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal streams [-h] [--rebuild] [-v] [-d] [name]"
+    },
+    {
+      "name": "break",
+      "kind": "whitespace",
+      "value": "\n"
+    },
+    {
+      "name": "paragraph",
+      "kind": "whitespace",
+      "value": "\n\n"
+    },
+    {
+      "name": "indent",
+      "kind": "whitespace",
+      "value": "  "
+    },
+    {
+      "name": "name_input",
+      "kind": "accepted-input",
+      "value": "name"
+    },
+    {
+      "name": "name_space",
+      "kind": "whitespace",
+      "value": "           "
+    },
+    {
+      "name": "help_input",
+      "kind": "accepted-input",
+      "value": "-h, --help"
+    },
+    {
+      "name": "help_space",
+      "kind": "whitespace",
+      "value": "     "
+    },
+    {
+      "name": "rebuild_input",
+      "kind": "accepted-input",
+      "value": "--rebuild"
+    },
+    {
+      "name": "rebuild_space",
+      "kind": "whitespace",
+      "value": "      "
+    },
+    {
+      "name": "verbose_input",
+      "kind": "accepted-input",
+      "value": "-v, --verbose"
+    },
+    {
+      "name": "verbose_space",
+      "kind": "whitespace",
+      "value": "  "
+    },
+    {
+      "name": "debug_input",
+      "kind": "accepted-input",
+      "value": "-d, --debug"
+    },
+    {
+      "name": "debug_space",
+      "kind": "whitespace",
+      "value": "    "
+    }
+  ]
+}

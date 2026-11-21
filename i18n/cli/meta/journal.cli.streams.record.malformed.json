@@ -1,0 +1,21 @@
+{
+  "description": "Journal streams command: record malformed.",
+  "context": "Journal streams command: record malformed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e6ac0b9014872dde17d9b6512fae0ac5e721abbb431c878d980fcbeb5b32fc03",
+  "max_length": 88,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

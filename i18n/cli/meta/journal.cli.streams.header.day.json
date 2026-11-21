@@ -1,0 +1,16 @@
+{
+  "description": "Journal streams command: header day.",
+  "context": "Journal streams command: header day.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d95ce0dc2c95b8da10157fd487dba9e50a12d05108fb4df6a4815c7682d656c7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

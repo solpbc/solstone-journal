@@ -1,0 +1,21 @@
+{
+  "description": "Journal streams command: segments error.",
+  "context": "Journal streams command: segments error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "19898f99415e32f8fbc385fe9848fa1f09b7508ec14d4b4df52b03e89c063031",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

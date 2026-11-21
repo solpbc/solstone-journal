@@ -8,15 +8,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
+use solstone_core_cli_copy::{Value as CopyValue, render, strings, text};
 use solstone_core_segment::{
-    LockOptions, MarkerTail, RepairOutcome, SUPERVISOR_MESSAGE, SupervisorRefusal, UnchangedReason,
+    LockOptions, MarkerTail, RepairOutcome, SupervisorRefusal, UnchangedReason,
     is_safe_stream_component, is_solstone_up, list_days, list_segments,
     list_stream_records_tolerant, repair_stream_tail_from_markers, require_solstone_with,
 };
-
-const USAGE: &str = "usage: solstone journal streams [-h] [--rebuild] [-v] [-d] [name]";
-const STREAMS_HELP_FIXTURE: &str =
-    include_str!("../../../fixtures/journal-storage-ops-reference-grammar.txt");
 
 /// The observable result of a library-hosted CLI invocation.
 #[derive(Debug, PartialEq, Eq)]
@@ -74,7 +71,8 @@ where
             return CliRun {
                 stdout: String::new(),
                 stderr: format!(
-                    "{USAGE}\nsolstone journal streams: error: unrecognized arguments: {arguments}\n"
+                    "{}\n",
+                    strings("journal.cli.streams.arguments", [("arguments", &arguments)])
                 ),
                 exit_code: 2,
             };
@@ -85,7 +83,11 @@ where
         Ok(()) => {}
         Err(SupervisorRefusal::SpawnedUnavailable) => return failure("", "", 75),
         Err(SupervisorRefusal::Unavailable) => {
-            return failure("", &format!("{SUPERVISOR_MESSAGE}\n"), 1);
+            return failure(
+                "",
+                &format!("{}\n", text("journal.cli.streams.supervisor")),
+                1,
+            );
         }
     }
 
@@ -136,24 +138,29 @@ fn parse_arguments(args: &[String]) -> Result<Command, String> {
 }
 
 fn streams_help() -> String {
-    let header = "=== streams --help\n";
-    let start = STREAMS_HELP_FIXTURE
-        .find(header)
-        .expect("streams help fixture block exists")
-        + header.len();
-    let rest = &STREAMS_HELP_FIXTURE[start..];
-    let end = rest.find("\n=== ").unwrap_or(rest.len());
-    rest[..end].to_owned()
+    format!("{}\n", text("journal.cli.streams.help"))
 }
 
 fn list_streams(journal: &Path) -> CliRun {
     let listing = match list_stream_records_tolerant(journal) {
         Ok(listing) => listing,
-        Err(error) => return failure("", &format!("Could not list streams: {error}\n"), 3),
+        Err(error) => {
+            return failure(
+                "",
+                &format!(
+                    "{}\n",
+                    strings(
+                        "journal.cli.streams.list.error",
+                        [("error", &error.to_string())]
+                    )
+                ),
+                3,
+            );
+        }
     };
 
     if listing.records.is_empty() && listing.anomalies.is_empty() {
-        return success("No streams found\n".to_owned());
+        return success(format!("{}\n", text("journal.cli.streams.empty")));
     }
 
     let mut rows = listing
@@ -165,11 +172,11 @@ fn list_streams(journal: &Path) -> CliRun {
 
     let mut stdout = format!(
         "{:<24} {:<12} {:<10} {:<16} {:>5}\n{}\n",
-        "Name",
-        "Type",
-        "Last Day",
-        "Last Segment",
-        "Seq",
+        text("journal.cli.streams.header.name"),
+        text("journal.cli.streams.header.type"),
+        text("journal.cli.streams.header.day"),
+        text("journal.cli.streams.header.segment"),
+        text("journal.cli.streams.header.sequence"),
         "-".repeat(71)
     );
     for row in rows {
@@ -180,10 +187,15 @@ fn list_streams(journal: &Path) -> CliRun {
     }
     let has_anomalies = !listing.anomalies.is_empty();
     for (path, reason) in listing.anomalies {
-        stdout.push_str(&format!(
-            "Could not read stream record {}: {reason}\n",
-            path.display()
-        ));
+        let path = path.display().to_string();
+        let message = match reason {
+            solstone_core_segment::StreamRecordAnomaly::Malformed => strings(
+                "journal.cli.streams.record.malformed",
+                [("path", path.as_str())],
+            ),
+        };
+        stdout.push_str(&message);
+        stdout.push('\n');
     }
 
     CliRun {
@@ -228,7 +240,10 @@ fn stream_row(value: &Value) -> StreamRow {
 fn inspect_stream(journal: &Path, name: &str) -> CliRun {
     if !is_safe_stream_component(name) {
         return CliRun {
-            stdout: format!("Stream not found: {name}\n"),
+            stdout: format!(
+                "{}\n",
+                strings("journal.cli.streams.inspect.not.found", [("name", name)])
+            ),
             stderr: String::new(),
             exit_code: 1,
         };
@@ -238,14 +253,20 @@ fn inspect_stream(journal: &Path, name: &str) -> CliRun {
         Ok(bytes) if !bytes.is_empty() => bytes,
         Ok(_) => {
             return CliRun {
-                stdout: format!("Stream not found: {name}\n"),
+                stdout: format!(
+                    "{}\n",
+                    strings("journal.cli.streams.inspect.not.found", [("name", name)])
+                ),
                 stderr: String::new(),
                 exit_code: 1,
             };
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             return CliRun {
-                stdout: format!("Stream not found: {name}\n"),
+                stdout: format!(
+                    "{}\n",
+                    strings("journal.cli.streams.inspect.not.found", [("name", name)])
+                ),
                 stderr: String::new(),
                 exit_code: 1,
             };
@@ -254,8 +275,11 @@ fn inspect_stream(journal: &Path, name: &str) -> CliRun {
             return failure(
                 "",
                 &format!(
-                    "Could not read stream {}: malformed record\n",
-                    path.display()
+                    "{}\n",
+                    strings(
+                        "journal.cli.streams.inspect.malformed",
+                        [("path", &path.display().to_string())]
+                    )
                 ),
                 3,
             );
@@ -266,8 +290,11 @@ fn inspect_stream(journal: &Path, name: &str) -> CliRun {
         return failure(
             "",
             &format!(
-                "Could not read stream {}: malformed record\n",
-                path.display()
+                "{}\n",
+                strings(
+                    "journal.cli.streams.inspect.malformed",
+                    [("path", &path.display().to_string())]
+                )
             ),
             3,
         );
@@ -303,7 +330,19 @@ enum MarkerAnomaly {
 fn rebuild_streams(journal: &Path, filter: Option<&str>, lock_options: LockOptions) -> CliRun {
     let markers = match marker_candidates(journal) {
         Ok(markers) => markers,
-        Err(error) => return failure("", &format!("Could not list segments: {error}\n"), 3),
+        Err(error) => {
+            return failure(
+                "",
+                &format!(
+                    "{}\n",
+                    strings(
+                        "journal.cli.streams.segments.error",
+                        [("error", &error.to_string())]
+                    )
+                ),
+                3,
+            );
+        }
     };
     let mut tails = BTreeMap::<String, CollectedTail>::new();
     let mut anomalies = Vec::new();
@@ -356,13 +395,31 @@ fn rebuild_streams(journal: &Path, filter: Option<&str>, lock_options: LockOptio
 
     let mut stdout = String::new();
     let mut has_anomaly = !anomalies.is_empty();
+    let segments = scanned.to_string();
+    let segment_quantity = CopyValue::Cardinal(scanned.min(i32::MAX as u64) as i64);
     if tails.is_empty() {
-        stdout.push_str(&format!("No streams found ({scanned} segments scanned)\n"));
-    } else {
-        stdout.push_str(&format!(
-            "Rebuilt {} stream(s) from {scanned} segments:\n",
-            tails.len()
+        stdout.push_str(&render(
+            "journal.cli.streams.rebuild.empty",
+            &[
+                ("segments", CopyValue::String(&segments)),
+                ("segment_quantity", segment_quantity),
+            ],
         ));
+        stdout.push('\n');
+    } else {
+        stdout.push_str(&render(
+            "journal.cli.streams.rebuild.result",
+            &[
+                ("streams", CopyValue::String(&tails.len().to_string())),
+                (
+                    "stream_quantity",
+                    CopyValue::Cardinal(tails.len().min(i32::MAX as usize) as i64),
+                ),
+                ("segments", CopyValue::String(&segments)),
+                ("segment_quantity", segment_quantity),
+            ],
+        ));
+        stdout.push('\n');
         for (stream, tail) in &tails {
             let marker_tail = MarkerTail {
                 last_day: &tail.day,
@@ -379,12 +436,18 @@ fn rebuild_streams(journal: &Path, filter: Option<&str>, lock_options: LockOptio
     for anomaly in anomalies {
         match anomaly {
             MarkerAnomaly::Unreadable(path) => stdout.push_str(&format!(
-                "unreadable marker {}: could not read marker\n",
-                path.display()
+                "{}\n",
+                strings(
+                    "journal.cli.streams.marker.unreadable",
+                    [("path", &path.display().to_string())]
+                )
             )),
             MarkerAnomaly::BadSeq(path) => stdout.push_str(&format!(
-                "unreadable marker {}: invalid sequence\n",
-                path.display()
+                "{}\n",
+                strings(
+                    "journal.cli.streams.marker.sequence",
+                    [("path", &path.display().to_string())]
+                )
             )),
         }
     }
@@ -414,31 +477,20 @@ fn marker_candidates(
 
 fn repair_report_line(stream: &str, outcome: RepairOutcome) -> (String, bool) {
     let path = format!("streams/{stream}.json");
-    match outcome {
+    let at_path = |id| strings(id, [("stream", stream), ("path", path.as_str())]);
+    let message = match outcome {
         RepairOutcome::Repaired | RepairOutcome::Unchanged(UnchangedReason::AlreadyCurrent) => {
-            (format!("  {stream}\n"), false)
+            return (format!("  {stream}\n"), false);
         }
-        RepairOutcome::Unchanged(UnchangedReason::RecordAhead) => (
-            format!("  {stream}: stream state sequence is ahead of markers; unchanged\n"),
-            true,
-        ),
-        RepairOutcome::NoRecord => (
-            format!("  {stream}: no stream record at {path}; unchanged\n"),
-            true,
-        ),
-        RepairOutcome::Malformed => (
-            format!("  {stream}: malformed stream record at {path}; unchanged\n"),
-            true,
-        ),
-        RepairOutcome::Locked => (
-            format!("  {stream}: could not lock {path}; unchanged\n"),
-            true,
-        ),
-        RepairOutcome::WriteFailed => (
-            format!("  {stream}: write failed for {path}: atomic publication failed\n"),
-            true,
-        ),
-    }
+        RepairOutcome::Unchanged(UnchangedReason::RecordAhead) => {
+            strings("journal.cli.streams.repair.ahead", [("stream", stream)])
+        }
+        RepairOutcome::NoRecord => at_path("journal.cli.streams.repair.missing"),
+        RepairOutcome::Malformed => at_path("journal.cli.streams.repair.malformed"),
+        RepairOutcome::Locked => at_path("journal.cli.streams.repair.locked"),
+        RepairOutcome::WriteFailed => at_path("journal.cli.streams.repair.write.failed"),
+    };
+    (format!("  {message}\n"), true)
 }
 
 fn success(stdout: String) -> CliRun {
@@ -460,6 +512,9 @@ fn failure(stdout: &str, stderr: &str, exit_code: i32) -> CliRun {
 #[cfg(test)]
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 mod tests {
+    use solstone_core_segment::SUPERVISOR_MESSAGE;
+    const USAGE: &str = "usage: solstone journal streams [-h] [--rebuild] [-v] [-d] [name]";
+
     use std::collections::BTreeMap;
     use std::fs;
     #[cfg(unix)]
@@ -894,10 +949,7 @@ zeta                     observer     20260101   090000_1         123456\n"
         );
         let alpha_before = fs::read(root.join("streams/alpha.json")).unwrap();
         let run = bypass_run(&["--rebuild", "alpha"], root);
-        assert_eq!(
-            run.stdout,
-            "Rebuilt 1 stream(s) from 1 segments:\n  alpha\n"
-        );
+        assert_eq!(run.stdout, "Rebuilt 1 stream from 1 segment:\n  alpha\n");
         assert_eq!(run.exit_code, 0);
         assert_ne!(
             fs::read(root.join("streams/alpha.json")).unwrap(),
@@ -910,7 +962,7 @@ zeta                     observer     20260101   090000_1         123456\n"
         );
         assert_eq!(
             bypass_run(&["--rebuild", "default-name"], root).stdout,
-            "Rebuilt 1 stream(s) from 1 segments:\n  default-name\n"
+            "Rebuilt 1 stream from 1 segment:\n  default-name\n"
         );
 
         let zero = TempDir::new().unwrap();
@@ -929,7 +981,7 @@ zeta                     observer     20260101   090000_1         123456\n"
         let bytes = fs::read(zero.path().join("streams/zero.json")).unwrap();
         assert_eq!(
             bypass_run(&["--rebuild"], zero.path()).stdout,
-            "Rebuilt 1 stream(s) from 1 segments:\n  zero\n"
+            "Rebuilt 1 stream from 1 segment:\n  zero\n"
         );
         assert_eq!(
             fs::read(zero.path().join("streams/zero.json")).unwrap(),
@@ -990,11 +1042,7 @@ zeta                     observer     20260101   090000_1         123456\n"
             bad_seq.display()
         )));
         assert!(!first.stdout.contains("silent/090000_4"));
-        assert!(
-            first
-                .stdout
-                .contains("Rebuilt 1 stream(s) from 2 segments:")
-        );
+        assert!(first.stdout.contains("Rebuilt 1 stream from 2 segments:"));
         let target = fs::read_to_string(root.join("streams/target.json")).unwrap();
         assert!(target.contains("\"seq\": 4"));
         assert!(target.contains("\"last_segment\": \"090000_1\""));

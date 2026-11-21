@@ -1,0 +1,25 @@
+{
+  "description": "Journal streams command: repair locked.",
+  "context": "Journal streams command: repair locked.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "stream",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0004a3814beadd4c5829895f5a2f7f97ddfa130b7067e3919f76afafa1310483",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

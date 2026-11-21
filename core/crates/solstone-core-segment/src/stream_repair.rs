@@ -47,11 +47,17 @@ pub enum RepairOutcome {
     WriteFailed,
 }
 
+/// A registry entry that the tolerant scan could not use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StreamRecordAnomaly {
+    Malformed,
+}
+
 /// A tolerant registry scan: valid object records and isolated bad files.
 #[derive(Debug, Default)]
 pub struct TolerantStreamRecords {
     pub records: Vec<(String, Value)>,
-    pub anomalies: Vec<(PathBuf, String)>,
+    pub anomalies: Vec<(PathBuf, StreamRecordAnomaly)>,
 }
 
 /// Read one registry record without normalizing its keys or values.
@@ -75,7 +81,9 @@ pub fn list_stream_records_tolerant(journal: &Path) -> Result<TolerantStreamReco
         match read_stream_record_value(&path) {
             Ok(Some(value)) if value.is_object() => result.records.push((name, value)),
             Ok(Some(_)) | Ok(None) | Err(_) => {
-                result.anomalies.push((path, "malformed record".to_owned()));
+                result
+                    .anomalies
+                    .push((path, StreamRecordAnomaly::Malformed));
             }
         }
     }
@@ -1096,7 +1104,7 @@ mod tests {
         assert_eq!(listed.records[0].1["type"], "observer");
         assert_eq!(
             listed.anomalies,
-            vec![(broken, "malformed record".to_owned())]
+            vec![(broken, StreamRecordAnomaly::Malformed)]
         );
     }
 

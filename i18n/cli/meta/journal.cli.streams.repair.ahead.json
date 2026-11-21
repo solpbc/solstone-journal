@@ -1,0 +1,21 @@
+{
+  "description": "Journal streams command: repair ahead.",
+  "context": "Journal streams command: repair ahead.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "stream",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "22d9861f1592bfa8f8f9d8cb7870c41bc99e645eef89819788712af4315f4f1b",
+  "max_length": 97,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}
