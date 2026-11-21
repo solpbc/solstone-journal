@@ -17884,6 +17884,34 @@ fn conversation_grants_agree_across_listing_direct_batch_and_search() {
         .unwrap();
         assert!(!hits.results.is_empty(), "{word}");
     }
+    // Reopen the permission record a pre-Messages Journal wrote for its
+    // default connection. Exercise the upgrade without rewriting the grant.
+    let old_grant = json!({"schema":1,"permissions":[{
+        "connection":CONNECTION, "schema":1, "generation":7, "evaluation":"enforce",
+        "read":{"scope":{"kind":"whole_journal"},
+                "categories":["transcripts","entities","profile_pics","facets","screen_text","body"]}
+    }]}).to_string();
+    let path = PermissionStore::open(root).permissions_path();
+    fs::write(&path, &old_grant).unwrap();
+    let listing = probe(&journal, "list_transcripts", json!({"day":day,"limit":100})).unwrap();
+    let span = probe(
+        &journal,
+        "get_transcript",
+        json!({"reference":listing["span_reference"]}),
+    )
+    .unwrap();
+    let entries = span["segments"].to_string();
+    assert!(entries.contains("cobaltcaption"));
+    for withheld in ["amberchat", "legacychat", "neutralturn", "quartzwritten"] {
+        assert!(!entries.contains(withheld), "{withheld}");
+    }
+    assert_eq!(fs::read_to_string(&path).unwrap(), old_grant);
+    assert!(
+        !ReadPermission::default_whole_journal()
+            .categories
+            .iter()
+            .any(|word| word == "messages")
+    );
     for (kinds, visible) in [
         (
             vec!["messages"],
