@@ -382,10 +382,15 @@ impl From<ArchivePlan> for ImportPreview {
 /// Plan a journal-archive merge from its archive metadata. Creates nothing.
 pub fn plan_journal_archive(archive_path: &Path) -> Result<ArchivePlan, ImportSourcesError> {
     require_zip_archive(archive_path)?;
-    plan_zip_archive(archive_path)
+    plan_zip_archive(archive_path).map(|(plan, _)| plan)
 }
 
-fn plan_zip_archive(archive_path: &Path) -> Result<ArchivePlan, ImportSourcesError> {
+/// Recognize a journal export by its manifest or a journal record under its archive root.
+pub(crate) fn claims_journal_archive(path: &Path) -> bool {
+    require_zip_archive(path).is_ok() && plan_zip_archive(path).is_ok_and(|(_, claims)| claims)
+}
+
+fn plan_zip_archive(archive_path: &Path) -> Result<(ArchivePlan, bool), ImportSourcesError> {
     let file = File::open(archive_path).map_err(|error| match error.kind() {
         io::ErrorKind::NotFound => ImportSourcesError::ArchiveNotFound {
             path: archive_path.to_path_buf(),
@@ -431,7 +436,8 @@ fn plan_zip_archive(archive_path: &Path) -> Result<ArchivePlan, ImportSourcesErr
     let mut has_macosx = false;
     let mut has_ds_store = false;
     let mut payload_files = 0_usize;
-    for (name, is_dir) in names.iter().zip(directories) {
+    let mut recognized = false;
+    for (index, (name, is_dir)) in names.iter().zip(directories).enumerate() {
         let relative = strip_archive_root(name, &root);
         let components = member_components(relative);
         if components.contains(&".DS_Store")
@@ -447,6 +453,27 @@ fn plan_zip_archive(archive_path: &Path) -> Result<ArchivePlan, ImportSourcesErr
         let Some(first) = components.first().copied() else {
             continue;
         };
+        if !is_dir && !recognized {
+            recognized = match components.as_slice() {
+                ["_export.json"] => archive.by_index(index).ok().is_some_and(|member| {
+                    if member.size() > 64 * 1024 {
+                        return false;
+                    }
+                    let parsed: Result<Value, _> = serde_json::from_reader(member.take(64 * 1024));
+                    parsed.is_ok_and(|manifest| {
+                        manifest["solstone_version"].is_string()
+                            && manifest["exported_at"].is_string()
+                    })
+                }),
+                ["chronicle", day, _, ..] => is_eight_digit_day(day),
+                [
+                    "imports",
+                    id,
+                    "import.json" | "imported.json" | "manifest.json",
+                ] => solstone_core_import::validate_timestamp(id).is_ok(),
+                _ => false,
+            };
+        }
         if AUTHORED_TOP_LEVEL_PRUNES.contains(&first) {
             prune_warnings.insert(first.to_owned());
         }
@@ -455,9 +482,11 @@ fn plan_zip_archive(archive_path: &Path) -> Result<ArchivePlan, ImportSourcesErr
         }
         if first == "entities" && components.len() == 3 && components[2] == "entity.json" && !is_dir
         {
+            recognized = true;
             entity_ids.insert(components[1].to_owned());
         }
         if first == "facets" && components.len() == 3 && components[2] == "facet.json" && !is_dir {
+            recognized = true;
             facet_ids.insert(components[1].to_owned());
         }
         if !is_dir && JOURNAL_FAMILY_ROOTS.contains(&first) {
@@ -479,15 +508,18 @@ fn plan_zip_archive(archive_path: &Path) -> Result<ArchivePlan, ImportSourcesErr
     let summary = format!(
         "Journal archive: {day_count} days, {entity_count} entities, {facet_count} facets ({warning_count} warnings)"
     );
-    Ok(ArchivePlan {
-        days,
-        entity_count,
-        facet_count,
-        warning_count,
-        warnings,
-        payload_files,
-        summary,
-    })
+    Ok((
+        ArchivePlan {
+            days,
+            entity_count,
+            facet_count,
+            warning_count,
+            warnings,
+            payload_files,
+            summary,
+        },
+        recognized,
+    ))
 }
 
 /// Journal archives are zip files, recognized by magic rather than extension.
@@ -5765,6 +5797,24 @@ mod tests {
             None
         }
         visit(root, name)
+    }
+
+    #[test]
+    fn recognizes_empty_journal_exports_and_distinguishes_other_import_folders() {
+        for (member, contents, expected) in [
+            (
+                "_export.json",
+                br#"{"solstone_version":"2","exported_at":"today"}"#.as_slice(),
+                true,
+            ),
+            ("wrapper/imports/20261101_131000/import.json", b"{}", true),
+            ("imports/receipts.csv", b"name,date", false),
+            ("_export.json", b"{}", false),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let file = write_zip(root.path(), &[(member, contents)]);
+            assert_eq!(super::claims_journal_archive(&file), expected, "{member}");
+        }
     }
 
     fn write_zip(tree: &Path, members: &[(&str, &[u8])]) -> PathBuf {

@@ -1,0 +1,21 @@
+{
+  "description": "Import handoff in the journal window.",
+  "context": "Shown on the import page during file selection, transfer or review.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "60fda5c7453bb105220d1030ea7a171e27b299e60a885e2be3db9db0de2ebe19",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -231,18 +231,25 @@ pub(crate) fn apple_card_arguments_for_tests(
     apple_card_arguments(data, metadata, "20261010_120000")
 }
 
+fn apple_preview_confirmed(data: &Value, metadata: &ImportMetadata) -> bool {
+    let shown = metadata
+        .get("preview")
+        .and_then(|preview| preview.get("token"))
+        .and_then(Value::as_str);
+    shown.is_some_and(|token| {
+        !token.is_empty()
+            && data["body_confirmed"].as_str() == Some(token)
+            && data["preview_token"].as_str() == Some(token)
+    })
+}
+
 fn apple_card_arguments(data: &Value, metadata: &ImportMetadata, record_id: &str) -> Vec<String> {
     if !is_apple_card(metadata) {
         return Vec::new();
     }
     // The run takes exactly this import, whatever the upload's detected time.
     let mut arguments = vec!["--import-id".to_owned(), record_id.to_owned()];
-    let shown = metadata
-        .get("preview")
-        .and_then(|preview| preview.get("token"))
-        .and_then(Value::as_str);
-    let confirmed = data.get("body_confirmed").and_then(Value::as_str);
-    if shown.is_some() && confirmed == shown {
+    if apple_preview_confirmed(data, metadata) {
         arguments.push("--confirm-body-save".to_owned());
     }
     arguments
@@ -545,13 +552,16 @@ fn exchange_task_id(
 /// the same content imports again and comes back. A fixed-key import with part
 /// of it deleted lets the same file through too: a re-import always brings back.
 fn manifest_exists(root: &Path, hash: &SourceHash) -> bool {
+    imported_manifest(root, hash).is_some()
+}
+
+fn imported_manifest(root: &Path, hash: &SourceHash) -> Option<ManifestMatch> {
     find_manifest_by_hash_where(root, hash, |found| {
         !is_failed_original_import(root, found)
             && !solstone_core_import::import_trash::reimport_brings_back(root, &found.path)
     })
     .ok()
     .and_then(|scan| scan.found)
-    .is_some()
 }
 
 /// A failed image or document import does not make its bytes "already imported".
@@ -1031,12 +1041,43 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
             }
         }
     }
-    let data = Value::Object(
+    let mut data = Value::Object(
         fields
             .into_iter()
             .map(|(key, value)| (key, Value::String(value)))
             .collect(),
     );
+    // Keep extension fields nested. Only these owner choices affect import behavior.
+    let context = match data.get("context").and_then(Value::as_str) {
+        None => None,
+        Some(encoded) if encoded.len() <= 16 * 1024 => {
+            match serde_json::from_str::<Map<String, Value>>(encoded) {
+                Ok(fields) => Some(fields),
+                Err(_) => return invalid_state("import context must be a JSON object", None),
+            }
+        }
+        Some(_) => return invalid_state("import context is too large", None),
+    };
+    if let Some(context) = &context {
+        for key in ["setting", "timestamp", "notebook"] {
+            if context.get(key).is_some_and(|value| !value.is_string()) {
+                return invalid_state("invalid import choice", None);
+            }
+        }
+        if let Some(timestamp) = context.get("timestamp").and_then(Value::as_str)
+            && validate_timestamp(timestamp).is_err()
+        {
+            return invalid_state("invalid import date", None);
+        }
+        if let Some(facet) = context.get(solstone_core_import::BODY_FACET_METADATA)
+            && !crate::body_facet::valid_import_facet(facet)
+        {
+            return invalid_state("that isn't a facet choice", None);
+        }
+        if let Some(setting) = context.get("setting") {
+            data["setting"] = setting.clone();
+        }
+    }
     let client_item_id = text_value(&data, "client_item_id");
     if client_item_id.is_empty() {
         return missing("Missing client_item_id");
@@ -1149,8 +1190,13 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
             solstone_core_import_sources::strava::looks_like_strava_csv_bytes(bytes)
         }
     };
-    // The Strava card is the one door that takes a Strava download: its importer
-    // reads only the workout list, and the run removes the upload when it ends.
+    // Route an unhinted file through the same workout-only importer and cleanup.
+    if is_strava
+        && matches!(&incoming, Incoming::File { .. })
+        && text_value(&data, "source_hint").trim().is_empty()
+    {
+        data["source_hint"] = json!(STRAVA_SOURCE);
+    }
     let strava_card = text_value(&data, "source_hint").trim() == STRAVA_SOURCE;
     if is_strava && !strava_card {
         return failure(
@@ -1198,10 +1244,27 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
         || (text_value(&data, "source_hint").trim().is_empty()
             && state.route.is_none()
             && solstone_core_import_sources::apple_export::detect_apple_zip_any_name(&source_path));
-    if !strava_card && !apple_upload && manifest_exists(&state.root, &source_hash) {
-        return invalid_state(
+    if !strava_card
+        && !apple_upload
+        && let Some(found) = imported_manifest(&state.root, &source_hash)
+    {
+        let mut response = invalid_state_body(
             "content already imported",
             Some(ImportErrorKind::AlreadyImported),
+        );
+        if let Some(id) = found
+            .path
+            .parent()
+            .and_then(Path::file_name)
+            .and_then(|name| name.to_str())
+            .filter(|id| validate_timestamp(id).is_ok())
+        {
+            response["import_id"] = json!(id);
+        }
+        return crate::http::refusal(
+            StatusCode::BAD_REQUEST,
+            response,
+            "journal.window.import.response.error.that.action.isn.t.available.in",
         );
     }
     if let Some(existing) = staged_by_source_hash(&state.root, &source_hash) {
@@ -1247,8 +1310,16 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
             tz: None,
         }
     };
-    let semantic = placed.semantic;
-    let method = placed.method;
+    let chosen = context
+        .as_ref()
+        .and_then(|fields| fields.get("timestamp"))
+        .and_then(Value::as_str);
+    let semantic = chosen.map_or(placed.semantic, str::to_owned);
+    let method = if chosen.is_some() {
+        "owner"
+    } else {
+        placed.method
+    };
     let no_match_reason = placed.no_match_reason;
     let import_id = match claim_import_directory(&state.root, &semantic) {
         Ok(import_id) => import_id,
@@ -1338,6 +1409,31 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
     {
         metadata.insert("source_hint".to_owned(), json!(APPLE_SOURCE));
         metadata.insert("source_inference".to_owned(), json!(APPLE_SOURCE));
+    }
+    if let Some(area) = data
+        .get("area")
+        .and_then(Value::as_str)
+        .filter(|area| !area.is_empty() && area.len() <= 96)
+    {
+        metadata.insert("area".to_owned(), json!(area));
+    }
+    if let Some(context) = context {
+        let hint = source_hint(&metadata);
+        if hint.as_deref() == Some("evernote")
+            && let Some(name) = context.get("notebook").and_then(Value::as_str)
+            && !name.trim().is_empty()
+        {
+            metadata.insert("notebook".to_owned(), json!(name.trim()));
+        }
+        if matches!(hint.as_deref(), Some(STRAVA_SOURCE | APPLE_SOURCE))
+            && let Some(facet) = context.get(solstone_core_import::BODY_FACET_METADATA)
+        {
+            metadata.insert(
+                solstone_core_import::BODY_FACET_METADATA.into(),
+                facet.clone(),
+            );
+        }
+        metadata.insert("context".to_owned(), Value::Object(context));
     }
     metadata.insert(
         "timestamp_detection_no_match_reason".to_owned(),
@@ -1885,6 +1981,21 @@ async fn run_start_localized(
         && apple_card_already_ran(root, id, false)
     {
         return already_ran();
+    }
+    // An unattended sender can stage this export. Only an owner who saw
+    // this staged file's preview can start it.
+    if let Some(id) = resolved_id.as_deref()
+        && let Ok(metadata) = read_import_metadata(root, id)
+        && is_apple_card(&metadata)
+        && !apple_preview_confirmed(&data, &metadata)
+    {
+        return json_response(
+            StatusCode::CONFLICT,
+            json!({
+                "reason_code":"import_preview_required", "kind":ImportErrorKind::BodyConfirmationRequired.as_wire(), "import_id":id,
+                "error":solstone_core_convey_http::window_catalog::text(locale,"journal.window.import.handoff.health.expiry")
+            }),
+        );
     }
     // An Apple Health import that no longer fits isn't started: the page may
     // have previewed it when there was room.
@@ -4723,6 +4834,50 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn save_records_context_and_applies_only_known_owner_choices() {
+        let root = TempDir::new().unwrap();
+        let context = json!({"setting":"field notes","timestamp":"20261105_094500","future":{"source_hint":"other"}});
+        let (boundary, file) =
+            multipart_upload_bytes("from-host", "notes.txt", "text/plain", b"notes");
+        let mut body = Vec::new();
+        for (name, value) in [
+            ("context", context.to_string()),
+            ("area", "quick".to_owned()),
+            ("imported_via", "linux".to_owned()),
+        ] {
+            write!(
+                &mut body,
+                "--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n"
+            )
+            .unwrap();
+        }
+        body.extend(file);
+        let request = Request::post("/app/import/api/save")
+            .header(
+                "content-type",
+                format!("multipart/form-data; boundary={boundary}"),
+            )
+            .body(Body::from(body))
+            .unwrap();
+        let (status, reply) = response_json(
+            crate::routes(root.path().to_owned())
+                .oneshot(request)
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{reply}");
+        let stored =
+            read_import_metadata(root.path(), reply["timestamp"].as_str().unwrap()).unwrap();
+        assert_eq!(stored["context"], context);
+        assert_eq!(stored["area"], "quick");
+        assert_eq!(stored["source_timestamp"], "20261105_094500");
+        assert_eq!(stored["setting"], "field notes");
+        assert_eq!(stored["imported_via"], "linux");
+        assert_eq!(super::source_hint(&stored), None);
+    }
+
     fn multipart_upload_bytes(
         client_item_id: &str,
         filename: &str,
@@ -5287,9 +5442,8 @@ mod tests {
             .await
             .unwrap();
         let (status, json) = response_json(resp).await;
-        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-        assert_eq!(json["reason_code"], "strava_download");
-        assert_no_claimed_imports(root.path());
+        assert_eq!(status, StatusCode::OK, "{json}");
+        assert_eq!(json["metadata"]["source_hint"], "strava");
 
         let root = TempDir::new().unwrap();
         let zip2 = make_zip_bytes("export_1/activities.csv", b"dummy");
@@ -5308,9 +5462,8 @@ mod tests {
             .await
             .unwrap();
         let (status, json) = response_json(resp).await;
-        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-        assert_eq!(json["reason_code"], "strava_download");
-        assert_no_claimed_imports(root.path());
+        assert_eq!(status, StatusCode::OK, "{json}");
+        assert_eq!(json["metadata"]["source_hint"], "strava");
 
         let root = TempDir::new().unwrap();
         let (boundary, body) = multipart_upload_bytes(
@@ -5332,9 +5485,8 @@ mod tests {
             .await
             .unwrap();
         let (status, json) = response_json(resp).await;
-        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-        assert_eq!(json["reason_code"], "strava_download");
-        assert_no_claimed_imports(root.path());
+        assert_eq!(status, StatusCode::OK, "{json}");
+        assert_eq!(json["metadata"]["source_hint"], "strava");
 
         let root = TempDir::new().unwrap();
         let (boundary, body) = multipart_upload_bytes(
@@ -5356,9 +5508,8 @@ mod tests {
             .await
             .unwrap();
         let (status, json) = response_json(resp).await;
-        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-        assert_eq!(json["reason_code"], "strava_download");
-        assert_no_claimed_imports(root.path());
+        assert_eq!(status, StatusCode::OK, "{json}");
+        assert_eq!(json["metadata"]["source_hint"], "strava");
 
         let root = TempDir::new().unwrap();
         let boundary = "paste-boundary";
@@ -5406,8 +5557,8 @@ mod tests {
             .await
             .unwrap();
         let (status, json) = response_json(resp).await;
-        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-        assert_eq!(json["reason_code"], "strava_download");
+        assert_eq!(status, StatusCode::OK, "{json}");
+        assert_eq!(json["metadata"]["source_hint"], "strava");
 
         let root = TempDir::new().unwrap();
         let (boundary, body) =

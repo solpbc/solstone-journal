@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "capability": "solstoneJournalHost",
+  "pick": "import.pick",
+  "status": "import.status",
+  "event": "solstone-journal-host-status",
+  "drop": "solstone-journal-host-drop",
+  "unsupported": "unsupported",
+  "contextMaxBytes": 16384,
+  "reply": "import.reply"
+}

@@ -29,6 +29,7 @@ pub fn claims(source: RegistrySource, path: &Path) -> Result<bool, SourceError> 
         RegistrySource::Claude => crate::claude::detect(path),
         RegistrySource::Chatgpt => crate::chatgpt::detect(path),
         RegistrySource::Gemini => crate::gemini::detect(path),
+        RegistrySource::JournalArchive => Ok(crate::archive::claims_journal_archive(path)),
         RegistrySource::Strava => Ok(crate::strava::claims_path(path)),
         RegistrySource::Evernote => Ok(crate::evernote::claims_path(path)),
         RegistrySource::Image => Ok(crate::image::detect(path)),

@@ -102,12 +102,35 @@ window.solstoneJournalWebHost = {{\n\
         serde_json::to_string(javascript_capability).expect("serialize capability name")
     );
 
+    let import = import_contract();
+    let js_text = format!("{js_text}\nwindow.solstoneImportContract = Object.freeze({import});\n");
     (host_bytes, js_text.into_bytes())
+}
+
+const IMPORT_CONTRACT: &str = "contracts/journal-web-host/import-host-contract.json";
+
+fn import_contract() -> Value {
+    let mut contract: Value = serde_json::from_str(include_str!(
+        "../../../../../contracts/journal-web-host/v2.json"
+    ))
+    .expect("parse v2 definition");
+    contract.sort_all_objects();
+    contract
+}
+
+fn import_bytes() -> Vec<u8> {
+    let mut bytes = serde_json::to_vec_pretty(&import_contract()).expect("serialize v2 definition");
+    bytes.push(b'\n');
+    bytes
 }
 
 #[test]
 fn generated_journal_web_host_artifacts_match_committed() {
     let root = repository_root();
+    assert_eq!(
+        fs::read(root.join(IMPORT_CONTRACT)).unwrap(),
+        import_bytes()
+    );
     let (expected_host_json, expected_client_js) = generate_artifacts(SOURCE_JSON_STR);
 
     let actual_host_json = fs::read(root.join(HOST_CONTRACT_REL_PATH))
@@ -129,6 +152,7 @@ fn generated_journal_web_host_artifacts_match_committed() {
 #[ignore = "writes committed contract artifacts; run explicitly when regenerating"]
 fn regenerate_journal_web_host_contract() {
     let root = repository_root();
+    fs::write(root.join(IMPORT_CONTRACT), import_bytes()).unwrap();
     let (host_json, client_js) = generate_artifacts(SOURCE_JSON_STR);
 
     let host_path = root.join(HOST_CONTRACT_REL_PATH);

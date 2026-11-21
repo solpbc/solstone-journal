@@ -11,3 +11,5 @@ version: 1,
 userAgentProduct: "SolstoneJournalExternal/1",
 javascriptCapability: "solstoneJournalExternalNavigation",
 };
+
+window.solstoneImportContract = Object.freeze({"capability":"solstoneJournalHost","contextMaxBytes":16384,"drop":"solstone-journal-host-drop","event":"solstone-journal-host-status","pick":"import.pick","reply":"import.reply","status":"import.status","unsupported":"unsupported","version":2});

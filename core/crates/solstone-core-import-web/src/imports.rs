@@ -277,6 +277,9 @@ pub(crate) fn load_import_info(root: &Path, timestamp: &str) -> Result<ImportInf
                 metadata.get(key).cloned().unwrap_or(Value::Null),
             );
         }
+        if let Some(hint) = metadata.get("source_hint").filter(|hint| hint.is_string()) {
+            values.insert("source_hint".into(), hint.clone());
+        }
         values.insert(
             "task_id".into(),
             metadata.get("task_id").cloned().unwrap_or(Value::Null),

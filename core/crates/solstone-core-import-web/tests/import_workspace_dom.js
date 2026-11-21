@@ -116,7 +116,7 @@ function makeContext(globals) {
   };
   withShell(caseWindow);
   Object.defineProperty(context, 'window', { configurable: true, enumerable: true, get: () => caseWindow, set: (value) => { caseWindow = withShell(value); } });
-  for (const name of ['setImportButton', 'invalidateImportPreview', 'restoreImportButton', 'prepareImportPreview', 'renderThinkingProgress', 'scheduleThinkingProgress']) {
+  for (const name of ['importHost', 'enableHandoff', 'handoffText', 'setImportButton', 'invalidateImportPreview', 'restoreImportButton', 'prepareImportPreview', 'renderThinkingProgress', 'scheduleThinkingProgress']) {
     vm.runInContext(functionSource(source, name), context);
   }
   return context;
@@ -863,9 +863,12 @@ function runImportRowColumns() {
   };
   const sourcelessHtml = vm.runInContext(`renderImportRow(${JSON.stringify(sourcelessRow)})`, context);
   assert.ok(
-    /<td class="source-cell">—<\/td>/.test(sourcelessHtml),
+    /<td class="source-cell"><div class="import-source-label">—<\/div><\/td>/.test(sourcelessHtml),
     'G3-113: a row with no source type is the only row whose source cell is a dash'
   );
+  vm.runInContext(functionSource(workspace, 'handoffText'), context);
+  const photoHtml = vm.runInContext(`renderImportRow(${JSON.stringify({...sourcelessRow, imported_via:'mobile_photos'})})`, context);
+  assert.ok(photoHtml.includes('</div><div>from a mobile device</div>'), 'live source updates must preserve the recorded origin');
   assert.ok(sourcelessHtml.includes('note.opus'), 'the file column still names the uploaded file');
 
   const namelessRow = {
@@ -898,7 +901,7 @@ function runImportRowColumns() {
     'G3-308: a recorded filename is shown in the file column'
   );
   assert.ok(
-    /<td class="source-cell">—<\/td>/.test(recordedFilenameHtml),
+    /<td class="source-cell"><div class="import-source-label">—<\/div><\/td>/.test(recordedFilenameHtml),
     'G3-308: the source column does not repeat the filename'
   );
 
