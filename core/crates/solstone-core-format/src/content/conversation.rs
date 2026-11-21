@@ -285,6 +285,14 @@ pub fn unresolved_markdown(relative: &str) -> bool {
     })
 }
 
+/// Current conversation files and the historical chat export audio spelling.
+/// Other imported audio keeps its ordinary recording behavior.
+pub fn is_conversation_jsonl(stream: &str, name: &str) -> bool {
+    name == "conversation_transcript.jsonl"
+        || (name == "imported_audio.jsonl"
+            && matches!(stream, "import.claude" | "import.gemini" | "import.chatgpt"))
+}
+
 /// Resolve a conversation already offered by the segment reader. The caller
 /// checks ordinary scope and the file's eligibility before using this result.
 pub fn file_medium(path: &Path, relative: &str) -> Option<ConversationMedium> {
@@ -312,16 +320,32 @@ pub fn file_medium_with_header(
     let _segment = parts.next()?;
     let stream = parts.next().unwrap_or_default();
     let native_chat = matches!(stream, "import.chatgpt" | "import.claude" | "import.gemini");
-    if name == "imported_audio.jsonl" && !native_chat {
-        return None;
-    }
-    if !matches!(
-        name,
-        "conversation_transcript.jsonl" | "imported_audio.jsonl"
-    ) {
+    if !is_conversation_jsonl(stream, name) {
         return None;
     }
     if is_transcribe() {
+        if native_chat {
+            // Native chat exports can name their model and contain a start
+            // field. A same-stem attachment is not a recording of those words.
+            let Some(header) = header() else {
+                return Some(Unresolved);
+            };
+            if !header
+                .as_object()
+                .is_some_and(solstone_core_processing_record::header_names_transcribe)
+            {
+                return Some(
+                    if header["imported"]["id"]
+                        .as_str()
+                        .is_some_and(|id| !id.is_empty())
+                    {
+                        Written
+                    } else {
+                        Unresolved
+                    },
+                );
+            }
+        }
         return Some(Spoken);
     }
     if native_chat {
@@ -607,6 +631,34 @@ mod tests {
     use super::ConversationMedium::{Spoken, Unresolved, Written};
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn a_chat_export_and_a_transcription_model_can_share_the_audio_spelling() {
+        use ConversationMedium::*;
+        let dir = tempfile::tempdir().unwrap();
+        let name = "imported_audio.jsonl";
+        let relative = "20261101/import.chatgpt/090000_300/imported_audio.jsonl";
+        let path = dir.path().join(name);
+        std::fs::write(path.with_extension("wav"), b"recording").unwrap();
+        for (header, expected) in [
+            (
+                serde_json::json!({"model":"text","imported":{"id":"chat"}}),
+                Written,
+            ),
+            (serde_json::json!({"model":"old"}), Unresolved),
+            (
+                serde_json::json!({"_solstone_processing":{"handler":"transcribe"}}),
+                Spoken,
+            ),
+        ] {
+            std::fs::write(
+                &path,
+                format!("{header}\n{{\"start\":\"00:00:00\",\"text\":\"hello\"}}\n"),
+            )
+            .unwrap();
+            assert_eq!(file_medium(&path, relative), Some(expected));
+        }
+    }
 
     #[test]
     fn message_block_ranges_preserve_utf8_and_markdown_verbatim() {

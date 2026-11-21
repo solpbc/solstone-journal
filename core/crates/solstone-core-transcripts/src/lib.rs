@@ -48,7 +48,7 @@ pub use segment_page::{
     SegmentTranscriptEntry, SegmentTranscriptPage, SegmentTranscriptReadError,
     SegmentTranscriptVersion, read_segment_transcript_page,
     read_segment_transcript_page_leaving_out, read_segment_transcript_page_with_permissions,
-    segment_clock, segment_has_permitted_files,
+    read_spoken_conversation, segment_clock, segment_has_permitted_files,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]

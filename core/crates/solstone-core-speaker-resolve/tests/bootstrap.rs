@@ -191,7 +191,7 @@ fn import_segment(root: &Path, stream: &str, key: &str, speaker: &str) {
     fs::write(
         path.join("conversation_transcript.jsonl"),
         format!(
-            "{{\"imported\":{{\"id\":\"fixture\"}}}}\n{{\"start\":\"12:00:00\",\"speaker\":\"{speaker}\"}}\n"
+            "{{\"imported\":{{\"id\":\"not_12345678901234\"}}}}\n{{\"start\":\"12:00:00\",\"speaker\":\"{speaker}\"}}\n"
         ),
     )
     .unwrap();
@@ -517,6 +517,41 @@ fn seed_from_imports_takes_no_voiceprint_from_an_overlapping_recording() {
     else {
         panic!("owner centroid is present");
     };
+    assert_eq!(stats.embeddings_saved, 0);
+    assert!(
+        !temporary
+            .path()
+            .join("entities/alex/voiceprints.npz")
+            .exists()
+    );
+}
+
+#[test]
+fn a_written_or_unresolved_import_cannot_name_a_neighboring_voice() {
+    let temporary = Temp::new();
+    entity(temporary.path(), "principal", "Principal", "Person", true);
+    entity(temporary.path(), "alex", "Alex", "Person", false);
+    write_owner(temporary.path());
+    for (key, reason) in [
+        ("120000_300", "zoom_chat"),
+        ("120500_300", "bracketed_speaker"),
+    ] {
+        import_segment(temporary.path(), "import.text", key, "Alex");
+        let path = temporary
+            .path()
+            .join("chronicle/20260808/import.text")
+            .join(key)
+            .join("conversation_transcript.jsonl");
+        let header = json!({"imported":{"id":"one","triage":{"kind":"transcripts","ruleset_version":7,"reasons":[reason]}}});
+        let row = json!({"start":"12:00:00","speaker":"Alex","text":"I'll bring a cart."});
+        fs::write(path, format!("{header}\n{row}\n")).unwrap();
+    }
+    let SeedFromImportsOutcome::Completed(stats) =
+        seed_from_imports(&request(temporary.path())).unwrap()
+    else {
+        panic!("owner centroid is present");
+    };
+    assert_eq!(stats.segments_with_speakers, 0);
     assert_eq!(stats.embeddings_saved, 0);
     assert!(
         !temporary
