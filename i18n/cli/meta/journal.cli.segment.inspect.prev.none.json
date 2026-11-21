@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for inspect prev none.",
+  "context": "Journal command-line text for inspect prev none.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "538532f95071028b79e3403483ffe227a2ebd2f465318b7aa094d5119b92b27b",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

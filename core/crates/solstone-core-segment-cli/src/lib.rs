@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! In-process native `journal segment` verb, not yet wired into a binary.
+//! In-process implementation of the native `journal segment` command.
 
+use solstone_core_cli_copy as copy;
 use std::path::Path;
 
 use solstone_core_segment::{
-    LockOptions, SUPERVISOR_MESSAGE, SupervisorRefusal, is_solstone_up, require_solstone_with,
+    LockOptions, SupervisorRefusal, is_solstone_up, require_solstone_with,
 };
 
 mod index;
@@ -16,11 +17,7 @@ mod read;
 
 use location::SegmentLocation;
 use r#move::{NativeOperations, SegmentOperations, build_plan, execute_plan, render_plan};
-use read::{checks, day_segments, inspect_output, list_output, render_checks, split_path};
-
-const USAGE: &str = "usage: solstone journal segment <command> [options]";
-const HELP_FIXTURE: &str =
-    include_str!("../../../fixtures/journal-storage-ops-reference-grammar.txt");
+use read::{checks_in, day_segments, inspect_output, list_output, render_checks, split_path};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct CliRun {
@@ -93,21 +90,29 @@ where
     let command = match parse(args) {
         Ok(Command::Help(name)) => return success(help(name)),
         Ok(command) => command,
-        Err(arguments) => {
-            return failure(
-                "",
-                &format!(
-                    "{USAGE}\nsolstone journal segment: error: unrecognized arguments: {arguments}\n"
-                ),
-                2,
-            );
+        Err(error) => {
+            let locale = output_locale(args.iter().any(|arg| arg == "--json"));
+            return failure("", &format!("{}\n", error.render(locale)), 2);
         }
     };
+    let locale = output_locale(matches!(
+        command,
+        Command::List { json: true, .. }
+            | Command::Inspect { json: true, .. }
+            | Command::Verify { json: true, .. }
+    ));
     match require_solstone_with(lookup_env, connectivity) {
         Ok(()) => {}
         Err(SupervisorRefusal::SpawnedUnavailable) => return failure("", "", 75),
         Err(SupervisorRefusal::Unavailable) => {
-            return failure("", &format!("{SUPERVISOR_MESSAGE}\n"), 1);
+            return failure(
+                "",
+                &format!(
+                    "{}\n",
+                    copy::render_for(locale, "journal.cli.streams.supervisor", &[])
+                ),
+                1,
+            );
         }
     }
     match command {
@@ -173,7 +178,36 @@ enum Command {
     },
 }
 
-fn parse(args: &[String]) -> Result<Command, String> {
+pub(crate) fn output_locale(json: bool) -> &'static str {
+    if json {
+        copy::ENGLISH
+    } else {
+        copy::cli_locale()
+    }
+}
+
+enum ParseError {
+    Arguments(String),
+    Required(&'static str),
+}
+impl ParseError {
+    fn render(&self, locale: &str) -> String {
+        match self {
+            Self::Arguments(arguments) => copy::display_for(
+                locale,
+                "journal.cli.segment.argument.unknown",
+                [("arguments", &arguments)],
+            ),
+            Self::Required(input) => copy::display_for(
+                locale,
+                "journal.cli.segment.argument.missing",
+                [("input", &input)],
+            ),
+        }
+    }
+}
+
+fn parse(args: &[String]) -> Result<Command, ParseError> {
     let verbose = args
         .iter()
         .any(|arg| matches!(arg.as_str(), "-v" | "--verbose"));
@@ -199,7 +233,7 @@ fn parse(args: &[String]) -> Result<Command, String> {
         "inspect" => parse_inspect(rest),
         "verify" => parse_verify(rest),
         "move" => parse_move(rest),
-        _ => Err(args.join(" ")),
+        _ => Err(ParseError::Arguments(args.join(" "))),
     }?;
     if let Command::Move {
         verbose: command_verbose,
@@ -211,7 +245,7 @@ fn parse(args: &[String]) -> Result<Command, String> {
     Ok(command)
 }
 
-fn parse_list(args: &[String]) -> Result<Command, String> {
+fn parse_list(args: &[String]) -> Result<Command, ParseError> {
     let mut day = None;
     let mut stream = None;
     let mut json = false;
@@ -237,12 +271,12 @@ fn parse_list(args: &[String]) -> Result<Command, String> {
     }
     match (day, bad.is_empty()) {
         (Some(day), true) => Ok(Command::List { day, stream, json }),
-        (_, false) => Err(bad.join(" ")),
-        (None, true) => Err("the following arguments are required: day".to_owned()),
+        (_, false) => Err(ParseError::Arguments(bad.join(" "))),
+        (None, true) => Err(ParseError::Required("day")),
     }
 }
 
-fn parse_inspect(args: &[String]) -> Result<Command, String> {
+fn parse_inspect(args: &[String]) -> Result<Command, ParseError> {
     let mut path = None;
     let mut json = false;
     let mut bad = Vec::new();
@@ -257,12 +291,12 @@ fn parse_inspect(args: &[String]) -> Result<Command, String> {
     }
     match (path, bad.is_empty()) {
         (Some(path), true) => Ok(Command::Inspect { path, json }),
-        (_, false) => Err(bad.join(" ")),
-        (None, true) => Err("the following arguments are required: path".to_owned()),
+        (_, false) => Err(ParseError::Arguments(bad.join(" "))),
+        (None, true) => Err(ParseError::Required("path")),
     }
 }
 
-fn parse_verify(args: &[String]) -> Result<Command, String> {
+fn parse_verify(args: &[String]) -> Result<Command, ParseError> {
     let mut path = None;
     let mut day = None;
     let mut json = false;
@@ -289,11 +323,11 @@ fn parse_verify(args: &[String]) -> Result<Command, String> {
     if bad.is_empty() {
         Ok(Command::Verify { path, day, json })
     } else {
-        Err(bad.join(" "))
+        Err(ParseError::Arguments(bad.join(" ")))
     }
 }
 
-fn parse_move(args: &[String]) -> Result<Command, String> {
+fn parse_move(args: &[String]) -> Result<Command, ParseError> {
     let mut path = None;
     let mut day = None;
     let mut time = None;
@@ -335,46 +369,66 @@ fn parse_move(args: &[String]) -> Result<Command, String> {
             dry_run,
             verbose,
         }),
-        (_, _, false) => Err(bad.join(" ")),
-        (None, _, true) => Err("the following arguments are required: path".to_owned()),
-        (Some(_), None, true) => Err("the following arguments are required: --to-day".to_owned()),
+        (_, _, false) => Err(ParseError::Arguments(bad.join(" "))),
+        (None, _, true) => Err(ParseError::Required("path")),
+        (Some(_), None, true) => Err(ParseError::Required("--to-day")),
     }
 }
 
 fn help(name: &str) -> String {
-    let header = format!("=== {name}\n");
-    let start = HELP_FIXTURE
-        .find(&header)
-        .expect("segment help fixture block exists")
-        + header.len();
-    let rest = &HELP_FIXTURE[start..];
-    let end = rest.find("\n=== ").unwrap_or(rest.len());
-    rest[..end].to_owned()
+    let id = match name {
+        "segment list --help" => "journal.cli.segment.help.list",
+        "segment inspect --help" => "journal.cli.segment.help.inspect",
+        "segment verify --help" => "journal.cli.segment.help.verify",
+        "segment move --help" => "journal.cli.segment.help.move",
+        _ => "journal.cli.segment.help.top",
+    };
+    format!("{}\n", copy::text(id))
 }
 
 fn inspect(journal: &Path, path: &str, json: bool) -> CliRun {
-    let (day, stream, segment) = match split_path(path) {
+    let locale = output_locale(json);
+    let (day, stream, segment) = match split_path(path, locale) {
         Ok(parts) => parts,
         Err(message) => return failure("", &format!("{message}\n"), 1),
     };
     let location = match SegmentLocation::resolve(journal, day, stream, segment) {
         Ok(location) if location.path.is_dir() => location,
-        _ => return failure("", &format!("Segment not found: {path}\n"), 1),
+        _ => {
+            return failure(
+                "",
+                &format!(
+                    "{}\n",
+                    copy::display_for(locale, "journal.cli.segment.missing", [("path", &path)])
+                ),
+                1,
+            );
+        }
     };
     success(inspect_output(journal, &location, json))
 }
 
 fn verify(journal: &Path, path: Option<&str>, day: Option<&str>, json: bool) -> CliRun {
+    let locale = output_locale(json);
     if let Some(path) = path {
-        let (day, stream, segment) = match split_path(path) {
+        let (day, stream, segment) = match split_path(path, locale) {
             Ok(parts) => parts,
             Err(message) => return failure("", &format!("{message}\n"), 1),
         };
         let location = match SegmentLocation::resolve(journal, day, stream, segment) {
             Ok(location) => location,
-            Err(_) => return failure("", &format!("Segment not found: {path}\n"), 1),
+            Err(_) => {
+                return failure(
+                    "",
+                    &format!(
+                        "{}\n",
+                        copy::display_for(locale, "journal.cli.segment.missing", [("path", &path)])
+                    ),
+                    1,
+                );
+            }
         };
-        let results = checks(journal, &location);
+        let results = checks_in(journal, &location, locale);
         let passed = results.iter().filter(|check| check.passed).count();
         let stdout = if json {
             serde_json::to_string_pretty(&results.iter().map(check_json).collect::<Vec<_>>())
@@ -382,9 +436,9 @@ fn verify(journal: &Path, path: Option<&str>, day: Option<&str>, json: bool) -> 
                 + "\n"
         } else {
             format!(
-                "{}\n{passed}/{} checks passed\n",
-                render_checks(&results),
-                results.len()
+                "{}\n{}\n",
+                render_checks(&results, locale),
+                check_summary(locale, passed, results.len(), false)
             )
         };
         return CliRun {
@@ -394,21 +448,35 @@ fn verify(journal: &Path, path: Option<&str>, day: Option<&str>, json: bool) -> 
         };
     }
     let Some(day) = day else {
-        return failure("", "verify requires a segment path or --day\n", 1);
+        return failure(
+            "",
+            &format!(
+                "{}\n",
+                copy::render_for(locale, "journal.cli.segment.verify.input", &[])
+            ),
+            1,
+        );
     };
-    let segments = match day_segments(journal, day) {
+    let segments = match day_segments(journal, day, locale) {
         Ok(segments) => segments,
         Err(message) => return failure("", &message, 1),
     };
     if segments.is_empty() {
-        return failure("", &format!("No segments found for {day}\n"), 1);
+        return failure(
+            "",
+            &format!(
+                "{}\n",
+                copy::display_for(locale, "journal.cli.segment.day.empty", [("day", &day)])
+            ),
+            1,
+        );
     }
     let mut total_passed = 0;
     let mut total_failed = 0;
     let mut all = serde_json::Map::new();
     let mut stdout = String::new();
     for location in segments {
-        let results = checks(journal, &location);
+        let results = checks_in(journal, &location, locale);
         total_passed += results.iter().filter(|check| check.passed).count();
         total_failed += results.iter().filter(|check| !check.passed).count();
         if json {
@@ -420,23 +488,47 @@ fn verify(journal: &Path, path: Option<&str>, day: Option<&str>, json: bool) -> 
             stdout.push_str(&format!(
                 "--- {} ---\n{}\n",
                 location.token(),
-                render_checks(&results)
+                render_checks(&results, locale)
             ));
         }
     }
     if json {
         stdout = serde_json::to_string_pretty(&serde_json::json!({"segments": all, "summary": {"passed": total_passed, "failed": total_failed}})).expect("verify serializes") + "\n";
     } else {
-        stdout.push_str(&format!(
-            "Summary: {total_passed}/{} checks passed\n",
-            total_passed + total_failed
+        stdout.push_str(&check_summary(
+            locale,
+            total_passed,
+            total_passed + total_failed,
+            true,
         ));
+        stdout.push('\n');
     }
     CliRun {
         stdout,
         stderr: String::new(),
         exit_code: if total_failed == 0 { 0 } else { 1 },
     }
+}
+
+pub(crate) fn check_summary(locale: &str, passed: usize, total: usize, summary: bool) -> String {
+    let id = if summary {
+        "journal.cli.segment.verify.day.result"
+    } else {
+        "journal.cli.segment.verify.result"
+    };
+    let total = i64::try_from(total).unwrap_or(i64::MAX);
+    copy::render_for(
+        locale,
+        id,
+        &[
+            ("quantity", copy::Value::Cardinal(total)),
+            ("total", copy::Value::Integer(total)),
+            (
+                "passed",
+                copy::Value::Integer(i64::try_from(passed).unwrap_or(i64::MAX)),
+            ),
+        ],
+    )
 }
 
 fn check_json(check: &read::Check) -> serde_json::Value {
@@ -454,13 +546,23 @@ fn move_segment(
     locks: LockOptions,
     operations: &dyn SegmentOperations,
 ) -> CliRun {
-    let (day, stream, segment) = match split_path(path) {
+    let locale = copy::cli_locale();
+    let (day, stream, segment) = match split_path(path, locale) {
         Ok(parts) => parts,
         Err(message) => return failure("", &format!("{message}\n"), 1),
     };
     let source = match SegmentLocation::resolve(journal, day, stream, segment) {
         Ok(location) if location.path.is_dir() => location,
-        _ => return failure("", &format!("Segment not found: {path}\n"), 1),
+        _ => {
+            return failure(
+                "",
+                &format!(
+                    "{}\n",
+                    copy::display_for(locale, "journal.cli.segment.missing", [("path", &path)])
+                ),
+                1,
+            );
+        }
     };
     let plan = match build_plan(journal, source, to_day, to_time) {
         Ok(plan) => plan,
@@ -468,7 +570,10 @@ fn move_segment(
     };
     let mut stdout = render_plan(&plan);
     if dry_run {
-        stdout.push_str("\n[dry run] No changes made\n");
+        stdout.push_str(&format!(
+            "\n{}\n",
+            copy::render_for(locale, "journal.cli.segment.move.dry", &[])
+        ));
         return success(stdout);
     }
     let execution = execute_plan(journal, &plan, verbose, locks, operations);
@@ -498,6 +603,8 @@ fn failure(stdout: &str, stderr: &str, exit_code: i32) -> CliRun {
 #[cfg(test)]
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 mod tests {
+    use crate::read::checks;
+    use solstone_core_segment::SUPERVISOR_MESSAGE;
     use std::{cell::RefCell, fs, path::PathBuf};
 
     use rusqlite::Connection;
@@ -1601,7 +1708,7 @@ mod tests {
 
     #[test]
     fn null_predecessor_boundary_passes_and_a_missing_link_fails() {
-        use crate::read::{Check, describe_next};
+        use crate::read::{Check, inspect_output};
         use solstone_core_segment::{
             Kind, PairedStreamBase, StreamAllocationBase, StreamHints, advance_bound_stream,
             bind_paired_stream,
@@ -1679,7 +1786,9 @@ mod tests {
         assert!(check_passed(&chks2, "backward chain"));
         assert!(check_passed(&chks2, "forward chain"));
 
-        let next_desc = describe_next(pass_root, &loc1, &bound1.stream);
+        let inspection: serde_json::Value =
+            serde_json::from_str(&inspect_output(pass_root, &loc1, true)).unwrap();
+        let next_desc = inspection["chain"]["next"].as_str().unwrap();
         assert!(next_desc.contains("20260805"));
         assert!(next_desc.contains("140000_60"));
         assert_ne!(next_desc, "(none)");

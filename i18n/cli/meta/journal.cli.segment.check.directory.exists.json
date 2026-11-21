@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for check directory exists.",
+  "context": "Journal command-line text for check directory exists.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c83e93ec044ebd472d0a4b8008dc0783ccac457bba2cbccf2f2944c9ad6ea21c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

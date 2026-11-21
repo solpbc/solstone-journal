@@ -1,0 +1,16 @@
+{
+  "description": "Label for the search box when the emoji tab is active in the icon picker.",
+  "context": "Journal window, settings view. Field label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "aa22f997e894089be428c009e0f46924bce93ce22fd2368458181586b52f0441",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

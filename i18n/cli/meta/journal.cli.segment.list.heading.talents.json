@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for list heading talents.",
+  "context": "Journal command-line text for list heading talents.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f489d59ff7bedaff9fe3038006f693a751d2e19d1d3b92cd1f1d13a09affd6b2",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

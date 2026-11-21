@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for relocation location.",
+  "context": "Journal command-line text for relocation location.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e779d4ca24767b95020acd6dcdf38c56b42c22d4728d0f3e7a39e7f83d9773ce",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for inspect path.",
+  "context": "Journal command-line text for inspect path.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "364f6ca80b9ec077fa01a0e0aec3dcc41320b9dd2ded0712aade14c3660d3b65",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

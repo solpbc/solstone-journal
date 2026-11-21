@@ -1,0 +1,36 @@
+{
+  "description": "Journal command-line text for verify result.",
+  "context": "Journal command-line text for verify result.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "passed",
+      "type": "integer",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "total",
+      "type": "integer",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "bef28a5c8e9382f7c4570b9a8c70e0d1c69f20abcff442e69164fbd0b5d5498b",
+  "max_length": 143,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

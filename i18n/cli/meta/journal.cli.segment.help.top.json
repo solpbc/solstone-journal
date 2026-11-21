@@ -1,0 +1,68 @@
+{
+  "description": "Journal command-line text for help top.",
+  "context": "Journal command-line text for help top.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9c1c0e2cedf645dd5e9cb31c74c2d37c90a5ddef96a9b00300cea86b075fd04e",
+  "max_length": 542,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal segment <command> [options]"
+    },
+    {
+      "name": "syntax_line_5",
+      "kind": "accepted-input",
+      "value": "  {list,inspect,verify,move}"
+    },
+    {
+      "name": "option_6",
+      "kind": "accepted-input",
+      "value": "    list                "
+    },
+    {
+      "name": "option_7",
+      "kind": "accepted-input",
+      "value": "    inspect             "
+    },
+    {
+      "name": "option_8",
+      "kind": "accepted-input",
+      "value": "    verify              "
+    },
+    {
+      "name": "option_9",
+      "kind": "accepted-input",
+      "value": "    move                "
+    },
+    {
+      "name": "option_12",
+      "kind": "accepted-input",
+      "value": "  -h, --help            "
+    },
+    {
+      "name": "option_13",
+      "kind": "accepted-input",
+      "value": "  -v, --verbose         "
+    },
+    {
+      "name": "option_14",
+      "kind": "accepted-input",
+      "value": "  -d, --debug           "
+    },
+    {
+      "name": "break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

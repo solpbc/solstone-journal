@@ -1,0 +1,36 @@
+{
+  "description": "Journal command-line text for verify day result.",
+  "context": "Journal command-line text for verify day result.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "passed",
+      "type": "integer",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "total",
+      "type": "integer",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "43d822a7b24c7d53edf0f873374faec60621a0e90e562eb6e191ac97e092a0af",
+  "max_length": 161,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

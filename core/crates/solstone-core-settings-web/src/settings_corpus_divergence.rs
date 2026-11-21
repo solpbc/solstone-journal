@@ -163,6 +163,39 @@ pub fn apply_permanent_facet_emoji_icon_divergence(expected: &mut Value) {
     recompute_case_digests(expected);
 }
 
+/// Permanent narrow divergence introduced 2026-11-21: facet listings now carry
+/// each facet's `description` so Settings can show descriptions and flag
+/// missing ones on multi-facet journals without N extra reads. Applies only to
+/// the three populated facet listings in the frozen corpus.
+pub fn apply_permanent_facet_description_divergence(expected: &mut Value) {
+    let phase = &mut expected["phases"]["populated"];
+    let mut changed = 0;
+    for case in [
+        "GET api/facets",
+        "GET api/facets/muted",
+        "GET api/facets?all=true",
+    ] {
+        let facets = phase[case]["normalized"]["facets"]
+            .as_array_mut()
+            .expect("captured facet listing");
+        for facet in facets {
+            let desc = match facet["name"].as_str() {
+                Some("work-life") => "Work Life desc",
+                Some("zeta-project") => "Zeta Project desc",
+                Some("muted-thing") => "Muted Thing desc",
+                other => panic!("{case} held unexpected corpus facet {other:?}"),
+            };
+            facet
+                .as_object_mut()
+                .expect("facet record object")
+                .insert("description".to_owned(), Value::String(desc.to_owned()));
+            changed += 1;
+        }
+    }
+    assert_eq!(changed, 6, "frozen settings corpus lists six facet records");
+    recompute_case_digests(expected);
+}
+
 fn update_empty_journal_name_probes(value: &mut Value) {
     match value {
         Value::Object(map) => {

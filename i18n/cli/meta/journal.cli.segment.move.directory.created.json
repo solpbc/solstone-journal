@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for move directory created.",
+  "context": "Journal command-line text for move directory created.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fa1166724c5cfbb475863bdc100bcda836cac0d42a81a27d677631a055ad11da",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

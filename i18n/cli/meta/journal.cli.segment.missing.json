@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for missing.",
+  "context": "Journal command-line text for missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9f8a47fbd2c4f8eca4cbc5b09d3d055a6f8f377b969c6a65afc2980301f7b123",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

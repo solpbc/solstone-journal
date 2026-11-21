@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for relocation marker.",
+  "context": "Journal command-line text for relocation marker.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "21acc4a8d2a8e4170b453be395d6a561f1c28fb08759dc3479b404148ea42ce1",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

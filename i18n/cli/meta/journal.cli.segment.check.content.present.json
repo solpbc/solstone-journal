@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for check content present.",
+  "context": "Journal command-line text for check content present.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "19f7a88564378a1e8594999c4ea30025e6ee5d73a47b1f41175940f66495f378",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

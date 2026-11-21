@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for list heading segment.",
+  "context": "Journal command-line text for list heading segment.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6cba7f27cfda2ae62cfef67719a67173b38801c8f7312d26b7b44a325ed8b731",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

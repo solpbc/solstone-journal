@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for move dry.",
+  "context": "Journal command-line text for move dry.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "28fb148071b403d942f91b65f3809466668403002ad27e933af838f9f49f5759",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

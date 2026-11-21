@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for inspect time.",
+  "context": "Journal command-line text for inspect time.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "range",
+      "type": "string"
+    },
+    {
+      "name": "seconds",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bb70c31546fbddd9191f1c64f75050b8a80d5035e068c7639ae713a54b710d49",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

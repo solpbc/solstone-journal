@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for move running.",
+  "context": "Journal command-line text for move running.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "84e3f8de81445f7d09de76861512d61be5d6087e966f292c95b15bed8091a7af",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

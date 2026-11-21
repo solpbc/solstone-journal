@@ -1,0 +1,36 @@
+{
+  "description": "Journal command-line text for move exists.",
+  "context": "Journal command-line text for move exists.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "segment",
+      "type": "string"
+    },
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "stream",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "dbe9c0292735195bbdea2f7b40c20798410928109797c5ba9316a305b2848a9f",
+  "max_length": 144,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "to_time_flag",
+      "kind": "flag",
+      "value": "--to-time"
+    }
+  ]
+}

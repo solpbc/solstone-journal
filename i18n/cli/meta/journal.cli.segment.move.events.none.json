@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for move events none.",
+  "context": "Journal command-line text for move events none.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4bbe4ce4152bd0e89c30ca538ee02e207b3397926693fabe4ff9d535fee10886",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "event_file",
+      "kind": "accepted-input",
+      "value": "events.jsonl"
+    }
+  ]
+}

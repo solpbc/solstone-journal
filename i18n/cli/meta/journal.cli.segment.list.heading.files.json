@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for list heading files.",
+  "context": "Journal command-line text for list heading files.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "245bf15d99111d4fa40ca1892d5cac3f27f56661b3aa614156dbf59190ce0ba2",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

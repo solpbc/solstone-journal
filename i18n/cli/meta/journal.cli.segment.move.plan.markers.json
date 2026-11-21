@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for move plan markers.",
+  "context": "Journal command-line text for move plan markers.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "source_day",
+      "type": "string"
+    },
+    {
+      "name": "destination_day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "112f9e96551aa7aa3dfb4a5cde8bed62d1dafc0405d0fe1666fa860c856ecda3",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

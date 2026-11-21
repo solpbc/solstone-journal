@@ -1,0 +1,34 @@
+{
+  "description": "Journal command-line text for inspect events tracts.",
+  "context": "Journal command-line text for inspect events tracts.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "entries",
+      "type": "string"
+    },
+    {
+      "name": "tracts",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "fb49d0c2938524f5bdf0c42ae7e239a5ae362b5569b4a8ff326e93309989a239",
+  "max_length": 154,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

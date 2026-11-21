@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for move same.",
+  "context": "Journal command-line text for move same.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5153c1b153491c4b5a83a5f6b4d81f0889c12acd1fefcc5b26cdbbcecdc7c00e",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

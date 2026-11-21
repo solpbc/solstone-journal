@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for path syntax.",
+  "context": "Journal command-line text for path syntax.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "157e5b6ae45d6620aa6456590d1e2ae09738afde8a5cf371ef9db0e2a5cdd4ad",
+  "max_length": 87,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "example",
+      "kind": "accepted-input",
+      "value": "20260304/default/090000_300"
+    },
+    {
+      "name": "path_form",
+      "kind": "accepted-input",
+      "value": "day/stream/segment"
+    }
+  ]
+}

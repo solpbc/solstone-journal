@@ -1860,3 +1860,85 @@ window.BackupErase = {
     this._state = null;
   },
 };
+
+/**
+ * Shared renderer for a facet's mark (chosen icon SVG, chosen emoji, or color
+ * dot fallback) inside a soft facet-color chip. Used across Settings,
+ * Activities, Home, Entities, and Agents.
+ */
+window.ConveyFacetMark = Object.freeze({
+  kind(facet) {
+    if (!facet || typeof facet !== 'object') return 'none';
+    const svg = typeof facet.icon_svg === 'string' ? facet.icon_svg.trim() : '';
+    if (svg.startsWith('<svg')) return 'icon';
+    const emoji = typeof facet.emoji === 'string' ? facet.emoji.trim() : '';
+    if (emoji) return 'emoji';
+    const color = typeof facet.color === 'string' ? facet.color.trim() : '';
+    if (color) return 'dot';
+    return 'none';
+  },
+
+  apply(el, facet, size = 'sm', extraClass = '') {
+    if (!el) return false;
+    const k = this.kind(facet);
+    const sz = size === 'lg' || size === 'md' ? size : 'sm';
+    const extra = extraClass ? ` ${extraClass}` : '';
+    el.setAttribute('aria-hidden', 'true');
+    if (k === 'none') {
+      el.className = `facet-mark facet-mark--${sz}${extra}`;
+      el.textContent = '';
+      el.hidden = true;
+      return false;
+    }
+    const color = (facet.color || '').trim() || 'var(--orange)';
+    el.hidden = false;
+    el.className = `facet-mark facet-mark--${sz} facet-mark--${k}${extra}`;
+    if (el.style && typeof el.style.setProperty === 'function') {
+      el.style.setProperty('--fc', color);
+    } else if (el.style) {
+      el.style['--fc'] = color;
+    }
+    if (k === 'icon') {
+      el.innerHTML = facet.icon_svg;
+      const svgEl = el.querySelector && el.querySelector('svg');
+      if (svgEl) {
+        svgEl.setAttribute('aria-hidden', 'true');
+        svgEl.removeAttribute('width');
+        svgEl.removeAttribute('height');
+      }
+    } else if (k === 'emoji') {
+      el.textContent = facet.emoji.trim();
+    } else {
+      el.textContent = '';
+    }
+    return true;
+  },
+
+  node(facet, size = 'sm', extraClass = '') {
+    if (this.kind(facet) === 'none') return null;
+    const el = document.createElement('span');
+    this.apply(el, facet, size, extraClass);
+    return el;
+  },
+
+  html(facet, size = 'sm', extraClass = '') {
+    const k = this.kind(facet);
+    if (k === 'none') return '';
+    const esc = (v) => window.AppServices.escapeHtml(v);
+    const sz = size === 'lg' || size === 'md' ? size : 'sm';
+    const extra = extraClass ? ` ${esc(extraClass)}` : '';
+    const color = esc((facet.color || '').trim() || 'var(--orange)');
+    const cls = `facet-mark facet-mark--${sz} facet-mark--${k}${extra}`;
+    if (k === 'icon') {
+      const svg = facet.icon_svg.trim().replace(
+        /^<svg\b([^>]*)>/i,
+        (_, attrs) => `<svg${attrs.replace(/\s+(?:width|height)="[^"]*"/gi, '')}>`
+      );
+      return `<span class="${cls}" aria-hidden="true" style="--fc:${color}">${svg}</span>`;
+    }
+    if (k === 'emoji') {
+      return `<span class="${cls}" aria-hidden="true" style="--fc:${color}">${esc(facet.emoji.trim())}</span>`;
+    }
+    return `<span class="${cls}" aria-hidden="true" style="--fc:${color}"></span>`;
+  },
+});

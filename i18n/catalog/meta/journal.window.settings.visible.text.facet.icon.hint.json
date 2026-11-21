@@ -1,0 +1,16 @@
+{
+  "description": "Helper text under a facet icon control in Appearance settings.",
+  "context": "Journal window, settings view. Visible text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "16c6d30b4e30849d15cc698b73ba61885ad4820475967ef4977e574ce076db57",
+  "max_length": 98,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

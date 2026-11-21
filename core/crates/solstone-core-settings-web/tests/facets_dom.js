@@ -350,7 +350,7 @@ function initialFacets() {
 }
 
 function publicFacet(name, config) {
-  return { name, title: config.title, color: config.color, emoji: config.emoji, icon: config.icon, icon_svg: '', muted: Boolean(config.muted) };
+  return { name, title: config.title, description: config.description || '', color: config.color, emoji: config.emoji, icon: config.icon, icon_svg: '', muted: Boolean(config.muted) };
 }
 
 function createHarness() {
@@ -428,9 +428,33 @@ function createHarness() {
     if (method === 'POST' && requestUrl === '/app/settings/api/facet') {
       const facet = slugify(body.title);
       if (!facet || facets.has(facet)) return response({ error: 'facet already exists' }, 400);
-      const config = { title: body.title, description: '', color: body.color, emoji: '📦', icon: '', muted: false, path: 'facets/' + facet };
+      const config = {
+        title: body.title,
+        description: body.description || '',
+        color: body.color,
+        emoji: body.emoji ?? '📦',
+        icon: body.icon || '',
+        muted: false,
+        path: 'facets/' + facet,
+      };
       facets.set(facet, config);
       return response({ success: true, facet, config }, 201);
+    }
+    if (method === 'GET' && requestUrl.startsWith('/app/settings/api/icons')) {
+      return response({
+        icons: [
+          { name: 'briefcase', svg: '<svg viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="6" rx="2"/></svg>' },
+          { name: 'house', svg: '<svg viewBox="0 0 24 24"><path d="M3 10l9-7 9 7"/></svg>' },
+        ],
+      });
+    }
+    if (method === 'GET' && requestUrl.startsWith('/app/settings/api/emojis')) {
+      return response({
+        emojis: [
+          { emoji: '🎩', label: 'top hat' },
+          { emoji: '🧑‍💻', label: 'technologist' },
+        ],
+      });
     }
     const activities = requestUrl.match(/^\/app\/settings\/api\/facet\/([^/]+)\/activities(?:\/[^/]+)?$/);
     if (method === 'GET' && activities) return response({ attached: [], defaults: [] });
@@ -832,9 +856,55 @@ async function testCase(name, fn) {
     harness.document.getElementById('facetCreateForm').dispatchEvent(event('submit', { bubbles: true }));
     await settle();
     const request = harness.requests.find((candidate) => candidate.method === 'POST' && candidate.url === '/app/settings/api/facet');
-    assert.deepStrictEqual(request.body, { title, color });
+    assert.deepStrictEqual(request.body, { title, color, emoji: '' });
     assert.strictEqual(harness.facets.get('reading-retreat').title, title);
     assert.strictEqual(harness.facets.get('reading-retreat').color, color);
+  });
+
+  await testCase('add facet dialog passes optional description and chosen icon from the unified picker', async () => {
+    const harness = createHarness();
+    await run(harness, 'loadFacetsList()');
+    await run(harness, 'openFacetCreateModal()');
+    harness.document.getElementById('facetCreateName').value = 'Consulting';
+    harness.document.getElementById('facetCreateDesc').value = 'Client work and invoices';
+    await click(harness.document.getElementById('facetCreateIconTrigger'));
+    await settle();
+    assert.strictEqual(harness.document.getElementById('iconPickerModal').style.display, 'block');
+    const briefcaseBtn = harness.document.querySelector('#iconResultsGrid .icon-result-btn');
+    assert.ok(briefcaseBtn);
+    await click(briefcaseBtn);
+    await click(harness.document.getElementById('applyIconBtn'));
+    await settle();
+    assert.strictEqual(harness.document.getElementById('iconPickerModal').style.display, 'none');
+    harness.document.getElementById('facetCreateForm').dispatchEvent(event('submit', { bubbles: true }));
+    await settle();
+    const request = harness.requests.find((candidate) => candidate.method === 'POST' && candidate.url === '/app/settings/api/facet');
+    assert.strictEqual(request.body.title, 'Consulting');
+    assert.strictEqual(request.body.description, 'Client work and invoices');
+    assert.strictEqual(request.body.icon, 'briefcase');
+    assert.strictEqual(request.body.emoji, '');
+  });
+
+  await testCase('missing description cues appear only when a journal has multiple enabled facets', async () => {
+    const harness = createHarness();
+    harness.facets.get('work-life').description = '';
+    harness.facets.get('zeta-project').description = 'Zeta projects';
+    await run(harness, 'loadFacetsList()');
+    const missingRows = harness.document.querySelectorAll('#facetsList .facet-list-desc--missing');
+    assert.strictEqual(missingRows.length, 1);
+
+    harness.window.location.pathname = '/app/settings/facets/work-life';
+    await run(harness, 'initSettingsWorkspace()');
+    await settle();
+    assert.strictEqual(harness.document.getElementById('facetDescMissingNote').hidden, false);
+
+    // With only one enabled facet, neither list nor detail shows the missing-description cue.
+    harness.facets.delete('zeta-project');
+    await run(harness, 'loadFacetsList()');
+    assert.strictEqual(harness.document.querySelectorAll('#facetsList .facet-list-desc--missing').length, 0);
+    await run(harness, 'initSettingsWorkspace()');
+    await settle();
+    assert.strictEqual(harness.document.getElementById('facetDescMissingNote').hidden, true);
   });
 
   await testCase('facet color dialog saves swatches and custom hex values', async () => {

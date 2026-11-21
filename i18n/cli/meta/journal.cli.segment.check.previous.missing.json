@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for check previous missing.",
+  "context": "Journal command-line text for check previous missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3920bfeb954aeb3abb876f375bd6733be1c3dc0997b036b00cf55d050e1a0c05",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

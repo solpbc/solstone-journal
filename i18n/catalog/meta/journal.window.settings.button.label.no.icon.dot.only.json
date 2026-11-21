@@ -1,0 +1,16 @@
+{
+  "description": "Button in the unified icon picker to clear a facet icon and show only its color dot.",
+  "context": "Journal window, settings view. Button label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5570ce702a651bf9ece10e9f1e1d4dcf9bbc69fc9e131a85ff2b8cf50c45db07",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

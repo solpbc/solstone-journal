@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for check chain no successor.",
+  "context": "Journal command-line text for check chain no successor.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "be8933a2f1293efc37dd1f1f56f93922455e5163ee106fb47430ff04183cebc2",
+  "max_length": 71,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

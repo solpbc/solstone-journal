@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for inspect next.",
+  "context": "Journal command-line text for inspect next.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "next",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "15e371030a2dec4be75c1ea3b16d171e424cad52511419e760580ea04ae2e8dd",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

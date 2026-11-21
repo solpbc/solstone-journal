@@ -1,4 +1,4 @@
-Vendored icon assets for convey — Lucide icon set + emoji→Lucide map.
+Vendored icon assets for convey — Lucide icon set + emoji keyword data.
 
 ================================================================
 Lucide (icons + names) — ISC License
@@ -53,4 +53,10 @@ SOFTWARE.
 Icons inherited from Feather — MIT License
 Copyright (c) 2013-present Cole Bemis
 Source: https://github.com/feathericons/feather
+================================================================
+
+================================================================
+Emoji keyword data (emoji-tags.json) — MIT License + Unicode License v3
+emojibase-data@17.0.0 (MIT): https://github.com/milesj/emojibase
+CLDR annotations (Unicode License v3): https://www.unicode.org/license.txt
 ================================================================

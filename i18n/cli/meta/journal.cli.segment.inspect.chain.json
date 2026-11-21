@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for inspect chain.",
+  "context": "Journal command-line text for inspect chain.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8ee186db638d49f9b064da5ff0cb9fadfcac37fcba8ed12f126226e57cddba43",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

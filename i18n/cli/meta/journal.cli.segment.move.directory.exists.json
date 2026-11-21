@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for move directory exists.",
+  "context": "Journal command-line text for move directory exists.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "destination",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6bb288374277b048fc4c0d31b25833abc5d9df02fbfededcf923eb2b14ee27ca",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -186,11 +186,15 @@ fn map_facet_declaration(root: &Path, facet_name: &str, count: usize) -> Value {
             } else {
                 d.title
             };
+            let icon = d.icon.as_deref().unwrap_or("");
             json!({
                 "name": facet_name,
                 "count": count,
                 "title": title,
                 "color": d.color,
+                "emoji": d.emoji,
+                "icon": icon,
+                "icon_svg": solstone_core_convey_http::icons::svg(d.icon.as_deref()),
                 "muted": d.muted.unwrap_or(false)
             })
         }
@@ -199,6 +203,9 @@ fn map_facet_declaration(root: &Path, facet_name: &str, count: usize) -> Value {
             "count": count,
             "title": facet_name,
             "color": "",
+            "emoji": "",
+            "icon": "",
+            "icon_svg": Value::Null,
             "muted": false
         }),
     }

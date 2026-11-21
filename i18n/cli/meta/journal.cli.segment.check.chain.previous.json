@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for check chain previous.",
+  "context": "Journal command-line text for check chain previous.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fe0df7f87775b296a96bc9f479236c7117f35e66f348d739db283088c17f8a01",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

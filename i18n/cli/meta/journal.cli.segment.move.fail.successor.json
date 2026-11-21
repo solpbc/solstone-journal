@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for move fail successor.",
+  "context": "Journal command-line text for move fail successor.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d55d0952b4aa746f9367b07c593e650fc7d760be31ad8435e0426f4d6b3731bf",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

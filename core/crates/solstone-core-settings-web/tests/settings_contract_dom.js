@@ -2108,19 +2108,29 @@ module.exports = async function settingsContractCases(crateDir) {
     assert.ok(p.doc.activeElement === display && facetPuts(p).length === 1, `an emptied name saves nothing and lands on the name: ${at(p)}`);
   });
 
-  await test("a facet's emoji and color open from the keyboard, and Enter in the emoji lands on it", async () => {
-    const p = await boot(env, FP, { answers: journal({ [`/app/settings/api/facet/${SLUG}#PUT`]: { success: true, config: { title: 'Work', color: '#cc0000', emoji: '🧪', muted: false } } }) });
-    const emoji = p.byId('emojiDisplay');
-    const input = p.byId('emojiInput');
-    blurFires(p, input);
-    emoji.focus();
-    p.key(emoji, 'Enter');
-    assert.ok(p.doc.activeElement === input, `the emoji opens: ${at(p)}`);
-    input.value = '🧪';
-    p.key(input, 'Enter');
+  await test("a facet's icon and color pickers open from the keyboard and restore focus", async () => {
+    const p = await boot(env, FP, {
+      answers: journal({
+        '/app/settings/api/icons?q=': { icons: [{ name: 'briefcase', svg: '<svg viewBox="0 0 24 24"></svg>' }] },
+        '/app/settings/api/emojis?q=': { emojis: [{ emoji: '🧪', label: 'test tube' }] },
+        [`/app/settings/api/facet/${SLUG}#PUT`]: { success: true, config: { title: 'Work', color: '#cc0000', emoji: '🧪', icon: '', muted: false } },
+      }),
+    });
+    const trigger = p.byId('iconTrigger');
+    trigger.focus();
+    p.press(trigger);
     await settle();
-    assert.ok(p.doc.activeElement === emoji, `the emoji as shown: ${at(p)}`);
-    assert.ok(facetPuts(p).length === 1, 'one save');
+    assert.deepStrictEqual(p.shownModals(), ['iconPickerModal']);
+    p.press(p.byId('iconTabEmoji'));
+    await settle();
+    const emojiBtn = p.qa('#iconResultsGrid .icon-result-btn')[0];
+    assert.ok(emojiBtn, 'emoji results render');
+    p.press(emojiBtn);
+    p.press(p.byId('applyIconBtn'));
+    await settle();
+    assert.strictEqual(p.doc.activeElement, trigger, `focus returns to icon trigger: ${at(p)}`);
+    const puts = facetPuts(p);
+    assert.ok(puts.length === 1 && JSON.parse(puts[0].body).emoji === '🧪' && JSON.parse(puts[0].body).icon === '', 'one save clearing icon and setting emoji');
     const color = p.byId('colorTrigger');
     color.focus();
     p.key(color, ' ');
@@ -2128,29 +2138,43 @@ module.exports = async function settingsContractCases(crateDir) {
     assert.deepStrictEqual(p.shownModals(), ['colorPickerModal']);
   });
 
-  await test("a facet's emoji takes one emoji whole, refuses a digit or a word, and Escape keeps it", async () => {
-    const p = await boot(env, FP, { answers: journal({ [`/app/settings/api/facet/${SLUG}#PUT`]: { success: true, config: { title: 'Work', color: '#cc0000', emoji: '🧑‍💻', muted: false } } }) });
-    const emoji = p.byId('emojiDisplay');
-    const input = p.byId('emojiInput');
-    blurFires(p, input);
-    for (const refused of ['2', 'hat 🎩']) {
-      p.key(emoji, 'Enter');
-      input.value = refused;
-      p.key(input, 'Enter');
-      await settle();
-      assert.ok(facetPuts(p).length === 0, `${refused} is not saved`);
-    }
-    p.key(emoji, 'Enter');
-    input.value = '🎩';
-    p.key(input, 'Escape');
+  await test("the unified icon picker's paste emoji box takes one joined emoji whole, refuses a digit or a word, and Escape closes without saving", async () => {
+    const p = await boot(env, FP, {
+      answers: journal({
+        '/app/settings/api/icons?q=': { icons: [{ name: 'briefcase', svg: '<svg viewBox="0 0 24 24"></svg>' }] },
+        '/app/settings/api/emojis?q=': { emojis: [{ emoji: '🎩', label: 'top hat' }] },
+        [`/app/settings/api/facet/${SLUG}#PUT`]: { success: true, config: { title: 'Work', color: '#cc0000', emoji: '🧑‍💻', icon: '', muted: false } },
+      }),
+    });
+    const trigger = p.byId('iconTrigger');
+    const paste = p.byId('emojiPasteInput');
+    const feedback = p.byId('emojiPasteFeedback');
+    p.press(trigger);
     await settle();
-    assert.ok(facetPuts(p).length === 0 && p.doc.activeElement === emoji, `Escape saves nothing: ${at(p)}`);
-    p.key(emoji, 'Enter');
-    input.value = '🧑‍💻';
-    p.key(input, 'Enter');
+    p.press(p.byId('iconTabEmoji'));
+    await settle();
+    for (const refused of ['2', 'hat 🎩']) {
+      paste.value = refused;
+      p.doc.dispatch(paste, { type: 'input' });
+      p.key(paste, 'Enter');
+      await settle();
+      assert.ok(facetPuts(p).length === 0 && !feedback.hidden, `${refused} is refused and not saved`);
+    }
+    paste.value = '🎩';
+    p.doc.dispatch(paste, { type: 'input' });
+    p.key(p.byId('iconPickerModal'), 'Escape');
+    await settle();
+    assert.ok(facetPuts(p).length === 0 && p.doc.activeElement === trigger, `Escape saves nothing and returns focus: ${at(p)}`);
+    p.press(trigger);
+    await settle();
+    p.press(p.byId('iconTabEmoji'));
+    await settle();
+    paste.value = '🧑‍💻';
+    p.doc.dispatch(paste, { type: 'input' });
+    p.key(paste, 'Enter');
     await settle();
     const puts = facetPuts(p);
-    assert.ok(puts.length === 1 && JSON.parse(puts[0].body).emoji === '🧑‍💻', `a joined emoji is saved whole: ${puts.map((c) => c.body)}`);
+    assert.ok(puts.length === 1 && JSON.parse(puts[0].body).emoji === '🧑‍💻' && JSON.parse(puts[0].body).icon === '', `a joined emoji is saved whole: ${puts.map((c) => c.body)}`);
   });
 
   await test("an activity's remove stays busy while it is out and sends one; its answer lands on the next row's priority, else the one before, else the heading", async () => {

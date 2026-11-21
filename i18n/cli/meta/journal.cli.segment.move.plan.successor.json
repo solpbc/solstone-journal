@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for move plan successor.",
+  "context": "Journal command-line text for move plan successor.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "26f0fd2262e8ace2f83a1f47287b55647a08c18d118da60d49ad5a450b029297",
+  "max_length": 61,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

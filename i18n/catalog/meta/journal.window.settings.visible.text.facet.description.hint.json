@@ -1,0 +1,16 @@
+{
+  "description": "Helper text under the optional description field in the add-a-facet dialog.",
+  "context": "Journal window, settings view. Visible text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c978a2a80b022b1452b2835fce08f68ac514b1bdbf8df986c227e7f4ca802611",
+  "max_length": 134,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

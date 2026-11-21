@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for move directory failed.",
+  "context": "Journal command-line text for move directory failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ad24c916742cada93822aaa5403080e50ce07ff394509c71674afa77510b6e83",
+  "max_length": 111,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

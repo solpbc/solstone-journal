@@ -1,0 +1,16 @@
+{
+  "description": "Concrete placeholder example in the optional description field when adding a facet.",
+  "context": "Journal window, settings view. Field placeholder.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8dca43727d57b0a89fdcb828a28a9a531af0845f20a1ef633c2196b159480022",
+  "max_length": 118,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

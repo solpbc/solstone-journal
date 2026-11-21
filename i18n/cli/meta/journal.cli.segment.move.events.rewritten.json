@@ -1,0 +1,53 @@
+{
+  "description": "Journal command-line text for move events rewritten.",
+  "context": "Journal command-line text for move events rewritten.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "source_day",
+      "type": "string"
+    },
+    {
+      "name": "destination_day",
+      "type": "string"
+    },
+    {
+      "name": "source",
+      "type": "string"
+    },
+    {
+      "name": "destination",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "936c2e82efbb7e6404fd34455551377af413ecc6d11eb060c8a9a6a951c9f7af",
+  "max_length": 321,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  },
+  "protected_slots": [
+    {
+      "name": "event_file",
+      "kind": "accepted-input",
+      "value": "events.jsonl"
+    }
+  ]
+}

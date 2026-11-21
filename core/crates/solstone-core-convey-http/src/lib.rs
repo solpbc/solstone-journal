@@ -160,6 +160,7 @@ pub mod cant_open;
 pub mod coalesce;
 pub mod envelope;
 pub mod gate;
+pub mod icons;
 pub mod identity;
 pub mod ip_literal_guard;
 pub mod listener;

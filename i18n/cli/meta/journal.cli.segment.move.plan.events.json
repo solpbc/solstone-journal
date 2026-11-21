@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for move plan events.",
+  "context": "Journal command-line text for move plan events.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9c8eaf1e7f6046f40a246539715059f1d6fd187d78a388e6139774d617c0e37b",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "event_file",
+      "kind": "accepted-input",
+      "value": "events.jsonl"
+    }
+  ]
+}

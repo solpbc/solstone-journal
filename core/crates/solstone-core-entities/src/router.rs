@@ -2598,6 +2598,11 @@ pub(crate) fn assemble_journal_entity_records(
             .get("emoji")
             .and_then(Value::as_str)
             .unwrap_or("");
+        let icon = declaration
+            .get("icon")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty());
+        let icon_svg = solstone_core_convey_http::icons::svg(icon);
         let mut scoped_entities =
             solstone_core_facets::list_scoped_facet_entities_tolerant_with_resolved_ids(
                 root, &facet_dir, true, true, &resolved,
@@ -2649,6 +2654,8 @@ pub(crate) fn assemble_journal_entity_records(
                 "title": title,
                 "color": color,
                 "emoji": emoji,
+                "icon": icon.unwrap_or(""),
+                "icon_svg": icon_svg,
                 "description": relationship.get("description").cloned().unwrap_or_else(|| json!("")),
                 "last_seen": relationship.get("last_seen").cloned().unwrap_or(Value::Null),
                 "attached_at": relationship.get("attached_at").cloned().unwrap_or(Value::Null),

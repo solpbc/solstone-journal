@@ -176,16 +176,44 @@ async fn pulse(
     let now = clock.now();
     spawn_blocking_response(OwnerReadRole::HomePulse, move || {
         let originals_total = removals::originals_total(&journal_root);
+        let facets = home_facet_marks(&journal_root);
         let context = HomeContext::new(journal_root, now).with_locale(locale);
         let account_time = requested_account_time(&context, query.as_deref());
         let mut payload = solstone_core_home::pulse::pulse_payload_at(&context, account_time);
         payload["originals_total"] = originals_total;
+        payload["facets"] = facets;
         if let Some(deps) = backup {
             payload["backup"] = solstone_core_backup_web::home_backup_observation(&deps);
         }
         Json(payload).into_response()
     })
     .await
+}
+
+fn home_facet_marks(journal_root: &std::path::Path) -> serde_json::Value {
+    let mut map = serde_json::Map::new();
+    for name in solstone_core_facets::list_declared_facet_names(journal_root).unwrap_or_default() {
+        if let Ok(Some(d)) = solstone_core_facets::observe_facet_declaration(journal_root, &name) {
+            let title = if d.title.trim().is_empty() {
+                name.clone()
+            } else {
+                d.title
+            };
+            let icon = d.icon.as_deref().unwrap_or("");
+            map.insert(
+                name,
+                serde_json::json!({
+                    "title": title,
+                    "color": d.color,
+                    "emoji": d.emoji,
+                    "icon": icon,
+                    "icon_svg": solstone_core_convey_http::icons::svg(d.icon.as_deref()),
+                    "muted": d.muted.unwrap_or(false),
+                }),
+            );
+        }
+    }
+    serde_json::Value::Object(map)
 }
 
 async fn briefing(
@@ -869,6 +897,7 @@ mod tests {
             "home_state",
             "welcome_framing",
             "originals_total",
+            "facets",
         ]
         .into_iter()
         .map(str::to_owned)

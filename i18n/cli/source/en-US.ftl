@@ -1513,3 +1513,258 @@ journal.cli.retention.recovery.segment.staged = this segment is part-way through
 journal.cli.retention.recovery.segment.unconfirmed = this could not be confirmed gone, so it is not being reported as removed
 
 journal.cli.retention.recovery.segment.unfinished = a previous removal of this segment did not finish; it needs looking at before this can be retried
+
+journal.cli.segment.argument.missing = usage: { $syntax }{ $line_break }{ $command }: error: unrecognized arguments: the following arguments are required: { $input }
+
+journal.cli.segment.argument.unknown = usage: { $syntax }{ $line_break }{ $command }: error: unrecognized arguments: { $arguments }
+
+journal.cli.segment.day.empty = No segments found for { $day }
+
+journal.cli.segment.help.inspect = usage: { $syntax }{ $break }{ $break }positional arguments:{ $break }{ $option_3 }Segment path: { $example_path } (e.g.{ $break }{ $syntax_line_4 }{ $break }{ $break }options:{ $break }{ $option_7 }show this help message and exit{ $break }{ $option_8 }Output as { $json_format }
+
+journal.cli.segment.help.list = usage: { $syntax }{ $break }{ $syntax_line_1 }{ $break }{ $syntax_line_2 }{ $break }{ $break }positional arguments:{ $break }{ $option_5 }Day in { $day_format } format{ $break }{ $break }options:{ $break }{ $option_8 }show this help message and exit{ $break }{ $option_9 }Filter to a specific stream{ $break }{ $option_10 }Output as { $json_format }
+
+journal.cli.segment.help.move = usage: { $syntax }{ $break }{ $syntax_line_1 }{ $break }{ $syntax_line_2 }{ $break }{ $syntax_line_3 }{ $break }{ $break }positional arguments:{ $break }{ $option_6 }Segment path: { $example_path } (e.g.{ $break }{ $syntax_line_7 }{ $break }{ $break }options:{ $break }{ $option_10 }show this help message and exit{ $break }{ $option_11 }Destination day ({ $day_format }){ $break }{ $option_12 }New time ({ $time_format }), preserving original duration{ $break }{ $option_13 }Show plan without making changes{ $break }{ $option_14 }Show detailed progress
+
+journal.cli.segment.help.top = usage: { $syntax }{ $break }{ $break }Inspect and manage journal segments{ $break }{ $break }positional arguments:{ $break }{ $syntax_line_5 }{ $break }{ $option_6 }List segments for a day{ $break }{ $option_7 }Show segment metadata{ $break }{ $option_8 }Verify segment integrity{ $break }{ $option_9 }Move segment to a different day/time{ $break }{ $break }options:{ $break }{ $option_12 }show this help message and exit{ $break }{ $option_13 }Enable verbose output{ $break }{ $option_14 }Enable debug logging
+
+journal.cli.segment.help.verify = usage: { $syntax }{ $break }{ $syntax_line_1 }{ $break }{ $break }positional arguments:{ $break }{ $option_4 }Segment path: { $example_path }{ $break }{ $break }options:{ $break }{ $option_7 }show this help message and exit{ $break }{ $option_8 }Verify all segments for a day{ $break }{ $option_9 }Output as { $json_format }
+
+journal.cli.segment.missing = Segment not found: { $path }
+
+journal.cli.segment.move.dry = [dry run] No changes made
+
+journal.cli.segment.verify.day.result = { $quantity ->
+    [one] Summary: { $passed }/{ $total } check passed
+   *[other] Summary: { $passed }/{ $total } checks passed
+}
+
+journal.cli.segment.verify.input = { $verb } requires a segment path or { $day_flag }
+
+journal.cli.segment.verify.result = { $quantity ->
+    [one] { $passed }/{ $total } check passed
+   *[other] { $passed }/{ $total } checks passed
+}
+
+
+
+
+journal.cli.segment.check.backward = backward chain
+
+journal.cli.segment.check.chain.no.day = { $prev_segment_key } set without { $prev_day_key }
+
+journal.cli.segment.check.chain.no.successor = next segment not found, not stream tail
+
+journal.cli.segment.check.chain.previous = previous segment found
+
+journal.cli.segment.check.chain.start = no previous segment
+
+journal.cli.segment.check.chain.tail = stream tail
+
+journal.cli.segment.check.content.empty = no { $audio_file }, { $screen_file }, or { $browser_files }
+
+journal.cli.segment.check.content.present = content files present
+
+journal.cli.segment.check.directory.absent = segment directory missing
+
+journal.cli.segment.check.directory.exists = directory exists
+
+journal.cli.segment.check.directory.missing = directory missing
+
+journal.cli.segment.check.forward = forward chain
+
+journal.cli.segment.check.index = index presence
+
+journal.cli.segment.check.index.absent = journal index not available
+
+journal.cli.segment.check.index.error = journal index error: { $error } (run: { $index_command })
+
+journal.cli.segment.check.index.missing = segment not indexed
+
+journal.cli.segment.check.index.present = segment indexed
+
+journal.cli.segment.check.marker.exists = { $stream_file } exists
+
+journal.cli.segment.check.marker.invalid = { $stream_file } invalid { $json_format }
+
+journal.cli.segment.check.marker.missing = { $stream_file } missing
+
+journal.cli.segment.check.marker.no.stream = { $stream_file } missing stream field
+
+journal.cli.segment.check.marker.valid = { $stream_file } valid
+
+journal.cli.segment.check.next = next segment { $path }
+
+journal.cli.segment.check.previous.missing = missing previous segment { $path }
+
+journal.cli.segment.identity.default = segment list refused: named stream directory "{ $default_stream }" cannot be spelled as a record identity: { $path }
+
+journal.cli.segment.identity.duplicate = segment list refused: multiple segments share stream { $stream } key { $key }
+
+journal.cli.segment.identity.encoding = segment list refused: segment path is not { $encoding } representable: { $path }
+
+journal.cli.segment.identity.refused = segment list refused: { $detail }
+
+journal.cli.segment.inspect.chain = Chain:
+
+journal.cli.segment.inspect.events = { $quantity ->
+    [one] Events: { $entries } entry
+   *[other] Events: { $entries } entries
+}
+
+journal.cli.segment.inspect.events.tracts = { $quantity ->
+    [one] Events: { $entries } entry ({ $tracts })
+   *[other] Events: { $entries } entries ({ $tracts })
+}
+
+journal.cli.segment.inspect.files = Files ({ $count }):
+
+journal.cli.segment.inspect.index.error = Index: error ({ $error }) - run: { $index_command }
+
+journal.cli.segment.inspect.index.missing = Index: not-indexed
+
+journal.cli.segment.inspect.index.unavailable = Index: unavailable
+
+journal.cli.segment.inspect.indexed = { $quantity ->
+    [one] Index: indexed ({ $chunks } chunk)
+   *[other] Index: indexed ({ $chunks } chunks)
+}
+
+journal.cli.segment.inspect.next = next: { $next }
+
+journal.cli.segment.inspect.path = Segment: { $path }
+
+journal.cli.segment.inspect.prev = prev: { $previous }
+
+journal.cli.segment.inspect.size = Size: { $size }
+
+journal.cli.segment.inspect.stream = Stream:  { $stream }
+
+journal.cli.segment.inspect.stream.seq = Stream:  { $stream } (seq { $sequence })
+
+journal.cli.segment.inspect.talents = Talents ({ $count }):
+
+journal.cli.segment.inspect.time = Time:    { $range } ({ $seconds }s)
+
+journal.cli.segment.list.heading.dur = DUR
+
+journal.cli.segment.list.heading.files = FILES
+
+journal.cli.segment.list.heading.segment = SEGMENT
+
+journal.cli.segment.list.heading.size = SIZE
+
+journal.cli.segment.list.heading.stream = STREAM
+
+journal.cli.segment.list.heading.talents = TALENTS
+
+journal.cli.segment.list.heading.time = TIME
+
+journal.cli.segment.path.syntax = Segment path must be { $path_form } (e.g. { $example })
+
+journal.cli.segment.status.pass = PASS
+
+journal.cli.segment.move.day.format = Invalid { $to_day_flag } format: { $to_day } (expected { $date_format })
+
+journal.cli.segment.move.directory.created = created directory: { $path }
+
+journal.cli.segment.move.directory.exists = Destination { $destination } already exists; no changes made
+
+journal.cli.segment.move.directory.failed = step 1 directory move failed: { $error }; source and index remain authoritative
+
+journal.cli.segment.move.directory.moved = moved directory: { $source } -> { $destination }
+
+journal.cli.segment.move.events.none = no { $event_file } to rewrite
+
+journal.cli.segment.move.events.rewritten = { $quantity ->
+    [one] rewrote { $count } { $event_file } line (day: { $source_day }->{ $destination_day }, segment: { $source }->{ $destination })
+   *[other] rewrote { $count } { $event_file } lines (day: { $source_day }->{ $destination_day }, segment: { $source }->{ $destination })
+}
+
+journal.cli.segment.move.exists = Segment { $segment } already exists on { $day }/{ $stream }. Use { $to_time_flag } to specify an alternate time.
+
+journal.cli.segment.move.fail.ambiguous = { $quantity ->
+    [one] step 3 successor patch inconsistent after move: ambiguous chain: { $count } successor left unpatched
+   *[other] step 3 successor patch inconsistent after move: ambiguous chain: { $count } successors left unpatched
+}
+
+journal.cli.segment.move.fail.events = step 2 events rewrite inconsistent after move: { $detail }
+
+journal.cli.segment.move.fail.health.marker = step 6 health-marker touch inconsistent after move: { $detail }
+
+journal.cli.segment.move.fail.search = step 5 search update inconsistent after move: the search update could not be queued: { $error }
+
+journal.cli.segment.move.fail.successor = step 3 successor patch inconsistent after move: { $detail }
+
+journal.cli.segment.move.fail.tail.locked = step 4 stream-tail repair inconsistent after move: could not lock stream record
+
+journal.cli.segment.move.fail.tail.malformed = step 4 stream-tail repair inconsistent after move: malformed stream record
+
+journal.cli.segment.move.fail.tail.no.record = step 4 stream-tail repair inconsistent after move: no stream record; identity was not re-authored
+
+journal.cli.segment.move.fail.tail.write = step 4 stream-tail repair inconsistent after move: atomic publication failed
+
+journal.cli.segment.move.markers.touched = touched health markers: { $days }
+
+journal.cli.segment.move.no.duration = Source segment key has no duration
+
+journal.cli.segment.move.no.marker = No { $stream_file } in source segment
+
+journal.cli.segment.move.no.slot = No available segment slot near { $destination_segment } on { $to_day }
+
+journal.cli.segment.move.plan = Move: { $source } -> { $destination }
+
+journal.cli.segment.move.plan.ambiguous = { $quantity ->
+    [one] successor to patch: (ambiguous: { $count } successor)
+   *[other] successor to patch: (ambiguous: { $count } successors)
+}
+
+journal.cli.segment.move.plan.events = { $event_file } lines: { $count }
+
+journal.cli.segment.move.plan.index = index chunks: { $chunks }
+
+journal.cli.segment.move.plan.index.error = index read error: { $error } (delete+reindex will be attempted; run: { $index_command })
+
+journal.cli.segment.move.plan.markers = health markers: { $source_day }, { $destination_day }
+
+journal.cli.segment.move.plan.successor = successor to patch: { $path }
+
+journal.cli.segment.move.plan.tail = successor to patch: (none - stream tail)
+
+journal.cli.segment.move.running = Executing move...
+
+journal.cli.segment.move.same = Source and destination are the same
+
+journal.cli.segment.move.search.queued = search updates queued
+
+journal.cli.segment.move.stream.mismatch = Stream mismatch: path says '{ $path_stream }' but { $stream_file } says '{ $marker_stream }'
+
+journal.cli.segment.move.stream.rebuilt = rebuilt stream state: { $stream }
+
+journal.cli.segment.move.successor.none = no successor to patch (stream tail)
+
+journal.cli.segment.move.successor.patched = patched successor { $path }
+
+journal.cli.segment.move.talents = { $command } will re-run daily talents on the touched days
+
+journal.cli.segment.move.time.format = Invalid { $to_time_flag } format: { $time } (expected { $time_format })
+
+journal.cli.segment.guard.activity = another journal operation needs attention before this change can continue
+
+journal.cli.segment.guard.binding = the journal could not be checked, so this change is on hold
+
+journal.cli.segment.guard.reserved = this location is reserved for a journal operation and cannot be changed
+
+journal.cli.segment.relocation.deleted = segment was deleted by its owner
+
+journal.cli.segment.relocation.location = the segment location does not match the planned move
+
+journal.cli.segment.relocation.marker = could not read marker
+
+journal.cli.segment.inspect.next.none = next: (none)
+
+journal.cli.segment.inspect.next.tail = next: (tail)
+
+journal.cli.segment.inspect.prev.missing = prev: { $path } [MISSING]
+
+journal.cli.segment.inspect.prev.none = prev: (none)

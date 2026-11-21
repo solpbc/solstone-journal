@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for list heading stream.",
+  "context": "Journal command-line text for list heading stream.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "352d1effdafd6a2554f30ec92dc4cc034b3adc419c165f3b4d56c459e8a2272a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

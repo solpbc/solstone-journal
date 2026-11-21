@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for inspect index error.",
+  "context": "Journal command-line text for inspect index error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1ab1f9ea414c1d8137e7d481a63ee2230014c82830a01f169c7083bfddd0d8f4",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "index_command",
+      "kind": "command",
+      "value": "solstone journal indexer --rescan"
+    }
+  ]
+}

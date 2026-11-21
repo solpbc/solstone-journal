@@ -373,6 +373,7 @@ pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: Lock
             ),
         )
         .route("/app/settings/api/icons", get(icons::search))
+        .route("/app/settings/api/emojis", get(icons::search_emojis))
 }
 
 #[cfg(test)]

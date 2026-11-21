@@ -93,6 +93,19 @@
   background: var(--orange-wash);
 }
 
+.act-scope-option > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.act-panel-facet {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
 .act-scope-dot {
   width: 8px;
   height: 8px;
@@ -1390,15 +1403,20 @@
       columnsArea.style.borderTopColor = selectedObj && selectedObj.color ? selectedObj.color : 'transparent';
     }
 
+    function scopeMarkHtml(f) {
+      if (window.ConveyFacetMark) return window.ConveyFacetMark.html(f, 'sm');
+      return f && f.color ? `<span class="act-scope-dot" style="background-color: ${esc(f.color)}"></span>` : '';
+    }
+
     if (listboxEl) {
       let opts = `<li class="act-scope-option" role="option" aria-selected="${state.facet === null}" data-facet="" tabindex="-1"><span data-copy-key="scope-all-option">${esc(STRINGS['scope-all-option'])}</span><span class="act-scope-count">${nonMutedTotal}</span></li>`;
       facets.filter(f => !f.muted).forEach(f => {
-        const dot = f.color ? `<span class="act-scope-dot" style="background-color: ${esc(f.color)}"></span>` : '';
-        opts += `<li class="act-scope-option" role="option" aria-selected="${state.facet === f.name}" data-facet="${esc(f.name)}" tabindex="-1"><span>${dot} ${esc(f.title || f.name)}</span><span class="act-scope-count">${f.count || 0}</span></li>`;
+        const mark = scopeMarkHtml(f);
+        opts += `<li class="act-scope-option" role="option" aria-selected="${state.facet === f.name}" data-facet="${esc(f.name)}" tabindex="-1"><span>${mark}${esc(f.title || f.name)}</span><span class="act-scope-count">${f.count || 0}</span></li>`;
       });
       facets.filter(f => f.muted).forEach(f => {
-        const dot = f.color ? `<span class="act-scope-dot" style="background-color: ${esc(f.color)}"></span>` : '';
-        opts += `<li class="act-scope-option act-scope-option--muted" role="option" aria-selected="${state.facet === f.name}" data-facet="${esc(f.name)}" tabindex="-1"><span>${dot} ${esc(f.title || f.name)}</span><span class="act-scope-count">${f.count || 0}</span></li>`;
+        const mark = scopeMarkHtml(f);
+        opts += `<li class="act-scope-option act-scope-option--muted" role="option" aria-selected="${state.facet === f.name}" data-facet="${esc(f.name)}" tabindex="-1"><span>${mark}${esc(f.title || f.name)}</span><span class="act-scope-count">${f.count || 0}</span></li>`;
       });
       listboxEl.innerHTML = opts;
     }
@@ -1482,7 +1500,9 @@
       untimed.forEach(it => {
         const fObj = (state.view.facets || []).find(f => f.name === it.facet);
         const fColor = fObj && fObj.color ? fObj.color : '';
-        const dot = !state.facet && fColor ? `<span class="act-block-dot" style="background-color: ${esc(fColor)}"></span>` : '';
+        const dot = !state.facet
+          ? (window.ConveyFacetMark ? window.ConveyFacetMark.html(fObj, 'sm') : (fColor ? `<span class="act-block-dot" style="background-color: ${esc(fColor)}"></span>` : ''))
+          : '';
         uhtml += `<button type="button" class="act-untimed-row" data-id="${esc(it.id)}" data-facet="${esc(it.facet)}">${dot}<span class="act-untimed-label">${esc(it.activity_label || it.kind)}</span><span class="act-untimed-title">${esc(it.title)}</span></button>`;
       });
       untimedList.innerHTML = uhtml;
@@ -1656,7 +1676,9 @@
 
       // Line 1
       const facetColor = facetObj && facetObj.color ? facetObj.color : '';
-      const dot = !state.facet && facetColor ? `<span class="act-block-dot" style="background-color: ${esc(facetColor)}"></span>` : '';
+      const dot = !state.facet
+        ? (window.ConveyFacetMark ? window.ConveyFacetMark.html(facetObj, 'sm') : (facetColor ? `<span class="act-block-dot" style="background-color: ${esc(facetColor)}"></span>` : ''))
+        : '';
       const pencil = item.edited_by_owner && window.ConveyIcons ? `<span class="act-block-icon">${window.ConveyIcons.svg('pencil')}</span>` : '';
       const line1 = `<div class="act-block-line1">${dot}<span class="act-block-time">${esc(timeRange)}</span>${pencil}</div>`;
 
@@ -1779,7 +1801,9 @@
     const timeRange = item.end_min != null ? `${item.start}–${item.end}` : item.start;
     const facetObj = (state.view.facets || []).find(f => f.name === item.facet);
     const facetTitle = facetObj ? (facetObj.title || facetObj.name) : item.facet;
-    const dot = !state.facet && facetObj && facetObj.color ? `<span class="act-block-dot" style="background-color: ${esc(facetObj.color)}"></span>` : '';
+    const dot = !state.facet
+      ? (window.ConveyFacetMark ? window.ConveyFacetMark.html(facetObj, 'sm') : (facetObj && facetObj.color ? `<span class="act-block-dot" style="background-color: ${esc(facetObj.color)}"></span>` : ''))
+      : '';
     const editedCue = item.edited_by_owner ? `<span class="act-cue" data-copy-key="cue-edited">${esc(STRINGS['cue-edited'])}</span>` : '';
     let metaSource = '';
     if (item.mixed) {
@@ -1790,7 +1814,7 @@
       metaSource = STRINGS['source-unknown'];
     }
     const metaSourceHtml = metaSource ? `<span class="act-panel-source">${esc(metaSource)}</span> · ` : '';
-    phtml += `<div class="act-panel-meta"><span class="act-panel-time">${esc(timeRange)}</span> · ${metaSourceHtml}<span class="act-panel-kind">${esc(item.activity_label || item.kind)}</span> · <span>${dot} ${esc(facetTitle)}</span>${editedCue}</div></div>`;
+    phtml += `<div class="act-panel-meta"><span class="act-panel-time">${esc(timeRange)}</span> · ${metaSourceHtml}<span class="act-panel-kind">${esc(item.activity_label || item.kind)}</span> · <span class="act-panel-facet">${dot}${esc(facetTitle)}</span>${editedCue}</div></div>`;
 
     // Hidden status & reason line
     if (item.hidden) {

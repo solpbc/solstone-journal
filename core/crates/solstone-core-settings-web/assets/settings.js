@@ -89,8 +89,18 @@
     }
     if (heading) heading.textContent = title;
     if (swatch) {
-      swatch.style.backgroundColor = color;
-      swatch.hidden = !color;
+      const mark = {
+        color,
+        emoji: String(config.emoji || ''),
+        icon: String(config.icon || ''),
+        icon_svg: String(config.icon_svg || ''),
+      };
+      if (global.ConveyFacetMark) {
+        global.ConveyFacetMark.apply(swatch, mark, 'lg', 'facet-detail-swatch');
+      } else {
+        swatch.style.backgroundColor = color;
+        swatch.hidden = !color;
+      }
     }
     if (muteAction) {
       muteAction.textContent = muted

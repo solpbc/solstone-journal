@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for guard binding.",
+  "context": "Journal command-line text for guard binding.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e8fd118911ac22cce04d968752a6f1106305d386b4985e59a3ccf95112525214",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

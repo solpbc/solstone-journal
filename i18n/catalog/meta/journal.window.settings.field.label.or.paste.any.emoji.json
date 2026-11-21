@@ -1,0 +1,16 @@
+{
+  "description": "Label beside the paste-any-emoji input inside the emoji tab of the icon picker.",
+  "context": "Journal window, settings view. Field label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0f446590c00ca6fd8bfca7da3f646cb18a98a7a881318c952bff3b9a44416ecf",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

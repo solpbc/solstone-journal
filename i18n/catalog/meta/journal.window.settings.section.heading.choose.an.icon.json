@@ -1,0 +1,16 @@
+{
+  "description": "Heading of the unified icon and emoji picker dialog.",
+  "context": "Journal window, settings view. Section heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "93b1fa50fc1417634e540f5b14255990622cf3fa263ab04d8864803a4a341cbf",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

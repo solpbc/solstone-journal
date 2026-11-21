@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for check chain start.",
+  "context": "Journal command-line text for check chain start.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "87a9e1f151e53227484ffe0422f0ed5d4dc7d4f83c56f0695747831d2afc69c0",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

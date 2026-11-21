@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for move fail tail malformed.",
+  "context": "Journal command-line text for move fail tail malformed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "525ca23a9eb7f70882757117c0e5f6b7b309e5e1bebfaff2189a552f902e2f14",
+  "max_length": 106,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

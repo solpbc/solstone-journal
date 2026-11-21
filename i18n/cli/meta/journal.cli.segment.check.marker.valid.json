@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for check marker valid.",
+  "context": "Journal command-line text for check marker valid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d6c3c7e0b71addd4eff48f87541e8f554a31c52c96a6c6013f24238308aa22e5",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "stream_file",
+      "kind": "accepted-input",
+      "value": "stream.json"
+    }
+  ]
+}

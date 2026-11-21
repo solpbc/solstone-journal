@@ -16,33 +16,38 @@ use crate::segment_dir::STAGED_PREFIX;
 
 pub(crate) struct Cooperation {
     activity: Arc<ActivityLease>,
+    pub(crate) locale: &'static str,
 }
 
 impl Cooperation {
     pub(crate) fn admit(journal: &Path) -> Result<Self, String> {
-        let root = JournalRoot::open(journal).map_err(|_| binding_hold())?;
+        Self::admit_for(journal, solstone_core_cli_copy::ENGLISH)
+    }
+
+    pub(crate) fn admit_for(journal: &Path, locale: &'static str) -> Result<Self, String> {
+        let root = JournalRoot::open(journal).map_err(|_| binding_hold(locale))?;
         #[cfg(windows)]
         let root = {
             // Admit the original spelling before canonicalizing coordinates.
             // Both retained bindings must still identify that admitted object.
             let canonical_path =
-                std::fs::canonicalize(root.canonical_path()).map_err(|_| binding_hold())?;
-            let canonical = JournalRoot::open(&canonical_path).map_err(|_| binding_hold())?;
+                std::fs::canonicalize(root.canonical_path()).map_err(|_| binding_hold(locale))?;
+            let canonical = JournalRoot::open(&canonical_path).map_err(|_| binding_hold(locale))?;
             if canonical.identity() != root.identity() {
-                return Err(binding_hold());
+                return Err(binding_hold(locale));
             }
             root.revalidate_canonical_binding()
-                .map_err(|_| binding_hold())?;
+                .map_err(|_| binding_hold(locale))?;
             canonical
                 .revalidate_canonical_binding()
-                .map_err(|_| binding_hold())?;
+                .map_err(|_| binding_hold(locale))?;
             canonical
         };
         let activity = ActivityLease::try_acquire(Arc::new(root)).map_err(|error| match error {
-            ActivityAdmissionError::Busy => activity_hold(),
-            ActivityAdmissionError::Unavailable(_) => binding_hold(),
+            ActivityAdmissionError::Busy => activity_hold(locale),
+            ActivityAdmissionError::Unavailable(_) => binding_hold(locale),
         })?;
-        let guard = Self { activity };
+        let guard = Self { activity, locale };
         guard.population()?;
         Ok(guard)
     }
@@ -52,19 +57,21 @@ impl Cooperation {
     }
 
     fn revalidate(&self) -> Result<(), String> {
-        self.activity.revalidate().map_err(|_| binding_hold())?;
+        self.activity
+            .revalidate()
+            .map_err(|_| binding_hold(self.locale))?;
         self.activity
             .journal_root()
             .revalidate_canonical_binding()
-            .map_err(|_| binding_hold())
+            .map_err(|_| binding_hold(self.locale))
     }
 
     pub(crate) fn population(&self) -> Result<(), String> {
         self.revalidate()?;
-        let population =
-            observe_obligations(self.activity.journal_root()).map_err(|_| binding_hold())?;
+        let population = observe_obligations(self.activity.journal_root())
+            .map_err(|_| binding_hold(self.locale))?;
         if !population.entries().is_empty() {
-            return Err(activity_hold());
+            return Err(activity_hold(self.locale));
         }
         self.revalidate()
     }
@@ -73,7 +80,7 @@ impl Cooperation {
         self.revalidate()?;
         let relative = path
             .strip_prefix(self.journal())
-            .map_err(|_| binding_hold())?;
+            .map_err(|_| binding_hold(self.locale))?;
         let plain = relative.to_str().is_some_and(|text| {
             !text.is_empty()
                 && text
@@ -85,7 +92,7 @@ impl Cooperation {
                 .components()
                 .any(|part| !matches!(part, Component::Normal(name) if name.to_str().is_some_and(|name| !name.contains(['/', '\\']))))
         {
-            return Err(binding_hold());
+            return Err(binding_hold(self.locale));
         }
         if relative.components().any(|part| {
             let mut name = part.as_os_str();
@@ -102,20 +109,22 @@ impl Cooperation {
                 name = std::ffi::OsStr::new(original);
             }
         }) {
-            return Err(
-                "this location is reserved for a journal operation and cannot be changed"
-                    .to_owned(),
-            );
+            return Err(solstone_core_cli_copy::render_for(
+                self.locale,
+                "journal.cli.segment.guard.reserved",
+                &[],
+            ));
         }
         let relative = relative
             .components()
             .map(|part| part.as_os_str().to_str())
             .collect::<Option<Vec<_>>>()
-            .ok_or_else(binding_hold)?
+            .ok_or_else(|| binding_hold(self.locale))?
             .join("/");
-        let contained = contained_path(self.journal(), &relative).map_err(|_| binding_hold())?;
+        let contained =
+            contained_path(self.journal(), &relative).map_err(|_| binding_hold(self.locale))?;
         if contained != path {
-            return Err(binding_hold());
+            return Err(binding_hold(self.locale));
         }
         Ok(())
     }
@@ -128,12 +137,12 @@ impl Cooperation {
     }
 }
 
-fn activity_hold() -> String {
-    "another journal operation needs attention before this change can continue".to_owned()
+fn activity_hold(locale: &str) -> String {
+    solstone_core_cli_copy::render_for(locale, "journal.cli.segment.guard.activity", &[])
 }
 
-fn binding_hold() -> String {
-    "the journal could not be checked, so this change is on hold".to_owned()
+fn binding_hold(locale: &str) -> String {
+    solstone_core_cli_copy::render_for(locale, "journal.cli.segment.guard.binding", &[])
 }
 
 #[cfg(all(test, unix, feature = "full-tests"))]

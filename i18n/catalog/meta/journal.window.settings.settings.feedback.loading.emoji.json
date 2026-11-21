@@ -1,0 +1,16 @@
+{
+  "description": "Status shown in the icon picker while emoji search results are loading.",
+  "context": "Journal window, settings view. Settings feedback.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "daddc0de539160bbc0cc88d551217bd246fd6266107f4d24876f58fb40466e8f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

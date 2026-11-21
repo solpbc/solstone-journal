@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for move day format.",
+  "context": "Journal command-line text for move day format.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "to_day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8b4ee47616d6282b769a05b605042f531ba23259f606511147eea1db47a9ce21",
+  "max_length": 104,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "date_format",
+      "kind": "accepted-input",
+      "value": "YYYYMMDD"
+    },
+    {
+      "name": "to_day_flag",
+      "kind": "flag",
+      "value": "--to-day"
+    }
+  ]
+}

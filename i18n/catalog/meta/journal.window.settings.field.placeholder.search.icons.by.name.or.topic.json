@@ -1,0 +1,16 @@
+{
+  "description": "Placeholder in the icon picker search box when the icons tab is active.",
+  "context": "Journal window, settings view. Field placeholder.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "58d36716c215f01b31035e6b81079e3ac5eb02e5b502112eb8b560ca7ff1fb73",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

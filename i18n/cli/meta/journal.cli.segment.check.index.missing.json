@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for check index missing.",
+  "context": "Journal command-line text for check index missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3cc04a48fc5e9b3af99bf7a56d8a9086cc9d411b2331fb45a1dab78505567439",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -75,3 +75,49 @@ assert(demo.renderTodayHtml({ today: '20251022', now: '2025-10-22T15:30:00.00000
 assert(demo.renderTodayHtml({ today: '20261117', now: '2026-11-17T15:30:00.000000' })
   .includes('href="/app/activities/"'));
 assert.strictEqual(mount('#today=bad').PULSE_URL, PULSE_URL);
+
+// Facet marks on Home: chips always carry facet titles and marks; activity rows
+// carry facet marks only when more than one enabled facet exists.
+function mountWithFacetMarks() {
+  const document = {
+    readyState: 'loading',
+    addEventListener() {},
+    querySelector() { return null; },
+  };
+  const window = {
+    createViewReady: () => () => {},
+    location: { href: '', hash: '' },
+    document,
+    addEventListener() {},
+    JournalFormat: { time: () => '12:00 PM' },
+    ConveyFacetMark: {
+      html: (facet, size) => `<span class="facet-mark facet-mark--${size}" data-mark="${facet.icon || facet.emoji || 'dot'}"></span>`,
+    },
+  };
+  window.window = window;
+  document.defaultView = window;
+  vm.runInNewContext(withViewRuntime(source), { window, document, console }, { filename: 'home.js' });
+  return window.__today.renderTodayHtml;
+}
+
+const renderWithMarks = mountWithFacetMarks();
+const oneFacetHtml = renderWithMarks({
+  facets: { 'side-project': { title: 'Side Project', color: '#ffcc33', emoji: '🧪', icon: '', muted: false } },
+  facet_data: { 'side-project': { minutes: 35 } },
+  activities: [{ id: '1', day: '20260602', facet: 'side-project', display_time: '2026-06-02T12:00:00+00:00', description: 'sketched parser' }],
+});
+const oneRow = oneFacetHtml.split('<a class="pulse-activity"')[1].split('</a>')[0];
+assert(!oneRow.includes('facet-mark'), 'single-facet activity rows stay uncluttered');
+assert(oneFacetHtml.includes('Side Project · 35m') && !oneFacetHtml.includes('side-project · 35m'), 'facet chip uses facet title instead of raw slug');
+assert(oneFacetHtml.includes('data-mark="🧪"'), 'facet chip renders facet mark even on a single-facet journal');
+
+const multiFacetHtml = renderWithMarks({
+  facets: {
+    consulting: { title: 'Consulting', color: '#e8913a', emoji: '', icon: 'briefcase', icon_svg: '<svg></svg>', muted: false },
+    'side-project': { title: 'Side Project', color: '#ffcc33', emoji: '🧪', icon: '', muted: false },
+  },
+  facet_data: { consulting: { minutes: 95 }, 'side-project': { minutes: 35 } },
+  activities: [{ id: '1', day: '20260602', facet: 'consulting', display_time: '2026-06-02T12:00:00+00:00', description: 'review' }],
+});
+const multiRow = multiFacetHtml.split('<a class="pulse-activity"')[1].split('</a>')[0];
+assert(multiRow.includes('data-mark="briefcase"'), 'multi-facet activity rows show the facet mark');

@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for check content empty.",
+  "context": "Journal command-line text for check content empty.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2181105a995f36124b0ad1a341c190c70bf5b9d12d786560be0e578a8bdfb3a5",
+  "max_length": 91,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "browser_files",
+      "kind": "accepted-input",
+      "value": "browser_*.jsonl"
+    },
+    {
+      "name": "screen_file",
+      "kind": "accepted-input",
+      "value": "screen.jsonl"
+    },
+    {
+      "name": "audio_file",
+      "kind": "accepted-input",
+      "value": "audio.jsonl"
+    }
+  ]
+}

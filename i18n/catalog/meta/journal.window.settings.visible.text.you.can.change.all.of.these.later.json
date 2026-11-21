@@ -1,0 +1,16 @@
+{
+  "description": "Reassurance line at the bottom of the add-a-facet dialog.",
+  "context": "Journal window, settings view. Visible text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "099a988547fb18e0e2933fa65d03e26ef1be3657fb01caa8be28edc06d60e084",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

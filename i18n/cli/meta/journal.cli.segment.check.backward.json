@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for check backward.",
+  "context": "Journal command-line text for check backward.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "af6b67b7f9b4d7498d6b93cbba7f4ed122db6dffcb25ce7bf75e40c85b744661",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

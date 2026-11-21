@@ -22745,6 +22745,3992 @@
       "call_contract": {
         "arguments": [
           {
+            "name": "input",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.argument.missing\u0004m6a6f75726e616c2e636c692e7365676d656e742e617267756d656e742e6d697373696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e617267756d656e742e6d697373696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.argument.missing",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e617267756d656e742e6d697373696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "usage: solstone journal segment <command> [options]\nsolstone journal segment: error: unrecognized arguments: the following arguments are required: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "input": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "usage: solstone journal segment <command> [options]\nsolstone journal segment: error: unrecognized arguments: the following arguments are required: ⁨sample⁩",
+      "message_id": "journal.cli.segment.argument.missing",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.argument.missing\", &[(\"input\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e617267756d656e742e6d697373696e67",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "arguments",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.argument.unknown\u0004m6a6f75726e616c2e636c692e7365676d656e742e617267756d656e742e756e6b6e6f776e",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e617267756d656e742e756e6b6e6f776e_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.argument.unknown",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e617267756d656e742e756e6b6e6f776e",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "usage: solstone journal segment <command> [options]\nsolstone journal segment: error: unrecognized arguments: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "arguments": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "usage: solstone journal segment <command> [options]\nsolstone journal segment: error: unrecognized arguments: ⁨sample⁩",
+      "message_id": "journal.cli.segment.argument.unknown",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.argument.unknown\", &[(\"arguments\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e617267756d656e742e756e6b6e6f776e",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.check.backward\u0004m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6261636b77617264",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6261636b77617264_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.check.backward",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6261636b77617264",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "backward chain",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "backward chain",
+      "message_id": "journal.cli.segment.check.backward",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.check.backward\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6261636b77617264",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.check.chain.no.day\u0004m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e636861696e2e6e6f2e646179",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e636861696e2e6e6f2e646179_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.check.chain.no.day",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e636861696e2e6e6f2e646179",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "prev_segment set without prev_day",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "prev_segment set without prev_day",
+      "message_id": "journal.cli.segment.check.chain.no.day",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.check.chain.no.day\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e636861696e2e6e6f2e646179",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.check.chain.no.successor\u0004m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e636861696e2e6e6f2e737563636573736f72",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e636861696e2e6e6f2e737563636573736f72_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.check.chain.no.successor",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e636861696e2e6e6f2e737563636573736f72",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "next segment not found, not stream tail",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "next segment not found, not stream tail",
+      "message_id": "journal.cli.segment.check.chain.no.successor",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.check.chain.no.successor\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e636861696e2e6e6f2e737563636573736f72",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.check.chain.previous\u0004m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e636861696e2e70726576696f7573",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e636861696e2e70726576696f7573_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.check.chain.previous",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e636861696e2e70726576696f7573",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "previous segment found",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "previous segment found",
+      "message_id": "journal.cli.segment.check.chain.previous",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.check.chain.previous\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e636861696e2e70726576696f7573",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.check.chain.start\u0004m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e636861696e2e7374617274",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e636861696e2e7374617274_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.check.chain.start",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e636861696e2e7374617274",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "no previous segment",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "no previous segment",
+      "message_id": "journal.cli.segment.check.chain.start",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.check.chain.start\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e636861696e2e7374617274",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.check.chain.tail\u0004m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e636861696e2e7461696c",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e636861696e2e7461696c_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.check.chain.tail",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e636861696e2e7461696c",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "stream tail",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "stream tail",
+      "message_id": "journal.cli.segment.check.chain.tail",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.check.chain.tail\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e636861696e2e7461696c",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.check.content.empty\u0004m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e636f6e74656e742e656d707479",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e636f6e74656e742e656d707479_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.check.content.empty",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e636f6e74656e742e656d707479",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "no audio.jsonl, screen.jsonl, or browser_*.jsonl",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "no audio.jsonl, screen.jsonl, or browser_*.jsonl",
+      "message_id": "journal.cli.segment.check.content.empty",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.check.content.empty\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e636f6e74656e742e656d707479",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.check.content.present\u0004m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e636f6e74656e742e70726573656e74",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e636f6e74656e742e70726573656e74_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.check.content.present",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e636f6e74656e742e70726573656e74",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "content files present",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "content files present",
+      "message_id": "journal.cli.segment.check.content.present",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.check.content.present\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e636f6e74656e742e70726573656e74",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.check.directory.absent\u0004m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6469726563746f72792e616273656e74",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6469726563746f72792e616273656e74_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.check.directory.absent",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6469726563746f72792e616273656e74",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "segment directory missing",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "segment directory missing",
+      "message_id": "journal.cli.segment.check.directory.absent",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.check.directory.absent\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6469726563746f72792e616273656e74",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.check.directory.exists\u0004m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6469726563746f72792e657869737473",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6469726563746f72792e657869737473_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.check.directory.exists",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6469726563746f72792e657869737473",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "directory exists",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "directory exists",
+      "message_id": "journal.cli.segment.check.directory.exists",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.check.directory.exists\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6469726563746f72792e657869737473",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.check.directory.missing\u0004m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6469726563746f72792e6d697373696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6469726563746f72792e6d697373696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.check.directory.missing",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6469726563746f72792e6d697373696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "directory missing",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "directory missing",
+      "message_id": "journal.cli.segment.check.directory.missing",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.check.directory.missing\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6469726563746f72792e6d697373696e67",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.check.forward\u0004m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e666f7277617264",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e666f7277617264_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.check.forward",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e666f7277617264",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "forward chain",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "forward chain",
+      "message_id": "journal.cli.segment.check.forward",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.check.forward\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e666f7277617264",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.check.index\u0004m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e696e646578",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e696e646578_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.check.index",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e696e646578",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "index presence",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "index presence",
+      "message_id": "journal.cli.segment.check.index",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.check.index\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e696e646578",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.check.index.absent\u0004m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e696e6465782e616273656e74",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e696e6465782e616273656e74_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.check.index.absent",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e696e6465782e616273656e74",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "journal index not available",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "journal index not available",
+      "message_id": "journal.cli.segment.check.index.absent",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.check.index.absent\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e696e6465782e616273656e74",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "error",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.check.index.error\u0004m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e696e6465782e6572726f72",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e696e6465782e6572726f72_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.check.index.error",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e696e6465782e6572726f72",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "journal index error: ⁨sample⁩ (run: solstone journal indexer --rescan)",
+      "folder": null,
+      "inputs": {
+        "error": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "journal index error: ⁨sample⁩ (run: solstone journal indexer --rescan)",
+      "message_id": "journal.cli.segment.check.index.error",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.check.index.error\", &[(\"error\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e696e6465782e6572726f72",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.check.index.missing\u0004m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e696e6465782e6d697373696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e696e6465782e6d697373696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.check.index.missing",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e696e6465782e6d697373696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "segment not indexed",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "segment not indexed",
+      "message_id": "journal.cli.segment.check.index.missing",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.check.index.missing\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e696e6465782e6d697373696e67",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.check.index.present\u0004m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e696e6465782e70726573656e74",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e696e6465782e70726573656e74_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.check.index.present",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e696e6465782e70726573656e74",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "segment indexed",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "segment indexed",
+      "message_id": "journal.cli.segment.check.index.present",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.check.index.present\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e696e6465782e70726573656e74",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.check.marker.exists\u0004m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6d61726b65722e657869737473",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6d61726b65722e657869737473_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.check.marker.exists",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6d61726b65722e657869737473",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "stream.json exists",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "stream.json exists",
+      "message_id": "journal.cli.segment.check.marker.exists",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.check.marker.exists\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6d61726b65722e657869737473",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.check.marker.invalid\u0004m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6d61726b65722e696e76616c6964",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6d61726b65722e696e76616c6964_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.check.marker.invalid",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6d61726b65722e696e76616c6964",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "stream.json invalid JSON",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "stream.json invalid JSON",
+      "message_id": "journal.cli.segment.check.marker.invalid",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.check.marker.invalid\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6d61726b65722e696e76616c6964",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.check.marker.missing\u0004m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6d61726b65722e6d697373696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6d61726b65722e6d697373696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.check.marker.missing",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6d61726b65722e6d697373696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "stream.json missing",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "stream.json missing",
+      "message_id": "journal.cli.segment.check.marker.missing",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.check.marker.missing\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6d61726b65722e6d697373696e67",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.check.marker.no.stream\u0004m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6d61726b65722e6e6f2e73747265616d",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6d61726b65722e6e6f2e73747265616d_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.check.marker.no.stream",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6d61726b65722e6e6f2e73747265616d",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "stream.json missing stream field",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "stream.json missing stream field",
+      "message_id": "journal.cli.segment.check.marker.no.stream",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.check.marker.no.stream\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6d61726b65722e6e6f2e73747265616d",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.check.marker.valid\u0004m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6d61726b65722e76616c6964",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6d61726b65722e76616c6964_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.check.marker.valid",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6d61726b65722e76616c6964",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "stream.json valid",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "stream.json valid",
+      "message_id": "journal.cli.segment.check.marker.valid",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.check.marker.valid\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6d61726b65722e76616c6964",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "path",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.check.next\u0004m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6e657874",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6e657874_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.check.next",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6e657874",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "next segment ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "path": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "next segment ⁨sample⁩",
+      "message_id": "journal.cli.segment.check.next",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.check.next\", &[(\"path\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6e657874",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "path",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.check.previous.missing\u0004m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e70726576696f75732e6d697373696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e70726576696f75732e6d697373696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.check.previous.missing",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e70726576696f75732e6d697373696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "missing previous segment ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "path": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "missing previous segment ⁨sample⁩",
+      "message_id": "journal.cli.segment.check.previous.missing",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.check.previous.missing\", &[(\"path\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e70726576696f75732e6d697373696e67",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "day",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.day.empty\u0004m6a6f75726e616c2e636c692e7365676d656e742e6461792e656d707479",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6461792e656d707479_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.day.empty",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6461792e656d707479",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "No segments found for ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "day": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "No segments found for ⁨sample⁩",
+      "message_id": "journal.cli.segment.day.empty",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.day.empty\", &[(\"day\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6461792e656d707479",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.guard.activity\u0004m6a6f75726e616c2e636c692e7365676d656e742e67756172642e6163746976697479",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e67756172642e6163746976697479_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.guard.activity",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e67756172642e6163746976697479",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "another journal operation needs attention before this change can continue",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "another journal operation needs attention before this change can continue",
+      "message_id": "journal.cli.segment.guard.activity",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.guard.activity\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e67756172642e6163746976697479",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.guard.binding\u0004m6a6f75726e616c2e636c692e7365676d656e742e67756172642e62696e64696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e67756172642e62696e64696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.guard.binding",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e67756172642e62696e64696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "the journal could not be checked, so this change is on hold",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "the journal could not be checked, so this change is on hold",
+      "message_id": "journal.cli.segment.guard.binding",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.guard.binding\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e67756172642e62696e64696e67",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.guard.reserved\u0004m6a6f75726e616c2e636c692e7365676d656e742e67756172642e7265736572766564",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e67756172642e7265736572766564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.guard.reserved",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e67756172642e7265736572766564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "this location is reserved for a journal operation and cannot be changed",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "this location is reserved for a journal operation and cannot be changed",
+      "message_id": "journal.cli.segment.guard.reserved",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.guard.reserved\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e67756172642e7265736572766564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.help.inspect\u0004m6a6f75726e616c2e636c692e7365676d656e742e68656c702e696e7370656374",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e68656c702e696e7370656374_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.help.inspect",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e68656c702e696e7370656374",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "usage: solstone journal segment <command> [options] inspect [-h] [--json] path\n\npositional arguments:\n  path        Segment path: day/stream/segment (e.g.\n              20260304/default/090000_300)\n\noptions:\n  -h, --help  show this help message and exit\n  --json      Output as JSON",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "usage: solstone journal segment <command> [options] inspect [-h] [--json] path\n\npositional arguments:\n  path        Segment path: day/stream/segment (e.g.\n              20260304/default/090000_300)\n\noptions:\n  -h, --help  show this help message and exit\n  --json      Output as JSON",
+      "message_id": "journal.cli.segment.help.inspect",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.help.inspect\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e68656c702e696e7370656374",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.help.list\u0004m6a6f75726e616c2e636c692e7365676d656e742e68656c702e6c697374",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e68656c702e6c697374_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.help.list",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e68656c702e6c697374",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "usage: solstone journal segment <command> [options] list [-h] [--stream STREAM]\n                                                [--json]\n                                                day\n\npositional arguments:\n  day              Day in YYYYMMDD format\n\noptions:\n  -h, --help       show this help message and exit\n  --stream STREAM  Filter to a specific stream\n  --json           Output as JSON",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "usage: solstone journal segment <command> [options] list [-h] [--stream STREAM]\n                                                [--json]\n                                                day\n\npositional arguments:\n  day              Day in YYYYMMDD format\n\noptions:\n  -h, --help       show this help message and exit\n  --stream STREAM  Filter to a specific stream\n  --json           Output as JSON",
+      "message_id": "journal.cli.segment.help.list",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.help.list\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e68656c702e6c697374",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.help.move\u0004m6a6f75726e616c2e636c692e7365676d656e742e68656c702e6d6f7665",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e68656c702e6d6f7665_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.help.move",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e68656c702e6d6f7665",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "usage: solstone journal segment <command> [options] move [-h] --to-day TO_DAY\n                                                [--to-time TO_TIME]\n                                                [--dry-run] [-v]\n                                                path\n\npositional arguments:\n  path               Segment path: day/stream/segment (e.g.\n                     20260304/default/090000_300)\n\noptions:\n  -h, --help         show this help message and exit\n  --to-day TO_DAY    Destination day (YYYYMMDD)\n  --to-time TO_TIME  New time (HHMMSS), preserving original duration\n  --dry-run          Show plan without making changes\n  -v, --verbose      Show detailed progress",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "usage: solstone journal segment <command> [options] move [-h] --to-day TO_DAY\n                                                [--to-time TO_TIME]\n                                                [--dry-run] [-v]\n                                                path\n\npositional arguments:\n  path               Segment path: day/stream/segment (e.g.\n                     20260304/default/090000_300)\n\noptions:\n  -h, --help         show this help message and exit\n  --to-day TO_DAY    Destination day (YYYYMMDD)\n  --to-time TO_TIME  New time (HHMMSS), preserving original duration\n  --dry-run          Show plan without making changes\n  -v, --verbose      Show detailed progress",
+      "message_id": "journal.cli.segment.help.move",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.help.move\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e68656c702e6d6f7665",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.help.top\u0004m6a6f75726e616c2e636c692e7365676d656e742e68656c702e746f70",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e68656c702e746f70_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.help.top",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e68656c702e746f70",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "usage: solstone journal segment <command> [options]\n\nInspect and manage journal segments\n\npositional arguments:\n  {list,inspect,verify,move}\n    list                List segments for a day\n    inspect             Show segment metadata\n    verify              Verify segment integrity\n    move                Move segment to a different day/time\n\noptions:\n  -h, --help            show this help message and exit\n  -v, --verbose         Enable verbose output\n  -d, --debug           Enable debug logging",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "usage: solstone journal segment <command> [options]\n\nInspect and manage journal segments\n\npositional arguments:\n  {list,inspect,verify,move}\n    list                List segments for a day\n    inspect             Show segment metadata\n    verify              Verify segment integrity\n    move                Move segment to a different day/time\n\noptions:\n  -h, --help            show this help message and exit\n  -v, --verbose         Enable verbose output\n  -d, --debug           Enable debug logging",
+      "message_id": "journal.cli.segment.help.top",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.help.top\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e68656c702e746f70",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.help.verify\u0004m6a6f75726e616c2e636c692e7365676d656e742e68656c702e766572696679",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e68656c702e766572696679_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.help.verify",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e68656c702e766572696679",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "usage: solstone journal segment <command> [options] verify [-h] [--day DAY] [--json]\n                                                  [path]\n\npositional arguments:\n  path        Segment path: day/stream/segment\n\noptions:\n  -h, --help  show this help message and exit\n  --day DAY   Verify all segments for a day\n  --json      Output as JSON",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "usage: solstone journal segment <command> [options] verify [-h] [--day DAY] [--json]\n                                                  [path]\n\npositional arguments:\n  path        Segment path: day/stream/segment\n\noptions:\n  -h, --help  show this help message and exit\n  --day DAY   Verify all segments for a day\n  --json      Output as JSON",
+      "message_id": "journal.cli.segment.help.verify",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.help.verify\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e68656c702e766572696679",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "path",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.identity.default\u0004m6a6f75726e616c2e636c692e7365676d656e742e6964656e746974792e64656661756c74",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6964656e746974792e64656661756c74_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.identity.default",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6964656e746974792e64656661756c74",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "segment list refused: named stream directory \"_default\" cannot be spelled as a record identity: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "path": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "segment list refused: named stream directory \"_default\" cannot be spelled as a record identity: ⁨sample⁩",
+      "message_id": "journal.cli.segment.identity.default",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.identity.default\", &[(\"path\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6964656e746974792e64656661756c74",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "stream",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "key",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.identity.duplicate\u0004m6a6f75726e616c2e636c692e7365676d656e742e6964656e746974792e6475706c6963617465",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6964656e746974792e6475706c6963617465_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.identity.duplicate",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6964656e746974792e6475706c6963617465",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "segment list refused: multiple segments share stream ⁨sample⁩ key ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "key": "sample",
+        "stream": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "segment list refused: multiple segments share stream ⁨sample⁩ key ⁨sample⁩",
+      "message_id": "journal.cli.segment.identity.duplicate",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.identity.duplicate\", &[(\"key\", Value::String(\"sample\")), (\"stream\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6964656e746974792e6475706c6963617465",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "path",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.identity.encoding\u0004m6a6f75726e616c2e636c692e7365676d656e742e6964656e746974792e656e636f64696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6964656e746974792e656e636f64696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.identity.encoding",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6964656e746974792e656e636f64696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "segment list refused: segment path is not UTF-8 representable: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "path": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "segment list refused: segment path is not UTF-8 representable: ⁨sample⁩",
+      "message_id": "journal.cli.segment.identity.encoding",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.identity.encoding\", &[(\"path\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6964656e746974792e656e636f64696e67",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "detail",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.identity.refused\u0004m6a6f75726e616c2e636c692e7365676d656e742e6964656e746974792e72656675736564",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6964656e746974792e72656675736564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.identity.refused",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6964656e746974792e72656675736564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "segment list refused: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "detail": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "segment list refused: ⁨sample⁩",
+      "message_id": "journal.cli.segment.identity.refused",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.identity.refused\", &[(\"detail\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6964656e746974792e72656675736564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.inspect.chain\u0004m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e636861696e",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e636861696e_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.inspect.chain",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e636861696e",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Chain:",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "Chain:",
+      "message_id": "journal.cli.segment.inspect.chain",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.inspect.chain\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e636861696e",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "entries",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.inspect.events\u0004m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e6576656e7473",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e6576656e7473_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.inspect.events",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e6576656e7473",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Events: ⁨sample⁩ entries",
+      "folder": null,
+      "inputs": {
+        "entries": "sample",
+        "quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "Events: ⁨sample⁩ entries",
+      "message_id": "journal.cli.segment.inspect.events",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.inspect.events\", &[(\"entries\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e6576656e7473",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "entries",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "tracts",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.inspect.events.tracts\u0004m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e6576656e74732e747261637473",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e6576656e74732e747261637473_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.inspect.events.tracts",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e6576656e74732e747261637473",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Events: ⁨sample⁩ entries (⁨sample⁩)",
+      "folder": null,
+      "inputs": {
+        "entries": "sample",
+        "quantity": 0,
+        "tracts": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Events: ⁨sample⁩ entries (⁨sample⁩)",
+      "message_id": "journal.cli.segment.inspect.events.tracts",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.inspect.events.tracts\", &[(\"entries\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0)), (\"tracts\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e6576656e74732e747261637473",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "count",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.inspect.files\u0004m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e66696c6573",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e66696c6573_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.inspect.files",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e66696c6573",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Files (⁨sample⁩):",
+      "folder": null,
+      "inputs": {
+        "count": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Files (⁨sample⁩):",
+      "message_id": "journal.cli.segment.inspect.files",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.inspect.files\", &[(\"count\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e66696c6573",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "error",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.inspect.index.error\u0004m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e696e6465782e6572726f72",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e696e6465782e6572726f72_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.inspect.index.error",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e696e6465782e6572726f72",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Index: error (⁨sample⁩) - run: solstone journal indexer --rescan",
+      "folder": null,
+      "inputs": {
+        "error": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Index: error (⁨sample⁩) - run: solstone journal indexer --rescan",
+      "message_id": "journal.cli.segment.inspect.index.error",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.inspect.index.error\", &[(\"error\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e696e6465782e6572726f72",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.inspect.index.missing\u0004m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e696e6465782e6d697373696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e696e6465782e6d697373696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.inspect.index.missing",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e696e6465782e6d697373696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Index: not-indexed",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "Index: not-indexed",
+      "message_id": "journal.cli.segment.inspect.index.missing",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.inspect.index.missing\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e696e6465782e6d697373696e67",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.inspect.index.unavailable\u0004m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e696e6465782e756e617661696c61626c65",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e696e6465782e756e617661696c61626c65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.inspect.index.unavailable",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e696e6465782e756e617661696c61626c65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Index: unavailable",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "Index: unavailable",
+      "message_id": "journal.cli.segment.inspect.index.unavailable",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.inspect.index.unavailable\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e696e6465782e756e617661696c61626c65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "chunks",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.inspect.indexed\u0004m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e696e6465786564",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e696e6465786564_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.inspect.indexed",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e696e6465786564",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Index: indexed (⁨sample⁩ chunks)",
+      "folder": null,
+      "inputs": {
+        "chunks": "sample",
+        "quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "Index: indexed (⁨sample⁩ chunks)",
+      "message_id": "journal.cli.segment.inspect.indexed",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.inspect.indexed\", &[(\"chunks\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e696e6465786564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "next",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.inspect.next\u0004m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e6e657874",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e6e657874_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.inspect.next",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e6e657874",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "next: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "next": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "next: ⁨sample⁩",
+      "message_id": "journal.cli.segment.inspect.next",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.inspect.next\", &[(\"next\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e6e657874",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.inspect.next.none\u0004m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e6e6578742e6e6f6e65",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e6e6578742e6e6f6e65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.inspect.next.none",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e6e6578742e6e6f6e65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "next: (none)",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "next: (none)",
+      "message_id": "journal.cli.segment.inspect.next.none",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.inspect.next.none\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e6e6578742e6e6f6e65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.inspect.next.tail\u0004m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e6e6578742e7461696c",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e6e6578742e7461696c_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.inspect.next.tail",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e6e6578742e7461696c",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "next: (tail)",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "next: (tail)",
+      "message_id": "journal.cli.segment.inspect.next.tail",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.inspect.next.tail\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e6e6578742e7461696c",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "path",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.inspect.path\u0004m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e70617468",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e70617468_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.inspect.path",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e70617468",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Segment: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "path": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Segment: ⁨sample⁩",
+      "message_id": "journal.cli.segment.inspect.path",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.inspect.path\", &[(\"path\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e70617468",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "previous",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.inspect.prev\u0004m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e70726576",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e70726576_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.inspect.prev",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e70726576",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "prev: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "previous": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "prev: ⁨sample⁩",
+      "message_id": "journal.cli.segment.inspect.prev",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.inspect.prev\", &[(\"previous\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e70726576",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "path",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.inspect.prev.missing\u0004m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e707265762e6d697373696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e707265762e6d697373696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.inspect.prev.missing",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e707265762e6d697373696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "prev: ⁨sample⁩ [MISSING]",
+      "folder": null,
+      "inputs": {
+        "path": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "prev: ⁨sample⁩ [MISSING]",
+      "message_id": "journal.cli.segment.inspect.prev.missing",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.inspect.prev.missing\", &[(\"path\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e707265762e6d697373696e67",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.inspect.prev.none\u0004m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e707265762e6e6f6e65",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e707265762e6e6f6e65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.inspect.prev.none",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e707265762e6e6f6e65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "prev: (none)",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "prev: (none)",
+      "message_id": "journal.cli.segment.inspect.prev.none",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.inspect.prev.none\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e707265762e6e6f6e65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "size",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.inspect.size\u0004m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e73697a65",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e73697a65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.inspect.size",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e73697a65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Size: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "size": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Size: ⁨sample⁩",
+      "message_id": "journal.cli.segment.inspect.size",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.inspect.size\", &[(\"size\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e73697a65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "stream",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.inspect.stream\u0004m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e73747265616d",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e73747265616d_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.inspect.stream",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e73747265616d",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Stream:  ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "stream": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Stream:  ⁨sample⁩",
+      "message_id": "journal.cli.segment.inspect.stream",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.inspect.stream\", &[(\"stream\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e73747265616d",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "stream",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "sequence",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.inspect.stream.seq\u0004m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e73747265616d2e736571",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e73747265616d2e736571_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.inspect.stream.seq",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e73747265616d2e736571",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Stream:  ⁨sample⁩ (seq ⁨sample⁩)",
+      "folder": null,
+      "inputs": {
+        "sequence": "sample",
+        "stream": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Stream:  ⁨sample⁩ (seq ⁨sample⁩)",
+      "message_id": "journal.cli.segment.inspect.stream.seq",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.inspect.stream.seq\", &[(\"sequence\", Value::String(\"sample\")), (\"stream\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e73747265616d2e736571",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "count",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.inspect.talents\u0004m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e74616c656e7473",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e74616c656e7473_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.inspect.talents",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e74616c656e7473",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Talents (⁨sample⁩):",
+      "folder": null,
+      "inputs": {
+        "count": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Talents (⁨sample⁩):",
+      "message_id": "journal.cli.segment.inspect.talents",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.inspect.talents\", &[(\"count\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e74616c656e7473",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "range",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "seconds",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.inspect.time\u0004m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e74696d65",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e74696d65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.inspect.time",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e74696d65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Time:    ⁨sample⁩ (⁨sample⁩s)",
+      "folder": null,
+      "inputs": {
+        "range": "sample",
+        "seconds": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Time:    ⁨sample⁩ (⁨sample⁩s)",
+      "message_id": "journal.cli.segment.inspect.time",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.inspect.time\", &[(\"range\", Value::String(\"sample\")), (\"seconds\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e74696d65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.list.heading.dur\u0004m6a6f75726e616c2e636c692e7365676d656e742e6c6973742e68656164696e672e647572",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6c6973742e68656164696e672e647572_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.list.heading.dur",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6c6973742e68656164696e672e647572",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "DUR",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "DUR",
+      "message_id": "journal.cli.segment.list.heading.dur",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.list.heading.dur\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6c6973742e68656164696e672e647572",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.list.heading.files\u0004m6a6f75726e616c2e636c692e7365676d656e742e6c6973742e68656164696e672e66696c6573",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6c6973742e68656164696e672e66696c6573_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.list.heading.files",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6c6973742e68656164696e672e66696c6573",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "FILES",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "FILES",
+      "message_id": "journal.cli.segment.list.heading.files",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.list.heading.files\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6c6973742e68656164696e672e66696c6573",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.list.heading.segment\u0004m6a6f75726e616c2e636c692e7365676d656e742e6c6973742e68656164696e672e7365676d656e74",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6c6973742e68656164696e672e7365676d656e74_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.list.heading.segment",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6c6973742e68656164696e672e7365676d656e74",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "SEGMENT",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "SEGMENT",
+      "message_id": "journal.cli.segment.list.heading.segment",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.list.heading.segment\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6c6973742e68656164696e672e7365676d656e74",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.list.heading.size\u0004m6a6f75726e616c2e636c692e7365676d656e742e6c6973742e68656164696e672e73697a65",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6c6973742e68656164696e672e73697a65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.list.heading.size",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6c6973742e68656164696e672e73697a65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "SIZE",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "SIZE",
+      "message_id": "journal.cli.segment.list.heading.size",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.list.heading.size\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6c6973742e68656164696e672e73697a65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.list.heading.stream\u0004m6a6f75726e616c2e636c692e7365676d656e742e6c6973742e68656164696e672e73747265616d",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6c6973742e68656164696e672e73747265616d_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.list.heading.stream",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6c6973742e68656164696e672e73747265616d",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "STREAM",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "STREAM",
+      "message_id": "journal.cli.segment.list.heading.stream",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.list.heading.stream\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6c6973742e68656164696e672e73747265616d",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.list.heading.talents\u0004m6a6f75726e616c2e636c692e7365676d656e742e6c6973742e68656164696e672e74616c656e7473",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6c6973742e68656164696e672e74616c656e7473_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.list.heading.talents",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6c6973742e68656164696e672e74616c656e7473",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "TALENTS",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "TALENTS",
+      "message_id": "journal.cli.segment.list.heading.talents",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.list.heading.talents\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6c6973742e68656164696e672e74616c656e7473",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.list.heading.time\u0004m6a6f75726e616c2e636c692e7365676d656e742e6c6973742e68656164696e672e74696d65",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6c6973742e68656164696e672e74696d65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.list.heading.time",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6c6973742e68656164696e672e74696d65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "TIME",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "TIME",
+      "message_id": "journal.cli.segment.list.heading.time",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.list.heading.time\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6c6973742e68656164696e672e74696d65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "path",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.missing\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d697373696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d697373696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.missing",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d697373696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Segment not found: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "path": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Segment not found: ⁨sample⁩",
+      "message_id": "journal.cli.segment.missing",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.missing\", &[(\"path\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d697373696e67",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "to_day",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.day.format\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6461792e666f726d6174",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6461792e666f726d6174_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.day.format",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6461792e666f726d6174",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Invalid --to-day format: ⁨sample⁩ (expected YYYYMMDD)",
+      "folder": null,
+      "inputs": {
+        "to_day": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Invalid --to-day format: ⁨sample⁩ (expected YYYYMMDD)",
+      "message_id": "journal.cli.segment.move.day.format",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.day.format\", &[(\"to_day\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6461792e666f726d6174",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "path",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.directory.created\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6469726563746f72792e63726561746564",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6469726563746f72792e63726561746564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.directory.created",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6469726563746f72792e63726561746564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "created directory: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "path": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "created directory: ⁨sample⁩",
+      "message_id": "journal.cli.segment.move.directory.created",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.directory.created\", &[(\"path\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6469726563746f72792e63726561746564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "destination",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.directory.exists\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6469726563746f72792e657869737473",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6469726563746f72792e657869737473_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.directory.exists",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6469726563746f72792e657869737473",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Destination ⁨sample⁩ already exists; no changes made",
+      "folder": null,
+      "inputs": {
+        "destination": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Destination ⁨sample⁩ already exists; no changes made",
+      "message_id": "journal.cli.segment.move.directory.exists",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.directory.exists\", &[(\"destination\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6469726563746f72792e657869737473",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "error",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.directory.failed\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6469726563746f72792e6661696c6564",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6469726563746f72792e6661696c6564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.directory.failed",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6469726563746f72792e6661696c6564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "step 1 directory move failed: ⁨sample⁩; source and index remain authoritative",
+      "folder": null,
+      "inputs": {
+        "error": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "step 1 directory move failed: ⁨sample⁩; source and index remain authoritative",
+      "message_id": "journal.cli.segment.move.directory.failed",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.directory.failed\", &[(\"error\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6469726563746f72792e6661696c6564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "source",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "destination",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.directory.moved\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6469726563746f72792e6d6f766564",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6469726563746f72792e6d6f766564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.directory.moved",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6469726563746f72792e6d6f766564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "moved directory: ⁨sample⁩ -> ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "destination": "sample",
+        "source": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "moved directory: ⁨sample⁩ -> ⁨sample⁩",
+      "message_id": "journal.cli.segment.move.directory.moved",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.directory.moved\", &[(\"destination\", Value::String(\"sample\")), (\"source\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6469726563746f72792e6d6f766564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.dry\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e647279",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e647279_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.dry",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e647279",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "[dry run] No changes made",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "[dry run] No changes made",
+      "message_id": "journal.cli.segment.move.dry",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.dry\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e647279",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.events.none\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6576656e74732e6e6f6e65",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6576656e74732e6e6f6e65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.events.none",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6576656e74732e6e6f6e65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "no events.jsonl to rewrite",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "no events.jsonl to rewrite",
+      "message_id": "journal.cli.segment.move.events.none",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.events.none\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6576656e74732e6e6f6e65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "count",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "source_day",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "destination_day",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "source",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "destination",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.events.rewritten\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6576656e74732e72657772697474656e",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6576656e74732e72657772697474656e_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.events.rewritten",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6576656e74732e72657772697474656e",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "rewrote ⁨sample⁩ events.jsonl lines (day: ⁨sample⁩->⁨sample⁩, segment: ⁨sample⁩->⁨sample⁩)",
+      "folder": null,
+      "inputs": {
+        "count": "sample",
+        "destination": "sample",
+        "destination_day": "sample",
+        "quantity": 0,
+        "source": "sample",
+        "source_day": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "rewrote ⁨sample⁩ events.jsonl lines (day: ⁨sample⁩->⁨sample⁩, segment: ⁨sample⁩->⁨sample⁩)",
+      "message_id": "journal.cli.segment.move.events.rewritten",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.events.rewritten\", &[(\"count\", Value::String(\"sample\")), (\"destination\", Value::String(\"sample\")), (\"destination_day\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0)), (\"source\", Value::String(\"sample\")), (\"source_day\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6576656e74732e72657772697474656e",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "segment",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "day",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "stream",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.exists\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e657869737473",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e657869737473_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.exists",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e657869737473",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Segment ⁨sample⁩ already exists on ⁨sample⁩/⁨sample⁩. Use --to-time to specify an alternate time.",
+      "folder": null,
+      "inputs": {
+        "day": "sample",
+        "segment": "sample",
+        "stream": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Segment ⁨sample⁩ already exists on ⁨sample⁩/⁨sample⁩. Use --to-time to specify an alternate time.",
+      "message_id": "journal.cli.segment.move.exists",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.exists\", &[(\"day\", Value::String(\"sample\")), (\"segment\", Value::String(\"sample\")), (\"stream\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e657869737473",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "count",
+            "type": "integer",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.fail.ambiguous\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e616d626967756f7573",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e616d626967756f7573_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.fail.ambiguous",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e616d626967756f7573",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "step 3 successor patch inconsistent after move: ambiguous chain: ⁨0⁩ successors left unpatched",
+      "folder": null,
+      "inputs": {
+        "count": 0,
+        "quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "step 3 successor patch inconsistent after move: ambiguous chain: ⁨0⁩ successors left unpatched",
+      "message_id": "journal.cli.segment.move.fail.ambiguous",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.fail.ambiguous\", &[(\"count\", Value::Integer(0)), (\"quantity\", Value::Cardinal(0))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e616d626967756f7573",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "detail",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.fail.events\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e6576656e7473",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e6576656e7473_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.fail.events",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e6576656e7473",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "step 2 events rewrite inconsistent after move: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "detail": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "step 2 events rewrite inconsistent after move: ⁨sample⁩",
+      "message_id": "journal.cli.segment.move.fail.events",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.fail.events\", &[(\"detail\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e6576656e7473",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "detail",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.fail.health.marker\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e6865616c74682e6d61726b6572",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e6865616c74682e6d61726b6572_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.fail.health.marker",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e6865616c74682e6d61726b6572",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "step 6 health-marker touch inconsistent after move: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "detail": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "step 6 health-marker touch inconsistent after move: ⁨sample⁩",
+      "message_id": "journal.cli.segment.move.fail.health.marker",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.fail.health.marker\", &[(\"detail\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e6865616c74682e6d61726b6572",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "error",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.fail.search\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e736561726368",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e736561726368_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.fail.search",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e736561726368",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "step 5 search update inconsistent after move: the search update could not be queued: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "error": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "step 5 search update inconsistent after move: the search update could not be queued: ⁨sample⁩",
+      "message_id": "journal.cli.segment.move.fail.search",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.fail.search\", &[(\"error\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e736561726368",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "detail",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.fail.successor\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e737563636573736f72",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e737563636573736f72_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.fail.successor",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e737563636573736f72",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "step 3 successor patch inconsistent after move: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "detail": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "step 3 successor patch inconsistent after move: ⁨sample⁩",
+      "message_id": "journal.cli.segment.move.fail.successor",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.fail.successor\", &[(\"detail\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e737563636573736f72",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.fail.tail.locked\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e7461696c2e6c6f636b6564",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e7461696c2e6c6f636b6564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.fail.tail.locked",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e7461696c2e6c6f636b6564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "step 4 stream-tail repair inconsistent after move: could not lock stream record",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "step 4 stream-tail repair inconsistent after move: could not lock stream record",
+      "message_id": "journal.cli.segment.move.fail.tail.locked",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.fail.tail.locked\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e7461696c2e6c6f636b6564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.fail.tail.malformed\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e7461696c2e6d616c666f726d6564",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e7461696c2e6d616c666f726d6564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.fail.tail.malformed",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e7461696c2e6d616c666f726d6564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "step 4 stream-tail repair inconsistent after move: malformed stream record",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "step 4 stream-tail repair inconsistent after move: malformed stream record",
+      "message_id": "journal.cli.segment.move.fail.tail.malformed",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.fail.tail.malformed\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e7461696c2e6d616c666f726d6564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.fail.tail.no.record\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e7461696c2e6e6f2e7265636f7264",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e7461696c2e6e6f2e7265636f7264_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.fail.tail.no.record",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e7461696c2e6e6f2e7265636f7264",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "step 4 stream-tail repair inconsistent after move: no stream record; identity was not re-authored",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "step 4 stream-tail repair inconsistent after move: no stream record; identity was not re-authored",
+      "message_id": "journal.cli.segment.move.fail.tail.no.record",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.fail.tail.no.record\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e7461696c2e6e6f2e7265636f7264",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.fail.tail.write\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e7461696c2e7772697465",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e7461696c2e7772697465_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.fail.tail.write",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e7461696c2e7772697465",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "step 4 stream-tail repair inconsistent after move: atomic publication failed",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "step 4 stream-tail repair inconsistent after move: atomic publication failed",
+      "message_id": "journal.cli.segment.move.fail.tail.write",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.fail.tail.write\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e7461696c2e7772697465",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "days",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.markers.touched\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6d61726b6572732e746f7563686564",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6d61726b6572732e746f7563686564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.markers.touched",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6d61726b6572732e746f7563686564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "touched health markers: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "days": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "touched health markers: ⁨sample⁩",
+      "message_id": "journal.cli.segment.move.markers.touched",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.markers.touched\", &[(\"days\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6d61726b6572732e746f7563686564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.no.duration\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6e6f2e6475726174696f6e",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6e6f2e6475726174696f6e_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.no.duration",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6e6f2e6475726174696f6e",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Source segment key has no duration",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "Source segment key has no duration",
+      "message_id": "journal.cli.segment.move.no.duration",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.no.duration\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6e6f2e6475726174696f6e",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.no.marker\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6e6f2e6d61726b6572",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6e6f2e6d61726b6572_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.no.marker",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6e6f2e6d61726b6572",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "No stream.json in source segment",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "No stream.json in source segment",
+      "message_id": "journal.cli.segment.move.no.marker",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.no.marker\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6e6f2e6d61726b6572",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "destination_segment",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "to_day",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.no.slot\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6e6f2e736c6f74",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6e6f2e736c6f74_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.no.slot",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6e6f2e736c6f74",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "No available segment slot near ⁨sample⁩ on ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "destination_segment": "sample",
+        "to_day": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "No available segment slot near ⁨sample⁩ on ⁨sample⁩",
+      "message_id": "journal.cli.segment.move.no.slot",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.no.slot\", &[(\"destination_segment\", Value::String(\"sample\")), (\"to_day\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6e6f2e736c6f74",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "source",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "destination",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.plan\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.plan",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Move: ⁨sample⁩ -> ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "destination": "sample",
+        "source": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Move: ⁨sample⁩ -> ⁨sample⁩",
+      "message_id": "journal.cli.segment.move.plan",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.plan\", &[(\"destination\", Value::String(\"sample\")), (\"source\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "count",
+            "type": "integer",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.plan.ambiguous\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e2e616d626967756f7573",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e2e616d626967756f7573_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.plan.ambiguous",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e2e616d626967756f7573",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "successor to patch: (ambiguous: ⁨0⁩ successors)",
+      "folder": null,
+      "inputs": {
+        "count": 0,
+        "quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "successor to patch: (ambiguous: ⁨0⁩ successors)",
+      "message_id": "journal.cli.segment.move.plan.ambiguous",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.plan.ambiguous\", &[(\"count\", Value::Integer(0)), (\"quantity\", Value::Cardinal(0))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e2e616d626967756f7573",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "count",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.plan.events\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e2e6576656e7473",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e2e6576656e7473_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.plan.events",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e2e6576656e7473",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "events.jsonl lines: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "count": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "events.jsonl lines: ⁨sample⁩",
+      "message_id": "journal.cli.segment.move.plan.events",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.plan.events\", &[(\"count\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e2e6576656e7473",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "chunks",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.plan.index\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e2e696e646578",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e2e696e646578_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.plan.index",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e2e696e646578",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "index chunks: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "chunks": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "index chunks: ⁨sample⁩",
+      "message_id": "journal.cli.segment.move.plan.index",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.plan.index\", &[(\"chunks\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e2e696e646578",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "error",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.plan.index.error\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e2e696e6465782e6572726f72",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e2e696e6465782e6572726f72_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.plan.index.error",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e2e696e6465782e6572726f72",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "index read error: ⁨sample⁩ (delete+reindex will be attempted; run: solstone journal indexer --rescan)",
+      "folder": null,
+      "inputs": {
+        "error": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "index read error: ⁨sample⁩ (delete+reindex will be attempted; run: solstone journal indexer --rescan)",
+      "message_id": "journal.cli.segment.move.plan.index.error",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.plan.index.error\", &[(\"error\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e2e696e6465782e6572726f72",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "source_day",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "destination_day",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.plan.markers\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e2e6d61726b657273",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e2e6d61726b657273_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.plan.markers",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e2e6d61726b657273",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "health markers: ⁨sample⁩, ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "destination_day": "sample",
+        "source_day": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "health markers: ⁨sample⁩, ⁨sample⁩",
+      "message_id": "journal.cli.segment.move.plan.markers",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.plan.markers\", &[(\"destination_day\", Value::String(\"sample\")), (\"source_day\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e2e6d61726b657273",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "path",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.plan.successor\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e2e737563636573736f72",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e2e737563636573736f72_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.plan.successor",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e2e737563636573736f72",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "successor to patch: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "path": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "successor to patch: ⁨sample⁩",
+      "message_id": "journal.cli.segment.move.plan.successor",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.plan.successor\", &[(\"path\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e2e737563636573736f72",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.plan.tail\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e2e7461696c",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e2e7461696c_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.plan.tail",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e2e7461696c",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "successor to patch: (none - stream tail)",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "successor to patch: (none - stream tail)",
+      "message_id": "journal.cli.segment.move.plan.tail",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.plan.tail\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e2e7461696c",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.running\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e72756e6e696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e72756e6e696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.running",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e72756e6e696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Executing move...",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "Executing move...",
+      "message_id": "journal.cli.segment.move.running",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.running\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e72756e6e696e67",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.same\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e73616d65",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e73616d65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.same",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e73616d65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Source and destination are the same",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "Source and destination are the same",
+      "message_id": "journal.cli.segment.move.same",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.same\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e73616d65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.search.queued\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e7365617263682e717565756564",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e7365617263682e717565756564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.search.queued",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e7365617263682e717565756564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "search updates queued",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "search updates queued",
+      "message_id": "journal.cli.segment.move.search.queued",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.search.queued\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e7365617263682e717565756564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "path_stream",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "marker_stream",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.stream.mismatch\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e73747265616d2e6d69736d61746368",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e73747265616d2e6d69736d61746368_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.stream.mismatch",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e73747265616d2e6d69736d61746368",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Stream mismatch: path says '⁨sample⁩' but stream.json says '⁨sample⁩'",
+      "folder": null,
+      "inputs": {
+        "marker_stream": "sample",
+        "path_stream": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Stream mismatch: path says '⁨sample⁩' but stream.json says '⁨sample⁩'",
+      "message_id": "journal.cli.segment.move.stream.mismatch",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.stream.mismatch\", &[(\"marker_stream\", Value::String(\"sample\")), (\"path_stream\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e73747265616d2e6d69736d61746368",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "stream",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.stream.rebuilt\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e73747265616d2e72656275696c74",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e73747265616d2e72656275696c74_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.stream.rebuilt",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e73747265616d2e72656275696c74",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "rebuilt stream state: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "stream": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "rebuilt stream state: ⁨sample⁩",
+      "message_id": "journal.cli.segment.move.stream.rebuilt",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.stream.rebuilt\", &[(\"stream\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e73747265616d2e72656275696c74",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.successor.none\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e737563636573736f722e6e6f6e65",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e737563636573736f722e6e6f6e65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.successor.none",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e737563636573736f722e6e6f6e65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "no successor to patch (stream tail)",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "no successor to patch (stream tail)",
+      "message_id": "journal.cli.segment.move.successor.none",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.successor.none\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e737563636573736f722e6e6f6e65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "path",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.successor.patched\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e737563636573736f722e70617463686564",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e737563636573736f722e70617463686564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.successor.patched",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e737563636573736f722e70617463686564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "patched successor ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "path": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "patched successor ⁨sample⁩",
+      "message_id": "journal.cli.segment.move.successor.patched",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.successor.patched\", &[(\"path\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e737563636573736f722e70617463686564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.talents\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e74616c656e7473",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e74616c656e7473_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.talents",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e74616c656e7473",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "think will re-run daily talents on the touched days",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "think will re-run daily talents on the touched days",
+      "message_id": "journal.cli.segment.move.talents",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.talents\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e74616c656e7473",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "time",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.move.time.format\u0004m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e74696d652e666f726d6174",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e74696d652e666f726d6174_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.move.time.format",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e74696d652e666f726d6174",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Invalid --to-time format: ⁨sample⁩ (expected HHMMSS)",
+      "folder": null,
+      "inputs": {
+        "time": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Invalid --to-time format: ⁨sample⁩ (expected HHMMSS)",
+      "message_id": "journal.cli.segment.move.time.format",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.move.time.format\", &[(\"time\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e74696d652e666f726d6174",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.path.syntax\u0004m6a6f75726e616c2e636c692e7365676d656e742e706174682e73796e746178",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e706174682e73796e746178_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.path.syntax",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e706174682e73796e746178",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Segment path must be day/stream/segment (e.g. 20260304/default/090000_300)",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "Segment path must be day/stream/segment (e.g. 20260304/default/090000_300)",
+      "message_id": "journal.cli.segment.path.syntax",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.path.syntax\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e706174682e73796e746178",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.relocation.deleted\u0004m6a6f75726e616c2e636c692e7365676d656e742e72656c6f636174696f6e2e64656c65746564",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e72656c6f636174696f6e2e64656c65746564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.relocation.deleted",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e72656c6f636174696f6e2e64656c65746564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "segment was deleted by its owner",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "segment was deleted by its owner",
+      "message_id": "journal.cli.segment.relocation.deleted",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.relocation.deleted\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e72656c6f636174696f6e2e64656c65746564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.relocation.location\u0004m6a6f75726e616c2e636c692e7365676d656e742e72656c6f636174696f6e2e6c6f636174696f6e",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e72656c6f636174696f6e2e6c6f636174696f6e_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.relocation.location",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e72656c6f636174696f6e2e6c6f636174696f6e",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "the segment location does not match the planned move",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "the segment location does not match the planned move",
+      "message_id": "journal.cli.segment.relocation.location",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.relocation.location\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e72656c6f636174696f6e2e6c6f636174696f6e",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.relocation.marker\u0004m6a6f75726e616c2e636c692e7365676d656e742e72656c6f636174696f6e2e6d61726b6572",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e72656c6f636174696f6e2e6d61726b6572_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.relocation.marker",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e72656c6f636174696f6e2e6d61726b6572",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "could not read marker",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "could not read marker",
+      "message_id": "journal.cli.segment.relocation.marker",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.relocation.marker\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e72656c6f636174696f6e2e6d61726b6572",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.status.pass\u0004m6a6f75726e616c2e636c692e7365676d656e742e7374617475732e70617373",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e7374617475732e70617373_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.status.pass",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e7374617475732e70617373",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "PASS",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "PASS",
+      "message_id": "journal.cli.segment.status.pass",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.status.pass\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e7374617475732e70617373",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "passed",
+            "type": "integer",
+            "value": 0
+          },
+          {
+            "name": "total",
+            "type": "integer",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.verify.day.result\u0004m6a6f75726e616c2e636c692e7365676d656e742e7665726966792e6461792e726573756c74",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e7665726966792e6461792e726573756c74_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.verify.day.result",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e7665726966792e6461792e726573756c74",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Summary: ⁨0⁩/⁨0⁩ checks passed",
+      "folder": null,
+      "inputs": {
+        "passed": 0,
+        "quantity": 0,
+        "total": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "Summary: ⁨0⁩/⁨0⁩ checks passed",
+      "message_id": "journal.cli.segment.verify.day.result",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.verify.day.result\", &[(\"passed\", Value::Integer(0)), (\"quantity\", Value::Cardinal(0)), (\"total\", Value::Integer(0))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e7665726966792e6461792e726573756c74",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.verify.input\u0004m6a6f75726e616c2e636c692e7365676d656e742e7665726966792e696e707574",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e7665726966792e696e707574_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.verify.input",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e7665726966792e696e707574",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "verify requires a segment path or --day",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "verify requires a segment path or --day",
+      "message_id": "journal.cli.segment.verify.input",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.verify.input\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e7665726966792e696e707574",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "passed",
+            "type": "integer",
+            "value": 0
+          },
+          {
+            "name": "total",
+            "type": "integer",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.segment.verify.result\u0004m6a6f75726e616c2e636c692e7365676d656e742e7665726966792e726573756c74",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e7365676d656e742e7665726966792e726573756c74_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.cli.segment.verify.result",
+        "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e7665726966792e726573756c74",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "⁨0⁩/⁨0⁩ checks passed",
+      "folder": null,
+      "inputs": {
+        "passed": 0,
+        "quantity": 0,
+        "total": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨0⁩/⁨0⁩ checks passed",
+      "message_id": "journal.cli.segment.verify.result",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.segment.verify.result\", &[(\"passed\", Value::Integer(0)), (\"quantity\", Value::Cardinal(0)), (\"total\", Value::Integer(0))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e7365676d656e742e7665726966792e726573756c74",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
             "name": "argument",
             "type": "string",
             "value": "sample"

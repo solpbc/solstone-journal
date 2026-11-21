@@ -1127,6 +1127,7 @@
 
     function facetChipRows(pulse, activities) {
       const measuredFacets = isPlainObject(pulse.facet_data) ? pulse.facet_data : {};
+      const facetMarks = isPlainObject(pulse.facets) ? pulse.facets : {};
       const names = Object.keys(measuredFacets);
       activities.forEach(function (activity) {
         activityFacets(activity).forEach(function (facet) {
@@ -1135,15 +1136,27 @@
       });
       return names.map(function (name) {
         const data = measuredFacets[name];
+        const meta = isPlainObject(facetMarks[name]) ? facetMarks[name] : null;
         const minutes = isPlainObject(data) ? (parseInt(data.minutes || 0, 10) || 0) : 0;
         // No `count` here on purpose: facet_data counts the whole day, and the
         // label beside these chips counts the window the card shows.
-        return { name: name, text: isPlainObject(data) ? hoursAndMinutes(minutes) : window.JournalI18n.render('journal.window.home.text.no.time.measured') };
+        return {
+          name: name,
+          title: meta && meta.title ? meta.title : name,
+          meta: meta,
+          text: isPlainObject(data) ? hoursAndMinutes(minutes) : window.JournalI18n.render('journal.window.home.text.no.time.measured'),
+        };
       });
     }
 
     function renderTodayHtml(pulse) {
       const activities = Array.isArray(pulse.activities) ? pulse.activities : [];
+      const facetMarks = isPlainObject(pulse.facets) ? pulse.facets : {};
+      const enabledFacets = Object.keys(facetMarks).filter(function (name) {
+        const f = facetMarks[name];
+        return isPlainObject(f) && !f.muted;
+      }).length;
+      const showRowMarks = enabledFacets > 1;
       const day = accountTime && pulse.now?.slice(0, 16) === accountTime ? pulse.today : '';
       const allActivities = '<a class="pulse-today-link" href="/app/activities/' + esc(day)
         + `" data-copy-key="home-today-link">${window.JournalI18n.renderHtml('journal.window.home.action.all.of.todays.activities')}</a>`;
@@ -1178,8 +1191,12 @@
           const href = '/app/activities/' + esc(day)
             + '?facet=' + esc(encodeURIComponent(facet))
             + '#' + esc(encodeURIComponent(facet)) + '/' + esc(encodeURIComponent(id));
+          const mark = showRowMarks && window.ConveyFacetMark && isPlainObject(facetMarks[facet])
+            ? window.ConveyFacetMark.html(facetMarks[facet], 'sm')
+            : '';
           html += '<a class="pulse-activity" href="' + href + '">'
             + '<span class="pulse-activity-time">' + esc(activity.display_time ? window.JournalFormat.time(activity.display_time) : '') + '</span>'
+            + mark
             + '<span class="pulse-activity-text">' + esc(description)
             + (source ? '<span class="pulse-activity-source">' + esc(source) + '</span>' : '')
             + '</span>'
@@ -1207,7 +1224,8 @@
           : window.JournalI18n.render('journal.window.home.window.explanation.time.in.each.facet');
         html += '<div class="pulse-activities-label">' + esc(chipLabel) + '</div><div class="pulse-facet-dist">';
         facetChips.forEach(function (chip) {
-          html += '<span class="pulse-facet-chip">' + esc(chip.name) + ' · ' + esc(chip.text) + '</span>';
+          const mark = window.ConveyFacetMark && chip.meta ? window.ConveyFacetMark.html(chip.meta, 'sm') : '';
+          html += '<span class="pulse-facet-chip">' + mark + esc(chip.title) + ' · ' + esc(chip.text) + '</span>';
         });
         html += '</div>';
       }

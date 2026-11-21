@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for move plan.",
+  "context": "Journal command-line text for move plan.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    },
+    {
+      "name": "destination",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "157fcf3e55cdce95cc26d302b596d7503f6776fd48d43a2bc7d1ed7e251c8eaf",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

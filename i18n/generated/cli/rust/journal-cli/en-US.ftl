@@ -1415,6 +1415,258 @@ m6a6f75726e616c2e636c692e726574656e74696f6e2e7265636f766572792e7365676d656e742e7
 
 m6a6f75726e616c2e636c692e726574656e74696f6e2e72656d6f76616c2e756e6365727461696e = deletion couldn't be completed or confirmed. recovery is needed.
 
+m6a6f75726e616c2e636c692e7365676d656e742e617267756d656e742e6d697373696e67 = usage: { "solstone journal segment <command> [options]" }{ "\u000a" }{ "solstone journal segment" }: error: unrecognized arguments: the following arguments are required: { $input }
+
+m6a6f75726e616c2e636c692e7365676d656e742e617267756d656e742e756e6b6e6f776e = usage: { "solstone journal segment <command> [options]" }{ "\u000a" }{ "solstone journal segment" }: error: unrecognized arguments: { $arguments }
+
+m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6261636b77617264 = backward chain
+
+m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e636861696e2e6e6f2e646179 = { "prev_segment" } set without { "prev_day" }
+
+m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e636861696e2e6e6f2e737563636573736f72 = next segment not found, not stream tail
+
+m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e636861696e2e70726576696f7573 = previous segment found
+
+m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e636861696e2e7374617274 = no previous segment
+
+m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e636861696e2e7461696c = stream tail
+
+m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e636f6e74656e742e656d707479 = no { "audio.jsonl" }, { "screen.jsonl" }, or { "browser_*.jsonl" }
+
+m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e636f6e74656e742e70726573656e74 = content files present
+
+m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6469726563746f72792e616273656e74 = segment directory missing
+
+m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6469726563746f72792e657869737473 = directory exists
+
+m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6469726563746f72792e6d697373696e67 = directory missing
+
+m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e666f7277617264 = forward chain
+
+m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e696e646578 = index presence
+
+m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e696e6465782e616273656e74 = journal index not available
+
+m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e696e6465782e6572726f72 = journal index error: { $error } (run: { "solstone journal indexer --rescan" })
+
+m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e696e6465782e6d697373696e67 = segment not indexed
+
+m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e696e6465782e70726573656e74 = segment indexed
+
+m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6d61726b65722e657869737473 = { "stream.json" } exists
+
+m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6d61726b65722e696e76616c6964 = { "stream.json" } invalid { "JSON" }
+
+m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6d61726b65722e6d697373696e67 = { "stream.json" } missing
+
+m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6d61726b65722e6e6f2e73747265616d = { "stream.json" } missing stream field
+
+m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6d61726b65722e76616c6964 = { "stream.json" } valid
+
+m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e6e657874 = next segment { $path }
+
+m6a6f75726e616c2e636c692e7365676d656e742e636865636b2e70726576696f75732e6d697373696e67 = missing previous segment { $path }
+
+m6a6f75726e616c2e636c692e7365676d656e742e6461792e656d707479 = No segments found for { $day }
+
+m6a6f75726e616c2e636c692e7365676d656e742e67756172642e6163746976697479 = another journal operation needs attention before this change can continue
+
+m6a6f75726e616c2e636c692e7365676d656e742e67756172642e62696e64696e67 = the journal could not be checked, so this change is on hold
+
+m6a6f75726e616c2e636c692e7365676d656e742e67756172642e7265736572766564 = this location is reserved for a journal operation and cannot be changed
+
+m6a6f75726e616c2e636c692e7365676d656e742e68656c702e696e7370656374 = usage: { "solstone journal segment <command> [options] inspect [-h] [--json] path" }{ "\u000a" }{ "\u000a" }positional arguments:{ "\u000a" }{ "  path        " }Segment path: { "day/stream/segment" } (e.g.{ "\u000a" }{ "              20260304/default/090000_300)" }{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  -h, --help  " }show this help message and exit{ "\u000a" }{ "  --json      " }Output as { "JSON" }
+
+m6a6f75726e616c2e636c692e7365676d656e742e68656c702e6c697374 = usage: { "solstone journal segment <command> [options] list [-h] [--stream STREAM]" }{ "\u000a" }{ "                                                [--json]" }{ "\u000a" }{ "                                                day" }{ "\u000a" }{ "\u000a" }positional arguments:{ "\u000a" }{ "  day              " }Day in { "YYYYMMDD" } format{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  -h, --help       " }show this help message and exit{ "\u000a" }{ "  --stream STREAM  " }Filter to a specific stream{ "\u000a" }{ "  --json           " }Output as { "JSON" }
+
+m6a6f75726e616c2e636c692e7365676d656e742e68656c702e6d6f7665 = usage: { "solstone journal segment <command> [options] move [-h] --to-day TO_DAY" }{ "\u000a" }{ "                                                [--to-time TO_TIME]" }{ "\u000a" }{ "                                                [--dry-run] [-v]" }{ "\u000a" }{ "                                                path" }{ "\u000a" }{ "\u000a" }positional arguments:{ "\u000a" }{ "  path               " }Segment path: { "day/stream/segment" } (e.g.{ "\u000a" }{ "                     20260304/default/090000_300)" }{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  -h, --help         " }show this help message and exit{ "\u000a" }{ "  --to-day TO_DAY    " }Destination day ({ "YYYYMMDD" }){ "\u000a" }{ "  --to-time TO_TIME  " }New time ({ "HHMMSS" }), preserving original duration{ "\u000a" }{ "  --dry-run          " }Show plan without making changes{ "\u000a" }{ "  -v, --verbose      " }Show detailed progress
+
+m6a6f75726e616c2e636c692e7365676d656e742e68656c702e746f70 = usage: { "solstone journal segment <command> [options]" }{ "\u000a" }{ "\u000a" }Inspect and manage journal segments{ "\u000a" }{ "\u000a" }positional arguments:{ "\u000a" }{ "  {list,inspect,verify,move}" }{ "\u000a" }{ "    list                " }List segments for a day{ "\u000a" }{ "    inspect             " }Show segment metadata{ "\u000a" }{ "    verify              " }Verify segment integrity{ "\u000a" }{ "    move                " }Move segment to a different day/time{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  -h, --help            " }show this help message and exit{ "\u000a" }{ "  -v, --verbose         " }Enable verbose output{ "\u000a" }{ "  -d, --debug           " }Enable debug logging
+
+m6a6f75726e616c2e636c692e7365676d656e742e68656c702e766572696679 = usage: { "solstone journal segment <command> [options] verify [-h] [--day DAY] [--json]" }{ "\u000a" }{ "                                                  [path]" }{ "\u000a" }{ "\u000a" }positional arguments:{ "\u000a" }{ "  path        " }Segment path: { "day/stream/segment" }{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  -h, --help  " }show this help message and exit{ "\u000a" }{ "  --day DAY   " }Verify all segments for a day{ "\u000a" }{ "  --json      " }Output as { "JSON" }
+
+m6a6f75726e616c2e636c692e7365676d656e742e6964656e746974792e64656661756c74 = segment list refused: named stream directory "{ "_default" }" cannot be spelled as a record identity: { $path }
+
+m6a6f75726e616c2e636c692e7365676d656e742e6964656e746974792e6475706c6963617465 = segment list refused: multiple segments share stream { $stream } key { $key }
+
+m6a6f75726e616c2e636c692e7365676d656e742e6964656e746974792e656e636f64696e67 = segment list refused: segment path is not { "UTF-8" } representable: { $path }
+
+m6a6f75726e616c2e636c692e7365676d656e742e6964656e746974792e72656675736564 = segment list refused: { $detail }
+
+m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e636861696e = Chain:
+
+m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e6576656e7473 = { $i18nCategory ->
+    [one] Events: { $entries } entry
+   *[other] Events: { $entries } entries
+}
+
+m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e6576656e74732e747261637473 = { $i18nCategory ->
+    [one] Events: { $entries } entry ({ $tracts })
+   *[other] Events: { $entries } entries ({ $tracts })
+}
+
+m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e66696c6573 = Files ({ $count }):
+
+m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e696e6465782e6572726f72 = Index: error ({ $error }) - run: { "solstone journal indexer --rescan" }
+
+m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e696e6465782e6d697373696e67 = Index: not-indexed
+
+m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e696e6465782e756e617661696c61626c65 = Index: unavailable
+
+m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e696e6465786564 = { $i18nCategory ->
+    [one] Index: indexed ({ $chunks } chunk)
+   *[other] Index: indexed ({ $chunks } chunks)
+}
+
+m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e6e657874 = next: { $next }
+
+m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e6e6578742e6e6f6e65 = next: (none)
+
+m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e6e6578742e7461696c = next: (tail)
+
+m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e70617468 = Segment: { $path }
+
+m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e70726576 = prev: { $previous }
+
+m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e707265762e6d697373696e67 = prev: { $path } [MISSING]
+
+m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e707265762e6e6f6e65 = prev: (none)
+
+m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e73697a65 = Size: { $size }
+
+m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e73747265616d = Stream:  { $stream }
+
+m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e73747265616d2e736571 = Stream:  { $stream } (seq { $sequence })
+
+m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e74616c656e7473 = Talents ({ $count }):
+
+m6a6f75726e616c2e636c692e7365676d656e742e696e73706563742e74696d65 = Time:    { $range } ({ $seconds }s)
+
+m6a6f75726e616c2e636c692e7365676d656e742e6c6973742e68656164696e672e647572 = DUR
+
+m6a6f75726e616c2e636c692e7365676d656e742e6c6973742e68656164696e672e66696c6573 = FILES
+
+m6a6f75726e616c2e636c692e7365676d656e742e6c6973742e68656164696e672e7365676d656e74 = SEGMENT
+
+m6a6f75726e616c2e636c692e7365676d656e742e6c6973742e68656164696e672e73697a65 = SIZE
+
+m6a6f75726e616c2e636c692e7365676d656e742e6c6973742e68656164696e672e73747265616d = STREAM
+
+m6a6f75726e616c2e636c692e7365676d656e742e6c6973742e68656164696e672e74616c656e7473 = TALENTS
+
+m6a6f75726e616c2e636c692e7365676d656e742e6c6973742e68656164696e672e74696d65 = TIME
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d697373696e67 = Segment not found: { $path }
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6461792e666f726d6174 = Invalid { "--to-day" } format: { $to_day } (expected { "YYYYMMDD" })
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6469726563746f72792e63726561746564 = created directory: { $path }
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6469726563746f72792e657869737473 = Destination { $destination } already exists; no changes made
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6469726563746f72792e6661696c6564 = step 1 directory move failed: { $error }; source and index remain authoritative
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6469726563746f72792e6d6f766564 = moved directory: { $source } -> { $destination }
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e647279 = [dry run] No changes made
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6576656e74732e6e6f6e65 = no { "events.jsonl" } to rewrite
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6576656e74732e72657772697474656e = { $i18nCategory ->
+    [one] rewrote { $count } { "events.jsonl" } line (day: { $source_day }->{ $destination_day }, segment: { $source }->{ $destination })
+   *[other] rewrote { $count } { "events.jsonl" } lines (day: { $source_day }->{ $destination_day }, segment: { $source }->{ $destination })
+}
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e657869737473 = Segment { $segment } already exists on { $day }/{ $stream }. Use { "--to-time" } to specify an alternate time.
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e616d626967756f7573 = { $i18nCategory ->
+    [one] step 3 successor patch inconsistent after move: ambiguous chain: { NUMBER($count, useGrouping: 0) } successor left unpatched
+   *[other] step 3 successor patch inconsistent after move: ambiguous chain: { NUMBER($count, useGrouping: 0) } successors left unpatched
+}
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e6576656e7473 = step 2 events rewrite inconsistent after move: { $detail }
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e6865616c74682e6d61726b6572 = step 6 health-marker touch inconsistent after move: { $detail }
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e736561726368 = step 5 search update inconsistent after move: the search update could not be queued: { $error }
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e737563636573736f72 = step 3 successor patch inconsistent after move: { $detail }
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e7461696c2e6c6f636b6564 = step 4 stream-tail repair inconsistent after move: could not lock stream record
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e7461696c2e6d616c666f726d6564 = step 4 stream-tail repair inconsistent after move: malformed stream record
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e7461696c2e6e6f2e7265636f7264 = step 4 stream-tail repair inconsistent after move: no stream record; identity was not re-authored
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6661696c2e7461696c2e7772697465 = step 4 stream-tail repair inconsistent after move: atomic publication failed
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6d61726b6572732e746f7563686564 = touched health markers: { $days }
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6e6f2e6475726174696f6e = Source segment key has no duration
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6e6f2e6d61726b6572 = No { "stream.json" } in source segment
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e6e6f2e736c6f74 = No available segment slot near { $destination_segment } on { $to_day }
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e = Move: { $source } -> { $destination }
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e2e616d626967756f7573 = { $i18nCategory ->
+    [one] successor to patch: (ambiguous: { NUMBER($count, useGrouping: 0) } successor)
+   *[other] successor to patch: (ambiguous: { NUMBER($count, useGrouping: 0) } successors)
+}
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e2e6576656e7473 = { "events.jsonl" } lines: { $count }
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e2e696e646578 = index chunks: { $chunks }
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e2e696e6465782e6572726f72 = index read error: { $error } (delete+reindex will be attempted; run: { "solstone journal indexer --rescan" })
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e2e6d61726b657273 = health markers: { $source_day }, { $destination_day }
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e2e737563636573736f72 = successor to patch: { $path }
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e706c616e2e7461696c = successor to patch: (none - stream tail)
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e72756e6e696e67 = Executing move...
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e73616d65 = Source and destination are the same
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e7365617263682e717565756564 = search updates queued
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e73747265616d2e6d69736d61746368 = Stream mismatch: path says '{ $path_stream }' but { "stream.json" } says '{ $marker_stream }'
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e73747265616d2e72656275696c74 = rebuilt stream state: { $stream }
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e737563636573736f722e6e6f6e65 = no successor to patch (stream tail)
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e737563636573736f722e70617463686564 = patched successor { $path }
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e74616c656e7473 = { "think" } will re-run daily talents on the touched days
+
+m6a6f75726e616c2e636c692e7365676d656e742e6d6f76652e74696d652e666f726d6174 = Invalid { "--to-time" } format: { $time } (expected { "HHMMSS" })
+
+m6a6f75726e616c2e636c692e7365676d656e742e706174682e73796e746178 = Segment path must be { "day/stream/segment" } (e.g. { "20260304/default/090000_300" })
+
+m6a6f75726e616c2e636c692e7365676d656e742e72656c6f636174696f6e2e64656c65746564 = segment was deleted by its owner
+
+m6a6f75726e616c2e636c692e7365676d656e742e72656c6f636174696f6e2e6c6f636174696f6e = the segment location does not match the planned move
+
+m6a6f75726e616c2e636c692e7365676d656e742e72656c6f636174696f6e2e6d61726b6572 = could not read marker
+
+m6a6f75726e616c2e636c692e7365676d656e742e7374617475732e70617373 = PASS
+
+m6a6f75726e616c2e636c692e7365676d656e742e7665726966792e6461792e726573756c74 = { $i18nCategory ->
+    [one] Summary: { NUMBER($passed, useGrouping: 0) }/{ NUMBER($total, useGrouping: 0) } check passed
+   *[other] Summary: { NUMBER($passed, useGrouping: 0) }/{ NUMBER($total, useGrouping: 0) } checks passed
+}
+
+m6a6f75726e616c2e636c692e7365676d656e742e7665726966792e696e707574 = { "verify" } requires a segment path or { "--day" }
+
+m6a6f75726e616c2e636c692e7365676d656e742e7665726966792e726573756c74 = { $i18nCategory ->
+    [one] { NUMBER($passed, useGrouping: 0) }/{ NUMBER($total, useGrouping: 0) } check passed
+   *[other] { NUMBER($passed, useGrouping: 0) }/{ NUMBER($total, useGrouping: 0) } checks passed
+}
+
 m6a6f75726e616c2e636c692e73746174732e617267756d656e7473 = usage: { "solstone journal journal-stats [-h] [--no-cache] [-v] [-d]" }{ "\u000a" }{ "solstone journal journal-stats" }: error: unrecognized arguments: { $argument }
 
 m6a6f75726e616c2e636c692e73746174732e63617573652e6661636574 = facet store error: { $detail }

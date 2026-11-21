@@ -1,0 +1,16 @@
+{
+  "description": "Button to clear an icon on a custom activity or facet.",
+  "context": "Journal window, settings view. Button label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e0df2f5b12850e295cbe49256ad3d6acd0a92246ec7327ac44bfc208e80f334d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

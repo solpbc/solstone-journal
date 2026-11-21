@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for list heading dur.",
+  "context": "Journal command-line text for list heading dur.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7edf52c9b205547ce38d38e111e9cc73ae759530eb92748b11cd421a6c40fac7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

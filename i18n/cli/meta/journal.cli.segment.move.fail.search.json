@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for move fail search.",
+  "context": "Journal command-line text for move fail search.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "375f855950a8ef01aeb986bdfb45690575704b2167f0c7965618eca2c95925be",
+  "max_length": 127,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}
