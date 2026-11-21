@@ -24,7 +24,11 @@ pub fn imported_text_medium(header: &Value, sidecar: Option<&Value>) -> Conversa
     let legacy = sidecar.filter(|metadata| metadata["import_id"].as_str() == Some(id));
     if let Some(embedded) = imported.get("triage") {
         let medium = verdict_medium(embedded);
-        if legacy.is_some_and(|legacy| verdict_medium(legacy) != medium) {
+        if legacy.is_some_and(|legacy| {
+            ["kind", "ruleset_version", "reasons"]
+                .iter()
+                .any(|key| legacy.get(key) != embedded.get(key))
+        }) {
             return Unresolved;
         }
         return medium;
@@ -50,7 +54,9 @@ fn verdict_medium(verdict: &Value) -> ConversationMedium {
                 "webvtt_cues" | "subrip_cues" | "whisper_tsv" | "whisper_json" | "childes_chat"
                 | "bracketed_offsets",
             ) => Spoken,
-            Some("otter_export" | "macwhisper_stacked") if version >= 3 => Spoken,
+            Some("otter_export") if version >= 3 => Spoken,
+            Some("macwhisper_stacked") if version >= 5 => Spoken,
+            Some("dated_bold_speaker") if version >= 5 => continue,
             Some(
                 "zoom_chat" | "discord_export" | "signal_sigtop_long" | "sms_backup_xml"
                 | "slack_text",
@@ -72,8 +78,7 @@ fn verdict_medium(verdict: &Value) -> ConversationMedium {
                 | "dated_tab_nick"
                 | "signal_dated"
                 | "signal_sigtop_short"
-                | "irc_angle_nick"
-                | "dated_bold_speaker",
+                | "irc_angle_nick",
             ) => continue,
             _ => return Unresolved,
         };
@@ -103,6 +108,37 @@ mod tests {
         sidecar["ruleset_version"] = json!(8);
         assert_eq!(imported_text_medium(&header, Some(&sidecar)), Unresolved);
         assert_eq!(imported_text_medium(&header, None), Unresolved);
+    }
+
+    #[test]
+    fn a_reason_must_exist_in_the_recorded_ruleset() {
+        for (reason, version, expected) in [
+            ("macwhisper_stacked", 4, Unresolved),
+            ("macwhisper_stacked", 5, Spoken),
+            ("dated_bold_speaker", 4, Unresolved),
+            ("dated_bold_speaker", 5, Written),
+        ] {
+            let reasons = if reason == "dated_bold_speaker" {
+                json!(["zoom_chat", reason])
+            } else {
+                json!([reason])
+            };
+            let header = json!({"imported":{"id":"one","triage":{"ruleset_version":version, "kind":"transcripts","reasons":reasons}}});
+            assert_eq!(imported_text_medium(&header, None), expected);
+        }
+    }
+
+    #[test]
+    fn same_medium_does_not_reconcile_two_different_source_verdicts() {
+        let header = json!({"imported":{"id":"one","triage":{"kind":"transcripts","ruleset_version":7,"reasons":["zoom_chat"]}}});
+        let mut sidecar = header["imported"]["triage"].clone();
+        sidecar["import_id"] = json!("one");
+        assert_eq!(imported_text_medium(&header, Some(&sidecar)), Written);
+        sidecar["reasons"] = json!(["discord_export"]);
+        assert_eq!(imported_text_medium(&header, Some(&sidecar)), Unresolved);
+        sidecar["reasons"] = json!(["zoom_chat"]);
+        sidecar["ruleset_version"] = json!(6);
+        assert_eq!(imported_text_medium(&header, Some(&sidecar)), Unresolved);
     }
 
     #[test]
