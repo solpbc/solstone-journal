@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use serde_json::{Map, Value, json};
@@ -30,65 +30,152 @@ fn shown_on(faces: &Faces, day: &str) -> usize {
 }
 
 pub fn compute_day_counts(root: &Path, query: Option<&str>) -> BTreeMap<String, usize> {
-    let declared = list_declared_facet_names(root).unwrap_or_default();
-    let query_facet = query_value(query, "facet").filter(|f| !f.is_empty());
+    let counter = DayCounter::new(root, query);
+    counter.counts(&counter.days.iter().collect::<Vec<_>>())
+}
 
-    let facets: Vec<String> = match query_facet {
-        Some(f) => {
-            if declared.contains(&f) {
-                vec![f]
-            } else {
-                Vec::new()
-            }
-        }
-        None => declared
-            .into_iter()
-            .filter(|f| {
-                observe_facet_declaration(root, f)
-                    .ok()
-                    .flatten()
-                    .is_none_or(|d| d.muted != Some(true))
-            })
-            .collect(),
-    };
+/// [`compute_day_counts`] for the days from `from` to `to`: each the same
+/// count, with no other day's activity file opened beyond the few days around
+/// the span a body group's members can be filed on.
+pub fn compute_day_counts_between(
+    root: &Path,
+    query: Option<&str>,
+    from: &str,
+    to: &str,
+) -> BTreeMap<String, usize> {
+    let counter = DayCounter::new(root, query);
+    let days = counter.between(from, to);
+    counter.counts(&days)
+}
 
-    let mut days_set = std::collections::BTreeSet::new();
-    for f in &facets {
-        if let Ok(stems) = list_activity_day_stems(root, f) {
-            for stem in stems {
-                days_set.insert(stem);
-            }
+/// The years with a day on or before `through` that [`compute_day_counts`]
+/// counts. Each year's days are read in order only until one has a count.
+pub fn day_count_years(root: &Path, query: Option<&str>, through: &str) -> BTreeSet<String> {
+    let counter = DayCounter::new(root, query);
+    let mut by_year: BTreeMap<&str, Vec<&String>> = BTreeMap::new();
+    for day in counter.days.iter().filter(|day| day.as_str() <= through) {
+        if let Some(year) = day.get(..4) {
+            by_year.entry(year).or_default().push(day);
         }
     }
+    by_year
+        .into_iter()
+        .filter(|(_, days)| {
+            days.iter().any(|day| counter.rows(day) > 0) || !counter.counts(days).is_empty()
+        })
+        .map(|(year, _)| year.to_owned())
+        .collect()
+}
 
-    // Counting a body group needs it grouped, not composed.
-    let body: BTreeMap<&String, solstone_core_location::body_records::Groups> =
-        match (days_set.first(), days_set.last()) {
-            (Some(first), Some(last)) => facets
-                .iter()
-                .map(|f| {
-                    let groups = solstone_core_location::body_records::body_groups_range(
-                        root, f, first, last, None, false,
-                    )
-                    .unwrap_or_default();
-                    (f, groups)
+/// The facets a count covers and every day any of them has a file for.
+struct DayCounter<'a> {
+    root: &'a Path,
+    facets: Vec<String>,
+    days: BTreeSet<String>,
+}
+
+impl<'a> DayCounter<'a> {
+    fn new(root: &'a Path, query: Option<&str>) -> Self {
+        let declared = list_declared_facet_names(root).unwrap_or_default();
+        let query_facet = query_value(query, "facet").filter(|f| !f.is_empty());
+
+        let facets: Vec<String> = match query_facet {
+            Some(f) => {
+                if declared.contains(&f) {
+                    vec![f]
+                } else {
+                    Vec::new()
+                }
+            }
+            None => declared
+                .into_iter()
+                .filter(|f| {
+                    observe_facet_declaration(root, f)
+                        .ok()
+                        .flatten()
+                        .is_none_or(|d| d.muted != Some(true))
                 })
                 .collect(),
-            _ => BTreeMap::new(),
         };
-    let mut counts = BTreeMap::new();
-    for day in days_set {
-        let mut total = 0;
+
+        let mut days = BTreeSet::new();
         for f in &facets {
-            let visible_rows =
-                load_activity_records_readable(root, f, &day, false).unwrap_or_default();
-            total += visible_rows.len() + body.get(f).map_or(0, |groups| groups.on(&day).len());
+            if let Ok(stems) = list_activity_day_stems(root, f) {
+                days.extend(stems);
+            }
         }
-        if total > 0 {
-            counts.insert(day, total);
-        }
+        Self { root, facets, days }
     }
-    counts
+
+    fn between(&self, from: &str, to: &str) -> Vec<&String> {
+        self.days
+            .iter()
+            .filter(|day| from <= day.as_str() && day.as_str() <= to)
+            .collect()
+    }
+
+    /// The records the facets show on `day`, body records aside.
+    fn rows(&self, day: &str) -> usize {
+        self.facets
+            .iter()
+            .map(|f| {
+                load_activity_records_readable(self.root, f, day, false)
+                    .unwrap_or_default()
+                    .len()
+            })
+            .sum()
+    }
+
+    /// The count on each of `days` (in order, each held) that has one.
+    fn counts(&self, days: &[&String]) -> BTreeMap<String, usize> {
+        let body = self.body(days);
+        let mut counts = BTreeMap::new();
+        for day in days {
+            let mut total = 0;
+            for f in &self.facets {
+                let visible_rows =
+                    load_activity_records_readable(self.root, f, day, false).unwrap_or_default();
+                total += visible_rows.len() + body.get(f).map_or(0, |groups| groups.on(day).len());
+            }
+            if total > 0 {
+                counts.insert((*day).clone(), total);
+            }
+        }
+        counts
+    }
+
+    /// Each facet's body groups to count on `days`, grouped, not composed.
+    /// Only the span of `days` is read, with the days around it a group's
+    /// members can be filed on: the groups shown under those days are the
+    /// ones every day held gives. When an end of either span isn't a date,
+    /// the whole span is read, as when every day is counted.
+    fn body(
+        &self,
+        days: &[&String],
+    ) -> BTreeMap<&String, solstone_core_location::body_records::Groups> {
+        let (Some(first), Some(last)) = (self.days.first(), self.days.last()) else {
+            return BTreeMap::new();
+        };
+        let (Some(&from), Some(&to)) = (days.first(), days.last()) else {
+            return BTreeMap::new();
+        };
+        let dated = |day: &str| solstone_core_time::parse_day(day).is_some();
+        let (from, to) = if dated(first) && dated(last) && dated(from) && dated(to) {
+            (from, to)
+        } else {
+            (first, last)
+        };
+        self.facets
+            .iter()
+            .map(|f| {
+                let groups = solstone_core_location::body_records::body_groups_range(
+                    self.root, f, from, to, None, false,
+                )
+                .unwrap_or_default();
+                (f, groups)
+            })
+            .collect()
+    }
 }
 
 fn map_facet_declaration(root: &Path, facet_name: &str, count: usize) -> Value {

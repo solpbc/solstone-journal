@@ -698,9 +698,19 @@ impl Reconciler {
 
 /// Every stay and visit the days' build records hold, in day order.
 pub fn all_stays(journal: &Path) -> Vec<StayRecord> {
+    stays_where(journal, |_| true)
+}
+
+/// [`all_stays`] for the days from `from` to `to`: no other day's build
+/// record is opened.
+pub fn stays_between(journal: &Path, from: &str, to: &str) -> Vec<StayRecord> {
+    stays_where(journal, |day| from <= day && day <= to)
+}
+
+fn stays_where(journal: &Path, keep: impl Fn(&str) -> bool) -> Vec<StayRecord> {
     let mut stays = Vec::new();
     let mut days: Vec<String> = day_dirs(journal)
-        .map(|days| days.into_keys().collect())
+        .map(|days| days.into_keys().filter(|day| keep(day)).collect())
         .unwrap_or_default();
     days.sort_unstable();
     for day in days {

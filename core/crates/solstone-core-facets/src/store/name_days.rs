@@ -6,7 +6,7 @@
 //! A hide in any facet keeps a name out everywhere here: this read crosses
 //! facets, so a name the owner hid in one must not come back through another.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 
 use serde_json::Value;
@@ -74,6 +74,9 @@ pub fn detected_name_days(
         });
     }
 
+    // Whether a name is left out, and its key when it isn't, rest on the name
+    // alone: each distinct spelling is weighed once, however often it is found.
+    let mut verdicts: HashMap<String, Option<String>> = HashMap::new();
     let mut found: BTreeMap<(String, String), (String, String, BTreeSet<String>)> = BTreeMap::new();
     for facet in list_declared_facet_names(journal_root)? {
         let muted = observe_facet_declaration(journal_root, &facet)?
@@ -94,16 +97,26 @@ pub fn detected_name_days(
                 if name.is_empty() {
                     continue;
                 }
-                if left_out.contains(name) || hides.iter().any(|keys| keys.is_hidden(name)) {
+                let key = match verdicts.get(name) {
+                    Some(key) => key.clone(),
+                    None => {
+                        let key = (!left_out.contains(name)
+                            && !hides.iter().any(|keys| keys.is_hidden(name)))
+                        .then(|| hidden_name_key(name));
+                        verdicts.insert(name.to_owned(), key.clone());
+                        key
+                    }
+                };
+                let Some(key) = key else {
                     continue;
-                }
+                };
                 let entity_type = row
                     .get("type")
                     .and_then(Value::as_str)
                     .unwrap_or_default()
                     .to_owned();
                 found
-                    .entry((entity_type.to_lowercase(), hidden_name_key(name)))
+                    .entry((entity_type.to_lowercase(), key))
                     .or_insert_with(|| (entity_type, name.to_owned(), BTreeSet::new()))
                     .2
                     .insert(day.clone());
