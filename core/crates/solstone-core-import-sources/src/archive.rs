@@ -466,7 +466,6 @@ fn plan_zip_archive(archive_path: &Path) -> Result<(ArchivePlan, bool), ImportSo
                     })
                 }),
                 ["chronicle", day, _, ..] => is_eight_digit_day(day),
-                ["entities", _, "entity.json"] | ["facets", _, "facet.json"] => true,
                 [
                     "imports",
                     id,
@@ -483,9 +482,11 @@ fn plan_zip_archive(archive_path: &Path) -> Result<(ArchivePlan, bool), ImportSo
         }
         if first == "entities" && components.len() == 3 && components[2] == "entity.json" && !is_dir
         {
+            recognized = true;
             entity_ids.insert(components[1].to_owned());
         }
         if first == "facets" && components.len() == 3 && components[2] == "facet.json" && !is_dir {
+            recognized = true;
             facet_ids.insert(components[1].to_owned());
         }
         if !is_dir && JOURNAL_FAMILY_ROOTS.contains(&first) {
