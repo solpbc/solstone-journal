@@ -476,6 +476,19 @@ test('a paired device links to network and has no pairing controls', () => {
   });
 });
 
+test('both the empty view and a paired device link to import', () => {
+  const label = globalThis.JournalI18n.render('journal.window.sources.copy.import.import.files.from.other.apps');
+  [ok([]), ok([client('studio', { last_accepted_ingest_at: iso(NOW - 5 * MIN) })])].forEach((payload) => {
+    ['wide', 'cards'].forEach((layout) => {
+      const links = render(payload, layout).querySelectorAll('.sources-import');
+      assert.strictEqual(links.length, 1, layout);
+      assert.strictEqual(links[0].tagName, 'A');
+      assert.strictEqual(links[0].getAttribute('href'), '/app/import/');
+      assert.strictEqual(links[0].textContent, label);
+    });
+  });
+});
+
 (async () => {
   let passed = 0;
   for (let i = 0; i < tests.length; i += 1) {

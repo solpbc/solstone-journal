@@ -12507,6 +12507,8 @@ journal.window.sources.copy.empty.no.devices.are.paired.yet = no devices are pai
 
 journal.window.sources.copy.error.this.didn.t.load = this didn't load.
 
+journal.window.sources.copy.import.import.files.from.other.apps = import files from other apps
+
 journal.window.sources.copy.manage.manage.devices = manage devices
 
 journal.window.sources.copy.nothing.nothing.added.yet = nothing added yet
@@ -19408,6 +19410,8 @@ journal.window.import.link.label.import.another.source = import another source
 journal.window.import.link.label.plaud.connection.settings = { $slot1 } connection settings
 
 journal.window.import.link.label.see.it.in.the.body.app = see it in the body app →
+
+journal.window.import.link.label.see.when.your.devices.last.added.something = see when your devices last added something →
 
 journal.window.import.link.label.view.imported.content = view imported content
 

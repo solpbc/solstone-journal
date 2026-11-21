@@ -1,0 +1,16 @@
+{
+  "description": "Link label in the journal's sources view, beside the link to pair or manage devices.",
+  "context": "Journal window, sources view. Link label. Opens the import view, where the owner brings in files and exports from other apps.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2dd51d2177853abd9eb2faeff81cd40fb03b11f5deb0da46107670957e1982a4",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

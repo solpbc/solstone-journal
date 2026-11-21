@@ -533,6 +533,18 @@ module.exports = async function sourcesContractCases(manifestDir) {
     assert.strictEqual(p.root().querySelectorAll('article').length, 1, 'drawn as cards');
   });
 
+  await test('a layout redraw with the import link focused keeps focus on that link', async () => {
+    const p = await boot(env);
+    p.reads()[0].answer(200, { clients: [] });
+    await settle();
+    p.root().querySelector('.sources-import').focus();
+    p.media.matches = true;
+    p.media.fire({ type: 'change' });
+    focusIsSomewhere(p, 'after the redraw');
+    const link = p.root().querySelector('.sources-import');
+    assert.ok(p.doc.activeElement === link, `focus on the new import link (it is on ${tagOf(p.doc.activeElement)})`);
+  });
+
   await test('a layout redraw leaves focus outside the view where it is', async () => {
     const p = await boot(env);
     p.reads()[0].answer(200, { clients: [] });
