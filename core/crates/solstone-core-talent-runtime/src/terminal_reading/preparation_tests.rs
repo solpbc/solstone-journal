@@ -282,3 +282,60 @@ fn screen_reads_the_same_sampled_terminal_in_one_request() {
         "the Screen projection is replaced: {text}"
     );
 }
+
+#[test]
+fn a_line_shown_in_the_segment_before_that_comes_back_is_not_read_as_new() {
+    let capture = |frames: &[(f64, &str)]| -> String {
+        frames
+            .iter()
+            .map(|(time, content)| {
+                let raw = json!({"timestamp":time,"analysis":{"primary":"tmux"},"content":{"tmux":{"session":"main","window":{"id":"@0","name":"work"},"panes":[{"id":"%0","active":true,"content":content}]}}});
+                format!("{raw}\n")
+            })
+            .collect()
+    };
+    let (_root, paths, context, request) = setup("");
+    let day = context.journal.join("chronicle/20261021/device");
+    fs::write(
+        day.join("100000_300/tmux_main_screen.jsonl"),
+        capture(&[
+            (0.0, "$ make\n"),
+            (5.0, "$ make\nbuilding\n"),
+            (
+                10.0,
+                "⏺ Fixed the typo in setup.sh\n$ make\nbuilding\nbuild finished\n",
+            ),
+        ]),
+    )
+    .unwrap();
+    let read = |request: &serde_json::Map<String, Value>| {
+        let prepared = crate::prepare::prepare(
+            request.clone(),
+            &paths,
+            &context,
+            crate::prepare::PrepareMode::Preview,
+        )
+        .unwrap();
+        assert!(prepared.terminal_reading.is_some());
+        source_text(&prepared)
+    };
+    let alone = read(&request);
+    assert!(
+        alone.contains("new text\n```\n⏺ Fixed the typo in setup.sh\n"),
+        "{alone}"
+    );
+    // The stream's segment before showed the fix; a later one, or another stream's, does not count.
+    for (dir, line) in [
+        ("device/095500_300", "⏺ Fixed the typo in setup.sh\n"),
+        ("device/100500_300", "build finished\n"),
+        ("other/095500_300", "building\n"),
+    ] {
+        let dir = context.journal.join("chronicle/20261021").join(dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("tmux_main_screen.jsonl"), capture(&[(0.0, line)])).unwrap();
+    }
+    let text = read(&request);
+    assert!(!text.contains("⏺ Fixed the typo in setup.sh"), "{text}");
+    assert!(text.contains("new text\n```\nbuilding\n"), "{text}");
+    assert!(text.contains("new text\n```\nbuild finished\n"), "{text}");
+}
