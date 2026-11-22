@@ -7868,3 +7868,245 @@ journal.cli.sol.help.section.arguments = Arguments:
 journal.cli.sol.help.section.commands = Commands:
 
 journal.cli.sol.help.section.options = Options:
+
+journal.cli.install.archive.binary = { $binary_name } missing from archive
+
+journal.cli.install.archive.digest = { $algorithm } mismatch: expected { $expected }, got { $actual }
+
+journal.cli.install.archive.download = download failed: { $message }
+
+journal.cli.install.archive.host = download host refused: { $host }
+
+journal.cli.install.archive.origin = download origin unavailable at { $host }: { $message }
+
+journal.cli.install.archive.path = archive member escapes destination: { $path }
+
+journal.cli.install.archive.redirect = download redirect hop limit exceeded: { $limit }
+
+journal.cli.install.archive.scheme = download scheme refused for { $host }: { $scheme }
+
+journal.cli.install.archive.size = { $quantity ->
+    [one] download size mismatch: expected { $expected } byte, got { $actual }
+   *[other] download size mismatch: expected { $expected } bytes, got { $actual }
+}
+
+journal.cli.install.archive.userinfo = download URL authority must not include userinfo: { $authority }
+
+journal.cli.install.backend.metal = backend must be "metal" when supplied
+
+journal.cli.install.backend.unavailable = the requested local backend is unavailable on this platform
+
+journal.cli.install.component.packaged = build defect: this component ships inside the package, and retrying will not help
+
+journal.cli.install.component.unfetched = build defect: this build does not download this component, and retrying will not help
+
+journal.cli.install.coreml.asset.digest = parakeet { $coreml } asset digest mismatch for { $file }: expected { $expected }, found { $found }
+
+journal.cli.install.coreml.asset.incomplete = speech model asset is incomplete
+
+journal.cli.install.coreml.asset.missing = parakeet { $coreml } asset missing: { $file }; install it with: { $install_command }
+
+journal.cli.install.coreml.asset.read = failed to read { $file }: { $error }
+
+journal.cli.install.coreml.asset.size = parakeet { $coreml } asset size mismatch for { $file }: expected { $expected }, found { $found }
+
+journal.cli.install.coreml.attempt.changed = the speech install attempt changed.
+
+journal.cli.install.coreml.cache.directory = parakeet { $coreml } sentinel cache dir ({ $installed }) does not match configured ({ $configured })
+
+journal.cli.install.coreml.catalog.conflict = { $artifact } catalog rows have conflicting versions
+
+journal.cli.install.coreml.catalog.empty = no { $artifact } catalog rows found
+
+journal.cli.install.coreml.catalog.mismatch = parakeet { $coreml } catalog version mismatch: found { $found }, expected { $expected }
+
+journal.cli.install.coreml.platform = parakeet { $coreml } is only supported on { $host }, not { $os_name }/{ $arch }
+
+journal.cli.install.coreml.publication.lock = failed to acquire publication lock: { $error }
+
+journal.cli.install.coreml.publish.restore = { $error }; restore failed: { $restore }
+
+journal.cli.install.coreml.sentinel.not.ready = parakeet { $coreml } sentinel not ready: { $path }; install it with: { $install_command }
+
+journal.cli.install.coreml.sentinel.removed = incumbent sentinel was removed before publication
+
+journal.cli.install.cuda.integrity = cuda runtime integrity failure
+
+journal.cli.install.disk.insufficient = not enough space to finish downloading the model
+
+journal.cli.install.fingerprint.artifact = { $field } missing
+
+journal.cli.install.fingerprint.backend = backend missing
+
+journal.cli.install.fingerprint.missing = attempt fingerprint missing
+
+journal.cli.install.fingerprint.runtime = runtime artifact key missing
+
+journal.cli.install.hardware.apple.memory = local thinking needs at least { $minimum } of memory
+
+journal.cli.install.hardware.memory.minimum = { $available_bytes ->
+    [one] device-local { $vram } below { $minimum } minimum: { $available_bytes } byte
+   *[other] device-local { $vram } below { $minimum } minimum: { $available_bytes } bytes
+}
+
+journal.cli.install.hardware.memory.unknown = { $vulkan } probe failed to report memory
+
+journal.cli.install.hardware.no.hardware = no hardware { $vulkan } GPU found
+
+journal.cli.install.hardware.probe.required = { $vulkan } GPU observation required on Windows
+
+journal.cli.install.lease.held = { $provider } install lease is held
+
+journal.cli.install.lease.regular = install lease is not a regular file
+
+journal.cli.install.member.cuda.arch = unsupported cuda arch { $arch }
+
+journal.cli.install.member.cuda.arch.key = unsupported cuda arch key { $artifact_key }
+
+journal.cli.install.member.cuda.missing = required cuda member missing: { $name }
+
+journal.cli.install.member.cuda.regular = required cuda member is not a regular file: { $name }
+
+journal.cli.install.member.link.broken = broken link in chain for { $name }
+
+journal.cli.install.member.link.cycle = link cycle detected for { $name }
+
+journal.cli.install.member.link.missing = required link member missing: { $name }
+
+journal.cli.install.member.link.read = cannot read link { $name }: { $error }
+
+journal.cli.install.member.link.regular = link { $name } does not resolve to regular file
+
+journal.cli.install.member.link.target = link { $name } target mismatch: expected { $target }, got { $found }
+
+journal.cli.install.member.link.type = required link member is not a symlink: { $name }
+
+journal.cli.install.member.link.unreadable = cannot read link in chain for { $name }
+
+journal.cli.install.member.regular.missing = required regular member missing: { $name }
+
+journal.cli.install.member.regular.type = required regular member is not a regular file: { $name }
+
+journal.cli.install.metal.platform = { $metal } local inference is unsupported on { $key }
+
+journal.cli.install.mlx.digest.read = { $function } failed for { $file }: { $error }
+
+journal.cli.install.mlx.directory.explicit = explicit { $mlx } model directory does not exist: { $path }
+
+journal.cli.install.mlx.directory.invalid = model dir is not a directory: { $path }
+
+journal.cli.install.mlx.directory.override = { $env } does not exist: { $path }
+
+journal.cli.install.mlx.directory.read = cannot read model directory: { $error }
+
+journal.cli.install.mlx.directory.unset = { $env } is unset or not a directory
+
+journal.cli.install.mlx.entry.read = failed reading entry: { $error }
+
+journal.cli.install.mlx.file.digest = sha256 mismatch for { $file }: expected { $expected } got { $actual }
+
+journal.cli.install.mlx.file.missing = missing required file: { $file }
+
+journal.cli.install.mlx.file.regular = not a regular file: { $file }
+
+journal.cli.install.mlx.file.size = size mismatch for { $file }: expected { $expected } got { $actual }
+
+journal.cli.install.mlx.helper.explicit = explicit { $mlx } helper is not valid or missing { $library }: { $path }
+
+journal.cli.install.mlx.helper.invalid = helper binary is invalid: { $path }
+
+journal.cli.install.mlx.helper.missing = { $helper } executable with { $library } resource bundle not found
+
+journal.cli.install.mlx.helper.override = { $env } is not valid or missing { $library }: { $path }
+
+journal.cli.install.mlx.input.extra = extra unverified model input: { $file }
+
+journal.cli.install.mlx.metadata.read = cannot read metadata for { $file }: { $error }
+
+journal.cli.install.mlx.override.failed = { $mlx } override verification failed
+
+journal.cli.install.mlx.pins.empty = empty pins list
+
+journal.cli.install.mlx.pins.missing = no pins supplied
+
+journal.cli.install.mlx.platform = { $mlx } requires { $os }
+
+journal.cli.install.mlx.type.read = failed file type: { $error }
+
+journal.cli.install.pin.missing = no pin for { $key }
+
+journal.cli.install.registry.artifact.ambiguous = catalog has multiple matching { $unit } artifacts
+
+journal.cli.install.registry.artifact.missing = catalog has no matching { $unit } artifact
+
+journal.cli.install.registry.platform = no catalog platform mapping for { $key }
+
+journal.cli.install.runtime.unavailable = the journal app does not provide this local runtime
+
+journal.cli.install.speech.platform = { $program } is unsupported on { $os_name }/{ $arch }
+
+journal.cli.install.staging.binary.parent = binary has no parent
+
+journal.cli.install.staging.bundle.occupied = bundle destination already exists: { $path }
+
+journal.cli.install.staging.target.name = target has no file name
+
+journal.cli.install.staging.target.parent = target has no parent
+
+journal.cli.install.status.conflict.different.attempt.while.install.in.flight = install status conflict: different attempt while install in-flight
+
+journal.cli.install.status.conflict.illegal.install.status.transition = install status conflict: illegal install status transition
+
+journal.cli.install.status.conflict.install.attempt.id.changed = install status conflict: install attempt id changed
+
+journal.cli.install.status.conflict.install.attempt.is.no.longer.in.flight = install status conflict: install attempt is no longer in-flight
+
+journal.cli.install.status.conflict.install.progress.can.only.be.bumped.for = install status conflict: install progress can only be bumped for in-flight states
+
+journal.cli.install.status.conflict.install.target.fingerprint.changed = install status conflict: install target fingerprint changed
+
+journal.cli.install.status.conflict.interrupted.attempt.id.does.not.match = install status conflict: interrupted attempt id does not match
+
+journal.cli.install.status.conflict.interrupted.target.fingerprint.does.not.match = install status conflict: interrupted target fingerprint does not match
+
+journal.cli.install.status.conflict.new.in.flight.attempt.reused.attempt.id = install status conflict: new in-flight attempt reused attempt id
+
+journal.cli.install.status.conflict.non.idle.install.status.requires.attempt.id = install status conflict: non-idle install status requires attempt id
+
+journal.cli.install.status.conflict.only.in.flight.installs.can.be.interrupted = install status conflict: only in-flight installs can be interrupted
+
+journal.cli.install.status.conflict.stale.install.status.revision = install status conflict: stale install status revision
+
+journal.cli.install.status.lock = status lock error: { $error }
+
+journal.cli.install.status.malformed.file = malformed install status: { $path }
+
+journal.cli.install.status.malformed.initial.install.attempt.state.must.be.in = malformed install status: initial install attempt state must be in-flight
+
+journal.cli.install.status.malformed.invalid.provider = malformed install status: invalid status for { $provider }
+
+journal.cli.install.status.malformed.owner.must.be.an.object.or.null = malformed install status: owner must be an object or null
+
+journal.cli.install.status.malformed.providers = malformed install status: provider install status must be one of: [{ $listed }]
+
+journal.cli.install.status.malformed.state = malformed install status: unknown install state: { $state }
+
+journal.cli.install.terminal.write = native install failed and failed to write status
+
+journal.cli.install.windows.digest.absent = signed payload manifest does not declare digest for { $path }
+
+journal.cli.install.windows.executable.location = running journal executable is not in the package bin directory: { $path }
+
+journal.cli.install.windows.executable.parent = running journal executable has no containing directory
+
+journal.cli.install.windows.executable.read = could not determine the running journal executable: { $error }
+
+journal.cli.install.windows.package.root = package bin directory has no package root
+
+journal.cli.install.windows.package.runtime = Windows local thinking package verification requires a Windows runtime
+
+journal.cli.install.windows.platform = unsupported Windows platform: { $key }
+
+journal.cli.install.windows.target.different = signed payload target differs from { $key }
+
+journal.cli.install.windows.target.unsupported = signed payload target is unsupported

@@ -11,6 +11,8 @@
 //! and a human-readable `message`.  The `run` verbs return exit code 75 for a
 //! held lease so callers can distinguish busy from an internal failure.
 
+use solstone_core_cli_copy::MessageDetail;
+
 pub mod apple_memory;
 pub mod archive;
 pub mod capability_status;
@@ -288,10 +290,29 @@ pub struct InstallError {
     pub reason_code: String,
     pub message: String,
 }
-#[derive(Debug)]
 pub struct DispatchError {
     pub envelope: InstallEnvelope,
     pub exit_code: u8,
+    pub detail: Option<MessageDetail>,
+}
+
+impl std::fmt::Debug for DispatchError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DispatchError")
+            .field("envelope", &self.envelope)
+            .field("exit_code", &self.exit_code)
+            .finish()
+    }
+}
+
+impl DispatchError {
+    pub fn into_detail(self) -> MessageDetail {
+        self.detail.unwrap_or_else(|| {
+            self.envelope
+                .error
+                .map_or_else(|| "install failed".into(), |error| error.message.into())
+        })
+    }
 }
 
 impl InstallEnvelope {
@@ -352,7 +373,9 @@ pub fn dispatch(verb: InstallVerb, request: Value) -> Result<InstallEnvelope, Di
                 Path::new(&required(&object, "path")?),
                 &required(&object, "sha256")?,
             )
-            .map_err(|error| failure("verification", "sha256_mismatch", error, 65))?;
+            .map_err(|error| {
+                failure_detail("verification", "sha256_mismatch", archive_detail(error), 65)
+            })?;
             json!({"sha256":digest,"verified":true})
         }
         InstallVerb::CudaTrust => {
@@ -428,13 +451,13 @@ fn local_backend_for_key(
         Some(Value::String(value)) if value == "mlx" && platform_key == "aarch64-apple-darwin" => {
             Ok(LocalBackend::Mlx)
         }
-        Some(_) => Err(failure(
+        Some(_) => Err(failure_detail(
             "input",
             "unsupported_backend",
             if platform_key == "aarch64-apple-darwin" {
-                "the requested local backend is unavailable on this platform"
+                MessageDetail::message("journal.cli.install.backend.unavailable", [])
             } else {
-                "backend must be \"metal\" when supplied"
+                MessageDetail::message("journal.cli.install.backend.metal", [])
             },
             65,
         )),
@@ -444,8 +467,17 @@ fn local_backend_for_key(
 fn parakeet_key(object: &Map<String, Value>) -> Result<String, DispatchError> {
     match string(object, "artifact_key") {
         Some(key) => Ok(key),
-        None => pins::parakeet_host_artifact_key()
-            .map_err(|error| failure("platform", "unsupported_platform", error, 65)),
+        None => pins::parakeet_host_artifact_key().map_err(|error| {
+            failure_detail(
+                "platform",
+                "unsupported_platform",
+                MessageDetail::message(
+                    "journal.cli.install.speech.platform",
+                    [("os_name", &error.os_name), ("arch", &error.arch)],
+                ),
+                65,
+            )
+        }),
     }
 }
 
@@ -454,10 +486,10 @@ fn artifact_platform(key: &str) -> Result<AssetPlatform, DispatchError> {
         "aarch64-apple-darwin" => Ok(AssetPlatform::MacosArm64),
         "x86_64-unknown-linux-gnu" => Ok(AssetPlatform::LinuxX64),
         "aarch64-unknown-linux-gnu" => Ok(AssetPlatform::LinuxArm64),
-        _ => Err(failure(
+        _ => Err(failure_detail(
             "registry",
             "artifact_registry_mismatch",
-            format!("no catalog platform mapping for {key}"),
+            MessageDetail::message("journal.cli.install.registry.platform", [("key", &key)]),
             65,
         )),
     }
@@ -475,18 +507,24 @@ pub(crate) fn select_artifact(
         .filter(|artifact| artifact_key.is_none_or(|key| artifact.artifact_key == Some(key)))
         .filter(|artifact| filename.is_none_or(|name| artifact.filename == name));
     let Some(artifact) = matches.next() else {
-        return Err(failure(
+        return Err(failure_detail(
             "registry",
             "artifact_registry_mismatch",
-            format!("catalog has no matching {unit} artifact"),
+            MessageDetail::message(
+                "journal.cli.install.registry.artifact.missing",
+                [("unit", &unit)],
+            ),
             65,
         ));
     };
     if matches.next().is_some() {
-        return Err(failure(
+        return Err(failure_detail(
             "registry",
             "artifact_registry_mismatch",
-            format!("catalog has multiple matching {unit} artifacts"),
+            MessageDetail::message(
+                "journal.cli.install.registry.artifact.ambiguous",
+                [("unit", &unit)],
+            ),
             65,
         ));
     }
@@ -513,6 +551,82 @@ fn download_artifact_reason_code<'a>(
         archive::ArchiveError::Io(_) | archive::ArchiveError::Download(_) => fallback_reason_code,
         archive::ArchiveError::PathEscape(_) => fallback_reason_code,
     }
+}
+
+fn fetch_mint_detail(error: solstone_core_assets::FetchMintError) -> MessageDetail {
+    use solstone_core_assets::FetchMintError;
+    match error {
+        FetchMintError::Packaged => {
+            MessageDetail::message("journal.cli.install.component.packaged", [])
+        }
+        FetchMintError::NotFetched => {
+            MessageDetail::message("journal.cli.install.component.unfetched", [])
+        }
+    }
+}
+
+/// Recover a typed installer cause or preserve the original operating-system detail.
+pub fn io_detail(error: std::io::Error) -> MessageDetail {
+    error
+        .get_ref()
+        .and_then(|cause| cause.downcast_ref::<MessageDetail>())
+        .cloned()
+        .unwrap_or_else(|| error.to_string().into())
+}
+
+fn archive_detail(error: archive::ArchiveError) -> MessageDetail {
+    use archive::ArchiveError;
+    match error {
+        ArchiveError::PathEscape(path) => {
+            MessageDetail::message("journal.cli.install.archive.path", [("path", &path)])
+        }
+        ArchiveError::DigestMismatch { expected, actual } => MessageDetail::message(
+            "journal.cli.install.archive.digest",
+            [("expected", &expected), ("actual", &actual)],
+        ),
+        ArchiveError::HostRefused { host } => {
+            MessageDetail::message("journal.cli.install.archive.host", [("host", &host)])
+        }
+        ArchiveError::InsecureScheme { scheme, host } => MessageDetail::message(
+            "journal.cli.install.archive.scheme",
+            [("host", &host), ("scheme", &scheme)],
+        ),
+        ArchiveError::RedirectHopLimitExceeded { limit } => {
+            MessageDetail::message("journal.cli.install.archive.redirect", [("limit", &limit)])
+        }
+        ArchiveError::UrlUserinfoRefused { authority } => MessageDetail::message(
+            "journal.cli.install.archive.userinfo",
+            [("authority", &authority)],
+        ),
+        ArchiveError::OriginUnavailable { host, message } => MessageDetail::message(
+            "journal.cli.install.archive.origin",
+            [("host", &host), ("message", &message)],
+        ),
+        ArchiveError::Download(message) => MessageDetail::message(
+            "journal.cli.install.archive.download",
+            [("message", &message)],
+        ),
+        ArchiveError::Io(error) => io_detail(error),
+        ArchiveError::SizeMismatch { expected, actual } => {
+            let id = "journal.cli.install.archive.size";
+            let source = format!("download size mismatch: expected {expected} bytes, got {actual}");
+            MessageDetail::cardinal(
+                id,
+                [("quantity", i64::try_from(expected).unwrap_or(i64::MAX))],
+                source,
+                [("expected", &expected), ("actual", &actual)],
+            )
+        }
+    }
+}
+
+fn memory_minimum(available_bytes: u64) -> MessageDetail {
+    MessageDetail::cardinal(
+        "journal.cli.install.hardware.memory.minimum",
+        [("available_bytes", available_bytes as i64)],
+        format!("device-local VRAM below 6 GiB minimum: {available_bytes} bytes"),
+        [],
+    )
 }
 
 fn fetch_runtime_member(
@@ -544,7 +658,7 @@ fn fetch_runtime_member_with_cancel(
     }
 
     let handle = solstone_core_assets::mint_runtime_fetch(query)
-        .map_err(|err| failure("package", err.reason_code(), err, 65))?;
+        .map_err(|err| failure_detail("package", err.reason_code(), fetch_mint_detail(err), 65))?;
     let result = if let Some(cancelled) = cancelled {
         solstone_core_artifact_download::download_runtime_fetch_cancellable(
             &handle,
@@ -559,10 +673,10 @@ fn fetch_runtime_member_with_cancel(
         if cancelled.is_some_and(|cancelled| cancelled()) {
             return failure("cancelled", "install_cancelled", "install_cancelled", 74);
         }
-        failure(
+        failure_detail(
             "download",
             download_artifact_reason_code(&error, fallback_reason_code),
-            error,
+            archive_detail(error),
             74,
         )
     })
@@ -737,7 +851,7 @@ pub fn run_local_with_gpu_admission(
         LocalHardwareAdmission::WindowsUnobserved => (
             Some((
                 "gpu_memory_unknown",
-                "Vulkan GPU observation required on Windows".to_owned(),
+                MessageDetail::message("journal.cli.install.hardware.probe.required", []),
             )),
             None,
         ),
@@ -749,17 +863,17 @@ pub fn run_local_with_gpu_admission(
             let refusal =
                 match crate::vulkan::gpu_device_local_verdict(probe_ok, &devices, override_index) {
                     crate::vulkan::GpuDeviceLocalVerdict::Eligible { .. } => None,
-                    crate::vulkan::GpuDeviceLocalVerdict::BelowBar { available_bytes } => Some((
-                        "gpu_memory_insufficient",
-                        format!("device-local VRAM below 6 GiB minimum: {available_bytes} bytes"),
-                    )),
+                    crate::vulkan::GpuDeviceLocalVerdict::BelowBar { available_bytes } => {
+                        Some(("gpu_memory_insufficient", memory_minimum(available_bytes)))
+                    }
                     crate::vulkan::GpuDeviceLocalVerdict::Unknown => Some((
                         "gpu_memory_unknown",
-                        "Vulkan probe failed to report memory".to_owned(),
+                        MessageDetail::message("journal.cli.install.hardware.memory.unknown", []),
                     )),
-                    crate::vulkan::GpuDeviceLocalVerdict::NoHardwareDevice => {
-                        Some(("gpu_unavailable", "no hardware Vulkan GPU found".to_owned()))
-                    }
+                    crate::vulkan::GpuDeviceLocalVerdict::NoHardwareDevice => Some((
+                        "gpu_unavailable",
+                        MessageDetail::message("journal.cli.install.hardware.no.hardware", []),
+                    )),
                 };
             (refusal, None)
         }
@@ -769,7 +883,7 @@ pub fn run_local_with_gpu_admission(
                 apple_memory::AppleTotalMemoryVerdict::BelowBar => (
                     Some((
                         "memory_insufficient",
-                        "local thinking needs at least 16 GiB of memory".to_owned(),
+                        MessageDetail::message("journal.cli.install.hardware.apple.memory", []),
                     )),
                     None,
                 ),
@@ -793,12 +907,7 @@ pub fn run_local_with_gpu_admission(
                         match crate::vulkan::device_local_capacity_verdict(bytes) {
                             crate::vulkan::GpuDeviceLocalVerdict::Eligible { .. } => (None, None),
                             crate::vulkan::GpuDeviceLocalVerdict::BelowBar { available_bytes } => (
-                                Some((
-                                    "gpu_memory_insufficient",
-                                    format!(
-                                        "device-local VRAM below 6 GiB minimum: {available_bytes} bytes"
-                                    ),
-                                )),
+                                Some(("gpu_memory_insufficient", memory_minimum(available_bytes))),
                                 None,
                             ),
                             crate::vulkan::GpuDeviceLocalVerdict::Unknown
@@ -817,16 +926,14 @@ pub fn run_local_with_gpu_admission(
                 match crate::vulkan::gpu_device_local_verdict(probe_ok, &devices, override_index) {
                     crate::vulkan::GpuDeviceLocalVerdict::Eligible { .. } => (None, None),
                     crate::vulkan::GpuDeviceLocalVerdict::BelowBar { available_bytes } => (
-                        Some((
-                            "gpu_memory_insufficient",
-                            format!(
-                                "device-local VRAM below 6 GiB minimum: {available_bytes} bytes"
-                            ),
-                        )),
+                        Some(("gpu_memory_insufficient", memory_minimum(available_bytes))),
                         None,
                     ),
                     crate::vulkan::GpuDeviceLocalVerdict::NoHardwareDevice => (
-                        Some(("gpu_unavailable", "no hardware Vulkan GPU found".to_owned())),
+                        Some((
+                            "gpu_unavailable",
+                            MessageDetail::message("journal.cli.install.hardware.no.hardware", []),
+                        )),
                         None,
                     ),
                     crate::vulkan::GpuDeviceLocalVerdict::Unknown => {
@@ -837,19 +944,20 @@ pub fn run_local_with_gpu_admission(
         },
     };
     if let Some((reason_code, message)) = refusal {
-        status::record_terminal_refusal(&journal, "local", reason_code, &message)
-            .map_err(|error| failure("state", "terminal_write_failed", error, 74))?;
-        return Err(failure("gpu", reason_code, message, 65));
+        status::record_terminal_refusal_detail(&journal, "local", reason_code, &message).map_err(
+            |error| failure_detail("state", "terminal_write_failed", error.into_detail(), 74),
+        )?;
+        return Err(failure_detail("gpu", reason_code, message, 65));
     }
 
     let provider = RunKind::Local.status_provider();
     let Some(lease) = lease::acquire(&journal, provider)
         .map_err(|error| failure("io", "lease_error", error, 74))?
     else {
-        return Err(failure(
+        return Err(failure_detail(
             "busy",
             "install_busy",
-            format!("{provider} install lease is held"),
+            MessageDetail::message("journal.cli.install.lease.held", [("provider", &provider)]),
             lease::BUSY_EXIT_CODE,
         ));
     };
@@ -869,10 +977,10 @@ fn run_local(object: &Map<String, Value>) -> Result<Value, DispatchError> {
     let key = pins::platform_key();
     if crate::embedded::supports_key(&key) {
         let identity = crate::embedded::identity_for_key(&key).ok_or_else(|| {
-            failure(
+            failure_detail(
                 "package",
                 "embedded_runtime_unavailable",
-                "the journal app does not provide this local runtime",
+                MessageDetail::message("journal.cli.install.runtime.unavailable", []),
                 65,
             )
         })?;
@@ -887,7 +995,7 @@ fn run_local(object: &Map<String, Value>) -> Result<Value, DispatchError> {
     let mut admission = observe_local_hardware_admission(&journal)?;
     if let LocalHardwareAdmission::GpuHost { override_index, .. } = &mut admission {
         let config = solstone_core_journal_config::read_journal_config(&journal)
-            .map_err(|error| failure("state", "config_unreadable", error, 74))?
+            .map_err(|error| failure_detail("state", "config_unreadable", error.diagnostic(), 74))?
             .config
             .unwrap_or_default();
         *override_index = config
@@ -924,10 +1032,10 @@ fn observe_local_hardware_admission(
         let choice = match local_backend_choice(journal, Some(probe.clone())) {
             crate::nvidia::BackendSelection::Selected(choice) => choice,
             crate::nvidia::BackendSelection::IntegrityBlocked => {
-                return Err(failure(
+                return Err(failure_detail(
                     "verification",
                     "cuda_runtime_integrity",
-                    "cuda runtime integrity failure",
+                    MessageDetail::message("journal.cli.install.cuda.integrity", []),
                     65,
                 ));
             }
@@ -1009,10 +1117,10 @@ fn run(object: &Map<String, Value>, kind: RunKind<'_>) -> Result<Value, Dispatch
     let Some(lease) = lease::acquire(&journal, provider)
         .map_err(|error| failure("io", "lease_error", error, 74))?
     else {
-        return Err(failure(
+        return Err(failure_detail(
             "busy",
             "install_busy",
-            format!("{provider} install lease is held"),
+            MessageDetail::message("journal.cli.install.lease.held", [("provider", &provider)]),
             lease::BUSY_EXIT_CODE,
         ));
     };
@@ -1057,8 +1165,21 @@ fn run_with_lease(
                 .error
                 .as_ref()
                 .map_or("install failed", |e| e.message.as_str());
-            status::record_terminal_refusal_with_lease(&journal, provider, code, message, &lease)
-                .map_err(|write_error| failure("state", "terminal_write_failed", write_error, 74))?;
+            status::record_terminal_refusal_with_lease(
+                &journal,
+                provider,
+                code,
+                error.detail.as_ref().unwrap_or(&message.into()),
+                &lease,
+            )
+            .map_err(|write_error| {
+                failure_detail(
+                    "state",
+                    "terminal_write_failed",
+                    write_error.into_detail(),
+                    74,
+                )
+            })?;
             return Err(error);
         }
     };
@@ -1080,7 +1201,7 @@ fn run_with_lease(
         "resolving",
         admission_warning,
     )
-    .map_err(|error| failure("state", "begin_failed", error, 74))?;
+    .map_err(|error| failure_detail("state", "begin_failed", error.into_detail(), 74))?;
     on_admitted(&state);
     let start = Instant::now();
     let result = match kind {
@@ -1095,11 +1216,14 @@ fn run_with_lease(
     };
     match result {
         Ok(result) => {
-            status::assert_current(&journal, &state)
-                .map_err(|error| failure("state", "attempt_superseded", error, 74))?;
+            status::assert_current(&journal, &state).map_err(|error| {
+                failure_detail("state", "attempt_superseded", error.into_detail(), 74)
+            })?;
             let terminal = status::transition(state, "installed", None, None)
                 .and_then(|value| status::write_status(&journal, value))
-                .map_err(|error| failure("state", "terminal_write_failed", error, 74))?;
+                .map_err(|error| {
+                    failure_detail("state", "terminal_write_failed", error.into_detail(), 74)
+                })?;
             Ok(json!({"status":terminal,"install":result}))
         }
         Err(error) => {
@@ -1122,12 +1246,12 @@ fn run_with_lease(
                 ),
                 Some(reason_code),
             )
-            .and_then(|value| status::write_status(&journal, value));
+            .and_then(|value| status::write_status_detail(&journal, value, error.detail.as_ref()));
             if terminal.is_err() {
-                return Err(failure(
+                return Err(failure_detail(
                     "state",
                     "terminal_write_failed",
-                    "native install failed and failed to write status",
+                    MessageDetail::message("journal.cli.install.terminal.write", []),
                     74,
                 ));
             }
@@ -1209,34 +1333,34 @@ fn local_target_for_key_with_probe(
         return mobile::target_for_key(model_id, key);
     }
     if backend == LocalBackend::Metal && key != "aarch64-apple-darwin" {
-        return Err(failure(
+        return Err(failure_detail(
             "platform",
             "unsupported_platform",
-            format!("Metal local inference is unsupported on {key}"),
+            MessageDetail::message("journal.cli.install.metal.platform", [("key", &key)]),
             65,
         ));
     }
 
     if backend == LocalBackend::Mlx {
         if key != "aarch64-apple-darwin" {
-            return Err(failure(
+            return Err(failure_detail(
                 "platform",
                 "unsupported_platform",
-                "MLX requires macos",
+                MessageDetail::message("journal.cli.install.mlx.platform", []),
                 65,
             ));
         }
         return Ok(mlx_candidate::artifact_target_json(&pins::MLX_QWEN_PINS).0);
     }
     if WindowsArchitecture::from_runtime_key(key).is_some() {
-        let pkg = windows_engine::verified_windows_llama_package()
-            .and_then(|pkg| pkg.require_runtime_key(key))
+        let pkg = windows_engine::verified_windows_llama_package_detail()
+            .and_then(|pkg| pkg.require_runtime_key_detail(key))
             .map_err(|err| match err {
                 windows_engine::WindowsLlamaPackageError::Missing(msg) => {
-                    failure("package", "package_unavailable", msg, 65)
+                    failure_detail("package", "package_unavailable", msg, 65)
                 }
                 windows_engine::WindowsLlamaPackageError::Invalid(msg) => {
-                    failure("package", "package_invalid", msg, 65)
+                    failure_detail("package", "package_invalid", msg, 65)
                 }
             })?;
         return local_target_for_windows_package(&pkg, model_id);
@@ -1252,10 +1376,10 @@ fn local_target_for_key_with_probe(
             let choice = match local_backend_choice(journal, nvidia_probe) {
                 crate::nvidia::BackendSelection::Selected(choice) => choice,
                 crate::nvidia::BackendSelection::IntegrityBlocked => {
-                    return Err(failure(
+                    return Err(failure_detail(
                         "verification",
                         "cuda_runtime_integrity",
-                        "cuda runtime integrity failure",
+                        MessageDetail::message("journal.cli.install.cuda.integrity", []),
                         65,
                     ));
                 }
@@ -1268,10 +1392,10 @@ fn local_target_for_key_with_probe(
         }
     };
     let runtime_pin = runtime_pin.ok_or_else(|| {
-        failure(
+        failure_detail(
             "platform",
             "unsupported_platform",
-            format!("no pin for {key}"),
+            MessageDetail::message("journal.cli.install.pin.missing", [("key", &key)]),
             65,
         )
     })?;
@@ -1414,18 +1538,35 @@ pub fn verify_required_oracle(
     artifact_key: &str,
     is_cuda: bool,
 ) -> Result<(), String> {
+    verify_required_oracle_detail(root, release_tag, artifact_key, is_cuda)
+        .map_err(|error| error.to_string())
+}
+
+fn verify_required_oracle_detail(
+    root: &Path,
+    release_tag: &str,
+    artifact_key: &str,
+    is_cuda: bool,
+) -> Result<(), MessageDetail> {
     if is_cuda {
-        let arch = pins::cuda_runtime_arch(artifact_key)
-            .ok_or_else(|| format!("unsupported cuda arch key {artifact_key}"))?;
-        let wanted =
-            pins::cuda_wanted_files(arch).ok_or_else(|| format!("unsupported cuda arch {arch}"))?;
+        let arch = pins::cuda_runtime_arch(artifact_key).ok_or_else(|| {
+            MessageDetail::message(
+                "journal.cli.install.member.cuda.arch.key",
+                [("artifact_key", &artifact_key)],
+            )
+        })?;
+        let wanted = pins::cuda_wanted_files(arch).ok_or_else(|| {
+            MessageDetail::message("journal.cli.install.member.cuda.arch", [("arch", &arch)])
+        })?;
         for name in wanted {
             let path = root.join(&name);
-            let meta = fs::symlink_metadata(&path)
-                .map_err(|_| format!("required cuda member missing: {name}"))?;
+            let meta = fs::symlink_metadata(&path).map_err(|_| {
+                MessageDetail::message("journal.cli.install.member.cuda.missing", [("name", &name)])
+            })?;
             if !meta.is_file() || meta.file_type().is_symlink() {
-                return Err(format!(
-                    "required cuda member is not a regular file: {name}"
+                return Err(MessageDetail::message(
+                    "journal.cli.install.member.cuda.regular",
+                    [("name", &name)],
                 ));
             }
         }
@@ -1439,48 +1580,82 @@ pub fn verify_required_oracle(
         match member {
             pins::RequiredMember::Regular(name) => {
                 let path = root.join(name);
-                let meta = fs::symlink_metadata(&path)
-                    .map_err(|_| format!("required regular member missing: {name}"))?;
+                let meta = fs::symlink_metadata(&path).map_err(|_| {
+                    MessageDetail::message(
+                        "journal.cli.install.member.regular.missing",
+                        [("name", &name)],
+                    )
+                })?;
                 if !meta.is_file() || meta.file_type().is_symlink() {
-                    return Err(format!(
-                        "required regular member is not a regular file: {name}"
+                    return Err(MessageDetail::message(
+                        "journal.cli.install.member.regular.type",
+                        [("name", &name)],
                     ));
                 }
             }
             pins::RequiredMember::Link { name, target } => {
                 let path = root.join(name);
-                let meta = fs::symlink_metadata(&path)
-                    .map_err(|_| format!("required link member missing: {name}"))?;
+                let meta = fs::symlink_metadata(&path).map_err(|_| {
+                    MessageDetail::message(
+                        "journal.cli.install.member.link.missing",
+                        [("name", &name)],
+                    )
+                })?;
                 if !meta.file_type().is_symlink() {
-                    return Err(format!("required link member is not a symlink: {name}"));
+                    return Err(MessageDetail::message(
+                        "journal.cli.install.member.link.type",
+                        [("name", &name)],
+                    ));
                 }
-                let link_target =
-                    fs::read_link(&path).map_err(|e| format!("cannot read link {name}: {e}"))?;
+                let link_target = fs::read_link(&path).map_err(|e| {
+                    MessageDetail::message(
+                        "journal.cli.install.member.link.read",
+                        [("name", &name), ("error", &e)],
+                    )
+                })?;
                 if link_target != Path::new(target) {
-                    return Err(format!(
-                        "link {name} target mismatch: expected {target}, got {}",
-                        link_target.display()
+                    return Err(MessageDetail::message(
+                        "journal.cli.install.member.link.target",
+                        [
+                            ("name", &name),
+                            ("target", &target),
+                            ("found", &link_target.display()),
+                        ],
                     ));
                 }
                 let mut current = path.clone();
                 let mut hops = 0;
                 while hops < 20 {
-                    let meta = fs::symlink_metadata(&current)
-                        .map_err(|_| format!("broken link in chain for {name}"))?;
+                    let meta = fs::symlink_metadata(&current).map_err(|_| {
+                        MessageDetail::message(
+                            "journal.cli.install.member.link.broken",
+                            [("name", &name)],
+                        )
+                    })?;
                     if meta.file_type().is_symlink() {
-                        let link = fs::read_link(&current)
-                            .map_err(|_| format!("cannot read link in chain for {name}"))?;
+                        let link = fs::read_link(&current).map_err(|_| {
+                            MessageDetail::message(
+                                "journal.cli.install.member.link.unreadable",
+                                [("name", &name)],
+                            )
+                        })?;
                         let parent = current.parent().unwrap_or(root);
                         current = parent.join(link);
                         hops += 1;
                     } else if meta.is_file() {
                         break;
                     } else {
-                        return Err(format!("link {name} does not resolve to regular file"));
+                        return Err(MessageDetail::message(
+                            "journal.cli.install.member.link.regular",
+                            [("name", &name)],
+                        ));
                     }
                 }
                 if hops >= 20 {
-                    return Err(format!("link cycle detected for {name}"));
+                    return Err(MessageDetail::message(
+                        "journal.cli.install.member.link.cycle",
+                        [("name", &name)],
+                    ));
                 }
             }
         }
@@ -1763,8 +1938,17 @@ pub fn parakeet_target_for_platform(
     os_name: &str,
     arch: &str,
 ) -> Result<Value, DispatchError> {
-    let key = pins::parakeet_artifact_key(os_name, arch)
-        .map_err(|error| failure("platform", "unsupported_platform", error, 65))?;
+    let key = pins::parakeet_artifact_key(os_name, arch).map_err(|error| {
+        failure_detail(
+            "platform",
+            "unsupported_platform",
+            MessageDetail::message(
+                "journal.cli.install.speech.platform",
+                [("os_name", &error.os_name), ("arch", &error.arch)],
+            ),
+            65,
+        )
+    })?;
     let binary_pins: Vec<Value> = ["cpu", "vulkan"]
         .into_iter()
         .map(|backend| {
@@ -1888,12 +2072,17 @@ fn fetch_install_member_with(
         }
     })?;
     if let Some(error) = progress_error {
-        return Err(failure("state", "status_write_failed", error, 74));
+        return Err(failure_detail(
+            "state",
+            "status_write_failed",
+            error.into_detail(),
+            74,
+        ));
     }
     state.progress_bytes_received = Some(completed.saturating_add(artifact.size_bytes));
     state.progress_bytes_total = Some(total);
     *state = status::write_status(journal, state.clone())
-        .map_err(|error| failure("state", "status_write_failed", error, 74))?;
+        .map_err(|error| failure_detail("state", "status_write_failed", error.into_detail(), 74))?;
     Ok(())
 }
 
@@ -1909,28 +2098,33 @@ fn run_local_install(
             .target_fingerprint_json
             .as_deref()
             .ok_or_else(|| {
-                failure(
+                failure_detail(
                     "state",
                     "fingerprint_missing",
-                    "attempt fingerprint missing",
+                    MessageDetail::message("journal.cli.install.fingerprint.missing", []),
                     74,
                 )
             })?,
     )
     .map_err(|error| failure("state", "fingerprint_malformed", error, 74))?;
-    let backend = target["backend"]
-        .as_str()
-        .ok_or_else(|| failure("state", "fingerprint_malformed", "backend missing", 74))?;
+    let backend = target["backend"].as_str().ok_or_else(|| {
+        failure_detail(
+            "state",
+            "fingerprint_malformed",
+            MessageDetail::message("journal.cli.install.fingerprint.backend", []),
+            74,
+        )
+    })?;
     if backend == "mlx" {
         return mlx_install::install(&journal, status_value);
     }
     let key = target["runtime_pin"]["artifact_key"]
         .as_str()
         .ok_or_else(|| {
-            failure(
+            failure_detail(
                 "state",
                 "fingerprint_malformed",
-                "runtime artifact key missing",
+                MessageDetail::message("journal.cli.install.fingerprint.runtime", []),
                 74,
             )
         })?
@@ -1938,14 +2132,14 @@ fn run_local_install(
     let model_bytes = local_model_download_bytes(&model_id)?;
     let root = pins::cache_root(&journal);
     if WindowsArchitecture::from_runtime_key(&key).is_some() {
-        let pkg = windows_engine::verified_windows_llama_package()
-            .and_then(|pkg| pkg.require_runtime_key(&key))
+        let pkg = windows_engine::verified_windows_llama_package_detail()
+            .and_then(|pkg| pkg.require_runtime_key_detail(&key))
             .map_err(|err| match err {
                 windows_engine::WindowsLlamaPackageError::Missing(msg) => {
-                    failure("package", "package_unavailable", msg, 65)
+                    failure_detail("package", "package_unavailable", msg, 65)
                 }
                 windows_engine::WindowsLlamaPackageError::Invalid(msg) => {
-                    failure("package", "package_invalid", msg, 65)
+                    failure_detail("package", "package_invalid", msg, 65)
                 }
             })?;
         let model_identity = pins::model_identity(&model_id)
@@ -1974,10 +2168,10 @@ fn run_local_install(
         }));
     }
     if key.ends_with("-windows") {
-        return Err(failure(
+        return Err(failure_detail(
             "platform",
             "unsupported_platform",
-            format!("unsupported Windows platform: {key}"),
+            MessageDetail::message("journal.cli.install.windows.platform", [("key", &key)]),
             65,
         ));
     }
@@ -2036,10 +2230,11 @@ fn run_local_install(
         .join(&filename);
     *status_value = status::write_status(
         &journal,
-        status::transition(status_value.clone(), "downloading", None, None)
-            .map_err(|error| failure("state", "transition_failed", error, 74))?,
+        status::transition(status_value.clone(), "downloading", None, None).map_err(|error| {
+            failure_detail("state", "transition_failed", error.into_detail(), 74)
+        })?,
     )
-    .map_err(|error| failure("state", "status_write_failed", error, 74))?;
+    .map_err(|error| failure_detail("state", "status_write_failed", error.into_detail(), 74))?;
     let total_bytes = artifact.size_bytes + model_bytes;
     fetch_install_member(
         &journal,
@@ -2051,27 +2246,30 @@ fn run_local_install(
         "download_failed",
     )?;
     archive::verify_sha256(&archive_path, artifact.sha256)
-        .map_err(|e| failure("archive", "digest_mismatch", e, 65))?;
+        .map_err(|e| failure_detail("archive", "digest_mismatch", archive_detail(e), 65))?;
     archive::extract_tar_gz(&archive_path, &staging)
-        .map_err(|error| failure("archive", "extract_failed", error, 65))?;
+        .map_err(|error| failure_detail("archive", "extract_failed", archive_detail(error), 65))?;
     let binary = find_file(&staging, "llama-server").ok_or_else(|| {
-        failure(
+        failure_detail(
             "archive",
             "binary_missing",
-            "llama-server missing from archive",
+            MessageDetail::message(
+                "journal.cli.install.archive.binary",
+                [("binary_name", &"llama-server")],
+            ),
             65,
         )
     })?;
     let final_binary = staging.join("llama-server");
     hoist_binary(&staging, &binary, backend).map_err(|error| {
-        failure(
+        failure_detail(
             "io",
             if backend == "metal" || backend == "vulkan" {
                 "binary_bundle_move_failed"
             } else {
                 "binary_move_failed"
             },
-            error,
+            io_detail(error),
             74,
         )
     })?;
@@ -2126,9 +2324,9 @@ pub fn commit_staged_local_runtime(
         is_cuda,
         pin_identity,
     } = admission;
-    if let Err(error) = verify_required_oracle(staging, release_tag, artifact_key, is_cuda) {
+    if let Err(error) = verify_required_oracle_detail(staging, release_tag, artifact_key, is_cuda) {
         let _ = fs::remove_dir_all(staging);
-        return Err(failure(
+        return Err(failure_detail(
             "verification",
             "required_member_missing",
             error,
@@ -2146,10 +2344,10 @@ pub fn commit_staged_local_runtime(
         let trust = assess_cuda_bytes(staging, &inventory);
         if trust != crate::ArtifactTrust::Trusted {
             let _ = fs::remove_dir_all(staging);
-            return Err(failure(
+            return Err(failure_detail(
                 "verification",
                 "cuda_runtime_integrity",
-                "cuda runtime integrity failure",
+                MessageDetail::message("journal.cli.install.cuda.integrity", []),
                 65,
             ));
         }
@@ -2180,7 +2378,7 @@ pub fn commit_staged_local_runtime(
         return Err(failure("io", "manifest_write_failed", error, 74));
     }
     publish_staged_tree(staging, install_dir)
-        .map_err(|error| failure("io", "publish_failed", error, 74))?;
+        .map_err(|error| failure_detail("io", "publish_failed", io_detail(error), 74))?;
     Ok(())
 }
 
@@ -2197,10 +2395,10 @@ fn run_parakeet_install(
             .target_fingerprint_json
             .as_deref()
             .ok_or_else(|| {
-                failure(
+                failure_detail(
                     "state",
                     "fingerprint_missing",
-                    "attempt fingerprint missing",
+                    MessageDetail::message("journal.cli.install.fingerprint.missing", []),
                     74,
                 )
             })?,
@@ -2208,7 +2406,14 @@ fn run_parakeet_install(
     .map_err(|error| failure("state", "fingerprint_malformed", error, 74))?;
     let key = target["artifact_key"]
         .as_str()
-        .ok_or_else(|| failure("state", "fingerprint_malformed", "artifact_key missing", 74))?
+        .ok_or_else(|| {
+            failure_detail(
+                "state",
+                "fingerprint_malformed",
+                MessageDetail::message("journal.cli.install.fingerprint.artifact", []),
+                74,
+            )
+        })?
         .to_owned();
     let total_bytes = parakeet_download_bytes(&key)?;
     let mut completed_bytes = 0;
@@ -2247,10 +2452,11 @@ fn run_parakeet_install(
             .join(filename);
         *status_value = status::write_status(
             journal,
-            status::transition(status_value.clone(), "downloading", None, None)
-                .map_err(|error| failure("state", "transition_failed", error, 74))?,
+            status::transition(status_value.clone(), "downloading", None, None).map_err(
+                |error| failure_detail("state", "transition_failed", error.into_detail(), 74),
+            )?,
         )
-        .map_err(|error| failure("state", "status_write_failed", error, 74))?;
+        .map_err(|error| failure_detail("state", "status_write_failed", error.into_detail(), 74))?;
         fetch_install_member(
             journal,
             status_value,
@@ -2262,14 +2468,18 @@ fn run_parakeet_install(
         )?;
         completed_bytes += artifact.size_bytes;
         archive::verify_sha256(&archive_path, artifact.sha256)
-            .map_err(|e| failure("archive", "digest_mismatch", e, 65))?;
-        archive::extract_tar_gz(&archive_path, &staging)
-            .map_err(|error| failure("archive", "extract_failed", error, 65))?;
+            .map_err(|e| failure_detail("archive", "digest_mismatch", archive_detail(e), 65))?;
+        archive::extract_tar_gz(&archive_path, &staging).map_err(|error| {
+            failure_detail("archive", "extract_failed", archive_detail(error), 65)
+        })?;
         let binary = find_file(&staging, binary_name).ok_or_else(|| {
-            failure(
+            failure_detail(
                 "archive",
                 "binary_missing",
-                format!("{binary_name} missing from archive"),
+                MessageDetail::message(
+                    "journal.cli.install.archive.binary",
+                    [("binary_name", &binary_name)],
+                ),
                 65,
             )
         })?;
@@ -2297,7 +2507,7 @@ fn run_parakeet_install(
         manifest::write_manifest(&manifest::artifact_manifest_path(&staging), &manifest_value)
             .map_err(|error| failure("io", "manifest_write_failed", error, 74))?;
         publish_staged_tree(&staging, &install_dir)
-            .map_err(|error| failure("io", "publish_failed", error, 74))?;
+            .map_err(|error| failure_detail("io", "publish_failed", io_detail(error), 74))?;
         completed_archives.push(archive_path);
         binaries.push(json!({"backend": backend, "binary_path": install_dir.join(binary_name)}));
     }
@@ -2325,10 +2535,11 @@ fn install_parakeet_model(
     let dest = model_dir.join(filename);
     *status_value = status::write_status(
         journal,
-        status::transition(status_value.clone(), "downloading", None, None)
-            .map_err(|error| failure("state", "transition_failed", error, 74))?,
+        status::transition(status_value.clone(), "downloading", None, None).map_err(|error| {
+            failure_detail("state", "transition_failed", error.into_detail(), 74)
+        })?,
     )
-    .map_err(|error| failure("state", "status_write_failed", error, 74))?;
+    .map_err(|error| failure_detail("state", "status_write_failed", error.into_detail(), 74))?;
     retry_transient_fetch(
         status_value,
         |status_value| {
@@ -2345,17 +2556,20 @@ fn install_parakeet_model(
         |status_value| {
             status::assert_current(journal, status_value)
                 .map(|_| ())
-                .map_err(|error| failure("state", "attempt_superseded", error, 74))
+                .map_err(|error| {
+                    failure_detail("state", "attempt_superseded", error.into_detail(), 74)
+                })
         },
         &MODEL_FETCH_RETRY_WAITS,
         std::thread::sleep,
     )?;
     *status_value = status::write_status(
         journal,
-        status::transition(status_value.clone(), "verifying", None, None)
-            .map_err(|error| failure("state", "transition_failed", error, 74))?,
+        status::transition(status_value.clone(), "verifying", None, None).map_err(|error| {
+            failure_detail("state", "transition_failed", error.into_detail(), 74)
+        })?,
     )
-    .map_err(|error| failure("state", "status_write_failed", error, 74))?;
+    .map_err(|error| failure_detail("state", "status_write_failed", error.into_detail(), 74))?;
     write_parakeet_model_manifest(&model_dir, status_value)?;
     Ok(dest)
 }
@@ -2454,7 +2668,7 @@ fn model_verification_failure(
     {
         failure("cancelled", "install_cancelled", "install_cancelled", 74)
     } else {
-        failure("io", reason, error, 74)
+        failure_detail("io", reason, archive_detail(error), 74)
     }
 }
 
@@ -2496,15 +2710,16 @@ fn install_model_with_cancel(
     *status_value = status::write_status(
         journal,
         status::transition(status_value.clone(), "downloading", None, None)
-            .map_err(|e| failure("state", "transition_failed", e, 74))?,
+            .map_err(|e| failure_detail("state", "transition_failed", e.into_detail(), 74))?,
     )
-    .map_err(|e| failure("state", "status_write_failed", e, 74))?;
+    .map_err(|e| failure_detail("state", "status_write_failed", e.into_detail(), 74))?;
     let mut cumulative_bytes = completed_bytes;
 
     for name in &files {
         checkpoint()?;
-        status::assert_current(journal, status_value)
-            .map_err(|error| failure("state", "attempt_superseded", error, 74))?;
+        status::assert_current(journal, status_value).map_err(|error| {
+            failure_detail("state", "attempt_superseded", error.into_detail(), 74)
+        })?;
         let artifact = select_artifact("local-model", None, None, None, Some(name))?;
         let dest = fetch_root.join(name);
         let installed = match solstone_core_artifact_download::verify_sha256_with_cancel(
@@ -2552,10 +2767,10 @@ fn install_model_with_cancel(
             .map_err(|error| model_verification_failure("model_verify_failed", error))?,
         );
         if fit_report::free_bytes(&fetch_root).is_ok_and(|free| free < remaining) {
-            return Err(failure(
+            return Err(failure_detail(
                 "disk",
                 "disk_space_insufficient",
-                "not enough space to finish downloading the model",
+                MessageDetail::message("journal.cli.install.disk.insufficient", []),
                 74,
             ));
         }
@@ -2584,7 +2799,9 @@ fn install_model_with_cancel(
                 checkpoint()?;
                 status::assert_current(journal, status_value)
                     .map(|_| ())
-                    .map_err(|error| failure("state", "attempt_superseded", error, 74))
+                    .map_err(|error| {
+                        failure_detail("state", "attempt_superseded", error.into_detail(), 74)
+                    })
             },
             &MODEL_FETCH_RETRY_WAITS,
             |duration| {
@@ -2618,17 +2835,18 @@ fn install_model_with_cancel(
     status_value.progress_bytes_total = Some(total_bytes);
 
     status::assert_current(journal, status_value)
-        .map_err(|error| failure("state", "attempt_superseded", error, 74))?;
+        .map_err(|error| failure_detail("state", "attempt_superseded", error.into_detail(), 74))?;
 
     *status_value = status::write_status(
         journal,
-        status::transition(status_value.clone(), "verifying", None, None)
-            .map_err(|error| failure("state", "transition_failed", error, 74))?,
+        status::transition(status_value.clone(), "verifying", None, None).map_err(|error| {
+            failure_detail("state", "transition_failed", error.into_detail(), 74)
+        })?,
     )
-    .map_err(|error| failure("state", "status_write_failed", error, 74))?;
+    .map_err(|error| failure_detail("state", "status_write_failed", error.into_detail(), 74))?;
 
     status::assert_current(journal, status_value)
-        .map_err(|error| failure("state", "attempt_superseded", error, 74))?;
+        .map_err(|error| failure_detail("state", "attempt_superseded", error.into_detail(), 74))?;
 
     if root == generation.directory(&pins::cache_root(journal).join("models")) {
         generation
@@ -2669,43 +2887,61 @@ pub fn cancel_local_bootstrap(
     expected_attempt_id: &str,
     stop_writer: impl FnOnce(&Value) -> Result<(), String>,
 ) -> Result<status::InstallStatus, DispatchError> {
+    cancel_local_bootstrap_detail(journal, provider, expected_attempt_id, |owner| {
+        stop_writer(owner).map_err(MessageDetail::from)
+    })
+}
+
+pub fn cancel_local_bootstrap_detail(
+    journal: &Path,
+    provider: &str,
+    expected_attempt_id: &str,
+    stop_writer: impl FnOnce(&Value) -> Result<(), MessageDetail>,
+) -> Result<status::InstallStatus, DispatchError> {
     let check = |current: &status::InstallStatus| {
         if current.attempt_id.as_deref() == Some(expected_attempt_id) {
             Ok(())
         } else {
-            Err(failure(
+            Err(failure_detail(
                 "conflict",
                 "attempt_mismatch",
-                "install attempt changed",
+                MessageDetail::window("journal.setup.cancel.changed", []),
                 65,
             ))
         }
     };
     let current = status::read_status(journal, provider)
-        .map_err(|error| failure("state", "read_status_failed", error, 74))?;
+        .map_err(|error| failure_detail("state", "read_status_failed", error.into_detail(), 74))?;
     check(&current)?;
     if !status::is_in_flight(&current.install_state) {
         return Ok(current);
     }
     if lease::is_held(journal, provider)
-        .map_err(|error| failure("state", "lease_unavailable", error, 74))?
+        .map_err(|error| failure_detail("state", "lease_unavailable", io_detail(error), 74))?
     {
         let owner = current.owner.as_ref().ok_or_else(|| {
-            failure(
+            failure_detail(
                 "state",
                 "owner_unavailable",
-                "installer identity is unavailable",
+                MessageDetail::window("journal.setup.cancel.identity", []),
                 74,
             )
         })?;
-        stop_writer(owner).map_err(|error| failure("state", "cancel_failed", error, 74))?;
+        stop_writer(owner).map_err(|error| failure_detail("state", "cancel_failed", error, 74))?;
     }
     // No terminal write while the installer can still publish progress or success.
     let _held = lease::acquire(journal, provider)
-        .map_err(|error| failure("state", "lease_unavailable", error, 74))?
-        .ok_or_else(|| failure("busy", "install_busy", "installer still owns its lease", 75))?;
+        .map_err(|error| failure_detail("state", "lease_unavailable", io_detail(error), 74))?
+        .ok_or_else(|| {
+            failure_detail(
+                "busy",
+                "install_busy",
+                MessageDetail::window("journal.setup.cancel.busy", []),
+                75,
+            )
+        })?;
     let latest = status::read_status(journal, provider)
-        .map_err(|error| failure("state", "read_status_failed", error, 74))?;
+        .map_err(|error| failure_detail("state", "read_status_failed", error.into_detail(), 74))?;
     check(&latest)?;
     if !status::is_in_flight(&latest.install_state) {
         return Ok(latest);
@@ -2716,9 +2952,9 @@ pub fn cancel_local_bootstrap(
         Some("install_cancelled".into()),
         Some("install_cancelled".into()),
     )
-    .map_err(|error| failure("state", "transition_failed", error, 74))?;
+    .map_err(|error| failure_detail("state", "transition_failed", error.into_detail(), 74))?;
     status::write_status(journal, cancelled)
-        .map_err(|error| failure("state", "status_write_failed", error, 74))
+        .map_err(|error| failure_detail("state", "status_write_failed", error.into_detail(), 74))
 }
 
 fn find_file(root: &Path, name: &str) -> Option<PathBuf> {
@@ -2750,7 +2986,10 @@ fn hoist_binary(staging: &Path, binary: &Path, backend: &str) -> std::io::Result
 
 fn flatten_binary_bundle(staging: &Path, binary: &Path) -> std::io::Result<()> {
     let parent = binary.parent().ok_or_else(|| {
-        std::io::Error::new(std::io::ErrorKind::InvalidInput, "binary has no parent")
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            MessageDetail::message("journal.cli.install.staging.binary.parent", []),
+        )
     })?;
     if parent == staging {
         return Ok(());
@@ -2761,9 +3000,9 @@ fn flatten_binary_bundle(staging: &Path, binary: &Path) -> std::io::Result<()> {
         if fs::symlink_metadata(&destination).is_ok() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::AlreadyExists,
-                format!(
-                    "bundle destination already exists: {}",
-                    destination.display()
+                MessageDetail::message(
+                    "journal.cli.install.staging.bundle.occupied",
+                    [("path", &destination.display())],
                 ),
             ));
         }
@@ -2782,10 +3021,16 @@ fn publish_staged_tree_with(
     rename: &mut impl FnMut(&Path, &Path) -> std::io::Result<()>,
 ) -> std::io::Result<()> {
     let parent = target.parent().ok_or_else(|| {
-        std::io::Error::new(std::io::ErrorKind::InvalidInput, "target has no parent")
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            MessageDetail::message("journal.cli.install.staging.target.parent", []),
+        )
     })?;
     let name = target.file_name().ok_or_else(|| {
-        std::io::Error::new(std::io::ErrorKind::InvalidInput, "target has no file name")
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            MessageDetail::message("journal.cli.install.staging.target.name", []),
+        )
     })?;
     let aside = loop {
         let candidate = parent.join(format!(
@@ -2863,7 +3108,14 @@ fn failure(kind: &str, reason: &str, message: impl ToString, exit_code: u8) -> D
     DispatchError {
         envelope: InstallEnvelope::error(kind, reason, message),
         exit_code,
+        detail: None,
     }
+}
+
+fn failure_detail(kind: &str, reason: &str, detail: MessageDetail, exit_code: u8) -> DispatchError {
+    let mut error = failure(kind, reason, &detail, exit_code);
+    error.detail = Some(detail);
+    error
 }
 
 #[cfg(all(test, feature = "test-fixture-pin"))]

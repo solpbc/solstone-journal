@@ -1,0 +1,32 @@
+{
+  "description": "A provider installer reports this diagnostic when starting, updating or reading a journal install attempt.",
+  "context": "A provider installer reports this diagnostic when starting, updating or reading a journal install attempt.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "installed",
+      "type": "string"
+    },
+    {
+      "name": "configured",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e36cf24b960f3f32681056b75cfa537c842150cdc3ce73df6e81d12b6e52ecfa",
+  "max_length": 285,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "coreml",
+      "kind": "accepted-input",
+      "value": "CoreML"
+    }
+  ]
+}

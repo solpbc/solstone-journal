@@ -5530,6 +5530,7 @@ dependencies = [
  "solstone-core-backup-web",
  "solstone-core-brain",
  "solstone-core-callosum",
+ "solstone-core-cli-copy",
  "solstone-core-convey-body",
  "solstone-core-convey-http",
  "solstone-core-entities",

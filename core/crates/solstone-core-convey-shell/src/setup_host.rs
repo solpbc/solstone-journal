@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::sync::mpsc::sync_channel;
 use std::thread;
 
+use solstone_core_cli_copy::{ENGLISH, MessageDetail};
 use solstone_core_sol_link::http::{
     SetupDownloads, SetupHost, SetupProgressError, SetupRetryError, localized_setup_downloads,
     packaged_speech_retry, read_setup_downloads_with_packaged_speech,
@@ -54,6 +55,11 @@ impl ConveySetupHost {
     }
 
     fn start_local_for_key(&self, journal: &Path, key: &str) -> Result<(), String> {
+        self.start_local_detail(journal, key)
+            .map_err(|error| error.to_string())
+    }
+
+    fn start_local_detail(&self, journal: &Path, key: &str) -> Result<(), MessageDetail> {
         if solstone_core_local::embedded::supports_key(key) {
             let root = self
                 .backup
@@ -62,9 +68,11 @@ impl ConveySetupHost {
             if root.canonical_path() != journal {
                 return Err("journal binding changed".into());
             }
-            crate::thinking_install::start_mobile(root, "local/qwen3.5-4b", false).map(|_| ())
+            crate::thinking_install::start_mobile(root, "local/qwen3.5-4b", false)
+                .map(|_| ())
+                .map_err(MessageDetail::from)
         } else {
-            crate::thinking_install::start(journal, "local/qwen3.5-4b").map(|_| ())
+            crate::thinking_install::start_detail(journal, "local/qwen3.5-4b").map(|_| ())
         }
     }
 }
@@ -75,6 +83,11 @@ impl SetupHost for ConveySetupHost {
             journal_root,
             &solstone_core_local::install::pins::platform_key(),
         )
+    }
+
+    fn start_local_for_locale(&self, journal: &Path, locale: &str) -> Result<(), String> {
+        self.start_local_detail(journal, &solstone_core_local::install::pins::platform_key())
+            .map_err(|error| error.render_for_response(locale))
     }
 
     fn cancel_local(&self, journal_root: &Path, attempt_id: &str) -> Result<(), String> {
@@ -91,6 +104,14 @@ impl SetupHost for ConveySetupHost {
     }
 
     fn retry_speech(&self, journal_root: &Path) -> Result<(), SetupRetryError> {
+        self.retry_speech_for_locale(journal_root, ENGLISH)
+    }
+
+    fn retry_speech_for_locale(
+        &self,
+        journal_root: &Path,
+        locale: &str,
+    ) -> Result<(), SetupRetryError> {
         if self.packaged_speech.is_some() || cfg!(any(target_os = "android", target_os = "ios")) {
             return packaged_speech_retry(
                 self.packaged_speech(journal_root)
@@ -112,7 +133,12 @@ impl SetupHost for ConveySetupHost {
             arch: std::env::consts::ARCH,
         };
 
-        retry_speech_with(journal_root, work)
+        retry_speech_for(
+            journal_root,
+            work,
+            std::time::Duration::from_secs(5),
+            locale,
+        )
     }
 
     fn project_downloads(&self, journal_root: &Path) -> Result<SetupDownloads, SetupProgressError> {
@@ -274,14 +300,25 @@ impl Drop for AdmitDropGuard {
     }
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 pub(crate) fn retry_speech_with(journal: &Path, work: SpeechWork) -> Result<(), SetupRetryError> {
     retry_speech_with_timeout(journal, work, std::time::Duration::from_secs(5))
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 fn retry_speech_with_timeout(
     journal: &Path,
     work: SpeechWork,
     admission_timeout: std::time::Duration,
+) -> Result<(), SetupRetryError> {
+    retry_speech_for(journal, work, admission_timeout, ENGLISH)
+}
+
+fn retry_speech_for(
+    journal: &Path,
+    work: SpeechWork,
+    admission_timeout: std::time::Duration,
+    locale: &str,
 ) -> Result<(), SetupRetryError> {
     if let SpeechWork::WindowsPackage(verified) = work {
         return packaged_speech_retry(verified);
@@ -291,7 +328,7 @@ fn retry_speech_with_timeout(
         .map_err(|error| SetupRetryError {
             code: "status_unreadable",
             message_id: "journal.setup.speech.cannot.start",
-            detail: error.to_string(),
+            detail: error.into_detail().render_for_response(locale),
         })?;
     let lease = match solstone_core_local::install::lease::acquire(journal, "parakeet") {
         Ok(Some(lease)) => lease,
@@ -311,7 +348,7 @@ fn retry_speech_with_timeout(
             return Err(SetupRetryError {
                 code: "lease_unavailable",
                 message_id: "journal.setup.speech.cannot.start",
-                detail: error.to_string(),
+                detail: solstone_core_local::install::io_detail(error).render_for_response(locale),
             });
         }
     };
@@ -324,7 +361,8 @@ fn retry_speech_with_timeout(
                     journal,
                     &observed,
                     "config_unreadable",
-                    error.to_string(),
+                    error.diagnostic(),
+                    locale,
                 ));
             }
         }
@@ -334,6 +372,7 @@ fn retry_speech_with_timeout(
 
     let (tx, rx) = sync_channel::<Result<(), SetupRetryError>>(1);
     let journal_buf = journal.to_path_buf();
+    let worker_locale = locale.to_owned();
     let worker_observed = observed.clone();
 
     let spawn_res = thread::Builder::new()
@@ -360,7 +399,7 @@ fn retry_speech_with_timeout(
                         on_admitted,
                     )
                     .map(|_| ())
-                    .map_err(|error| (error.reason_code.clone(), error.to_string()))
+                    .map_err(|error| (error.reason_code.clone(), error.into_detail()))
                 }
                 SpeechWork::Linux { os, arch } => {
                     let lease = worker_lease.take().expect("speech worker owns the lease");
@@ -379,7 +418,7 @@ fn retry_speech_with_timeout(
                             .as_ref()
                             .map_or("install_failed", |error| error.reason_code.as_str())
                             .to_owned();
-                        (code, format!("{error:?}"))
+                        (code, MessageDetail::from(format!("{error:?}")))
                     })
                 }
                 #[cfg(all(test, feature = "full-tests"))]
@@ -446,7 +485,11 @@ fn retry_speech_with_timeout(
                     &journal_buf,
                     &worker_observed,
                     "speech_admission_failed",
-                    format!("{code}: {detail}"),
+                    detail.context_with(
+                        "journal.cli.transcribe.installation.coded",
+                        [("code", &code)],
+                    ),
+                    &worker_locale,
                 );
                 let _ = tx.send(Err(error));
             }
@@ -457,7 +500,8 @@ fn retry_speech_with_timeout(
             journal,
             &observed,
             "install_start_failed",
-            e.to_string(),
+            e.to_string().into(),
+            locale,
         ));
     }
 
@@ -478,9 +522,10 @@ fn persist_speech_refusal(
     journal: &Path,
     observed: &solstone_core_local::install::status::InstallStatus,
     code: &'static str,
-    detail: String,
+    detail: MessageDetail,
+    locale: &str,
 ) -> SetupRetryError {
-    match solstone_core_local::install::status::record_terminal_refusal_if_unchanged(
+    match solstone_core_local::install::status::record_terminal_refusal_detail_if_unchanged(
         journal,
         "parakeet",
         observed.attempt_id.as_deref(),
@@ -491,12 +536,12 @@ fn persist_speech_refusal(
         Ok(_) => SetupRetryError {
             code,
             message_id: "journal.setup.speech.cannot.start",
-            detail,
+            detail: detail.render_for_response(locale),
         },
         Err(error) => SetupRetryError {
             code: "status_write_failed",
             message_id: "journal.setup.speech.cannot.start",
-            detail: error.to_string(),
+            detail: error.into_detail().render_for_response(locale),
         },
     }
 }
@@ -950,6 +995,77 @@ mod tests {
                 .unwrap()
                 .install_state,
             "installed"
+        );
+    }
+
+    #[test]
+    fn structured_speech_refusals_preserve_the_source_english_count() {
+        let source = "download size mismatch: expected 1 bytes, got 0";
+        let code = "download_size_mismatch";
+        let full_source = format!("{code}: {source}");
+        for request in ["en-US", "en-XA", "unshipped"] {
+            let root = TempDir::new().unwrap();
+            let current =
+                solstone_core_local::install::status::read_status(root.path(), "parakeet").unwrap();
+            let locale = solstone_core_cli_copy::packaged_locale(Some(request));
+            let cause = MessageDetail::cardinal(
+                "journal.cli.install.archive.size",
+                [("quantity", 1)],
+                source.into(),
+                [("expected", &1), ("actual", &0)],
+            )
+            .context_with(
+                "journal.cli.transcribe.installation.coded",
+                [("code", &code)],
+            );
+            let expected = if locale == ENGLISH {
+                full_source.clone()
+            } else {
+                cause.render(locale)
+            };
+            let error = persist_speech_refusal(
+                root.path(),
+                &current,
+                "speech_admission_failed",
+                cause,
+                locale,
+            );
+            assert_eq!(error.detail, expected);
+            let state =
+                solstone_core_local::install::status::read_status(root.path(), "parakeet").unwrap();
+            assert_eq!(state.install_error.as_ref(), Some(&full_source));
+            assert_eq!(
+                solstone_core_local::install::status::display_error(root.path(), &state, locale),
+                Some(expected)
+            );
+        }
+    }
+
+    #[test]
+    fn speech_admission_config_error_is_readable_in_the_requesting_locale() {
+        let root = TempDir::new().unwrap();
+        let config = root.path().join("config");
+        std::fs::create_dir(&config).unwrap();
+        std::fs::write(config.join("journal.json"), b"[").unwrap();
+        let source = solstone_core_journal_config::read_journal_config(root.path())
+            .unwrap_err()
+            .diagnostic();
+        let locale = solstone_core_cli_copy::packaged_locale(Some("en-XA"));
+        let refused = retry_speech_for(
+            root.path(),
+            SpeechWork::Coreml,
+            std::time::Duration::from_secs(1),
+            locale,
+        )
+        .unwrap_err();
+        let status =
+            solstone_core_local::install::status::read_status(root.path(), "parakeet").unwrap();
+        assert_eq!(refused.code, "config_unreadable");
+        assert_eq!(refused.detail, source.render_for_response(locale));
+        assert_eq!(status.install_error, Some(source.to_string()));
+        assert_eq!(
+            solstone_core_local::install::status::display_error(root.path(), &status, locale),
+            Some(refused.detail)
         );
     }
 

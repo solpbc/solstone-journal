@@ -1,0 +1,32 @@
+{
+  "description": "A provider installer reports which part of its local runtime or model package could not be verified.",
+  "context": "A provider installer reports which part of its local runtime or model package could not be verified.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "file",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7667045299d654f84306bcfd33bc8e929ac6c254fa123bc9b8dca1a75821bcfd",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "function",
+      "kind": "accepted-input",
+      "value": "sha256_file"
+    }
+  ]
+}

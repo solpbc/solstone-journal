@@ -1,0 +1,25 @@
+{
+  "description": "A provider installer reports this diagnostic when starting, updating or reading a journal install attempt.",
+  "context": "A provider installer reports this diagnostic when starting, updating or reading a journal install attempt.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    },
+    {
+      "name": "restore",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ce5603459dd58d4b9657afc9e61ca5dfdcbe8894f4eb0648225d05a1846a2a90",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

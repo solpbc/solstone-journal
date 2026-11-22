@@ -3,25 +3,28 @@
 
 //! Installation of the pinned macOS MLX model generation.
 
-use super::{DispatchError, failure, fetch_install_member, mlx_candidate, pins, status};
+use super::{
+    DispatchError, failure, failure_detail, fetch_install_member, mlx_candidate, pins, status,
+};
 use serde_json::{Value, json};
+use solstone_core_cli_copy::MessageDetail;
 use std::{fs, path::Path};
 
 pub(super) fn install(
     journal: &Path,
     state: &mut status::InstallStatus,
 ) -> Result<Value, DispatchError> {
-    let helper = mlx_candidate::resolve_mlx_helper(None)
-        .map_err(|e| failure("package", "package_unavailable", e, 65))?;
+    let helper = mlx_candidate::resolve_mlx_helper_detail(None)
+        .map_err(|e| failure_detail("package", "package_unavailable", e, 65))?;
     if std::env::var_os(mlx_candidate::MODEL_DIR_ENV_KEY).is_some() {
-        let proof = mlx_candidate::inspect_verified_default(journal);
+        let (proof, detail) = mlx_candidate::inspect_verified_default_detail(journal);
         if proof["ready"] != true {
-            return Err(failure(
+            return Err(failure_detail(
                 "verification",
                 "artifact_stale",
-                proof["detail"]
-                    .as_str()
-                    .unwrap_or("MLX override verification failed"),
+                detail.unwrap_or_else(|| {
+                    MessageDetail::message("journal.cli.install.mlx.override.failed", [])
+                }),
                 65,
             ));
         }
@@ -80,13 +83,13 @@ fn install_generation(
     *state = status::write_status(
         journal,
         status::transition(state.clone(), "downloading", None, None)
-            .map_err(|e| failure("state", "transition_failed", e, 74))?,
+            .map_err(|e| failure_detail("state", "transition_failed", e.into_detail(), 74))?,
     )
-    .map_err(|e| failure("state", "status_write_failed", e, 74))?;
+    .map_err(|e| failure_detail("state", "status_write_failed", e.into_detail(), 74))?;
     let mut completed = 0;
     for row in rows {
         status::assert_current(journal, state)
-            .map_err(|e| failure("state", "attempt_superseded", e, 74))?;
+            .map_err(|e| failure_detail("state", "attempt_superseded", e.into_detail(), 74))?;
         let dest = root.join(row.filename);
         if solstone_core_artifact_download::verify_sha256(&dest, row.sha256).is_err() {
             let fetched = fetch_root.join(row.filename);
@@ -96,7 +99,9 @@ fn install_generation(
                 |state| {
                     status::assert_current(journal, state)
                         .map(|_| ())
-                        .map_err(|e| failure("state", "attempt_superseded", e, 74))
+                        .map_err(|e| {
+                            failure_detail("state", "attempt_superseded", e.into_detail(), 74)
+                        })
                 },
                 &super::MODEL_FETCH_RETRY_WAITS,
                 std::thread::sleep,
@@ -115,9 +120,9 @@ fn install_generation(
     *state = status::write_status(
         journal,
         status::transition(state.clone(), "verifying", None, None)
-            .map_err(|e| failure("state", "transition_failed", e, 74))?,
+            .map_err(|e| failure_detail("state", "transition_failed", e.into_detail(), 74))?,
     )
-    .map_err(|e| failure("state", "status_write_failed", e, 74))?;
+    .map_err(|e| failure_detail("state", "status_write_failed", e.into_detail(), 74))?;
     generation
         .seal(&root)
         .map_err(|e| failure("verification", "sha256_mismatch", e, 74))?;

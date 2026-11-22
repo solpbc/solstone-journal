@@ -1,0 +1,23 @@
+{
+  "description": "A provider installer reports this diagnostic when starting, updating or reading a journal install attempt.",
+  "context": "A provider installer reports this diagnostic when starting, updating or reading a journal install attempt.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c7961382574d828f14b2eb4177cfae61fd016876bea7f8ac8d1d997616c2bc78",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "vulkan",
+      "kind": "accepted-input",
+      "value": "Vulkan"
+    }
+  ]
+}

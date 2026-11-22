@@ -1,0 +1,38 @@
+{
+  "description": "A provider installer reports this diagnostic when starting, updating or reading a journal install attempt.",
+  "context": "A provider installer reports this diagnostic when starting, updating or reading a journal install attempt.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "available_bytes",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "447ed174d35af5610ba70013dca021e143fa513bd4abb1600ee9aa274411dd41",
+  "max_length": 528,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "minimum",
+      "kind": "accepted-input",
+      "value": "6 GiB"
+    },
+    {
+      "name": "vram",
+      "kind": "accepted-input",
+      "value": "VRAM"
+    }
+  ],
+  "selector": {
+    "name": "available_bytes",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "description": "A provider installer reports this diagnostic when starting, updating or reading a journal install attempt.",
+  "context": "A provider installer reports this diagnostic when starting, updating or reading a journal install attempt.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "os_name",
+      "type": "string"
+    },
+    {
+      "name": "arch",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3bc42d40cfc4be469d130597185141dd0b7e34f88d65cec2b9aa27af0b102bda",
+  "max_length": 231,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "host",
+      "kind": "accepted-input",
+      "value": "darwin/arm64"
+    },
+    {
+      "name": "coreml",
+      "kind": "accepted-input",
+      "value": "CoreML"
+    }
+  ]
+}

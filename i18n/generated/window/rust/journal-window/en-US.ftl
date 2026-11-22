@@ -114,6 +114,40 @@ m6a6f75726e616c2e73657475702e6964656e746974792e756e6365727461696e = this install
 
 m6a6f75726e616c2e73657475702e6964656e746974792e77696e646f7773 = this installation couldn't be verified.{ "\u000a\u000a" }details: { $error }{ "\u000a\u000a" }to recover, first run `{ "solstone journal service uninstall" }`. if it fails, stop here and include these details in a support request. if it succeeds, run these commands in { "PowerShell" }, then run `{ "solstone journal setup" }` again:{ $commands }{ "\u000a\u000a" }your journal itself is untouched. none of these holds your memories.
 
+m6a6f75726e616c2e73657475702e696e7374616c6c65722e636c65616e75702e6661696c6564 = installer admission cleanup failed: { $error }
+
+m6a6f75726e616c2e73657475702e696e7374616c6c65722e636f6e74726f6c2e74696d65642e6f7574 = installer control timed out
+
+m6a6f75726e616c2e73657475702e696e7374616c6c65722e636f6e74726f6c2e756e617661696c61626c65 = installer control unavailable
+
+m6a6f75726e616c2e73657475702e696e7374616c6c65722e6469726563746f72792e756e617661696c61626c65 = installer directory unavailable
+
+m6a6f75726e616c2e73657475702e696e7374616c6c65722e657869746564 = installer exited before admission ({ $code })
+
+m6a6f75726e616c2e73657475702e696e7374616c6c65722e6964656e746974792e756e617661696c61626c65 = installer identity unavailable
+
+m6a6f75726e616c2e73657475702e696e7374616c6c65722e6a6f622e617574686f72697479 = installer Job authority unavailable
+
+m6a6f75726e616c2e73657475702e696e7374616c6c65722e6a6f622e636c65616e7570 = installer Job cleanup failed: { $error }
+
+m6a6f75726e616c2e73657475702e696e7374616c6c65722e6c656173652e62757379 = installer lease is busy
+
+m6a6f75726e616c2e73657475702e696e7374616c6c65722e70726f636573732e6964656e746974792e696e76616c6964 = installer process identity invalid
+
+m6a6f75726e616c2e73657475702e696e7374616c6c65722e70726f636573732e6964656e746974792e756e617661696c61626c65 = installer process identity unavailable
+
+m6a6f75726e616c2e73657475702e696e7374616c6c65722e70726f636573732e6f62736572766174696f6e2e756e617661696c61626c65 = installer process observation unavailable
+
+m6a6f75726e616c2e73657475702e696e7374616c6c65722e72656769737472792e756e617661696c61626c65 = installer registry unavailable
+
+m6a6f75726e616c2e73657475702e696e7374616c6c65722e7374696c6c2e72756e6e696e67 = installer is still running
+
+m6a6f75726e616c2e73657475702e696e7374616c6c65722e73746f70706564 = installer was stopped
+
+m6a6f75726e616c2e73657475702e696e7374616c6c65722e74696d65642e6f7574 = installer admission timed out
+
+m6a6f75726e616c2e73657475702e696e7374616c6c65722e747265652e6e6f742e726561706564 = process tree not reaped: { $reason }; survivors={ $survivors }
+
 m6a6f75726e616c2e73657475702e6a6f75726e616c2e61626f72746564 = setup aborted by user
 
 m6a6f75726e616c2e73657475702e6a6f75726e616c2e6578697374696e67 = { "solstone journal setup" }: cannot proceed in non-interactive mode - { $path } already contains journal data.{ "\u000a" }Setup will not auto-claim an existing journal.{ "\u000a\u000a" }Retry with one of:{ "\u000a  " }{ $accept }{ "\u000a  " }{ $new }{ "\u000a\u000a" }Interactive escape:{ "\u000a  " }{ $verb }{ "\u000a\u000a" }Run { $explain } for full step list.

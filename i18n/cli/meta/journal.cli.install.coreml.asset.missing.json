@@ -1,0 +1,33 @@
+{
+  "description": "A provider installer reports this diagnostic when starting, updating or reading a journal install attempt.",
+  "context": "A provider installer reports this diagnostic when starting, updating or reading a journal install attempt.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "file",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ed0ee7cf92bab253bb95e22f062aeedf6ccdbf755ed0e692ff18337c94f26528",
+  "max_length": 270,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "install_command",
+      "kind": "command",
+      "value": "solstone journal install-models"
+    },
+    {
+      "name": "coreml",
+      "kind": "accepted-input",
+      "value": "CoreML"
+    }
+  ]
+}

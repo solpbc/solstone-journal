@@ -1,0 +1,21 @@
+{
+  "description": "A provider installer explains why its pinned component could not be acquired or verified.",
+  "context": "A provider installer explains why its pinned component could not be acquired or verified.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "98dc421e5318ee6c96c810a65d0967e00715ffb28feda14bc7391f706422dc88",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

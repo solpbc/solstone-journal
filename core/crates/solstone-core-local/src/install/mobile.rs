@@ -3,16 +3,17 @@
 
 //! App-package runtime authority with the ordinary pinned model generation.
 
-use super::{DispatchError, failure, manifest, pins, resolved_fingerprint, status};
+use super::{DispatchError, failure, failure_detail, manifest, pins, resolved_fingerprint, status};
 use serde_json::{Value, json};
+use solstone_core_cli_copy::MessageDetail;
 use std::path::Path;
 
 pub fn target_for_key(model_id: &str, key: &str) -> Result<Value, DispatchError> {
     let identity = crate::embedded::identity_for_key(key).ok_or_else(|| {
-        failure(
+        failure_detail(
             "package",
             "embedded_runtime_unavailable",
-            "the journal app does not provide this local runtime",
+            MessageDetail::message("journal.cli.install.runtime.unavailable", []),
             65,
         )
     })?;
@@ -47,10 +48,10 @@ pub fn install_with_lease_admitted(
     admitted: impl FnOnce(&status::InstallStatus),
 ) -> Result<Value, DispatchError> {
     let identity = crate::embedded::identity_for_key(&pins::platform_key()).ok_or_else(|| {
-        failure(
+        failure_detail(
             "package",
             "embedded_runtime_unavailable",
-            "the journal app does not provide this local runtime",
+            MessageDetail::message("journal.cli.install.runtime.unavailable", []),
             65,
         )
     })?;

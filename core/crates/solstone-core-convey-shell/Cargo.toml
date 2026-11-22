@@ -205,6 +205,7 @@ host = [
 ]
 
 [dependencies]
+solstone-core-cli-copy = { workspace = true }
 solstone-core-removals.workspace = true
 solstone-core-about.workspace = true
 axum = { workspace = true, features = ["tokio"] }

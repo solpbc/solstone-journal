@@ -7,9 +7,13 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
+mod display;
+pub use display::display_error;
+
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use solstone_core_cli_copy::MessageDetail;
 use solstone_core_time::{Precision, utc_z};
 use thiserror::Error;
 
@@ -32,8 +36,9 @@ fn unknown_provider() -> StatusError {
         .map(|name| format!("'{name}'"))
         .collect::<Vec<_>>()
         .join(", ");
-    StatusError::Malformed(format!(
-        "provider install status must be one of: [{listed}]"
+    StatusError::Diagnostic(MessageDetail::message(
+        "journal.cli.install.status.malformed.providers",
+        [("listed", &listed)],
     ))
 }
 
@@ -43,12 +48,28 @@ pub enum StatusError {
     Malformed(String),
     #[error("install status conflict: {0}")]
     Conflict(String),
+    #[error("{0}")]
+    Diagnostic(MessageDetail),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
     #[error("status lock error: {0}")]
     Lock(String),
+}
+
+impl StatusError {
+    pub fn into_detail(self) -> MessageDetail {
+        match self {
+            Self::Diagnostic(detail) => detail,
+            Self::Malformed(_) | Self::Conflict(_) => self.to_string().into(),
+            Self::Io(error) => super::io_detail(error),
+            Self::Json(error) => error.to_string().into(),
+            Self::Lock(error) => {
+                MessageDetail::message("journal.cli.install.status.lock", [("error", &error)])
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -129,8 +150,9 @@ fn validate(status: &InstallStatus, provider: &str) -> Result<(), StatusError> {
         || status.provider != provider
         || !valid_state(&status.install_state)
     {
-        return Err(StatusError::Malformed(format!(
-            "invalid status for {provider}"
+        return Err(StatusError::Diagnostic(MessageDetail::message(
+            "journal.cli.install.status.malformed.invalid.provider",
+            [("provider", &provider)],
         )));
     }
     if status
@@ -138,9 +160,10 @@ fn validate(status: &InstallStatus, provider: &str) -> Result<(), StatusError> {
         .as_ref()
         .is_some_and(|owner| !owner.is_object())
     {
-        return Err(StatusError::Malformed(
-            "owner must be an object or null".to_owned(),
-        ));
+        return Err(StatusError::Diagnostic(MessageDetail::message(
+            "journal.cli.install.status.malformed.owner.must.be.an.object.or.null",
+            [],
+        )));
     }
     Ok(())
 }
@@ -157,8 +180,12 @@ pub fn read_status(journal: &Path, provider: &str) -> Result<InstallStatus, Stat
         }
         Err(error) => return Err(error.into()),
     };
-    let status: InstallStatus = serde_json::from_slice(&bytes)
-        .map_err(|_| StatusError::Malformed(format!("{}", path.display())))?;
+    let status: InstallStatus = serde_json::from_slice(&bytes).map_err(|_| {
+        StatusError::Diagnostic(MessageDetail::message(
+            "journal.cli.install.status.malformed.file",
+            [("path", &path.display())],
+        ))
+    })?;
     validate(&status, provider)?;
     Ok(status)
 }
@@ -200,9 +227,10 @@ pub fn begin(
     admission_warning: Option<String>,
 ) -> Result<InstallStatus, StatusError> {
     if !is_in_flight(state) {
-        return Err(StatusError::Malformed(
-            "initial install attempt state must be in-flight".to_owned(),
-        ));
+        return Err(StatusError::Diagnostic(MessageDetail::message(
+            "journal.cli.install.status.malformed.initial.install.attempt.state.must.be.in",
+            [],
+        )));
     }
     let mut next = read_status(journal, "local")?;
     next.target_fingerprint_json = Some(fingerprint_json);
@@ -219,19 +247,22 @@ pub fn assert_current(
 ) -> Result<InstallStatus, StatusError> {
     let current = read_status(journal, &attempt.provider)?;
     if !is_in_flight(&current.install_state) {
-        return Err(StatusError::Conflict(
-            "install attempt is no longer in-flight".to_owned(),
-        ));
+        return Err(StatusError::Diagnostic(MessageDetail::message(
+            "journal.cli.install.status.conflict.install.attempt.is.no.longer.in.flight",
+            [],
+        )));
     }
     if current.attempt_id != attempt.attempt_id {
-        return Err(StatusError::Conflict(
-            "install attempt id changed".to_owned(),
-        ));
+        return Err(StatusError::Diagnostic(MessageDetail::message(
+            "journal.cli.install.status.conflict.install.attempt.id.changed",
+            [],
+        )));
     }
     if current.target_fingerprint_sha256 != attempt.target_fingerprint_sha256 {
-        return Err(StatusError::Conflict(
-            "install target fingerprint changed".to_owned(),
-        ));
+        return Err(StatusError::Diagnostic(MessageDetail::message(
+            "journal.cli.install.status.conflict.install.target.fingerprint.changed",
+            [],
+        )));
     }
     Ok(current)
 }
@@ -288,19 +319,22 @@ pub fn record_interrupted(
 ) -> Result<InstallStatus, StatusError> {
     let current = read_status(journal, "local")?;
     if !is_in_flight(&current.install_state) {
-        return Err(StatusError::Conflict(
-            "only in-flight installs can be interrupted".to_owned(),
-        ));
+        return Err(StatusError::Diagnostic(MessageDetail::message(
+            "journal.cli.install.status.conflict.only.in.flight.installs.can.be.interrupted",
+            [],
+        )));
     }
     if current.attempt_id.as_deref() != Some(attempt_id) {
-        return Err(StatusError::Conflict(
-            "interrupted attempt id does not match".to_owned(),
-        ));
+        return Err(StatusError::Diagnostic(MessageDetail::message(
+            "journal.cli.install.status.conflict.interrupted.attempt.id.does.not.match",
+            [],
+        )));
     }
     if current.target_fingerprint_sha256.as_deref() != target_fingerprint_sha256 {
-        return Err(StatusError::Conflict(
-            "interrupted target fingerprint does not match".to_owned(),
-        ));
+        return Err(StatusError::Diagnostic(MessageDetail::message(
+            "journal.cli.install.status.conflict.interrupted.target.fingerprint.does.not.match",
+            [],
+        )));
     }
     write_status(
         journal,
@@ -377,13 +411,25 @@ fn read_unlocked(path: &Path, provider: &str) -> Result<InstallStatus, StatusErr
     if !path.exists() {
         return Ok(idle_status(provider));
     }
-    let status: InstallStatus = serde_json::from_slice(&fs::read(path)?)
-        .map_err(|_| StatusError::Malformed(format!("{}", path.display())))?;
+    let status: InstallStatus = serde_json::from_slice(&fs::read(path)?).map_err(|_| {
+        StatusError::Diagnostic(MessageDetail::message(
+            "journal.cli.install.status.malformed.file",
+            [("path", &path.display())],
+        ))
+    })?;
     validate(&status, provider)?;
     Ok(status)
 }
 
 pub fn write_status(journal: &Path, incoming: InstallStatus) -> Result<InstallStatus, StatusError> {
+    write_status_detail(journal, incoming, None)
+}
+
+pub(super) fn write_status_detail(
+    journal: &Path,
+    incoming: InstallStatus,
+    detail: Option<&MessageDetail>,
+) -> Result<InstallStatus, StatusError> {
     let provider = incoming.provider.clone();
     if !PROVIDERS.contains(&provider.as_str()) {
         return Err(unknown_provider());
@@ -399,6 +445,7 @@ pub fn write_status(journal: &Path, incoming: InstallStatus) -> Result<InstallSt
     let mut stored = accepted;
     stored.revision = current.revision + 1;
     atomic_replace(&path, &stored)?;
+    display::publish(journal, &stored, detail);
     Ok(stored)
 }
 
@@ -412,22 +459,25 @@ fn accept_transition(
     }
     if is_terminal(&current.install_state) {
         if incoming.revision != current.revision {
-            return Err(StatusError::Conflict(
-                "stale install status revision".to_owned(),
-            ));
+            return Err(StatusError::Diagnostic(MessageDetail::message(
+                "journal.cli.install.status.conflict.stale.install.status.revision",
+                [],
+            )));
         }
         if incoming.install_state == "idle" {
             return Ok(incoming.clone());
         }
         if incoming.attempt_id.is_none() {
-            return Err(StatusError::Conflict(
-                "non-idle install status requires attempt id".to_owned(),
-            ));
+            return Err(StatusError::Diagnostic(MessageDetail::message(
+                "journal.cli.install.status.conflict.non.idle.install.status.requires.attempt.id",
+                [],
+            )));
         }
         if is_in_flight(&incoming.install_state) && incoming.attempt_id == current.attempt_id {
-            return Err(StatusError::Conflict(
-                "new in-flight attempt reused attempt id".to_owned(),
-            ));
+            return Err(StatusError::Diagnostic(MessageDetail::message(
+                "journal.cli.install.status.conflict.new.in.flight.attempt.reused.attempt.id",
+                [],
+            )));
         }
         if is_in_flight(&incoming.install_state)
             || matches!(incoming.install_state.as_str(), "installed" | "failed")
@@ -437,14 +487,16 @@ fn accept_transition(
     }
     if is_in_flight(&current.install_state) {
         if !same_attempt {
-            return Err(StatusError::Conflict(
-                "different attempt while install in-flight".to_owned(),
-            ));
+            return Err(StatusError::Diagnostic(MessageDetail::message(
+                "journal.cli.install.status.conflict.different.attempt.while.install.in.flight",
+                [],
+            )));
         }
         if incoming.revision != current.revision {
-            return Err(StatusError::Conflict(
-                "stale install status revision".to_owned(),
-            ));
+            return Err(StatusError::Diagnostic(MessageDetail::message(
+                "journal.cli.install.status.conflict.stale.install.status.revision",
+                [],
+            )));
         }
         if is_in_flight(&incoming.install_state) {
             if current.install_state == incoming.install_state
@@ -466,9 +518,10 @@ fn accept_transition(
             return Ok(incoming.clone());
         }
     }
-    Err(StatusError::Conflict(
-        "illegal install status transition".to_owned(),
-    ))
+    Err(StatusError::Diagnostic(MessageDetail::message(
+        "journal.cli.install.status.conflict.illegal.install.status.transition",
+        [],
+    )))
 }
 
 pub fn transition(
@@ -478,8 +531,9 @@ pub fn transition(
     error_code: Option<String>,
 ) -> Result<InstallStatus, StatusError> {
     if !valid_state(state) {
-        return Err(StatusError::Malformed(format!(
-            "unknown install state: {state}"
+        return Err(StatusError::Diagnostic(MessageDetail::message(
+            "journal.cli.install.status.malformed.state",
+            [("state", &state)],
         )));
     }
     let timestamp = now();
@@ -546,9 +600,10 @@ pub fn bump_progress(
     last_write: &mut Instant,
 ) -> Result<Option<InstallStatus>, StatusError> {
     if !is_in_flight(&status.install_state) {
-        return Err(StatusError::Conflict(
-            "install progress can only be bumped for in-flight states".to_owned(),
-        ));
+        return Err(StatusError::Diagnostic(MessageDetail::message(
+            "journal.cli.install.status.conflict.install.progress.can.only.be.bumped.for",
+            [],
+        )));
     }
     let total_changed = total.is_some_and(|value| Some(value) != status.progress_bytes_total);
     if received.is_some() {
@@ -584,10 +639,22 @@ pub fn record_terminal_refusal(
     reason_code: &str,
     message: &str,
 ) -> Result<InstallStatus, StatusError> {
+    record_terminal_refusal_detail(journal, provider, reason_code, &message.into())
+}
+
+pub fn record_terminal_refusal_detail(
+    journal: &Path,
+    provider: &str,
+    reason_code: &str,
+    detail: &MessageDetail,
+) -> Result<InstallStatus, StatusError> {
+    if !PROVIDERS.contains(&provider) {
+        return Err(unknown_provider());
+    }
     let Some(lease) = super::lease::acquire(journal, provider)? else {
         return read_status(journal, provider);
     };
-    record_terminal_refusal_with_lease(journal, provider, reason_code, message, &lease)
+    record_terminal_refusal_with_lease(journal, provider, reason_code, detail, &lease)
 }
 
 pub fn record_terminal_refusal_if_unchanged(
@@ -598,6 +665,27 @@ pub fn record_terminal_refusal_if_unchanged(
     reason_code: &str,
     message: &str,
 ) -> Result<InstallStatus, StatusError> {
+    record_terminal_refusal_detail_if_unchanged(
+        journal,
+        provider,
+        observed_attempt_id,
+        observed_revision,
+        reason_code,
+        &message.into(),
+    )
+}
+
+pub fn record_terminal_refusal_detail_if_unchanged(
+    journal: &Path,
+    provider: &str,
+    observed_attempt_id: Option<&str>,
+    observed_revision: u64,
+    reason_code: &str,
+    detail: &MessageDetail,
+) -> Result<InstallStatus, StatusError> {
+    if !PROVIDERS.contains(&provider) {
+        return Err(unknown_provider());
+    }
     let Some(lease) = super::lease::acquire(journal, provider)? else {
         return read_status(journal, provider);
     };
@@ -606,14 +694,14 @@ pub fn record_terminal_refusal_if_unchanged(
     {
         return Ok(current);
     }
-    record_terminal_refusal_with_lease(journal, provider, reason_code, message, &lease)
+    record_terminal_refusal_with_lease(journal, provider, reason_code, detail, &lease)
 }
 
 pub(crate) fn record_terminal_refusal_with_lease(
     journal: &Path,
     provider: &str,
     reason_code: &str,
-    message: &str,
+    detail: &MessageDetail,
     _lease: &super::lease::InstallLease,
 ) -> Result<InstallStatus, StatusError> {
     let mut current = read_status(journal, provider)?;
@@ -637,10 +725,10 @@ pub(crate) fn record_terminal_refusal_with_lease(
     let failed = transition(
         current,
         "failed",
-        Some(message.to_owned()),
+        Some(detail.to_string()),
         Some(reason_code.to_owned()),
     )?;
-    write_status(journal, failed)
+    write_status_detail(journal, failed, Some(detail))
 }
 
 #[cfg(test)]
@@ -747,7 +835,7 @@ mod tests {
             "sibling missing",
         )
         .unwrap_err();
-        assert!(matches!(err, StatusError::Malformed(_)));
+        assert!(matches!(err, StatusError::Diagnostic(_)));
         assert_eq!(std::fs::read(&path).unwrap(), b"not json");
     }
 }
@@ -792,7 +880,7 @@ mod full_tests {
         drop(lock);
         assert!(matches!(
             result.recv_timeout(Duration::from_secs(2)).unwrap(),
-            Err(StatusError::Conflict(_))
+            Err(StatusError::Diagnostic(_))
         ));
         writer.join().unwrap();
         assert_eq!(read_status(journal, "local").unwrap(), current);
@@ -873,7 +961,7 @@ mod full_tests {
             "sibling missing",
         )
         .unwrap_err();
-        assert!(matches!(err, StatusError::Malformed(_)));
+        assert!(matches!(err, StatusError::Diagnostic(_)));
         assert_eq!(std::fs::read(&path).unwrap(), b"corrupt bytes");
     }
 }

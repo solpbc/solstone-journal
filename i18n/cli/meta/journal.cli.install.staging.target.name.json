@@ -1,0 +1,16 @@
+{
+  "description": "A provider installer reports a problem while staging its runtime package.",
+  "context": "A provider installer reports a problem while staging its runtime package.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e8cdcab0bcafb76bc3a95bce76b474a5cda426487b581ef0133efdcaf64513b5",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -68,7 +68,7 @@ pub fn is_held(journal: &Path, provider: &str) -> std::io::Result<bool> {
     if !file.metadata()?.is_file() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            "install lease is not a regular file",
+            solstone_core_cli_copy::MessageDetail::message("journal.cli.install.lease.regular", []),
         ));
     }
     match try_lock(file, true) {

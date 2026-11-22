@@ -3,6 +3,7 @@
 
 //! Atomic installation and verification of the Parakeet CoreML model tree.
 
+use solstone_core_cli_copy::MessageDetail;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -303,13 +304,17 @@ fn rows() -> Result<Vec<&'static Artifact>, CoremlInstallError> {
 
 fn shared_catalog_version(rows: &[&Artifact]) -> Result<&'static str, CoremlInstallError> {
     let first = rows.first().ok_or_else(|| {
-        CoremlInstallError::new("catalog_empty", "no parakeet-coreml catalog rows found", 65)
+        CoremlInstallError::new(
+            "catalog_empty",
+            MessageDetail::message("journal.cli.install.coreml.catalog.empty", []),
+            65,
+        )
     })?;
     let version = first.version;
     if rows.iter().any(|r| r.version != version) {
         return Err(CoremlInstallError::new(
             "catalog_version_mismatch",
-            "parakeet-coreml catalog rows have conflicting versions",
+            MessageDetail::message("journal.cli.install.coreml.catalog.conflict", []),
             65,
         ));
     }
@@ -329,7 +334,10 @@ fn require_coreml_host(os_name: &str, arch: &str) -> Result<(), CoremlInstallErr
     } else {
         Err(CoremlInstallError::new(
             "platform_unsupported",
-            format!("parakeet CoreML is only supported on darwin/arm64, not {os_name}/{arch}"),
+            MessageDetail::message(
+                "journal.cli.install.coreml.platform",
+                [("os_name", &os_name), ("arch", &arch)],
+            ),
             69,
         ))
     }
@@ -350,7 +358,11 @@ fn archive_error_reason_code(error: &archive::ArchiveError) -> &'static str {
 }
 
 fn archive_error(error: archive::ArchiveError) -> CoremlInstallError {
-    CoremlInstallError::new(archive_error_reason_code(&error), error.to_string(), 74)
+    CoremlInstallError::new(
+        archive_error_reason_code(&error),
+        super::archive_detail(error),
+        74,
+    )
 }
 
 fn write_sentinel(path: &Path, sentinel: &ParakeetCoremlSentinel) -> std::io::Result<()> {
@@ -403,7 +415,7 @@ pub fn refresh_installed_parakeet_coreml(
     let total_bytes: u64 = rows.iter().map(|r| r.size_bytes).sum();
     let mut completed_bytes: u64 = 0;
     let mut progress_at = std::time::Instant::now();
-    let mut progress_error: Option<String> = None;
+    let mut progress_error: Option<MessageDetail> = None;
 
     let mut fetch = |query: &RuntimeFetchQuery<'_>, destination: &Path| {
         if let Some(ref err) = progress_error {
@@ -421,7 +433,7 @@ pub fn refresh_installed_parakeet_coreml(
             let state = match super::status::read_status(journal, "parakeet") {
                 Ok(s) => s,
                 Err(e) => {
-                    progress_error = Some(e.to_string());
+                    progress_error = Some(e.into_detail());
                     return;
                 }
             };
@@ -437,7 +449,7 @@ pub fn refresh_installed_parakeet_coreml(
             }) {
                 Ok(Some(_)) => {}
                 Ok(None) => {}
-                Err(err) => progress_error = Some(err.to_string()),
+                Err(err) => progress_error = Some(err.into_detail()),
             }
         });
         fetch_res?;
@@ -592,35 +604,44 @@ fn heal_with(
     .map_err(|error| error.to_string())?;
     let result = install();
     let state = current_attempt_status(journal, &state).map_err(|error| error.to_string())?;
-    let (next, outcome) = match result {
-        Ok(_) => (
-            status::transition(state, "installed", None, None),
-            CoremlHeal::Installed,
-        ),
-        Err(error) => (
-            status::transition(
-                state,
-                "failed",
-                Some(error.to_string()),
-                Some(error.reason_code.clone()),
-            ),
-            CoremlHeal::Failed(error.to_string()),
-        ),
+    let outcome = match result {
+        Ok(_) => {
+            let next =
+                status::transition(state, "installed", None, None).map_err(|e| e.to_string())?;
+            status::write_status(journal, next).map_err(|e| e.to_string())?;
+            CoremlHeal::Installed
+        }
+        Err(error) => {
+            write_failure(journal, state, &error).map_err(|e| e.to_string())?;
+            CoremlHeal::Failed(error.to_string())
+        }
     };
-    next.and_then(|next| status::write_status(journal, next))
-        .map_err(|error| error.to_string())?;
     Ok(outcome)
+}
+
+fn write_failure(
+    journal: &Path,
+    record: super::status::InstallStatus,
+    error: &CoremlInstallError,
+) -> Result<super::status::InstallStatus, super::status::StatusError> {
+    let failed = super::status::transition(
+        record,
+        "failed",
+        Some(error.to_string()),
+        Some(error.reason_code.clone()),
+    )?;
+    super::status::write_status_detail(journal, failed, Some(&error.message))
 }
 
 fn write_attempt_phase(journal: &Path, phase: &str) -> Result<(), CoremlInstallError> {
     let mut current = super::status::read_status(journal, "parakeet")
-        .map_err(|error| CoremlInstallError::new("status_unreadable", error.to_string(), 74))?;
+        .map_err(|error| CoremlInstallError::new("status_unreadable", error.into_detail(), 74))?;
     if phase == "verifying" {
         current.progress_bytes_received = current.progress_bytes_total;
     }
     super::status::transition(current, phase, None, None)
         .and_then(|next| super::status::write_status(journal, next))
-        .map_err(|error| CoremlInstallError::new("status_write_failed", error.to_string(), 74))?;
+        .map_err(|error| CoremlInstallError::new("status_write_failed", error.into_detail(), 74))?;
     Ok(())
 }
 
@@ -629,11 +650,11 @@ fn current_attempt_status(
     admitted: &super::status::InstallStatus,
 ) -> Result<super::status::InstallStatus, CoremlInstallError> {
     let current = super::status::read_status(journal, "parakeet")
-        .map_err(|error| CoremlInstallError::new("status_unreadable", error.to_string(), 74))?;
+        .map_err(|error| CoremlInstallError::new("status_unreadable", error.into_detail(), 74))?;
     if current.attempt_id != admitted.attempt_id {
         return Err(CoremlInstallError::new(
             "status_write_failed",
-            "the speech install attempt changed.",
+            MessageDetail::message("journal.cli.install.coreml.attempt.changed", []),
             74,
         ));
     }
@@ -667,30 +688,24 @@ pub fn run_coreml_parakeet_attempt(
         "downloading",
         on_admitted,
     )
-    .map_err(|e| CoremlInstallError::new("status_write_failed", e.to_string(), 74))?;
+    .map_err(|e| CoremlInstallError::new("status_write_failed", e.into_detail(), 74))?;
 
     match download_publish_coreml(journal, home_dir, config, force) {
         Ok(target) => {
             let record = current_attempt_status(journal, &state)?;
             let next = status::transition(record, "installed", None, None)
-                .map_err(|e| CoremlInstallError::new("status_write_failed", e.to_string(), 74))?;
+                .map_err(|e| CoremlInstallError::new("status_write_failed", e.into_detail(), 74))?;
             status::write_status(journal, next)
-                .map_err(|e| CoremlInstallError::new("status_write_failed", e.to_string(), 74))?;
+                .map_err(|e| CoremlInstallError::new("status_write_failed", e.into_detail(), 74))?;
             Ok(target)
         }
         Err(error) => {
             let record = current_attempt_status(journal, &state)?;
-            let write_res = status::transition(
-                record,
-                "failed",
-                Some(error.to_string()),
-                Some(error.reason_code.clone()),
-            )
-            .and_then(|failed| status::write_status(journal, failed));
+            let write_res = write_failure(journal, record, &error);
             if let Err(term_err) = write_res {
                 return Err(CoremlInstallError::new(
                     "status_write_failed",
-                    term_err.to_string(),
+                    term_err.into_detail(),
                     74,
                 ));
             }
@@ -722,7 +737,7 @@ fn download_publish_coreml(
         Some(journal),
         &mut |received, total| {
             let state = super::status::read_status(journal, "parakeet").map_err(|error| {
-                CoremlInstallError::new("status_unreadable", error.to_string(), 74)
+                CoremlInstallError::new("status_unreadable", error.into_detail(), 74)
             })?;
             super::status::bump_progress(state, Some(received), total, &mut progress_at)
                 .and_then(|next| {
@@ -730,7 +745,7 @@ fn download_publish_coreml(
                         .transpose()
                 })
                 .map_err(|error| {
-                    CoremlInstallError::new("status_write_failed", error.to_string(), 74)
+                    CoremlInstallError::new("status_write_failed", error.into_detail(), 74)
                 })?;
             Ok(())
         },
@@ -742,8 +757,9 @@ fn fetch_runtime_member(
     destination: &Path,
     on_chunk: &mut impl FnMut(u64, Option<u64>),
 ) -> Result<(), CoremlInstallError> {
-    let handle = solstone_core_assets::mint_runtime_fetch(query)
-        .map_err(|err| CoremlInstallError::new(err.reason_code(), err.to_string(), 65))?;
+    let handle = solstone_core_assets::mint_runtime_fetch(query).map_err(|err| {
+        CoremlInstallError::new(err.reason_code(), super::fetch_mint_detail(err), 65)
+    })?;
     solstone_core_artifact_download::download_runtime_fetch(&handle, destination, on_chunk)
         .map_err(archive_error)?;
     Ok(())
@@ -850,7 +866,10 @@ fn install_observed_with_rows(
         ),
         other => CoremlInstallError::new(
             "install_failed",
-            format!("failed to acquire publication lock: {other}"),
+            MessageDetail::message(
+                "journal.cli.install.coreml.publication.lock",
+                [("error", &other)],
+            ),
             74,
         ),
     })?;
@@ -1087,9 +1106,9 @@ fn check_with_rows(
         read_valid_parakeet_coreml_sentinel(home_dir, os_name, arch).ok_or_else(|| {
             CoremlInstallError::new(
                 "sentinel_not_ready",
-                format!(
-                    "parakeet CoreML sentinel not ready: {}; install it with: solstone journal install-models",
-                    parakeet_coreml_sentinel_path(home_dir).display(),
+                MessageDetail::message(
+                    "journal.cli.install.coreml.sentinel.not.ready",
+                    [("path", &(parakeet_coreml_sentinel_path(home_dir).display()))],
                 ),
                 65,
             )
@@ -1098,10 +1117,12 @@ fn check_with_rows(
     if sentinel.cache_dir() != expected_cache_dir {
         return Err(CoremlInstallError::new(
             "cache_dir_mismatch",
-            format!(
-                "parakeet CoreML sentinel cache dir ({}) does not match configured ({})",
-                sentinel.cache_dir().display(),
-                expected_cache_dir.display(),
+            MessageDetail::message(
+                "journal.cli.install.coreml.cache.directory",
+                [
+                    ("installed", &sentinel.cache_dir().display()),
+                    ("configured", &expected_cache_dir.display()),
+                ],
             ),
             65,
         ));
@@ -1111,10 +1132,12 @@ fn check_with_rows(
     if sentinel.catalog_version() != expected_catalog_version {
         return Err(CoremlInstallError::new(
             "catalog_version_mismatch",
-            format!(
-                "parakeet CoreML catalog version mismatch: found {}, expected {}",
-                sentinel.catalog_version(),
-                expected_catalog_version,
+            MessageDetail::message(
+                "journal.cli.install.coreml.catalog.mismatch",
+                [
+                    ("found", &sentinel.catalog_version()),
+                    ("expected", &expected_catalog_version),
+                ],
             ),
             65,
         ));
@@ -1134,9 +1157,9 @@ fn check_model_tree_with_rows(
             _ => {
                 return Err(CoremlInstallError::new(
                     "model_incomplete",
-                    format!(
-                        "parakeet CoreML asset missing: {}; install it with: solstone journal install-models",
-                        row.filename
+                    MessageDetail::message(
+                        "journal.cli.install.coreml.asset.missing",
+                        [("file", &row.filename)],
                     ),
                     65,
                 ));
@@ -1145,11 +1168,13 @@ fn check_model_tree_with_rows(
         if meta.len() != row.size_bytes {
             return Err(CoremlInstallError::new(
                 "model_incomplete",
-                format!(
-                    "parakeet CoreML asset size mismatch for {}: expected {}, found {}",
-                    row.filename,
-                    row.size_bytes,
-                    meta.len()
+                MessageDetail::message(
+                    "journal.cli.install.coreml.asset.size",
+                    [
+                        ("file", &row.filename),
+                        ("expected", &row.size_bytes),
+                        ("found", &meta.len()),
+                    ],
                 ),
                 65,
             ));
@@ -1157,16 +1182,23 @@ fn check_model_tree_with_rows(
         let actual_sha = sha256_file(&path).map_err(|error| {
             CoremlInstallError::new(
                 "model_incomplete",
-                format!("failed to read {}: {error}", row.filename),
+                MessageDetail::message(
+                    "journal.cli.install.coreml.asset.read",
+                    [("file", &row.filename), ("error", &error)],
+                ),
                 65,
             )
         })?;
         if actual_sha != row.sha256 {
             return Err(CoremlInstallError::new(
                 "model_incomplete",
-                format!(
-                    "parakeet CoreML asset digest mismatch for {}: expected {}, found {}",
-                    row.filename, row.sha256, actual_sha
+                MessageDetail::message(
+                    "journal.cli.install.coreml.asset.digest",
+                    [
+                        ("file", &row.filename),
+                        ("expected", &row.sha256),
+                        ("found", &actual_sha),
+                    ],
                 ),
                 65,
             ));
@@ -1227,7 +1259,7 @@ pub fn check_parakeet_coreml_cache_doctor_in(
             locale,
             "journal.cli.doctor.parakeet.coreml.configured",
             [
-                ("installed", &(sentinel.cache_dir().display())),
+                ("installed", &sentinel.cache_dir().display()),
                 ("configured", &configured.display()),
             ],
         ));
@@ -1299,8 +1331,11 @@ fn publication_failure(
     error: impl std::fmt::Display,
 ) -> CoremlInstallError {
     let message = match recover_publication_locked(home) {
-        Ok(()) => error.to_string(),
-        Err(restore) => format!("{error}; restore failed: {restore}"),
+        Ok(()) => MessageDetail::from(error.to_string()),
+        Err(restore) => MessageDetail::message(
+            "journal.cli.install.coreml.publish.restore",
+            [("error", &error), ("restore", &restore)],
+        ),
     };
     CoremlInstallError::new(reason, message, 74)
 }
@@ -1596,7 +1631,7 @@ fn refresh_with_rows(
         "downloading",
         |_| {},
     )
-    .map_err(|e| CoremlInstallError::new("status_write_failed", e.to_string(), 74))?;
+    .map_err(|e| CoremlInstallError::new("status_write_failed", e.into_detail(), 74))?;
 
     let outcome = download_and_commit_coreml_observed(
         home_dir,
@@ -1613,24 +1648,18 @@ fn refresh_with_rows(
         Ok(target) => {
             let record = current_attempt_status(journal, &state)?;
             let next = super::status::transition(record, "installed", None, None)
-                .map_err(|e| CoremlInstallError::new("status_write_failed", e.to_string(), 74))?;
+                .map_err(|e| CoremlInstallError::new("status_write_failed", e.into_detail(), 74))?;
             super::status::write_status(journal, next)
-                .map_err(|e| CoremlInstallError::new("status_write_failed", e.to_string(), 74))?;
+                .map_err(|e| CoremlInstallError::new("status_write_failed", e.into_detail(), 74))?;
             Ok(target)
         }
         Err(error) => {
             let record = current_attempt_status(journal, &state)?;
-            let write_res = super::status::transition(
-                record,
-                "failed",
-                Some(error.to_string()),
-                Some(error.reason_code.clone()),
-            )
-            .and_then(|failed| super::status::write_status(journal, failed));
+            let write_res = write_failure(journal, record, &error);
             if let Err(term_err) = write_res {
                 return Err(CoremlInstallError::new(
                     "status_write_failed",
-                    term_err.to_string(),
+                    term_err.into_detail(),
                     74,
                 ));
             }
@@ -1722,7 +1751,7 @@ fn download_and_commit_coreml_observed(
         let _ = fs::remove_dir_all(&staging);
         return Err(CoremlInstallError::new(
             "sentinel_removed",
-            "incumbent sentinel was removed before publication",
+            MessageDetail::message("journal.cli.install.coreml.sentinel.removed", []),
             74,
         ));
     }
@@ -1740,7 +1769,7 @@ fn download_and_commit_coreml_observed(
             if !metadata.is_file() || metadata.len() != row.size_bytes {
                 return Err(CoremlInstallError::new(
                     "model_incomplete",
-                    "speech model asset is incomplete",
+                    MessageDetail::message("journal.cli.install.coreml.asset.incomplete", []),
                     65,
                 ));
             }
@@ -2199,7 +2228,7 @@ mod tests {
                             status::write_status(&journal, current).map_err(|error| {
                                 CoremlInstallError::new(
                                     "status_write_failed",
-                                    error.to_string(),
+                                    error.into_detail(),
                                     74,
                                 )
                             })?;

@@ -6058,3 +6058,125 @@ fn parakeet_model_retry_admits_disk_for_only_the_remaining_prefix() {
     assert!(!requests[0].contains("range:"));
     assert!(requests[1].contains("range: bytes=64-\r\n"));
 }
+
+#[test]
+fn installer_receipts_follow_typed_writes_and_keep_raw_english() {
+    use super::{LocalHardwareAdmission, run_local_with_gpu_admission};
+    use solstone_core_cli_copy::MessageDetail;
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    let object = json!({"journal": root});
+    let before = "device-local VRAM below 6 GiB minimum: 1 bytes";
+    let after = "device-local VRAM below 6 GiB minimum: 1 byte";
+    let error = run_local_with_gpu_admission(
+        object.as_object().unwrap(),
+        LocalHardwareAdmission::GpuHost {
+            backend: crate::Backend::Cuda,
+            nvidia_detected: true,
+            nvidia_memory_bytes: Some(1),
+            probe_ok: false,
+            devices: vec![],
+            override_index: None,
+        },
+    )
+    .unwrap_err();
+    let status = status::read_status(root, "local").unwrap();
+    assert_eq!(status.install_error.as_deref(), Some(before));
+    assert_eq!(error.envelope.error.as_ref().unwrap().message, before);
+    let detail = error.into_detail();
+    assert_eq!(detail.render("en-US"), after);
+    let stored_path = super::status::status_path(root, "local");
+    let receipt = stored_path.with_extension("json.display");
+    let initial_receipt = fs::read(&receipt).unwrap();
+    assert!(!String::from_utf8_lossy(&initial_receipt).contains(before));
+    assert_eq!(
+        super::status::display_error(root, &status, "en-US").as_deref(),
+        Some(before)
+    );
+    let stale = super::status::record_terminal_refusal_detail_if_unchanged(
+        root,
+        "local",
+        None,
+        0,
+        "fixture",
+        &MessageDetail::from("stale"),
+    )
+    .unwrap();
+    assert_eq!(stale, status);
+    assert_eq!(fs::read(&receipt).unwrap(), initial_receipt);
+    let private = solstone_core_cli_copy::packaged_locale(Some("en-XA"));
+    if private != "en-US" {
+        assert_eq!(
+            super::status::display_error(root, &status, private).unwrap(),
+            detail.render(private)
+        );
+        // A previous version can replace the authoritative file with identical bytes.
+        let temp = stored_path.with_extension("replacement");
+        fs::copy(&stored_path, &temp).unwrap();
+        solstone_core_journal_io::atomic_replace(
+            &stored_path,
+            &fs::read(temp).unwrap(),
+            Default::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            super::status::display_error(root, &status, private).as_deref(),
+            Some(before)
+        );
+    }
+    let current = super::status::record_terminal_refusal_if_unchanged(
+        root,
+        "local",
+        status.attempt_id.as_deref(),
+        status.revision,
+        "gpu_memory_insufficient",
+        before,
+    )
+    .unwrap();
+    assert!(!receipt.exists());
+    assert_eq!(
+        super::status::display_error(root, &current, private).as_deref(),
+        Some(before)
+    );
+
+    let foreign = archive::ArchiveError::SizeMismatch {
+        expected: 1,
+        actual: 2,
+    };
+    let raw_archive = foreign.to_string();
+    let archive_detail = super::archive_detail(foreign);
+    let archived = super::status::record_terminal_refusal_detail(
+        root,
+        "parakeet",
+        "download_size_mismatch",
+        &archive_detail,
+    )
+    .unwrap();
+    assert_eq!(
+        raw_archive,
+        "download size mismatch: expected 1 bytes, got 2"
+    );
+    assert_eq!(archived.install_error.as_ref(), Some(&raw_archive));
+    assert_eq!(
+        archive_detail.render("en-US"),
+        "download size mismatch: expected 1 byte, got 2"
+    );
+    assert_eq!(
+        super::status::display_error(root, &archived, "en-US").unwrap(),
+        raw_archive
+    );
+    assert_eq!(
+        super::status::StatusError::Malformed("from another caller".to_owned()).to_string(),
+        "malformed install status: from another caller"
+    );
+    if private != "en-US" {
+        assert_eq!(
+            super::status::display_error(root, &archived, private).unwrap(),
+            archive_detail.render(private)
+        );
+    }
+    println!(
+        "{}",
+        json!({"gpu":{"record":before,"human":detail.render("en-US")},"archive":{"record":raw_archive,"human":archive_detail.render("en-US")}})
+    );
+}

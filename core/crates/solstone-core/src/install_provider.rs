@@ -327,6 +327,7 @@ fn install_local(
         Some(instance) if instance.birth.is_verifiable() => json!(instance),
         _ => {
             return Err(Box::new(DispatchError {
+                detail: None,
                 envelope: solstone_core_local::install::InstallEnvelope {
                     schema: "solstone-local-install-v1",
                     outcome: "error",
@@ -2182,6 +2183,7 @@ mod tests {
 
     fn dispatch_error(message: &str) -> Box<DispatchError> {
         Box::new(DispatchError {
+            detail: None,
             envelope: solstone_core_local::install::InstallEnvelope {
                 schema: "solstone-local-install-v1",
                 outcome: "error",
@@ -2198,6 +2200,7 @@ mod tests {
 
     fn install_busy_error() -> Box<DispatchError> {
         Box::new(DispatchError {
+            detail: None,
             envelope: solstone_core_local::install::InstallEnvelope {
                 schema: "solstone-local-install-v1",
                 outcome: "error",

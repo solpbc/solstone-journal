@@ -41601,6 +41601,4242 @@
     {
       "bundle": "journal-cli",
       "call_contract": {
+        "arguments": [
+          {
+            "name": "binary_name",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.archive.binary\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e62696e617279",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e62696e617279_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.archive.binary",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e62696e617279",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "⁨sample⁩ missing from archive",
+      "folder": null,
+      "inputs": {
+        "binary_name": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ missing from archive",
+      "message_id": "journal.cli.install.archive.binary",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.archive.binary\", &[(\"binary_name\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e62696e617279",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "expected",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "actual",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.archive.digest\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e646967657374",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e646967657374_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.archive.digest",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e646967657374",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "sha256 mismatch: expected ⁨sample⁩, got ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "actual": "sample",
+        "expected": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "sha256 mismatch: expected ⁨sample⁩, got ⁨sample⁩",
+      "message_id": "journal.cli.install.archive.digest",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.archive.digest\", &[(\"actual\", Value::String(\"sample\")), (\"expected\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e646967657374",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "message",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.archive.download\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e646f776e6c6f6164",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e646f776e6c6f6164_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.archive.download",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e646f776e6c6f6164",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "download failed: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "message": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "download failed: ⁨sample⁩",
+      "message_id": "journal.cli.install.archive.download",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.archive.download\", &[(\"message\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e646f776e6c6f6164",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "host",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.archive.host\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e686f7374",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e686f7374_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.archive.host",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e686f7374",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "download host refused: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "host": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "download host refused: ⁨sample⁩",
+      "message_id": "journal.cli.install.archive.host",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.archive.host\", &[(\"host\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e686f7374",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "host",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "message",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.archive.origin\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e6f726967696e",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e6f726967696e_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.archive.origin",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e6f726967696e",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "download origin unavailable at ⁨sample⁩: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "host": "sample",
+        "message": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "download origin unavailable at ⁨sample⁩: ⁨sample⁩",
+      "message_id": "journal.cli.install.archive.origin",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.archive.origin\", &[(\"host\", Value::String(\"sample\")), (\"message\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e6f726967696e",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "path",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.archive.path\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e70617468",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e70617468_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.archive.path",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e70617468",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "archive member escapes destination: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "path": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "archive member escapes destination: ⁨sample⁩",
+      "message_id": "journal.cli.install.archive.path",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.archive.path\", &[(\"path\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e70617468",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "limit",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.archive.redirect\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e7265646972656374",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e7265646972656374_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.archive.redirect",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e7265646972656374",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "download redirect hop limit exceeded: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "limit": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "download redirect hop limit exceeded: ⁨sample⁩",
+      "message_id": "journal.cli.install.archive.redirect",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.archive.redirect\", &[(\"limit\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e7265646972656374",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "host",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "scheme",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.archive.scheme\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e736368656d65",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e736368656d65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.archive.scheme",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e736368656d65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "download scheme refused for ⁨sample⁩: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "host": "sample",
+        "scheme": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "download scheme refused for ⁨sample⁩: ⁨sample⁩",
+      "message_id": "journal.cli.install.archive.scheme",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.archive.scheme\", &[(\"host\", Value::String(\"sample\")), (\"scheme\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e736368656d65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "expected",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "actual",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.archive.size\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e73697a65",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e73697a65_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.archive.size",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e73697a65",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "download size mismatch: expected ⁨sample⁩ bytes, got ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "actual": "sample",
+        "expected": "sample",
+        "quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "download size mismatch: expected ⁨sample⁩ bytes, got ⁨sample⁩",
+      "message_id": "journal.cli.install.archive.size",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.archive.size\", &[(\"actual\", Value::String(\"sample\")), (\"expected\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e73697a65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "authority",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.archive.userinfo\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e75736572696e666f",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e75736572696e666f_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.archive.userinfo",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e75736572696e666f",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "download URL authority must not include userinfo: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "authority": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "download URL authority must not include userinfo: ⁨sample⁩",
+      "message_id": "journal.cli.install.archive.userinfo",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.archive.userinfo\", &[(\"authority\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e75736572696e666f",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.backend.metal\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6261636b656e642e6d6574616c",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6261636b656e642e6d6574616c_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.backend.metal",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6261636b656e642e6d6574616c",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "backend must be \"metal\" when supplied",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "backend must be \"metal\" when supplied",
+      "message_id": "journal.cli.install.backend.metal",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.backend.metal\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6261636b656e642e6d6574616c",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.backend.unavailable\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6261636b656e642e756e617661696c61626c65",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6261636b656e642e756e617661696c61626c65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.backend.unavailable",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6261636b656e642e756e617661696c61626c65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "the requested local backend is unavailable on this platform",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "the requested local backend is unavailable on this platform",
+      "message_id": "journal.cli.install.backend.unavailable",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.backend.unavailable\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6261636b656e642e756e617661696c61626c65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.component.packaged\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e636f6d706f6e656e742e7061636b61676564",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f6d706f6e656e742e7061636b61676564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.component.packaged",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f6d706f6e656e742e7061636b61676564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "build defect: this component ships inside the package, and retrying will not help",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "build defect: this component ships inside the package, and retrying will not help",
+      "message_id": "journal.cli.install.component.packaged",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.component.packaged\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f6d706f6e656e742e7061636b61676564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.component.unfetched\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e636f6d706f6e656e742e756e66657463686564",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f6d706f6e656e742e756e66657463686564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.component.unfetched",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f6d706f6e656e742e756e66657463686564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "build defect: this build does not download this component, and retrying will not help",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "build defect: this build does not download this component, and retrying will not help",
+      "message_id": "journal.cli.install.component.unfetched",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.component.unfetched\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f6d706f6e656e742e756e66657463686564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "file",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "expected",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "found",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.coreml.asset.digest\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e61737365742e646967657374",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e61737365742e646967657374_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.coreml.asset.digest",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e61737365742e646967657374",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "parakeet CoreML asset digest mismatch for ⁨sample⁩: expected ⁨sample⁩, found ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "expected": "sample",
+        "file": "sample",
+        "found": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "parakeet CoreML asset digest mismatch for ⁨sample⁩: expected ⁨sample⁩, found ⁨sample⁩",
+      "message_id": "journal.cli.install.coreml.asset.digest",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.coreml.asset.digest\", &[(\"expected\", Value::String(\"sample\")), (\"file\", Value::String(\"sample\")), (\"found\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e61737365742e646967657374",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.coreml.asset.incomplete\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e61737365742e696e636f6d706c657465",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e61737365742e696e636f6d706c657465_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.coreml.asset.incomplete",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e61737365742e696e636f6d706c657465",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "speech model asset is incomplete",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "speech model asset is incomplete",
+      "message_id": "journal.cli.install.coreml.asset.incomplete",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.coreml.asset.incomplete\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e61737365742e696e636f6d706c657465",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "file",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.coreml.asset.missing\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e61737365742e6d697373696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e61737365742e6d697373696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.coreml.asset.missing",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e61737365742e6d697373696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "parakeet CoreML asset missing: ⁨sample⁩; install it with: solstone journal install-models",
+      "folder": null,
+      "inputs": {
+        "file": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "parakeet CoreML asset missing: ⁨sample⁩; install it with: solstone journal install-models",
+      "message_id": "journal.cli.install.coreml.asset.missing",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.coreml.asset.missing\", &[(\"file\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e61737365742e6d697373696e67",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "file",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "error",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.coreml.asset.read\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e61737365742e72656164",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e61737365742e72656164_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.coreml.asset.read",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e61737365742e72656164",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "failed to read ⁨sample⁩: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "error": "sample",
+        "file": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "failed to read ⁨sample⁩: ⁨sample⁩",
+      "message_id": "journal.cli.install.coreml.asset.read",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.coreml.asset.read\", &[(\"error\", Value::String(\"sample\")), (\"file\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e61737365742e72656164",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "file",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "expected",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "found",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.coreml.asset.size\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e61737365742e73697a65",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e61737365742e73697a65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.coreml.asset.size",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e61737365742e73697a65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "parakeet CoreML asset size mismatch for ⁨sample⁩: expected ⁨sample⁩, found ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "expected": "sample",
+        "file": "sample",
+        "found": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "parakeet CoreML asset size mismatch for ⁨sample⁩: expected ⁨sample⁩, found ⁨sample⁩",
+      "message_id": "journal.cli.install.coreml.asset.size",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.coreml.asset.size\", &[(\"expected\", Value::String(\"sample\")), (\"file\", Value::String(\"sample\")), (\"found\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e61737365742e73697a65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.coreml.attempt.changed\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e617474656d70742e6368616e676564",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e617474656d70742e6368616e676564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.coreml.attempt.changed",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e617474656d70742e6368616e676564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "the speech install attempt changed.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "the speech install attempt changed.",
+      "message_id": "journal.cli.install.coreml.attempt.changed",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.coreml.attempt.changed\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e617474656d70742e6368616e676564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "installed",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "configured",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.coreml.cache.directory\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e63616368652e6469726563746f7279",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e63616368652e6469726563746f7279_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.coreml.cache.directory",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e63616368652e6469726563746f7279",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "parakeet CoreML sentinel cache dir (⁨sample⁩) does not match configured (⁨sample⁩)",
+      "folder": null,
+      "inputs": {
+        "configured": "sample",
+        "installed": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "parakeet CoreML sentinel cache dir (⁨sample⁩) does not match configured (⁨sample⁩)",
+      "message_id": "journal.cli.install.coreml.cache.directory",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.coreml.cache.directory\", &[(\"configured\", Value::String(\"sample\")), (\"installed\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e63616368652e6469726563746f7279",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.coreml.catalog.conflict\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e636174616c6f672e636f6e666c696374",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e636174616c6f672e636f6e666c696374_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.coreml.catalog.conflict",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e636174616c6f672e636f6e666c696374",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "parakeet-coreml catalog rows have conflicting versions",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "parakeet-coreml catalog rows have conflicting versions",
+      "message_id": "journal.cli.install.coreml.catalog.conflict",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.coreml.catalog.conflict\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e636174616c6f672e636f6e666c696374",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.coreml.catalog.empty\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e636174616c6f672e656d707479",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e636174616c6f672e656d707479_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.coreml.catalog.empty",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e636174616c6f672e656d707479",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "no parakeet-coreml catalog rows found",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "no parakeet-coreml catalog rows found",
+      "message_id": "journal.cli.install.coreml.catalog.empty",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.coreml.catalog.empty\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e636174616c6f672e656d707479",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "found",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "expected",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.coreml.catalog.mismatch\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e636174616c6f672e6d69736d61746368",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e636174616c6f672e6d69736d61746368_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.coreml.catalog.mismatch",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e636174616c6f672e6d69736d61746368",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "parakeet CoreML catalog version mismatch: found ⁨sample⁩, expected ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "expected": "sample",
+        "found": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "parakeet CoreML catalog version mismatch: found ⁨sample⁩, expected ⁨sample⁩",
+      "message_id": "journal.cli.install.coreml.catalog.mismatch",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.coreml.catalog.mismatch\", &[(\"expected\", Value::String(\"sample\")), (\"found\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e636174616c6f672e6d69736d61746368",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "os_name",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "arch",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.coreml.platform\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e706c6174666f726d",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e706c6174666f726d_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.coreml.platform",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e706c6174666f726d",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "parakeet CoreML is only supported on darwin/arm64, not ⁨sample⁩/⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "arch": "sample",
+        "os_name": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "parakeet CoreML is only supported on darwin/arm64, not ⁨sample⁩/⁨sample⁩",
+      "message_id": "journal.cli.install.coreml.platform",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.coreml.platform\", &[(\"arch\", Value::String(\"sample\")), (\"os_name\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e706c6174666f726d",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "error",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.coreml.publication.lock\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e7075626c69636174696f6e2e6c6f636b",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e7075626c69636174696f6e2e6c6f636b_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.coreml.publication.lock",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e7075626c69636174696f6e2e6c6f636b",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "failed to acquire publication lock: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "error": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "failed to acquire publication lock: ⁨sample⁩",
+      "message_id": "journal.cli.install.coreml.publication.lock",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.coreml.publication.lock\", &[(\"error\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e7075626c69636174696f6e2e6c6f636b",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "error",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "restore",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.coreml.publish.restore\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e7075626c6973682e726573746f7265",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e7075626c6973682e726573746f7265_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.coreml.publish.restore",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e7075626c6973682e726573746f7265",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "⁨sample⁩; restore failed: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "error": "sample",
+        "restore": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩; restore failed: ⁨sample⁩",
+      "message_id": "journal.cli.install.coreml.publish.restore",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.coreml.publish.restore\", &[(\"error\", Value::String(\"sample\")), (\"restore\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e7075626c6973682e726573746f7265",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "path",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.coreml.sentinel.not.ready\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e73656e74696e656c2e6e6f742e7265616479",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e73656e74696e656c2e6e6f742e7265616479_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.coreml.sentinel.not.ready",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e73656e74696e656c2e6e6f742e7265616479",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "parakeet CoreML sentinel not ready: ⁨sample⁩; install it with: solstone journal install-models",
+      "folder": null,
+      "inputs": {
+        "path": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "parakeet CoreML sentinel not ready: ⁨sample⁩; install it with: solstone journal install-models",
+      "message_id": "journal.cli.install.coreml.sentinel.not.ready",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.coreml.sentinel.not.ready\", &[(\"path\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e73656e74696e656c2e6e6f742e7265616479",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.coreml.sentinel.removed\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e73656e74696e656c2e72656d6f766564",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e73656e74696e656c2e72656d6f766564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.coreml.sentinel.removed",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e73656e74696e656c2e72656d6f766564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "incumbent sentinel was removed before publication",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "incumbent sentinel was removed before publication",
+      "message_id": "journal.cli.install.coreml.sentinel.removed",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.coreml.sentinel.removed\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e73656e74696e656c2e72656d6f766564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.cuda.integrity\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e637564612e696e74656772697479",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e637564612e696e74656772697479_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.cuda.integrity",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e637564612e696e74656772697479",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "cuda runtime integrity failure",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "cuda runtime integrity failure",
+      "message_id": "journal.cli.install.cuda.integrity",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.cuda.integrity\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e637564612e696e74656772697479",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.disk.insufficient\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6469736b2e696e73756666696369656e74",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6469736b2e696e73756666696369656e74_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.disk.insufficient",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6469736b2e696e73756666696369656e74",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "not enough space to finish downloading the model",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "not enough space to finish downloading the model",
+      "message_id": "journal.cli.install.disk.insufficient",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.disk.insufficient\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6469736b2e696e73756666696369656e74",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.fingerprint.artifact\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e66696e6765727072696e742e6172746966616374",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e66696e6765727072696e742e6172746966616374_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.fingerprint.artifact",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e66696e6765727072696e742e6172746966616374",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "artifact_key missing",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "artifact_key missing",
+      "message_id": "journal.cli.install.fingerprint.artifact",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.fingerprint.artifact\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e66696e6765727072696e742e6172746966616374",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.fingerprint.backend\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e66696e6765727072696e742e6261636b656e64",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e66696e6765727072696e742e6261636b656e64_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.fingerprint.backend",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e66696e6765727072696e742e6261636b656e64",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "backend missing",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "backend missing",
+      "message_id": "journal.cli.install.fingerprint.backend",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.fingerprint.backend\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e66696e6765727072696e742e6261636b656e64",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.fingerprint.missing\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e66696e6765727072696e742e6d697373696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e66696e6765727072696e742e6d697373696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.fingerprint.missing",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e66696e6765727072696e742e6d697373696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "attempt fingerprint missing",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "attempt fingerprint missing",
+      "message_id": "journal.cli.install.fingerprint.missing",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.fingerprint.missing\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e66696e6765727072696e742e6d697373696e67",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.fingerprint.runtime\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e66696e6765727072696e742e72756e74696d65",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e66696e6765727072696e742e72756e74696d65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.fingerprint.runtime",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e66696e6765727072696e742e72756e74696d65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "runtime artifact key missing",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "runtime artifact key missing",
+      "message_id": "journal.cli.install.fingerprint.runtime",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.fingerprint.runtime\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e66696e6765727072696e742e72756e74696d65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.hardware.apple.memory\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e68617264776172652e6170706c652e6d656d6f7279",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e68617264776172652e6170706c652e6d656d6f7279_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.hardware.apple.memory",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e68617264776172652e6170706c652e6d656d6f7279",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "local thinking needs at least 16 GiB of memory",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "local thinking needs at least 16 GiB of memory",
+      "message_id": "journal.cli.install.hardware.apple.memory",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.hardware.apple.memory\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e68617264776172652e6170706c652e6d656d6f7279",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "available_bytes",
+            "type": "cardinal",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.hardware.memory.minimum\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e68617264776172652e6d656d6f72792e6d696e696d756d",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e68617264776172652e6d656d6f72792e6d696e696d756d_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.hardware.memory.minimum",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e68617264776172652e6d656d6f72792e6d696e696d756d",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "device-local VRAM below 6 GiB minimum: ⁨0⁩ bytes",
+      "folder": null,
+      "inputs": {
+        "available_bytes": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "device-local VRAM below 6 GiB minimum: ⁨0⁩ bytes",
+      "message_id": "journal.cli.install.hardware.memory.minimum",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.hardware.memory.minimum\", &[(\"available_bytes\", Value::Cardinal(0))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e68617264776172652e6d656d6f72792e6d696e696d756d",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.hardware.memory.unknown\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e68617264776172652e6d656d6f72792e756e6b6e6f776e",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e68617264776172652e6d656d6f72792e756e6b6e6f776e_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.hardware.memory.unknown",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e68617264776172652e6d656d6f72792e756e6b6e6f776e",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Vulkan probe failed to report memory",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "Vulkan probe failed to report memory",
+      "message_id": "journal.cli.install.hardware.memory.unknown",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.hardware.memory.unknown\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e68617264776172652e6d656d6f72792e756e6b6e6f776e",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.hardware.no.hardware\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e68617264776172652e6e6f2e6861726477617265",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e68617264776172652e6e6f2e6861726477617265_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.hardware.no.hardware",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e68617264776172652e6e6f2e6861726477617265",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "no hardware Vulkan GPU found",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "no hardware Vulkan GPU found",
+      "message_id": "journal.cli.install.hardware.no.hardware",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.hardware.no.hardware\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e68617264776172652e6e6f2e6861726477617265",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.hardware.probe.required\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e68617264776172652e70726f62652e7265717569726564",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e68617264776172652e70726f62652e7265717569726564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.hardware.probe.required",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e68617264776172652e70726f62652e7265717569726564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Vulkan GPU observation required on Windows",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "Vulkan GPU observation required on Windows",
+      "message_id": "journal.cli.install.hardware.probe.required",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.hardware.probe.required\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e68617264776172652e70726f62652e7265717569726564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "provider",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.lease.held\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6c656173652e68656c64",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6c656173652e68656c64_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.lease.held",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6c656173652e68656c64",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "⁨sample⁩ install lease is held",
+      "folder": null,
+      "inputs": {
+        "provider": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ install lease is held",
+      "message_id": "journal.cli.install.lease.held",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.lease.held\", &[(\"provider\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6c656173652e68656c64",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.lease.regular\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6c656173652e726567756c6172",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6c656173652e726567756c6172_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.lease.regular",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6c656173652e726567756c6172",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "install lease is not a regular file",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "install lease is not a regular file",
+      "message_id": "journal.cli.install.lease.regular",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.lease.regular\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6c656173652e726567756c6172",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "arch",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.member.cuda.arch\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e637564612e61726368",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e637564612e61726368_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.member.cuda.arch",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e637564612e61726368",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "unsupported cuda arch ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "arch": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "unsupported cuda arch ⁨sample⁩",
+      "message_id": "journal.cli.install.member.cuda.arch",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.member.cuda.arch\", &[(\"arch\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e637564612e61726368",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "artifact_key",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.member.cuda.arch.key\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e637564612e617263682e6b6579",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e637564612e617263682e6b6579_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.member.cuda.arch.key",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e637564612e617263682e6b6579",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "unsupported cuda arch key ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "artifact_key": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "unsupported cuda arch key ⁨sample⁩",
+      "message_id": "journal.cli.install.member.cuda.arch.key",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.member.cuda.arch.key\", &[(\"artifact_key\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e637564612e617263682e6b6579",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "name",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.member.cuda.missing\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e637564612e6d697373696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e637564612e6d697373696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.member.cuda.missing",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e637564612e6d697373696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "required cuda member missing: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "name": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "required cuda member missing: ⁨sample⁩",
+      "message_id": "journal.cli.install.member.cuda.missing",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.member.cuda.missing\", &[(\"name\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e637564612e6d697373696e67",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "name",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.member.cuda.regular\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e637564612e726567756c6172",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e637564612e726567756c6172_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.member.cuda.regular",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e637564612e726567756c6172",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "required cuda member is not a regular file: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "name": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "required cuda member is not a regular file: ⁨sample⁩",
+      "message_id": "journal.cli.install.member.cuda.regular",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.member.cuda.regular\", &[(\"name\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e637564612e726567756c6172",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "name",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.member.link.broken\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e62726f6b656e",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e62726f6b656e_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.member.link.broken",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e62726f6b656e",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "broken link in chain for ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "name": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "broken link in chain for ⁨sample⁩",
+      "message_id": "journal.cli.install.member.link.broken",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.member.link.broken\", &[(\"name\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e62726f6b656e",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "name",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.member.link.cycle\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e6379636c65",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e6379636c65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.member.link.cycle",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e6379636c65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "link cycle detected for ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "name": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "link cycle detected for ⁨sample⁩",
+      "message_id": "journal.cli.install.member.link.cycle",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.member.link.cycle\", &[(\"name\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e6379636c65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "name",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.member.link.missing\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e6d697373696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e6d697373696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.member.link.missing",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e6d697373696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "required link member missing: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "name": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "required link member missing: ⁨sample⁩",
+      "message_id": "journal.cli.install.member.link.missing",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.member.link.missing\", &[(\"name\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e6d697373696e67",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "name",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "error",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.member.link.read\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e72656164",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e72656164_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.member.link.read",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e72656164",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "cannot read link ⁨sample⁩: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "error": "sample",
+        "name": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "cannot read link ⁨sample⁩: ⁨sample⁩",
+      "message_id": "journal.cli.install.member.link.read",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.member.link.read\", &[(\"error\", Value::String(\"sample\")), (\"name\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e72656164",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "name",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.member.link.regular\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e726567756c6172",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e726567756c6172_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.member.link.regular",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e726567756c6172",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "link ⁨sample⁩ does not resolve to regular file",
+      "folder": null,
+      "inputs": {
+        "name": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "link ⁨sample⁩ does not resolve to regular file",
+      "message_id": "journal.cli.install.member.link.regular",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.member.link.regular\", &[(\"name\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e726567756c6172",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "name",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "target",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "found",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.member.link.target\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e746172676574",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e746172676574_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.member.link.target",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e746172676574",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "link ⁨sample⁩ target mismatch: expected ⁨sample⁩, got ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "found": "sample",
+        "name": "sample",
+        "target": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "link ⁨sample⁩ target mismatch: expected ⁨sample⁩, got ⁨sample⁩",
+      "message_id": "journal.cli.install.member.link.target",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.member.link.target\", &[(\"found\", Value::String(\"sample\")), (\"name\", Value::String(\"sample\")), (\"target\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e746172676574",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "name",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.member.link.type\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e74797065",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e74797065_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.member.link.type",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e74797065",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "required link member is not a symlink: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "name": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "required link member is not a symlink: ⁨sample⁩",
+      "message_id": "journal.cli.install.member.link.type",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.member.link.type\", &[(\"name\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e74797065",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "name",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.member.link.unreadable\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e756e7265616461626c65",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e756e7265616461626c65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.member.link.unreadable",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e756e7265616461626c65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "cannot read link in chain for ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "name": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "cannot read link in chain for ⁨sample⁩",
+      "message_id": "journal.cli.install.member.link.unreadable",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.member.link.unreadable\", &[(\"name\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e756e7265616461626c65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "name",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.member.regular.missing\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e726567756c61722e6d697373696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e726567756c61722e6d697373696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.member.regular.missing",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e726567756c61722e6d697373696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "required regular member missing: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "name": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "required regular member missing: ⁨sample⁩",
+      "message_id": "journal.cli.install.member.regular.missing",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.member.regular.missing\", &[(\"name\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e726567756c61722e6d697373696e67",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "name",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.member.regular.type\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e726567756c61722e74797065",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e726567756c61722e74797065_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.member.regular.type",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e726567756c61722e74797065",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "required regular member is not a regular file: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "name": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "required regular member is not a regular file: ⁨sample⁩",
+      "message_id": "journal.cli.install.member.regular.type",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.member.regular.type\", &[(\"name\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e726567756c61722e74797065",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "key",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.metal.platform\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6d6574616c2e706c6174666f726d",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6574616c2e706c6174666f726d_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.metal.platform",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6574616c2e706c6174666f726d",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Metal local inference is unsupported on ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "key": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Metal local inference is unsupported on ⁨sample⁩",
+      "message_id": "journal.cli.install.metal.platform",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.metal.platform\", &[(\"key\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6574616c2e706c6174666f726d",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "file",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "error",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.mlx.digest.read\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6469676573742e72656164",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6469676573742e72656164_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.mlx.digest.read",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6469676573742e72656164",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "sha256_file failed for ⁨sample⁩: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "error": "sample",
+        "file": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "sha256_file failed for ⁨sample⁩: ⁨sample⁩",
+      "message_id": "journal.cli.install.mlx.digest.read",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.mlx.digest.read\", &[(\"error\", Value::String(\"sample\")), (\"file\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6469676573742e72656164",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "path",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.mlx.directory.explicit\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6469726563746f72792e6578706c69636974",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6469726563746f72792e6578706c69636974_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.mlx.directory.explicit",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6469726563746f72792e6578706c69636974",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "explicit MLX model directory does not exist: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "path": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "explicit MLX model directory does not exist: ⁨sample⁩",
+      "message_id": "journal.cli.install.mlx.directory.explicit",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.mlx.directory.explicit\", &[(\"path\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6469726563746f72792e6578706c69636974",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "path",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.mlx.directory.invalid\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6469726563746f72792e696e76616c6964",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6469726563746f72792e696e76616c6964_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.mlx.directory.invalid",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6469726563746f72792e696e76616c6964",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "model dir is not a directory: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "path": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "model dir is not a directory: ⁨sample⁩",
+      "message_id": "journal.cli.install.mlx.directory.invalid",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.mlx.directory.invalid\", &[(\"path\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6469726563746f72792e696e76616c6964",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "path",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.mlx.directory.override\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6469726563746f72792e6f76657272696465",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6469726563746f72792e6f76657272696465_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.mlx.directory.override",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6469726563746f72792e6f76657272696465",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "SOLSTONE_MLX_MODEL_DIR does not exist: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "path": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "SOLSTONE_MLX_MODEL_DIR does not exist: ⁨sample⁩",
+      "message_id": "journal.cli.install.mlx.directory.override",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.mlx.directory.override\", &[(\"path\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6469726563746f72792e6f76657272696465",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "error",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.mlx.directory.read\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6469726563746f72792e72656164",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6469726563746f72792e72656164_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.mlx.directory.read",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6469726563746f72792e72656164",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "cannot read model directory: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "error": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "cannot read model directory: ⁨sample⁩",
+      "message_id": "journal.cli.install.mlx.directory.read",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.mlx.directory.read\", &[(\"error\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6469726563746f72792e72656164",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.mlx.directory.unset\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6469726563746f72792e756e736574",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6469726563746f72792e756e736574_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.mlx.directory.unset",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6469726563746f72792e756e736574",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "SOLSTONE_MLX_MODEL_DIR is unset or not a directory",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "SOLSTONE_MLX_MODEL_DIR is unset or not a directory",
+      "message_id": "journal.cli.install.mlx.directory.unset",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.mlx.directory.unset\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6469726563746f72792e756e736574",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "error",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.mlx.entry.read\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e656e7472792e72656164",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e656e7472792e72656164_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.mlx.entry.read",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e656e7472792e72656164",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "failed reading entry: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "error": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "failed reading entry: ⁨sample⁩",
+      "message_id": "journal.cli.install.mlx.entry.read",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.mlx.entry.read\", &[(\"error\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e656e7472792e72656164",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "file",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "expected",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "actual",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.mlx.file.digest\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e66696c652e646967657374",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e66696c652e646967657374_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.mlx.file.digest",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e66696c652e646967657374",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "sha256 mismatch for ⁨sample⁩: expected ⁨sample⁩ got ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "actual": "sample",
+        "expected": "sample",
+        "file": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "sha256 mismatch for ⁨sample⁩: expected ⁨sample⁩ got ⁨sample⁩",
+      "message_id": "journal.cli.install.mlx.file.digest",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.mlx.file.digest\", &[(\"actual\", Value::String(\"sample\")), (\"expected\", Value::String(\"sample\")), (\"file\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e66696c652e646967657374",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "file",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.mlx.file.missing\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e66696c652e6d697373696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e66696c652e6d697373696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.mlx.file.missing",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e66696c652e6d697373696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "missing required file: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "file": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "missing required file: ⁨sample⁩",
+      "message_id": "journal.cli.install.mlx.file.missing",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.mlx.file.missing\", &[(\"file\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e66696c652e6d697373696e67",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "file",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.mlx.file.regular\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e66696c652e726567756c6172",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e66696c652e726567756c6172_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.mlx.file.regular",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e66696c652e726567756c6172",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "not a regular file: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "file": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "not a regular file: ⁨sample⁩",
+      "message_id": "journal.cli.install.mlx.file.regular",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.mlx.file.regular\", &[(\"file\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e66696c652e726567756c6172",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "file",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "expected",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "actual",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.mlx.file.size\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e66696c652e73697a65",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e66696c652e73697a65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.mlx.file.size",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e66696c652e73697a65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "size mismatch for ⁨sample⁩: expected ⁨sample⁩ got ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "actual": "sample",
+        "expected": "sample",
+        "file": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "size mismatch for ⁨sample⁩: expected ⁨sample⁩ got ⁨sample⁩",
+      "message_id": "journal.cli.install.mlx.file.size",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.mlx.file.size\", &[(\"actual\", Value::String(\"sample\")), (\"expected\", Value::String(\"sample\")), (\"file\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e66696c652e73697a65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "path",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.mlx.helper.explicit\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e68656c7065722e6578706c69636974",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e68656c7065722e6578706c69636974_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.mlx.helper.explicit",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e68656c7065722e6578706c69636974",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "explicit MLX helper is not valid or missing metallib: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "path": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "explicit MLX helper is not valid or missing metallib: ⁨sample⁩",
+      "message_id": "journal.cli.install.mlx.helper.explicit",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.mlx.helper.explicit\", &[(\"path\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e68656c7065722e6578706c69636974",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "path",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.mlx.helper.invalid\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e68656c7065722e696e76616c6964",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e68656c7065722e696e76616c6964_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.mlx.helper.invalid",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e68656c7065722e696e76616c6964",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "helper binary is invalid: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "path": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "helper binary is invalid: ⁨sample⁩",
+      "message_id": "journal.cli.install.mlx.helper.invalid",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.mlx.helper.invalid\", &[(\"path\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e68656c7065722e696e76616c6964",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.mlx.helper.missing\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e68656c7065722e6d697373696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e68656c7065722e6d697373696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.mlx.helper.missing",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e68656c7065722e6d697373696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "mlx-helper executable with metallib resource bundle not found",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "mlx-helper executable with metallib resource bundle not found",
+      "message_id": "journal.cli.install.mlx.helper.missing",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.mlx.helper.missing\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e68656c7065722e6d697373696e67",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "path",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.mlx.helper.override\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e68656c7065722e6f76657272696465",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e68656c7065722e6f76657272696465_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.mlx.helper.override",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e68656c7065722e6f76657272696465",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "SOLSTONE_MLX_HELPER is not valid or missing metallib: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "path": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "SOLSTONE_MLX_HELPER is not valid or missing metallib: ⁨sample⁩",
+      "message_id": "journal.cli.install.mlx.helper.override",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.mlx.helper.override\", &[(\"path\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e68656c7065722e6f76657272696465",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "file",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.mlx.input.extra\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e696e7075742e6578747261",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e696e7075742e6578747261_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.mlx.input.extra",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e696e7075742e6578747261",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "extra unverified model input: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "file": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "extra unverified model input: ⁨sample⁩",
+      "message_id": "journal.cli.install.mlx.input.extra",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.mlx.input.extra\", &[(\"file\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e696e7075742e6578747261",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "file",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "error",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.mlx.metadata.read\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6d657461646174612e72656164",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6d657461646174612e72656164_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.mlx.metadata.read",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6d657461646174612e72656164",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "cannot read metadata for ⁨sample⁩: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "error": "sample",
+        "file": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "cannot read metadata for ⁨sample⁩: ⁨sample⁩",
+      "message_id": "journal.cli.install.mlx.metadata.read",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.mlx.metadata.read\", &[(\"error\", Value::String(\"sample\")), (\"file\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6d657461646174612e72656164",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.mlx.override.failed\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6f766572726964652e6661696c6564",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6f766572726964652e6661696c6564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.mlx.override.failed",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6f766572726964652e6661696c6564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "MLX override verification failed",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "MLX override verification failed",
+      "message_id": "journal.cli.install.mlx.override.failed",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.mlx.override.failed\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6f766572726964652e6661696c6564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.mlx.pins.empty\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e70696e732e656d707479",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e70696e732e656d707479_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.mlx.pins.empty",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e70696e732e656d707479",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "empty pins list",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "empty pins list",
+      "message_id": "journal.cli.install.mlx.pins.empty",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.mlx.pins.empty\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e70696e732e656d707479",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.mlx.pins.missing\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e70696e732e6d697373696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e70696e732e6d697373696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.mlx.pins.missing",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e70696e732e6d697373696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "no pins supplied",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "no pins supplied",
+      "message_id": "journal.cli.install.mlx.pins.missing",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.mlx.pins.missing\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e70696e732e6d697373696e67",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.mlx.platform\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e706c6174666f726d",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e706c6174666f726d_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.mlx.platform",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e706c6174666f726d",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "MLX requires macos",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "MLX requires macos",
+      "message_id": "journal.cli.install.mlx.platform",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.mlx.platform\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e706c6174666f726d",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "error",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.mlx.type.read\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e747970652e72656164",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e747970652e72656164_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.mlx.type.read",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e747970652e72656164",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "failed file type: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "error": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "failed file type: ⁨sample⁩",
+      "message_id": "journal.cli.install.mlx.type.read",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.mlx.type.read\", &[(\"error\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e747970652e72656164",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "key",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.pin.missing\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e70696e2e6d697373696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e70696e2e6d697373696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.pin.missing",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e70696e2e6d697373696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "no pin for ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "key": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "no pin for ⁨sample⁩",
+      "message_id": "journal.cli.install.pin.missing",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.pin.missing\", &[(\"key\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e70696e2e6d697373696e67",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "unit",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.registry.artifact.ambiguous\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e72656769737472792e61727469666163742e616d626967756f7573",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e72656769737472792e61727469666163742e616d626967756f7573_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.registry.artifact.ambiguous",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e72656769737472792e61727469666163742e616d626967756f7573",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "catalog has multiple matching ⁨sample⁩ artifacts",
+      "folder": null,
+      "inputs": {
+        "unit": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "catalog has multiple matching ⁨sample⁩ artifacts",
+      "message_id": "journal.cli.install.registry.artifact.ambiguous",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.registry.artifact.ambiguous\", &[(\"unit\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e72656769737472792e61727469666163742e616d626967756f7573",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "unit",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.registry.artifact.missing\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e72656769737472792e61727469666163742e6d697373696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e72656769737472792e61727469666163742e6d697373696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.registry.artifact.missing",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e72656769737472792e61727469666163742e6d697373696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "catalog has no matching ⁨sample⁩ artifact",
+      "folder": null,
+      "inputs": {
+        "unit": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "catalog has no matching ⁨sample⁩ artifact",
+      "message_id": "journal.cli.install.registry.artifact.missing",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.registry.artifact.missing\", &[(\"unit\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e72656769737472792e61727469666163742e6d697373696e67",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "key",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.registry.platform\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e72656769737472792e706c6174666f726d",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e72656769737472792e706c6174666f726d_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.registry.platform",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e72656769737472792e706c6174666f726d",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "no catalog platform mapping for ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "key": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "no catalog platform mapping for ⁨sample⁩",
+      "message_id": "journal.cli.install.registry.platform",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.registry.platform\", &[(\"key\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e72656769737472792e706c6174666f726d",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.runtime.unavailable\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e72756e74696d652e756e617661696c61626c65",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e72756e74696d652e756e617661696c61626c65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.runtime.unavailable",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e72756e74696d652e756e617661696c61626c65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "the journal app does not provide this local runtime",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "the journal app does not provide this local runtime",
+      "message_id": "journal.cli.install.runtime.unavailable",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.runtime.unavailable\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e72756e74696d652e756e617661696c61626c65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "os_name",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "arch",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.speech.platform\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e7370656563682e706c6174666f726d",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7370656563682e706c6174666f726d_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.speech.platform",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7370656563682e706c6174666f726d",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "parakeet-cpp is unsupported on ⁨sample⁩/⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "arch": "sample",
+        "os_name": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "parakeet-cpp is unsupported on ⁨sample⁩/⁨sample⁩",
+      "message_id": "journal.cli.install.speech.platform",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.speech.platform\", &[(\"arch\", Value::String(\"sample\")), (\"os_name\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7370656563682e706c6174666f726d",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.staging.binary.parent\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e73746167696e672e62696e6172792e706172656e74",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e73746167696e672e62696e6172792e706172656e74_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.staging.binary.parent",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e73746167696e672e62696e6172792e706172656e74",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "binary has no parent",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "binary has no parent",
+      "message_id": "journal.cli.install.staging.binary.parent",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.staging.binary.parent\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e73746167696e672e62696e6172792e706172656e74",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "path",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.staging.bundle.occupied\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e73746167696e672e62756e646c652e6f63637570696564",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e73746167696e672e62756e646c652e6f63637570696564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.staging.bundle.occupied",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e73746167696e672e62756e646c652e6f63637570696564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "bundle destination already exists: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "path": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "bundle destination already exists: ⁨sample⁩",
+      "message_id": "journal.cli.install.staging.bundle.occupied",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.staging.bundle.occupied\", &[(\"path\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e73746167696e672e62756e646c652e6f63637570696564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.staging.target.name\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e73746167696e672e7461726765742e6e616d65",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e73746167696e672e7461726765742e6e616d65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.staging.target.name",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e73746167696e672e7461726765742e6e616d65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "target has no file name",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "target has no file name",
+      "message_id": "journal.cli.install.staging.target.name",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.staging.target.name\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e73746167696e672e7461726765742e6e616d65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.staging.target.parent\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e73746167696e672e7461726765742e706172656e74",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e73746167696e672e7461726765742e706172656e74_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.staging.target.parent",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e73746167696e672e7461726765742e706172656e74",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "target has no parent",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "target has no parent",
+      "message_id": "journal.cli.install.staging.target.parent",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.staging.target.parent\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e73746167696e672e7461726765742e706172656e74",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.status.conflict.different.attempt.while.install.in.flight\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e646966666572656e742e617474656d70742e7768696c652e696e7374616c6c2e696e2e666c69676874",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e646966666572656e742e617474656d70742e7768696c652e696e7374616c6c2e696e2e666c69676874_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.status.conflict.different.attempt.while.install.in.flight",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e646966666572656e742e617474656d70742e7768696c652e696e7374616c6c2e696e2e666c69676874",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "install status conflict: different attempt while install in-flight",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "install status conflict: different attempt while install in-flight",
+      "message_id": "journal.cli.install.status.conflict.different.attempt.while.install.in.flight",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.status.conflict.different.attempt.while.install.in.flight\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e646966666572656e742e617474656d70742e7768696c652e696e7374616c6c2e696e2e666c69676874",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.status.conflict.illegal.install.status.transition\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e696c6c6567616c2e696e7374616c6c2e7374617475732e7472616e736974696f6e",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e696c6c6567616c2e696e7374616c6c2e7374617475732e7472616e736974696f6e_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.status.conflict.illegal.install.status.transition",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e696c6c6567616c2e696e7374616c6c2e7374617475732e7472616e736974696f6e",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "install status conflict: illegal install status transition",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "install status conflict: illegal install status transition",
+      "message_id": "journal.cli.install.status.conflict.illegal.install.status.transition",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.status.conflict.illegal.install.status.transition\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e696c6c6567616c2e696e7374616c6c2e7374617475732e7472616e736974696f6e",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.status.conflict.install.attempt.id.changed\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e696e7374616c6c2e617474656d70742e69642e6368616e676564",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e696e7374616c6c2e617474656d70742e69642e6368616e676564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.status.conflict.install.attempt.id.changed",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e696e7374616c6c2e617474656d70742e69642e6368616e676564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "install status conflict: install attempt id changed",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "install status conflict: install attempt id changed",
+      "message_id": "journal.cli.install.status.conflict.install.attempt.id.changed",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.status.conflict.install.attempt.id.changed\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e696e7374616c6c2e617474656d70742e69642e6368616e676564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.status.conflict.install.attempt.is.no.longer.in.flight\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e696e7374616c6c2e617474656d70742e69732e6e6f2e6c6f6e6765722e696e2e666c69676874",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e696e7374616c6c2e617474656d70742e69732e6e6f2e6c6f6e6765722e696e2e666c69676874_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.status.conflict.install.attempt.is.no.longer.in.flight",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e696e7374616c6c2e617474656d70742e69732e6e6f2e6c6f6e6765722e696e2e666c69676874",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "install status conflict: install attempt is no longer in-flight",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "install status conflict: install attempt is no longer in-flight",
+      "message_id": "journal.cli.install.status.conflict.install.attempt.is.no.longer.in.flight",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.status.conflict.install.attempt.is.no.longer.in.flight\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e696e7374616c6c2e617474656d70742e69732e6e6f2e6c6f6e6765722e696e2e666c69676874",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.status.conflict.install.progress.can.only.be.bumped.for\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e696e7374616c6c2e70726f67726573732e63616e2e6f6e6c792e62652e62756d7065642e666f72",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e696e7374616c6c2e70726f67726573732e63616e2e6f6e6c792e62652e62756d7065642e666f72_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.status.conflict.install.progress.can.only.be.bumped.for",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e696e7374616c6c2e70726f67726573732e63616e2e6f6e6c792e62652e62756d7065642e666f72",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "install status conflict: install progress can only be bumped for in-flight states",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "install status conflict: install progress can only be bumped for in-flight states",
+      "message_id": "journal.cli.install.status.conflict.install.progress.can.only.be.bumped.for",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.status.conflict.install.progress.can.only.be.bumped.for\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e696e7374616c6c2e70726f67726573732e63616e2e6f6e6c792e62652e62756d7065642e666f72",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.status.conflict.install.target.fingerprint.changed\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e696e7374616c6c2e7461726765742e66696e6765727072696e742e6368616e676564",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e696e7374616c6c2e7461726765742e66696e6765727072696e742e6368616e676564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.status.conflict.install.target.fingerprint.changed",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e696e7374616c6c2e7461726765742e66696e6765727072696e742e6368616e676564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "install status conflict: install target fingerprint changed",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "install status conflict: install target fingerprint changed",
+      "message_id": "journal.cli.install.status.conflict.install.target.fingerprint.changed",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.status.conflict.install.target.fingerprint.changed\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e696e7374616c6c2e7461726765742e66696e6765727072696e742e6368616e676564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.status.conflict.interrupted.attempt.id.does.not.match\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e696e7465727275707465642e617474656d70742e69642e646f65732e6e6f742e6d61746368",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e696e7465727275707465642e617474656d70742e69642e646f65732e6e6f742e6d61746368_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.status.conflict.interrupted.attempt.id.does.not.match",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e696e7465727275707465642e617474656d70742e69642e646f65732e6e6f742e6d61746368",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "install status conflict: interrupted attempt id does not match",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "install status conflict: interrupted attempt id does not match",
+      "message_id": "journal.cli.install.status.conflict.interrupted.attempt.id.does.not.match",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.status.conflict.interrupted.attempt.id.does.not.match\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e696e7465727275707465642e617474656d70742e69642e646f65732e6e6f742e6d61746368",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.status.conflict.interrupted.target.fingerprint.does.not.match\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e696e7465727275707465642e7461726765742e66696e6765727072696e742e646f65732e6e6f742e6d61746368",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e696e7465727275707465642e7461726765742e66696e6765727072696e742e646f65732e6e6f742e6d61746368_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.status.conflict.interrupted.target.fingerprint.does.not.match",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e696e7465727275707465642e7461726765742e66696e6765727072696e742e646f65732e6e6f742e6d61746368",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "install status conflict: interrupted target fingerprint does not match",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "install status conflict: interrupted target fingerprint does not match",
+      "message_id": "journal.cli.install.status.conflict.interrupted.target.fingerprint.does.not.match",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.status.conflict.interrupted.target.fingerprint.does.not.match\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e696e7465727275707465642e7461726765742e66696e6765727072696e742e646f65732e6e6f742e6d61746368",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.status.conflict.new.in.flight.attempt.reused.attempt.id\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e6e65772e696e2e666c696768742e617474656d70742e7265757365642e617474656d70742e6964",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e6e65772e696e2e666c696768742e617474656d70742e7265757365642e617474656d70742e6964_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.status.conflict.new.in.flight.attempt.reused.attempt.id",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e6e65772e696e2e666c696768742e617474656d70742e7265757365642e617474656d70742e6964",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "install status conflict: new in-flight attempt reused attempt id",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "install status conflict: new in-flight attempt reused attempt id",
+      "message_id": "journal.cli.install.status.conflict.new.in.flight.attempt.reused.attempt.id",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.status.conflict.new.in.flight.attempt.reused.attempt.id\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e6e65772e696e2e666c696768742e617474656d70742e7265757365642e617474656d70742e6964",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.status.conflict.non.idle.install.status.requires.attempt.id\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e6e6f6e2e69646c652e696e7374616c6c2e7374617475732e72657175697265732e617474656d70742e6964",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e6e6f6e2e69646c652e696e7374616c6c2e7374617475732e72657175697265732e617474656d70742e6964_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.status.conflict.non.idle.install.status.requires.attempt.id",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e6e6f6e2e69646c652e696e7374616c6c2e7374617475732e72657175697265732e617474656d70742e6964",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "install status conflict: non-idle install status requires attempt id",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "install status conflict: non-idle install status requires attempt id",
+      "message_id": "journal.cli.install.status.conflict.non.idle.install.status.requires.attempt.id",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.status.conflict.non.idle.install.status.requires.attempt.id\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e6e6f6e2e69646c652e696e7374616c6c2e7374617475732e72657175697265732e617474656d70742e6964",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.status.conflict.only.in.flight.installs.can.be.interrupted\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e6f6e6c792e696e2e666c696768742e696e7374616c6c732e63616e2e62652e696e746572727570746564",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e6f6e6c792e696e2e666c696768742e696e7374616c6c732e63616e2e62652e696e746572727570746564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.status.conflict.only.in.flight.installs.can.be.interrupted",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e6f6e6c792e696e2e666c696768742e696e7374616c6c732e63616e2e62652e696e746572727570746564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "install status conflict: only in-flight installs can be interrupted",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "install status conflict: only in-flight installs can be interrupted",
+      "message_id": "journal.cli.install.status.conflict.only.in.flight.installs.can.be.interrupted",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.status.conflict.only.in.flight.installs.can.be.interrupted\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e6f6e6c792e696e2e666c696768742e696e7374616c6c732e63616e2e62652e696e746572727570746564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.status.conflict.stale.install.status.revision\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e7374616c652e696e7374616c6c2e7374617475732e7265766973696f6e",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e7374616c652e696e7374616c6c2e7374617475732e7265766973696f6e_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.status.conflict.stale.install.status.revision",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e7374616c652e696e7374616c6c2e7374617475732e7265766973696f6e",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "install status conflict: stale install status revision",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "install status conflict: stale install status revision",
+      "message_id": "journal.cli.install.status.conflict.stale.install.status.revision",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.status.conflict.stale.install.status.revision\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e7374616c652e696e7374616c6c2e7374617475732e7265766973696f6e",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "error",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.status.lock\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e6c6f636b",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e6c6f636b_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.status.lock",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e6c6f636b",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "status lock error: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "error": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "status lock error: ⁨sample⁩",
+      "message_id": "journal.cli.install.status.lock",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.status.lock\", &[(\"error\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e6c6f636b",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "path",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.status.malformed.file\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e6d616c666f726d65642e66696c65",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e6d616c666f726d65642e66696c65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.status.malformed.file",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e6d616c666f726d65642e66696c65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "malformed install status: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "path": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "malformed install status: ⁨sample⁩",
+      "message_id": "journal.cli.install.status.malformed.file",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.status.malformed.file\", &[(\"path\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e6d616c666f726d65642e66696c65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.status.malformed.initial.install.attempt.state.must.be.in\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e6d616c666f726d65642e696e697469616c2e696e7374616c6c2e617474656d70742e73746174652e6d7573742e62652e696e",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e6d616c666f726d65642e696e697469616c2e696e7374616c6c2e617474656d70742e73746174652e6d7573742e62652e696e_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.status.malformed.initial.install.attempt.state.must.be.in",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e6d616c666f726d65642e696e697469616c2e696e7374616c6c2e617474656d70742e73746174652e6d7573742e62652e696e",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "malformed install status: initial install attempt state must be in-flight",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "malformed install status: initial install attempt state must be in-flight",
+      "message_id": "journal.cli.install.status.malformed.initial.install.attempt.state.must.be.in",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.status.malformed.initial.install.attempt.state.must.be.in\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e6d616c666f726d65642e696e697469616c2e696e7374616c6c2e617474656d70742e73746174652e6d7573742e62652e696e",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "provider",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.status.malformed.invalid.provider\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e6d616c666f726d65642e696e76616c69642e70726f7669646572",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e6d616c666f726d65642e696e76616c69642e70726f7669646572_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.status.malformed.invalid.provider",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e6d616c666f726d65642e696e76616c69642e70726f7669646572",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "malformed install status: invalid status for ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "provider": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "malformed install status: invalid status for ⁨sample⁩",
+      "message_id": "journal.cli.install.status.malformed.invalid.provider",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.status.malformed.invalid.provider\", &[(\"provider\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e6d616c666f726d65642e696e76616c69642e70726f7669646572",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.status.malformed.owner.must.be.an.object.or.null\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e6d616c666f726d65642e6f776e65722e6d7573742e62652e616e2e6f626a6563742e6f722e6e756c6c",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e6d616c666f726d65642e6f776e65722e6d7573742e62652e616e2e6f626a6563742e6f722e6e756c6c_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.status.malformed.owner.must.be.an.object.or.null",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e6d616c666f726d65642e6f776e65722e6d7573742e62652e616e2e6f626a6563742e6f722e6e756c6c",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "malformed install status: owner must be an object or null",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "malformed install status: owner must be an object or null",
+      "message_id": "journal.cli.install.status.malformed.owner.must.be.an.object.or.null",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.status.malformed.owner.must.be.an.object.or.null\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e6d616c666f726d65642e6f776e65722e6d7573742e62652e616e2e6f626a6563742e6f722e6e756c6c",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "listed",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.status.malformed.providers\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e6d616c666f726d65642e70726f766964657273",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e6d616c666f726d65642e70726f766964657273_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.status.malformed.providers",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e6d616c666f726d65642e70726f766964657273",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "malformed install status: provider install status must be one of: [⁨sample⁩]",
+      "folder": null,
+      "inputs": {
+        "listed": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "malformed install status: provider install status must be one of: [⁨sample⁩]",
+      "message_id": "journal.cli.install.status.malformed.providers",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.status.malformed.providers\", &[(\"listed\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e6d616c666f726d65642e70726f766964657273",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "state",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.status.malformed.state\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e6d616c666f726d65642e7374617465",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e6d616c666f726d65642e7374617465_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.status.malformed.state",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e6d616c666f726d65642e7374617465",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "malformed install status: unknown install state: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "state": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "malformed install status: unknown install state: ⁨sample⁩",
+      "message_id": "journal.cli.install.status.malformed.state",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.status.malformed.state\", &[(\"state\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e6d616c666f726d65642e7374617465",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.terminal.write\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e7465726d696e616c2e7772697465",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7465726d696e616c2e7772697465_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.terminal.write",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7465726d696e616c2e7772697465",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "native install failed and failed to write status",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "native install failed and failed to write status",
+      "message_id": "journal.cli.install.terminal.write",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.terminal.write\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e7465726d696e616c2e7772697465",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "path",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.windows.digest.absent\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e6469676573742e616273656e74",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e6469676573742e616273656e74_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.windows.digest.absent",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e6469676573742e616273656e74",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "signed payload manifest does not declare digest for ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "path": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "signed payload manifest does not declare digest for ⁨sample⁩",
+      "message_id": "journal.cli.install.windows.digest.absent",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.windows.digest.absent\", &[(\"path\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e6469676573742e616273656e74",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "path",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.windows.executable.location\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e65786563757461626c652e6c6f636174696f6e",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e65786563757461626c652e6c6f636174696f6e_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.windows.executable.location",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e65786563757461626c652e6c6f636174696f6e",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "running journal executable is not in the package bin directory: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "path": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "running journal executable is not in the package bin directory: ⁨sample⁩",
+      "message_id": "journal.cli.install.windows.executable.location",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.windows.executable.location\", &[(\"path\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e65786563757461626c652e6c6f636174696f6e",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.windows.executable.parent\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e65786563757461626c652e706172656e74",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e65786563757461626c652e706172656e74_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.windows.executable.parent",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e65786563757461626c652e706172656e74",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "running journal executable has no containing directory",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "running journal executable has no containing directory",
+      "message_id": "journal.cli.install.windows.executable.parent",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.windows.executable.parent\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e65786563757461626c652e706172656e74",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "error",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.windows.executable.read\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e65786563757461626c652e72656164",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e65786563757461626c652e72656164_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.windows.executable.read",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e65786563757461626c652e72656164",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "could not determine the running journal executable: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "error": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "could not determine the running journal executable: ⁨sample⁩",
+      "message_id": "journal.cli.install.windows.executable.read",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.windows.executable.read\", &[(\"error\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e65786563757461626c652e72656164",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.windows.package.root\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e7061636b6167652e726f6f74",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e7061636b6167652e726f6f74_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.windows.package.root",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e7061636b6167652e726f6f74",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "package bin directory has no package root",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "package bin directory has no package root",
+      "message_id": "journal.cli.install.windows.package.root",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.windows.package.root\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e7061636b6167652e726f6f74",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.windows.package.runtime\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e7061636b6167652e72756e74696d65",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e7061636b6167652e72756e74696d65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.windows.package.runtime",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e7061636b6167652e72756e74696d65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Windows local thinking package verification requires a Windows runtime",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "Windows local thinking package verification requires a Windows runtime",
+      "message_id": "journal.cli.install.windows.package.runtime",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.windows.package.runtime\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e7061636b6167652e72756e74696d65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "key",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.windows.platform\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e706c6174666f726d",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e706c6174666f726d_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.windows.platform",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e706c6174666f726d",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "unsupported Windows platform: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "key": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "unsupported Windows platform: ⁨sample⁩",
+      "message_id": "journal.cli.install.windows.platform",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.windows.platform\", &[(\"key\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e706c6174666f726d",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "key",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.windows.target.different\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e7461726765742e646966666572656e74",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e7461726765742e646966666572656e74_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.windows.target.different",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e7461726765742e646966666572656e74",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "signed payload target differs from ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "key": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "signed payload target differs from ⁨sample⁩",
+      "message_id": "journal.cli.install.windows.target.different",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.windows.target.different\", &[(\"key\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e7461726765742e646966666572656e74",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.install.windows.target.unsupported\u0004m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e7461726765742e756e737570706f72746564",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e7461726765742e756e737570706f72746564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.install.windows.target.unsupported",
+        "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e7461726765742e756e737570706f72746564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "signed payload target is unsupported",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "signed payload target is unsupported",
+      "message_id": "journal.cli.install.windows.target.unsupported",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.install.windows.target.unsupported\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e7461726765742e756e737570706f72746564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
         "arguments": [],
         "bundle": "journal-cli",
         "entry": "render(locale, MessageId, named_args)",

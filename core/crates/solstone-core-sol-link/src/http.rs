@@ -52,6 +52,9 @@ pub use crate::setup_progress::{
 
 pub trait SetupHost: Send + Sync {
     fn start_local(&self, journal_root: &Path) -> Result<(), String>;
+    fn start_local_for_locale(&self, journal: &Path, _locale: &str) -> Result<(), String> {
+        self.start_local(journal)
+    }
     fn cancel_local(&self, journal_root: &Path, attempt_id: &str) -> Result<(), String>;
     fn cancel_local_for_locale(
         &self,
@@ -62,6 +65,13 @@ pub trait SetupHost: Send + Sync {
         self.cancel_local(journal, attempt)
     }
     fn retry_speech(&self, journal_root: &Path) -> Result<(), SetupRetryError>;
+    fn retry_speech_for_locale(
+        &self,
+        journal: &Path,
+        _locale: &str,
+    ) -> Result<(), SetupRetryError> {
+        self.retry_speech(journal)
+    }
     fn project_downloads(&self, journal_root: &Path) -> Result<SetupDownloads, SetupProgressError>;
     fn localized_downloads(
         &self,
@@ -1273,7 +1283,11 @@ async fn init_action(
             if start {
                 let journal = state.journal_root.clone();
                 let host = state.host.clone();
-                match tokio::task::spawn_blocking(move || host.start_local(&journal)).await {
+                match tokio::task::spawn_blocking(move || {
+                    host.start_local_for_locale(&journal, locale)
+                })
+                .await
+                {
                     Ok(Ok(())) => {}
                     Ok(Err(error)) => {
                         return error_envelope(
@@ -1360,7 +1374,9 @@ async fn init_action(
             }
             let journal = state.journal_root.clone();
             let host = state.host.clone();
-            match tokio::task::spawn_blocking(move || host.start_local(&journal)).await {
+            match tokio::task::spawn_blocking(move || host.start_local_for_locale(&journal, locale))
+                .await
+            {
                 Ok(Ok(())) => {}
                 Ok(Err(error)) => {
                     return error_envelope(
@@ -1430,7 +1446,9 @@ async fn init_action(
         "retry_speech_download" => {
             let journal = state.journal_root.clone();
             let host = state.host.clone();
-            let retry_res = tokio::task::spawn_blocking(move || host.retry_speech(&journal)).await;
+            let retry_res =
+                tokio::task::spawn_blocking(move || host.retry_speech_for_locale(&journal, locale))
+                    .await;
             match retry_res {
                 Ok(Ok(())) => {}
                 Ok(Err(err)) => {

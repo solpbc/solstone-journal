@@ -408,6 +408,125 @@
       "locales": []
     },
     {
+      "id": "journal.setup.installer.cleanup.failed",
+      "source": "9a4ea3c3ea528794f5cdfb569f0e830bd7273e438ce030df326d03cebb2c475c",
+      "contract": "cd8338c1064eb3d9bfc46b2711e69439e425fd8648ee88e9b2df7001e57ee8db",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.setup.installer.control.timed.out",
+      "source": "655bec68629844db5df3590b987c9b36c59101d6eaef13be708159de3230207f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.setup.installer.control.unavailable",
+      "source": "de0e6e48824d3c6d622500e77a1953fa3a475202d6b96857fb8e06f0b0f2e886",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.setup.installer.directory.unavailable",
+      "source": "14f6dc9c33e96dfcc6215d9d141f1621d51ed9c6d096a69a98fe7b58b58354b9",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.setup.installer.exited",
+      "source": "059a589af288e51f698a103a590d660b42a51db55b28637986aedb74ca9e9a0f",
+      "contract": "072c2b94c866a3004a73a692d92265d702f07209b78b77ab27a66412aaca7e9c",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.setup.installer.identity.unavailable",
+      "source": "ac188dfeeb8d107cd7cf5b11e403b9d3190a0c0d16d9a77645f18e97567ac445",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.setup.installer.job.authority",
+      "source": "3009a022453fcdf3c18a036031eb834f8234822df50d0a454a7e94b14ffe6619",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.setup.installer.job.cleanup",
+      "source": "8fc6d24ca09fe857462b6973e5a539f854e8b73983aa2655af569e97897ceff0",
+      "contract": "cd8338c1064eb3d9bfc46b2711e69439e425fd8648ee88e9b2df7001e57ee8db",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.setup.installer.lease.busy",
+      "source": "df1750369a5080c36b6f5f8aa1429080dff5c74ec121fba2c28af2c2585e0567",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.setup.installer.process.identity.invalid",
+      "source": "7667855a57ba4b7e0cbdb8a0d0e49e09cf4285c394d1ab37c5dc2536343b9c14",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.setup.installer.process.identity.unavailable",
+      "source": "4ae500c53babd8498134e625861203471ff70dd435bbb68253d54979ad93d660",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.setup.installer.process.observation.unavailable",
+      "source": "d23b358d7676314c0c6090b770a271cc735957f26b5c7add3bde0360b354f1af",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.setup.installer.registry.unavailable",
+      "source": "c930f1906d73e8756cc9d20de24b4c69c5d5ac8471d805c4c6785595a543e4e1",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.setup.installer.still.running",
+      "source": "5dc86cf0a9032ae73954e45490263f1503e77882e1d5051ddea42f63bf58b93c",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.setup.installer.stopped",
+      "source": "1adb4d09dc71987ebee1a174d150fe510a66164b32e5442921578268ab7950a1",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.setup.installer.timed.out",
+      "source": "bc74ad95d8e544f7722f91c5cdf32bcce8c4f6df528ff6b62575126f07953e1e",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.setup.installer.tree.not.reaped",
+      "source": "96278eab66b2c106bfbc41565b0d4683fddadd12f1ff5b09b9e242f5aa0ed310",
+      "contract": "7de53c48f58a9ab91887841c8719b070bf469ca0888b564ddba3c930ad7b1ce4",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.setup.journal.aborted",
       "source": "69a0d6528c920b35e63e1b67e7ceda205fa1dab4edbf4480de371c8fbc6c19fd",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",

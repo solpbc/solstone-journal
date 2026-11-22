@@ -1,0 +1,28 @@
+{
+  "description": "A provider installer reports which part of its local runtime or model package could not be verified.",
+  "context": "A provider installer reports which part of its local runtime or model package could not be verified.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3da28d12ce2b27ad5ab66a1c0aba6a2525659ad79f2d5ed5dbc3bdeebe504cea",
+  "max_length": 183,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "helper",
+      "kind": "accepted-input",
+      "value": "mlx-helper"
+    },
+    {
+      "name": "library",
+      "kind": "accepted-input",
+      "value": "metallib"
+    }
+  ]
+}

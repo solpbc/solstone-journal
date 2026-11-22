@@ -1,0 +1,28 @@
+{
+  "description": "A provider installer explains a failure while resolving, verifying or installing a runtime or a model.",
+  "context": "A provider installer explains a failure while resolving, verifying or installing a runtime or a model.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ec9c879f3f1149b329884f5216dfdbef22891ea38038c1d5f14f8ace1454a1f0",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "mlx",
+      "kind": "accepted-input",
+      "value": "MLX"
+    },
+    {
+      "name": "os",
+      "kind": "accepted-input",
+      "value": "macos"
+    }
+  ]
+}

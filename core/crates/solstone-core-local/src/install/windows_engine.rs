@@ -3,6 +3,7 @@
 
 //! Signed Windows package binding for llama-server engine, Vulkan loader, and Vulkan probe.
 
+use solstone_core_cli_copy::MessageDetail;
 use solstone_core_installed_payload::WindowsArchitecture;
 #[cfg(any(windows, test))]
 use std::path::Path;
@@ -30,18 +31,36 @@ pub struct WindowsLlamaPackage {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum WindowsLlamaPackageError {
+pub enum WindowsLlamaPackageError<T = String> {
     #[error("{0}")]
-    Missing(String),
+    Missing(T),
     #[error("{0}")]
-    Invalid(String),
+    Invalid(T),
+}
+
+impl WindowsLlamaPackageError<MessageDetail> {
+    fn into_source(self) -> WindowsLlamaPackageError {
+        match self {
+            Self::Missing(detail) => WindowsLlamaPackageError::Missing(detail.to_string()),
+            Self::Invalid(detail) => WindowsLlamaPackageError::Invalid(detail.to_string()),
+        }
+    }
 }
 
 impl WindowsLlamaPackage {
     pub fn require_runtime_key(self, key: &str) -> Result<Self, WindowsLlamaPackageError> {
+        self.require_runtime_key_detail(key)
+            .map_err(WindowsLlamaPackageError::into_source)
+    }
+
+    pub(super) fn require_runtime_key_detail(
+        self,
+        key: &str,
+    ) -> Result<Self, WindowsLlamaPackageError<MessageDetail>> {
         if self.architecture.runtime_key() != key {
-            return Err(WindowsLlamaPackageError::Invalid(format!(
-                "signed payload target differs from {key}"
+            return Err(WindowsLlamaPackageError::Invalid(MessageDetail::message(
+                "journal.cli.install.windows.target.different",
+                [("key", &key)],
             )));
         }
         Ok(self)
@@ -49,13 +68,13 @@ impl WindowsLlamaPackage {
 }
 
 #[cfg(any(windows, test))]
-impl From<WindowsPayloadError> for WindowsLlamaPackageError {
+impl From<WindowsPayloadError> for WindowsLlamaPackageError<MessageDetail> {
     fn from(error: WindowsPayloadError) -> Self {
         match error.kind {
             WindowsPayloadRefusal::Missing | WindowsPayloadRefusal::MissingMember => {
-                Self::Missing(error.to_string())
+                Self::Missing(error.to_string().into())
             }
-            _ => Self::Invalid(error.to_string()),
+            _ => Self::Invalid(error.to_string().into()),
         }
     }
 }
@@ -86,53 +105,87 @@ impl WindowsLlamaPackage {
     }
 }
 
+#[cfg(any(windows, test))]
+impl From<WindowsPayloadError> for WindowsLlamaPackageError {
+    fn from(error: WindowsPayloadError) -> Self {
+        WindowsLlamaPackageError::<MessageDetail>::from(error).into_source()
+    }
+}
+
 /// Resolve the llama-server engine and Vulkan components from the complete signed package
 /// containing the running journal executable. Every invocation verifies the current bytes.
-#[cfg(windows)]
 pub fn verified_windows_llama_package() -> Result<WindowsLlamaPackage, WindowsLlamaPackageError> {
+    verified_windows_llama_package_detail().map_err(WindowsLlamaPackageError::into_source)
+}
+
+#[cfg(windows)]
+pub(super) fn verified_windows_llama_package_detail()
+-> Result<WindowsLlamaPackage, WindowsLlamaPackageError<MessageDetail>> {
     #[cfg(any(test, feature = "test-hooks"))]
     if let Some(pkg) = TEST_PACKAGE.with(|current| current.borrow().clone()) {
         return Ok(pkg);
     }
     let executable = std::env::current_exe().map_err(|error| {
-        WindowsLlamaPackageError::Missing(format!(
-            "could not determine the running journal executable: {error}"
+        WindowsLlamaPackageError::Missing(MessageDetail::message(
+            "journal.cli.install.windows.executable.read",
+            [("error", &error)],
         ))
     })?;
-    verified_windows_llama_package_at(&executable)
+    verified_windows_llama_package_at_detail(&executable)
 }
 
 #[cfg(not(windows))]
-pub fn verified_windows_llama_package() -> Result<WindowsLlamaPackage, WindowsLlamaPackageError> {
+pub(super) fn verified_windows_llama_package_detail()
+-> Result<WindowsLlamaPackage, WindowsLlamaPackageError<MessageDetail>> {
     #[cfg(any(test, feature = "test-hooks"))]
     if let Some(pkg) = TEST_PACKAGE.with(|current| current.borrow().clone()) {
         return Ok(pkg);
     }
-    Err(WindowsLlamaPackageError::Missing(
-        "Windows local thinking package verification requires a Windows runtime".to_owned(),
-    ))
+    Err(WindowsLlamaPackageError::Missing(MessageDetail::message(
+        "journal.cli.install.windows.package.runtime",
+        [],
+    )))
 }
 
 #[cfg(any(windows, test))]
 pub fn verified_windows_llama_package_at(
     executable: &Path,
 ) -> Result<WindowsLlamaPackage, WindowsLlamaPackageError> {
+    verified_windows_llama_package_at_detail(executable)
+        .map_err(WindowsLlamaPackageError::into_source)
+}
+
+#[cfg(any(windows, test))]
+fn verified_windows_llama_package_at_detail(
+    executable: &Path,
+) -> Result<WindowsLlamaPackage, WindowsLlamaPackageError<MessageDetail>> {
     use WindowsLlamaPackageError::{Invalid, Missing};
     let bin = executable.parent().ok_or_else(|| {
-        Missing("running journal executable has no containing directory".to_owned())
+        Missing(MessageDetail::message(
+            "journal.cli.install.windows.executable.parent",
+            [],
+        ))
     })?;
     if bin.file_name() != Some(OsStr::new("bin")) {
-        return Err(Invalid(format!(
-            "running journal executable is not in the package bin directory: {}",
-            executable.display()
+        return Err(Invalid(MessageDetail::message(
+            "journal.cli.install.windows.executable.location",
+            [("path", &executable.display())],
         )));
     }
-    let package_root = bin
-        .parent()
-        .ok_or_else(|| Missing("package bin directory has no package root".to_owned()))?;
+    let package_root = bin.parent().ok_or_else(|| {
+        Missing(MessageDetail::message(
+            "journal.cli.install.windows.package.root",
+            [],
+        ))
+    })?;
     let payload = verify_windows_payload(package_root)?;
-    let architecture = WindowsArchitecture::from_target_id(&payload.manifest().target)
-        .ok_or_else(|| Invalid("signed payload target is unsupported".to_owned()))?;
+    let architecture =
+        WindowsArchitecture::from_target_id(&payload.manifest().target).ok_or_else(|| {
+            Invalid(MessageDetail::message(
+                "journal.cli.install.windows.target.unsupported",
+                [],
+            ))
+        })?;
 
     let engine = payload.llama_server_path()?;
     let loader = payload.vulkan_loader_path()?;
@@ -146,8 +199,9 @@ pub fn verified_windows_llama_package_at(
             .find(|file| file.path == path)
             .map(|file| file.sha256.clone())
             .ok_or_else(|| {
-                Missing(format!(
-                    "signed payload manifest does not declare digest for {path}"
+                Missing(MessageDetail::message(
+                    "journal.cli.install.windows.digest.absent",
+                    [("path", &path)],
                 ))
             })
     };

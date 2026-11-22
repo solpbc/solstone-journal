@@ -305,13 +305,13 @@ pub fn read_setup_downloads(journal: &Path) -> Result<SetupDownloads, SetupProgr
 
 pub fn localized_setup_downloads(
     journal: &Path,
-    _locale: &str,
+    locale: &str,
 ) -> Result<SetupDownloads, SetupProgressError> {
     #[cfg(not(any(target_os = "windows", target_os = "android", target_os = "ios")))]
     let speech_status =
         status::read_observed_status(journal, "parakeet").map_err(|err| SetupProgressError {
             code: "status_unreadable",
-            detail: err.to_string(),
+            detail: err.into_detail().render_for_response(locale),
         })?;
 
     #[cfg(not(any(target_os = "windows", target_os = "android", target_os = "ios")))]
@@ -319,7 +319,7 @@ pub fn localized_setup_downloads(
         solstone_core_local::install::lease::is_held(journal, "parakeet").map_err(|e| {
             SetupProgressError {
                 code: "lease_unavailable",
-                detail: e.to_string(),
+                detail: solstone_core_local::install::io_detail(e).render_for_response(locale),
             }
         })?;
 
@@ -327,7 +327,7 @@ pub fn localized_setup_downloads(
     let speech = project_packaged_speech(
         solstone_core_local::install::parakeet_readiness::verified_windows_parakeet_package()
             .map(|_| ()),
-        _locale,
+        locale,
     );
 
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
@@ -373,16 +373,21 @@ pub fn localized_setup_downloads(
     };
 
     #[cfg(not(any(target_os = "windows", target_os = "android", target_os = "ios")))]
-    let speech = project_speech(
-        Some(&speech_status),
-        speech_held,
-        speech_verified,
-        speech_catalog_total,
+    let speech = present_error(
+        journal,
+        &speech_status,
+        locale,
+        project_speech(
+            Some(&speech_status),
+            speech_held,
+            speech_verified,
+            speech_catalog_total,
+        ),
     );
 
     #[cfg(any(target_os = "android", target_os = "ios"))]
-    let speech = project_packaged_speech(Err("packaged speech proof unavailable".into()), _locale);
-    read_setup_downloads_with_speech(journal, speech)
+    let speech = project_packaged_speech(Err("packaged speech proof unavailable".into()), locale);
+    read_setup_downloads_with_speech(journal, speech, locale)
 }
 
 /// The embedded host supplies actual app-model verification, not an owner flag
@@ -392,23 +397,28 @@ pub fn read_setup_downloads_with_packaged_speech(
     verification: Result<(), String>,
     locale: &str,
 ) -> Result<SetupDownloads, SetupProgressError> {
-    read_setup_downloads_with_speech(journal, project_packaged_speech(verification, locale))
+    read_setup_downloads_with_speech(
+        journal,
+        project_packaged_speech(verification, locale),
+        locale,
+    )
 }
 
 fn read_setup_downloads_with_speech(
     journal: &Path,
     speech: SetupDownloadTask,
+    locale: &str,
 ) -> Result<SetupDownloads, SetupProgressError> {
     let thinking_status =
         status::read_observed_status(journal, "local").map_err(|err| SetupProgressError {
             code: "status_unreadable",
-            detail: err.to_string(),
+            detail: err.into_detail().render_for_response(locale),
         })?;
     let thinking_held =
         solstone_core_local::install::lease::is_held(journal, "local").map_err(|e| {
             SetupProgressError {
                 code: "lease_unavailable",
-                detail: e.to_string(),
+                detail: solstone_core_local::install::io_detail(e).render_for_response(locale),
             }
         })?;
     let thinking_verified = solstone_core_local::install::local_thinking_present(journal);
@@ -431,14 +441,33 @@ fn read_setup_downloads_with_speech(
                 .collect::<Vec<_>>();
             solstone_core_thinking_copy::sum_download_bytes(&members)
         });
-    let thinking = project_thinking(
-        Some(&thinking_status),
-        thinking_held,
-        thinking_verified,
-        thinking_total,
+    let thinking = present_error(
+        journal,
+        &thinking_status,
+        locale,
+        project_thinking(
+            Some(&thinking_status),
+            thinking_held,
+            thinking_verified,
+            thinking_total,
+        ),
     );
 
     Ok(SetupDownloads { speech, thinking })
+}
+
+fn present_error(
+    journal: &Path,
+    observed: &InstallStatus,
+    locale: &str,
+    mut task: SetupDownloadTask,
+) -> SetupDownloadTask {
+    if let Some(error) = &mut task.error
+        && let Some(detail) = status::display_error(journal, observed, locale)
+    {
+        error.detail = detail;
+    }
+    task
 }
 
 #[cfg(test)]

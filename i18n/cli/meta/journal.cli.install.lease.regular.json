@@ -1,0 +1,16 @@
+{
+  "description": "The installer cannot check the attempt owner because the provider lease is not a regular file.",
+  "context": "The installer cannot check the attempt owner because the provider lease is not a regular file.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a7c6487a7c3f0ef4f991e142f3afa7add42542074850a5565ad95690854d8ab1",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

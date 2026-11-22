@@ -1,0 +1,23 @@
+{
+  "description": "A provider installer reports which part of its local runtime or model package could not be verified.",
+  "context": "A provider installer reports which part of its local runtime or model package could not be verified.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "00e491b9aec48d5f0c977455359e6b30ac35d4e6fef2514238437baa5224ebea",
+  "max_length": 150,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "env",
+      "kind": "accepted-input",
+      "value": "SOLSTONE_MLX_MODEL_DIR"
+    }
+  ]
+}

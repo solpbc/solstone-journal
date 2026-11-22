@@ -1,0 +1,23 @@
+{
+  "description": "A provider installer reports this diagnostic when starting, updating or reading a journal install attempt.",
+  "context": "A provider installer reports this diagnostic when starting, updating or reading a journal install attempt.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3d20554dd282b6d96ddd4c3a236439df79b170c41fb6f0ed0493f677e1752eae",
+  "max_length": 162,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "artifact",
+      "kind": "accepted-input",
+      "value": "parakeet-coreml"
+    }
+  ]
+}

@@ -983,6 +983,249 @@
       "selector": null
     },
     {
+      "id": "journal.setup.installer.cleanup.failed",
+      "resource": "m6a6f75726e616c2e73657475702e696e7374616c6c65722e636c65616e75702e6661696c6564",
+      "namespace": "journal.setup.installer.cleanup",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.setup.installer.control.timed.out",
+      "resource": "m6a6f75726e616c2e73657475702e696e7374616c6c65722e636f6e74726f6c2e74696d65642e6f7574",
+      "namespace": "journal.setup.installer.control.timed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.setup.installer.control.unavailable",
+      "resource": "m6a6f75726e616c2e73657475702e696e7374616c6c65722e636f6e74726f6c2e756e617661696c61626c65",
+      "namespace": "journal.setup.installer.control",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.setup.installer.directory.unavailable",
+      "resource": "m6a6f75726e616c2e73657475702e696e7374616c6c65722e6469726563746f72792e756e617661696c61626c65",
+      "namespace": "journal.setup.installer.directory",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.setup.installer.exited",
+      "resource": "m6a6f75726e616c2e73657475702e696e7374616c6c65722e657869746564",
+      "namespace": "journal.setup.installer",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "code",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.setup.installer.identity.unavailable",
+      "resource": "m6a6f75726e616c2e73657475702e696e7374616c6c65722e6964656e746974792e756e617661696c61626c65",
+      "namespace": "journal.setup.installer.identity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.setup.installer.job.authority",
+      "resource": "m6a6f75726e616c2e73657475702e696e7374616c6c65722e6a6f622e617574686f72697479",
+      "namespace": "journal.setup.installer.job",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.setup.installer.job.cleanup",
+      "resource": "m6a6f75726e616c2e73657475702e696e7374616c6c65722e6a6f622e636c65616e7570",
+      "namespace": "journal.setup.installer.job",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.setup.installer.lease.busy",
+      "resource": "m6a6f75726e616c2e73657475702e696e7374616c6c65722e6c656173652e62757379",
+      "namespace": "journal.setup.installer.lease",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.setup.installer.process.identity.invalid",
+      "resource": "m6a6f75726e616c2e73657475702e696e7374616c6c65722e70726f636573732e6964656e746974792e696e76616c6964",
+      "namespace": "journal.setup.installer.process.identity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.setup.installer.process.identity.unavailable",
+      "resource": "m6a6f75726e616c2e73657475702e696e7374616c6c65722e70726f636573732e6964656e746974792e756e617661696c61626c65",
+      "namespace": "journal.setup.installer.process.identity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.setup.installer.process.observation.unavailable",
+      "resource": "m6a6f75726e616c2e73657475702e696e7374616c6c65722e70726f636573732e6f62736572766174696f6e2e756e617661696c61626c65",
+      "namespace": "journal.setup.installer.process.observation",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.setup.installer.registry.unavailable",
+      "resource": "m6a6f75726e616c2e73657475702e696e7374616c6c65722e72656769737472792e756e617661696c61626c65",
+      "namespace": "journal.setup.installer.registry",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.setup.installer.still.running",
+      "resource": "m6a6f75726e616c2e73657475702e696e7374616c6c65722e7374696c6c2e72756e6e696e67",
+      "namespace": "journal.setup.installer.still",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.setup.installer.stopped",
+      "resource": "m6a6f75726e616c2e73657475702e696e7374616c6c65722e73746f70706564",
+      "namespace": "journal.setup.installer",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.setup.installer.timed.out",
+      "resource": "m6a6f75726e616c2e73657475702e696e7374616c6c65722e74696d65642e6f7574",
+      "namespace": "journal.setup.installer.timed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.setup.installer.tree.not.reaped",
+      "resource": "m6a6f75726e616c2e73657475702e696e7374616c6c65722e747265652e6e6f742e726561706564",
+      "namespace": "journal.setup.installer.tree.not",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "reason",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "survivors",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.setup.journal.aborted",
       "resource": "m6a6f75726e616c2e73657475702e6a6f75726e616c2e61626f72746564",
       "namespace": "journal.setup.journal",

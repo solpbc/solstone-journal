@@ -5,6 +5,7 @@
 
 use super::{ADMISSION_TIMEOUT, STOP_TIMEOUT, lease, status};
 use serde_json::Value;
+use solstone_core_cli_copy::MessageDetail;
 use solstone_core_system::process::{LaunchAuthority, ProcessInstance};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -25,25 +26,36 @@ struct Owner {
 fn lock_child(
     owner: &Owner,
     deadline: Instant,
-) -> Result<MutexGuard<'_, Option<LaunchAuthority>>, String> {
+) -> Result<MutexGuard<'_, Option<LaunchAuthority>>, MessageDetail> {
     loop {
         match owner.child.try_lock() {
             Ok(child) => return Ok(child),
-            Err(TryLockError::Poisoned(_)) => return Err("installer control unavailable".into()),
+            Err(TryLockError::Poisoned(_)) => {
+                return Err(MessageDetail::window(
+                    "journal.setup.installer.control.unavailable",
+                    [],
+                ));
+            }
             Err(TryLockError::WouldBlock) if Instant::now() < deadline => {
                 std::thread::sleep(Duration::from_millis(10));
             }
-            Err(TryLockError::WouldBlock) => return Err("installer control timed out".into()),
+            Err(TryLockError::WouldBlock) => {
+                return Err(MessageDetail::window(
+                    "journal.setup.installer.control.timed.out",
+                    [],
+                ));
+            }
         }
     }
 }
 
-fn register(mut child: LaunchAuthority, journal: &Path) -> Result<Arc<Owner>, String> {
+fn register(mut child: LaunchAuthority, journal: &Path) -> Result<Arc<Owner>, MessageDetail> {
     let Some(instance) = child.process_instance() else {
-        child
-            .terminate_exact(STOP_TIMEOUT)
-            .map_err(|error| error.to_string())?;
-        return Err("installer identity unavailable".into());
+        child.terminate_exact(STOP_TIMEOUT)?;
+        return Err(MessageDetail::window(
+            "journal.setup.installer.identity.unavailable",
+            [],
+        ));
     };
     let owner = Arc::new(Owner {
         instance,
@@ -54,7 +66,7 @@ fn register(mut child: LaunchAuthority, journal: &Path) -> Result<Arc<Owner>, St
     });
     let mut owners = OWNERS
         .lock()
-        .map_err(|_| "installer registry unavailable")?;
+        .map_err(|_| MessageDetail::window("journal.setup.installer.registry.unavailable", []))?;
     // Only completed receipts are evicted. Failed cleanup keeps its Job handle.
     prune_completed(&mut owners);
     owners.push(Arc::clone(&owner));
@@ -76,16 +88,16 @@ fn prune_completed(owners: &mut Vec<Arc<Owner>>) {
     });
 }
 
-fn find(instance: ProcessInstance) -> Result<Option<Arc<Owner>>, String> {
+fn find(instance: ProcessInstance) -> Result<Option<Arc<Owner>>, MessageDetail> {
     Ok(OWNERS
         .lock()
-        .map_err(|_| "installer registry unavailable")?
+        .map_err(|_| MessageDetail::window("journal.setup.installer.registry.unavailable", []))?
         .iter()
         .find(|owner| owner.instance == instance)
         .cloned())
 }
 
-fn retire(owner: &Owner) -> Result<(), String> {
+fn retire(owner: &Owner) -> Result<(), MessageDetail> {
     let deadline = Instant::now() + ADMISSION_TIMEOUT;
     let mut child = lock_child(owner, deadline)?;
     let Some(authority) = child.as_mut() else {
@@ -94,7 +106,13 @@ fn retire(owner: &Owner) -> Result<(), String> {
     owner.cleanup_pending.store(true, Ordering::Release);
     authority
         .terminate_exact(STOP_TIMEOUT.min(deadline.saturating_duration_since(Instant::now())))
-        .map_err(|error| format!("installer Job cleanup failed: {error}"))?;
+        .map_err(|error| {
+            MessageDetail::from(error).window_context_slot(
+                "journal.setup.installer.job.cleanup",
+                "error",
+                [],
+            )
+        })?;
     let retired = child.take();
     owner.completed.store(true, Ordering::Release);
     owner.cleanup_pending.store(false, Ordering::Release);
@@ -108,7 +126,7 @@ fn retire(owner: &Owner) -> Result<(), String> {
     Ok(())
 }
 
-pub(super) fn stop(instance: ProcessInstance) -> Result<(), String> {
+pub(super) fn stop(instance: ProcessInstance) -> Result<(), MessageDetail> {
     // The child can publish its status in the small launch-to-register interval.
     // Wait for that registration, never substitute PID observation as authority.
     let deadline = Instant::now() + ADMISSION_TIMEOUT;
@@ -117,25 +135,29 @@ pub(super) fn stop(instance: ProcessInstance) -> Result<(), String> {
             return retire(&owner);
         }
         if Instant::now() >= deadline {
-            return Err("installer Job authority unavailable".into());
+            return Err(MessageDetail::window(
+                "journal.setup.installer.job.authority",
+                [],
+            ));
         }
         std::thread::sleep(Duration::from_millis(10));
     }
 }
 
-pub(super) fn stop_registered(value: &Value) -> Result<(), String> {
-    let instance = serde_json::from_value(value.clone())
-        .map_err(|_| "installer process identity unavailable")?;
+pub(super) fn stop_registered(value: &Value) -> Result<(), MessageDetail> {
+    let instance = serde_json::from_value(value.clone()).map_err(|_| {
+        MessageDetail::window("journal.setup.installer.process.identity.unavailable", [])
+    })?;
     if let Some(owner) = find(instance)? {
         retire(&owner)?;
     }
     Ok(())
 }
 
-pub(super) fn reconcile(journal: &Path) -> Result<(), String> {
+pub(super) fn reconcile(journal: &Path) -> Result<(), MessageDetail> {
     let owners: Vec<_> = OWNERS
         .lock()
-        .map_err(|_| "installer registry unavailable")?
+        .map_err(|_| MessageDetail::window("journal.setup.installer.registry.unavailable", []))?
         .iter()
         .filter(|owner| owner.journal == journal && !owner.completed.load(Ordering::Acquire))
         .cloned()
@@ -148,11 +170,13 @@ pub(super) fn reconcile(journal: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn poll(owner: &Owner) -> Result<Option<i32>, String> {
+fn poll(owner: &Owner) -> Result<Option<i32>, MessageDetail> {
     let mut child = lock_child(owner, Instant::now() + ADMISSION_TIMEOUT)?;
     match child.as_mut() {
-        Some(child) => child.poll().map_err(|error| error.to_string()),
-        None => Err("installer was stopped".into()),
+        Some(child) => child
+            .poll()
+            .map_err(|error| MessageDetail::from(error.to_string())),
+        None => Err(MessageDetail::window("journal.setup.installer.stopped", [])),
     }
 }
 
@@ -161,7 +185,7 @@ pub(super) fn admit(
     journal: &Path,
     model: &str,
     timeout: Duration,
-    admitted: &std::sync::mpsc::SyncSender<Result<Value, String>>,
+    admitted: &std::sync::mpsc::SyncSender<Result<Value, MessageDetail>>,
     observed_attempt_id: Option<&str>,
     observed_revision: u64,
 ) {
@@ -268,12 +292,14 @@ fn admission(
     journal: &Path,
     model: &str,
     timeout: Duration,
-) -> Result<(Value, bool), String> {
+) -> Result<(Value, bool), MessageDetail> {
     let deadline = Instant::now() + timeout;
     loop {
         let exit = poll(owner)?;
-        let current = status::read_status(journal, "local").map_err(|error| error.to_string())?;
-        let held = lease::is_held(journal, "local").map_err(|error| error.to_string())?;
+        let current =
+            status::read_status(journal, "local").map_err(status::StatusError::into_detail)?;
+        let held =
+            lease::is_held(journal, "local").map_err(solstone_core_local::install::io_detail)?;
         let owned = current
             .owner
             .clone()
@@ -296,10 +322,16 @@ fn admission(
                     false,
                 ));
             }
-            return Err(format!("installer exited before admission ({code})"));
+            return Err(MessageDetail::window(
+                "journal.setup.installer.exited",
+                [("code", &code)],
+            ));
         }
         if Instant::now() >= deadline {
-            return Err("installer admission timed out".to_owned());
+            return Err(MessageDetail::window(
+                "journal.setup.installer.timed.out",
+                [],
+            ));
         }
         std::thread::sleep(Duration::from_millis(50));
     }

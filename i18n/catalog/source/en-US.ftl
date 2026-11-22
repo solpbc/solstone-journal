@@ -21098,3 +21098,37 @@ journal.window.location.day.stay = a stay your journal worked out from { $count 
 journal.window.location.day.visit = a visit { $device } reported { $location }: { $arrival }, { $departure }.
 
 journal.window.entities.merge.evidence.meeting.photos = meeting photos suggest these may be the same person.
+
+journal.setup.installer.cleanup.failed = installer admission cleanup failed: { $error }
+
+journal.setup.installer.control.timed.out = installer control timed out
+
+journal.setup.installer.control.unavailable = installer control unavailable
+
+journal.setup.installer.directory.unavailable = installer directory unavailable
+
+journal.setup.installer.exited = installer exited before admission ({ $code })
+
+journal.setup.installer.identity.unavailable = installer identity unavailable
+
+journal.setup.installer.job.authority = installer Job authority unavailable
+
+journal.setup.installer.job.cleanup = installer Job cleanup failed: { $error }
+
+journal.setup.installer.lease.busy = installer lease is busy
+
+journal.setup.installer.process.identity.invalid = installer process identity invalid
+
+journal.setup.installer.process.identity.unavailable = installer process identity unavailable
+
+journal.setup.installer.process.observation.unavailable = installer process observation unavailable
+
+journal.setup.installer.registry.unavailable = installer registry unavailable
+
+journal.setup.installer.still.running = installer is still running
+
+journal.setup.installer.stopped = installer was stopped
+
+journal.setup.installer.timed.out = installer admission timed out
+
+journal.setup.installer.tree.not.reaped = process tree not reaped: { $reason }; survivors={ $survivors }

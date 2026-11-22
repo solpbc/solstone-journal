@@ -15,12 +15,11 @@ pub enum NativeExecutableError {
 }
 
 impl NativeExecutableError {
-    pub(crate) fn render(&self, locale: &str) -> String {
+    pub fn detail(&self) -> solstone_core_cli_copy::MessageDetail {
         match self {
-            Self::CurrentExe(error) => solstone_core_cli_copy::display_for(
-                locale,
+            Self::CurrentExe(error) => solstone_core_cli_copy::MessageDetail::message(
                 "journal.cli.journal.helper.inspect",
-                [("error", &error)],
+                [("error", error)],
             ),
             Self::Missing { path } | Self::NonExecutable { path } => {
                 let id = match (self, cfg!(target_os = "macos")) {
@@ -29,9 +28,13 @@ impl NativeExecutableError {
                     (_, true) => "journal.cli.journal.helper.mode.mac",
                     (_, false) => "journal.cli.journal.helper.mode.other",
                 };
-                solstone_core_cli_copy::display_for(locale, id, [("path", &path.display())])
+                solstone_core_cli_copy::MessageDetail::message(id, [("path", &path.display())])
             }
         }
+    }
+
+    pub(crate) fn render(&self, locale: &str) -> String {
+        self.detail().render(locale)
     }
 }
 

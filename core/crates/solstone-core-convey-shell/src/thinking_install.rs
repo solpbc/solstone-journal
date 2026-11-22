@@ -11,6 +11,7 @@ use std::time::Duration;
 use std::time::Instant;
 
 use serde_json::Value;
+use solstone_core_cli_copy::MessageDetail;
 use solstone_core_local::install::{lease, status};
 #[cfg(not(windows))]
 use solstone_core_system::process::SystemProcessInstanceSource;
@@ -67,29 +68,37 @@ const STOP_TIMEOUT: Duration = Duration::from_secs(2);
 const INSTALLER_STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub(crate) fn start(journal: &Path, model: &str) -> Result<Value, String> {
+    start_detail(journal, model).map_err(|error| error.to_string())
+}
+
+pub(super) fn start_detail(journal: &Path, model: &str) -> Result<Value, MessageDetail> {
     admit(journal, model, false)
 }
 
 pub(crate) fn start_automatic(journal: &Path, model: &str) -> Result<Value, String> {
-    admit(journal, model, true)
+    admit(journal, model, true).map_err(|error| error.to_string())
 }
 
-fn admit(journal: &Path, model: &str, automatic: bool) -> Result<Value, String> {
+fn admit(journal: &Path, model: &str, automatic: bool) -> Result<Value, MessageDetail> {
     let _guard = ADMISSION
         .lock()
-        .map_err(|_| "installer admission unavailable")?;
+        .map_err(|_| MessageDetail::window("journal.setup.cancel.admission", []))?;
     #[cfg(windows)]
     windows::reconcile(journal)?;
     // Recheck under the admission mutex. Other CLI processes still arbitrate via
     // the OS lease, so an independent winner is reported from persisted status.
-    let current = status::read_status(journal, "local").map_err(|e| e.to_string())?;
-    if lease::is_held(journal, "local").map_err(|e| e.to_string())? {
+    let current =
+        status::read_status(journal, "local").map_err(status::StatusError::into_detail)?;
+    if lease::is_held(journal, "local").map_err(solstone_core_local::install::io_detail)? {
         if status::is_in_flight(&current.install_state) {
             return Ok(solstone_core_thinking::local::bootstrap_status(
                 journal, model,
             ));
         }
-        return Err("installer lease is busy".into());
+        return Err(MessageDetail::window(
+            "journal.setup.installer.lease.busy",
+            [],
+        ));
     }
     if automatic && current.error_code.as_deref() == Some("install_cancelled") {
         return Err("install_cancelled".into());
@@ -98,14 +107,14 @@ fn admit(journal: &Path, model: &str, automatic: bool) -> Result<Value, String> 
     let observed_revision = current.revision;
 
     let executable = std::env::current_exe().map_err(|e| e.to_string())?;
-    let parent = executable
-        .parent()
-        .ok_or("installer directory unavailable")?;
+    let parent = executable.parent().ok_or_else(|| {
+        MessageDetail::window("journal.setup.installer.directory.unavailable", [])
+    })?;
     let binary = match solstone_core_journal_cli::sibling_native_in_dir(parent, "solstone-core") {
         Ok(binary) => binary,
         Err(err) => {
-            let message = err.to_string();
-            let write_res = status::record_terminal_refusal_if_unchanged(
+            let message = err.detail();
+            let write_res = status::record_terminal_refusal_detail_if_unchanged(
                 journal,
                 "local",
                 observed_attempt_id.as_deref(),
@@ -114,7 +123,7 @@ fn admit(journal: &Path, model: &str, automatic: bool) -> Result<Value, String> 
                 &message,
             );
             if let Err(error) = write_res {
-                return Err(error.to_string());
+                return Err(error.into_detail());
             }
             return Err(message);
         }
@@ -134,7 +143,7 @@ pub(crate) fn reconcile(journal: &Path) -> Result<(), String> {
     let _guard = ADMISSION
         .lock()
         .map_err(|_| "installer admission unavailable")?;
-    windows::reconcile(journal)
+    windows::reconcile(journal).map_err(|error| error.to_string())
 }
 
 fn installer_request(journal: &Path, binary: &Path) -> ManagedLaunchRequest {
@@ -174,6 +183,7 @@ pub(crate) fn launch_installer(
         observed_attempt_id.as_deref(),
         observed_revision,
     )
+    .map_err(|error| error.to_string())
 }
 
 fn launch_installer_with_observed(
@@ -183,7 +193,7 @@ fn launch_installer_with_observed(
     admission_timeout: Duration,
     observed_attempt_id: Option<&str>,
     observed_revision: u64,
-) -> Result<Value, String> {
+) -> Result<Value, MessageDetail> {
     // Linux arms the installer's parent-death SIGKILL against the *thread* that
     // forked it, so that thread has to outlive the child. The portal reaches here
     // from a Tokio blocking worker, which is reaped after its idle keep-alive:
@@ -215,12 +225,12 @@ fn launch_installer_with_observed(
                 observed_attempt_id,
                 observed_revision,
                 "installer_launch_failed",
-                error.to_string(),
+                error.to_string().into(),
             )
         })?;
     admission
         .recv_timeout(admission_timeout + STOP_TIMEOUT + Duration::from_secs(1))
-        .map_err(|_| "installer admission unavailable".to_owned())?
+        .map_err(|_| MessageDetail::window("journal.setup.cancel.admission", []))?
 }
 
 /// Fork the installer, report the admission outcome, then reap it on this same
@@ -230,7 +240,7 @@ fn admit_installer(
     model: &str,
     request: ManagedLaunchRequest,
     admission_timeout: Duration,
-    admitted: &std::sync::mpsc::SyncSender<Result<Value, String>>,
+    admitted: &std::sync::mpsc::SyncSender<Result<Value, MessageDetail>>,
     observed_attempt_id: Option<&str>,
     observed_revision: u64,
 ) {
@@ -245,8 +255,8 @@ fn admit_installer(
     let child = match launched {
         Ok(child) => child,
         Err(error) => {
-            let message = error.to_string();
-            let write_res = status::record_terminal_refusal_if_unchanged(
+            let message = MessageDetail::from(error);
+            let write_res = status::record_terminal_refusal_detail_if_unchanged(
                 journal,
                 "local",
                 observed_attempt_id,
@@ -255,7 +265,7 @@ fn admit_installer(
                 &message,
             );
             if let Err(error) = write_res {
-                let _ = admitted.send(Err(error.to_string()));
+                let _ = admitted.send(Err(error.into_detail()));
                 return;
             }
             let _ = admitted.send(Err(message));
@@ -290,12 +300,15 @@ fn admit_portable(
     journal: &Path,
     model: &str,
     admission_timeout: Duration,
-    admitted: &std::sync::mpsc::SyncSender<Result<Value, String>>,
+    admitted: &std::sync::mpsc::SyncSender<Result<Value, MessageDetail>>,
     observed_attempt_id: Option<&str>,
     observed_revision: u64,
 ) {
     let Some(identity) = child.exact_identity().map(|launched| launched.instance) else {
-        let _ = admitted.send(Err("installer identity unavailable".into()));
+        let _ = admitted.send(Err(MessageDetail::window(
+            "journal.setup.installer.identity.unavailable",
+            [],
+        )));
         return;
     };
     let deadline = Instant::now() + admission_timeout;
@@ -303,21 +316,21 @@ fn admit_portable(
         let exit = match child.poll() {
             Ok(exit) => exit,
             Err(error) => {
-                let _ = admitted.send(Err(error.to_string()));
+                let _ = admitted.send(Err(error.to_string().into()));
                 return;
             }
         };
         let current = match status::read_status(journal, "local") {
             Ok(current) => current,
             Err(error) => {
-                let _ = admitted.send(Err(error.to_string()));
+                let _ = admitted.send(Err(error.into_detail()));
                 return;
             }
         };
         let held = match lease::is_held(journal, "local") {
             Ok(held) => held,
             Err(error) => {
-                let _ = admitted.send(Err(error.to_string()));
+                let _ = admitted.send(Err(solstone_core_local::install::io_detail(error)));
                 return;
             }
         };
@@ -358,17 +371,21 @@ fn admit_portable(
                 observed_attempt_id,
                 observed_revision,
                 "installer_exited",
-                format!("installer exited before admission ({code})"),
+                MessageDetail::window("journal.setup.installer.exited", [("code", &code)]),
             );
             let _ = admitted.send(Err(error));
             return;
         }
         if Instant::now() >= deadline {
             let outcome = match child.terminate_exact(STOP_TIMEOUT) {
-                Ok(()) => "installer admission timed out".to_owned(),
-                Err(error) => format!("installer admission cleanup failed: {error}"),
+                Ok(()) => MessageDetail::window("journal.setup.installer.timed.out", []),
+                Err(error) => MessageDetail::from(error).window_context_slot(
+                    "journal.setup.installer.cleanup.failed",
+                    "error",
+                    [],
+                ),
             };
-            let write_res = status::record_terminal_refusal_if_unchanged(
+            let write_res = status::record_terminal_refusal_detail_if_unchanged(
                 journal,
                 "local",
                 observed_attempt_id,
@@ -377,7 +394,7 @@ fn admit_portable(
                 &outcome,
             );
             if let Err(error) = write_res {
-                let _ = admitted.send(Err(error.to_string()));
+                let _ = admitted.send(Err(error.into_detail()));
                 return;
             }
             let _ = admitted.send(Err(outcome));
@@ -392,28 +409,47 @@ fn persist_local_refusal(
     attempt: Option<&str>,
     revision: u64,
     code: &str,
-    detail: String,
-) -> String {
-    match status::record_terminal_refusal_if_unchanged(
+    detail: MessageDetail,
+) -> MessageDetail {
+    match status::record_terminal_refusal_detail_if_unchanged(
         journal, "local", attempt, revision, code, &detail,
     ) {
         Ok(_) => detail,
-        Err(error) => error.to_string(),
+        Err(error) => error.into_detail(),
     }
 }
 
-pub(crate) fn stop(owner: &Value) -> Result<(), String> {
-    let expected: ProcessInstance = serde_json::from_value(owner.clone())
-        .map_err(|_| "installer process identity unavailable")?;
+fn stop_detail(owner: &Value) -> Result<(), MessageDetail> {
+    let expected: ProcessInstance = serde_json::from_value(owner.clone()).map_err(|_| {
+        MessageDetail::window("journal.setup.installer.process.identity.unavailable", [])
+    })?;
     if expected.pid == std::process::id() || expected.pid == 0 || !expected.birth.is_verifiable() {
-        return Err("installer process identity invalid".into());
+        return Err(MessageDetail::window(
+            "journal.setup.installer.process.identity.invalid",
+            [],
+        ));
     }
     #[cfg(windows)]
     return windows::stop(expected);
     #[cfg(not(windows))]
     stop_with(expected, &SystemProcessInstanceSource, |signal| {
-        signal_exact_instance(expected, signal, &SystemProcessInstanceSource)
-            .map_err(|e| e.to_string())
+        signal_exact_instance(expected, signal, &SystemProcessInstanceSource).map_err(|error| {
+            if let solstone_core_system::process::TerminationError::ProcessTreeNotReaped {
+                reason,
+                survivors,
+            } = error
+            {
+                MessageDetail::window(
+                    "journal.setup.installer.tree.not.reaped",
+                    [
+                        ("reason", &reason),
+                        ("survivors", &format!("{survivors:?}")),
+                    ],
+                )
+            } else {
+                error.to_string().into()
+            }
+        })
     })
 }
 
@@ -441,7 +477,8 @@ pub(crate) fn cancel_for_locale(
         .map_err(|_| text(locale, "journal.setup.cancel.admission"))?;
     #[cfg(windows)]
     {
-        let current = status::read_status(journal, "local").map_err(|error| error.to_string())?;
+        let current = status::read_status(journal, "local")
+            .map_err(|error| error.into_detail().render_for_response(locale))?;
         if current.attempt_id.as_deref() != Some(attempt) {
             return Err(text(locale, "journal.setup.cancel.changed"));
         }
@@ -449,31 +486,36 @@ pub(crate) fn cancel_for_locale(
         // Reconcile retained authority even when the domain no longer sees a writer.
         if let Some(owner) = current.owner.as_ref() {
             if status::is_in_flight(&current.install_state) {
-                stop(owner)?;
+                stop_detail(owner).map_err(|error| error.render_for_response(locale))?;
             } else {
-                windows::stop_registered(owner)?;
+                windows::stop_registered(owner)
+                    .map_err(|error| error.render_for_response(locale))?;
             }
         }
     }
-    solstone_core_local::install::cancel_local_bootstrap(journal, "local", attempt, stop).map_err(
-        |error| match error.envelope.error {
-            Some(error) => match error.reason_code.as_str() {
-                "attempt_mismatch" => text(locale, "journal.setup.cancel.changed"),
-                "owner_unavailable" => text(locale, "journal.setup.cancel.identity"),
-                "install_busy" => text(locale, "journal.setup.cancel.busy"),
-                _ => error.message,
-            },
-            None => text(locale, "journal.setup.cancel.failed"),
-        },
+    solstone_core_local::install::cancel_local_bootstrap_detail(
+        journal,
+        "local",
+        attempt,
+        stop_detail,
     )
+    .map_err(|error| match error.envelope.error.as_ref() {
+        Some(envelope) => match envelope.reason_code.as_str() {
+            "attempt_mismatch" => text(locale, "journal.setup.cancel.changed"),
+            "owner_unavailable" => text(locale, "journal.setup.cancel.identity"),
+            "install_busy" => text(locale, "journal.setup.cancel.busy"),
+            _ => error.into_detail().render_for_response(locale),
+        },
+        None => text(locale, "journal.setup.cancel.failed"),
+    })
 }
 
 #[cfg(any(not(windows), test))]
 fn stop_with(
     expected: ProcessInstance,
     source: &dyn ProcessInstanceSource,
-    signal: impl FnMut(SignalKind) -> Result<(), String>,
-) -> Result<(), String> {
+    signal: impl FnMut(SignalKind) -> Result<(), MessageDetail>,
+) -> Result<(), MessageDetail> {
     stop_with_timeout(expected, source, signal, STOP_TIMEOUT)
 }
 
@@ -481,14 +523,17 @@ fn stop_with(
 fn stop_with_timeout(
     expected: ProcessInstance,
     source: &dyn ProcessInstanceSource,
-    mut signal: impl FnMut(SignalKind) -> Result<(), String>,
+    mut signal: impl FnMut(SignalKind) -> Result<(), MessageDetail>,
     timeout: Duration,
-) -> Result<(), String> {
+) -> Result<(), MessageDetail> {
     for kind in [SignalKind::Terminate, SignalKind::Kill] {
         match source.observe(&expected) {
             InstanceVerdict::NotSameOrExited => return Ok(()),
             InstanceVerdict::Unverifiable => {
-                return Err("installer process observation unavailable".into());
+                return Err(MessageDetail::window(
+                    "journal.setup.installer.process.observation.unavailable",
+                    [],
+                ));
             }
             InstanceVerdict::SameLive { .. } => signal(kind)?,
         }
@@ -501,7 +546,10 @@ fn stop_with_timeout(
                     // reads. Observe again within this wait, but uncertainty
                     // never authorizes another signal or a successful result.
                     if Instant::now() >= deadline {
-                        return Err("installer process observation unavailable".into());
+                        return Err(MessageDetail::window(
+                            "journal.setup.installer.process.observation.unavailable",
+                            [],
+                        ));
                     }
                 }
                 InstanceVerdict::SameLive { .. } => {
@@ -513,7 +561,10 @@ fn stop_with_timeout(
             std::thread::sleep(Duration::from_millis(25));
         }
     }
-    Err("installer is still running".into())
+    Err(MessageDetail::window(
+        "journal.setup.installer.still.running",
+        [],
+    ))
 }
 
 #[cfg(test)]
@@ -581,8 +632,8 @@ mod tests {
             ))
             .is_ok()
         );
-        assert!(stop(&serde_json::json!({"pid": -1})).is_err());
-        assert!(stop(&serde_json::json!({"pid": 4294967296_u64})).is_err());
+        assert!(stop_detail(&serde_json::json!({"pid": -1})).is_err());
+        assert!(stop_detail(&serde_json::json!({"pid": 4294967296_u64})).is_err());
     }
 
     #[test]
@@ -641,7 +692,7 @@ mod tests {
             Duration::ZERO,
         );
         assert_eq!(
-            result.unwrap_err(),
+            result.unwrap_err().to_string(),
             "installer process observation unavailable"
         );
         assert!(matches!(signals.as_slice(), [SignalKind::Terminate]));
@@ -669,6 +720,45 @@ mod tests {
             [SignalKind::Terminate, SignalKind::Kill]
         ));
         assert!(still_live.0.lock().unwrap().is_empty());
+    }
+
+    #[cfg(all(unix, feature = "full-tests"))]
+    #[test]
+    fn admission_refusal_presents_the_same_cause_in_setup_and_on_disk() {
+        for (command, expected) in [
+            (
+                "sleep 0.2; exit 42",
+                MessageDetail::window("journal.setup.installer.exited", [("code", &42)]),
+            ),
+            (
+                "exec sleep 30",
+                MessageDetail::window("journal.setup.installer.timed.out", []),
+            ),
+        ] {
+            let journal = tempfile::tempdir().unwrap();
+            let mut request = installer_request(journal.path(), Path::new("/bin/sh"));
+            request.command = vec!["/bin/sh".into(), "-c".into(), command.into()];
+            let error = launch_installer_with_observed(
+                journal.path(),
+                "local/qwen3.5-4b",
+                request,
+                Duration::from_millis(750),
+                None,
+                0,
+            )
+            .unwrap_err();
+            let raw = status::read_status(journal.path(), "local").unwrap();
+            assert_eq!(raw.install_error, Some(expected.to_string()));
+            for request in ["en-US", "en-XA", "unshipped"] {
+                let locale = solstone_core_cli_copy::packaged_locale(Some(request));
+                let rendered = expected.render(locale);
+                assert_eq!(error.render(locale), rendered);
+                assert_eq!(
+                    status::display_error(journal.path(), &raw, locale),
+                    Some(rendered)
+                );
+            }
+        }
     }
 
     #[cfg(all(test, feature = "full-tests"))]
@@ -714,7 +804,7 @@ mod tests {
             )
             .unwrap();
             released.recv_timeout(Duration::from_secs(10)).unwrap();
-            stop(&serde_json::json!(identity)).unwrap();
+            stop_detail(&serde_json::json!(identity)).unwrap();
         });
         let admitted = launch_installer(
             journal.path(),
@@ -784,7 +874,7 @@ mod tests {
             )
             .unwrap();
             released.recv_timeout(Duration::from_secs(10)).unwrap();
-            stop(&serde_json::json!(identity)).unwrap();
+            stop_detail(&serde_json::json!(identity)).unwrap();
         });
 
         let requested = journal.path().to_owned();
@@ -853,7 +943,8 @@ mod tests {
             admission
                 .recv_timeout(Duration::from_secs(5))
                 .unwrap()
-                .unwrap_err(),
+                .unwrap_err()
+                .to_string(),
             "installer admission timed out"
         );
         assert_eq!(

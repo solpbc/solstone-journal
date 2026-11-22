@@ -42,6 +42,7 @@ fn failed_retirement_retains_authority_and_never_becomes_absent_root_success() {
     assert!(
         retire(&owner)
             .unwrap_err()
+            .to_string()
             .contains("fixture cleanup failure")
     );
     assert!(owner.child.lock().unwrap().is_some());

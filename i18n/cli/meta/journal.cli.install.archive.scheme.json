@@ -1,0 +1,25 @@
+{
+  "description": "A provider installer explains a failure while resolving, verifying or installing a runtime or a model.",
+  "context": "A provider installer explains a failure while resolving, verifying or installing a runtime or a model.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "host",
+      "type": "string"
+    },
+    {
+      "name": "scheme",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0a3373eb830069cce1de4a6ac40b1584ae69311c6425fbb89f8142020dc2f266",
+  "max_length": 150,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

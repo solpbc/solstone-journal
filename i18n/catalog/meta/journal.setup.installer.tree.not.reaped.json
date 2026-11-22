@@ -1,0 +1,25 @@
+{
+  "description": "A local model installer failure reported in native journal setup.",
+  "context": "Returned in the setup action refusal or the current install attempt status.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    },
+    {
+      "name": "survivors",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "96278eab66b2c106bfbc41565b0d4683fddadd12f1ff5b09b9e242f5aa0ed310",
+  "max_length": 186,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

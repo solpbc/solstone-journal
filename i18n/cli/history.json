@@ -23304,6 +23304,2354 @@
       "selector": null
     },
     {
+      "id": "journal.cli.install.archive.binary",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e62696e617279",
+      "namespace": "journal.cli.install.archive",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "binary_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.archive.digest",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e646967657374",
+      "namespace": "journal.cli.install.archive",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "expected",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "actual",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "algorithm",
+          "kind": "accepted-input",
+          "value": "sha256"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.archive.download",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e646f776e6c6f6164",
+      "namespace": "journal.cli.install.archive",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "message",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.archive.host",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e686f7374",
+      "namespace": "journal.cli.install.archive",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "host",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.archive.origin",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e6f726967696e",
+      "namespace": "journal.cli.install.archive",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "host",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "message",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.archive.path",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e70617468",
+      "namespace": "journal.cli.install.archive",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.archive.redirect",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e7265646972656374",
+      "namespace": "journal.cli.install.archive",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "limit",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.archive.scheme",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e736368656d65",
+      "namespace": "journal.cli.install.archive",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "host",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "scheme",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.archive.size",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e73697a65",
+      "namespace": "journal.cli.install.archive",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "expected",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "actual",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.install.archive.userinfo",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e617263686976652e75736572696e666f",
+      "namespace": "journal.cli.install.archive",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "authority",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.backend.metal",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6261636b656e642e6d6574616c",
+      "namespace": "journal.cli.install.backend",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.backend.unavailable",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6261636b656e642e756e617661696c61626c65",
+      "namespace": "journal.cli.install.backend",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.component.packaged",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f6d706f6e656e742e7061636b61676564",
+      "namespace": "journal.cli.install.component",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.component.unfetched",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f6d706f6e656e742e756e66657463686564",
+      "namespace": "journal.cli.install.component",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.coreml.asset.digest",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e61737365742e646967657374",
+      "namespace": "journal.cli.install.coreml.asset",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "file",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "expected",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "found",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "coreml",
+          "kind": "accepted-input",
+          "value": "CoreML"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.coreml.asset.incomplete",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e61737365742e696e636f6d706c657465",
+      "namespace": "journal.cli.install.coreml.asset",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.coreml.asset.missing",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e61737365742e6d697373696e67",
+      "namespace": "journal.cli.install.coreml.asset",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "file",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "install_command",
+          "kind": "command",
+          "value": "solstone journal install-models"
+        },
+        {
+          "name": "coreml",
+          "kind": "accepted-input",
+          "value": "CoreML"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.coreml.asset.read",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e61737365742e72656164",
+      "namespace": "journal.cli.install.coreml.asset",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "file",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.coreml.asset.size",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e61737365742e73697a65",
+      "namespace": "journal.cli.install.coreml.asset",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "file",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "expected",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "found",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "coreml",
+          "kind": "accepted-input",
+          "value": "CoreML"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.coreml.attempt.changed",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e617474656d70742e6368616e676564",
+      "namespace": "journal.cli.install.coreml.attempt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.coreml.cache.directory",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e63616368652e6469726563746f7279",
+      "namespace": "journal.cli.install.coreml.cache",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "installed",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "configured",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "coreml",
+          "kind": "accepted-input",
+          "value": "CoreML"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.coreml.catalog.conflict",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e636174616c6f672e636f6e666c696374",
+      "namespace": "journal.cli.install.coreml.catalog",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "artifact",
+          "kind": "accepted-input",
+          "value": "parakeet-coreml"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.coreml.catalog.empty",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e636174616c6f672e656d707479",
+      "namespace": "journal.cli.install.coreml.catalog",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "artifact",
+          "kind": "accepted-input",
+          "value": "parakeet-coreml"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.coreml.catalog.mismatch",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e636174616c6f672e6d69736d61746368",
+      "namespace": "journal.cli.install.coreml.catalog",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "found",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "expected",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "coreml",
+          "kind": "accepted-input",
+          "value": "CoreML"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.coreml.platform",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e706c6174666f726d",
+      "namespace": "journal.cli.install.coreml",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "os_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "arch",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "host",
+          "kind": "accepted-input",
+          "value": "darwin/arm64"
+        },
+        {
+          "name": "coreml",
+          "kind": "accepted-input",
+          "value": "CoreML"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.coreml.publication.lock",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e7075626c69636174696f6e2e6c6f636b",
+      "namespace": "journal.cli.install.coreml.publication",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.coreml.publish.restore",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e7075626c6973682e726573746f7265",
+      "namespace": "journal.cli.install.coreml.publish",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "restore",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.coreml.sentinel.not.ready",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e73656e74696e656c2e6e6f742e7265616479",
+      "namespace": "journal.cli.install.coreml.sentinel.not",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "install_command",
+          "kind": "command",
+          "value": "solstone journal install-models"
+        },
+        {
+          "name": "coreml",
+          "kind": "accepted-input",
+          "value": "CoreML"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.coreml.sentinel.removed",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e636f72656d6c2e73656e74696e656c2e72656d6f766564",
+      "namespace": "journal.cli.install.coreml.sentinel",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.cuda.integrity",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e637564612e696e74656772697479",
+      "namespace": "journal.cli.install.cuda",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.disk.insufficient",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6469736b2e696e73756666696369656e74",
+      "namespace": "journal.cli.install.disk",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.fingerprint.artifact",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e66696e6765727072696e742e6172746966616374",
+      "namespace": "journal.cli.install.fingerprint",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "field",
+          "kind": "accepted-input",
+          "value": "artifact_key"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.fingerprint.backend",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e66696e6765727072696e742e6261636b656e64",
+      "namespace": "journal.cli.install.fingerprint",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.fingerprint.missing",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e66696e6765727072696e742e6d697373696e67",
+      "namespace": "journal.cli.install.fingerprint",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.fingerprint.runtime",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e66696e6765727072696e742e72756e74696d65",
+      "namespace": "journal.cli.install.fingerprint",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.hardware.apple.memory",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e68617264776172652e6170706c652e6d656d6f7279",
+      "namespace": "journal.cli.install.hardware.apple",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "minimum",
+          "kind": "accepted-input",
+          "value": "16 GiB"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.hardware.memory.minimum",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e68617264776172652e6d656d6f72792e6d696e696d756d",
+      "namespace": "journal.cli.install.hardware.memory",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "available_bytes",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "minimum",
+          "kind": "accepted-input",
+          "value": "6 GiB"
+        },
+        {
+          "name": "vram",
+          "kind": "accepted-input",
+          "value": "VRAM"
+        }
+      ],
+      "selector": {
+        "name": "available_bytes",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.install.hardware.memory.unknown",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e68617264776172652e6d656d6f72792e756e6b6e6f776e",
+      "namespace": "journal.cli.install.hardware.memory",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "vulkan",
+          "kind": "accepted-input",
+          "value": "Vulkan"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.hardware.no.hardware",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e68617264776172652e6e6f2e6861726477617265",
+      "namespace": "journal.cli.install.hardware.no",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "vulkan",
+          "kind": "accepted-input",
+          "value": "Vulkan"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.hardware.probe.required",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e68617264776172652e70726f62652e7265717569726564",
+      "namespace": "journal.cli.install.hardware.probe",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "vulkan",
+          "kind": "accepted-input",
+          "value": "Vulkan"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.lease.held",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6c656173652e68656c64",
+      "namespace": "journal.cli.install.lease",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "provider",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.lease.regular",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6c656173652e726567756c6172",
+      "namespace": "journal.cli.install.lease",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.member.cuda.arch",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e637564612e61726368",
+      "namespace": "journal.cli.install.member.cuda",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "arch",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.member.cuda.arch.key",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e637564612e617263682e6b6579",
+      "namespace": "journal.cli.install.member.cuda.arch",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "artifact_key",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.member.cuda.missing",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e637564612e6d697373696e67",
+      "namespace": "journal.cli.install.member.cuda",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.member.cuda.regular",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e637564612e726567756c6172",
+      "namespace": "journal.cli.install.member.cuda",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.member.link.broken",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e62726f6b656e",
+      "namespace": "journal.cli.install.member.link",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.member.link.cycle",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e6379636c65",
+      "namespace": "journal.cli.install.member.link",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.member.link.missing",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e6d697373696e67",
+      "namespace": "journal.cli.install.member.link",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.member.link.read",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e72656164",
+      "namespace": "journal.cli.install.member.link",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.member.link.regular",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e726567756c6172",
+      "namespace": "journal.cli.install.member.link",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.member.link.target",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e746172676574",
+      "namespace": "journal.cli.install.member.link",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "found",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.member.link.type",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e74797065",
+      "namespace": "journal.cli.install.member.link",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.member.link.unreadable",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e6c696e6b2e756e7265616461626c65",
+      "namespace": "journal.cli.install.member.link",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.member.regular.missing",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e726567756c61722e6d697373696e67",
+      "namespace": "journal.cli.install.member.regular",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.member.regular.type",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d656d6265722e726567756c61722e74797065",
+      "namespace": "journal.cli.install.member.regular",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.metal.platform",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6574616c2e706c6174666f726d",
+      "namespace": "journal.cli.install.metal",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "key",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "metal",
+          "kind": "accepted-input",
+          "value": "Metal"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.mlx.digest.read",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6469676573742e72656164",
+      "namespace": "journal.cli.install.mlx.digest",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "file",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "function",
+          "kind": "accepted-input",
+          "value": "sha256_file"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.mlx.directory.explicit",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6469726563746f72792e6578706c69636974",
+      "namespace": "journal.cli.install.mlx.directory",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "mlx",
+          "kind": "accepted-input",
+          "value": "MLX"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.mlx.directory.invalid",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6469726563746f72792e696e76616c6964",
+      "namespace": "journal.cli.install.mlx.directory",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.mlx.directory.override",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6469726563746f72792e6f76657272696465",
+      "namespace": "journal.cli.install.mlx.directory",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "env",
+          "kind": "accepted-input",
+          "value": "SOLSTONE_MLX_MODEL_DIR"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.mlx.directory.read",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6469726563746f72792e72656164",
+      "namespace": "journal.cli.install.mlx.directory",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.mlx.directory.unset",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6469726563746f72792e756e736574",
+      "namespace": "journal.cli.install.mlx.directory",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "env",
+          "kind": "accepted-input",
+          "value": "SOLSTONE_MLX_MODEL_DIR"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.mlx.entry.read",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e656e7472792e72656164",
+      "namespace": "journal.cli.install.mlx.entry",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.mlx.file.digest",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e66696c652e646967657374",
+      "namespace": "journal.cli.install.mlx.file",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "file",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "expected",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "actual",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.mlx.file.missing",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e66696c652e6d697373696e67",
+      "namespace": "journal.cli.install.mlx.file",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "file",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.mlx.file.regular",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e66696c652e726567756c6172",
+      "namespace": "journal.cli.install.mlx.file",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "file",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.mlx.file.size",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e66696c652e73697a65",
+      "namespace": "journal.cli.install.mlx.file",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "file",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "expected",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "actual",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.mlx.helper.explicit",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e68656c7065722e6578706c69636974",
+      "namespace": "journal.cli.install.mlx.helper",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "library",
+          "kind": "accepted-input",
+          "value": "metallib"
+        },
+        {
+          "name": "mlx",
+          "kind": "accepted-input",
+          "value": "MLX"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.mlx.helper.invalid",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e68656c7065722e696e76616c6964",
+      "namespace": "journal.cli.install.mlx.helper",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.mlx.helper.missing",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e68656c7065722e6d697373696e67",
+      "namespace": "journal.cli.install.mlx.helper",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "helper",
+          "kind": "accepted-input",
+          "value": "mlx-helper"
+        },
+        {
+          "name": "library",
+          "kind": "accepted-input",
+          "value": "metallib"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.mlx.helper.override",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e68656c7065722e6f76657272696465",
+      "namespace": "journal.cli.install.mlx.helper",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "env",
+          "kind": "accepted-input",
+          "value": "SOLSTONE_MLX_HELPER"
+        },
+        {
+          "name": "library",
+          "kind": "accepted-input",
+          "value": "metallib"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.mlx.input.extra",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e696e7075742e6578747261",
+      "namespace": "journal.cli.install.mlx.input",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "file",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.mlx.metadata.read",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6d657461646174612e72656164",
+      "namespace": "journal.cli.install.mlx.metadata",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "file",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.mlx.override.failed",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e6f766572726964652e6661696c6564",
+      "namespace": "journal.cli.install.mlx.override",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "mlx",
+          "kind": "accepted-input",
+          "value": "MLX"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.mlx.pins.empty",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e70696e732e656d707479",
+      "namespace": "journal.cli.install.mlx.pins",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.mlx.pins.missing",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e70696e732e6d697373696e67",
+      "namespace": "journal.cli.install.mlx.pins",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.mlx.platform",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e706c6174666f726d",
+      "namespace": "journal.cli.install.mlx",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "mlx",
+          "kind": "accepted-input",
+          "value": "MLX"
+        },
+        {
+          "name": "os",
+          "kind": "accepted-input",
+          "value": "macos"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.mlx.type.read",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e6d6c782e747970652e72656164",
+      "namespace": "journal.cli.install.mlx.type",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.pin.missing",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e70696e2e6d697373696e67",
+      "namespace": "journal.cli.install.pin",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "key",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.registry.artifact.ambiguous",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e72656769737472792e61727469666163742e616d626967756f7573",
+      "namespace": "journal.cli.install.registry.artifact",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "unit",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.registry.artifact.missing",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e72656769737472792e61727469666163742e6d697373696e67",
+      "namespace": "journal.cli.install.registry.artifact",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "unit",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.registry.platform",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e72656769737472792e706c6174666f726d",
+      "namespace": "journal.cli.install.registry",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "key",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.runtime.unavailable",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e72756e74696d652e756e617661696c61626c65",
+      "namespace": "journal.cli.install.runtime",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.speech.platform",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e7370656563682e706c6174666f726d",
+      "namespace": "journal.cli.install.speech",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "os_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "arch",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "program",
+          "kind": "accepted-input",
+          "value": "parakeet-cpp"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.staging.binary.parent",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e73746167696e672e62696e6172792e706172656e74",
+      "namespace": "journal.cli.install.staging.binary",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.staging.bundle.occupied",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e73746167696e672e62756e646c652e6f63637570696564",
+      "namespace": "journal.cli.install.staging.bundle",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.staging.target.name",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e73746167696e672e7461726765742e6e616d65",
+      "namespace": "journal.cli.install.staging.target",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.staging.target.parent",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e73746167696e672e7461726765742e706172656e74",
+      "namespace": "journal.cli.install.staging.target",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.status.conflict.different.attempt.while.install.in.flight",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e646966666572656e742e617474656d70742e7768696c652e696e7374616c6c2e696e2e666c69676874",
+      "namespace": "journal.cli.install.status.conflict.different.attempt.while.install.in",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.status.conflict.illegal.install.status.transition",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e696c6c6567616c2e696e7374616c6c2e7374617475732e7472616e736974696f6e",
+      "namespace": "journal.cli.install.status.conflict.illegal.install.status",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.status.conflict.install.attempt.id.changed",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e696e7374616c6c2e617474656d70742e69642e6368616e676564",
+      "namespace": "journal.cli.install.status.conflict.install.attempt.id",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.status.conflict.install.attempt.is.no.longer.in.flight",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e696e7374616c6c2e617474656d70742e69732e6e6f2e6c6f6e6765722e696e2e666c69676874",
+      "namespace": "journal.cli.install.status.conflict.install.attempt.is.no.longer.in",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.status.conflict.install.progress.can.only.be.bumped.for",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e696e7374616c6c2e70726f67726573732e63616e2e6f6e6c792e62652e62756d7065642e666f72",
+      "namespace": "journal.cli.install.status.conflict.install.progress.can.only.be.bumped",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.status.conflict.install.target.fingerprint.changed",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e696e7374616c6c2e7461726765742e66696e6765727072696e742e6368616e676564",
+      "namespace": "journal.cli.install.status.conflict.install.target.fingerprint",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.status.conflict.interrupted.attempt.id.does.not.match",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e696e7465727275707465642e617474656d70742e69642e646f65732e6e6f742e6d61746368",
+      "namespace": "journal.cli.install.status.conflict.interrupted.attempt.id.does.not",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.status.conflict.interrupted.target.fingerprint.does.not.match",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e696e7465727275707465642e7461726765742e66696e6765727072696e742e646f65732e6e6f742e6d61746368",
+      "namespace": "journal.cli.install.status.conflict.interrupted.target.fingerprint.does.not",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.status.conflict.new.in.flight.attempt.reused.attempt.id",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e6e65772e696e2e666c696768742e617474656d70742e7265757365642e617474656d70742e6964",
+      "namespace": "journal.cli.install.status.conflict.new.in.flight.attempt.reused.attempt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.status.conflict.non.idle.install.status.requires.attempt.id",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e6e6f6e2e69646c652e696e7374616c6c2e7374617475732e72657175697265732e617474656d70742e6964",
+      "namespace": "journal.cli.install.status.conflict.non.idle.install.status.requires.attempt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.status.conflict.only.in.flight.installs.can.be.interrupted",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e6f6e6c792e696e2e666c696768742e696e7374616c6c732e63616e2e62652e696e746572727570746564",
+      "namespace": "journal.cli.install.status.conflict.only.in.flight.installs.can.be",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.status.conflict.stale.install.status.revision",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e636f6e666c6963742e7374616c652e696e7374616c6c2e7374617475732e7265766973696f6e",
+      "namespace": "journal.cli.install.status.conflict.stale.install.status",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.status.lock",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e6c6f636b",
+      "namespace": "journal.cli.install.status",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.status.malformed.file",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e6d616c666f726d65642e66696c65",
+      "namespace": "journal.cli.install.status.malformed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.status.malformed.initial.install.attempt.state.must.be.in",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e6d616c666f726d65642e696e697469616c2e696e7374616c6c2e617474656d70742e73746174652e6d7573742e62652e696e",
+      "namespace": "journal.cli.install.status.malformed.initial.install.attempt.state.must.be",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.status.malformed.invalid.provider",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e6d616c666f726d65642e696e76616c69642e70726f7669646572",
+      "namespace": "journal.cli.install.status.malformed.invalid",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "provider",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.status.malformed.owner.must.be.an.object.or.null",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e6d616c666f726d65642e6f776e65722e6d7573742e62652e616e2e6f626a6563742e6f722e6e756c6c",
+      "namespace": "journal.cli.install.status.malformed.owner.must.be.an.object.or",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.status.malformed.providers",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e6d616c666f726d65642e70726f766964657273",
+      "namespace": "journal.cli.install.status.malformed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "listed",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.status.malformed.state",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e7374617475732e6d616c666f726d65642e7374617465",
+      "namespace": "journal.cli.install.status.malformed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "state",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.terminal.write",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e7465726d696e616c2e7772697465",
+      "namespace": "journal.cli.install.terminal",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.windows.digest.absent",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e6469676573742e616273656e74",
+      "namespace": "journal.cli.install.windows.digest",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.windows.executable.location",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e65786563757461626c652e6c6f636174696f6e",
+      "namespace": "journal.cli.install.windows.executable",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.windows.executable.parent",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e65786563757461626c652e706172656e74",
+      "namespace": "journal.cli.install.windows.executable",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.windows.executable.read",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e65786563757461626c652e72656164",
+      "namespace": "journal.cli.install.windows.executable",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.windows.package.root",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e7061636b6167652e726f6f74",
+      "namespace": "journal.cli.install.windows.package",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.windows.package.runtime",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e7061636b6167652e72756e74696d65",
+      "namespace": "journal.cli.install.windows.package",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.windows.platform",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e706c6174666f726d",
+      "namespace": "journal.cli.install.windows",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "key",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.windows.target.different",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e7461726765742e646966666572656e74",
+      "namespace": "journal.cli.install.windows.target",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "key",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.install.windows.target.unsupported",
+      "resource": "m6a6f75726e616c2e636c692e696e7374616c6c2e77696e646f77732e7461726765742e756e737570706f72746564",
+      "namespace": "journal.cli.install.windows.target",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.cli.journal.archive.argument",
       "resource": "m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e617267756d656e74",
       "namespace": "journal.cli.journal.archive",

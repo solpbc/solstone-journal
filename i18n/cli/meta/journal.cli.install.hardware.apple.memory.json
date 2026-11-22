@@ -1,0 +1,23 @@
+{
+  "description": "A provider installer reports this diagnostic when starting, updating or reading a journal install attempt.",
+  "context": "A provider installer reports this diagnostic when starting, updating or reading a journal install attempt.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "145634f4e3f68e998c7e03c52ac46bb7470def549784a77178a8cb2c2e02d871",
+  "max_length": 138,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "minimum",
+      "kind": "accepted-input",
+      "value": "16 GiB"
+    }
+  ]
+}

@@ -115,6 +115,10 @@ impl Diagnostic {
         }
     }
 
+    pub fn fields(&self) -> &[(&'static str, String)] {
+        &self.values
+    }
+
     pub fn render(&self, locale: &str) -> String {
         let args: Vec<_> = self
             .values
@@ -149,6 +153,7 @@ enum DetailValue {
         separator: &'static str,
     },
     Context {
+        window: bool,
         slot: &'static str,
         message: Diagnostic,
         detail: MessageDetail,
@@ -169,6 +174,33 @@ impl MessageDetail {
                 Some((message.id, &message.values))
             }
             _ => None,
+        }
+    }
+
+    /// Return the nested diagnostic in a context message without rendering its cause.
+    pub fn context_fields(&self) -> Option<(&Diagnostic, &'static str, &MessageDetail)> {
+        if let DetailValue::Context {
+            slot,
+            message,
+            detail,
+            ..
+        } = self.0.as_ref()
+        {
+            Some((message, *slot, detail))
+        } else {
+            None
+        }
+    }
+
+    /// Numeric arguments retain their type across a stored diagnostic boundary.
+    pub fn cardinal_fields(&self) -> Option<(&Diagnostic, &[(&'static str, i64)])> {
+        if let DetailValue::Count {
+            message, counts, ..
+        } = self.0.as_ref()
+        {
+            Some((message, counts))
+        } else {
+            None
         }
     }
 
@@ -226,6 +258,21 @@ impl MessageDetail {
         args: [(&'static str, &dyn std::fmt::Display); N],
     ) -> Self {
         Self(Box::new(DetailValue::Context {
+            window: false,
+            slot,
+            message: Diagnostic::new(id, args),
+            detail: self,
+        }))
+    }
+
+    pub fn window_context_slot<const N: usize>(
+        self,
+        id: &'static str,
+        slot: &'static str,
+        args: [(&'static str, &dyn std::fmt::Display); N],
+    ) -> Self {
+        Self(Box::new(DetailValue::Context {
+            window: true,
             slot,
             message: Diagnostic::new(id, args),
             detail: self,
@@ -234,6 +281,12 @@ impl MessageDetail {
 
     pub fn render(&self, locale: &str) -> String {
         self.render_for_output(Some(locale))
+    }
+
+    /// Keep native English response fields byte-compatible with older clients.
+    pub fn render_for_response(&self, requested: &str) -> String {
+        let locale = packaged_locale(Some(requested));
+        self.render_for_output((locale != ENGLISH).then_some(locale))
     }
 
     /// A machine reader gets the stable source spelling even after a terminal grammar fix.
@@ -285,11 +338,27 @@ impl MessageDetail {
                 .collect::<Vec<_>>()
                 .join(separator),
             DetailValue::Context {
+                window,
                 slot,
                 message,
                 detail,
             } => {
                 let cause = detail.render_for_output(requested);
+                if *window {
+                    let mut values: Vec<_> = message
+                        .values
+                        .iter()
+                        .map(|(name, value)| {
+                            (*name, solstone_core_window_catalog::Value::String(value))
+                        })
+                        .collect();
+                    values.push((*slot, solstone_core_window_catalog::Value::String(&cause)));
+                    return solstone_core_window_catalog::render(
+                        packaged_locale(Some(locale)),
+                        message.id,
+                        &values,
+                    );
+                }
                 let mut values: Vec<_> = message
                     .values
                     .iter()

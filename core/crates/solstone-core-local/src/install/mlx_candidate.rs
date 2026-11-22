@@ -3,6 +3,7 @@
 
 //! macOS MLX local provider candidate inspection and proof.
 
+use solstone_core_cli_copy::MessageDetail;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -112,31 +113,43 @@ impl Drop for MlxHelperTestGuard {
 }
 
 pub fn resolve_mlx_helper(override_opt: Option<&str>) -> Result<PathBuf, String> {
+    resolve_mlx_helper_detail(override_opt).map_err(|error| error.to_string())
+}
+
+pub(super) fn resolve_mlx_helper_detail(
+    override_opt: Option<&str>,
+) -> Result<PathBuf, MessageDetail> {
     if let Some(explicit) = override_opt {
         let path = resolve_override_path(PathBuf::from(explicit));
         if is_valid_helper_executable(&path) {
-            return path.canonicalize().map_err(|error| error.to_string());
+            return path
+                .canonicalize()
+                .map_err(|error| error.to_string().into());
         }
-        return Err(format!(
-            "explicit MLX helper is not valid or missing metallib: {}",
-            path.display()
+        return Err(MessageDetail::message(
+            "journal.cli.install.mlx.helper.explicit",
+            [("path", &path.display())],
         ));
     }
     #[cfg(any(test, feature = "test-hooks"))]
     if let Some(path) = FIXTURE_HELPER.with(|slot| slot.borrow().clone()) {
         if is_valid_helper_executable(&path) {
-            return path.canonicalize().map_err(|error| error.to_string());
+            return path
+                .canonicalize()
+                .map_err(|error| error.to_string().into());
         }
         return Err("MLX package fixture is invalid".into());
     }
     if let Some(env_val) = std::env::var_os(HELPER_ENV_KEY) {
         let path = resolve_override_path(PathBuf::from(env_val));
         if is_valid_helper_executable(&path) {
-            return path.canonicalize().map_err(|error| error.to_string());
+            return path
+                .canonicalize()
+                .map_err(|error| error.to_string().into());
         }
-        return Err(format!(
-            "SOLSTONE_MLX_HELPER is not valid or missing metallib: {}",
-            path.display()
+        return Err(MessageDetail::message(
+            "journal.cli.install.mlx.helper.override",
+            [("path", &path.display())],
         ));
     }
     if let Ok(current_exe) = std::env::current_exe()
@@ -146,7 +159,7 @@ pub fn resolve_mlx_helper(override_opt: Option<&str>) -> Result<PathBuf, String>
         if is_valid_helper_executable(&sibling_path) {
             return sibling_path
                 .canonicalize()
-                .map_err(|error| error.to_string());
+                .map_err(|error| error.to_string().into());
         }
     }
     let dev_path = PathBuf::from(concat!(
@@ -154,33 +167,51 @@ pub fn resolve_mlx_helper(override_opt: Option<&str>) -> Result<PathBuf, String>
         "/mlx-helper/DerivedData/Build/Products/Release/mlx-helper"
     ));
     if is_valid_helper_executable(&dev_path) {
-        return dev_path.canonicalize().map_err(|error| error.to_string());
+        return dev_path
+            .canonicalize()
+            .map_err(|error| error.to_string().into());
     }
-    Err("mlx-helper executable with metallib resource bundle not found".to_owned())
+    Err(MessageDetail::message(
+        "journal.cli.install.mlx.helper.missing",
+        [],
+    ))
 }
 
 pub fn resolve_mlx_model_dir(override_opt: Option<&str>) -> Result<PathBuf, String> {
+    resolve_mlx_model_dir_detail(override_opt).map_err(|error| error.to_string())
+}
+
+pub(super) fn resolve_mlx_model_dir_detail(
+    override_opt: Option<&str>,
+) -> Result<PathBuf, MessageDetail> {
     if let Some(explicit) = override_opt {
         let path = resolve_override_path(PathBuf::from(explicit));
         if path.is_dir() {
-            return path.canonicalize().map_err(|error| error.to_string());
+            return path
+                .canonicalize()
+                .map_err(|error| error.to_string().into());
         }
-        return Err(format!(
-            "explicit MLX model directory does not exist: {}",
-            path.display()
+        return Err(MessageDetail::message(
+            "journal.cli.install.mlx.directory.explicit",
+            [("path", &path.display())],
         ));
     }
     if let Some(env_val) = std::env::var_os(MODEL_DIR_ENV_KEY) {
         let path = resolve_override_path(PathBuf::from(env_val));
         if path.is_dir() {
-            return path.canonicalize().map_err(|error| error.to_string());
+            return path
+                .canonicalize()
+                .map_err(|error| error.to_string().into());
         }
-        return Err(format!(
-            "SOLSTONE_MLX_MODEL_DIR does not exist: {}",
-            path.display()
+        return Err(MessageDetail::message(
+            "journal.cli.install.mlx.directory.override",
+            [("path", &path.display())],
         ));
     }
-    Err("SOLSTONE_MLX_MODEL_DIR is unset or not a directory".to_owned())
+    Err(MessageDetail::message(
+        "journal.cli.install.mlx.directory.unset",
+        [],
+    ))
 }
 
 /// Operator paths take precedence; ordinary installs are journal-scoped generations.
@@ -211,14 +242,17 @@ pub fn artifact_target_json(pins: &[MlxFilePin]) -> (Value, String) {
     (target, sha256)
 }
 
-fn check_extra_loadable_names(model_dir: &Path, pins: &[MlxFilePin]) -> Result<(), String> {
-    let read_dir =
-        fs::read_dir(model_dir).map_err(|e| format!("cannot read model directory: {e}"))?;
+fn check_extra_loadable_names(model_dir: &Path, pins: &[MlxFilePin]) -> Result<(), MessageDetail> {
+    let read_dir = fs::read_dir(model_dir).map_err(|e| {
+        MessageDetail::message("journal.cli.install.mlx.directory.read", [("error", &e)])
+    })?;
     for entry in read_dir {
-        let entry = entry.map_err(|e| format!("failed reading entry: {e}"))?;
-        let file_type = entry
-            .file_type()
-            .map_err(|e| format!("failed file type: {e}"))?;
+        let entry = entry.map_err(|e| {
+            MessageDetail::message("journal.cli.install.mlx.entry.read", [("error", &e)])
+        })?;
+        let file_type = entry.file_type().map_err(|e| {
+            MessageDetail::message("journal.cli.install.mlx.type.read", [("error", &e)])
+        })?;
         let name = entry.file_name();
         // The download client's metadata directory is never a model input.
         if (file_type.is_dir() && name == ".cache")
@@ -227,9 +261,9 @@ fn check_extra_loadable_names(model_dir: &Path, pins: &[MlxFilePin]) -> Result<(
             continue;
         }
         if !pins.iter().any(|pin| name == pin.name) {
-            return Err(format!(
-                "extra unverified model input: {}",
-                name.to_string_lossy()
+            return Err(MessageDetail::message(
+                "journal.cli.install.mlx.input.extra",
+                [("file", &name.to_string_lossy())],
             ));
         }
     }
@@ -240,52 +274,63 @@ fn inspect_present_with_overrides(
     helper_override: Option<&str>,
     model_dir_override: Option<&str>,
     pins: &[MlxFilePin],
-) -> Value {
+) -> Result<Value, (&'static str, MessageDetail)> {
     if pins.is_empty() {
-        return failure_readiness("empty_pins", "no pins supplied");
+        return Err((
+            "empty_pins",
+            MessageDetail::message("journal.cli.install.mlx.pins.missing", []),
+        ));
     }
-    let helper_path = match resolve_mlx_helper(helper_override) {
+    let helper_path = match resolve_mlx_helper_detail(helper_override) {
         Ok(path) => path,
-        Err(err) => return failure_readiness("package_unavailable", &err),
+        Err(err) => return Err(("package_unavailable", err)),
     };
-    let model_dir = match resolve_mlx_model_dir(model_dir_override) {
+    let model_dir = match resolve_mlx_model_dir_detail(model_dir_override) {
         Ok(dir) => dir,
-        Err(err) => return failure_readiness("artifact_missing", &err),
+        Err(err) => return Err(("artifact_missing", err)),
     };
     if let Err(err) = check_extra_loadable_names(&model_dir, pins) {
-        return failure_readiness("artifact_stale", &err);
+        return Err(("artifact_stale", err));
     }
     for pin in pins {
         let file_path = model_dir.join(pin.name);
         let meta = match fs::metadata(&file_path) {
             Ok(m) => m,
             Err(_) => {
-                return failure_readiness(
+                return Err((
                     "artifact_missing",
-                    &format!("missing required file: {}", pin.name),
-                );
+                    MessageDetail::message(
+                        "journal.cli.install.mlx.file.missing",
+                        [("file", &pin.name)],
+                    ),
+                ));
             }
         };
         if !meta.is_file() {
-            return failure_readiness(
+            return Err((
                 "artifact_missing",
-                &format!("not a regular file: {}", pin.name),
-            );
+                MessageDetail::message(
+                    "journal.cli.install.mlx.file.regular",
+                    [("file", &pin.name)],
+                ),
+            ));
         }
         if meta.len() != pin.size {
-            return failure_readiness(
+            return Err((
                 "inventory_size_mismatch",
-                &format!(
-                    "size mismatch for {}: expected {} got {}",
-                    pin.name,
-                    pin.size,
-                    meta.len()
+                MessageDetail::message(
+                    "journal.cli.install.mlx.file.size",
+                    [
+                        ("file", &pin.name),
+                        ("expected", &pin.size),
+                        ("actual", &meta.len()),
+                    ],
                 ),
-            );
+            ));
         }
     }
     let (target_json, target_sha256) = artifact_target_json(pins);
-    json!({
+    Ok(json!({
         "provider": "local",
         "ready": true,
         "status": "ready",
@@ -308,51 +353,71 @@ fn inspect_present_with_overrides(
             "model_path": model_dir.display().to_string(),
             "projector_path": Value::Null,
         },
-    })
+    }))
 }
 
 fn prove_artifacts_with_pins(
     model_dir: &Path,
     helper_path: &Path,
     pins: &[MlxFilePin],
-) -> Result<Value, String> {
+) -> Result<Value, MessageDetail> {
     if pins.is_empty() {
-        return Err("empty pins list".to_owned());
+        return Err(MessageDetail::message(
+            "journal.cli.install.mlx.pins.empty",
+            [],
+        ));
     }
     if !is_valid_helper_executable(helper_path) {
-        return Err(format!(
-            "helper binary is invalid: {}",
-            helper_path.display()
+        return Err(MessageDetail::message(
+            "journal.cli.install.mlx.helper.invalid",
+            [("path", &helper_path.display())],
         ));
     }
     if !model_dir.is_dir() {
-        return Err(format!(
-            "model dir is not a directory: {}",
-            model_dir.display()
+        return Err(MessageDetail::message(
+            "journal.cli.install.mlx.directory.invalid",
+            [("path", &model_dir.display())],
         ));
     }
     check_extra_loadable_names(model_dir, pins)?;
     for pin in pins {
         let file_path = model_dir.join(pin.name);
-        let meta = fs::metadata(&file_path)
-            .map_err(|e| format!("cannot read metadata for {}: {e}", pin.name))?;
+        let meta = fs::metadata(&file_path).map_err(|e| {
+            MessageDetail::message(
+                "journal.cli.install.mlx.metadata.read",
+                [("file", &pin.name), ("error", &e)],
+            )
+        })?;
         if !meta.is_file() {
-            return Err(format!("not a regular file: {}", pin.name));
-        }
-        if meta.len() != pin.size {
-            return Err(format!(
-                "size mismatch for {}: expected {} got {}",
-                pin.name,
-                pin.size,
-                meta.len()
+            return Err(MessageDetail::message(
+                "journal.cli.install.mlx.file.regular",
+                [("file", &pin.name)],
             ));
         }
-        let digest = super::manifest::sha256_file(&file_path)
-            .map_err(|e| format!("sha256_file failed for {}: {e}", pin.name))?;
+        if meta.len() != pin.size {
+            return Err(MessageDetail::message(
+                "journal.cli.install.mlx.file.size",
+                [
+                    ("file", &pin.name),
+                    ("expected", &pin.size),
+                    ("actual", &meta.len()),
+                ],
+            ));
+        }
+        let digest = super::manifest::sha256_file(&file_path).map_err(|e| {
+            MessageDetail::message(
+                "journal.cli.install.mlx.digest.read",
+                [("file", &pin.name), ("error", &e)],
+            )
+        })?;
         if digest != pin.sha256 {
-            return Err(format!(
-                "sha256 mismatch for {}: expected {} got {}",
-                pin.name, pin.sha256, digest
+            return Err(MessageDetail::message(
+                "journal.cli.install.mlx.file.digest",
+                [
+                    ("file", &pin.name),
+                    ("expected", &pin.sha256),
+                    ("actual", &digest),
+                ],
             ));
         }
     }
@@ -384,9 +449,13 @@ fn prove_artifacts_with_pins(
 }
 
 pub fn inspect_verified_default(journal: &Path) -> Value {
-    let mut readiness = inspect_present_default(journal);
+    inspect_verified_default_detail(journal).0
+}
+
+pub(super) fn inspect_verified_default_detail(journal: &Path) -> (Value, Option<MessageDetail>) {
+    let (mut readiness, detail) = inspect_present_default_detail(journal);
     if readiness["ready"] != true {
-        return readiness;
+        return (readiness, detail);
     }
     let helper = Path::new(
         readiness["artifacts"]["binary_path"]
@@ -399,13 +468,13 @@ pub fn inspect_verified_default(journal: &Path) -> Value {
             .expect("ready model path"),
     );
     match prove_artifacts_with_pins(model, helper, &MLX_QWEN_PINS) {
-        Ok(proof) => proof,
+        Ok(proof) => (proof, None),
         Err(error) => {
             readiness["ready"] = json!(false);
             readiness["status"] = json!("missing-or-mismatched");
             readiness["reason_code"] = json!("sha256_mismatch");
-            readiness["detail"] = json!(error);
-            readiness
+            readiness["detail"] = json!(error.to_string());
+            (readiness, Some(error))
         }
     }
 }
@@ -416,15 +485,24 @@ pub fn inspect_verified_default(journal: &Path) -> Value {
 pub fn inspect_fixture(helper: &Path, model: &Path, pins: &[MlxFilePin], verify: bool) -> Value {
     if verify {
         prove_artifacts_with_pins(model, helper, pins)
-            .unwrap_or_else(|error| failure_readiness("sha256_mismatch", &error))
+            .unwrap_or_else(|error| failure_readiness("sha256_mismatch", &error.to_string()))
     } else {
         inspect_present_with_overrides(helper.to_str(), model.to_str(), pins)
+            .unwrap_or_else(|(code, error)| failure_readiness(code, &error.to_string()))
     }
 }
 
 pub fn inspect_present_default(journal: &Path) -> Value {
+    inspect_present_default_detail(journal).0
+}
+
+fn inspect_present_default_detail(journal: &Path) -> (Value, Option<MessageDetail>) {
     let directory = model_directory(journal);
-    let mut readiness = inspect_present_with_overrides(None, directory.to_str(), &MLX_QWEN_PINS);
+    let (mut readiness, detail) =
+        match inspect_present_with_overrides(None, directory.to_str(), &MLX_QWEN_PINS) {
+            Ok(readiness) => (readiness, None),
+            Err((code, error)) => (failure_readiness(code, &error.to_string()), Some(error)),
+        };
     let (target, hash) = artifact_target_json(&MLX_QWEN_PINS);
     let canonical = super::fingerprint::canonical(target).expect("valid MLX target");
     readiness["target"]["target_fingerprint_json"] = json!(canonical);
@@ -457,7 +535,7 @@ pub fn inspect_present_default(journal: &Path) -> Value {
             readiness["proof"] = json!({"model": {"status":"missing-or-mismatched", "reason_code":"manifest_missing"}});
         }
     }
-    readiness
+    (readiness, detail)
 }
 
 fn failure_readiness(reason_code: &str, detail: &str) -> Value {
@@ -551,7 +629,8 @@ mod tests {
             Some(helper_bin.to_str().unwrap()),
             Some(model_dir.to_str().unwrap()),
             &[],
-        );
+        )
+        .unwrap_or_else(|(code, error)| failure_readiness(code, &error.to_string()));
         assert_eq!(empty_res["ready"], false);
         assert_eq!(empty_res["reason_code"], "empty_pins");
 
@@ -569,7 +648,8 @@ mod tests {
             Some(helper_bin.to_str().unwrap()),
             Some(model_dir.to_str().unwrap()),
             &test_pins,
-        );
+        )
+        .unwrap_or_else(|(code, error)| failure_readiness(code, &error.to_string()));
         assert_eq!(missing_res["ready"], false);
         assert_eq!(missing_res["reason_code"], "artifact_missing");
 
@@ -583,12 +663,18 @@ mod tests {
             Some(helper_bin.to_str().unwrap()),
             Some(model_dir.to_str().unwrap()),
             &test_pins,
-        );
+        )
+        .unwrap_or_else(|(code, error)| failure_readiness(code, &error.to_string()));
         assert_eq!(corrupt_presence["ready"], true);
 
         let corrupt_proof = prove_artifacts_with_pins(&model_dir, &helper_bin, &test_pins);
         assert!(corrupt_proof.is_err());
-        assert!(corrupt_proof.unwrap_err().contains("sha256 mismatch"));
+        assert!(
+            corrupt_proof
+                .unwrap_err()
+                .to_string()
+                .contains("sha256 mismatch")
+        );
 
         // Write correct file bytes
         fs::write(&config_file, dummy_bytes).unwrap();
@@ -611,7 +697,8 @@ mod tests {
             Some(helper_bin.to_str().unwrap()),
             Some(model_dir.to_str().unwrap()),
             &wrong_hash_pins,
-        );
+        )
+        .unwrap_or_else(|(code, error)| failure_readiness(code, &error.to_string()));
         assert_eq!(wrong_hash_presence["ready"], true);
 
         let wrong_hash_proof = prove_artifacts_with_pins(&model_dir, &helper_bin, &wrong_hash_pins);
@@ -624,7 +711,8 @@ mod tests {
             Some(helper_bin.to_str().unwrap()),
             Some(model_dir.to_str().unwrap()),
             &test_pins,
-        );
+        )
+        .unwrap_or_else(|(code, error)| failure_readiness(code, &error.to_string()));
         assert_eq!(extra_gen_res["ready"], false);
         assert_eq!(extra_gen_res["reason_code"], "artifact_stale");
         fs::remove_file(&extra_gen).unwrap();
@@ -636,7 +724,8 @@ mod tests {
             Some(helper_bin.to_str().unwrap()),
             Some(model_dir.to_str().unwrap()),
             &test_pins,
-        );
+        )
+        .unwrap_or_else(|(code, error)| failure_readiness(code, &error.to_string()));
         assert_eq!(extra_safe_res["ready"], false);
         assert_eq!(extra_safe_res["reason_code"], "artifact_stale");
         fs::remove_file(&extra_safe).unwrap();
@@ -647,7 +736,8 @@ mod tests {
             Some(helper_bin.to_str().unwrap()),
             Some(model_dir.to_str().unwrap()),
             &test_pins,
-        );
+        )
+        .unwrap_or_else(|(code, error)| failure_readiness(code, &error.to_string()));
         assert_eq!(no_metallib["ready"], false);
         assert_eq!(no_metallib["reason_code"], "package_unavailable");
 
@@ -656,7 +746,8 @@ mod tests {
             Some("/nonexistent/helper"),
             Some(model_dir.to_str().unwrap()),
             &test_pins,
-        );
+        )
+        .unwrap_or_else(|(code, error)| failure_readiness(code, &error.to_string()));
         assert_eq!(bad_helper["ready"], false);
         assert_eq!(bad_helper["reason_code"], "package_unavailable");
     }
