@@ -12,14 +12,18 @@
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>app.solstone.journal</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en-US</string>
+	</array>
 	<key>CFBundleName</key>
 	<string>journal</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>2.0.87</string>
+	<string>2.0.88</string>
 	<key>CFBundleVersion</key>
-	<string>138</string>
+	<string>139</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
 	<key>LSMinimumSystemVersion</key>
@@ -56,10 +60,6 @@
 	<key>SolstoneSetupCapabilities</key>
 	<array>
 		<string>setup-sequence-v1</string>
-	</array>
-	<key>CFBundleLocalizations</key>
-	<array>
-		<string>en-US</string>
 	</array>
 </dict>
 </plist>
