@@ -730,11 +730,12 @@ fn project_sunday(
 
     if !include.is_empty() {
         let today = solstone_core_time::day_key(now.date());
-        let mut day_keys: Vec<_> = week_dates
+        let served_days: Vec<_> = week_dates
             .iter()
             .map(|date| solstone_core_time::day_key(*date))
             .filter(|day| day <= &today)
             .collect();
+        let mut day_keys = served_days.clone();
         let mut body_days = BTreeMap::new();
         let mut body_summary_note = None;
         if !day_keys.is_empty()
@@ -762,11 +763,13 @@ fn project_sunday(
                 None => places_note = Some(ToolError::FileUnreadable.agent_message()),
             }
         }
+        let mut kind_summaries =
+            prefetch_kind_summaries(journal, principal, snapshot, &served_days, include);
         let mut cells: BTreeMap<_, _> = days
             .into_iter()
             .filter_map(|cell| Some((cell["day"].as_str()?.to_owned(), cell)))
             .collect();
-        for key in day_keys.into_iter().filter(|day| day >= &start_day) {
+        for key in served_days {
             let cell = cells.entry(key.clone()).or_insert_with(|| {
                 let mut cell = json!({"day": key});
                 crate::journal_links::attach(
@@ -778,8 +781,6 @@ fn project_sunday(
             });
             let people = people_by_day.remove(&key).unwrap_or_default();
             let (summary, day_targets) = build_day_summary(
-                journal,
-                principal,
                 snapshot,
                 &key,
                 include,
@@ -788,6 +789,7 @@ fn project_sunday(
                 &mut places,
                 places_note,
                 people,
+                &mut kind_summaries,
             );
             windows.extend(day_targets);
             cell["summary"] = Value::Object(summary);
@@ -993,10 +995,37 @@ fn parse_said_uri(uri: &str) -> Option<(&str, &str, &str)> {
     Some((facet, day, id))
 }
 
-#[allow(clippy::too_many_arguments)]
-fn build_day_summary(
+fn prefetch_kind_summaries(
     journal: &Path,
     principal: DispatchPrincipal<'_>,
+    snapshot: &ConnectionReadSnapshot,
+    day_keys: &[String],
+    include: &BTreeSet<AdmittedCategory>,
+) -> BTreeMap<AdmittedCategory, crate::dispatch::WeekKindSummaries> {
+    let mut prefetched = BTreeMap::new();
+    let (Some(first_day), Some(last_day)) = (day_keys.first(), day_keys.last()) else {
+        return prefetched;
+    };
+    for &kind in include {
+        if matches!(
+            kind,
+            AdmittedCategory::Body | AdmittedCategory::Places | AdmittedCategory::Entities
+        ) || !snapshot.categories.contains(&kind)
+        {
+            continue;
+        }
+        prefetched.insert(
+            kind,
+            crate::dispatch::week_kind_summaries_range(
+                journal, principal, snapshot, first_day, last_day, kind,
+            ),
+        );
+    }
+    prefetched
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_day_summary(
     snapshot: &ConnectionReadSnapshot,
     day: &str,
     include: &BTreeSet<AdmittedCategory>,
@@ -1005,6 +1034,7 @@ fn build_day_summary(
     places: &mut BTreeMap<String, String>,
     places_note: Option<&'static str>,
     people: BTreeSet<String>,
+    kind_summaries: &mut BTreeMap<AdmittedCategory, crate::dispatch::WeekKindSummaries>,
 ) -> (Map<String, Value>, Vec<String>) {
     let mut summary = Map::new();
     let mut targets = Vec::new();
@@ -1047,8 +1077,10 @@ fn build_day_summary(
                     })
                 }
                 _ => {
-                    let (value, kind_targets) =
-                        crate::dispatch::week_kind_summary(journal, principal, snapshot, day, kind);
+                    let (value, kind_targets) = kind_summaries
+                        .get_mut(&kind)
+                        .expect("admitted index-backed summary kind prefetched")
+                        .take_day(day);
                     targets.extend(kind_targets);
                     value
                 }
@@ -1384,6 +1416,8 @@ fn project_range_with_limits(
             None => places_note = Some(ToolError::FileUnreadable.agent_message()),
         }
     }
+    let mut kind_summaries =
+        prefetch_kind_summaries(journal, principal, snapshot, &candidate_day_keys, include);
 
     let mut days = Vec::new();
     let mut served_weeks = BTreeSet::new();
@@ -1439,8 +1473,6 @@ fn project_range_with_limits(
         let mut day_targets = Vec::new();
         if !include.is_empty() {
             let (summary, kind_targets) = build_day_summary(
-                journal,
-                principal,
                 snapshot,
                 &day_str,
                 include,
@@ -1449,6 +1481,7 @@ fn project_range_with_limits(
                 &mut places,
                 places_note,
                 summary_activities.people,
+                &mut kind_summaries,
             );
             day_targets = kind_targets;
             cell["summary"] = Value::Object(summary);

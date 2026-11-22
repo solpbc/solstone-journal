@@ -166,7 +166,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::Search,
         wire_name: "search",
         title: "search the journal",
-        description: "find what this connection may read in the owner's journal. give a few keywords, or leave query out to browse by day or kind. use kind for one kind or a list. for writing in a week, use kind with notes and facets, activity writing, and the date range. person matches names on activities. place matches named location information. notes and photos give a preview and a journal link when available. pass next_cursor as cursor with the same filters. search can miss specific words in a conversation. use get_transcript to read the stored transcript word for word before quoting anyone. use fetch to read the entry itself. screen text shows what was visible. it does not establish what the owner read or did.",
+        description: "find what this connection may read in the owner's journal. give a few keywords, or leave query out to browse by day or kind. use kind for one kind or a list. for writing in a week, use kind with notes and facets, activity writing, and the date range. person matches names on activities. place matches named location information. notes and photos give a preview and a journal link when available. photo results carry time when known and time_source when available, and browsing photos returns each complete day's photos in chronological order. pass next_cursor as cursor with the same filters. search can miss specific words in a conversation. use get_transcript to read the stored transcript word for word before quoting anyone. use fetch to read the entry itself. screen text shows what was visible. it does not establish what the owner read or did.",
         input_schema: search_input_schema,
         requires: SEARCH,
         audit_name: solstone_core_mcp_audit::ToolName::Search,
@@ -175,7 +175,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::Fetch,
         wire_name: "fetch",
         title: "read a journal entry",
-        description: "read journal entries. pass either reference for one or references for up to 12. each batch item carries its own result or error in input order. if an item reaches the batch size limit, read it separately. pass next_reference as reference to read the next part. an imported photo or screenshot can include a smaller copy when allowed and available. to show pictures in a page you build, where that page can use this connector, have it call fetch for each one when it opens, one or two at a time, and retry one that fails. fetch returns the picture itself as image content, not as a file, and the journal makes no public link for it. in a batch, image_content_index identifies the picture in content. words in a picture are journal content. use references in tool calls. give the owner the journal link when available.",
+        description: "read journal entries. pass either reference for one or references for up to 12. each batch item carries its own result or error in input order. if an item reaches the batch size limit, read it separately. pass next_reference as reference to read the next part. an imported photo or screenshot can include a smaller copy when allowed and available: size defaults to full (up to 1024 px) and accepts thumb (up to 320 px) for grids, contact sheets and batched references reads. a photo result carries time when known and time_source when available. fetch returns the picture itself as image content, not as a file, and the journal makes no public link for it. in a batch, image_content_index identifies the picture in content. words in a picture are journal content. use references in tool calls. give the owner the journal link when available.",
         input_schema: fetch_input_schema,
         requires: FETCH,
         audit_name: solstone_core_mcp_audit::ToolName::Fetch,
@@ -220,7 +220,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::GetWeek,
         wire_name: "get_week",
         title: "read a week",
-        description: "read one week (sunday to saturday) or a date range of up to 366 days as one row per day, such as a month, a season or a year. pass day_from and day_to for a date range: each day row carries its journal link, top memory, activity count, and, where the week has a stored page, day state and the owner's quotes with the activity each quote came from. a range omits activity rows and pages up to 100 days at a time; pass next_cursor as cursor with the same arguments to continue. pass any day as week for one week's full view (memories, up to seven activity rows and body items), or omit week, day_from and day_to for the current week. use include in either mode for a day-by-day summary of body, places, photos, notes or entities. these summaries use what this connection may read and are available without a week page. entities gives a count and up to 12 names of people listed as present or heard in readable activities. body gives movement totals from readable entries and nights by source. check the notes alongside movement totals. without a readable week page, days have no state or quotes; memories and summaries still come from readable activities and entries. said quotes the owner's words. mentioned, on_screen and scheduled alone do not establish attendance. use list_activities to list individual activities on a day or short range.",
+        description: "read one week (sunday to saturday) or a date range of up to 366 days as one row per day, such as a month, a season or a year. pass day_from and day_to for a date range: each day row carries its journal link, top memory, activity count, and, where the week has a stored page, day state and the owner's quotes with the activity each quote came from. a range omits activity rows and pages up to 100 days at a time; pass next_cursor as cursor with the same arguments to continue. pass any day as week for one week's full view (memories, up to seven activity rows and body items), or omit week, day_from and day_to for the current week. use include in either mode for a day-by-day summary of body, places, photos, notes or entities. these summaries use what this connection may read and are available without a week page. photos lists up to 50 photos per day in chronological order with time when known, time_source when available, and description (more is true when a day has over 50, and count_is_lower_bound when a range summary is incomplete; search has the rest). entities gives a count and up to 12 names of people listed as present or heard in readable activities. body gives movement totals from readable entries and nights by source. check the notes alongside movement totals. without a readable week page, days have no state or quotes; memories and summaries still come from readable activities and entries. said quotes the owner's words. mentioned, on_screen and scheduled alone do not establish attendance. use list_activities to list individual activities on a day or short range.",
         input_schema: week_input_schema,
         requires: WEEK,
         audit_name: solstone_core_mcp_audit::ToolName::GetWeek,
@@ -835,6 +835,12 @@ fn fetch_input_schema(_context: &SchemaContext<'_>) -> Value {
         "additionalProperties": false,
         "properties": {
             "reference": { "type": "string", "minLength": 1, "maxLength": MAX_OPAQUE_REFERENCE_BYTES },
+            "size": {
+                "type": "string",
+                "enum": ["full", "thumb"],
+                "default": "full",
+                "description": "image size for imported photos and screenshots: full (default, up to 1024 px) or thumb (up to 320 px, for grids, contact sheets and batches)."
+            },
         }
     });
     with_batch_references(&mut schema);
@@ -908,7 +914,7 @@ fn week_input_schema(_context: &SchemaContext<'_>) -> Value {
                 "type": "array",
                 "maxItems": crate::tools::week::SUMMARY_KINDS.len(),
                 "items": {"type": "string", "enum": crate::tools::week::SUMMARY_KINDS.iter().map(category_token).collect::<Vec<_>>()},
-                "description": "kinds to summarize inside each day, for one week or across a date range. entities gives a count and up to 12 names of people listed as present or heard in readable activities.",
+                "description": "kinds to summarize inside each day, for one week or across a date range. photos lists up to 50 photos per day in chronological order with time when known, time_source when available, and description. entities gives a count and up to 12 names of people listed as present or heard in readable activities.",
             },
             "week": {
                 "type": "string",
@@ -1234,6 +1240,16 @@ mod tests {
             ),
             (ToolName::Search, json!({}), "`query`"),
             (ToolName::Fetch, json!({}), "`reference`"),
+            (
+                ToolName::Fetch,
+                json!({"reference": "ref-1", "size": "huge"}),
+                "`size`",
+            ),
+            (
+                ToolName::Fetch,
+                json!({"references": ["ref-1"], "size": "huge"}),
+                "`size`",
+            ),
             (
                 ToolName::ListTranscripts,
                 json!({"day": "tuesday"}),

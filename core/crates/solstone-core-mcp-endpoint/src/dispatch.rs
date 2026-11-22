@@ -655,7 +655,9 @@ fn recorded_arguments(validated: &ValidatedTool) -> Map<String, Value> {
                 arguments.insert("cursor".to_owned(), reference_fingerprint(cursor).into());
             }
         }
-        ValidatedTool::ReadBatch(_, references) => {
+        ValidatedTool::ReadBatch {
+            references, size, ..
+        } => {
             arguments.insert(
                 "references".to_owned(),
                 json!(
@@ -665,12 +667,18 @@ fn recorded_arguments(validated: &ValidatedTool) -> Map<String, Value> {
                         .collect::<Vec<_>>()
                 ),
             );
+            if let Some(size) = size {
+                arguments.insert("size".to_owned(), size.as_str().into());
+            }
         }
         ValidatedTool::Fetch(request) => {
             arguments.insert(
                 "reference".to_owned(),
                 reference_fingerprint(&request.reference).into(),
             );
+            if let Some(size) = request.size {
+                arguments.insert("size".to_owned(), size.as_str().into());
+            }
         }
         ValidatedTool::ListTranscripts(request) => {
             arguments.insert("limit".to_owned(), request.limit.into());
@@ -819,11 +827,22 @@ fn validate(
         let Some(references) = references.as_array() else {
             return Err(DispatchError::InvalidInput);
         };
-        if object.len() != 1
-            || !(1..=crate::tools::MAX_BATCH_REFERENCES).contains(&references.len())
-        {
+        let allowed_keys = if entry.tool_name == crate::jsonrpc::ToolName::Fetch {
+            object
+                .keys()
+                .all(|key| matches!(key.as_str(), "references" | "size"))
+        } else {
+            object.len() == 1
+        };
+        if !allowed_keys || !(1..=crate::tools::MAX_BATCH_REFERENCES).contains(&references.len()) {
             return Err(DispatchError::InvalidInput);
         }
+        let size = if entry.tool_name == crate::jsonrpc::ToolName::Fetch {
+            crate::tools::fetch::parse_size(object.get("size"))
+                .map_err(|_| DispatchError::InvalidInput)?
+        } else {
+            None
+        };
         let references = references
             .iter()
             .map(|reference| {
@@ -836,7 +855,11 @@ fn validate(
                     .ok_or(DispatchError::InvalidInput)
             })
             .collect::<Result<Vec<_>, _>>()?;
-        return Ok(ValidatedTool::ReadBatch(entry.tool_name, references));
+        return Ok(ValidatedTool::ReadBatch {
+            tool: entry.tool_name,
+            references,
+            size,
+        });
     }
     use crate::jsonrpc::ToolName;
     if matches!(
@@ -981,71 +1004,192 @@ fn get_week(
     Ok(Prepared::new(read.value, read.count, read.targets).served_as_is(&["uri", "snippet"]))
 }
 
-/// The same admitted rows that a kind-filtered search returns. Return the
-/// audit coordinates alongside the compact preview.
-pub(crate) fn week_kind_summary(
+/// Maximum photo items included per day in `get_week(include=["photos"])`.
+/// Keeps single-week and 96 KiB range pages well within client limits even on
+/// unusually busy days while returning full days without truncation in ordinary
+/// use; days with more set `"more": true`.
+pub(crate) const MAX_WEEK_PHOTOS_PER_DAY: usize = 50;
+const MAX_WEEK_NOTES_PER_DAY: usize = 8;
+/// Safety bound on cursor pages pulled for one `get_week` page's kind summary
+/// (up to 2,000 rows per page).
+const MAX_WEEK_KIND_PAGES: usize = 20;
+
+/// Chronological sort key for photos within a single day: timed photos first in
+/// ascending `HH:MM:SS` order, followed by untimed (`upload_fallback`) photos
+/// in deterministic path order.
+fn photo_chronological_key<'a>(row: &'a Value, target: &'a str) -> (bool, &'a str, &'a str) {
+    let time = row.get("time").and_then(Value::as_str);
+    (time.is_none(), time.unwrap_or(""), target)
+}
+
+/// Pre-fetched index-backed daily summaries (`photos` or `notes`) for one
+/// `get_week` page span, keyed by day so audit targets are attributed strictly
+/// to days the page actually serves.
+pub(crate) struct WeekKindSummaries {
+    by_day: BTreeMap<String, (Value, Vec<String>)>,
+    cutoff_day: Option<String>,
+    range_incomplete: bool,
+    error_note: Option<String>,
+}
+
+impl WeekKindSummaries {
+    pub(crate) fn take_day(&mut self, day: &str) -> (Value, Vec<String>) {
+        if let Some(note) = &self.error_note {
+            return (json!({"note": note}), Vec::new());
+        }
+        if let Some(entry) = self.by_day.remove(day) {
+            return entry;
+        }
+        let mut summary = json!({"count": 0, "items": []});
+        if self.range_incomplete || self.cutoff_day.as_deref().is_some_and(|cut| day <= cut) {
+            summary["count_is_lower_bound"] = json!(true);
+        }
+        (summary, Vec::new())
+    }
+}
+
+/// Read admitted rows for one index-backed `get_week.include` kind across a
+/// whole page span (`day_from..=day_to`) in batched range queries instead of
+/// scanning the index once per day, preserving the exact search boundary,
+/// live release checks and per-day audit target attribution.
+pub(crate) fn week_kind_summaries_range(
     journal: &Path,
     principal: DispatchPrincipal<'_>,
     snapshot: &ConnectionReadSnapshot,
-    day: &str,
+    day_from: &str,
+    day_to: &str,
     kind: AdmittedCategory,
-) -> (Value, Vec<String>) {
-    let request = ValidatedSearch {
-        query: String::new(),
-        limit: 100,
-        cursor: None,
-        day: Some(day.to_owned()),
-        day_from: None,
-        day_to: None,
-        category: None,
-        content_kinds: Some(BTreeSet::from([kind])),
-        facet_id: None,
-        person: None,
-        place: None,
-        activity: None,
-    };
-    let result = match search(journal, principal, snapshot, request) {
-        Ok(result) => result,
-        Err(DispatchError::Tool(error)) => {
-            return (json!({"note": error.agent_message()}), Vec::new());
-        }
-        Err(_) => {
-            return (
-                json!({"note": "this day's entries could not be read"}),
-                Vec::new(),
-            );
-        }
-    };
-    let rows = result.value["results"].as_array().expect("search rows");
-    let mut items = Vec::new();
-    let limit = if kind == AdmittedCategory::Notes {
-        8
-    } else {
-        3
-    };
-    for row in rows.iter().take(limit) {
-        let mut item = json!({"title": row["title"]});
-        for field in ["reference", "link"] {
-            if let Some(value) = row.get(field) {
-                item[field] = value.clone();
+) -> WeekKindSummaries {
+    let mut grouped: BTreeMap<String, Vec<(Value, String)>> = BTreeMap::new();
+    let mut cursor: Option<String> = None;
+    let mut range_incomplete = false;
+    let mut cutoff_day: Option<String> = None;
+    let mut oldest_seen_day: Option<String> = None;
+
+    for page_idx in 0..MAX_WEEK_KIND_PAGES {
+        let request = ValidatedSearch {
+            query: String::new(),
+            limit: 100,
+            cursor: cursor.clone(),
+            day: None,
+            day_from: Some(day_from.to_owned()),
+            day_to: Some(day_to.to_owned()),
+            category: None,
+            content_kinds: Some(BTreeSet::from([kind])),
+            facet_id: None,
+            person: None,
+            place: None,
+            activity: None,
+        };
+        let mut result = match search(journal, principal, snapshot, request) {
+            Ok(result) => result,
+            Err(DispatchError::Tool(error)) => {
+                if page_idx == 0 {
+                    return WeekKindSummaries {
+                        by_day: BTreeMap::new(),
+                        cutoff_day: None,
+                        range_incomplete: false,
+                        error_note: Some(error.agent_message().to_owned()),
+                    };
+                }
+                range_incomplete = true;
+                break;
             }
-        }
-        if kind == AdmittedCategory::Photos
-            && let Some(description) = row.get("description")
+            Err(_) => {
+                if page_idx == 0 {
+                    return WeekKindSummaries {
+                        by_day: BTreeMap::new(),
+                        cutoff_day: None,
+                        range_incomplete: false,
+                        error_note: Some("this day's entries could not be read".to_owned()),
+                    };
+                }
+                range_incomplete = true;
+                break;
+            }
+        };
+        if result.value["coverage"]["live_examination_complete"] != true
+            || result.value["coverage"]["index_classification_complete"] != true
+            || result.value["degraded"] == true
         {
-            item["description"] = description.clone();
+            range_incomplete = true;
         }
-        items.push(item);
+        let next = result.value["next_cursor"].as_str().map(str::to_owned);
+        let rows = result
+            .value
+            .get_mut("results")
+            .and_then(Value::as_array_mut)
+            .map(std::mem::take)
+            .unwrap_or_default();
+        for (row, target) in rows.into_iter().zip(result.targets) {
+            let day = row["date"].as_str().unwrap_or_default().to_owned();
+            if !day.is_empty()
+                && oldest_seen_day
+                    .as_deref()
+                    .is_none_or(|oldest| day.as_str() < oldest)
+            {
+                oldest_seen_day = Some(day.clone());
+            }
+            grouped.entry(day).or_default().push((row, target));
+        }
+        if next.is_none() {
+            break;
+        }
+        if page_idx + 1 == MAX_WEEK_KIND_PAGES {
+            cutoff_day = oldest_seen_day.clone().or_else(|| Some(day_to.to_owned()));
+            break;
+        }
+        cursor = next;
     }
-    let mut summary = json!({"count": rows.len(), "items": items});
-    if !result.value["next_cursor"].is_null()
-        || result.value["coverage"]["live_examination_complete"] != true
-        || result.value["coverage"]["index_classification_complete"] != true
-        || result.value["degraded"] == true
-    {
-        summary["count_is_lower_bound"] = json!(true);
+
+    let limit = match kind {
+        AdmittedCategory::Photos => MAX_WEEK_PHOTOS_PER_DAY,
+        AdmittedCategory::Notes => MAX_WEEK_NOTES_PER_DAY,
+        _ => 3,
+    };
+    let mut by_day = BTreeMap::new();
+    for (day, mut entries) in grouped {
+        if kind == AdmittedCategory::Photos {
+            entries.sort_by(|(a_row, a_target), (b_row, b_target)| {
+                photo_chronological_key(a_row, a_target)
+                    .cmp(&photo_chronological_key(b_row, b_target))
+            });
+        }
+        let total = entries.len();
+        let mut items = Vec::with_capacity(total.min(limit));
+        for (row, _) in entries.iter().take(limit) {
+            let mut item = json!({"title": row["title"]});
+            for field in ["reference", "link"] {
+                if let Some(value) = row.get(field) {
+                    item[field] = value.clone();
+                }
+            }
+            if kind == AdmittedCategory::Photos {
+                for field in ["time", "time_source", "description"] {
+                    if let Some(value) = row.get(field) {
+                        item[field] = value.clone();
+                    }
+                }
+            }
+            items.push(item);
+        }
+        let mut summary = json!({"count": total, "items": items});
+        if total > limit {
+            summary["more"] = json!(true);
+        }
+        if range_incomplete || cutoff_day.as_deref().is_some_and(|cut| day.as_str() <= cut) {
+            summary["count_is_lower_bound"] = json!(true);
+        }
+        let day_targets = entries.into_iter().map(|(_, target)| target).collect();
+        by_day.insert(day, (summary, day_targets));
     }
-    (summary, result.targets)
+
+    WeekKindSummaries {
+        by_day,
+        cutoff_day,
+        range_incomplete,
+        error_note: None,
+    }
 }
 
 fn execute_validated(
@@ -1086,12 +1230,17 @@ fn execute_validated(
             Ok(found)
         }
         ValidatedTool::Fetch(request) => fetch(journal_root, principal, snapshot, request),
-        ValidatedTool::ReadBatch(tool, references) => Ok(read_batch(
+        ValidatedTool::ReadBatch {
+            tool,
+            references,
+            size,
+        } => Ok(read_batch(
             journal_root,
             principal,
             snapshot,
             tool,
             references,
+            size,
         )),
         ValidatedTool::ListTranscripts(request) => {
             list_transcripts(journal_root, principal, snapshot, request)
@@ -1122,6 +1271,7 @@ fn read_batch(
     snapshot: &ConnectionReadSnapshot,
     tool: crate::jsonrpc::ToolName,
     references: Vec<String>,
+    size: Option<crate::photo_picture::PictureSize>,
 ) -> Prepared {
     use crate::jsonrpc::ToolName;
 
@@ -1133,7 +1283,7 @@ fn read_batch(
     let mut image_bytes = 0;
     for (index, reference) in references.into_iter().enumerate() {
         let request = match tool {
-            ToolName::Fetch => ValidatedTool::Fetch(ValidatedFetch { reference }),
+            ToolName::Fetch => ValidatedTool::Fetch(ValidatedFetch { reference, size }),
             ToolName::GetTranscript => ValidatedTool::GetTranscript(ValidatedGetTranscript {
                 offset_ms: None,
                 display: None,
@@ -1836,6 +1986,7 @@ fn search(
             |anchor| anchor.day.clone(),
         ));
     }
+    let incoming_cursor_day = start_after.as_ref().map(|a| a.day.clone());
     let mut locations = BTreeMap::new();
     let mut location_documents = BTreeMap::new();
     let may_read_locations = snapshot.categories.contains(&AdmittedCategory::Places)
@@ -1896,6 +2047,7 @@ fn search(
         if batch_len == 0 {
             break;
         }
+        let facet_declarations = FacetDeclarationSet::from_journal(journal_root).ok();
         let mut processed = 0;
         for hit in response.results {
             processed += 1;
@@ -1929,14 +2081,14 @@ fn search(
             } else {
                 None
             };
-            let Some(classification) = FacetDeclarationSet::from_journal(journal_root)
-                .ok()
+            let Some(classification) = facet_declarations
+                .as_ref()
                 .map(|declarations| {
                     classify_source(
                         journal_root,
                         &hit.metadata.path,
                         Some(&hit.metadata.stream),
-                        &declarations,
+                        declarations,
                     )
                 })
                 .filter(|classification| {
@@ -2181,6 +2333,29 @@ fn search(
                     import_previews
                         .entry(hit.metadata.path.clone())
                         .or_insert_with(|| {
+                            if photo
+                                && let Some(full_text) = verified_markdown_document(
+                                    journal_root,
+                                    &hit.metadata.path,
+                                    hit.metadata.idx,
+                                    &served_text,
+                                )
+                            {
+                                match crate::photo_picture::photo_preview_from_document(
+                                    &full_text,
+                                    MAX_SNIPPET_CHARS,
+                                ) {
+                                    crate::photo_picture::PhotoDocumentPreview::Description(
+                                        text,
+                                    ) => {
+                                        return Some(text);
+                                    }
+                                    crate::photo_picture::PhotoDocumentPreview::Empty => {
+                                        return None;
+                                    }
+                                    crate::photo_picture::PhotoDocumentPreview::Unstructured => {}
+                                }
+                            }
                             match read_indexed_path_entries(
                                 journal_root,
                                 &boundary,
@@ -2343,6 +2518,16 @@ fn search(
                     );
                 }
             }
+            if photo {
+                let clock =
+                    crate::photo_picture::photo_clock_info(journal_root, &hit.metadata.path);
+                if let Some(time) = clock.time {
+                    value["time"] = Value::String(time);
+                }
+                if let Some(time_source) = clock.time_source {
+                    value["time_source"] = Value::String(time_source.to_owned());
+                }
+            }
             if is_possible_name {
                 // Tentative: the journal's guess at who or what was meant.
                 value["possible_name"] = Value::Bool(true);
@@ -2405,6 +2590,7 @@ fn search(
             break;
         }
     }
+    let anchor_day = anchor.as_ref().map(|a| a.day.clone());
     let next_cursor = anchor
         .filter(|anchor| !anchor.omit_cursor)
         .filter(|_| has_more || examined == MAX_SEARCH_EXAMINED_ROWS)
@@ -2436,6 +2622,46 @@ fn search(
         .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))?;
     let live_examination_complete =
         examined < MAX_SEARCH_EXAMINED_ROWS && !(live_dropped && results.len() < request.limit);
+    let pure_photo_browse =
+        request.query.trim().is_empty()
+            && (request.content_kinds.as_ref().is_some_and(|kinds| {
+                kinds.len() == 1 && kinds.contains(&AdmittedCategory::Photos)
+            }) || request.category == Some(AdmittedCategory::Photos));
+    if pure_photo_browse && results.len() > 1 && results.len() == targets.len() {
+        let trailing_split_day = if next_cursor.is_some() {
+            anchor_day.as_deref()
+        } else {
+            None
+        };
+        let leading_split_day = incoming_cursor_day.as_deref();
+        let mut paired: Vec<(Value, String)> = results.into_iter().zip(targets).collect();
+        let mut start = 0;
+        while start < paired.len() {
+            let run_day = paired[start]
+                .0
+                .get("date")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_owned();
+            let mut end = start + 1;
+            while end < paired.len()
+                && paired[end].0.get("date").and_then(Value::as_str) == Some(run_day.as_str())
+            {
+                end += 1;
+            }
+            if end - start > 1
+                && trailing_split_day != Some(run_day.as_str())
+                && leading_split_day != Some(run_day.as_str())
+            {
+                paired[start..end].sort_by(|(a_row, a_target), (b_row, b_target)| {
+                    photo_chronological_key(a_row, a_target)
+                        .cmp(&photo_chronological_key(b_row, b_target))
+                });
+            }
+            start = end;
+        }
+        (results, targets) = paired.into_iter().unzip();
+    }
     let count = results.len() + resolution.cards.len();
     for card in &resolution.cards {
         targets.push(format!("facet:{}/entity:{}", card.facet_id, card.entity_id));
@@ -2530,7 +2756,7 @@ fn import_preview_content(chunk: &str) -> &str {
 
 fn import_preview(entries: &[String], photo: bool) -> Option<String> {
     let chunks = || entries.iter().map(|entry| import_preview_content(entry));
-    let text = if photo {
+    let text: std::borrow::Cow<'_, str> = if photo {
         chunks()
             .find_map(|chunk| {
                 let (heading, body) = chunk.split_once('\n')?;
@@ -2542,25 +2768,30 @@ fn import_preview(entries: &[String], photo: bool) -> Option<String> {
                     && body != "unavailable"
                     && !body.starts_with("unavailable —")
                     && !body.starts_with("unavailable -"))
-                .then_some(body)
+                .then(|| {
+                    std::borrow::Cow::Owned(crate::photo_picture::repair_chunked_punctuation(body))
+                })
             })
             .or_else(|| {
                 chunks().find_map(|chunk| {
                     let (heading, body) = chunk.split_once('\n')?;
-                    (heading.trim() == "Caption:" && !body.trim().is_empty()).then_some(body.trim())
+                    (heading.trim() == "Caption:" && !body.trim().is_empty())
+                        .then(|| std::borrow::Cow::Borrowed(body.trim()))
                 })
             })
             .or_else(|| {
-                chunks().find(|chunk| {
-                    let first = chunk.lines().next().unwrap_or_default();
-                    !first.is_empty()
-                        && first.trim_matches(['[', ']', ' '])
-                            != "image description — model-derived"
-                        && first.trim() != "Caption:"
-                })
+                chunks()
+                    .find(|chunk| {
+                        let first = chunk.lines().next().unwrap_or_default();
+                        !first.is_empty()
+                            && first.trim_matches(['[', ']', ' '])
+                                != "image description — model-derived"
+                            && first.trim() != "Caption:"
+                    })
+                    .map(std::borrow::Cow::Borrowed)
             })?
     } else {
-        chunks().find(|chunk| !chunk.is_empty())?
+        std::borrow::Cow::Borrowed(chunks().find(|chunk| !chunk.is_empty())?)
     };
     Some(text.chars().take(MAX_SNIPPET_CHARS).collect())
 }
@@ -3152,6 +3383,15 @@ fn fetch(
                 "date": entry.day,
                 "text": decoded.as_deref().unwrap_or(&text),
             });
+            if photo {
+                let clock = crate::photo_picture::photo_clock_info(journal_root, &entry.path);
+                if let Some(time) = clock.time {
+                    value["time"] = Value::String(time);
+                }
+                if let Some(time_source) = clock.time_source {
+                    value["time_source"] = Value::String(time_source.to_owned());
+                }
+            }
             if let Some(doc) = &topic {
                 insert_topic_kinds(&mut value, doc);
             } else {
@@ -3183,16 +3423,18 @@ fn fetch(
             }
             // A photo's description arrives with the photo itself: the photos
             // kind that admitted the description admits its picture.
+            let picture_size = request.size.unwrap_or_default();
             let mut picture = None;
             if photo {
-                let (state, kept) = crate::photo_picture::photo_picture(journal_root, &entry.path);
+                let (state, kept) =
+                    crate::photo_picture::photo_picture(journal_root, &entry.path, picture_size);
                 value["picture"] = state;
                 picture = kept.map(|kept| kept.jpeg);
             }
             if let Some(folder) = crate::screen_picture::import_folder(&entry.path) {
                 let (info, image) = if snapshot.categories.contains(&AdmittedCategory::Screenshots)
                 {
-                    crate::screen_picture::imported(journal_root, folder)
+                    crate::screen_picture::imported(journal_root, folder, picture_size)
                 } else {
                     (
                         json!({"state":"not_allowed","message":kind_refusal(AdmittedCategory::Screenshots)}),
