@@ -88,6 +88,7 @@ fn reconcile_paused_notice(
     data_dir: &std::path::Path,
     send: &dyn Fn(&std::path::Path, &Value),
 ) {
+    use crate::window_catalog::{ENGLISH, text};
     use solstone_core_update::automatic;
     let paused = automatic::read_choice(data_dir) == automatic::Choice::On
         && automatic::read_state(data_dir).paused;
@@ -101,8 +102,8 @@ fn reconcile_paused_notice(
                 "tract": "owner_notice",
                 "event": "raise",
                 "key": PAUSED_KEY,
-                "title": "automatic updates stopped",
-                "message": "your journal couldn't install an update twice in a row, so it stopped trying. the version you have keeps running.",
+                "title": text(ENGLISH, "journal.window.automatic.update.notice.paused.title"),
+                "message": text(ENGLISH, "journal.window.automatic.update.notice.paused.body"),
                 "action": "/app/home/",
             }),
         );

@@ -12296,6 +12296,30 @@
       "selector": null
     },
     {
+      "id": "journal.window.automatic.update.notice.paused.body",
+      "resource": "m6a6f75726e616c2e77696e646f772e6175746f6d617469632e7570646174652e6e6f746963652e7061757365642e626f6479",
+      "namespace": "journal.window.automatic.update.notice.paused",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.automatic.update.notice.paused.title",
+      "resource": "m6a6f75726e616c2e77696e646f772e6175746f6d617469632e7570646174652e6e6f746963652e7061757365642e7469746c65",
+      "namespace": "journal.window.automatic.update.notice.paused",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.backup.age.backup.failed.clock",
       "resource": "m6a6f75726e616c2e77696e646f772e6261636b75702e6167652e6261636b75702e6661696c65642e636c6f636b",
       "namespace": "journal.window.backup.age.backup.failed",
@@ -102099,6 +102123,18 @@
       "selector": null
     },
     {
+      "id": "journal.window.network.notice.pair.body",
+      "resource": "m6a6f75726e616c2e77696e646f772e6e6574776f726b2e6e6f746963652e706169722e626f6479",
+      "namespace": "journal.window.network.notice.pair",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.network.offered.busy",
       "resource": "m6a6f75726e616c2e77696e646f772e6e6574776f726b2e6f6666657265642e62757379",
       "namespace": "journal.window.network.offered",
@@ -105729,6 +105765,82 @@
           "value": " "
         }
       ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.security.notice.device.body",
+      "resource": "m6a6f75726e616c2e77696e646f772e73656375726974792e6e6f746963652e6465766963652e626f6479",
+      "namespace": "journal.window.security.notice.device",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "version",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.security.notice.device.named.title",
+      "resource": "m6a6f75726e616c2e77696e646f772e73656375726974792e6e6f746963652e6465766963652e6e616d65642e7469746c65",
+      "namespace": "journal.window.security.notice.device.named",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "device_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.security.notice.device.unnamed.title",
+      "resource": "m6a6f75726e616c2e77696e646f772e73656375726974792e6e6f746963652e6465766963652e756e6e616d65642e7469746c65",
+      "namespace": "journal.window.security.notice.device.unnamed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.security.notice.journal.title",
+      "resource": "m6a6f75726e616c2e77696e646f772e73656375726974792e6e6f746963652e6a6f75726e616c2e7469746c65",
+      "namespace": "journal.window.security.notice.journal",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.security.notice.restart.title",
+      "resource": "m6a6f75726e616c2e77696e646f772e73656375726974792e6e6f746963652e726573746172742e7469746c65",
+      "namespace": "journal.window.security.notice.restart",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
       "selector": null
     },
     {

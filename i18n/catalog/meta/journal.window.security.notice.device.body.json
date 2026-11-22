@@ -1,0 +1,21 @@
+{
+  "description": "Paired-device security notification body. version is the first app version containing the fix.",
+  "context": "Paired-device security notification body. version is the first app version containing the fix.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "version",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "37d9cc7c4545126cb7f5203d93556eeaff0c1d06ee32a8809855b2c26bedc225",
+  "max_length": 255,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

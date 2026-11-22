@@ -1,0 +1,16 @@
+{
+  "description": "Instructions in the notification that a device has paired with the journal.",
+  "context": "Instructions in the notification that a device has paired with the journal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "df0e676772646cfa2711b1efb5a4f2d16f71367f0e1cd57c7840a4e92afb1b06",
+  "max_length": 156,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Notification title when an installed journal security update needs a restart.",
+  "context": "Notification title when an installed journal security update needs a restart.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "12f4cab090fb51d19e08abe0c1c8aeb86445a648c25e934aa55b2ea6e6e04e32",
+  "max_length": 105,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

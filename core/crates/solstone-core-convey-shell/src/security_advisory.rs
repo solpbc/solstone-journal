@@ -341,29 +341,40 @@ fn reconcile(journal: &Path, report: &Report, send: &dyn Fn(&Path, &Value)) {
 }
 
 fn raise(flag: &Flag) -> Value {
+    use crate::window_catalog::{ENGLISH, strings, text};
+
     let (title, message) = match flag.device.as_deref().map(notice_name) {
         None if flag.restart => (
-            "restart to finish a security update".to_owned(),
-            "a security update is installed. restart your journal to finish it.".to_owned(),
+            text(ENGLISH, "journal.window.security.notice.restart.title"),
+            text(
+                ENGLISH,
+                "journal.window.shared.status.pane.visible.text.a.security.update.is.installed.restart",
+            ),
         ),
         None => (
-            "a security update is ready for your journal".to_owned(),
-            format!(
-                "your journal is missing a security fix. update it to {} or later.",
-                flag.fixed_in
+            text(ENGLISH, "journal.window.security.notice.journal.title"),
+            strings(
+                ENGLISH,
+                "journal.window.home.security.journal",
+                [("version", flag.fixed_in.as_str())],
             ),
         ),
         Some(name) => (
             match name {
-                Some(name) => {
-                    format!("a security update is ready for the solstone app on \"{name}\"")
-                }
-                None => "a security update is ready for the solstone app on one of your devices"
-                    .to_owned(),
+                Some(name) => strings(
+                    ENGLISH,
+                    "journal.window.security.notice.device.named.title",
+                    [("device_name", name)],
+                ),
+                None => text(
+                    ENGLISH,
+                    "journal.window.security.notice.device.unnamed.title",
+                ),
             },
-            format!(
-                "the solstone app there is missing a security fix. update it to {} or later.",
-                flag.fixed_in
+            strings(
+                ENGLISH,
+                "journal.window.security.notice.device.body",
+                [("version", flag.fixed_in.as_str())],
             ),
         ),
     };

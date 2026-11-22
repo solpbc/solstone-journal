@@ -942,16 +942,22 @@ fn emit_pair_complete(journal_root: &std::path::Path, fingerprint: &str) {
 /// pairing issues a new certificate, so its client id is new and the notice
 /// is one-shot: a device unpaired and paired again is announced again.
 fn device_access_notice(cid: &str, label: &str) -> Value {
+    use crate::window_catalog::{ENGLISH, strings, text};
+
     let title = match notice_name(label) {
-        Some(label) => format!("\"{label}\" can now reach your journal"),
-        None => "a new device can now reach your journal".to_owned(),
+        Some(label) => strings(
+            ENGLISH,
+            "journal.window.network.pair.success.named.device",
+            [("device_name", label)],
+        ),
+        None => text(ENGLISH, "journal.window.network.success.heading.unnamed"),
     };
     json!({
         "tract": "owner_notice",
         "event": "raise",
         "key": format!("access:device:{cid}"),
         "title": title,
-        "message": "if you didn't pair it, unpair it in the network app.",
+        "message": text(ENGLISH, "journal.window.network.notice.pair.body"),
         "action": "/app/network",
     })
 }

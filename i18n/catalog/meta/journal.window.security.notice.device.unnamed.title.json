@@ -1,0 +1,16 @@
+{
+  "description": "Notification title when a paired device is missing a fix and its display label cannot be shown.",
+  "context": "Notification title when a paired device is missing a fix and its display label cannot be shown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "55163d0b806da98da06002759f8bad5d54be486a22b3c6e73c8c62f572e1d7ce",
+  "max_length": 210,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

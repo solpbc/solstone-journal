@@ -1,0 +1,16 @@
+{
+  "description": "Notification title when the automatic journal updater has paused after two failed installs.",
+  "context": "Notification title when the automatic journal updater has paused after two failed installs.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d66c9f1c349a3e4f49a594b549d10156d6b7fd23b364c713ff3a7ba222ee30c8",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

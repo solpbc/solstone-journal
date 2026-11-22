@@ -1,0 +1,16 @@
+{
+  "description": "Notification title when the journal is missing a security fix.",
+  "context": "Notification title when the journal is missing a security fix.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d44ae9f0d32b0c95807261531d2e92ad51c9999c5914bf971ef4434e9c30e8bc",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

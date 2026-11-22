@@ -1,0 +1,21 @@
+{
+  "description": "Notification title when a paired device is missing a fix. device_name is the device’s display label.",
+  "context": "Notification title when a paired device is missing a fix. device_name is the device’s display label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "device_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7e846afa42d6711ad95f52c138b436a784f965b6da0d6fed4afe745a5b67c9fc",
+  "max_length": 207,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

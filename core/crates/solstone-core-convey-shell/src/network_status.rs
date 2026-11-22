@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use axum::Json;
 use axum::extract::Extension;
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use jiff::Timestamp;
 use serde::Serialize;
@@ -42,7 +42,6 @@ use crate::network_writes::NetworkOperationsOverride;
 use crate::window_catalog::{self, response_locale};
 
 const DEFAULT_RELAY_URL: &str = "https://link.solstone.app";
-const HOME_CANDIDATES_ERROR: &str = "couldn't check your journal's addresses";
 
 /// The non-I/O health fields published by the status route.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -175,7 +174,7 @@ pub(crate) struct StatusBody {
     pub(crate) home_address: Option<String>,
     pub(crate) home_address_unusable: Option<&'static str>,
     pub(crate) home_candidates: Vec<HomeCandidate>,
-    pub(crate) home_candidates_error: Option<&'static str>,
+    pub(crate) home_candidates_error: Option<String>,
     pub(crate) home_candidates_state: &'static str,
     pub(crate) home_label: Option<String>,
     pub(crate) instance_id: Option<String>,
@@ -195,6 +194,7 @@ pub(crate) struct StatusBody {
 }
 
 pub(crate) struct StatusInputs<'a> {
+    pub(crate) locale: &'a str,
     pub(crate) link_state: LinkStateRead,
     pub(crate) token_present: bool,
     pub(crate) posture: LinkPosture,
@@ -264,6 +264,7 @@ struct LocalEndpointsBody {
 
 pub(crate) async fn status(
     Extension(root): Extension<Arc<JournalRoot>>,
+    locale: Option<Extension<ResponseLocale>>,
     health_cache: Option<Extension<RelayHealthCacheStore>>,
     snapshot: Option<Extension<PairingSnapshot>>,
 ) -> Response {
@@ -289,6 +290,7 @@ pub(crate) async fn status(
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
     let body = match build_status_body(StatusInputs {
+        locale: response_locale(locale),
         link_state: load_link_state(&root.0),
         token_present,
         posture,
@@ -306,7 +308,7 @@ pub(crate) async fn status(
         Ok(body) => body,
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
-    Json(body).into_response()
+    ([(header::VARY, "X-Solstone-Locale")], Json(body)).into_response()
 }
 
 pub(crate) async fn identity(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
@@ -510,6 +512,7 @@ pub(crate) struct StatusError;
 
 pub(crate) fn build_status_body(inputs: StatusInputs<'_>) -> Result<StatusBody, StatusError> {
     let StatusInputs {
+        locale,
         link_state,
         token_present,
         posture,
@@ -628,7 +631,10 @@ pub(crate) fn build_status_body(inputs: StatusInputs<'_>) -> Result<StatusBody, 
                     false,
                     Vec::new(),
                     "unavailable",
-                    Some(HOME_CANDIDATES_ERROR),
+                    Some(window_catalog::text(
+                        locale,
+                        "journal.window.network.home.candidates.error",
+                    )),
                     VpnStatus {
                         active: None,
                         candidates: Vec::new(),
@@ -876,6 +882,7 @@ mod tests {
     ) -> Value {
         serde_json::to_value(
             build_status_body(StatusInputs {
+                locale: window_catalog::ENGLISH,
                 link_state: LinkStateRead::Missing,
                 token_present: false,
                 posture: LinkPosture::Direct,
@@ -1074,6 +1081,7 @@ mod tests {
             ..Default::default()
         };
         let status = build_status_body(StatusInputs {
+            locale: window_catalog::ENGLISH,
             link_state: LinkStateRead::Missing,
             token_present: true,
             posture: LinkPosture::Spl,
@@ -1280,6 +1288,7 @@ mod tests {
         assert_eq!(configured_only["lan_accessible"], true);
         let custom = serde_json::to_value(
             build_status_body(StatusInputs {
+                locale: window_catalog::ENGLISH,
                 link_state: LinkStateRead::Missing,
                 token_present: false,
                 posture: LinkPosture::Direct,
@@ -1355,7 +1364,7 @@ mod tests {
         );
         assert_eq!(
             unusable_override_body["home_candidates_error"],
-            HOME_CANDIDATES_ERROR
+            "couldn't check your journal's addresses"
         );
 
         let unavailable_body = status_json(None, Err(error()), None);
@@ -1364,7 +1373,7 @@ mod tests {
         assert_eq!(unavailable_body["home_candidates_state"], "unavailable");
         assert_eq!(
             unavailable_body["home_candidates_error"],
-            HOME_CANDIDATES_ERROR
+            "couldn't check your journal's addresses"
         );
         assert_eq!(unavailable_body["home_address_unusable"], Value::Null);
     }
@@ -1428,6 +1437,7 @@ mod tests {
         assert_eq!(raw_home.as_deref(), Some("169.254.1.1:7657"));
 
         let status_body = build_status_body(StatusInputs {
+            locale: window_catalog::ENGLISH,
             link_state: LinkStateRead::Missing,
             token_present: false,
             posture: LinkPosture::Direct,

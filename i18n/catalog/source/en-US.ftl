@@ -20344,3 +20344,19 @@ journal.window.backup.detail.bin.parent = current executable has no parent direc
 journal.window.backup.detail.bin.directory = current executable is not in a { $bin_directory } directory
 
 journal.window.backup.detail.package.root = package root directory not found
+
+journal.window.network.notice.pair.body = if you didn't pair it, unpair it in the network app.
+
+journal.window.security.notice.restart.title = restart to finish a security update
+
+journal.window.security.notice.journal.title = a security update is ready for your journal
+
+journal.window.security.notice.device.named.title = a security update is ready for the solstone app on "{ $device_name }"
+
+journal.window.security.notice.device.unnamed.title = a security update is ready for the solstone app on one of your devices
+
+journal.window.security.notice.device.body = the solstone app there is missing a security fix. update it to { $version } or later.
+
+journal.window.automatic.update.notice.paused.title = automatic updates stopped
+
+journal.window.automatic.update.notice.paused.body = your journal couldn't install an update twice in a row, so it stopped trying. the version you have keeps running.
