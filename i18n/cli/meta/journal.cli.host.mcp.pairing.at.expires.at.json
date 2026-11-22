@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output for mcp pairing at expires at.",
+  "context": "Journal host output for mcp pairing at expires at.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "expires_at",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ea7edbce3517b06e895cd5544ca75cf1a2b271a57542bde9459a65fec98dc219",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

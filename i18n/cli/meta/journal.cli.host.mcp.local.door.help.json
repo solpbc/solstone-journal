@@ -1,0 +1,38 @@
+{
+  "description": "Terminal help and usage for mcp local door help.",
+  "context": "Terminal help and usage for mcp local door help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d27d54d6b66269509ac1c0190cfb38275e8c27534d100b87de0d5a92425d6c62",
+  "max_length": 693,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal mcp local-door [-h]",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    }
+  ]
+}

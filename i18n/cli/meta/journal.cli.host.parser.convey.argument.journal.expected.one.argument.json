@@ -1,0 +1,28 @@
+{
+  "description": "Terminal diagnostic for parser convey argument journal expected one argument.",
+  "context": "Terminal diagnostic for parser convey argument journal expected one argument.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a39e26f678f25b3fdc119d790be99878e3ad164ca2107556f2cf36fde21d5ffa",
+  "max_length": 186,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "flag",
+      "value": "--journal",
+      "kind": "flag"
+    }
+  ]
+}

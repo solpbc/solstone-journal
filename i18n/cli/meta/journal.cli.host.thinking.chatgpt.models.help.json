@@ -1,0 +1,73 @@
+{
+  "description": "Terminal help and usage for thinking chatgpt models help.",
+  "context": "Terminal help and usage for thinking chatgpt models help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3d622c30d15bbf7955fdf83853c7f4e4907027c1ef7856edebefc65d62cfe7a2",
+  "max_length": 1116,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal thinking chatgpt models [-h] [--journal PATH] [--json]",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "term",
+      "value": "ChatGPT",
+      "kind": "mark-word"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_12",
+      "value": "            ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_7",
+      "value": "--journal PATH",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_8",
+      "value": "        ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_9",
+      "value": "--json",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_16",
+      "value": "                ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "term_11",
+      "value": "JSON",
+      "kind": "mark-word"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Native contract paths command, fixture journal. Preserve terminal syntax and supplied data.",
+  "context": "Native contract paths command, fixture journal. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "327f7c3fb3346248e051d11e1daef52c0cf43f7f1348266b28f2f7f9da68a45a",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

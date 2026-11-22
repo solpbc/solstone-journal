@@ -1,0 +1,25 @@
+{
+  "description": "Native config command, read wrapper targets. Preserve terminal syntax and supplied data.",
+  "context": "Native config command, read wrapper targets. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "e",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2a8668d7e3009fef70d6238a5dc09c42e99a6be2bcf81f31278b657a9ec68221",
+  "max_length": 189,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

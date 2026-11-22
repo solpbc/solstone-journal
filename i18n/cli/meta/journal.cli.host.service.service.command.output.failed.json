@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service service command output failed.",
+  "context": "Journal host service service command output failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ea295831a3410c390a5e910c1fbf83eb09aea467e5a683e754fa6430d1d991f1",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -32,7 +32,8 @@ pub use solstone_core_mcp_endpoint::{
     OAuthStoreError, PermissionDecision, PermissionStore, PermissionStoreError, PermissionsFile,
     ReadPermission, ReadScope, RecordedOutcome, RequestRecord, ResultShape, TokenStore,
     TokenStoreError, TokenSummary, VerifiedToken, evaluate_connection_read,
-    mcp_endpoint_server_config, read_activity, resolve_permission_facet_names,
+    mcp_endpoint_server_config, read_activity, read_activity_for_locale,
+    resolve_permission_facet_names, resolve_permission_facet_names_for,
     run_local_door_with_hosted_parent, run_mcp_probe, run_native_service_with_hosted_parent, tally,
 };
 

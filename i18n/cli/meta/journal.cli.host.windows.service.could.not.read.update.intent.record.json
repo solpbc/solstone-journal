@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output for windows service could not read update intent record.",
+  "context": "Journal host output for windows service could not read update intent record.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "acbdbdcab07db54bf24434cce610712294a4f042b1dc2187134b122a783e4126",
+  "max_length": 141,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

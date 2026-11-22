@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service service forwarder admission is invalid.",
+  "context": "Journal host output for windows service service forwarder admission is invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3fb96697a5ad72aef8364a3aaf250edd429d1c113bfb628a53fa5db0d42d3e7c",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

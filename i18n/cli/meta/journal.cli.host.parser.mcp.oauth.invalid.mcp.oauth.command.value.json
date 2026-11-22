@@ -1,0 +1,32 @@
+{
+  "description": "Terminal diagnostic for parser mcp oauth invalid mcp oauth command value.",
+  "context": "Terminal diagnostic for parser mcp oauth invalid mcp oauth command value.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    },
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "454d166830bf8fc8046ffa957a9f427e87ce7098b8783179ce19a3692a644710",
+  "max_length": 192,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "term",
+      "value": "MCP",
+      "kind": "mark-word"
+    }
+  ]
+}

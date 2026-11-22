@@ -72,6 +72,11 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
     ),
     (
         "core",
+        "host_copy",
+        include_str!("../../../solstone-core/src/host_copy.rs"),
+    ),
+    (
+        "core",
         "importer_desktop",
         include_str!("../../../solstone-core/src/importer_desktop.rs"),
     ),

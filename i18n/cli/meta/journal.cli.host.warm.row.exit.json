@@ -1,0 +1,25 @@
+{
+  "description": "Journal host warm row exit.",
+  "context": "Journal host warm row exit.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "binary",
+      "type": "string"
+    },
+    {
+      "name": "code",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6c78c8bb834262e17ae2ab3827011f9fb6152c63198e323ecd9c769751d6e529",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

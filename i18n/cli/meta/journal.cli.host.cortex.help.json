@@ -1,0 +1,68 @@
+{
+  "description": "Terminal help and usage for cortex help.",
+  "context": "Terminal help and usage for cortex help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ce576e23a26e02ad58a2b1780a642949d32552dc42a5274a7d9058911a2fe559",
+  "max_length": 1107,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal cortex [-h] [-v] [-d]",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "term",
+      "value": "solstone",
+      "kind": "mark-word"
+    },
+    {
+      "name": "term_4",
+      "value": "Cortex",
+      "kind": "mark-word"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_5",
+      "value": "     ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_8",
+      "value": "-v, --verbose",
+      "kind": "command"
+    },
+    {
+      "name": "option_9",
+      "value": "-d, --debug",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_4",
+      "value": "    ",
+      "kind": "whitespace"
+    }
+  ]
+}

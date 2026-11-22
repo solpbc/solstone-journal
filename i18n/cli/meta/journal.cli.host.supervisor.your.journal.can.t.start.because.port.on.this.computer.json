@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output for supervisor your journal can t start because port on this computer.",
+  "context": "Journal host output for supervisor your journal can t start because port on this computer.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "port",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "52f6dbbbcea83a86d099ceaea52c29bf027163d5b948fb6399c46468f9b31a84",
+  "max_length": 564,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

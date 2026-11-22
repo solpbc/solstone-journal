@@ -1,0 +1,34 @@
+{
+  "description": "Native contract mod command, contract.validated. Preserve terminal syntax and supplied data.",
+  "context": "Native contract mod command, contract.validated. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "display_count",
+      "type": "string"
+    },
+    {
+      "name": "root",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "bddd151f87d07d6edb153433953bbea34d8b6fb1f945f865014eac3d5489e10b",
+  "max_length": 531,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -37,8 +37,15 @@ pub(crate) fn run(path: String) -> ExitCode {
         }
     };
     if let Err(error) = require_solstone(&journal.path) {
-        if let Some(message) = error.message() {
-            eprintln!("{message}");
+        if error.message().is_some() {
+            eprintln!(
+                "{}",
+                solstone_core_cli_copy::render_for(
+                    crate::host_locale(),
+                    "journal.cli.streams.supervisor",
+                    &[]
+                )
+            );
         }
         return ExitCode::from(error.exit_code() as u8);
     }
@@ -55,7 +62,12 @@ pub(crate) fn run(path: String) -> ExitCode {
         Ok(line) => line,
         Err(error) => {
             eprintln!(
-                "solstone journal navigate: error: failed to encode Callosum request: {error}"
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.navigate.run.navigate.failed.encode.callosum.request",
+                    [("error", &error)]
+                )
             );
             return ExitCode::from(EXIT_TEMPFAIL);
         }
@@ -66,8 +78,12 @@ pub(crate) fn run(path: String) -> ExitCode {
     let sender = CallosumOneShotSender::new(&socket, NAVIGATE_SOCKET_TIMEOUT);
     if sender.send_line(&line).is_err() {
         eprintln!(
-            "solstone journal navigate: error: Callosum socket unavailable: {}",
-            socket.display()
+            "{}",
+            solstone_core_cli_copy::display_for(
+                crate::host_locale(),
+                "journal.cli.host.navigate.run.navigate.callosum.socket.unavailable.path",
+                [("path", &socket.display())]
+            )
         );
         return ExitCode::from(EXIT_UNAVAILABLE);
     }
@@ -77,5 +93,12 @@ pub(crate) fn run(path: String) -> ExitCode {
 }
 
 fn print_navigation(path: &str) {
-    println!("Navigate: {path}");
+    println!(
+        "{}",
+        solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.navigate.print.navigation.navigate.path",
+            [("path", &path)]
+        )
+    );
 }

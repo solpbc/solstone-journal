@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service task control input exceeds its byte limit.",
+  "context": "Journal host output for windows service task control input exceeds its byte limit.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d8cca00a86f140e50f3cd4804ac214f101286154c8af70eb89d384f50daf1f5e",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

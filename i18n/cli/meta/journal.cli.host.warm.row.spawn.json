@@ -1,0 +1,29 @@
+{
+  "description": "Journal host warm row spawn.",
+  "context": "Journal host warm row spawn.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "binary",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e4222603a6398f3c35258dbc84736d02eec7f1e04c6065e4505e68ff32c30515",
+  "max_length": 186,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

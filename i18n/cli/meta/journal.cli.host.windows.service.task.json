@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output for windows service task.",
+  "context": "Journal host output for windows service task.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "task",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6e3a2ee8da557e3547526cd1673d755dc5557586d4a51095977c5e60dea09ab4",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

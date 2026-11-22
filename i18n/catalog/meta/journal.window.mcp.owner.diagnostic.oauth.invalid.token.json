@@ -1,0 +1,23 @@
+{
+  "description": "MCP owner diagnostic for oauth invalid token.",
+  "context": "MCP owner diagnostic for oauth invalid token.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3a1c3afe5b6f03230dbfb6037ace2c1a473eab26679714035b0d59a159543d4e",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_oauth",
+      "kind": "accepted-input",
+      "value": "OAuth"
+    }
+  ]
+}

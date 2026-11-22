@@ -1,0 +1,16 @@
+{
+  "description": "Journal host service service command output exceeded kib.",
+  "context": "Journal host service service command output exceeded kib.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a8eb54ea6e390931479285091ef2ba792ce6f3d46473c7336dbf89bcff5634e2",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

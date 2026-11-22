@@ -1,0 +1,16 @@
+{
+  "description": "Native open command, socket mac old. Preserve terminal syntax and supplied data.",
+  "context": "Native open command, socket mac old. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2eb7f8abce6c4b171a6d624f56cef64c2cc7aea5734e3f052adf0fbb42266f80",
+  "max_length": 300,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

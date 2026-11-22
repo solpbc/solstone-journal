@@ -1,0 +1,28 @@
+{
+  "description": "Terminal help and usage for usage commands.",
+  "context": "Terminal help and usage for usage commands.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "commands",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a992d58ab3ba573fb2c0f656e2d4eb00d3e798013c965a52108423a8aa2352e1",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    }
+  ]
+}

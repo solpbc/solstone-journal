@@ -1,0 +1,16 @@
+{
+  "description": "Journal host warm development.",
+  "context": "Journal host warm development.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d6995f92125663969e8c4a0e82629c6913dfbf52b8811de849ee21764fe89da6",
+  "max_length": 408,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

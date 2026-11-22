@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service manager stop service before changing journal folder.",
+  "context": "Journal host service manager stop service before changing journal folder.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "result",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "587a86f7da001855fcd42da294de94ad73c0dc669a67e3b812a1c239cf461030",
+  "max_length": 189,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal host output for supervisor already running.",
+  "context": "Journal host output for supervisor already running.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3f1c12f6776233743d94deb25a497c2975a84b9a8b1ab3a49647e2d3a23d50cf",
+  "max_length": 477,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "break_line",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output for windows service could not clear prior update intent.",
+  "context": "Journal host output for windows service could not clear prior update intent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9e47e5caf2005028a85f67a9902e4ca52cc52ea9994188fbf5ed9fb59bed7930",
+  "max_length": 141,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

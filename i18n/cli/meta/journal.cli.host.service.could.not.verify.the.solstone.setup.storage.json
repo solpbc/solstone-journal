@@ -1,0 +1,28 @@
+{
+  "description": "Journal host service could not verify the solstone setup storage.",
+  "context": "Journal host service could not verify the solstone setup storage.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a306ff0640968a9557dc8f4c17bc7a6533998bd57a3ede948072a3b04cac72ec",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone",
+      "kind": "accepted-input",
+      "value": "solstone"
+    }
+  ]
+}

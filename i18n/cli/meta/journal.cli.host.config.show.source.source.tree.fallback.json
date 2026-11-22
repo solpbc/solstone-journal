@@ -1,0 +1,16 @@
+{
+  "description": "Native config command, show source. Preserve terminal syntax and supplied data.",
+  "context": "Native config command, show source. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3be32dee9f8ca1d094add1f485212048c13ae19ab6561791ef873ed9a2344e9d",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

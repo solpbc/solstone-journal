@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output for mcp permission scope facets.",
+  "context": "Journal host output for mcp permission scope facets.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "facets",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0861bcdfa10b672748d84f9980ff861bf66ca0a3dde49a58d202102c3d0ef9a2",
+  "max_length": 128,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

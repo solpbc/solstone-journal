@@ -1,0 +1,53 @@
+{
+  "description": "Terminal help and usage for check help.",
+  "context": "Terminal help and usage for check help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "174e40fc2182b42f48449d4dccb8ebc764c091cab98d3fac5936f8b467c8ee6d",
+  "max_length": 1017,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal check [-h] [--json]",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    },
+    {
+      "name": "option_5",
+      "value": "--json",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_6",
+      "value": "      ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "term",
+      "value": "JSON",
+      "kind": "mark-word"
+    }
+  ]
+}

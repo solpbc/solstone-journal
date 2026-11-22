@@ -1,0 +1,23 @@
+{
+  "description": "Journal host output for mcp activity activity is not compiled into this build.",
+  "context": "Journal host output for mcp activity activity is not compiled into this build.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "45b21b7dfc4207733a0a873d1a565cdd86e1dceebaf6d57a53dd47b2fef20e8c",
+  "max_length": 222,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command_solstone_journal_mcp_activity",
+      "kind": "command",
+      "value": "solstone journal mcp activity"
+    }
+  ]
+}

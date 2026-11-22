@@ -1,0 +1,46 @@
+{
+  "description": "Journal host warm summary.",
+  "context": "Journal host warm summary.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "ran",
+      "type": "string"
+    },
+    {
+      "name": "missing",
+      "type": "string"
+    },
+    {
+      "name": "cannot_load",
+      "type": "string"
+    },
+    {
+      "name": "gaps",
+      "type": "string"
+    },
+    {
+      "name": "not_applicable",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "ef01added4a77b92952bfb2bea92e629a9ce611c0fa9f0d0febac48c681bed90",
+  "max_length": 885,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

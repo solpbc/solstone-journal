@@ -1,0 +1,28 @@
+{
+  "description": "Journal host output for mcp oauth revoked oauth client.",
+  "context": "Journal host output for mcp oauth revoked oauth client.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "client_id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b974db29dd6842174d92a077c4df6d8b1ef7d169ac01d7a7776c74723ada81f4",
+  "max_length": 147,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_oauth",
+      "kind": "accepted-input",
+      "value": "OAuth"
+    }
+  ]
+}

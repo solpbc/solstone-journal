@@ -1,0 +1,23 @@
+{
+  "description": "MCP owner diagnostic for oauth transaction exhausted.",
+  "context": "MCP owner diagnostic for oauth transaction exhausted.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a66f41789c75d423cded9877fbf7de2d54e03ab600260f7b5323d73aacd6f3a0",
+  "max_length": 171,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_oauth",
+      "kind": "accepted-input",
+      "value": "OAuth"
+    }
+  ]
+}

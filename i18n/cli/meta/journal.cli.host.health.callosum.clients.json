@@ -1,0 +1,30 @@
+{
+  "description": "Journal host health callosum clients.",
+  "context": "Journal host health callosum clients.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "clients",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "4b304b717ea1c25a558f4f17a0a64a0b94c758b2153615bdfdcf7b11d4003a9f",
+  "max_length": 309,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal host output for windows service your journal didn t report ready so the start can.",
+  "context": "Journal host output for windows service your journal didn t report ready so the start can.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b5465a94a71a2159ad1880007afde2fa7bb77fa8665555d260e591c60fe8ce27",
+  "max_length": 378,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command_solstone_journal_service",
+      "kind": "command",
+      "value": "solstone journal service"
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "description": "Terminal diagnostic for parser mcp token the following arguments are required create list revoke.",
+  "context": "Terminal diagnostic for parser mcp token the following arguments are required create list revoke.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e368e65bb1e6b3c58681e2a19a1361af71cac50e5f5434675239eaf41da47d3a",
+  "max_length": 309,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal",
+      "value": "create",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "literal_2",
+      "value": "list",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "literal_3",
+      "value": "revoke",
+      "kind": "accepted-input"
+    }
+  ]
+}

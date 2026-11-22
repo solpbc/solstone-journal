@@ -1,0 +1,21 @@
+{
+  "description": "Journal host health media pending.",
+  "context": "Journal host health media pending.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "depth",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1256d685ea39b45ee325945ea671aa501a82dfeb876b1f005107fecf07ee5956",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

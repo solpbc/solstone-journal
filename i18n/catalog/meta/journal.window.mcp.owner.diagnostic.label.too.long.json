@@ -1,0 +1,16 @@
+{
+  "description": "MCP owner diagnostic for label too long.",
+  "context": "MCP owner diagnostic for label too long.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ec4e444043cfd22146dcf551f6cbeb370601b1575862f926366f4f3949c3aad1",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

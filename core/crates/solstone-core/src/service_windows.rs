@@ -120,27 +120,52 @@ fn resolve_context_at(selected: Option<&Path>) -> Result<ServiceContext, ExitCod
 
 /// The service context for `journal`, or the one-line reason there is none.
 fn context_for_journal(journal: PathBuf) -> Result<ServiceContext, String> {
-    let owner = owner_base().map_err(|error| format!("could not locate owner base: {error}"))?;
-    let exe = std::env::current_exe()
-        .map_err(|error| format!("could not inspect current executable: {error}"))?;
+    let owner = owner_base().map_err(|error| {
+        crate::host_display(
+            "journal.cli.host.windows.service.could.not.locate.owner.base",
+            [("error", &error)],
+        )
+    })?;
+    let exe = std::env::current_exe().map_err(|error| {
+        crate::host_display(
+            "journal.cli.host.windows.service.could.not.inspect.current.executable",
+            [("error", &error)],
+        )
+    })?;
     let exe_dir = exe.parent().unwrap_or_else(|| Path::new("."));
     let root = resolve_identity_root_from_executable_dir(exe_dir)
-        .ok_or_else(|| "could not resolve identity root from executable directory".to_owned())?;
-    let root_token = root_token_from_path(&root)
-        .map_err(|error| format!("could not resolve root token: {error}"))?;
-    let binding = load_installation_binding(&owner, &root_token)
-        .map_err(|error| format!("could not load installation binding: {error}"))?;
+        .ok_or_else(|| crate::host_text("journal.cli.host.windows.service.could.not.resolve.identity.root.from.executable.directory"))?;
+    let root_token = root_token_from_path(&root).map_err(|error| {
+        crate::host_display(
+            "journal.cli.host.windows.service.could.not.resolve.root.token",
+            [("error", &error)],
+        )
+    })?;
+    let binding = load_installation_binding(&owner, &root_token).map_err(|error| {
+        crate::host_display(
+            "journal.cli.host.windows.service.could.not.load.installation.binding",
+            [("error", &error)],
+        )
+    })?;
 
     if journal_token_from_path(&journal).ok().as_ref() != Some(&binding.journal_token) {
-        return Err("selected journal differs from the saved installation binding".to_owned());
+        return Err(crate::host_text(
+            "journal.cli.host.windows.service.selected.journal.differs.from.the.saved.installation.binding",
+        ));
     }
-    let sid = solstone_core_callosum::windows::sid::current_user_sid()
-        .map_err(|error| format!("could not retrieve user SID: {error}"))?;
+    let sid = solstone_core_callosum::windows::sid::current_user_sid().map_err(|error| {
+        crate::host_display(
+            "journal.cli.host.windows.service.could.not.retrieve.user.sid",
+            [("error", &error)],
+        )
+    })?;
     let installation_id = binding.id.as_hex();
     let task_path = format!(r"\solstone-{sid}\{installation_id}");
     let public_solstone_exe = exe_dir.join("solstone.exe");
     if !public_solstone_exe.is_file() {
-        return Err("the installed solstone.exe facade is unavailable".to_owned());
+        return Err(crate::host_text(
+            "journal.cli.host.windows.service.the.installed.solstone.exe.facade.is.unavailable",
+        ));
     }
 
     Ok(ServiceContext {
@@ -186,9 +211,9 @@ pub(crate) fn doctor_registration(
         return WindowsServiceRegistration::Absent;
     }
     let Some(xml) = snapshot.validation_xml.as_deref() else {
-        return WindowsServiceRegistration::Unreadable(
-            "the registered task has no readable definition".to_owned(),
-        );
+        return WindowsServiceRegistration::Unreadable(crate::host_text(
+            "journal.cli.host.windows.service.the.registered.task.has.no.readable.definition",
+        ));
     };
     let definition = match parse_windows_task_xml(xml) {
         Ok(definition) => definition,
@@ -202,19 +227,26 @@ pub(crate) fn doctor_registration(
         .to_string();
     let journal = ctx.journal.display().to_string();
     let mismatch = if definition.command != expected && definition.command != legacy_expected {
-        Some(format!(
-            "{} is registered, expected {expected}",
-            definition.command
+        Some(crate::host_display(
+            "journal.cli.host.windows.service.is.registered.expected",
+            [("registered", &definition.command), ("expected", &expected)],
         ))
     } else if definition.principal_sid != ctx.sid {
-        Some("it is registered to another account".to_owned())
+        Some(crate::host_text(
+            "journal.cli.host.windows.service.it.is.registered.to.another.account",
+        ))
     } else if definition.working_directory != journal || definition.action.journal != journal {
-        Some(format!(
-            "it runs the journal at {}, expected {journal}",
-            definition.action.journal
+        Some(crate::host_display(
+            "journal.cli.host.windows.service.it.runs.the.journal.at.expected",
+            [
+                ("registered", &definition.action.journal),
+                ("journal", &journal),
+            ],
         ))
     } else if definition.action.guard != ctx.guard {
-        Some("it belongs to a different installation of the journal".to_owned())
+        Some(crate::host_text(
+            "journal.cli.host.windows.service.it.belongs.to.a.different.installation.of.the.journal",
+        ))
     } else {
         None
     };
@@ -225,7 +257,13 @@ pub(crate) fn doctor_registration(
 }
 
 fn task_error(error: impl std::fmt::Display) -> ExitCode {
-    eprintln!("journal: {error}");
+    eprintln!(
+        "{}",
+        crate::host_display(
+            "journal.cli.host.windows.service.journal",
+            [("error", &error)]
+        )
+    );
     ExitCode::from(1)
 }
 
@@ -248,32 +286,42 @@ fn validate_task(
         .validation_xml
         .as_deref()
         .filter(|_| snapshot.present)
-        .ok_or_else(|| task_error("service task is not installed"))?;
+        .ok_or_else(|| {
+            task_error(crate::host_text(
+                "journal.cli.host.windows.service.service.task.is.not.installed",
+            ))
+        })?;
     let definition = parse_windows_task_xml(xml).map_err(task_error)?;
     let command_matches = definition.command
-        == ctx
-            .public_solstone_exe
-            .to_str()
-            .ok_or_else(|| task_error("installed command contains invalid text"))?
+        == ctx.public_solstone_exe.to_str().ok_or_else(|| {
+            task_error(crate::host_text(
+                "journal.cli.host.windows.service.installed.command.contains.invalid.text",
+            ))
+        })?
         || definition.command
             == ctx
                 .public_solstone_exe
                 .with_file_name("journal.exe")
                 .to_str()
-                .ok_or_else(|| task_error("installed command contains invalid text"))?;
+                .ok_or_else(|| {
+                    task_error(crate::host_text(
+                        "journal.cli.host.windows.service.installed.command.contains.invalid.text",
+                    ))
+                })?;
     if definition.principal_sid != ctx.sid
         || !command_matches
         || definition.working_directory
-            != ctx
-                .journal
-                .to_str()
-                .ok_or_else(|| task_error("journal path contains invalid text"))?
+            != ctx.journal.to_str().ok_or_else(|| {
+                task_error(crate::host_text(
+                    "journal.cli.host.windows.service.journal.path.contains.invalid.text",
+                ))
+            })?
         || definition.action.journal != definition.working_directory
         || definition.action.guard != ctx.guard
     {
-        return Err(task_error(
-            "service task differs from the current installation binding",
-        ));
+        return Err(task_error(crate::host_text(
+            "journal.cli.host.windows.service.service.task.differs.from.the.current.installation.binding",
+        )));
     }
     Ok(definition)
 }
@@ -302,14 +350,16 @@ fn install_task(
             .as_ref()
             .map_or(DEFAULT_SERVICE_PORT, |definition| definition.action.port)
     });
-    let journal_display = ctx
-        .journal
-        .to_str()
-        .ok_or_else(|| task_error("journal path contains invalid text"))?;
-    let command = ctx
-        .public_solstone_exe
-        .to_str()
-        .ok_or_else(|| task_error("installed command contains invalid text"))?;
+    let journal_display = ctx.journal.to_str().ok_or_else(|| {
+        task_error(crate::host_text(
+            "journal.cli.host.windows.service.journal.path.contains.invalid.text",
+        ))
+    })?;
+    let command = ctx.public_solstone_exe.to_str().ok_or_else(|| {
+        task_error(crate::host_text(
+            "journal.cli.host.windows.service.installed.command.contains.invalid.text",
+        ))
+    })?;
     let enabled = registered.as_ref().is_none_or(|definition| {
         registered_run_intent(ctx, definition, !before.instances.is_empty())
     });
@@ -424,9 +474,9 @@ fn install_task(
     };
     let installed = validate_task(ctx, after)?;
     if installed.action != action || installed.starts_at_sign_in != profile.starts_at_sign_in {
-        return Err(task_error(
-            "installed task action did not match its readback",
-        ));
+        return Err(task_error(crate::host_text(
+            "journal.cli.host.windows.service.installed.task.action.did.not.match.its.readback",
+        )));
     }
     // Preserve the setup artifact only after actual scheduler readback succeeds.
     // It is never authorization to replace/delete the registered task.
@@ -435,17 +485,19 @@ fn install_task(
     // the trigger principal as an account name, and the strict profile parser
     // that later reads this artifact (setup evidence) performs no native
     // normalization, so a raw artifact refuses every later setup as malformed.
-    let directory = task_artifact_directory(&ctx.owner)
-        .ok_or_else(|| task_error("installation provider location is unavailable"))?;
+    let directory = task_artifact_directory(&ctx.owner).ok_or_else(|| {
+        task_error(crate::host_text(
+            "journal.cli.host.windows.service.installation.provider.location.is.unavailable",
+        ))
+    })?;
     fs::create_dir_all(&directory).map_err(task_error)?;
     fs::write(
         directory.join(format!("{}.xml", ctx.guard.namespace)),
-        encode_windows_task_xml(
-            after
-                .validation_xml
-                .as_deref()
-                .ok_or_else(|| task_error("task XML readback missing"))?,
-        )
+        encode_windows_task_xml(after.validation_xml.as_deref().ok_or_else(|| {
+            task_error(crate::host_text(
+                "journal.cli.host.windows.service.task.xml.readback.missing",
+            ))
+        })?)
         .map_err(task_error)?,
     )
     .map_err(task_error)?;
@@ -529,7 +581,9 @@ fn set_task_enabled(
     .map_err(task_error)?;
     let definition = validate_task(ctx, &after)?;
     if definition.enabled != enabled || !same_task_security(before, &after) {
-        return Err(task_error("service task changed while recording its state"));
+        return Err(task_error(crate::host_text(
+            "journal.cli.host.windows.service.service.task.changed.while.recording.its.state",
+        )));
     }
     Ok(after)
 }
@@ -546,9 +600,9 @@ fn retain_task_run(
         POLL_INTERVAL,
     )
     .ok_or_else(|| {
-        task_error(
-            "your journal didn't report ready, so the start can't be confirmed. run `solstone journal service logs` to see why",
-        )
+        task_error(crate::host_text(
+            "journal.cli.host.windows.service.your.journal.didn.t.report.ready.so.the.start.can",
+        ))
     })?;
     let supervisor_instance: solstone_core_system::process::ProcessInstance =
         serde_json::from_value(
@@ -556,7 +610,7 @@ fn retain_task_run(
                 .extra
                 .get("windows_process_instance")
                 .cloned()
-                .ok_or_else(|| task_error("service readiness has no exact native identity"))?,
+                .ok_or_else(|| task_error(crate::host_text("journal.cli.host.windows.service.service.readiness.has.no.exact.native.identity")))?,
         )
         .map_err(task_error)?;
     let current_instance: solstone_core_system::process::ProcessInstance = serde_json::from_slice(
@@ -564,35 +618,41 @@ fn retain_task_run(
     )
     .map_err(task_error)?;
     if marker.pid != supervisor_instance.pid || current_instance != supervisor_instance {
-        return Err(task_error("service readiness identity changed"));
+        return Err(task_error(crate::host_text(
+            "journal.cli.host.windows.service.service.readiness.identity.changed",
+        )));
     }
     let root: ReadyForwarder = serde_json::from_value(
         marker
             .extra
             .get("windows_task_forwarder")
             .cloned()
-            .ok_or_else(|| task_error("service readiness has no installed forwarder admission"))?,
+            .ok_or_else(|| task_error(crate::host_text("journal.cli.host.windows.service.service.readiness.has.no.installed.forwarder.admission")))?,
     )
     .map_err(task_error)?;
     if root.launch_id.len() != 48
         || !root.launch_id.bytes().all(|byte| byte.is_ascii_hexdigit())
         || root.instance.pid == supervisor_instance.pid
     {
-        return Err(task_error("service forwarder admission is invalid"));
+        return Err(task_error(crate::host_text(
+            "journal.cli.host.windows.service.service.forwarder.admission.is.invalid",
+        )));
     }
     let current = inspect_task(ctx, deadline)?;
     validate_task(ctx, &current)?;
     if !same_task_profile(before, &current) || current.instances.len() != 1 {
-        return Err(task_error("service task changed during run admission"));
+        return Err(task_error(crate::host_text(
+            "journal.cli.host.windows.service.service.task.changed.during.run.admission",
+        )));
     }
     let selected = current.instances[0].clone();
     if selected.guid != selected_guid
         || selected.engine_pid != root.instance.pid
         || selected.current_action != "journal-supervisor"
     {
-        return Err(task_error(
-            "service scheduler instance does not match its admitted forwarder",
-        ));
+        return Err(task_error(crate::host_text(
+            "journal.cli.host.windows.service.service.scheduler.instance.does.not.match.its.admitted.forwarder",
+        )));
     }
     let supervisor =
         native_process::RetainedProcess::open(supervisor_instance).map_err(task_error)?;
@@ -600,14 +660,16 @@ fn retain_task_run(
     if supervisor.exit_code().map_err(task_error)?.is_some()
         || forwarder.exit_code().map_err(task_error)?.is_some()
     {
-        return Err(task_error("service run exited during admission"));
+        return Err(task_error(crate::host_text(
+            "journal.cli.host.windows.service.service.run.exited.during.admission",
+        )));
     }
     let after = inspect_task(ctx, deadline)?;
     validate_task(ctx, &after)?;
     if !same_task_profile(&current, &after) || after.instances != [selected.clone()] {
-        return Err(task_error(
-            "service task instance changed while retaining native handles",
-        ));
+        return Err(task_error(crate::host_text(
+            "journal.cli.host.windows.service.service.task.instance.changed.while.retaining.native.handles",
+        )));
     }
     Ok(RetainedTaskRun {
         selected,
@@ -641,19 +703,32 @@ fn start_task(ctx: &ServiceContext) -> Result<(), ExitCode> {
             .map_err(task_error)?;
             validate_task(ctx, &started)?;
             if !same_task_profile(&before, &started) {
-                return Err(task_error("service task changed during start"));
+                return Err(task_error(crate::host_text(
+                    "journal.cli.host.windows.service.service.task.changed.during.start",
+                )));
             }
             started
                 .run_instance
-                .ok_or_else(|| task_error("scheduler returned no task run instance"))?
+                .ok_or_else(|| {
+                    task_error(crate::host_text(
+                        "journal.cli.host.windows.service.scheduler.returned.no.task.run.instance",
+                    ))
+                })?
                 .guid
         }
         [instance] => instance.guid.clone(),
-        _ => return Err(task_error("cannot identify one running service task")),
+        _ => {
+            return Err(task_error(crate::host_text(
+                "journal.cli.host.windows.service.cannot.identify.one.running.service.task",
+            )));
+        }
     };
     let _run = retain_task_run(ctx, &before, &selected_guid, deadline)?;
     sign_in_resume::clear(&ctx.owner.path(), &ctx.guard.id.as_hex()).map_err(task_error)?;
-    println!("your journal is ready");
+    println!(
+        "{}",
+        crate::host_text("journal.cli.host.windows.service.your.journal.is.ready")
+    );
     Ok(())
 }
 
@@ -661,9 +736,9 @@ fn stop_task(ctx: &ServiceContext, disable: bool) -> Result<(), ExitCode> {
     let deadline = Instant::now() + STOP_TIMEOUT;
     let before = inspect_task(ctx, deadline)?;
     if !before.present {
-        return Err(task_error(
-            "service task is absent and its forwarder cleanup cannot be verified",
-        ));
+        return Err(task_error(crate::host_text(
+            "journal.cli.host.windows.service.service.task.is.absent.and.its.forwarder.cleanup.cannot.be",
+        )));
     }
     // Disable first when requested, so the five-minute recovery trigger cannot
     // race the stop. A public stop arms a separate hidden sign-in resume before
@@ -676,10 +751,17 @@ fn stop_task(ctx: &ServiceContext, disable: bool) -> Result<(), ExitCode> {
     let selected = match before.instances.as_slice() {
         [instance] => instance,
         [] => {
-            println!("background service stopped");
+            println!(
+                "{}",
+                crate::host_text("journal.cli.host.windows.service.background.service.stopped")
+            );
             return Ok(());
         }
-        _ => return Err(task_error("cannot identify one running service task")),
+        _ => {
+            return Err(task_error(crate::host_text(
+                "journal.cli.host.windows.service.cannot.identify.one.running.service.task",
+            )));
+        }
     };
     let run = retain_task_run(ctx, &before, &selected.guid, deadline)?;
     let frame = serde_json::json!({"tract":"supervisor", "event":"service_stop", "target":run.supervisor_instance,
@@ -715,31 +797,38 @@ fn stop_task(ctx: &ServiceContext, disable: bool) -> Result<(), ExitCode> {
     }
     loop {
         if Instant::now() >= deadline {
-            return Err(task_error(
-                "service stop deadline elapsed; cleanup remains unverified",
-            ));
+            return Err(task_error(crate::host_text(
+                "journal.cli.host.windows.service.service.stop.deadline.elapsed.cleanup.remains.unverified",
+            )));
         }
         let supervisor_exit = run.supervisor.exit_code().map_err(task_error)?;
         let forwarder_exit = run.forwarder.exit_code().map_err(task_error)?;
         if supervisor_exit.is_some_and(|code| code != 0)
             || forwarder_exit.is_some_and(|code| code != 0)
         {
-            return Err(task_error(
-                "service exited abnormally; cleanup remains unverified",
-            ));
+            return Err(task_error(crate::host_text(
+                "journal.cli.host.windows.service.service.exited.abnormally.cleanup.remains.unverified",
+            )));
         }
         if supervisor_exit == Some(0) && forwarder_exit == Some(0) {
             let after = inspect_task(ctx, deadline)?;
             validate_task(ctx, &after)?;
             if !same_task_profile(&before, &after) {
-                return Err(task_error("service task changed during stop"));
+                return Err(task_error(crate::host_text(
+                    "journal.cli.host.windows.service.service.task.changed.during.stop",
+                )));
             }
             if after.instances.is_empty() && after.state == Some(1) {
-                println!("background service stopped");
+                println!(
+                    "{}",
+                    crate::host_text("journal.cli.host.windows.service.background.service.stopped")
+                );
                 return Ok(());
             }
             if after.instances.len() != 1 || after.instances[0].guid != run.selected.guid {
-                return Err(task_error("service task instance changed during stop"));
+                return Err(task_error(crate::host_text(
+                    "journal.cli.host.windows.service.service.task.instance.changed.during.stop",
+                )));
             }
         }
         std::thread::sleep(POLL_INTERVAL.min(deadline.saturating_duration_since(Instant::now())));
@@ -762,7 +851,9 @@ fn delete_task(ctx: &ServiceContext) -> Result<(), ExitCode> {
     )
     .map_err(task_error)?;
     if after.present {
-        return Err(task_error("service task deletion was not observed"));
+        return Err(task_error(crate::host_text(
+            "journal.cli.host.windows.service.service.task.deletion.was.not.observed",
+        )));
     }
     Ok(())
 }
@@ -842,8 +933,11 @@ fn admitted_protected_journals(
 }
 
 fn saved_task_artifact_paths(ctx: &ServiceContext) -> Result<(PathBuf, PathBuf), ExitCode> {
-    let directory = task_artifact_directory(&ctx.owner)
-        .ok_or_else(|| task_error("installation provider location is unavailable"))?;
+    let directory = task_artifact_directory(&ctx.owner).ok_or_else(|| {
+        task_error(crate::host_text(
+            "journal.cli.host.windows.service.installation.provider.location.is.unavailable",
+        ))
+    })?;
     Ok((
         directory.join(format!("{}.xml", ctx.guard.namespace)),
         directory.join(format!("{}.after-update.json", ctx.guard.namespace)),
@@ -1154,9 +1248,11 @@ fn before_uninstall_deadline() -> Result<Instant, String> {
     let remaining = wall_deadline
         .duration_since(std::time::SystemTime::now())
         .unwrap_or_default();
-    Instant::now()
-        .checked_add(remaining)
-        .ok_or_else(|| "before-uninstall deadline is out of range".to_owned())
+    Instant::now().checked_add(remaining).ok_or_else(|| {
+        crate::host_text(
+            "journal.cli.host.windows.service.before.uninstall.deadline.is.out.of.range",
+        )
+    })
 }
 
 fn hook_cleanup_inventory(
@@ -1355,7 +1451,12 @@ fn run_install_action(
             .as_ref()
             != Some(&ctx.guard)
         {
-            eprintln!("service installation guard differs from the saved binding");
+            eprintln!(
+                "{}",
+                crate::host_text(
+                    "journal.cli.host.windows.service.service.installation.guard.differs.from.the.saved.binding"
+                )
+            );
             return ExitCode::from(1);
         }
     }
@@ -1369,8 +1470,14 @@ fn run_install_action(
         Some((_, Ok(port))) => Some(port),
         Some((text, Err(_))) => {
             eprintln!(
-                "error: invalid port '{}'",
-                solstone_core_system_health::sanitize_str_for_terminal_bounded(text)
+                "{}",
+                crate::host_display(
+                    "journal.cli.host.windows.service.error.invalid.port",
+                    [(
+                        "port",
+                        &(solstone_core_system_health::sanitize_str_for_terminal_bounded(text))
+                    )]
+                )
             );
             return ExitCode::from(1);
         }
@@ -1393,10 +1500,14 @@ fn run_uninstall_action() -> ExitCode {
     }
     if preflight.state == CleanUninstallPreflightState::NoBinding || preflight.root_record.is_none()
     {
-        return task_error("clean uninstall requires an adopted installation identity");
+        return task_error(crate::host_text(
+            "journal.cli.host.windows.service.clean.uninstall.requires.an.adopted.installation.identity",
+        ));
     }
     let Some(journal) = preflight.journal_path.as_deref() else {
-        return task_error("adopted installation has no journal path");
+        return task_error(crate::host_text(
+            "journal.cli.host.windows.service.adopted.installation.has.no.journal.path",
+        ));
     };
     let ctx = match context_for_journal(journal.to_path_buf()) {
         Ok(ctx) => ctx,
@@ -1566,14 +1677,18 @@ fn run_uninstall_action() -> ExitCode {
 }
 
 fn clear_update_intent(ctx: &ServiceContext) -> Result<(), ExitCode> {
-    let directory = task_artifact_directory(&ctx.owner)
-        .ok_or_else(|| task_error("cannot resolve task artifact directory"))?;
+    let directory = task_artifact_directory(&ctx.owner).ok_or_else(|| {
+        task_error(crate::host_text(
+            "journal.cli.host.windows.service.cannot.resolve.task.artifact.directory",
+        ))
+    })?;
     let path = directory.join(format!("{}.update-intent.json", ctx.guard.namespace));
     match fs::remove_file(path) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(task_error(format!(
-            "could not clear prior update intent: {error}"
+        Err(error) => Err(task_error(crate::host_display(
+            "journal.cli.host.windows.service.could.not.clear.prior.update.intent",
+            [("error", &error)],
         ))),
     }
 }
@@ -1623,19 +1738,32 @@ fn run_stop_for_update_action() -> ExitCode {
         return ExitCode::SUCCESS;
     }
     if snapshot.instances.len() > 1 {
-        return task_error("cannot identify one running service task");
+        return task_error(crate::host_text(
+            "journal.cli.host.windows.service.cannot.identify.one.running.service.task",
+        ));
     }
     let Some(artifact_dir) = task_artifact_directory(&ctx.owner) else {
-        return task_error("cannot resolve task artifact directory");
+        return task_error(crate::host_text(
+            "journal.cli.host.windows.service.cannot.resolve.task.artifact.directory",
+        ));
     };
     let intent_path = artifact_dir.join(format!("{}.update-intent.json", ctx.guard.namespace));
     let saved_intent = match fs::read(&intent_path) {
         Ok(bytes) => match parse_windows_update_intent(&bytes) {
             Some(intent) => Some(intent),
-            None => return task_error("update intent record is invalid"),
+            None => {
+                return task_error(crate::host_text(
+                    "journal.cli.host.windows.service.update.intent.record.is.invalid",
+                ));
+            }
         },
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
-        Err(error) => return task_error(format!("could not read update intent record: {error}")),
+        Err(error) => {
+            return task_error(crate::host_display(
+                "journal.cli.host.windows.service.could.not.read.update.intent.record",
+                [("error", &error)],
+            ));
+        }
     };
     let definition = match validate_task(&ctx, &snapshot) {
         Ok(definition) => definition,
@@ -1666,7 +1794,10 @@ fn run_stop_for_update_action() -> ExitCode {
         };
         if let Err(error) = publish() {
             let _ = fs::remove_file(&temp_path);
-            return task_error(format!("could not write update intent record: {error}"));
+            return task_error(crate::host_display(
+                "journal.cli.host.windows.service.could.not.write.update.intent.record",
+                [("error", &error)],
+            ));
         }
     }
 
@@ -1718,7 +1849,10 @@ fn run_restart_action(if_installed: bool) -> ExitCode {
         if if_installed {
             return ExitCode::SUCCESS;
         } else {
-            eprintln!("service task is not installed");
+            eprintln!(
+                "{}",
+                crate::host_text("journal.cli.host.windows.service.service.task.is.not.installed")
+            );
             return ExitCode::from(1);
         }
     }
@@ -1805,7 +1939,12 @@ fn run_status() -> ExitCode {
         Err(code) => return code,
     };
     if !snapshot.present {
-        println!("background service is not installed");
+        println!(
+            "{}",
+            crate::host_text(
+                "journal.cli.host.windows.service.background.service.is.not.installed"
+            )
+        );
         return ExitCode::from(3);
     }
     let definition = match validate_task(&ctx, &snapshot) {
@@ -1813,29 +1952,37 @@ fn run_status() -> ExitCode {
         Err(code) => return code,
     };
     let ready = solstone_core_system::lifecycle::readiness_is_valid(&ctx.journal);
-    println!("Task: {}", ctx.task_path);
     println!(
-        "Supervisor readiness: {}",
-        if ready { "ready" } else { "not ready" }
+        "{}",
+        crate::host_display(
+            "journal.cli.host.windows.service.task",
+            [("task", &ctx.task_path)]
+        )
+    );
+    println!(
+        "{}",
+        if ready {
+            crate::host_text("journal.cli.host.windows.service.supervisor.readiness.ready")
+        } else {
+            crate::host_text("journal.cli.host.windows.service.supervisor.readiness.not.ready")
+        }
     );
     if !definition.enabled {
         println!(
             "{}",
             if definition.starts_at_sign_in {
-                STOPPED_STATUS_COPY
+                crate::host_text(
+                    "journal.cli.host.windows.service.stopped.background.support.for.your.journal.starts.again.when.you",
+                )
             } else {
-                STOPPED_UNTIL_STARTED_STATUS_COPY
+                crate::host_text(
+                    "journal.cli.host.windows.service.stopped.background.support.for.your.journal.stays.off.until.you",
+                )
             }
         );
     }
     ExitCode::SUCCESS
 }
-
-/// The one status line a stopped service adds until the next sign-in.
-const STOPPED_STATUS_COPY: &str =
-    "Stopped: background support for your journal starts again when you next sign in.";
-/// The same line when signing in does not start the journal.
-const STOPPED_UNTIL_STARTED_STATUS_COPY: &str = "Stopped: background support for your journal stays off until you start it or open the journal app.";
 
 const APP_STATUS_SCHEMA: &str = "solstone-journal-app-status-v1";
 
@@ -1882,7 +2029,9 @@ fn run_app_status() -> ExitCode {
         None
     };
     let Some(journal) = ctx.journal.to_str() else {
-        return task_error("journal path contains invalid text");
+        return task_error(crate::host_text(
+            "journal.cli.host.windows.service.journal.path.contains.invalid.text",
+        ));
     };
     println!(
         "{}",
@@ -1962,7 +2111,9 @@ fn set_sign_in(ctx: &ServiceContext, on: bool) -> Result<(), ExitCode> {
             || changed.working_directory != registered.working_directory
             || !same_task_security(&before, &after)
         {
-            return Err(task_error("service task changed while recording its state"));
+            return Err(task_error(crate::host_text(
+                "journal.cli.host.windows.service.service.task.changed.while.recording.its.state",
+            )));
         }
         changed.enabled
     };
@@ -1999,10 +2150,14 @@ fn run_before_uninstall() -> ExitCode {
         CleanUninstallPreflightState::Proceed => {}
     }
     if preflight.root_record.is_none() {
-        return task_error("installation identity census is unreadable");
+        return task_error(crate::host_text(
+            "journal.cli.host.windows.service.installation.identity.census.is.unreadable",
+        ));
     }
     let Some(journal_path) = journal.as_deref() else {
-        return task_error("adopted installation has no journal path");
+        return task_error(crate::host_text(
+            "journal.cli.host.windows.service.adopted.installation.has.no.journal.path",
+        ));
     };
     let ctx = match context_for_journal(journal_path.to_path_buf()) {
         Ok(ctx) => ctx,
@@ -2285,7 +2440,11 @@ fn app_binding() -> Result<AppBinding, ExitCode> {
     let exe = std::env::current_exe().map_err(task_error)?;
     let root =
         resolve_identity_root_from_executable_dir(exe.parent().unwrap_or_else(|| Path::new(".")))
-            .ok_or_else(|| task_error("could not resolve uninstall root"))?;
+            .ok_or_else(|| {
+            task_error(crate::host_text(
+                "journal.cli.host.windows.service.could.not.resolve.uninstall.root",
+            ))
+        })?;
     let token = root_token_from_path(&root).map_err(task_error)?;
     app_binding_at(&owner, &token).map_err(task_error)
 }
@@ -2360,13 +2519,16 @@ fn consume_saved_intent(ctx: &ServiceContext) -> Result<Option<&'static str>, Ex
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => {
             log::warn!("could not read update intent file: {e}");
-            return Err(task_error(format!(
-                "could not read update intent record: {e}"
+            return Err(task_error(crate::host_display(
+                "journal.cli.host.windows.service.could.not.read.update.intent.record",
+                [("error", &e)],
             )));
         }
     };
     let Some(intent) = parse_windows_update_intent(&bytes) else {
-        return Err(task_error("update intent record is invalid"));
+        return Err(task_error(crate::host_text(
+            "journal.cli.host.windows.service.update.intent.record.is.invalid",
+        )));
     };
 
     let restore = windows_update_restore(intent);
@@ -2386,22 +2548,34 @@ fn consume_saved_intent(ctx: &ServiceContext) -> Result<Option<&'static str>, Ex
         if !is_running {
             start_task(ctx)?;
         }
-        fs::remove_file(&intent_path)
-            .map_err(|error| task_error(format!("could not consume update intent: {error}")))?;
+        fs::remove_file(&intent_path).map_err(|error| {
+            task_error(crate::host_display(
+                "journal.cli.host.windows.service.could.not.consume.update.intent",
+                [("error", &error)],
+            ))
+        })?;
         Ok(Some("started"))
     } else if restore.enable_without_start {
         if !is_enabled {
             set_task_enabled(ctx, &after, true, deadline)?;
         }
-        fs::remove_file(&intent_path)
-            .map_err(|error| task_error(format!("could not consume update intent: {error}")))?;
+        fs::remove_file(&intent_path).map_err(|error| {
+            task_error(crate::host_display(
+                "journal.cli.host.windows.service.could.not.consume.update.intent",
+                [("error", &error)],
+            ))
+        })?;
         Ok(Some("enabled"))
     } else {
         if is_enabled || is_running {
             stop_task(ctx, true)?;
         }
-        fs::remove_file(&intent_path)
-            .map_err(|error| task_error(format!("could not consume update intent: {error}")))?;
+        fs::remove_file(&intent_path).map_err(|error| {
+            task_error(crate::host_display(
+                "journal.cli.host.windows.service.could.not.consume.update.intent",
+                [("error", &error)],
+            ))
+        })?;
         Ok(Some("stopped"))
     }
 }
@@ -2465,14 +2639,17 @@ pub(crate) fn admit_task_action(args: &[OsString]) -> Result<Option<AdmittedTask
         .map(|arg| {
             arg.to_str()
                 .map(str::to_owned)
-                .ok_or_else(|| "windows service action contains non-Unicode text".to_owned())
+                .ok_or_else(|| crate::host_text("journal.cli.host.windows.service.windows.service.action.contains.non.unicode.text"))
         })
         .collect::<Result<Vec<_>, _>>()?;
     let action = WindowsServiceAction::parse(&arguments).map_err(str::to_owned)?;
-    let context = resolve_context_at(Some(Path::new(&action.journal)))
-        .map_err(|_| "windows service binding unavailable".to_owned())?;
+    let context = resolve_context_at(Some(Path::new(&action.journal))).map_err(|_| {
+        crate::host_text("journal.cli.host.windows.service.windows.service.binding.unavailable")
+    })?;
     if action.guard != context.guard {
-        return Err("windows service action differs from the complete saved binding".to_owned());
+        return Err(crate::host_text(
+            "journal.cli.host.windows.service.windows.service.action.differs.from.the.complete.saved.binding",
+        ));
     }
     Ok(Some(AdmittedTaskAction {
         arguments: arguments[..4].iter().map(OsString::from).collect(),

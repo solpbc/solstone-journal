@@ -1,0 +1,16 @@
+{
+  "description": "Native install models command, install with live progress. Preserve terminal syntax and supplied data.",
+  "context": "Native install models command, install with live progress. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "650800ed67d183a4ad74a7da7eb5b30811fc47ad107992ec9eb5e3ac6a7c31cb",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

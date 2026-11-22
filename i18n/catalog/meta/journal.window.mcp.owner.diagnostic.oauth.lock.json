@@ -1,0 +1,28 @@
+{
+  "description": "MCP owner diagnostic for oauth lock.",
+  "context": "MCP owner diagnostic for oauth lock.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "01225c147323ff40b385cba0f665fb7e249540650d124e173d49844d2ee4b954",
+  "max_length": 168,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_mcp",
+      "kind": "accepted-input",
+      "value": "MCP"
+    },
+    {
+      "name": "literal_oauth",
+      "kind": "accepted-input",
+      "value": "OAuth"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Journal host output for windows service it runs the journal at expected.",
+  "context": "Journal host output for windows service it runs the journal at expected.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "registered",
+      "type": "string"
+    },
+    {
+      "name": "journal",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b31820b9aa1bf2b745218ba37dd8263b1ef1d7581e5ca6211d60fc1d85dcd2bc",
+  "max_length": 183,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

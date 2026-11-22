@@ -1,0 +1,28 @@
+{
+  "description": "Journal host health heartbeat stale.",
+  "context": "Journal host health heartbeat stale.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "stale",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9a25d7f766fd3832bd79e930ff0bbebf4e0b3230afdf43dc0dd6249221c0113a",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

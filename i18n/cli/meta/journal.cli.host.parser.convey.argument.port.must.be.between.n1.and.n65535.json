@@ -1,0 +1,28 @@
+{
+  "description": "Terminal diagnostic for parser convey argument port must be between n1 and n65535.",
+  "context": "Terminal diagnostic for parser convey argument port must be between n1 and n65535.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a20eba1d61dc211bbd81bba38189b89bd468c673b4a274198aa5e569be2fbb94",
+  "max_length": 204,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "flag",
+      "value": "--port",
+      "kind": "flag"
+    }
+  ]
+}

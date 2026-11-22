@@ -1,0 +1,21 @@
+{
+  "description": "Journal host supervisor binding installation root.",
+  "context": "Journal host supervisor binding installation root.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "873ac4180ecb0f894f87a46bda7e1c104d5b2a44c2c3adb66340aa83b3a494be",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

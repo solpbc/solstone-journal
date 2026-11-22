@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for mcp pairing at revoked the active pairing code.",
+  "context": "Journal host output for mcp pairing at revoked the active pairing code.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a445195c89ea4bc20fcbb71ccb2b743200973758c6f939389971b470a6d719d1",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

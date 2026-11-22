@@ -1,0 +1,28 @@
+{
+  "description": "MCP owner diagnostic for token lock.",
+  "context": "MCP owner diagnostic for token lock.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "957f2abc73e330c9276d06d074d6378aaa3da0d1e7b8f6a2d1258d6ff0a8d559",
+  "max_length": 165,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_mcp",
+      "kind": "accepted-input",
+      "value": "MCP"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Native contract bundle command, build bundle. Preserve terminal syntax and supplied data.",
+  "context": "Native contract bundle command, build bundle. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "27cfb251ad6aefae89df07860f4a24f1f095c7ccb4dd786c3f9c875c47949fa7",
+  "max_length": 174,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service service readiness identity changed.",
+  "context": "Journal host output for windows service service readiness identity changed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "69d86dd717656254e855de002430eee641a131ab45f5af1b8312b6eee1a3e81b",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

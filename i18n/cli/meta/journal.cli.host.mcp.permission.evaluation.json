@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output for mcp permission evaluation.",
+  "context": "Journal host output for mcp permission evaluation.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "evaluation",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ef32672d4d65f4e6e80b23850242514b28a08c82289cd819ad4f524b796bd58a",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

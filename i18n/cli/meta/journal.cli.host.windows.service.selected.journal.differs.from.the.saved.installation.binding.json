@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service selected journal differs from the saved installation binding.",
+  "context": "Journal host output for windows service selected journal differs from the saved installation binding.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0778960c9afd7a92aa31c7a1012bccadac12cc500fa133d32d57499f670f39bc",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

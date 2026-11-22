@@ -1,0 +1,21 @@
+{
+  "description": "Terminal diagnostic for parser mcp permission set facet name must be nonempty.",
+  "context": "Terminal diagnostic for parser mcp permission set facet name must be nonempty.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6f65a7ff6b86d63750c1d85fe271b2bd35614fcabfa9c087222a771772124168",
+  "max_length": 144,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

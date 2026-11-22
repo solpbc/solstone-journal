@@ -1,0 +1,28 @@
+{
+  "description": "Terminal diagnostic for parser spl the following arguments are required service.",
+  "context": "Terminal diagnostic for parser spl the following arguments are required service.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fe625cfbf2f2136b67d219390bb933c192a292ab45369a8eae0e4cc25ce86c65",
+  "max_length": 213,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal",
+      "value": "service",
+      "kind": "accepted-input"
+    }
+  ]
+}

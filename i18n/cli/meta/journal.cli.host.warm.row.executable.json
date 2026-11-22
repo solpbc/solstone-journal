@@ -1,0 +1,25 @@
+{
+  "description": "Journal host warm row executable.",
+  "context": "Journal host warm row executable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "binary",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8a6da4f5c73f96218f43f446a378d51de99b0feeb400d529302fdbbff866712d",
+  "max_length": 210,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal setup argument validation: unknown.",
+  "context": "Journal setup argument validation: unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "33eabdcef7eba0ee9e81af1ec3d38efc474fe1dd01a7a0f6fc84922de37a91b6",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

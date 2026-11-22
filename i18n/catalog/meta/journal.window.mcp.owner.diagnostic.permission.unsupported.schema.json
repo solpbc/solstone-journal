@@ -1,0 +1,25 @@
+{
+  "description": "MCP owner diagnostic for permission unsupported schema.",
+  "context": "MCP owner diagnostic for permission unsupported schema.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "schema",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1ccdd82eced70f1cccd20eb6225f59ba175abee3ac0a9ad3cad0dd16e7d9aea4",
+  "max_length": 153,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

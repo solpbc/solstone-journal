@@ -1,0 +1,40 @@
+{
+  "description": "Journal host service file foreign.",
+  "context": "Journal host service file foreign.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "operation",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "7682e30a46331cc43aac9f9afe64f7158a3817d69f17f20a52b72cd2be4e2626",
+  "max_length": 2589,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "operation",
+    "type": "string",
+    "enum_values": [
+      "change-journal-folder",
+      "install",
+      "operate",
+      "restart",
+      "route-repair",
+      "status",
+      "stop",
+      "uninstall"
+    ],
+    "enum_default": "uninstall"
+  }
+}

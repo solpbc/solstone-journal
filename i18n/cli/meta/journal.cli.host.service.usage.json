@@ -1,0 +1,78 @@
+{
+  "description": "Terminal help and usage for service usage.",
+  "context": "Terminal help and usage for service usage.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e41519cccf7d4763b5ddb4711d6e01aa7d87966a87d227c26c9e7ab8c03df8d7",
+  "max_length": 1125,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal service <install|uninstall|start|stop|restart|status|logs>",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "spaces_7",
+      "value": "       ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "syntax_4",
+      "value": "solstone journal service install [--port PORT] [--initial-start-at-sign-in {on,off}]",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "term",
+      "value": "Windows",
+      "kind": "mark-word"
+    },
+    {
+      "name": "syntax_7",
+      "value": "solstone journal service restart [--if-installed]",
+      "kind": "command"
+    },
+    {
+      "name": "flag",
+      "value": "--if-installed",
+      "kind": "flag"
+    },
+    {
+      "name": "syntax_9",
+      "value": "solstone journal up",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_29",
+      "value": "                             ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "syntax_11",
+      "value": "solstone journal down",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_27",
+      "value": "                           ",
+      "kind": "whitespace"
+    }
+  ]
+}

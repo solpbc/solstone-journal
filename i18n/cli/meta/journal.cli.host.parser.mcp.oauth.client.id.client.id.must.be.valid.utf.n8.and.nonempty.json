@@ -1,0 +1,28 @@
+{
+  "description": "Terminal diagnostic for parser mcp oauth client id client id must be valid utf n8 and nonempty.",
+  "context": "Terminal diagnostic for parser mcp oauth client id client id must be valid utf n8 and nonempty.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1b590ab519981269396a722c7487831809b81f6292752a617d0acaaca9180295",
+  "max_length": 201,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "term",
+      "value": "UTF-8",
+      "kind": "mark-word"
+    }
+  ]
+}

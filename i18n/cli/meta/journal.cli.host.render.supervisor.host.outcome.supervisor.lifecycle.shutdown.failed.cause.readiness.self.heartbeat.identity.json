@@ -1,0 +1,33 @@
+{
+  "description": "Journal host output for render supervisor host outcome supervisor lifecycle shutdown failed cause readiness self heartbeat identity.",
+  "context": "Journal host output for render supervisor host outcome supervisor lifecycle shutdown failed cause readiness self heartbeat identity.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "cause",
+      "type": "string"
+    },
+    {
+      "name": "readiness",
+      "type": "string"
+    },
+    {
+      "name": "self_heartbeat",
+      "type": "string"
+    },
+    {
+      "name": "identity",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e94b857692727ab3d5f521aab24256f45228e5f21e0e4fd2e2fb53adde3a53f9",
+  "max_length": 420,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal host output for supervisor admission wait unverifiable.",
+  "context": "Journal host output for supervisor admission wait unverifiable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e34c448dc3b9fced611e79e3e0ff84004e3733491b477ba46368a8310fdc4b6d",
+  "max_length": 243,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "break_line",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service service command wait failed.",
+  "context": "Journal host service service command wait failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5699eb106315d2ee6230c71ff5dfaa801c0401a028dccbe0f89262b2c7481ac0",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

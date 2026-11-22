@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output for mcp status local disabled.",
+  "context": "Journal host output for mcp status local disabled.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "resource",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d232d297a17f7755a9e4be6fdb5cbcf2e099604f72e5b97163512396af1f6e68",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

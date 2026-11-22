@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service service unit publication failed.",
+  "context": "Journal host service service unit publication failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "be5aa43741d6c3e857ca5f43047f560b09526aa421d7be4bfbb56f6d97facc7c",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

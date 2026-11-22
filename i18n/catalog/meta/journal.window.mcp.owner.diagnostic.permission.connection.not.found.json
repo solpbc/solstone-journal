@@ -1,0 +1,21 @@
+{
+  "description": "MCP owner diagnostic for permission connection not found.",
+  "context": "MCP owner diagnostic for permission connection not found.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "key",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3859e5d7da8c5bcbd2d12b843db46a27be82f5cc551c3c225511e51a6ed02320",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

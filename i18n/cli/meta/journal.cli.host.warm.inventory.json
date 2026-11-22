@@ -1,0 +1,28 @@
+{
+  "description": "Journal host warm inventory.",
+  "context": "Journal host warm inventory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "758e6f4a9b9d033e749af53fe9c321e8f44b2ec1bddf9a0611735f7e00be88bd",
+  "max_length": 309,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "bindings",
+      "kind": "accepted-input",
+      "value": "bindings=\"bin\""
+    }
+  ]
+}

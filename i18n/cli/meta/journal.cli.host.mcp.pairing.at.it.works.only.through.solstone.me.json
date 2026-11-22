@@ -1,0 +1,23 @@
+{
+  "description": "Journal host output for mcp pairing at it works only through solstone me.",
+  "context": "Journal host output for mcp pairing at it works only through solstone me.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c3007a87c206d08935e66fa306cc112b59cb3ff4e424d2a3e701bec0f121e1b6",
+  "max_length": 141,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_solstone_me",
+      "kind": "accepted-input",
+      "value": "solstone.me"
+    }
+  ]
+}

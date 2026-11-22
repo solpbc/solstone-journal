@@ -1,0 +1,25 @@
+{
+  "description": "Journal host output for windows service is registered expected.",
+  "context": "Journal host output for windows service is registered expected.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "registered",
+      "type": "string"
+    },
+    {
+      "name": "expected",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "30c94f2b99cc8ab33204918eca1be93c423f75fabce66fd11fa4f2cc43de21e2",
+  "max_length": 159,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

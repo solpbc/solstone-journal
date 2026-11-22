@@ -1,0 +1,16 @@
+{
+  "description": "Journal host service service stderr unavailable.",
+  "context": "Journal host service service stderr unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8073739c87484931e38134cde8133c61055ae7fb15a18d3d712612a266761f14",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

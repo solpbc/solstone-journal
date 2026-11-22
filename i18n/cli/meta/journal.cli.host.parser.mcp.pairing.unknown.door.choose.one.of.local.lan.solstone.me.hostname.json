@@ -1,0 +1,43 @@
+{
+  "description": "Terminal diagnostic for parser mcp pairing unknown door choose one of local lan solstone me hostname.",
+  "context": "Terminal diagnostic for parser mcp pairing unknown door choose one of local lan solstone me hostname.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "84b3cfade34114872a1a6a3773f5db49180016d67acbed691906f81a2ccd2bb5",
+  "max_length": 327,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal",
+      "value": "local",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "literal_2",
+      "value": "lan",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "literal_3",
+      "value": "solstone.me",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "literal_4",
+      "value": "hostname",
+      "kind": "accepted-input"
+    }
+  ]
+}

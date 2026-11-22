@@ -1,0 +1,163 @@
+{
+  "description": "Terminal help and usage for start help.",
+  "context": "Terminal help and usage for start help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "54790fb0cb1500b2d27e4ed652fe9853890d03553286ae209658269fcdd6651f",
+  "max_length": 4797,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal start [-h] [--no-daily] [--no-cortex] [--no-spl]",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "spaces_21",
+      "value": "                     ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "syntax_4",
+      "value": "[--no-convey] [--no-schedule]",
+      "kind": "command"
+    },
+    {
+      "name": "syntax_5",
+      "value": "[--hosted-parent] [--journal JOURNAL]",
+      "kind": "command"
+    },
+    {
+      "name": "syntax_6",
+      "value": "[--direct-port DIRECT_PORT] [-v] [-d]",
+      "kind": "command"
+    },
+    {
+      "name": "syntax_7",
+      "value": "[port]",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "subcommand",
+      "value": "port",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "spaces_15",
+      "value": "               ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "term",
+      "value": "Convey",
+      "kind": "mark-word"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_9",
+      "value": "         ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_14",
+      "value": "--no-daily",
+      "kind": "command"
+    },
+    {
+      "name": "option_15",
+      "value": "--no-cortex",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_8",
+      "value": "        ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "term_17",
+      "value": "Cortex",
+      "kind": "mark-word"
+    },
+    {
+      "name": "option_18",
+      "value": "--no-spl",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_11",
+      "value": "           ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_20",
+      "value": "--no-convey",
+      "kind": "command"
+    },
+    {
+      "name": "option_21",
+      "value": "--no-schedule",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_6",
+      "value": "      ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_23",
+      "value": "--hosted-parent",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_4",
+      "value": "    ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_25",
+      "value": "--journal JOURNAL",
+      "kind": "command"
+    },
+    {
+      "name": "flag",
+      "value": "--direct-port",
+      "kind": "flag"
+    },
+    {
+      "name": "argument",
+      "value": "DIRECT_PORT",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "option_28",
+      "value": "-v, --verbose",
+      "kind": "command"
+    },
+    {
+      "name": "option_29",
+      "value": "-d, --debug",
+      "kind": "command"
+    }
+  ]
+}

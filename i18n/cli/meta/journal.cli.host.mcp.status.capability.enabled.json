@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for mcp status capability enabled.",
+  "context": "Journal host output for mcp status capability enabled.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "de61a789b875ed39bfb3f71ebbb83680fd254f576fd62aef8d4f161646c94f85",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

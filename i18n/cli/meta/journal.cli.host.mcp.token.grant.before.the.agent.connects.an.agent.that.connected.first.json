@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for mcp token grant before the agent connects an agent that connected first.",
+  "context": "Journal host output for mcp token grant before the agent connects an agent that connected first.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a31a677d95fe40dfe13683eeccd44f070b5c5857ad07e627a36818a16d3d5beb",
+  "max_length": 321,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

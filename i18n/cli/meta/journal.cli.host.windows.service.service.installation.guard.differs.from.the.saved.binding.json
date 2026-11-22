@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service service installation guard differs from the saved binding.",
+  "context": "Journal host output for windows service service installation guard differs from the saved binding.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a1f1282a11bce6a1777b8ff37a0205d4c9b9a8de357a9cb737fea6bb704b9985",
+  "max_length": 171,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

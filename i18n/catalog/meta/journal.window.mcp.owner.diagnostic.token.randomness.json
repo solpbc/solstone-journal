@@ -1,0 +1,16 @@
+{
+  "description": "MCP owner diagnostic for token randomness.",
+  "context": "MCP owner diagnostic for token randomness.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8fcde9057aeb82cff7592149900e6e5002960a6018400265fc2bbff3f83cd835",
+  "max_length": 147,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

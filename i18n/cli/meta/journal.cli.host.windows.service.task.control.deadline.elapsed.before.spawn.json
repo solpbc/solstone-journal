@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service task control deadline elapsed before spawn.",
+  "context": "Journal host output for windows service task control deadline elapsed before spawn.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4d3c935f3355b2a4fa4a7c0622959dec028d8ee172a659bcf1c2a0da81973326",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

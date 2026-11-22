@@ -1,0 +1,58 @@
+{
+  "description": "Terminal help and usage for navigate help.",
+  "context": "Terminal help and usage for navigate help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "83afb4b30ade888021508da49fc8b3495cda4dab88926543c3c0e4674cd43c63",
+  "max_length": 1062,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal navigate [-h] PATH",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "subcommand",
+      "value": "PATH",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "spaces_18",
+      "value": "                  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "term",
+      "value": "URL",
+      "kind": "mark-word"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_12",
+      "value": "            ",
+      "kind": "whitespace"
+    }
+  ]
+}

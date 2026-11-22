@@ -1,0 +1,28 @@
+{
+  "description": "MCP owner diagnostic for oauth directory.",
+  "context": "MCP owner diagnostic for oauth directory.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f175460ade98e99d007cfd270e307e678b788018e55ae9debd3abc5ae1a22ec6",
+  "max_length": 189,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_mcp",
+      "kind": "accepted-input",
+      "value": "MCP"
+    },
+    {
+      "name": "literal_oauth",
+      "kind": "accepted-input",
+      "value": "OAuth"
+    }
+  ]
+}

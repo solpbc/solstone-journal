@@ -1,0 +1,23 @@
+{
+  "description": "MCP owner diagnostic for oauth binding mismatch.",
+  "context": "MCP owner diagnostic for oauth binding mismatch.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "82c4db7eccfb3361fce56bdf3f1dda5ea1605eb1937fcba3a22dd2db05e10c21",
+  "max_length": 189,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_oauth",
+      "kind": "accepted-input",
+      "value": "OAuth"
+    }
+  ]
+}

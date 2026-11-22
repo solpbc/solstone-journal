@@ -1,0 +1,23 @@
+{
+  "description": "MCP owner diagnostic for oauth refresh reused.",
+  "context": "MCP owner diagnostic for oauth refresh reused.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1036844725823cba9c8419472ab1d787364a215e1a2ea9ef5ae0df9ecc8f5562",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_oauth",
+      "kind": "accepted-input",
+      "value": "OAuth"
+    }
+  ]
+}

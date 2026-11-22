@@ -1,0 +1,21 @@
+{
+  "description": "MCP owner diagnostic for token not found.",
+  "context": "MCP owner diagnostic for token not found.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "label",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9fa7c29f5409e88b5ece15fb8eb34a7f7bea0f9e62543957159f84d4bcac434b",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

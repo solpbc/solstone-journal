@@ -1,0 +1,16 @@
+{
+  "description": "Journal host service ready timeout.",
+  "context": "Journal host service ready timeout.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c34c065b1cad76fa8bb4f7204feab60477c4875ae12d3c6942aa81cb24bee5d6",
+  "max_length": 141,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

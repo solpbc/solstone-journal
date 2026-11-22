@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service before uninstall deadline is out of range.",
+  "context": "Journal host output for windows service before uninstall deadline is out of range.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8e90efec7c2d99099836f2ed367e2295fe7e43c02fd58f2e0a740d4e4f09934a",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

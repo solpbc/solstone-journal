@@ -1,0 +1,28 @@
+{
+  "description": "Journal host logs health usage.",
+  "context": "Journal host logs health usage.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "740c0295d95e38c90c1583508989e93e972c74c21d080a4b36992db80ca4146b",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "accepted-input",
+      "value": "solstone journal health logs"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service installed task action did not match its readback.",
+  "context": "Journal host output for windows service installed task action did not match its readback.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "25e21b78071ef637abba2a07409edbaef2a41e07905f26993726c3aaa9c905bf",
+  "max_length": 144,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal host service service stdout unavailable.",
+  "context": "Journal host service service stdout unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fd7099e9ed0c1dddadcd4d065b1dd2e66f9d867d9b0ca3bb7a9441a88f230499",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

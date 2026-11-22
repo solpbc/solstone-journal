@@ -1,0 +1,28 @@
+{
+  "description": "Terminal diagnostic for parser convey argument port invalid int value.",
+  "context": "Terminal diagnostic for parser convey argument port invalid int value.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c65f64664a84a39be2cdf132793eea3ae82ded40cd476e6ab19c8c9e3ea560a7",
+  "max_length": 174,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "flag",
+      "value": "--port",
+      "kind": "flag"
+    }
+  ]
+}

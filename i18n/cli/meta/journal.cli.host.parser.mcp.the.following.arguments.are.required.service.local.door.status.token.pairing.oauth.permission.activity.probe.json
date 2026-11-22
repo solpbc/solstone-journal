@@ -1,0 +1,68 @@
+{
+  "description": "Terminal diagnostic for parser mcp the following arguments are required service local door status token pairing oauth permission activity probe.",
+  "context": "Terminal diagnostic for parser mcp the following arguments are required service local door status token pairing oauth permission activity probe.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d1fb333690692554f43b7d981ef6f1056dfb92ac74918c15025632dab4515890",
+  "max_length": 597,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal",
+      "value": "service",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "literal_2",
+      "value": "local-door",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "literal_3",
+      "value": "status",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "literal_4",
+      "value": "token",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "literal_5",
+      "value": "pairing",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "literal_6",
+      "value": "oauth",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "literal_7",
+      "value": "permission",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "literal_8",
+      "value": "activity",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "literal_9",
+      "value": "probe",
+      "kind": "accepted-input"
+    }
+  ]
+}

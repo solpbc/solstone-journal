@@ -1,0 +1,16 @@
+{
+  "description": "Native config command, maybe restart current service. Preserve terminal syntax and supplied data.",
+  "context": "Native config command, maybe restart current service. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1e7d3fedf547326c70536aa787ef379639d3bac1208340164b6021b7a2470cf3",
+  "max_length": 168,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

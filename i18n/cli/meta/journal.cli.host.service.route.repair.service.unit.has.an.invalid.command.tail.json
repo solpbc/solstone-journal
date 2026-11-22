@@ -1,0 +1,16 @@
+{
+  "description": "Journal host service route repair service unit has an invalid command tail.",
+  "context": "Journal host service route repair service unit has an invalid command tail.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "09516b60ccaf577ad7a5cd66365b454da2b1c6704a834ebcd7ed414ed4f45b31",
+  "max_length": 159,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

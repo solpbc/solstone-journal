@@ -1,0 +1,28 @@
+{
+  "description": "Native thinking command, run chatgpt sign in. Preserve terminal syntax and supplied data.",
+  "context": "Native thinking command, run chatgpt sign in. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "outcome",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8ef0dae9c4e02a1951f3f8558e26cd067e088ceeb0a96812d51e016127ea05d3",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_1",
+      "kind": "accepted-input",
+      "value": "ChatGPT"
+    }
+  ]
+}

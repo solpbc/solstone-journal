@@ -1,0 +1,41 @@
+{
+  "description": "Journal host output for malformed jsonl warning solstone observe utils invalid json at line in.",
+  "context": "Journal host output for malformed jsonl warning solstone observe utils invalid json at line in.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "line",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bcea19354f46de36115005c5b4f2eab94feaa16852ae6a837d89dcdbf1449966",
+  "max_length": 336,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_warning_solstone_observe_utils",
+      "kind": "accepted-input",
+      "value": "WARNING:solstone.observe.utils"
+    },
+    {
+      "name": "literal_json",
+      "kind": "accepted-input",
+      "value": "JSON"
+    }
+  ]
+}

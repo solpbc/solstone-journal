@@ -1,0 +1,25 @@
+{
+  "description": "Journal host warm row missing.",
+  "context": "Journal host warm row missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "binary",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c6052b7fef5530bf8b14a8767769045a020b9dc07c661e7dcee5ade3bcda7238",
+  "max_length": 210,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

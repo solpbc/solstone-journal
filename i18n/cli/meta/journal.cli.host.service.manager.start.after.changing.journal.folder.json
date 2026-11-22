@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service manager start after changing journal folder.",
+  "context": "Journal host service manager start after changing journal folder.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "result",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f5ff2697a18ff198ca4986f5dc67906509c38e8c79436ad244e12e56e098b156",
+  "max_length": 165,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,103 @@
+{
+  "description": "Terminal help and usage for mcp permission set help.",
+  "context": "Terminal help and usage for mcp permission set help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6ebb979662e5f6df22a6601f713e0dc6cf5c5ff00096f3941c3b1220df21e569",
+  "max_length": 2517,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal mcp permission set [-h] (--token LABEL | --oauth CLIENT_ID [--created TIMESTAMP])",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "spaces_43",
+      "value": "                                           ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "syntax_4",
+      "value": "--category CATEGORY [--category CATEGORY ...]",
+      "kind": "command"
+    },
+    {
+      "name": "syntax_5",
+      "value": "[--facet FACET ...]",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_11",
+      "value": "           ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_9",
+      "value": "--token LABEL",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_8",
+      "value": "        ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_11",
+      "value": "--oauth CLIENT_ID",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_4",
+      "value": "    ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "term",
+      "value": "OAuth",
+      "kind": "mark-word"
+    },
+    {
+      "name": "option_14",
+      "value": "--created TIMESTAMP",
+      "kind": "command"
+    },
+    {
+      "name": "flag",
+      "value": "--oauth",
+      "kind": "flag"
+    },
+    {
+      "name": "option_16",
+      "value": "--category CATEGORY",
+      "kind": "command"
+    },
+    {
+      "name": "option_17",
+      "value": "--facet FACET",
+      "kind": "command"
+    }
+  ]
+}

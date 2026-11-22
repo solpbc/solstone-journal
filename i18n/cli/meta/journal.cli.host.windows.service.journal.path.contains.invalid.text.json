@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service journal path contains invalid text.",
+  "context": "Journal host output for windows service journal path contains invalid text.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "87b20ee9eba65879fbfeaf45f4714794f6b6be988019cc1feba62834e345d22f",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

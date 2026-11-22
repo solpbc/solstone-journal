@@ -18,7 +18,7 @@ use solstone_core_thinking::providers::{
 
 use crate::{
     EXIT_CANTCREAT, EXIT_DATAERR, EXIT_INTERNAL_FAILURE, EXIT_IOERR, EXIT_TEMPFAIL,
-    EXIT_UNAVAILABLE, print_journal_error, resolve_journal_config_path,
+    EXIT_UNAVAILABLE, resolve_journal_config_path,
 };
 
 struct SetLaneOutcome {
@@ -28,9 +28,13 @@ struct SetLaneOutcome {
 }
 
 pub fn run(options: ThinkingSetLaneOptions) -> ExitCode {
+    let locale = solstone_core_cli_copy::ENGLISH;
     let journal = match resolve_journal_config_path(options.journal_override.clone()) {
         Ok(journal) => journal.path,
-        Err(error) => return print_journal_error(error),
+        Err(error) => {
+            crate::eprint_journal_path_error_in(locale, error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
     };
     let outcome = run_set_lane(&journal, &options);
     if !outcome.stdout.is_empty() {
@@ -73,15 +77,19 @@ pub fn read_pasted_line_if_terminal<R: std::io::BufRead + IsTerminal>(
 }
 
 pub fn run_chatgpt_sign_in(options: ChatGptSignInOptions) -> ExitCode {
+    let locale = crate::host_locale();
     let journal = match resolve_journal_config_path(options.journal_override) {
         Ok(journal) => journal.path,
-        Err(error) => return print_journal_error(error),
+        Err(error) => {
+            crate::eprint_journal_path_error_in(locale, error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
     };
 
     let attempt = match solstone_core_thinking::chatgpt::begin_sign_in(&journal) {
         Ok(attempt) => attempt,
         Err(error) => {
-            eprintln!("{error}");
+            eprintln!("{}", credential_error(locale, &error));
             return ExitCode::from(EXIT_DATAERR);
         }
     };
@@ -136,31 +144,61 @@ pub fn run_chatgpt_sign_in(options: ChatGptSignInOptions) -> ExitCode {
 
     match finish_result {
         Ok(_res) => {
-            println!("signed in to ChatGPT successfully.");
+            println!(
+                "{}",
+                solstone_core_cli_copy::render_for(
+                    crate::host_locale(),
+                    "journal.cli.host.thinking.run.chatgpt.sign.in.signed.in.chatgpt.successfully",
+                    &[]
+                )
+            );
             ExitCode::SUCCESS
         }
         Err(solstone_core_thinking::chatgpt::ClosedOutcome::RegistrationRefused)
         | Err(solstone_core_thinking::chatgpt::ClosedOutcome::PlanUsageNotGranted) => {
-            eprintln!("ChatGPT sign-in required: run 'solstone journal thinking chatgpt sign-in'");
+            eprintln!(
+                "{}",
+                solstone_core_cli_copy::render_for(
+                    crate::host_locale(),
+                    "journal.cli.host.thinking.run.chatgpt.sign.in.chatgpt.sign.in.required.run",
+                    &[]
+                )
+            );
             ExitCode::from(EXIT_DATAERR)
         }
         Err(solstone_core_thinking::chatgpt::ClosedOutcome::AccountMismatch) => {
             eprintln!(
-                "account mismatch: run 'solstone journal thinking chatgpt sign-out --forget'"
+                "{}",
+                solstone_core_cli_copy::render_for(
+                    crate::host_locale(),
+                    "!journal.cli.host.thinking.run.chatgpt.sign.in.account.mismatch.run.thinking.chatgpt",
+                    &[]
+                )
             );
             ExitCode::from(EXIT_DATAERR)
         }
         Err(outcome) => {
-            eprintln!("ChatGPT sign-in failed: {outcome}");
+            eprintln!(
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.thinking.run.chatgpt.sign.in.chatgpt.sign.in.failed.outcome",
+                    [("outcome", &outcome)]
+                )
+            );
             ExitCode::from(EXIT_DATAERR)
         }
     }
 }
 
 pub fn run_chatgpt_sign_out(options: ChatGptSignOutOptions) -> ExitCode {
+    let locale = crate::host_locale();
     let journal = match resolve_journal_config_path(options.journal_override) {
         Ok(journal) => journal.path,
-        Err(error) => return print_journal_error(error),
+        Err(error) => {
+            crate::eprint_journal_path_error_in(locale, error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
     };
 
     let transport = solstone_core_thinking::chatgpt::UreqTransport;
@@ -168,24 +206,44 @@ pub fn run_chatgpt_sign_out(options: ChatGptSignOutOptions) -> ExitCode {
         Ok(res) => {
             if !res.revoked {
                 println!(
-                    "signed out of ChatGPT.\nTo complete sign-out, disconnect solstone in your ChatGPT account settings."
+                    "{}",
+                    solstone_core_cli_copy::render_for(
+                        crate::host_locale(),
+                        "journal.cli.host.thinking.run.chatgpt.sign.out.signed.out.chatgpt.complete.sign",
+                        &[]
+                    )
                 );
             } else {
-                println!("signed out of ChatGPT.");
+                println!(
+                    "{}",
+                    solstone_core_cli_copy::render_for(
+                        crate::host_locale(),
+                        "journal.cli.host.thinking.run.chatgpt.sign.out.signed.out.chatgpt",
+                        &[]
+                    )
+                );
             }
             ExitCode::SUCCESS
         }
         Err(error) => {
-            eprintln!("{error}");
+            eprintln!("{}", credential_error(locale, &error));
             ExitCode::from(EXIT_DATAERR)
         }
     }
 }
 
 pub fn run_chatgpt_status(options: ChatGptStatusOptions) -> ExitCode {
+    let locale = if options.json {
+        solstone_core_cli_copy::ENGLISH
+    } else {
+        crate::host_locale()
+    };
     let journal = match resolve_journal_config_path(options.journal_override) {
         Ok(journal) => journal.path,
-        Err(error) => return print_journal_error(error),
+        Err(error) => {
+            crate::eprint_journal_path_error_in(locale, error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
     };
 
     match solstone_core_thinking::chatgpt::get_status(&journal) {
@@ -196,26 +254,55 @@ pub fn run_chatgpt_status(options: ChatGptStatusOptions) -> ExitCode {
                     serde_json::to_string_pretty(&status).unwrap_or_default()
                 );
             } else if status.signed_in {
-                println!("status: signed in");
+                println!(
+                    "{}",
+                    solstone_core_cli_copy::render_for(
+                        crate::host_locale(),
+                        "journal.cli.host.thinking.run.chatgpt.status.status.signed.in",
+                        &[]
+                    )
+                );
                 if status.plan_usage_declined {
-                    println!("plan usage: declined");
+                    println!(
+                        "{}",
+                        solstone_core_cli_copy::render_for(
+                            crate::host_locale(),
+                            "journal.cli.host.thinking.run.chatgpt.status.plan.usage.declined",
+                            &[]
+                        )
+                    );
                 }
             } else {
-                println!("status: not signed in");
+                println!(
+                    "{}",
+                    solstone_core_cli_copy::render_for(
+                        crate::host_locale(),
+                        "journal.cli.host.thinking.run.chatgpt.status.status.not.signed.in",
+                        &[]
+                    )
+                );
             }
             ExitCode::SUCCESS
         }
         Err(error) => {
-            eprintln!("{error}");
+            eprintln!("{}", credential_error(locale, &error));
             ExitCode::from(EXIT_DATAERR)
         }
     }
 }
 
 pub fn run_chatgpt_models(options: ChatGptModelsOptions) -> ExitCode {
+    let locale = if options.json {
+        solstone_core_cli_copy::ENGLISH
+    } else {
+        crate::host_locale()
+    };
     let journal = match resolve_journal_config_path(options.journal_override) {
         Ok(journal) => journal.path,
-        Err(error) => return print_journal_error(error),
+        Err(error) => {
+            crate::eprint_journal_path_error_in(locale, error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
     };
 
     let transport = std::sync::Arc::new(solstone_core_thinking::chatgpt::UreqTransport);
@@ -235,9 +322,78 @@ pub fn run_chatgpt_models(options: ChatGptModelsOptions) -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(error) => {
-            eprintln!("{error}");
+            eprintln!("{}", credential_error(locale, &error));
             ExitCode::from(EXIT_UNAVAILABLE)
         }
+    }
+}
+
+fn credential_error(
+    locale: &str,
+    error: &solstone_core_thinking::chatgpt::CredentialError,
+) -> String {
+    use solstone_core_thinking::chatgpt::CredentialError;
+    match error {
+        CredentialError::SignInRequired => solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.host.thinking.run.chatgpt.sign.in.chatgpt.sign.in.required.run",
+            &[],
+        ),
+        CredentialError::Busy => solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.host.thinking.credential.chatgpt.credential.store.busy",
+            &[],
+        ),
+        CredentialError::Storage(path) => solstone_core_cli_copy::display_for(
+            locale,
+            "!journal.cli.host.thinking.credential.path.credential.storage.unreadable.or",
+            [("path", &path.display())],
+        ),
+        CredentialError::Io(msg) => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.host.thinking.credential.i.o.during.credential.operation",
+            [("msg", &msg)],
+        ),
+        CredentialError::GrantNotSaved => solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.host.thinking.credential.chatgpt.token.grant.was.received",
+            &[],
+        ),
+        CredentialError::Network => solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.host.thinking.credential.network.communicating.with.chatgpt.auth",
+            &[],
+        ),
+        CredentialError::Unavailable => solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.host.thinking.credential.chatgpt.auth.server.temporarily.unavailable",
+            &[],
+        ),
+        CredentialError::Refused(Some(code)) => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.host.thinking.credential.chatgpt.request.was.code",
+            [("code", &code)],
+        ),
+        CredentialError::Refused(None) => solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.host.thinking.credential.chatgpt.request.was.by.auth",
+            &[],
+        ),
+        CredentialError::Malformed(Some(field)) => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.host.thinking.credential.chatgpt.server.returned.malformed.payload",
+            [("field", &field)],
+        ),
+        CredentialError::Malformed(None) => solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.host.thinking.credential.chatgpt.server.returned.malformed.payload.server.returned.malformed.payload",
+            &[],
+        ),
+        CredentialError::NotEligible => solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.host.thinking.credential.this.chatgpt.account.isn.t",
+            &[],
+        ),
     }
 }
 

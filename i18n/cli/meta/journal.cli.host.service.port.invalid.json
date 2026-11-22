@@ -1,0 +1,21 @@
+{
+  "description": "Terminal diagnostic for service port invalid.",
+  "context": "Terminal diagnostic for service port invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1f9ff1869bf6c5c7cf1b4b84c2e200cec1590aa2f44d86a390def52b419de18a",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Terminal help and usage for thinking chatgpt usage.",
+  "context": "Terminal help and usage for thinking chatgpt usage.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "96bc3b646c1136ed2957bfd064ede127beb7eb439d924169bc3359767cdaef49",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal thinking chatgpt [-h] {sign-in,sign-out,status,models} ...",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    }
+  ]
+}

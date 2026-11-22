@@ -1,0 +1,25 @@
+{
+  "description": "Journal host logs grep unsupported.",
+  "context": "Journal host logs grep unsupported.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "family",
+      "type": "string"
+    },
+    {
+      "name": "offset",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4604fa9b54bd2260f1fc63ff9480b87db1869c16804f03c82053c0b858c853ad",
+  "max_length": 198,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

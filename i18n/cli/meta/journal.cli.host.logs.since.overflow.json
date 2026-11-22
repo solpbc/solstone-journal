@@ -1,0 +1,16 @@
+{
+  "description": "Journal host logs since overflow.",
+  "context": "Journal host logs since overflow.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c6697ee71d2b94219e6ce84cc844ccd467ce1d991c03986166d01243d82cdd45",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

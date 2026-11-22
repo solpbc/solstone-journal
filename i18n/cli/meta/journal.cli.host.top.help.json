@@ -1,0 +1,58 @@
+{
+  "description": "Terminal help and usage for top help.",
+  "context": "Terminal help and usage for top help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "994674636bf01f62ca835d1bbe4566f0e0f0c952e9b761501c510b036f32cb51",
+  "max_length": 1188,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal top [-h] [-v] [-d]",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_5",
+      "value": "     ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_6",
+      "value": "-v, --verbose",
+      "kind": "command"
+    },
+    {
+      "name": "option_7",
+      "value": "-d, --debug",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_4",
+      "value": "    ",
+      "kind": "whitespace"
+    }
+  ]
+}

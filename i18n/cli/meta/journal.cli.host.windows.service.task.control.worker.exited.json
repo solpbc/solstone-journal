@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service task control worker exited.",
+  "context": "Journal host output for windows service task control worker exited.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e98ddb784dd66fa22c4eaf100a0d8882b2f893fe7b5d2d970be088aaefd03c35",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

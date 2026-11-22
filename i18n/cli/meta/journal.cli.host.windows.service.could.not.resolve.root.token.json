@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output for windows service could not resolve root token.",
+  "context": "Journal host output for windows service could not resolve root token.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "495cf1c3ae68b1e1c3367ca3412f0807d58ecf5a7d6a394ab453c9ca0c2322a4",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

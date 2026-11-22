@@ -21,9 +21,7 @@ use solstone_core_installation_identity::{
 };
 use solstone_core_journal_io::legacy_log_alias::cleanup_legacy_log_aliases;
 #[cfg(unix)]
-use solstone_core_system::lifecycle::{
-    ADMISSION_WAIT_ACTIVE_COPY, AdmissionWaitTerminalReason, SupervisorBootAdmission,
-};
+use solstone_core_system::lifecycle::{AdmissionWaitTerminalReason, SupervisorBootAdmission};
 use solstone_core_system::lifecycle::{
     ArtifactClearOutcome, DeclaredParent, LifecycleError, ParentAdmissionFailure, ParentLossReason,
     ParentWatch, ShutdownDisposition, ShutdownOutcome, ShutdownPhase, SyncTickOutcome, WriterId,
@@ -31,7 +29,7 @@ use solstone_core_system::lifecycle::{
 #[cfg(unix)]
 use solstone_core_system::lifecycle::{ParentLossReaderOutcome, read_parent_loss_outcome};
 use solstone_core_system::process::SystemProcessInstanceSource;
-use solstone_core_system_health::format_sync_scan_failure_copy;
+use solstone_core_system_health::format_sync_scan_failure_copy_in;
 use solstone_core_transcribe::{SpeakersAnalyzeGeneration, SpeakersAnalyzeOwnerRole};
 
 use super::{runtime, tick};
@@ -94,20 +92,27 @@ pub enum InstallationBindingRefusal {
 
 impl fmt::Display for InstallationBindingRefusal {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let detail = match self {
-            Self::ProgramFolderJournal => {
-                return formatter.write_str(
-                    solstone_core_installation_identity::PROGRAM_FOLDER_JOURNAL_REFUSAL,
-                );
+        formatter.write_str(&self.message_for(solstone_core_cli_copy::ENGLISH))
+    }
+}
+
+impl InstallationBindingRefusal {
+    pub fn message_for(&self, locale: &str) -> String {
+        match self {
+            Self::ProgramFolderJournal => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.host.supervisor.journal.program.folder",
+                &[],
+            ),
+            Self::LoadFailed(detail) => {
+                crate::installation_context::installation_recovery_copy_for(locale, detail)
             }
-            Self::LoadFailed(detail) => detail.as_str(),
-            Self::JournalTokenMismatch => {
-                "the saved installation binding is for a different journal"
-            }
-        };
-        formatter.write_str(&crate::installation_context::installation_recovery_copy(
-            detail,
-        ))
+            Self::JournalTokenMismatch => solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.host.supervisor.journal.token.mismatch",
+                &[],
+            ),
+        }
     }
 }
 
@@ -189,10 +194,15 @@ struct HostedInstallationBinding {
 /// one is the journal.
 pub const ALREADY_RUNNING_COPY: &str = "your journal is already running.\n\nthis start stepped aside so the running one is not disturbed. nothing needs doing.\n";
 
+#[cfg(all(test, unix))]
 fn lifecycle_boot_refusal(error: LifecycleError) -> SupervisorBootRefusal {
+    lifecycle_boot_refusal_in(solstone_core_cli_copy::ENGLISH, error)
+}
+
+fn lifecycle_boot_refusal_in(locale: &str, error: LifecycleError) -> SupervisorBootRefusal {
     match error {
         LifecycleError::SyncScan(failure) => {
-            SupervisorBootRefusal::SyncScan(format_sync_scan_failure_copy(&failure))
+            SupervisorBootRefusal::SyncScan(format_sync_scan_failure_copy_in(&failure, locale))
         }
         LifecycleError::AlreadyRunning => SupervisorBootRefusal::AlreadyRunning,
         #[cfg(unix)]
@@ -202,7 +212,11 @@ fn lifecycle_boot_refusal(error: LifecycleError) -> SupervisorBootRefusal {
         LifecycleError::AdmissionWaitMarkerLive => {
             #[cfg(unix)]
             {
-                SupervisorBootRefusal::SyncScan(ADMISSION_WAIT_ACTIVE_COPY.to_owned())
+                SupervisorBootRefusal::SyncScan(solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.host.supervisor.admission.wait.active",
+                    &[],
+                ))
             }
             #[cfg(not(unix))]
             {
@@ -242,31 +256,52 @@ fn lifecycle_boot_refusal(error: LifecycleError) -> SupervisorBootRefusal {
 /// closure retires from. Every remaining cause converges on a retry: a missed
 /// deadline under load, a coordinator still adjudicating the last run, or a
 /// process from the last run still exiting.
-#[cfg(any(unix, test))]
+#[cfg(test)]
 fn format_lifecycle_recovery_copy(
     journal: &Path,
     reason: runtime::ParentLossCoordinatorBootstrapFailure,
 ) -> String {
-    let mut copy = String::from("this start could not continue.\n");
-    // ⚠ The settled close for this family --
-    // ADMISSION_WAIT_{TERMINAL,ACTIVE,UNVERIFIABLE}_COPY all end on exactly
-    // "wait a moment, then try again." The wait is load-bearing on
-    // `CoordinatorRetirementUnverified`, where retrying at once re-enters the
-    // race that produced the refusal.
-    if last_run_is_still_closing(journal, reason) {
-        copy.push_str("\nthe last run is still shutting down. wait a moment, then try again.\n");
+    format_lifecycle_recovery_copy_in(solstone_core_cli_copy::ENGLISH, journal, reason)
+}
+
+#[cfg(any(unix, test))]
+fn format_lifecycle_recovery_copy_in(
+    locale: &str,
+    journal: &Path,
+    reason: runtime::ParentLossCoordinatorBootstrapFailure,
+) -> String {
+    let summary = if last_run_is_still_closing(journal, reason) {
+        solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.host.supervisor.recovery.closing",
+            &[],
+        )
     } else {
-        copy.push_str("\nwait a moment, then try again.\n");
-    }
-    // ⛔ "your memories", NOT "your journal is untouched". Every one of these
-    // paths may have written bookkeeping under `health/`, and
-    // `CoordinatorRetirementUnverified` is returned precisely when a helper
-    // that may still be RUNNING could not be confirmed stopped -- so the one
-    // arm named for its lack of confirmation is the one that would be
-    // asserting a confirmed fact about the journal.
-    copy.push_str("\nyour memories are untouched.\n");
-    copy.push_str(&format!("\ndetails: {reason}\n"));
-    copy
+        solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.host.supervisor.recovery.retry",
+            &[],
+        )
+    };
+    let id = match reason {
+        runtime::ParentLossCoordinatorBootstrapFailure::Launch => {
+            "journal.cli.host.supervisor.recovery.launch"
+        }
+        runtime::ParentLossCoordinatorBootstrapFailure::IdentityEstablishment => {
+            "journal.cli.host.supervisor.recovery.identity.establishment"
+        }
+        runtime::ParentLossCoordinatorBootstrapFailure::InitialAdmissionHandshake => {
+            "journal.cli.host.supervisor.recovery.initial.admission.handshake"
+        }
+        runtime::ParentLossCoordinatorBootstrapFailure::CoordinatorStoppedBeforeReady => {
+            "journal.cli.host.supervisor.recovery.coordinator.stopped.before.ready"
+        }
+        runtime::ParentLossCoordinatorBootstrapFailure::CoordinatorRetirementUnverified => {
+            "journal.cli.host.supervisor.recovery.coordinator.retirement.unverified"
+        }
+    };
+    let detail = solstone_core_cli_copy::render_for(locale, id, &[]);
+    format!("{summary}\n{detail}\n")
 }
 
 /// The one refusal cause the owner can be told more about: the coordinator
@@ -307,7 +342,27 @@ pub async fn run_hosted(
         &solstone_core_system::process::AdmittedInstalledTaskLaunch,
     >,
 ) -> SupervisorHostOutcome {
-    let binding = match load_generation(journal) {
+    run_hosted_in(
+        solstone_core_cli_copy::ENGLISH,
+        journal,
+        options,
+        parent,
+        #[cfg(windows)]
+        installed_task,
+    )
+    .await
+}
+
+pub async fn run_hosted_in(
+    locale: &str,
+    journal: &Path,
+    options: SupervisorOptions,
+    parent: Option<DeclaredParent>,
+    #[cfg(windows)] installed_task: Option<
+        &solstone_core_system::process::AdmittedInstalledTaskLaunch,
+    >,
+) -> SupervisorHostOutcome {
+    let binding = match load_generation_in(locale, journal) {
         Ok(binding) => binding,
         Err(reason) => return SupervisorHostOutcome::Refused { reason },
     };
@@ -332,7 +387,8 @@ pub async fn run_hosted(
     // pre-lifecycle acquisition order.
     #[cfg(windows)]
     let speakers_analyze_generation =
-        match solstone_core_transcribe::enter_speakers_analyze_generation(
+        match solstone_core_transcribe::enter_speakers_analyze_generation_in(
+            locale,
             journal,
             SpeakersAnalyzeOwnerRole::Supervisor,
             #[cfg(windows)]
@@ -352,7 +408,7 @@ pub async fn run_hosted(
         Ok(admission) => admission,
         Err(error) => {
             return SupervisorHostOutcome::Refused {
-                reason: lifecycle_boot_refusal(error),
+                reason: lifecycle_boot_refusal_in(locale, error),
             };
         }
     };
@@ -388,7 +444,7 @@ pub async fn run_hosted(
         Ok(lifecycle) => lifecycle,
         Err(error) => {
             return SupervisorHostOutcome::Refused {
-                reason: lifecycle_boot_refusal(error),
+                reason: lifecycle_boot_refusal_in(locale, error),
             };
         }
     };
@@ -398,7 +454,7 @@ pub async fn run_hosted(
         Ok(lifecycle) => lifecycle,
         Err(error) => {
             return SupervisorHostOutcome::Refused {
-                reason: lifecycle_boot_refusal(error),
+                reason: lifecycle_boot_refusal_in(locale, error),
             };
         }
     };
@@ -414,8 +470,8 @@ pub async fn run_hosted(
         Err(error) => {
             let reason = match error {
                 runtime::RuntimeBootError::BootstrapRecoveryRequired(reason) => {
-                    SupervisorBootRefusal::LifecycleRecovery(format_lifecycle_recovery_copy(
-                        journal, reason,
+                    SupervisorBootRefusal::LifecycleRecovery(format_lifecycle_recovery_copy_in(
+                        locale, journal, reason,
                     ))
                 }
                 other => {
@@ -431,7 +487,8 @@ pub async fn run_hosted(
     // proves that child is gone before this generation attempts acquisition.
     #[cfg(unix)]
     let speakers_analyze_generation =
-        match solstone_core_transcribe::enter_speakers_analyze_generation(
+        match solstone_core_transcribe::enter_speakers_analyze_generation_in(
+            locale,
             journal,
             SpeakersAnalyzeOwnerRole::Supervisor,
         ) {
@@ -476,7 +533,9 @@ pub async fn run_hosted(
         }
         Err(runtime::RuntimeBootError::SyncScan(failure)) => {
             return SupervisorHostOutcome::Refused {
-                reason: SupervisorBootRefusal::SyncScan(format_sync_scan_failure_copy(&failure)),
+                reason: SupervisorBootRefusal::SyncScan(format_sync_scan_failure_copy_in(
+                    &failure, locale,
+                )),
             };
         }
         Err(runtime::RuntimeBootError::AdmissionWaitTerminal) => {
@@ -487,9 +546,9 @@ pub async fn run_hosted(
         #[cfg(unix)]
         Err(runtime::RuntimeBootError::BootstrapRecoveryRequired(reason)) => {
             return SupervisorHostOutcome::Refused {
-                reason: SupervisorBootRefusal::LifecycleRecovery(format_lifecycle_recovery_copy(
-                    journal, reason,
-                )),
+                reason: SupervisorBootRefusal::LifecycleRecovery(
+                    format_lifecycle_recovery_copy_in(locale, journal, reason),
+                ),
             };
         }
         Err(error) => {
@@ -560,17 +619,28 @@ fn classify_shutdown(cause: ShutdownCause, outcome: ShutdownOutcome) -> Supervis
     SupervisorHostOutcome::OrderlyShutdown { cause }
 }
 
-fn load_generation(journal: &Path) -> Result<HostedInstallationBinding, SupervisorBootRefusal> {
+fn load_generation_in(
+    locale: &str,
+    journal: &Path,
+) -> Result<HostedInstallationBinding, SupervisorBootRefusal> {
     #[cfg(unix)]
     let owner = {
         let home = std::env::var_os("HOME").ok_or_else(|| {
             SupervisorBootRefusal::InstallationBinding(InstallationBindingRefusal::LoadFailed(
-                format!("home: {}", IdentityError::InvalidInput("HOME is not set")),
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.host.supervisor.binding.home",
+                    [("error", &(IdentityError::InvalidInput("HOME is not set")))],
+                ),
             ))
         })?;
         crate::installation_context::owner_base_at_home(PathBuf::from(home)).map_err(|error| {
             SupervisorBootRefusal::InstallationBinding(InstallationBindingRefusal::LoadFailed(
-                format!("owner storage: {error}"),
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.host.supervisor.binding.owner.storage",
+                    [("error", &(error))],
+                ),
             ))
         })?
     };
@@ -580,16 +650,30 @@ fn load_generation(journal: &Path) -> Result<HostedInstallationBinding, Supervis
             "owner storage: {error}"
         )))
     })?;
-    let root =
-        crate::installation_context::identity_root_from_current_executable().map_err(|error| {
+    let root = crate::installation_context::identity_root_from_current_executable_in(locale)
+        .map_err(|error| {
             SupervisorBootRefusal::InstallationBinding(InstallationBindingRefusal::LoadFailed(
-                format!("installation root: {error}"),
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.host.supervisor.binding.installation.root",
+                    [("error", &(error))],
+                ),
             ))
         })?;
-    load_generation_at(journal, &root, &owner)
+    load_generation_at_in(locale, journal, &root, &owner)
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 fn load_generation_at(
+    journal: &Path,
+    root: &Path,
+    owner: &solstone_core_installation_identity::OwnerBase,
+) -> Result<HostedInstallationBinding, SupervisorBootRefusal> {
+    load_generation_at_in(solstone_core_cli_copy::ENGLISH, journal, root, owner)
+}
+
+fn load_generation_at_in(
+    locale: &str,
     journal: &Path,
     root: &Path,
     owner: &solstone_core_installation_identity::OwnerBase,
@@ -603,14 +687,22 @@ fn load_generation_at(
         )))
     })?;
     let binding = load_installation_binding(owner, &root_token).map_err(|error| {
-        SupervisorBootRefusal::InstallationBinding(InstallationBindingRefusal::LoadFailed(format!(
-            "saved binding: {error}"
-        )))
+        SupervisorBootRefusal::InstallationBinding(InstallationBindingRefusal::LoadFailed(
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.host.supervisor.binding.saved.binding",
+                [("error", &(error))],
+            ),
+        ))
     })?;
     let same_journal =
         journal_path_matches_token(journal, &binding.journal_token).map_err(|error| {
             SupervisorBootRefusal::InstallationBinding(InstallationBindingRefusal::LoadFailed(
-                format!("journal token: {error}"),
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.host.supervisor.binding.journal.token",
+                    [("error", &(error))],
+                ),
             ))
         })?;
     if !same_journal {
@@ -620,7 +712,11 @@ fn load_generation_at(
     }
     let writer_id = WriterId::parse(&binding.id.as_hex()).map_err(|_| {
         SupervisorBootRefusal::InstallationBinding(InstallationBindingRefusal::LoadFailed(
-            "the saved installation binding could not be loaded".to_owned(),
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.host.supervisor.binding.unreadable",
+                &[],
+            ),
         ))
     })?;
     Ok(HostedInstallationBinding {
@@ -1083,7 +1179,11 @@ mod tests {
         let error = io::Error::from(io::ErrorKind::PermissionDenied);
         assert_eq!(error.to_string(), "permission denied");
         assert_eq!(
-            format!("installation root: {error}"),
+            solstone_core_cli_copy::display_for(
+                solstone_core_cli_copy::ENGLISH,
+                "journal.cli.host.supervisor.binding.installation.root",
+                [("error", &(error))]
+            ),
             "installation root: permission denied"
         );
     }
@@ -1102,7 +1202,11 @@ mod tests {
             source,
         };
         assert_eq!(
-            format!("root token: {error}"),
+            solstone_core_cli_copy::display_for(
+                solstone_core_cli_copy::ENGLISH,
+                "journal.cli.host.supervisor.binding.root.token",
+                [("error", &(error))]
+            ),
             format!("root token: canonicalize root: {source_text}")
         );
     }
@@ -1112,7 +1216,11 @@ mod tests {
         // A portable test cannot route an overlong resolved executable root, so this covers formatting only.
         let error = IdentityError::InvalidInput("path exceeds 4096 bytes");
         assert_eq!(
-            format!("root token: {error}"),
+            solstone_core_cli_copy::display_for(
+                solstone_core_cli_copy::ENGLISH,
+                "journal.cli.host.supervisor.binding.root.token",
+                [("error", &(error))]
+            ),
             "root token: path exceeds 4096 bytes"
         );
     }

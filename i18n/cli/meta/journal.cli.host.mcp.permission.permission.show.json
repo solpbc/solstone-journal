@@ -1,0 +1,28 @@
+{
+  "description": "Journal host output for mcp permission permission show.",
+  "context": "Journal host output for mcp permission permission show.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "db4d79ee2c6c4549b1249f946d3def8bb8afa43d4e64df7be9903184b39d13bc",
+  "max_length": 183,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command_solstone_journal_mcp_permission_show",
+      "kind": "command",
+      "value": "solstone journal mcp permission show"
+    }
+  ]
+}

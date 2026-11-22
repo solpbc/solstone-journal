@@ -1,0 +1,21 @@
+{
+  "description": "Native contract validate command, walk four levels. Preserve terminal syntax and supplied data.",
+  "context": "Native contract validate command, walk four levels. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "46bb284da9883fa1a75f0496d1ce286fc1267e97bb6c3216993a415ac9f2d477",
+  "max_length": 141,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

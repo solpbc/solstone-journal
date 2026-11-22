@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service windows service action differs from the complete saved binding.",
+  "context": "Journal host output for windows service windows service action differs from the complete saved binding.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ed4d756a94a5c60211e528510c6670c2dbd8b0999e03a2824bde1090bf3a1696",
+  "max_length": 186,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -13,7 +13,7 @@ use std::process::ExitCode;
 
 #[cfg(any(target_os = "linux", target_os = "macos", windows))]
 use crate::EXIT_UNAVAILABLE;
-use crate::{EXIT_TEMPFAIL, eprint_journal_path_error, resolve_process_journal_path};
+use crate::{EXIT_TEMPFAIL, resolve_process_journal_path};
 
 /// The path to open: what the owner typed, rooted at `/`.
 fn rooted(path: &str) -> String {
@@ -25,17 +25,22 @@ fn rooted(path: &str) -> String {
 }
 
 pub(crate) fn run(path: String, print_url: bool) -> ExitCode {
+    let locale = if print_url {
+        solstone_core_cli_copy::ENGLISH
+    } else {
+        crate::host_locale()
+    };
     let journal = match resolve_process_journal_path() {
         Ok(journal) => journal,
         Err(error) => {
-            eprint_journal_path_error(error);
+            crate::eprint_journal_path_error_in(locale, error);
             return ExitCode::from(EXIT_TEMPFAIL);
         }
     };
     let path = rooted(&path);
     #[cfg(any(target_os = "linux", target_os = "macos", windows))]
     {
-        let url = match mint(&journal.path, &path) {
+        let url = match mint(locale, &journal.path, &path) {
             Ok(url) => url,
             Err(message) => {
                 eprintln!("{message}");
@@ -50,11 +55,21 @@ pub(crate) fn run(path: String, print_url: bool) -> ExitCode {
             return ExitCode::SUCCESS;
         }
         eprintln!(
-            "a browser could not be opened here. run this command again with --print-url, and open the link it prints within a minute."
+            "{}",
+            solstone_core_cli_copy::render_for(
+                crate::host_locale(),
+                "journal.cli.host.open.run.browser.could.not.be.opened",
+                &[]
+            )
         );
         if let Some(port) = link_port(&url) {
             eprintln!(
-                "to open it from another computer, first forward the journal's ports over SSH, and keep that terminal open:"
+                "{}",
+                solstone_core_cli_copy::render_for(
+                    crate::host_locale(),
+                    "journal.cli.host.open.run.open.it.from.another.computer",
+                    &[]
+                )
             );
             eprintln!(
                 "  ssh -N -L {port}:127.0.0.1:{port} -L 7659:127.0.0.1:7659 YOUR_LOGIN@JOURNAL_COMPUTER"
@@ -67,8 +82,15 @@ pub(crate) fn run(path: String, print_url: bool) -> ExitCode {
         // No owner socket here, so the browser port is open to this computer.
         let _ = print_url;
         println!(
-            "open your journal: {}{path}",
-            crate::settings::journal_url(&journal.path)
+            "{}",
+            solstone_core_cli_copy::display_for(
+                crate::host_locale(),
+                "journal.cli.host.open.run.open.url.path",
+                [
+                    ("url", &crate::settings::journal_url(&journal.path)),
+                    ("path", &path)
+                ]
+            )
         );
         ExitCode::SUCCESS
     }
@@ -76,17 +98,19 @@ pub(crate) fn run(path: String, print_url: bool) -> ExitCode {
 
 // A mac journal runs inside the journal app, so the app is what starts it.
 #[cfg(target_os = "macos")]
-const NOT_RUNNING: &str = "your journal isn't running for this account on this computer, so there is nothing to open. open the journal app to start it.";
+const NOT_RUNNING: &str = "journal.cli.host.open.socket.mac.down.isn.t.running.for.this";
 #[cfg(target_os = "linux")]
-const NOT_RUNNING: &str = "your journal isn't running for this account on this computer, so there is nothing to open. start it with solstone journal up.";
+const NOT_RUNNING: &str = "journal.cli.host.open.socket.linux.down.isn.t.running.for.this";
 #[cfg(target_os = "macos")]
-const OLDER_JOURNAL: &str = "your running journal is older than this command. quit the journal app, open it again, and try again.";
+const OLDER_JOURNAL: &str = "journal.cli.host.open.socket.mac.old.running.older.than.this.command";
 #[cfg(windows)]
-const NOT_RUNNING: &str = "your journal isn't running for this account on this computer, so there is nothing to open. start it from the journal app, and try again.";
+const NOT_RUNNING: &str = "journal.cli.host.open.socket.windows.down.isn.t.running.for.this";
 #[cfg(target_os = "linux")]
-const OLDER_JOURNAL: &str = "your running journal is older than this command. restart it with solstone journal down, then solstone journal up, and try again.";
+const OLDER_JOURNAL: &str =
+    "journal.cli.host.open.socket.linux.old.running.older.than.this.command";
 #[cfg(windows)]
-const OLDER_JOURNAL: &str = "your running journal is older than this command. restart it from the journal app, and try again.";
+const OLDER_JOURNAL: &str =
+    "journal.cli.host.open.socket.windows.old.running.older.than.this.command";
 
 /// The port of a minted link, for the SSH forwarding line.
 #[cfg(any(target_os = "linux", target_os = "macos", windows))]
@@ -96,7 +120,7 @@ fn link_port(url: &str) -> Option<&str> {
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-fn mint(journal: &std::path::Path, path: &str) -> Result<String, String> {
+fn mint(locale: &str, journal: &std::path::Path, path: &str) -> Result<String, String> {
     use solstone_core_local_endpoint as endpoint;
     let root = std::fs::canonicalize(journal).unwrap_or_else(|_| journal.to_owned());
     let socket = endpoint::socket_for_journal(&root)
@@ -105,7 +129,7 @@ fn mint(journal: &std::path::Path, path: &str) -> Result<String, String> {
         .filter(|socket| {
             endpoint::owned_socket(socket) && endpoint::socket_belongs_to_journal(socket, &root)
         })
-        .ok_or_else(|| NOT_RUNNING.to_owned())?;
+        .ok_or_else(|| solstone_core_cli_copy::render_for(locale, NOT_RUNNING, &[]))?;
     let agent = endpoint::socket_agent(&socket, std::time::Duration::from_secs(5));
     let mut response = agent
         .post("http://localhost/_solstone/browser-link")
@@ -115,7 +139,7 @@ fn mint(journal: &std::path::Path, path: &str) -> Result<String, String> {
         )
         .header("Content-Type", "application/json")
         .send(serde_json::json!({ "path": path }).to_string())
-        .map_err(|_| NOT_RUNNING.to_owned())?;
+        .map_err(|_| solstone_core_cli_copy::render_for(locale, NOT_RUNNING, &[]))?;
     let status = response.status().as_u16();
     let body: serde_json::Value = response
         .body_mut()
@@ -127,24 +151,44 @@ fn mint(journal: &std::path::Path, path: &str) -> Result<String, String> {
         .unwrap_or_default();
     match status {
         200 => body["url"].as_str().map(str::to_owned).ok_or_else(|| {
-            "the response from your journal could not be read. try again.".to_owned()
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.host.open.mint.response.from.could.not.be",
+                &[],
+            )
         }),
-        404 => Err(OLDER_JOURNAL.to_owned()),
+        404 => Err(solstone_core_cli_copy::render_for(
+            locale,
+            OLDER_JOURNAL,
+            &[],
+        )),
         _ => Err(body["error"]
             .as_str()
-            .map(|error| format!("your journal could not make a link: {error}"))
-            .unwrap_or_else(|| "your journal could not make a link. try again.".to_owned())),
+            .map(|error| {
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.host.open.mint.could.not.make.link",
+                    [("error", &error)],
+                )
+            })
+            .unwrap_or_else(|| {
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.host.open.mint.could.not.make.link.try",
+                    &[],
+                )
+            })),
     }
 }
 
 #[cfg(windows)]
-fn mint(journal: &std::path::Path, path: &str) -> Result<String, String> {
+fn mint(locale: &str, journal: &std::path::Path, path: &str) -> Result<String, String> {
     use solstone_core_local_endpoint as endpoint;
     let root = std::fs::canonicalize(journal).unwrap_or_else(|_| journal.to_owned());
     let pipe = endpoint::socket_for_journal(&root)
         .ok()
         .flatten()
-        .ok_or_else(|| NOT_RUNNING.to_owned())?;
+        .ok_or_else(|| solstone_core_cli_copy::render_for(locale, NOT_RUNNING, &[]))?;
     let timeout = std::time::Duration::from_secs(5);
     let request = serde_json::json!({ "path": path }).to_string();
     let response = endpoint::pipe_request(
@@ -154,17 +198,37 @@ fn mint(journal: &std::path::Path, path: &str) -> Result<String, String> {
         Some(request.as_bytes()),
         timeout,
     )
-    .map_err(|_| NOT_RUNNING.to_owned())?;
+    .map_err(|_| solstone_core_cli_copy::render_for(locale, NOT_RUNNING, &[]))?;
     let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap_or_default();
     match response.status {
         200 => body["url"].as_str().map(str::to_owned).ok_or_else(|| {
-            "the response from your journal could not be read. try again.".to_owned()
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.host.open.mint.response.from.could.not.be",
+                &[],
+            )
         }),
-        404 => Err(OLDER_JOURNAL.to_owned()),
+        404 => Err(solstone_core_cli_copy::render_for(
+            locale,
+            OLDER_JOURNAL,
+            &[],
+        )),
         _ => Err(body["error"]
             .as_str()
-            .map(|error| format!("your journal could not make a link: {error}"))
-            .unwrap_or_else(|| "your journal could not make a link. try again.".to_owned())),
+            .map(|error| {
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.host.open.mint.could.not.make.link",
+                    [("error", &error)],
+                )
+            })
+            .unwrap_or_else(|| {
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.host.open.mint.could.not.make.link.try",
+                    &[],
+                )
+            })),
     }
 }
 

@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service clean uninstall requires an adopted installation identity.",
+  "context": "Journal host output for windows service clean uninstall requires an adopted installation identity.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5e80916429d466c4f110de0a565f4a039307ed7ac5c69fe29c292e0da8a267a9",
+  "max_length": 171,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

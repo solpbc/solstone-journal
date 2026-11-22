@@ -1,0 +1,32 @@
+{
+  "description": "Journal host output for render token store error token no bearer token exists for label.",
+  "context": "Journal host output for render token store error token no bearer token exists for label.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "operation",
+      "type": "string"
+    },
+    {
+      "name": "label",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fce0b5ab993433bd62b7f1d75e4086e5eb50e0ceda4c3bfa89d44b6ef187b8b3",
+  "max_length": 297,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command_solstone_journal_mcp_token",
+      "kind": "command",
+      "value": "solstone journal mcp token"
+    }
+  ]
+}

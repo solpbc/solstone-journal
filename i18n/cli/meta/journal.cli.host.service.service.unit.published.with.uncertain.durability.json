@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service service unit published with uncertain durability.",
+  "context": "Journal host service service unit published with uncertain durability.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "other",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "355e5ab0e99a132f1a38f43d3044c276e54d9445de035c6641f2d6d13216dc67",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal setup argument validation: cwd.",
+  "context": "Journal setup argument validation: cwd.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "84022f762ab91f5276e24a0c7cf6e662888e1662ae3f9a743bb895de9ff6a277",
+  "max_length": 147,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

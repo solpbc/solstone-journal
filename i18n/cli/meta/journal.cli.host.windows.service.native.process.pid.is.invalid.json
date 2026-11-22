@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service native process pid is invalid.",
+  "context": "Journal host output for windows service native process pid is invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e17245a0317e079f8eb8c0c9b9a55b0baab06d6454358afbeff01bfbbdddc109",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal host service state stopped.",
+  "context": "Journal host service state stopped.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "485b7c81bad588b6029fb28fbd6d446e3e22a408818be35497143f914af58ca5",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

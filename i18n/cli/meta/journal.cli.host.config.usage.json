@@ -1,0 +1,38 @@
+{
+  "description": "Terminal help and usage for config usage.",
+  "context": "Terminal help and usage for config usage.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "55323098496935d7f530715b2cd42a7d43e20c9912295ffd03528edfc3a93a28",
+  "max_length": 222,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal config [-h] {show,journal} ...",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "spaces_7",
+      "value": "       ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "syntax_4",
+      "value": "solstone journal config journal PATH [--move | --switch | --force] [--yes | --dry-run]",
+      "kind": "command"
+    }
+  ]
+}

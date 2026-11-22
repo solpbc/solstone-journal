@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output for mcp permission categories.",
+  "context": "Journal host output for mcp permission categories.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "categories",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7a97a246ed6ff4fb4e17044471051dfd05b7e8d942042ba967c96d9f1b78e7db",
+  "max_length": 128,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

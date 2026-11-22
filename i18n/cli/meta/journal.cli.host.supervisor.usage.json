@@ -1,0 +1,53 @@
+{
+  "description": "Terminal help and usage for supervisor usage.",
+  "context": "Terminal help and usage for supervisor usage.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "201277a0a540a0fc50abde012fd412e55878fec361dc7cf60f91a0c694677137",
+  "max_length": 603,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal supervisor [-h] [--no-daily] [--no-cortex] [--no-spl]",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "spaces_26",
+      "value": "                          ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "syntax_4",
+      "value": "[--no-convey] [--no-schedule]",
+      "kind": "command"
+    },
+    {
+      "name": "syntax_5",
+      "value": "[--journal JOURNAL] [--direct-port DIRECT_PORT]",
+      "kind": "command"
+    },
+    {
+      "name": "syntax_6",
+      "value": "[-v] [-d]",
+      "kind": "command"
+    },
+    {
+      "name": "syntax_7",
+      "value": "[port]",
+      "kind": "command"
+    }
+  ]
+}

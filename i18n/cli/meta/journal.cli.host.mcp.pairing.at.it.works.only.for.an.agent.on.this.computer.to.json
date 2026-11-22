@@ -1,0 +1,28 @@
+{
+  "description": "Journal host output for mcp pairing at it works only for an agent on this computer to.",
+  "context": "Journal host output for mcp pairing at it works only for an agent on this computer to.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3eac775194857598811431c7f7d24a24ada0a71d911a49a8b28df11e29d5bf44",
+  "max_length": 426,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_door",
+      "kind": "flag",
+      "value": "--door"
+    },
+    {
+      "name": "literal_solstone_me",
+      "kind": "accepted-input",
+      "value": "solstone.me"
+    }
+  ]
+}

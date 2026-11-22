@@ -1,0 +1,28 @@
+{
+  "description": "Journal host output for windows service could not clear windows sign in resume.",
+  "context": "Journal host output for windows service could not clear windows sign in resume.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4f9a372e2d75348a65a4ea3dc1c2304d2483680f6642e1def246887918427b16",
+  "max_length": 189,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_windows",
+      "kind": "accepted-input",
+      "value": "Windows"
+    }
+  ]
+}

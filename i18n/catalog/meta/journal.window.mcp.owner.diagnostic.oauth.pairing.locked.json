@@ -1,0 +1,16 @@
+{
+  "description": "MCP owner diagnostic for oauth pairing locked.",
+  "context": "MCP owner diagnostic for oauth pairing locked.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9d62f101b815b4e3da23e87320f13a73bffd4a61ee33d87604bc31cf950be69f",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

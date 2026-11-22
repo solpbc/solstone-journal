@@ -18,6 +18,7 @@
 // solstone.think.providers.state.local_status_dict. Warm is a separate install-wide
 // sibling-binary census with per-row argv and closed stdin.
 
+use solstone_core_cli_copy::{Diagnostic, Value as CopyValue, display_for, render_for};
 use std::env;
 use std::io;
 #[cfg(unix)]
@@ -203,6 +204,7 @@ pub(crate) struct WarmRecord {
     pub(crate) stderr_truncated: bool,
     pub(crate) error: Option<String>,
     pub(crate) actual: String,
+    line: Diagnostic,
     pub(crate) repair: &'static str,
 }
 
@@ -300,7 +302,9 @@ pub(crate) fn run(json_output: bool) -> bool {
     if json_output {
         println!("{}", report.as_json());
     } else {
-        print_human(&report);
+        let locale =
+            solstone_core_cli_copy::terminal_locale().unwrap_or(solstone_core_cli_copy::ENGLISH);
+        print_human(locale, &report);
     }
     report.failed()
 }
@@ -334,7 +338,14 @@ fn unavailable_report(error: io::Error, host: Host) -> WarmReport {
             .copied()
             .map(|row| {
                 if row.applicability.applies_to(host) {
-                    unavailable_record(row, format!("cannot resolve current executable: {error}"))
+                    unavailable_record(
+                        row,
+                        format!("cannot resolve current executable: {error}"),
+                        Diagnostic::new(
+                            "journal.cli.host.warm.row.executable",
+                            [("binary", &row.binary_name), ("error", &(error))],
+                        ),
+                    )
                 } else {
                     not_applicable_record(row)
                 }
@@ -354,6 +365,10 @@ fn not_applicable_record(row: InventoryRow) -> WarmRecord {
         stderr: String::new(),
         stderr_truncated: false,
         error: None,
+        line: Diagnostic::new(
+            "journal.cli.host.warm.row.platform",
+            [("binary", &row.binary_name)],
+        ),
         actual: "Linux-only binary is not applicable on this platform".to_owned(),
         repair: "No repair needed on this platform.",
     }
@@ -373,6 +388,10 @@ fn probe(path: PathBuf, row: InventoryRow, cargo_tree: bool) -> WarmRecord {
             stderr: String::new(),
             stderr_truncated: false,
             error: Some("development sibling was not built".to_owned()),
+            line: Diagnostic::new(
+                "journal.cli.host.warm.row.development",
+                [("binary", &row.binary_name), ("path", &(path.display()))],
+            ),
             actual: format!(
                 "{} is absent beside the development executable",
                 path.display()
@@ -389,12 +408,25 @@ fn probe(path: PathBuf, row: InventoryRow, cargo_tree: bool) -> WarmRecord {
             stderr: String::new(),
             stderr_truncated: false,
             error: Some("shipped binary is absent".to_owned()),
+            line: Diagnostic::new(
+                "journal.cli.host.warm.row.missing",
+                [("binary", &row.binary_name), ("path", &(path.display()))],
+            ),
             actual: format!("{} is absent beside the running executable", path.display()),
             repair: "Reinstall or upgrade the owning host tool with the installer family that created this environment.",
         },
-        Err(error) => {
-            unavailable_record(row, format!("failed to spawn {}: {error}", path.display()))
-        }
+        Err(error) => unavailable_record(
+            row,
+            format!("failed to spawn {}: {error}", path.display()),
+            Diagnostic::new(
+                "journal.cli.host.warm.row.spawn",
+                [
+                    ("binary", &row.binary_name),
+                    ("path", &(path.display())),
+                    ("error", &(error)),
+                ],
+            ),
+        ),
         Ok((status, stderr)) => classify_output(row, status, stderr),
     }
 }
@@ -418,7 +450,7 @@ fn run_probe(path: &Path, argv: &[&str]) -> io::Result<(ExitStatus, BoundedStder
     Ok((status, stderr))
 }
 
-fn unavailable_record(row: InventoryRow, actual: String) -> WarmRecord {
+fn unavailable_record(row: InventoryRow, actual: String, line: Diagnostic) -> WarmRecord {
     WarmRecord {
         row,
         classification: Classification::CannotLoad,
@@ -430,6 +462,7 @@ fn unavailable_record(row: InventoryRow, actual: String) -> WarmRecord {
         stderr_truncated: false,
         error: Some("binary could not be spawned".to_owned()),
         actual,
+        line,
         repair: "Repair the reported host execution failure, then reinstall the owning host tool if needed.",
     }
 }
@@ -446,6 +479,10 @@ fn classify_output(row: InventoryRow, status: ExitStatus, stderr: BoundedStderr)
             row,
             classification: Classification::CannotLoad,
             reason_code: "loader-library-missing",
+            line: Diagnostic::new(
+                "journal.cli.host.warm.row.library",
+                [("binary", &row.binary_name), ("library", &(library))],
+            ),
             unresolved_library: Some(library),
             exit_code,
             signal,
@@ -471,6 +508,16 @@ fn classify_output(row: InventoryRow, status: ExitStatus, stderr: BoundedStderr)
             stderr,
             stderr_truncated,
             error: Some("binary did not return from its own code".to_owned()),
+            line: match signal {
+                Some(signal) => Diagnostic::new(
+                    "journal.cli.host.warm.row.signal",
+                    [("binary", &row.binary_name), ("signal", &(signal))],
+                ),
+                None => Diagnostic::new(
+                    "journal.cli.host.warm.row.no.code",
+                    [("binary", &row.binary_name)],
+                ),
+            },
             actual,
             repair: "Repair the reported host execution failure, then reinstall the owning host tool if needed.",
         };
@@ -486,6 +533,13 @@ fn classify_output(row: InventoryRow, status: ExitStatus, stderr: BoundedStderr)
         stderr_truncated,
         error: None,
         actual: format!("returned exit {}", exit_code.expect("numeric exit code")),
+        line: Diagnostic::new(
+            "journal.cli.host.warm.row.exit",
+            [
+                ("binary", &row.binary_name),
+                ("code", &(exit_code.expect("numeric exit code"))),
+            ],
+        ),
         repair: "No repair needed.",
     }
 }
@@ -509,20 +563,24 @@ fn verified_cargo_target_tree(executable: &Path) -> bool {
     })
 }
 
-fn print_human(report: &WarmReport) {
+fn print_human(locale: &str, report: &WarmReport) {
     println!(
-        "Warm checks the {} native binaries declared by the host maturin bindings=\"bin\" packaging leaves.",
-        report.records.len()
+        "{}",
+        display_for(
+            locale,
+            "journal.cli.host.warm.inventory",
+            [("count", &(report.records.len()))]
+        )
     );
     println!(
-        "On Linux, solstone-core, solstone-core-journal, solstone-retention, solstone-core-sol, and solstone-core-depict are statically linked musl. Warm proves that they start and reach their own code; there is no dynamic loader resolution to prove."
+        "{}",
+        render_for(locale, "journal.cli.host.warm.linux.static", &[])
     );
     println!(
-        "On Linux, solstone-core-speakers-analyze and solstone-core-vad-analyze dynamically load the bundled ONNX Runtime, and solstone-core-vulkan-probe dynamically loads the host Vulkan loader. Warm proves their loader resolution as well as their start-up. solstone-core-describe is asserted neither static nor dynamic here; wheel validation only forbids dynamically linked FFmpeg."
+        "{}",
+        render_for(locale, "journal.cli.host.warm.linux.dynamic", &[])
     );
-    println!(
-        "On macOS every Mach-O links libSystem. The property is non-empty but differs from Linux: warm exposes signing, quarantine, and dyld failures there."
-    );
+    println!("{}", render_for(locale, "journal.cli.host.warm.mac", &[]));
     let mut restricted_rows = Vec::new();
     for record in &report.records {
         let row = record.row;
@@ -540,53 +598,82 @@ fn print_human(report: &WarmReport) {
     }
     let restricted_rows = restricted_rows.join(", ");
     println!(
-        "Platform-restricted warm rows: {restricted_rows}. They report NOT APPLICABLE when their applicability does not include this host and do not fail warm."
+        "{}",
+        display_for(
+            locale,
+            "journal.cli.host.warm.platforms",
+            [("rows", &(restricted_rows))]
+        )
     );
     println!(
-        "A GAP is a development-layout sibling that was not built and therefore was not exercised; it is reported by name but does not fail warm."
+        "{}",
+        render_for(locale, "journal.cli.host.warm.development", &[])
     );
     for record in &report.records {
-        let label = match record.classification {
-            Classification::Ran => "RAN",
-            Classification::Missing => "MISSING",
-            Classification::CannotLoad => "CANNOT LOAD",
-            Classification::Unexercised => "GAP",
-            Classification::NotApplicable => "NOT APPLICABLE",
-        };
-        println!("{label} {}: {}", record.row.binary_name, record.actual);
+        println!("{}", record.line.render(locale));
         if let Some(library) = &record.unresolved_library {
-            println!("  unresolved library: {library}");
+            println!(
+                "{}",
+                display_for(
+                    locale,
+                    "journal.cli.host.warm.unresolved",
+                    [("library", &(library))]
+                )
+            );
         }
-        if record.classification != Classification::Ran {
-            println!("  repair: {}", record.repair);
-        }
+        let repair = match record.classification {
+            Classification::Ran => continue,
+            Classification::NotApplicable => {
+                render_for(locale, "journal.cli.host.warm.repair.platform", &[])
+            }
+            Classification::CannotLoad => {
+                render_for(locale, "journal.cli.host.warm.repair.execution", &[])
+            }
+            Classification::Unexercised => {
+                render_for(locale, "journal.cli.host.warm.repair.development", &[])
+            }
+            Classification::Missing => {
+                render_for(locale, "journal.cli.host.warm.repair.missing", &[])
+            }
+        };
+        println!("{repair}");
     }
+    let count = |classification| {
+        report
+            .records
+            .iter()
+            .filter(|record| record.classification == classification)
+            .count()
+    };
+    let gaps = count(Classification::Unexercised);
     println!(
-        "Summary: {} ran, {} missing, {} cannot load, {} gaps, {} not applicable.",
-        report
-            .records
-            .iter()
-            .filter(|record| record.classification == Classification::Ran)
-            .count(),
-        report
-            .records
-            .iter()
-            .filter(|record| record.classification == Classification::Missing)
-            .count(),
-        report
-            .records
-            .iter()
-            .filter(|record| record.classification == Classification::CannotLoad)
-            .count(),
-        report
-            .records
-            .iter()
-            .filter(|record| record.classification == Classification::Unexercised)
-            .count(),
-        report
-            .records
-            .iter()
-            .filter(|record| record.classification == Classification::NotApplicable)
-            .count(),
+        "{}",
+        render_for(
+            locale,
+            "journal.cli.host.warm.summary",
+            &[
+                (
+                    "ran",
+                    CopyValue::String(&(count(Classification::Ran)).to_string())
+                ),
+                (
+                    "missing",
+                    CopyValue::String(&(count(Classification::Missing)).to_string())
+                ),
+                (
+                    "cannot_load",
+                    CopyValue::String(&(count(Classification::CannotLoad)).to_string())
+                ),
+                ("gaps", CopyValue::String(&(gaps).to_string())),
+                (
+                    "not_applicable",
+                    CopyValue::String(&(count(Classification::NotApplicable)).to_string())
+                ),
+                (
+                    "quantity",
+                    CopyValue::Cardinal((gaps).try_into().unwrap_or(i64::MAX))
+                )
+            ]
+        )
     );
 }

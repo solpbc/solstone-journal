@@ -1,0 +1,25 @@
+{
+  "description": "Native open command, run. Preserve terminal syntax and supplied data.",
+  "context": "Native open command, run. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "url",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "53345fd77b0258478c244f05de427b856045176925b09e299bc6e7e6d2e5a601",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

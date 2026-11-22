@@ -1,0 +1,21 @@
+{
+  "description": "Journal host logs count.",
+  "context": "Journal host logs count.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "95f9c976f79a79ff3215b28007052a411aa4db1558c42e86bdf696e1c10e12e5",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

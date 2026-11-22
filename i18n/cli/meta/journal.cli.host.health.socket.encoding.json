@@ -1,0 +1,23 @@
+{
+  "description": "Journal host health socket encoding.",
+  "context": "Journal host health socket encoding.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e891898d49eecd11d98fb33529d4a9c27675f70f091b7e0d593b1e1e577ea201",
+  "max_length": 210,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

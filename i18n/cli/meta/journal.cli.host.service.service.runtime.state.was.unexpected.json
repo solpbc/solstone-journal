@@ -1,0 +1,39 @@
+{
+  "description": "Journal host service service runtime state was unexpected.",
+  "context": "Journal host service service runtime state was unexpected.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "operation",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "e14666185e29b62ce34f1f45b3146547cc1f1f453a8057708a242332e8919c91",
+  "max_length": 2448,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "operation",
+    "type": "string",
+    "enum_values": [
+      "change-journal-folder",
+      "clean-stale-launchd-service",
+      "install",
+      "operate",
+      "start-after-changing-journal-folder",
+      "status",
+      "stop",
+      "uninstall",
+      "up",
+      "verify-service-stop",
+      "verify-unload"
+    ],
+    "enum_default": "verify-unload"
+  }
+}

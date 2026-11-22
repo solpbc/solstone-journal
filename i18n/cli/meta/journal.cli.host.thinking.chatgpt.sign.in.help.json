@@ -1,0 +1,73 @@
+{
+  "description": "Terminal help and usage for thinking chatgpt sign in help.",
+  "context": "Terminal help and usage for thinking chatgpt sign in help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b40949e9492bbd7929b04fcf096dcc62a0d5ebf169a1962479195674346870bf",
+  "max_length": 1179,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal thinking chatgpt sign-in [-h] [--journal PATH] [--no-browser]",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "term",
+      "value": "ChatGPT",
+      "kind": "mark-word"
+    },
+    {
+      "name": "term_4",
+      "value": "OAuth",
+      "kind": "mark-word"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_12",
+      "value": "            ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_8",
+      "value": "--journal PATH",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_8",
+      "value": "        ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_10",
+      "value": "--no-browser",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_10",
+      "value": "          ",
+      "kind": "whitespace"
+    }
+  ]
+}

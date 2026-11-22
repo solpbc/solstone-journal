@@ -1,0 +1,28 @@
+{
+  "description": "Terminal diagnostic for service subcommand unknown.",
+  "context": "Terminal diagnostic for service subcommand unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a4fdb9dafc4b5a203ae7d609fa4044bb38f68ec3621438a84de08d698ab43421",
+  "max_length": 165,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal",
+      "value": "install, uninstall, start, stop, restart, status, logs",
+      "kind": "accepted-input"
+    }
+  ]
+}

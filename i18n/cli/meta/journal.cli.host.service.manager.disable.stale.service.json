@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service manager disable stale service.",
+  "context": "Journal host service manager disable stale service.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "result",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "09c709a4abed44304a2193fdead95cc88d98a7ddbfc58576ab2d49acb0c94fd3",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

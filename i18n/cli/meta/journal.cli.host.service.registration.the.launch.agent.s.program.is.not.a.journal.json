@@ -1,0 +1,51 @@
+{
+  "description": "Journal host service registration the launch agent s program is not a journal.",
+  "context": "Journal host service registration the launch agent s program is not a journal.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "operation",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "d14f52d8c69eb932a688de19151a9629773451e49e4607e3b7e845468775017e",
+  "max_length": 9729,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "restart_command",
+      "kind": "accepted-input",
+      "value": "systemctl --user daemon-reload && systemctl --user restart solstone.service"
+    },
+    {
+      "name": "inspect_command",
+      "kind": "accepted-input",
+      "value": "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe"
+    }
+  ],
+  "selector": {
+    "name": "operation",
+    "type": "string",
+    "enum_values": [
+      "change-journal-folder",
+      "clean-stale-launchd-service",
+      "install",
+      "operate",
+      "start-after-changing-journal-folder",
+      "status",
+      "stop",
+      "uninstall",
+      "up",
+      "verify-service-stop",
+      "verify-unload"
+    ],
+    "enum_default": "verify-unload"
+  }
+}

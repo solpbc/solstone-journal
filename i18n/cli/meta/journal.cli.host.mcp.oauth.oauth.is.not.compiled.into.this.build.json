@@ -1,0 +1,23 @@
+{
+  "description": "Journal host output for mcp oauth oauth is not compiled into this build.",
+  "context": "Journal host output for mcp oauth oauth is not compiled into this build.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "15da9a4a6e9dc30f0b3425d38e5f410e654a1d6f117d1d6fd93902d49838ccab",
+  "max_length": 213,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command_solstone_journal_mcp_oauth",
+      "kind": "command",
+      "value": "solstone journal mcp oauth"
+    }
+  ]
+}

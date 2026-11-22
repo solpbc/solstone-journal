@@ -1,0 +1,33 @@
+{
+  "description": "Terminal diagnostic for parser mcp target created cannot be used with token.",
+  "context": "Terminal diagnostic for parser mcp target created cannot be used with token.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d64f3cf09a8ab3a9a95af12a03b9767eacb2ab60601d24772815a2670ad32522",
+  "max_length": 186,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "flag",
+      "value": "--created",
+      "kind": "flag"
+    },
+    {
+      "name": "flag_2",
+      "value": "--token",
+      "kind": "flag"
+    }
+  ]
+}

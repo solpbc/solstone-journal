@@ -24,6 +24,6 @@ pub use solstone_core_think_cli::planner::WorkDiscovery;
 pub use host::{
     ALREADY_RUNNING_COPY, InstallationBindingRefusal, LifecycleBootError, ShutdownCause,
     SiblingBinaryResolutionError, SupervisorBootRefusal, SupervisorHostOutcome, SupervisorSignal,
-    SyncFailureKind, run_hosted,
+    SyncFailureKind, run_hosted, run_hosted_in,
 };
 pub use solstone_core_system::lifecycle::ShutdownDisposition;

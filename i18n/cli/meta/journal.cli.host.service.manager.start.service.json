@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service manager start service.",
+  "context": "Journal host service manager start service.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "result",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "01903c56c576a5e6a96536e8d04577692ec86d9bc3d2f6714e33cff547c3af53",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

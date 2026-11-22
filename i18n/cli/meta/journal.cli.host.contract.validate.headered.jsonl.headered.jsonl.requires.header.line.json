@@ -1,0 +1,23 @@
+{
+  "description": "Native contract validate command, validate headered jsonl. Preserve terminal syntax and supplied data.",
+  "context": "Native contract validate command, validate headered jsonl. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6aba75acb376fb71cf1ad29209bf69b78bbc4a4642887d1b132cf520d74a9c14",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_1",
+      "kind": "accepted-input",
+      "value": "headered JSONL"
+    }
+  ]
+}

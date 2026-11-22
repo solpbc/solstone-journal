@@ -1,0 +1,32 @@
+{
+  "description": "Journal host output for render oauth store error no active pairing code.",
+  "context": "Journal host output for render oauth store error no active pairing code.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    },
+    {
+      "name": "operation",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "50fb30f187e1e61aabd02be0e5dd8220ed46dc94f95c8ebbd2566edc100d740b",
+  "max_length": 255,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command_solstone_journal_mcp",
+      "kind": "command",
+      "value": "solstone journal mcp"
+    }
+  ]
+}

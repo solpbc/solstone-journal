@@ -1,0 +1,28 @@
+{
+  "description": "MCP owner diagnostic for facet id.",
+  "context": "MCP owner diagnostic for facet id.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1395cb9ce2a6a26b5cfad1d2f44cf46794c93759c03272924ef3550015b062c9",
+  "max_length": 258,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "command_solstone_journal_backfill_facet_ids",
+      "kind": "command",
+      "value": "solstone journal backfill-facet-ids"
+    }
+  ]
+}

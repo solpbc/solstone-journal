@@ -1,0 +1,23 @@
+{
+  "description": "Journal host service launchd omitted or malformed arguments.",
+  "context": "Journal host service launchd omitted or malformed arguments.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "340cb0b86535b7194842fedaf48b2b1fcc496e7c1b509e4bcbda1ca2ca89ef82",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "launchd",
+      "kind": "accepted-input",
+      "value": "launchd"
+    }
+  ]
+}

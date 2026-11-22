@@ -19,9 +19,10 @@ use solstone_core_journal_config::{
 /// RF-DETR assets are verified from the release tree, so this disclosure must
 /// describe the bundled payload rather than an upstream or mirror endpoint.
 fn rfdetr_bundled_asset_disclosure() -> String {
-    format!(
-        "rf-detr assets: verifying the bundled rf-detr.cpp {} engine (Apache-2.0) and RF-DETR nano GGUF weights (Apache-2.0). see THIRD_PARTY_NOTICES.md.",
-        rfdetr_install::ENGINE_VERSION
+    solstone_core_cli_copy::display_for(
+        crate::host_locale(),
+        "!journal.cli.host.install.models.rfdetr.bundled.asset.disclosure.rf.detr.assets.verifying.bundled",
+        [("version", &rfdetr_install::ENGINE_VERSION)],
     )
 }
 
@@ -125,15 +126,12 @@ fn install_required_rfdetr(
         return provider(journal, &host.os_name, &host.arch, action)
             .map(|_| ())
             .map_err(|error| {
-                let message = format!("{} {error}", solstone_core_local::install::rfdetr_windows::RFDETR_PACKAGE_UNAVAILABLE_GUIDANCE);
+                let message = solstone_core_cli_copy::display_for(crate::host_locale(), "journal.cli.host.install.models.rfdetr.repair.object.detection.unavailable.repair.or", [("error", &error)]);
                 rfdetr_install::RfdetrInstallError::new(error.reason_code, message, error.exit_code)
             });
     }
     if rfdetr_install::rfdetr_artifact_key(&host.os_name, &host.arch).is_none() {
-        stdout.push(format!(
-            "rf-detr install: unsupported platform {}/{}; skipping rf-detr object-detection assets",
-            host.os_name, host.arch
-        ));
+        stdout.push(solstone_core_cli_copy::display_for(crate::host_locale(), "journal.cli.host.install.models.install.required.rfdetr.rf.detr.install.unsupported.platform", [("os", &host.os_name), ("arch", &host.arch)]));
         return Ok(());
     }
     if options.check {
@@ -280,7 +278,7 @@ where
             |name: &str| {
                 resolve_model_asset(name)
                     .map(|_| ())
-                    .map_err(|error| error.to_string())
+                    .map_err(|error| error.render(crate::host_locale()))
             },
             None,
         ),
@@ -306,14 +304,14 @@ where
                         .map_err(|e| {
                             coreml_install::CoremlInstallError::new(
                                 "install_busy",
-                                e.to_string(),
+                                solstone_core_local::install::io_detail(e),
                                 EXIT_TEMPFAIL,
                             )
                         })?
                         .ok_or_else(|| {
                             coreml_install::CoremlInstallError::new(
                                 "install_busy",
-                                "speech install is already running; wait for it to finish",
+                                solstone_core_cli_copy::render_for(crate::host_locale(), "journal.cli.host.install.models.run.inner.speech.install.already.running.wait", &[]),
                                 EXIT_TEMPFAIL,
                             )
                         })?;
@@ -396,7 +394,11 @@ where
             return InstallModelsOutcome::failure(
                 variant,
                 EXIT_DATAERR,
-                format!("bundled asset verification failed: {error}"),
+                solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.install.models.run.inner.with.bundled.asset.verification.failed",
+                    [("error", &error)],
+                ),
             );
         }
     }
@@ -446,7 +448,7 @@ where
                 return InstallModelsOutcome::failure_with_stdout(
                     Some(variant),
                     EXIT_DATAERR,
-                    error.to_string(),
+                    error.render(crate::host_locale()),
                     provider_stdout,
                 );
             }
@@ -464,14 +466,14 @@ where
                 exit_code: 0,
                 stdout: [provider_stdout, vec![ready_line(&path)]].concat(),
                 stderr: (!options.check)
-                    .then(|| coreml_install::PARAKEET_COREML_DOWNLOAD_DISCLOSURE.to_owned())
+                    .then(|| solstone_core_cli_copy::render_for(crate::host_locale(), "!journal.cli.host.install.models.coreml.disclosure.parakeet.assets.downloading.parakeet.tdt", &[]))
                     .into_iter()
                     .collect(),
             },
             Err(error) => InstallModelsOutcome::failure_with_stdout(
                 Some(variant),
                 error.exit_code,
-                error.to_string(),
+                error.into_detail().render(crate::host_locale()),
                 provider_stdout,
             ),
         };
@@ -483,7 +485,11 @@ where
             return InstallModelsOutcome::failure_with_stdout(
                 Some(variant),
                 EXIT_DATAERR,
-                error.to_string(),
+                solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.install.speech.platform",
+                    [("os_name", &error.os_name), ("arch", &error.arch)],
+                ),
                 provider_stdout,
             );
         }
@@ -537,7 +543,11 @@ where
     let held = match lease::acquire(&journal, "parakeet") {
         Ok(value) => value,
         Err(error) => {
-            return InstallModelsOutcome::failure(Some(variant), EXIT_IOERR, error.to_string());
+            return InstallModelsOutcome::failure(
+                Some(variant),
+                EXIT_IOERR,
+                solstone_core_local::install::io_detail(error).render(crate::host_locale()),
+            );
         }
     };
     let model = match held {
@@ -558,7 +568,7 @@ where
                     return InstallModelsOutcome::failure(
                         Some(variant),
                         EXIT_IOERR,
-                        error.to_string(),
+                        error.into_detail().render(crate::host_locale()),
                     );
                 }
             };
@@ -568,7 +578,11 @@ where
                 return InstallModelsOutcome::failure(
                     Some(variant),
                     EXIT_TEMPFAIL,
-                    "parakeet install already running for a different target",
+                    solstone_core_cli_copy::render_for(
+                        crate::host_locale(),
+                        "journal.cli.host.install.models.run.inner.with.parakeet.install.already.running.for",
+                        &[],
+                    ),
                 );
             }
             match status::observe_attempt(
@@ -587,8 +601,12 @@ where
                         })
                         .unwrap_or_default();
                     eprintln!(
-                        "observing parakeet install: {}{suffix}",
-                        state.install_state
+                        "{}",
+                        solstone_core_cli_copy::display_for(
+                            crate::host_locale(),
+                            "journal.cli.host.install.models.run.inner.with.observing.parakeet.install.state.suffix",
+                            [("state", &state.install_state), ("suffix", &suffix)]
+                        )
                     );
                 },
             ) {
@@ -610,30 +628,37 @@ where
                     return InstallModelsOutcome::failure(
                         Some(variant),
                         EXIT_DATAERR,
-                        state
-                            .install_error
-                            .unwrap_or_else(|| "parakeet install failed".to_owned()),
+                        status::display_error(&journal, &state, crate::host_locale())
+                            .unwrap_or_else(|| solstone_core_cli_copy::render_for(crate::host_locale(), "journal.cli.host.install.models.run.inner.with.parakeet.install.failed", &[])),
                     );
                 }
                 Ok(status::ObserveAttempt::DifferentTarget(_)) => {
                     return InstallModelsOutcome::failure(
                         Some(variant),
                         EXIT_TEMPFAIL,
-                        "parakeet install already running for a different target",
+                        solstone_core_cli_copy::render_for(
+                            crate::host_locale(),
+                            "journal.cli.host.install.models.run.inner.with.parakeet.install.already.running.for",
+                            &[],
+                        ),
                     );
                 }
                 Ok(status::ObserveAttempt::TimedOut) => {
                     return InstallModelsOutcome::failure(
                         Some(variant),
                         EXIT_TEMPFAIL,
-                        "timed out observing parakeet install",
+                        solstone_core_cli_copy::render_for(
+                            crate::host_locale(),
+                            "journal.cli.host.install.models.run.inner.with.timed.out.observing.parakeet.install",
+                            &[],
+                        ),
                     );
                 }
                 Err(error) => {
                     return InstallModelsOutcome::failure(
                         Some(variant),
                         EXIT_IOERR,
-                        error.to_string(),
+                        error.into_detail().render(crate::host_locale()),
                     );
                 }
             }
@@ -658,7 +683,14 @@ where
     I: FnOnce(&Path, &HostPlatform, lease::InstallLease) -> Result<PathBuf, Box<DispatchError>>,
 {
     let model_name = pins::PARAKEET_MODEL.1;
-    eprintln!("preparing parakeet speech model: {model_name}");
+    eprintln!(
+        "{}",
+        solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.install.models.install.with.live.progress.preparing.parakeet.speech.model.model",
+            [("model_name", &model_name)]
+        )
+    );
     let (stop_tx, stop_rx) = mpsc::channel();
     let journal_path = journal.to_path_buf();
     let monitor = thread::spawn(move || {
@@ -670,22 +702,42 @@ where
                     "downloading" => {
                         let received = state.progress_bytes_received.unwrap_or(0);
                         match state.progress_bytes_total {
-                            Some(total) if total == pins::PARAKEET_MODEL.4 => format!(
-                                "parakeet model {model_name}: {}% ({:.1} / {:.1} MB)",
-                                received.saturating_mul(100) / total,
-                                received as f64 / 1_000_000.0,
-                                total as f64 / 1_000_000.0
+                            Some(total) if total == pins::PARAKEET_MODEL.4 => {
+                                solstone_core_cli_copy::display_for(
+                                    crate::host_locale(),
+                                    "journal.cli.host.install.models.install.with.live.progress.parakeet.model.model.name.percent",
+                                    [
+                                        ("model_name", &model_name),
+                                        ("percent", &(received.saturating_mul(100) / total)),
+                                        (
+                                            "received",
+                                            &format!("{:.1}", received as f64 / 1_000_000.0),
+                                        ),
+                                        ("total", &format!("{:.1}", total as f64 / 1_000_000.0)),
+                                    ],
+                                )
+                            }
+                            Some(total) if total > 0 => solstone_core_cli_copy::display_for(
+                                crate::host_locale(),
+                                "journal.cli.host.install.models.install.with.live.progress.parakeet.setup.downloading.required.files",
+                                [
+                                    ("percent", &(received.saturating_mul(100) / total)),
+                                    ("received", &format!("{:.1}", received as f64 / 1_000_000.0)),
+                                    ("total", &format!("{:.1}", total as f64 / 1_000_000.0)),
+                                ],
                             ),
-                            Some(total) if total > 0 => format!(
-                                "parakeet setup: downloading required files {}% ({:.1} / {:.1} MB)",
-                                received.saturating_mul(100) / total,
-                                received as f64 / 1_000_000.0,
-                                total as f64 / 1_000_000.0
+                            _ => solstone_core_cli_copy::render_for(
+                                crate::host_locale(),
+                                "journal.cli.host.install.models.install.with.live.progress.parakeet.setup.download.starting",
+                                &[],
                             ),
-                            _ => "parakeet setup: download starting".to_owned(),
                         }
                     }
-                    "verifying" => format!("parakeet model {model_name}: verifying download"),
+                    "verifying" => solstone_core_cli_copy::display_for(
+                        crate::host_locale(),
+                        "journal.cli.host.install.models.install.with.live.progress.parakeet.model.model.name.verifying",
+                        [("model_name", &model_name)],
+                    ),
                     _ => String::new(),
                 };
                 if !line.is_empty()
@@ -715,15 +767,17 @@ where
 /// there told an owner their speech recognition did not work when it did.
 fn parakeet_without_download(os: &str, arch: &str) -> String {
     if os == "windows" {
-        PARAKEET_BUNDLED_ON_WINDOWS.to_owned()
+        solstone_core_cli_copy::render_for(crate::host_locale(), PARAKEET_BUNDLED_ON_WINDOWS, &[])
     } else {
-        format!(
-            "parakeet install: unsupported platform {os}/{arch}; supported: darwin/arm64, linux/x86_64"
+        solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.install.models.parakeet.without.download.parakeet.install.unsupported.platform.os",
+            [("os", &os), ("arch", &arch)],
         )
     }
 }
 
-const PARAKEET_BUNDLED_ON_WINDOWS: &str = "parakeet: speech recognition ships inside the journal app on windows, so there is nothing to download";
+const PARAKEET_BUNDLED_ON_WINDOWS: &str = "journal.cli.host.install.models.parakeet.without.download.parakeet.speech.recognition.ships.inside";
 
 fn resolve_variant<P>(
     options: &InstallModelsOptions,
@@ -736,39 +790,51 @@ where
     match options.variant {
         InstallModelsVariant::Cpu => {
             if host.os_name != "linux" {
-                return Err(format!("variant 'cpu' not supported on {}", host.os_name));
+                return Err(solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.install.models.resolve.variant.variant.cpu.not.supported.on",
+                    [("os", &host.os_name)],
+                ));
             }
             if !matches!(host.arch.as_str(), "x86_64" | "arm64") {
-                return Err(format!(
-                    "variant 'cpu' not supported on {}/{}",
-                    host.os_name, host.arch
+                return Err(solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.install.models.resolve.variant.variant.cpu.not.supported.on.supported.on.os.arch",
+                    [("os", &host.os_name), ("arch", &host.arch)],
                 ));
             }
             Ok(Some(ResolvedVariant::Cpu))
         }
         InstallModelsVariant::Cuda => {
             if host.os_name != "linux" {
-                return Err(format!("variant 'cuda' not supported on {}", host.os_name));
+                return Err(solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.install.models.resolve.variant.variant.cuda.not.supported.on",
+                    [("os", &host.os_name)],
+                ));
             }
             if host.arch != "x86_64" {
-                return Err(format!(
-                    "variant 'cuda' not supported on {}/{}",
-                    host.os_name, host.arch
+                return Err(solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.install.models.resolve.variant.variant.cuda.not.supported.on.supported.on.os.arch",
+                    [("os", &host.os_name), ("arch", &host.arch)],
                 ));
             }
             Ok(Some(ResolvedVariant::Cuda))
         }
         InstallModelsVariant::Coreml => {
             if host.os_name != "darwin" {
-                return Err(format!(
-                    "variant 'coreml' not supported on {}",
-                    host.os_name
+                return Err(solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.install.models.resolve.variant.variant.coreml.not.supported.on",
+                    [("os", &host.os_name)],
                 ));
             }
             if host.arch != "arm64" {
-                return Err(format!(
-                    "variant 'coreml' not supported on {}/{}",
-                    host.os_name, host.arch
+                return Err(solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.install.models.resolve.variant.variant.coreml.not.supported.on.supported.on.os.arch",
+                    [("os", &host.os_name), ("arch", &host.arch)],
                 ));
             }
             Ok(Some(ResolvedVariant::Coreml))
@@ -787,14 +853,17 @@ where
                         "cpu" => return Ok(Some(ResolvedVariant::Cpu)),
                         "cuda" if host.arch == "x86_64" => return Ok(Some(ResolvedVariant::Cuda)),
                         "cuda" => {
-                            return Err(format!(
-                                "invalid JOURNAL_VARIANT='cuda'; use 'cpu' on {}/{}",
-                                host.os_name, host.arch
+                            return Err(solstone_core_cli_copy::display_for(
+                                crate::host_locale(),
+                                "journal.cli.host.install.models.resolve.variant.invalid.variant.cuda.use.cpu",
+                                [("os", &host.os_name), ("arch", &host.arch)],
                             ));
                         }
                         _ => {
-                            return Err(format!(
-                                "invalid JOURNAL_VARIANT='{value}'; use 'cpu' or 'cuda'"
+                            return Err(solstone_core_cli_copy::display_for(
+                                crate::host_locale(),
+                                "journal.cli.host.install.models.resolve.variant.invalid.variant.value.use.cpu",
+                                [("value", &value)],
                             ));
                         }
                     }
@@ -830,11 +899,16 @@ fn parakeet_ready(journal: &Path, key: &str) -> Result<PathBuf, String> {
         ("binary_cpu", &paths["binary_path_cpu"]),
         ("binary_vulkan", &paths["binary_path_vulkan"]),
     ] {
-        let path = PathBuf::from(path.as_str().ok_or("parakeet path missing")?);
+        let path = PathBuf::from(path.as_str().ok_or(solstone_core_cli_copy::render_for(
+            crate::host_locale(),
+            "journal.cli.host.install.models.parakeet.ready.parakeet.path.missing",
+            &[],
+        ))?);
         if !path.is_file() {
-            return Err(format!(
-                "parakeet-cpp check failed: {name} missing at {}",
-                path.display()
+            return Err(solstone_core_cli_copy::display_for(
+                crate::host_locale(),
+                "journal.cli.host.install.models.parakeet.ready.parakeet.cpp.check.failed.name",
+                [("name", &name), ("path", &path.display())],
             ));
         }
         #[cfg(unix)]
@@ -847,22 +921,26 @@ fn parakeet_ready(journal: &Path, key: &str) -> Result<PathBuf, String> {
                 & 0o111
                 == 0
             {
-                return Err(format!(
-                    "parakeet-cpp check failed: {name} not executable at {}",
-                    path.display()
+                return Err(solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.install.models.parakeet.ready.parakeet.cpp.check.failed.name.not.executable.at.path",
+                    [("name", &name), ("path", &path.display())],
                 ));
             }
         }
     }
-    let model = PathBuf::from(
-        paths["model_path"]
-            .as_str()
-            .ok_or("parakeet model path missing")?,
-    );
+    let model = PathBuf::from(paths["model_path"].as_str().ok_or(
+        solstone_core_cli_copy::render_for(
+            crate::host_locale(),
+            "journal.cli.host.install.models.parakeet.ready.parakeet.model.path.missing",
+            &[],
+        ),
+    )?);
     if !model.is_file() {
-        return Err(format!(
-            "parakeet-cpp check failed: model missing at {}",
-            model.display()
+        return Err(solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.install.models.parakeet.ready.parakeet.cpp.check.failed.model",
+            [("path", &model.display())],
         ));
     }
     Ok(model)
@@ -883,20 +961,24 @@ fn install_model(
 }
 
 fn install_error_message(error: DispatchError) -> String {
-    error
-        .envelope
-        .error
-        .as_ref()
-        .map(|value| value.message.clone())
-        .unwrap_or_else(|| "parakeet install failed".to_owned())
+    if error.envelope.error.is_some() {
+        error.into_detail().render(crate::host_locale())
+    } else {
+        solstone_core_cli_copy::render_for(
+            crate::host_locale(),
+            "journal.cli.host.install.models.run.inner.with.parakeet.install.failed",
+            &[],
+        )
+    }
 }
 
 /// Rebuilt from its components so a path joined from `/`-separated pieces
 /// prints with one separator on Windows, where the journal root uses `\`.
 fn ready_line(path: &Path) -> String {
-    format!(
-        "model ready: {}",
-        path.components().collect::<PathBuf>().display()
+    solstone_core_cli_copy::display_for(
+        crate::host_locale(),
+        "journal.cli.host.install.models.ready.line.model.ready.path",
+        [("path", &path.components().collect::<PathBuf>().display())],
     )
 }
 
@@ -1109,7 +1191,14 @@ mod tests {
     #[test]
     fn windows_is_told_parakeet_ships_with_the_app_not_that_it_is_unsupported() {
         let line = parakeet_without_download("windows", "x86_64");
-        assert_eq!(line, PARAKEET_BUNDLED_ON_WINDOWS);
+        assert_eq!(
+            line,
+            solstone_core_cli_copy::render_for(
+                crate::host_locale(),
+                PARAKEET_BUNDLED_ON_WINDOWS,
+                &[]
+            )
+        );
         assert!(!line.contains("unsupported"));
     }
 

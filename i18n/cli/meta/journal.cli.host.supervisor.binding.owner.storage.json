@@ -1,0 +1,21 @@
+{
+  "description": "Journal host supervisor binding owner storage.",
+  "context": "Journal host supervisor binding owner storage.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9df4e6be4c5ec24684757be4430de0e6919fdfc3d0e7665e4f4d58c8c9c6bb93",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

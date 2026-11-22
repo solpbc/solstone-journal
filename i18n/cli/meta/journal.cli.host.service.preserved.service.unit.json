@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service preserved service unit.",
+  "context": "Journal host service preserved service unit.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "10592cb9e648a6a06a49e9ae34dc612bd2c55774dad827cf7f16da8e9c484ce7",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal host service service became active during the journal folder change.",
+  "context": "Journal host service service became active during the journal folder change.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a61859b172ca6fdccc29ff982cd5b5a91d4a54086043c51190df9d8c1c73689b",
+  "max_length": 162,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

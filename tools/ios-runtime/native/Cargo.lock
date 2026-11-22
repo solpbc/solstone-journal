@@ -5449,6 +5449,7 @@ name = "solstone-core-cli"
 version = "2.0.88"
 dependencies = [
  "solstone-core-cli-boundary",
+ "solstone-core-cli-copy",
  "solstone-core-doctor",
  "solstone-core-format",
  "solstone-core-operational-logs",
@@ -7014,6 +7015,7 @@ dependencies = [
  "serde",
  "serde_json",
  "solstone-core-check",
+ "solstone-core-cli-copy",
  "solstone-core-installation-identity",
  "solstone-core-journal",
  "solstone-core-journal-config",

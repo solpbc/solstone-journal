@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service open your journal.",
+  "context": "Journal host service open your journal.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "url",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d367817d2cfbb3c8ea84f4f4e0ac1d2dedd55e740c4c2e59fe1fb1cb95dbbabc",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

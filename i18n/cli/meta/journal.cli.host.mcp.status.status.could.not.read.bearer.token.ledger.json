@@ -1,0 +1,28 @@
+{
+  "description": "Journal host output for mcp status status could not read bearer token ledger.",
+  "context": "Journal host output for mcp status status could not read bearer token ledger.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "262cb55cf53643dcd4d48b7cb4380cb8388b71e45aa8449107158ac2bbe38e9b",
+  "max_length": 264,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command_solstone_journal_mcp_status",
+      "kind": "command",
+      "value": "solstone journal mcp status"
+    }
+  ]
+}

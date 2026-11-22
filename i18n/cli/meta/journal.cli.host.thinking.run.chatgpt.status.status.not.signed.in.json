@@ -1,0 +1,16 @@
+{
+  "description": "Native thinking command, run chatgpt status. Preserve terminal syntax and supplied data.",
+  "context": "Native thinking command, run chatgpt status. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c185bbe820ca97bf6f0809f5931958da005de19a346c3aa812d71e71837daeb5",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

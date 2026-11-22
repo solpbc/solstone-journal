@@ -1,0 +1,16 @@
+{
+  "description": "Journal host service service unit changed during operation preserved replacement.",
+  "context": "Journal host service service unit changed during operation preserved replacement.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f5b88a84c214c9458d1423aefce63cbf01664c87301726dda7f9bd27d66505d0",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

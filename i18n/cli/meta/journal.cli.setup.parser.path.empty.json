@@ -1,0 +1,23 @@
+{
+  "description": "Journal setup argument validation: path empty.",
+  "context": "Journal setup argument validation: path empty.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "43412b74fa2b352faf877e3e03ade38d064e3d03b4693876bc249d3d05e78747",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "journal_flag",
+      "value": "--journal",
+      "kind": "flag"
+    }
+  ]
+}

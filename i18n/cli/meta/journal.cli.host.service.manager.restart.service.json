@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service manager restart service.",
+  "context": "Journal host service manager restart service.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "result",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f3383de1c7683d4a16f37722bab7b9821383972044706e674f6832215d32f2d4",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

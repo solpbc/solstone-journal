@@ -1,0 +1,23 @@
+{
+  "description": "Journal host health heartbeat ok.",
+  "context": "Journal host health heartbeat ok.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5c8f4eed9a1502c2d1865855423e16bc3fc758ece877fa6d8d8d9a572548e7c3",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

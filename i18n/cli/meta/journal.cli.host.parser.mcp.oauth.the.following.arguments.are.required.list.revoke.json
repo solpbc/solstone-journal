@@ -1,0 +1,33 @@
+{
+  "description": "Terminal diagnostic for parser mcp oauth the following arguments are required list revoke.",
+  "context": "Terminal diagnostic for parser mcp oauth the following arguments are required list revoke.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "197565ff7b77f6ae26d6868f0764e9612b1d36af578ed3813b19650bea735399",
+  "max_length": 261,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal",
+      "value": "list",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "literal_2",
+      "value": "revoke",
+      "kind": "accepted-input"
+    }
+  ]
+}

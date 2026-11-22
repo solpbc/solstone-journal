@@ -1,0 +1,16 @@
+{
+  "description": "Journal host service removed stale service registration.",
+  "context": "Journal host service removed stale service registration.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bebb8fd648e0f4a710ec5e5bc5ed2c01b4229f373e7212a8dc9eb244d88b190e",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

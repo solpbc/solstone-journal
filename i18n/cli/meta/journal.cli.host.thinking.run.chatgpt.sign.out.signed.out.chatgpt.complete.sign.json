@@ -1,0 +1,28 @@
+{
+  "description": "Native thinking command, run chatgpt sign out. Preserve terminal syntax and supplied data.",
+  "context": "Native thinking command, run chatgpt sign out. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "da0c77d6898f741b06d58cf4774fd0dc425ffe926f7d87e0bf45779d80551901",
+  "max_length": 294,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_1",
+      "kind": "accepted-input",
+      "value": "ChatGPT"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

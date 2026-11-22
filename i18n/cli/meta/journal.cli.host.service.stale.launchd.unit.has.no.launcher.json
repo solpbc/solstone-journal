@@ -1,0 +1,23 @@
+{
+  "description": "Journal host service stale launchd unit has no launcher.",
+  "context": "Journal host service stale launchd unit has no launcher.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "70eff3e08f7cbf7d9147891afa375d5f8806ae4ca33edf056a82fb3697772ced",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "launchd",
+      "kind": "accepted-input",
+      "value": "launchd"
+    }
+  ]
+}

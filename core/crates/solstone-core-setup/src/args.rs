@@ -12,6 +12,8 @@ use std::path::{Component, Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
+use solstone_core_cli_copy as copy;
+
 use crate::user_config::{config_path, default_journal, read_user_config};
 
 pub const USAGE: &str = concat!(
@@ -129,13 +131,30 @@ impl std::error::Error for UsageError {}
 
 /// Parse owner arguments using the process current directory for journal validation.
 pub fn parse_args(arguments: &[OsString]) -> Result<SetupArgs, UsageError> {
-    let cwd = env::current_dir()
-        .map_err(|error| UsageError(format!("could not determine current directory: {error}")))?;
-    parse_args_at(arguments, &cwd)
+    parse_args_for(copy::ENGLISH, arguments)
+}
+
+pub fn parse_args_for(locale: &str, arguments: &[OsString]) -> Result<SetupArgs, UsageError> {
+    let cwd = env::current_dir().map_err(|error| {
+        UsageError(copy::display_for(
+            locale,
+            "journal.cli.setup.parser.cwd",
+            [("error", &error)],
+        ))
+    })?;
+    parse_args_at_for(locale, arguments, &cwd)
 }
 
 /// Parse owner arguments against an explicit current directory.
 pub fn parse_args_at(arguments: &[OsString], cwd: &Path) -> Result<SetupArgs, UsageError> {
+    parse_args_at_for(copy::ENGLISH, arguments, cwd)
+}
+
+pub fn parse_args_at_for(
+    locale: &str,
+    arguments: &[OsString],
+    cwd: &Path,
+) -> Result<SetupArgs, UsageError> {
     // Deliberately do not support argparse-style prefix abbreviations. The reference's
     // `arg_supplied()` cannot see abbreviations, so accepting them could weaken the
     // irreversible `--clean-uninstall` incompatibility checks.
@@ -170,33 +189,39 @@ pub fn parse_args_at(arguments: &[OsString], cwd: &Path) -> Result<SetupArgs, Us
             arguments
                 .get(index + 1)
                 .map(OsString::as_os_str)
-                .ok_or_else(|| UsageError(format!("argument {name}: expected one argument")))
+                .ok_or_else(|| {
+                    UsageError(copy::display_for(
+                        locale,
+                        "journal.cli.think.argument.value",
+                        [("option", &name)],
+                    ))
+                })
         };
         if argument == OsStr::new("--journal") {
-            parsed.journal = Some(validate_journal(value("--journal")?, cwd)?);
+            parsed.journal = Some(validate_journal(locale, value("--journal")?, cwd)?);
             index += 1;
         } else if let Some(value) = equals_value(argument, "--journal") {
-            parsed.journal = Some(validate_journal(value, cwd)?);
+            parsed.journal = Some(validate_journal(locale, value, cwd)?);
         } else if argument == OsStr::new("--port") {
-            parsed.port = parse_port(value("--port")?)?;
+            parsed.port = parse_port(locale, value("--port")?)?;
             parsed.supplied.port = true;
             index += 1;
         } else if let Some(value) = equals_value(argument, "--port") {
-            parsed.port = parse_port(value)?;
+            parsed.port = parse_port(locale, value)?;
             parsed.supplied.port = true;
         } else if argument == OsStr::new("--variant") {
-            parsed.variant = parse_variant(value("--variant")?)?;
+            parsed.variant = parse_variant(locale, value("--variant")?)?;
             parsed.supplied.variant = true;
             index += 1;
         } else if let Some(value) = equals_value(argument, "--variant") {
-            parsed.variant = parse_variant(value)?;
+            parsed.variant = parse_variant(locale, value)?;
             parsed.supplied.variant = true;
         } else if argument == OsStr::new("--step-timeout-seconds") {
-            parsed.step_timeout_seconds = parse_integer(value("--step-timeout-seconds")?)?;
+            parsed.step_timeout_seconds = parse_integer(locale, value("--step-timeout-seconds")?)?;
             parsed.supplied.step_timeout_seconds = true;
             index += 1;
         } else if let Some(value) = equals_value(argument, "--step-timeout-seconds") {
-            parsed.step_timeout_seconds = parse_integer(value)?;
+            parsed.step_timeout_seconds = parse_integer(locale, value)?;
             parsed.supplied.step_timeout_seconds = true;
         } else if matches!(argument, value if value == OsStr::new("-y") || value == OsStr::new("--yes") || value == OsStr::new("--non-interactive"))
         {
@@ -229,17 +254,23 @@ pub fn parse_args_at(arguments: &[OsString], cwd: &Path) -> Result<SetupArgs, Us
             parsed.clean_uninstall = true;
         } else if argument == OsStr::new("--initial-start-at-sign-in") {
             parsed.initial_start_at_sign_in = Some(parse_initial_start_at_sign_in(
+                locale,
                 value("--initial-start-at-sign-in")?,
                 parsed.initial_start_at_sign_in,
             )?);
             index += 1;
         } else if let Some(value) = equals_value(argument, "--initial-start-at-sign-in") {
             parsed.initial_start_at_sign_in = Some(parse_initial_start_at_sign_in(
+                locale,
                 value,
                 parsed.initial_start_at_sign_in,
             )?);
         } else {
-            return Err(UsageError("unrecognized arguments".to_owned()));
+            return Err(UsageError(copy::render_for(
+                locale,
+                "journal.cli.setup.parser.unknown",
+                &[],
+            )));
         }
         index += 1;
     }
@@ -247,20 +278,29 @@ pub fn parse_args_at(arguments: &[OsString], cwd: &Path) -> Result<SetupArgs, Us
 }
 
 fn parse_initial_start_at_sign_in(
+    locale: &str,
     value: &OsStr,
     current: Option<InitialStartAtSignIn>,
 ) -> Result<InitialStartAtSignIn, UsageError> {
     if current.is_some() {
-        return Err(UsageError(
-            "argument --initial-start-at-sign-in: must not be repeated".into(),
-        ));
+        return Err(UsageError(copy::render_for(
+            locale,
+            "journal.cli.setup.parser.sign.in.repeated",
+            &[],
+        )));
     }
     let value = value.to_str().ok_or_else(|| {
-        UsageError("argument --initial-start-at-sign-in: expected on or off".into())
+        UsageError(copy::render_for(
+            locale,
+            "journal.cli.setup.parser.sign.in.encoding",
+            &[],
+        ))
     })?;
     InitialStartAtSignIn::parse_token(value).ok_or_else(|| {
-        UsageError(format!(
-            "argument --initial-start-at-sign-in: invalid choice: {value} (choose from on, off)"
+        UsageError(copy::display_for(
+            locale,
+            "journal.cli.setup.parser.sign.in.invalid",
+            [("value", &value)],
         ))
     })
 }
@@ -270,48 +310,72 @@ fn equals_value<'a>(argument: &'a OsStr, name: &str) -> Option<&'a OsStr> {
     value.strip_prefix(&format!("{name}=")).map(OsStr::new)
 }
 
-fn validate_journal(value: &OsStr, cwd: &Path) -> Result<PathBuf, UsageError> {
-    let value = value
-        .to_str()
-        .ok_or_else(|| UsageError("--journal could not be resolved: path is not UTF-8".into()))?;
+fn validate_journal(locale: &str, value: &OsStr, cwd: &Path) -> Result<PathBuf, UsageError> {
+    let value = value.to_str().ok_or_else(|| {
+        UsageError(copy::render_for(
+            locale,
+            "journal.cli.setup.parser.path.encoding",
+            &[],
+        ))
+    })?;
     if value.trim().is_empty() {
-        return Err(UsageError("--journal must not be empty".into()));
+        return Err(UsageError(copy::render_for(
+            locale,
+            "journal.cli.setup.parser.path.empty",
+            &[],
+        )));
     }
     let path = PathBuf::from(value);
     // The folder setup runs from is a valid journal, named by `.` or by its
     // full path; only an empty value is refused above.
-    resolve_path(&path, cwd)
-        .map_err(|error| UsageError(format!("--journal could not be resolved: {error}")))?;
+    resolve_path(&path, cwd).map_err(|error| {
+        UsageError(copy::display_for(
+            locale,
+            "journal.cli.setup.parser.path.resolve",
+            [("error", &error)],
+        ))
+    })?;
     Ok(path)
 }
 
-fn parse_port(value: &OsStr) -> Result<u16, UsageError> {
+fn parse_port(locale: &str, value: &OsStr) -> Result<u16, UsageError> {
     let value = value.to_string_lossy();
-    let port = value
-        .parse::<u16>()
-        .map_err(|_| UsageError(format!("--port must be in 1024-65535 (got {value})")))?;
+    let port = value.parse::<u16>().map_err(|_| {
+        UsageError(copy::display_for(
+            locale,
+            "journal.cli.setup.parser.port",
+            [("value", &value)],
+        ))
+    })?;
     if !(1024..=65535).contains(&port) {
-        return Err(UsageError(format!(
-            "--port must be in 1024-65535 (got {port})"
+        return Err(UsageError(copy::display_for(
+            locale,
+            "journal.cli.setup.parser.port",
+            [("value", &port)],
         )));
     }
     Ok(port)
 }
 
-fn parse_integer(value: &OsStr) -> Result<i64, UsageError> {
-    value
-        .to_string_lossy()
-        .parse()
-        .map_err(|_| UsageError("argument --step-timeout-seconds: invalid int value".into()))
+fn parse_integer(locale: &str, value: &OsStr) -> Result<i64, UsageError> {
+    value.to_string_lossy().parse().map_err(|_| {
+        UsageError(copy::render_for(
+            locale,
+            "journal.cli.setup.parser.timeout",
+            &[],
+        ))
+    })
 }
 
-fn parse_variant(value: &OsStr) -> Result<String, UsageError> {
+fn parse_variant(locale: &str, value: &OsStr) -> Result<String, UsageError> {
     let value = value.to_string_lossy();
     if matches!(value.as_ref(), "auto" | "cpu" | "cuda" | "coreml") {
         Ok(value.into_owned())
     } else {
-        Err(UsageError(format!(
-            "argument --variant: invalid choice: {value} (choose from auto, cpu, cuda, coreml)"
+        Err(UsageError(copy::display_for(
+            locale,
+            "journal.cli.setup.parser.variant",
+            [("value", &value)],
         )))
     }
 }
@@ -583,6 +647,7 @@ mod tests {
         InitialStartAtSignIn, ResolutionContext, SetupMode, USAGE, parse_args_at,
         resolve_clean_uninstall_journal, resolve_mode, resolve_setup,
     };
+
     use crate::user_config::{config_path, write_user_config};
     use std::ffi::OsString;
     use std::fs;

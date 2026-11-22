@@ -1,0 +1,36 @@
+{
+  "description": "Journal host health task slow.",
+  "context": "Journal host health task slow.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "duration",
+      "type": "string"
+    },
+    {
+      "name": "limit",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5c91847764ce504e999a38877165def5220c386b4f7fdaafd92e9177fe8983ec",
+  "max_length": 210,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "space_2",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ]
+}

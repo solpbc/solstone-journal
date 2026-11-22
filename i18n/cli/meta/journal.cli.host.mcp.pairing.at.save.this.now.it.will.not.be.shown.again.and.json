@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for mcp pairing at save this now it will not be shown again and.",
+  "context": "Journal host output for mcp pairing at save this now it will not be shown again and.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "65d89a6bf0e9f82420d8fe457122dd7b9dd86f3a75a4fe275df74beec082779e",
+  "max_length": 198,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

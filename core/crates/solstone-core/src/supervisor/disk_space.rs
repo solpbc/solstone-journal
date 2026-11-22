@@ -19,6 +19,8 @@ use serde_json::{Map, Value, json};
 use solstone_core_callosum::CallosumSocketServer;
 use solstone_core_offload::measurement::{MIN_FLOOR_BYTES, device_free_bytes, device_total_bytes};
 
+use solstone_core_window_catalog::{ENGLISH, text};
+
 use super::bus::emit;
 
 /// A statvfs-style read is cheap; free space moves over hours, not seconds.
@@ -27,9 +29,6 @@ pub(super) const CHECK_INTERVAL: Duration = Duration::from_secs(300);
 const TRACT: &str = "owner_notice";
 const KEY: &str = "disk_low:journal";
 const ACTION: &str = "/app/settings#storage";
-const LOW_TITLE: &str = "your journal's disk is running low on space";
-const LOW_MESSAGE: &str = "free up some space on it.";
-const BACK_TITLE: &str = "your journal's disk has space again";
 
 /// Free and total bytes on the filesystem holding the journal.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -89,8 +88,14 @@ pub(super) fn announcement(level: Level) -> (&'static str, Map<String, Value>) {
             "raise",
             Map::from_iter([
                 ("key".to_owned(), json!(KEY)),
-                ("title".to_owned(), json!(LOW_TITLE)),
-                ("message".to_owned(), json!(LOW_MESSAGE)),
+                (
+                    "title".to_owned(),
+                    json!(text(ENGLISH, "journal.window.host.disk.low.title")),
+                ),
+                (
+                    "message".to_owned(),
+                    json!(text(ENGLISH, "journal.window.host.disk.low.message")),
+                ),
                 ("action".to_owned(), json!(ACTION)),
             ]),
         ),
@@ -98,7 +103,10 @@ pub(super) fn announcement(level: Level) -> (&'static str, Map<String, Value>) {
             "clear",
             Map::from_iter([
                 ("key".to_owned(), json!(KEY)),
-                ("title".to_owned(), json!(BACK_TITLE)),
+                (
+                    "title".to_owned(),
+                    json!(text(ENGLISH, "journal.window.host.disk.back.title")),
+                ),
             ]),
         ),
     }
@@ -209,12 +217,19 @@ mod tests {
     fn announcements_carry_the_stable_key_and_a_journal_path() {
         let (event, raise) = announcement(Level::Low);
         assert_eq!(event, "raise");
+        assert_eq!(raise.len(), 4);
         assert_eq!(raise["key"], KEY);
+        assert!(
+            raise["message"]
+                .as_str()
+                .is_some_and(|body| !body.is_empty())
+        );
         let action = raise["action"].as_str().unwrap();
         assert!(action.starts_with("/app/") && !action.contains("//") && !action.contains(".."));
         assert!(!raise["title"].as_str().unwrap().is_empty());
         let (event, clear) = announcement(Level::Back);
         assert_eq!(event, "clear");
+        assert_eq!(clear.len(), 2);
         assert_eq!(clear["key"], KEY);
         assert!(!clear["title"].as_str().unwrap().is_empty());
     }

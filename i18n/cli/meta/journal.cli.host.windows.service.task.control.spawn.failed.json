@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output for windows service task control spawn failed.",
+  "context": "Journal host output for windows service task control spawn failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "dfb147b3132b3270269e50dd9393dbc8899e7167e2c30d029658ee0100729cc4",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

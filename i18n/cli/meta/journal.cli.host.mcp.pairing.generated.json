@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for mcp pairing at generated a pairing code valid for 10 minutes and one.",
+  "context": "Journal host output for mcp pairing at generated a pairing code valid for 10 minutes and one.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "55d9cb89d2e028d45a304e24e51fe0475b09c2ddbcd35dbd66b1d67330737660",
+  "max_length": 177,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

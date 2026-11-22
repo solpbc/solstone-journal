@@ -1,0 +1,16 @@
+{
+  "description": "Journal host service service management is supported only on linux and mac.",
+  "context": "Journal host service service management is supported only on linux and mac.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "180bab02d615043db35ca976586890f9063118958785496526d11a6c07db342a",
+  "max_length": 159,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

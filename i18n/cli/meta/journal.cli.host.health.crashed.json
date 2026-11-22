@@ -1,0 +1,23 @@
+{
+  "description": "Journal host health crashed.",
+  "context": "Journal host health crashed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "73f7e3d600b07a8bb040d1dde6bf3f0137cdc4861cb74f32027db146a4a7f53d",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

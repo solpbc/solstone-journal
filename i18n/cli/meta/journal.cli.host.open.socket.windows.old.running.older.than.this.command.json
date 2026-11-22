@@ -1,0 +1,16 @@
+{
+  "description": "Native open command, socket windows old. Preserve terminal syntax and supplied data.",
+  "context": "Native open command, socket windows old. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f976355a65489a2bb4b7c029c148ee69b11ad17b8f5afe177f485f873c1d72e1",
+  "max_length": 288,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service service task deletion was not observed.",
+  "context": "Journal host output for windows service service task deletion was not observed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "21a4e6f86661f9d0eb54fa3505e923d85c32b6a766ba13671e5cc08c8ab53d6f",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

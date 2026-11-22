@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service update intent record is invalid.",
+  "context": "Journal host output for windows service update intent record is invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e1a481619cdcaf9b392e3b16a23f650fb51577be91a6e8686a042f2c70db4457",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

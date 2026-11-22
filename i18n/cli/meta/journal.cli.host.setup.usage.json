@@ -1,0 +1,68 @@
+{
+  "description": "Terminal help and usage for setup usage.",
+  "context": "Terminal help and usage for setup usage.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9fa3c39194f7ffa8f0ab80fa53e9642627d63fe34d118e0967a12150b7438fc5",
+  "max_length": 906,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal setup [-h] [--journal PATH] [--port INT]",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "spaces_21",
+      "value": "                     ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "syntax_4",
+      "value": "[--variant {auto,cpu,cuda,coreml}] [--step-timeout-seconds INT]",
+      "kind": "command"
+    },
+    {
+      "name": "syntax_5",
+      "value": "[-y] [--dry-run] [--jsonl] [--explain] [--skip-models]",
+      "kind": "command"
+    },
+    {
+      "name": "syntax_6",
+      "value": "[--skip-brain] [--skip-skills] [--skip-service] [--skip-wrapper]",
+      "kind": "command"
+    },
+    {
+      "name": "syntax_7",
+      "value": "[--skip-path]",
+      "kind": "command"
+    },
+    {
+      "name": "syntax_8",
+      "value": "[--accept-existing-journal] [--force] [--clean-uninstall]",
+      "kind": "command"
+    },
+    {
+      "name": "syntax_9",
+      "value": "[--initial-start-at-sign-in {on,off}]",
+      "kind": "command"
+    },
+    {
+      "name": "term",
+      "value": "Windows",
+      "kind": "mark-word"
+    }
+  ]
+}

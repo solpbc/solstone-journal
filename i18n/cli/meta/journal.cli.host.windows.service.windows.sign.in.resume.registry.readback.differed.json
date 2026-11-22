@@ -1,0 +1,23 @@
+{
+  "description": "Journal host output for windows service windows sign in resume registry readback differed.",
+  "context": "Journal host output for windows service windows sign in resume registry readback differed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3449db8bf7223be0e1ac51a23062e08346b18cdf4b462f5fb132b0eaead1e321",
+  "max_length": 186,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_windows",
+      "kind": "accepted-input",
+      "value": "Windows"
+    }
+  ]
+}

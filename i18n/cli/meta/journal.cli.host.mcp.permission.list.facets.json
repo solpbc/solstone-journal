@@ -1,0 +1,40 @@
+{
+  "description": "Journal host output for mcp permission list facets.",
+  "context": "Journal host output for mcp permission list facets.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "connection",
+      "type": "string"
+    },
+    {
+      "name": "generation",
+      "type": "string"
+    },
+    {
+      "name": "evaluation",
+      "type": "string"
+    },
+    {
+      "name": "facets",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7b07e99567e6717947a7243bb99acaee76ee3cf80615017c3b13cdc6076a2ccb",
+  "max_length": 357,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "tab",
+      "kind": "whitespace",
+      "value": "\t"
+    }
+  ]
+}

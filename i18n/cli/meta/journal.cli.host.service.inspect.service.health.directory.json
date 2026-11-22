@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service inspect service health directory.",
+  "context": "Journal host service inspect service health directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "689691402ab983d50d893806d316d9029e8a6412d51618870b413a477447690e",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

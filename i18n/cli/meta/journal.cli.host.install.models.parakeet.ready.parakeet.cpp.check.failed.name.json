@@ -1,0 +1,32 @@
+{
+  "description": "Native install models command, parakeet ready. Preserve terminal syntax and supplied data.",
+  "context": "Native install models command, parakeet ready. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8e09cb9ed24c5d24c8b7124e2ea3ec52dc1f7c408ef117e3474849271d6eadfd",
+  "max_length": 171,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_1",
+      "kind": "accepted-input",
+      "value": "parakeet-cpp"
+    }
+  ]
+}

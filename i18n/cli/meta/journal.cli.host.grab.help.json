@@ -1,0 +1,133 @@
+{
+  "description": "Terminal help and usage for grab help.",
+  "context": "Terminal help and usage for grab help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3fe6108605b02c0d294bdef19f2f220caf8ba04240e4dc7dd812aee50465f6af",
+  "max_length": 2757,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal grab [-h] [--out OUT] [--force] [--json] [-v] [-d] [args ...]",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "subcommand",
+      "value": "args",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "spaces_11",
+      "value": "           ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "path_tokens",
+      "value": "[day] [stream] [segment] [screen] [frame-\n                 id[,frame-id...]]",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_5",
+      "value": "     ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_9",
+      "value": "--out OUT",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_6",
+      "value": "      ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "extension",
+      "value": ".png",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "extension_12",
+      "value": ".jpg",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "extension_13",
+      "value": ".jpeg",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "spaces_17",
+      "value": "                 ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "extension_15",
+      "value": ".webp",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "option_16",
+      "value": "--force",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_8",
+      "value": "        ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_18",
+      "value": "--json",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_9",
+      "value": "         ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "term",
+      "value": "JSON",
+      "kind": "mark-word"
+    },
+    {
+      "name": "option_21",
+      "value": "-v, --verbose",
+      "kind": "command"
+    },
+    {
+      "name": "option_22",
+      "value": "-d, --debug",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_4",
+      "value": "    ",
+      "kind": "whitespace"
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "description": "Journal host health service seconds.",
+  "context": "Journal host health service seconds.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "pid",
+      "type": "string"
+    },
+    {
+      "name": "seconds",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c66333a1baadd9cc8a1394bf366b70de1b0f8bf9203c4e9f5a63e490f4a5b946",
+  "max_length": 198,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "space_2",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ]
+}

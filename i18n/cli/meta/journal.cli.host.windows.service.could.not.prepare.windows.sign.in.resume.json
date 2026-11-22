@@ -1,0 +1,28 @@
+{
+  "description": "Journal host output for windows service could not prepare windows sign in resume.",
+  "context": "Journal host output for windows service could not prepare windows sign in resume.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cafcf0811b9ab15114d5fc95014dabd790b808af79b84ff78d06f36565fe9aea",
+  "max_length": 195,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_windows",
+      "kind": "accepted-input",
+      "value": "Windows"
+    }
+  ]
+}

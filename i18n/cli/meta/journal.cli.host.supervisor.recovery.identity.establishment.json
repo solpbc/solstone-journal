@@ -1,0 +1,16 @@
+{
+  "description": "Journal host supervisor recovery identity establishment.",
+  "context": "Journal host supervisor recovery identity establishment.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "839cfbafa7e99ce4e309f1e7c4357484a2ff4207927d7871c50b2be67bdd9e05",
+  "max_length": 147,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

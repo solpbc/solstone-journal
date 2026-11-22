@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output for sense sense batch failed.",
+  "context": "Journal host output for sense sense batch failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0836d223f31b0b4e59967f08465d2b644b81efe3b3c6fe753a3931fc9a61151b",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

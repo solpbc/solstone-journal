@@ -1,0 +1,38 @@
+{
+  "description": "Owner terminal count for mcp activity shown complete.",
+  "context": "Owner terminal count for mcp activity shown complete.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "shown",
+      "type": "string"
+    },
+    {
+      "name": "examined",
+      "type": "string"
+    },
+    {
+      "name": "counts",
+      "type": "string"
+    },
+    {
+      "name": "shown_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "f40a9bdf506ae68081b9992fc28c08877f854a4a14a41416ff848e61618cbd3f",
+  "max_length": 534,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "shown_quantity",
+    "type": "cardinal"
+  }
+}

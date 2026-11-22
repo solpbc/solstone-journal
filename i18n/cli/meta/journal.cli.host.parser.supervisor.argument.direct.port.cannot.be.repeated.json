@@ -1,0 +1,28 @@
+{
+  "description": "Terminal diagnostic for parser supervisor argument direct port cannot be repeated.",
+  "context": "Terminal diagnostic for parser supervisor argument direct port cannot be repeated.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "26b05896cf81b9396ff0e61518fdae18adebf8862b43f78014c2bc87362eaf3d",
+  "max_length": 177,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "flag",
+      "value": "--direct-port",
+      "kind": "flag"
+    }
+  ]
+}

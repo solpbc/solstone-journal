@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output for mcp service mcp service failed.",
+  "context": "Journal host output for mcp service mcp service failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "class",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "26a84819533136039a75de9bf3a0d9727e35bbd3dd2e895443086a888d9ce578",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

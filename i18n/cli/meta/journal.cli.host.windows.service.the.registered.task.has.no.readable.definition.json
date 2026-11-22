@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service the registered task has no readable definition.",
+  "context": "Journal host output for windows service the registered task has no readable definition.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "918c8e51f72715670aa280ca9c0876316c7b851a745af883e3c5482e1dac2a17",
+  "max_length": 138,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

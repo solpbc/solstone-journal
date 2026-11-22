@@ -1,0 +1,33 @@
+{
+  "description": "Terminal diagnostic for parser mcp target one of token or oauth is required.",
+  "context": "Terminal diagnostic for parser mcp target one of token or oauth is required.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e481f789a3a9c2121b5b4e8045e5b9e24250fc2e626340946f2854ca0e01cf7f",
+  "max_length": 192,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "flag",
+      "value": "--token",
+      "kind": "flag"
+    },
+    {
+      "name": "flag_2",
+      "value": "--oauth",
+      "kind": "flag"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal host health rfdetr ready.",
+  "context": "Journal host health rfdetr ready.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e8505bfa6ce75b79821c642e14a665572206b22855ab5b58337e269ab8bdfa8c",
+  "max_length": 165,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

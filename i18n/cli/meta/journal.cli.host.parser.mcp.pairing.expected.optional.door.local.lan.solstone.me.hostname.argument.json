@@ -1,0 +1,28 @@
+{
+  "description": "Terminal diagnostic for parser mcp pairing expected optional door local lan solstone me hostname argument.",
+  "context": "Terminal diagnostic for parser mcp pairing expected optional door local lan solstone me hostname argument.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e3fff92fc681afae7105bc8911ab1624dfc9a9b4aaed8a0dd5359382430b5cc0",
+  "max_length": 177,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "`--door local|lan|solstone.me|hostname`",
+      "kind": "command"
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "description": "Terminal diagnostic for parser mcp invalid mcp command value.",
+  "context": "Terminal diagnostic for parser mcp invalid mcp command value.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    },
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bc0ef2942ec4afb29792358dd0b9d589613fe39545f4dcd30cd71e097bfb2f6a",
+  "max_length": 174,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "term",
+      "value": "MCP",
+      "kind": "mark-word"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Terminal diagnostic for parser grab path tokens must be valid unicode.",
+  "context": "Terminal diagnostic for parser grab path tokens must be valid unicode.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c08c9cf910261ec3450d0b19d83baa0a727ad8151d3bec016b7704c1ccaf8967",
+  "max_length": 162,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

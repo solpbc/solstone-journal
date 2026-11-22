@@ -1,0 +1,16 @@
+{
+  "description": "Journal owner notice disk back title.",
+  "context": "Journal owner notice disk back title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "792c58686cb194b8052cff3c7da1d665d85db1e5e0e4ed180c44c8f719eae853",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

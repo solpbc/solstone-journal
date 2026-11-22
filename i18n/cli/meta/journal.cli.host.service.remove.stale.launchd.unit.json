@@ -1,0 +1,28 @@
+{
+  "description": "Journal host service remove stale launchd unit.",
+  "context": "Journal host service remove stale launchd unit.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "acc737c960dd4e36decac1f5edf5f489122b0e62dee3062b66c5c35220313b64",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "launchd",
+      "kind": "accepted-input",
+      "value": "launchd"
+    }
+  ]
+}

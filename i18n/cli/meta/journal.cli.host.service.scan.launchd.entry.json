@@ -1,0 +1,28 @@
+{
+  "description": "Journal host service scan launchd entry.",
+  "context": "Journal host service scan launchd entry.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2d3caaedb2cce0ae8650e2461e053f92e5e87d83fc362644b3a3f339b657f667",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "launchd",
+      "kind": "accepted-input",
+      "value": "launchd"
+    }
+  ]
+}

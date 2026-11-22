@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output for windows service could not consume update intent.",
+  "context": "Journal host output for windows service could not consume update intent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "41dd647f690691f29a4facfe42ed7af3436e96a7aeb71c6dd8629bf33e1cb82b",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

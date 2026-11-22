@@ -1,0 +1,41 @@
+{
+  "description": "Journal host output for mcp permission list whole.",
+  "context": "Journal host output for mcp permission list whole.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "connection",
+      "type": "string"
+    },
+    {
+      "name": "generation",
+      "type": "string"
+    },
+    {
+      "name": "evaluation",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0e78c6566341c11390dccf83ade27992199ec0ba539fcf1a9962f82279ff7b4a",
+  "max_length": 375,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "tab",
+      "kind": "whitespace",
+      "value": "\t"
+    },
+    {
+      "name": "literal_whole_journal",
+      "kind": "accepted-input",
+      "value": "whole_journal"
+    }
+  ]
+}

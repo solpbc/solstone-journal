@@ -1,0 +1,16 @@
+{
+  "description": "MCP owner diagnostic for permission agent state fault.",
+  "context": "MCP owner diagnostic for permission agent state fault.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c67e922fab12f812dc48c5910cbd007f12846c7653f18e631495f826c4294ddb",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -17,11 +17,11 @@ use solstone_core_generate::{ClientError, GenerateRequest, GenerateResponse, One
 
 use crate::{EXIT_UNAVAILABLE, resolve_journal_config_path};
 
-struct DesktopProbe;
+struct DesktopProbe(&'static str);
 
 impl OwnerProbe for DesktopProbe {
     fn diagnostic_locale(&self) -> &str {
-        solstone_core_cli_copy::cli_locale()
+        self.0
     }
 
     fn bundled_runtime_fingerprint(
@@ -57,7 +57,8 @@ pub(crate) fn run(command: JournalBrainOwnerCommand) -> ExitCode {
     match command {
         JournalBrainOwnerCommand::Status { json } => run_status(json),
         JournalBrainOwnerCommand::Refresh(options) => {
-            let Ok((journal, _)) = journal() else {
+            let locale = output_locale(options.json);
+            let Ok((journal, _)) = journal(locale) else {
                 return ExitCode::from(EXIT_UNAVAILABLE);
             };
             let outcome = solstone_core_brain_owner::refresh(
@@ -67,7 +68,7 @@ pub(crate) fn run(command: JournalBrainOwnerCommand) -> ExitCode {
                     expected_active_fingerprint: options.expected_active_fingerprint,
                     expect_active_fingerprint_absent: options.expect_active_fingerprint_absent,
                 },
-                &DesktopProbe,
+                &DesktopProbe(locale),
                 &ProductionSppPrerequisite,
                 &|| false,
             );
@@ -77,13 +78,14 @@ pub(crate) fn run(command: JournalBrainOwnerCommand) -> ExitCode {
             json,
             expected_fingerprint,
         } => {
-            let Ok((journal, _)) = journal() else {
+            let locale = output_locale(json);
+            let Ok((journal, _)) = journal(locale) else {
                 return ExitCode::from(EXIT_UNAVAILABLE);
             };
             let outcome = solstone_core_brain_owner::renew_prerequisites(
                 &journal,
                 expected_fingerprint.as_deref(),
-                &DesktopProbe,
+                &DesktopProbe(locale),
                 &ProductionSppPrerequisite,
                 &|| false,
             );
@@ -93,19 +95,24 @@ pub(crate) fn run(command: JournalBrainOwnerCommand) -> ExitCode {
     }
 }
 
-fn journal() -> Result<(PathBuf, Map<String, Value>), ExitCode> {
+fn output_locale(json: bool) -> &'static str {
+    if json {
+        solstone_core_cli_copy::ENGLISH
+    } else {
+        crate::host_locale()
+    }
+}
+
+fn journal(locale: &str) -> Result<(PathBuf, Map<String, Value>), ExitCode> {
     let line = resolve_journal_config_path(None).map_err(|error| {
-        crate::eprint_journal_path_error(error);
+        crate::eprint_journal_path_error_in(locale, error);
         ExitCode::from(EXIT_UNAVAILABLE)
     })?;
     let config = solstone_core_brain::read_journal_config(&line.path)
         .map_err(|error| {
             eprintln!(
                 "{}",
-                solstone_core_brain_owner::config_failure_in(
-                    error,
-                    solstone_core_cli_copy::cli_locale()
-                )
+                solstone_core_brain_owner::config_failure_in(error, locale)
             );
             ExitCode::from(EXIT_UNAVAILABLE)
         })?
@@ -115,7 +122,7 @@ fn journal() -> Result<(PathBuf, Map<String, Value>), ExitCode> {
 }
 
 fn run_status(json_output: bool) -> ExitCode {
-    let Ok((journal, config)) = journal() else {
+    let Ok((journal, config)) = journal(output_locale(json_output)) else {
         return ExitCode::from(EXIT_UNAVAILABLE);
     };
     let view = owner_view(&journal, &config, Timestamp::now());
@@ -145,9 +152,6 @@ fn render(view: &OwnerView, json_output: bool) {
     if json_output {
         println!("{}", json_text(view));
     } else {
-        println!(
-            "{}",
-            human_text_in(view, solstone_core_cli_copy::cli_locale())
-        );
+        println!("{}", human_text_in(view, crate::host_locale()));
     }
 }

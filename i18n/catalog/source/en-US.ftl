@@ -21132,3 +21132,115 @@ journal.setup.installer.stopped = installer was stopped
 journal.setup.installer.timed.out = installer admission timed out
 
 journal.setup.installer.tree.not.reaped = process tree not reaped: { $reason }; survivors={ $survivors }
+
+journal.window.host.disk.back.title = your journal's disk has space again
+
+journal.window.host.disk.low.message = free up some space on it.
+
+journal.window.host.disk.low.title = your journal's disk is running low on space
+
+journal.window.mcp.owner.diagnostic.activity.path = could not read the activity log: { $error }
+
+journal.window.mcp.owner.diagnostic.facet.id = facet { $name } has no stable id; run { $command_solstone_journal_backfill_facet_ids }
+
+journal.window.mcp.owner.diagnostic.facet.read = could not read facet { $name }: { $error }
+
+journal.window.mcp.owner.diagnostic.facet.unknown = unknown facet { $name }
+
+journal.window.mcp.owner.diagnostic.facets.list = could not list declared facets: { $error }
+
+journal.window.mcp.owner.diagnostic.label.ascii.control = { $literal_ascii } control bytes are not allowed
+
+journal.window.mcp.owner.diagnostic.label.boundary = label must start and end with an alphanumeric character
+
+journal.window.mcp.owner.diagnostic.label.disallowed.byte = only { $literal_ascii } letters, digits, spaces, '.', '_', and '-' are allowed
+
+journal.window.mcp.owner.diagnostic.label.empty = label must not be empty
+
+journal.window.mcp.owner.diagnostic.label.too.long = label must be at most 64 bytes
+
+journal.window.mcp.owner.diagnostic.oauth.binding.mismatch = { $literal_oauth } request does not match the bound transaction
+
+journal.window.mcp.owner.diagnostic.oauth.client.not.found = { $literal_oauth } client was not found
+
+journal.window.mcp.owner.diagnostic.oauth.code.expired = { $literal_oauth } authorization code expired
+
+journal.window.mcp.owner.diagnostic.oauth.directory = could not prepare { $literal_mcp } { $literal_oauth } directory
+
+journal.window.mcp.owner.diagnostic.oauth.entry.too.large = { $literal_oauth } store entry exceeds its size limit
+
+journal.window.mcp.owner.diagnostic.oauth.invalid.grant = { $literal_oauth } grant is invalid
+
+journal.window.mcp.owner.diagnostic.oauth.invalid.token = { $literal_oauth } token is invalid
+
+journal.window.mcp.owner.diagnostic.oauth.lock = could not lock { $literal_mcp } { $literal_oauth } store
+
+journal.window.mcp.owner.diagnostic.oauth.malformed = { $literal_mcp } { $literal_oauth } store is malformed
+
+journal.window.mcp.owner.diagnostic.oauth.no.active.pairing = no active pairing code
+
+journal.window.mcp.owner.diagnostic.oauth.pairing.locked = pairing code is locked
+
+journal.window.mcp.owner.diagnostic.oauth.pairing.mismatch = pairing code is invalid
+
+journal.window.mcp.owner.diagnostic.oauth.permission = the chosen permission could not be stored
+
+journal.window.mcp.owner.diagnostic.oauth.quota = { $literal_oauth } store quota reached
+
+journal.window.mcp.owner.diagnostic.oauth.randomness = could not obtain complete { $literal_oauth } randomness
+
+journal.window.mcp.owner.diagnostic.oauth.read = could not read { $literal_mcp } { $literal_oauth } store
+
+journal.window.mcp.owner.diagnostic.oauth.refresh.reused = { $literal_oauth } refresh token was reused
+
+journal.window.mcp.owner.diagnostic.oauth.state.too.large = { $literal_oauth } store exceeds its size limit
+
+journal.window.mcp.owner.diagnostic.oauth.transaction.exhausted = { $literal_oauth } authorization transaction is exhausted
+
+journal.window.mcp.owner.diagnostic.oauth.transaction.expired = { $literal_oauth } authorization transaction expired
+
+journal.window.mcp.owner.diagnostic.oauth.transaction.not.found = { $literal_oauth } authorization transaction was not found
+
+journal.window.mcp.owner.diagnostic.oauth.unsupported.schema = { $literal_mcp } { $literal_oauth } store has an unsupported schema
+
+journal.window.mcp.owner.diagnostic.oauth.write = could not write { $literal_mcp } { $literal_oauth } store
+
+journal.window.mcp.owner.diagnostic.permission.agent.state.fault = could not determine agent state pause status
+
+journal.window.mcp.owner.diagnostic.permission.connection.not.found = connection not found: { $key }
+
+journal.window.mcp.owner.diagnostic.permission.directory = could not prepare permissions directory: { $error }
+
+journal.window.mcp.owner.diagnostic.permission.invalid.connection.key = invalid connection key format: { $key }
+
+journal.window.mcp.owner.diagnostic.permission.lock = could not lock permissions store: { $error }
+
+journal.window.mcp.owner.diagnostic.permission.malformed = malformed permissions at { $path }: { $reason }
+
+journal.window.mcp.owner.diagnostic.permission.read = could not read permissions at { $path }: { $error }
+
+journal.window.mcp.owner.diagnostic.permission.unsupported.schema = unsupported schema version { $schema } at { $path }
+
+journal.window.mcp.owner.diagnostic.permission.write = could not write permissions: { $error }
+
+journal.window.mcp.owner.diagnostic.token.directory = could not prepare { $literal_mcp } token directory: { $error }
+
+journal.window.mcp.owner.diagnostic.token.duplicate.label = a bearer token already exists for label { $label }
+
+journal.window.mcp.owner.diagnostic.token.invalid.label = invalid token label: { $error }
+
+journal.window.mcp.owner.diagnostic.token.invalid.token = bearer token is invalid
+
+journal.window.mcp.owner.diagnostic.token.lock = could not lock { $literal_mcp } token store: { $error }
+
+journal.window.mcp.owner.diagnostic.token.malformed = { $literal_mcp } token store is malformed: { $path }
+
+journal.window.mcp.owner.diagnostic.token.not.found = no bearer token exists for label { $label }
+
+journal.window.mcp.owner.diagnostic.token.randomness = could not obtain complete bearer-token randomness
+
+journal.window.mcp.owner.diagnostic.token.read = could not read { $path }: { $error }
+
+journal.window.mcp.owner.diagnostic.token.unsupported.schema = { $literal_mcp } token store has unsupported schema { $schema }: { $path }
+
+journal.window.mcp.owner.diagnostic.token.write = could not write { $literal_mcp } token store: { $error }

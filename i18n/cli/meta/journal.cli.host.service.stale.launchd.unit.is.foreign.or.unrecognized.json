@@ -1,0 +1,23 @@
+{
+  "description": "Journal host service stale launchd unit is foreign or unrecognized.",
+  "context": "Journal host service stale launchd unit is foreign or unrecognized.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b5ab6a4590d06aec23fcd02e3c8b768e0a8f8f58048754cdb69c2eb5ac63e7e0",
+  "max_length": 150,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "launchd",
+      "kind": "accepted-input",
+      "value": "launchd"
+    }
+  ]
+}

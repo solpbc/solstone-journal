@@ -1,0 +1,21 @@
+{
+  "description": "Journal host warm row no code.",
+  "context": "Journal host warm row no code.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "binary",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "212cf028073817a537a7b883bb3269af0179b848f5bf71904443853e507ead67",
+  "max_length": 168,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

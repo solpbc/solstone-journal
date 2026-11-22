@@ -1,0 +1,16 @@
+{
+  "description": "Journal host service unit exceeds mib.",
+  "context": "Journal host service unit exceeds mib.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1eab198de9aa0504bfb534de3dd11dbcc981a9ef25bbd757fbed1f48bcb6c4b8",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

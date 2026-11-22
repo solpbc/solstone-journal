@@ -1,0 +1,23 @@
+{
+  "description": "Journal host output for mcp status mcp capability config status only this does not report service.",
+  "context": "Journal host output for mcp status mcp capability config status only this does not report service.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ea4793c2f7d0d3fdd339b1eeb39ec2e38d4300906d758e5f02bc672bd898b99d",
+  "max_length": 258,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_mcp",
+      "kind": "accepted-input",
+      "value": "MCP"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service service run exited during admission.",
+  "context": "Journal host output for windows service service run exited during admission.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bf92db2c55d273ece2f97b285f9046d664eb71b57cf909f9274e9f82cadf63da",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

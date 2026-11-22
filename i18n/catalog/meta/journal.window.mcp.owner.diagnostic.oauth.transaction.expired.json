@@ -1,0 +1,23 @@
+{
+  "description": "MCP owner diagnostic for oauth transaction expired.",
+  "context": "MCP owner diagnostic for oauth transaction expired.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "656f1ac7e4def29e6fd0ac3f74017246884b072e4c756d8860c4efc5241ff9e3",
+  "max_length": 156,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_oauth",
+      "kind": "accepted-input",
+      "value": "OAuth"
+    }
+  ]
+}

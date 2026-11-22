@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output for sense service sense service failed.",
+  "context": "Journal host output for sense service sense service failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "class",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5646a9c07df4fb971d8fdf27c6856004d5247ab3a33f8e5340b6ce0bbd8e8916",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

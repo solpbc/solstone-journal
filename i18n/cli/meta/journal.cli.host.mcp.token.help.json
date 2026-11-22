@@ -1,0 +1,68 @@
+{
+  "description": "Terminal help and usage for mcp token help.",
+  "context": "Terminal help and usage for mcp token help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d8336be4a2e02b614d98f89542142ab1216449a8686edfd76305ae990010b31b",
+  "max_length": 1479,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal mcp token [-h] {create,list,revoke} ...",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "term",
+      "value": "MCP",
+      "kind": "mark-word"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    },
+    {
+      "name": "subcommand",
+      "value": "create",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "spaces_6",
+      "value": "      ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "subcommand_8",
+      "value": "list",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "spaces_8",
+      "value": "        ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "subcommand_10",
+      "value": "revoke",
+      "kind": "accepted-input"
+    }
+  ]
+}

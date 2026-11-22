@@ -1,0 +1,21 @@
+{
+  "description": "Native install provider command, observe existing with. Preserve terminal syntax and supplied data.",
+  "context": "Native install provider command, observe existing with. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "provider",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "368b6b6a3e51ae454b7db9968d2e6257b33f2cf07e19567634ca6dcffe02cd5e",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

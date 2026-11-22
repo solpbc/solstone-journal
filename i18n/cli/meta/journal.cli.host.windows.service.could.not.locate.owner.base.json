@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output for windows service could not locate owner base.",
+  "context": "Journal host output for windows service could not locate owner base.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "124e84f5d6a4e8a528e493ce105c035f097bdd6c945b62b6c528369e1d271851",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,68 @@
+{
+  "description": "Terminal help and usage for mcp permission help.",
+  "context": "Terminal help and usage for mcp permission help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "011ec042859967cd8fb90c906597f2b5d018f7b3e0878bbeab3562270a723131",
+  "max_length": 1659,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal mcp permission [-h] {show,set,clear} ...",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    },
+    {
+      "name": "subcommand",
+      "value": "show",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "spaces_8",
+      "value": "        ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "subcommand_7",
+      "value": "set",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "spaces_9",
+      "value": "         ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "subcommand_9",
+      "value": "clear",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "spaces_7",
+      "value": "       ",
+      "kind": "whitespace"
+    }
+  ]
+}

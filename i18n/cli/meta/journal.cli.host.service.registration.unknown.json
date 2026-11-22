@@ -1,0 +1,43 @@
+{
+  "description": "Journal host service registration unknown.",
+  "context": "Journal host service registration unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "operation",
+      "type": "string"
+    },
+    {
+      "name": "cause",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "a37ff7e31813e02eddcef4d30f9033394c813476d9d0d7b5783937d630981a4a",
+  "max_length": 3240,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "operation",
+    "type": "string",
+    "enum_values": [
+      "change-journal-folder",
+      "clean-stale-launchd-service",
+      "install",
+      "operate",
+      "start-after-changing-journal-folder",
+      "status",
+      "stop",
+      "uninstall",
+      "up",
+      "verify-service-stop",
+      "verify-unload"
+    ],
+    "enum_default": "verify-unload"
+  }
+}

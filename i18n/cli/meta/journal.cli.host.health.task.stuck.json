@@ -1,0 +1,36 @@
+{
+  "description": "Journal host health task stuck.",
+  "context": "Journal host health task stuck.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "duration",
+      "type": "string"
+    },
+    {
+      "name": "limit",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3d25482d93436ba7facda090482c5330a809261da52bcb162a4730bc389cdbb4",
+  "max_length": 213,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "space_2",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ]
+}

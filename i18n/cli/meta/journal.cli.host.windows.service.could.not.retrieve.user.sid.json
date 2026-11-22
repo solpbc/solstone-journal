@@ -1,0 +1,28 @@
+{
+  "description": "Journal host output for windows service could not retrieve user sid.",
+  "context": "Journal host output for windows service could not retrieve user sid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "80299f372488cfa766285849250b7938c20641f314d0658c36cef511276468bb",
+  "max_length": 156,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_sid",
+      "kind": "accepted-input",
+      "value": "SID"
+    }
+  ]
+}

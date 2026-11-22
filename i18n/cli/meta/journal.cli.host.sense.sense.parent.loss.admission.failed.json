@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output for sense sense parent loss admission failed.",
+  "context": "Journal host output for sense sense parent loss admission failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cb4ca803f658b33944467092013ded9c1afc3da78585a80d6dce4ec41fa212b3",
+  "max_length": 138,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

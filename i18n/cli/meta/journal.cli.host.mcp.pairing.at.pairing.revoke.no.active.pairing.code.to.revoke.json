@@ -1,0 +1,23 @@
+{
+  "description": "Journal host output for mcp pairing at pairing revoke no active pairing code to revoke.",
+  "context": "Journal host output for mcp pairing at pairing revoke no active pairing code to revoke.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7af521e1b67d029cdfe178beade650a67c3fb88cd87b3a8a3b68f1aa0925014c",
+  "max_length": 246,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command_solstone_journal_mcp_pairing_revoke",
+      "kind": "command",
+      "value": "solstone journal mcp pairing revoke"
+    }
+  ]
+}

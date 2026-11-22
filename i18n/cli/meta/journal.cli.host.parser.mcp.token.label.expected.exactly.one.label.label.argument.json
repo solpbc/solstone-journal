@@ -1,0 +1,33 @@
+{
+  "description": "Terminal diagnostic for parser mcp token label expected exactly one label label argument.",
+  "context": "Terminal diagnostic for parser mcp token label expected exactly one label label argument.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6c0d42bf5b17dfb605d9fcbf4f8aae7d5cdb90383bb771467319da281bf18eba",
+  "max_length": 222,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "flag",
+      "value": "--label",
+      "kind": "flag"
+    },
+    {
+      "name": "argument",
+      "value": "LABEL",
+      "kind": "accepted-input"
+    }
+  ]
+}

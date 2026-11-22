@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service unsafe service directory.",
+  "context": "Journal host service unsafe service directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cf71d7137e13b9a152a5f86ec52b93e0f1def27062425711be35dccf0492f6f1",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

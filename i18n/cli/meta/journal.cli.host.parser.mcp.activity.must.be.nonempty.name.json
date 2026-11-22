@@ -1,0 +1,25 @@
+{
+  "description": "Terminal diagnostic for parser mcp activity must be nonempty name.",
+  "context": "Terminal diagnostic for parser mcp activity must be nonempty name.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    },
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "18dd9651eb0109bf12864f27b51f03a7cc42c607f0ee6d02d079f5629e6d5c53",
+  "max_length": 141,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

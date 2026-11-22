@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output for cortex service cortex service failed.",
+  "context": "Journal host output for cortex service cortex service failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "04961c63f5dd455d0bd81c312defe05a0576c0e7bad83fabf7cc98a38885843f",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

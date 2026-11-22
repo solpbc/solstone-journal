@@ -1,0 +1,16 @@
+{
+  "description": "Journal host service the previous service did not stop before replacement.",
+  "context": "Journal host service the previous service did not stop before replacement.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f69a9283b2368da17dd40a1c85c22d38a9be946e3722aac329d36d3021502662",
+  "max_length": 156,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "MCP owner diagnostic for token write.",
+  "context": "MCP owner diagnostic for token write.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "01bd52b0168ecbe454e8fd6f3e8d283eaf46a28496b8ebff76e57381ce614e66",
+  "max_length": 168,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_mcp",
+      "kind": "accepted-input",
+      "value": "MCP"
+    }
+  ]
+}

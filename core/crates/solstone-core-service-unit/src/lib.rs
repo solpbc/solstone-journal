@@ -38,7 +38,9 @@ pub use windows_task_readback::{
     parse_windows_task_xml, windows_registration_is_current,
 };
 
-pub use windows_task_reason::{WINDOWS_TASK_FAILURE_SCHEMA, windows_task_failure_reason};
+pub use windows_task_reason::{
+    WINDOWS_TASK_FAILURE_SCHEMA, windows_task_failure_reason, windows_task_supplied_reason,
+};
 
 pub use windows_update::{
     OwnerRunIntent, WINDOWS_UPDATE_INTENT_SCHEMA, WindowsRegistrationUpdateSteps,

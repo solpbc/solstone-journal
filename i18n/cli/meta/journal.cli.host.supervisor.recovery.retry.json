@@ -1,0 +1,23 @@
+{
+  "description": "Journal host supervisor recovery retry.",
+  "context": "Journal host supervisor recovery retry.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "caad2d0b835bf5c9a5bb025427612381c6a5b19a3700360c29928ece07894af9",
+  "max_length": 489,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

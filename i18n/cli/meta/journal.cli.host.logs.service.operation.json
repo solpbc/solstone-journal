@@ -1,0 +1,25 @@
+{
+  "description": "Journal host logs service operation.",
+  "context": "Journal host logs service operation.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "operation",
+      "type": "string"
+    },
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "034e3796938a1287abaf972c6645fd6d303ef27b0700d45d27c2a3d850887bcb",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

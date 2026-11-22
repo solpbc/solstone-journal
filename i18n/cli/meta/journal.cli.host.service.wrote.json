@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service wrote.",
+  "context": "Journal host service wrote.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "028bb24a9cdf8ae1325f571659da71e488881373092c5241baff0b6bfa936301",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service state running.",
+  "context": "Journal host service state running.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "manager",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3ad1825d2a3bb72f9c5f5ceb9778efe9878579b5de64cf34ee94b0a75efbd099",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

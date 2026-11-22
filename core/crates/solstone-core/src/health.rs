@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use solstone_core_cli_copy::{Value as CopyValue, display_for, render_for};
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 #[cfg(unix)]
@@ -12,11 +13,15 @@ use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::{Map, Value};
 use solstone_core_assets::canonical_host_pair;
 use solstone_core_callosum::{CallosumEnvelope, CallosumSocketConnection};
-use solstone_core_local::install::ced_readiness::{CED_READY_DETAIL, CedVerdict};
-use solstone_core_local::install::rfdetr_readiness::{RFDETR_READY_DETAIL, RfdetrReadiness};
+#[cfg(test)]
+use solstone_core_local::install::ced_readiness::CED_READY_DETAIL;
+use solstone_core_local::install::ced_readiness::CedVerdict;
+#[cfg(test)]
+use solstone_core_local::install::rfdetr_readiness::RFDETR_READY_DETAIL;
+use solstone_core_local::install::rfdetr_readiness::RfdetrReadiness;
 use solstone_core_system::process::SystemProcessInstanceSource;
 use solstone_core_system_health::{
-    SyncRescanDiagnosis, describe_sync_rescan, sanitize_for_terminal,
+    SyncRescanDiagnosis, describe_sync_rescan_in, sanitize_for_terminal,
 };
 use tokio::time::{Instant, timeout};
 
@@ -65,6 +70,9 @@ pub(super) fn run(verbose: bool, debug: bool) -> std::process::ExitCode {
     };
     // Model verification and helper startup are independent of the resident's
     // status exchange. They must not consume its ten-second receive budget.
+    #[cfg(windows)]
+    let ced = solstone_core_check::evaluate_host_ced_in(crate::host_locale(), &journal, os, arch);
+    #[cfg(not(windows))]
     let ced = solstone_core_check::evaluate_host_ced(&journal, os, arch);
     let rfdetr = evaluate_host_rfdetr(&journal, os, arch);
     let sync_diagnosis = should_rescan_sync(&fetch)
@@ -91,11 +99,12 @@ fn no_supervisor_sync_diagnosis(journal: &Path) -> Option<String> {
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0.0, |duration| duration.as_secs_f64());
     let process_source = SystemProcessInstanceSource;
-    match describe_sync_rescan(
+    match describe_sync_rescan_in(
         journal,
         STATUS_SYNC_DIAGNOSTIC_FILENAME,
         now,
         &process_source,
+        crate::host_locale(),
     ) {
         SyncRescanDiagnosis::Clean(_) => None,
         SyncRescanDiagnosis::Waiting(message)
@@ -141,30 +150,55 @@ fn should_rescan_sync(fetch: &Result<SupervisorStatus, PresentedHealthError>) ->
 
 fn ced_line(ced: &CedVerdict) -> String {
     match ced {
-        CedVerdict::Ready { .. } => CED_READY_DETAIL.to_owned(),
+        CedVerdict::Ready { .. } => render_for(
+            crate::host_locale(),
+            "journal.cli.host.health.ced.ready",
+            &[],
+        ),
         CedVerdict::Degraded(status) => {
-            let detail = status.detail().unwrap_or_default();
+            let detail = status
+                .display_detail(crate::host_locale())
+                .unwrap_or_default();
             let cause = status.cause_token().unwrap_or_default();
             format!("{detail} ({cause})")
         }
-        CedVerdict::Unsupported { os, arch } => {
-            format!("ced install: unsupported platform {os}/{arch}; skipping ced sound-tag assets")
-        }
+        CedVerdict::Unsupported { os, arch } => display_for(
+            crate::host_locale(),
+            "journal.cli.host.health.ced.unsupported",
+            [("arch", &(arch)), ("os", &(os))],
+        ),
     }
 }
 
 fn rfdetr_line(rfdetr: &RfdetrReadiness, os: &str, arch: &str) -> String {
     match rfdetr {
-        RfdetrReadiness::Ready { .. } => RFDETR_READY_DETAIL.to_owned(),
-        RfdetrReadiness::Degraded { .. } => {
-            solstone_core_local::install::rfdetr_windows::rfdetr_degraded_guidance(os, arch)
-                .to_owned()
-        }
-        RfdetrReadiness::Unsupported { os, arch } => {
-            format!(
-                "rf-detr install: unsupported platform {os}/{arch}; skipping rf-detr object-detection assets"
-            )
-        }
+        RfdetrReadiness::Ready { .. } => render_for(
+            crate::host_locale(),
+            "journal.cli.host.health.rfdetr.ready",
+            &[],
+        ),
+        RfdetrReadiness::Degraded { .. } => rfdetr_guidance(os, arch),
+        RfdetrReadiness::Unsupported { os, arch } => display_for(
+            crate::host_locale(),
+            "journal.cli.host.health.rfdetr.unsupported",
+            [("arch", &(arch)), ("os", &(os))],
+        ),
+    }
+}
+
+fn rfdetr_guidance(os: &str, arch: &str) -> String {
+    if solstone_core_local::install::rfdetr_install::rfdetr_uses_package_payload(os, arch) {
+        render_for(
+            crate::host_locale(),
+            "journal.cli.host.health.rfdetr.package",
+            &[],
+        )
+    } else {
+        render_for(
+            crate::host_locale(),
+            "journal.cli.host.health.rfdetr.assets",
+            &[],
+        )
     }
 }
 
@@ -183,8 +217,7 @@ fn present_health(
             std::process::ExitCode::SUCCESS,
         ),
         Ok(status) => {
-            let guidance =
-                solstone_core_local::install::rfdetr_windows::rfdetr_degraded_guidance(os, arch);
+            let guidance = rfdetr_guidance(os, arch);
             (
                 format!("{stdout}{}", render_status(&status)),
                 format!("{guidance}\n"),
@@ -193,58 +226,74 @@ fn present_health(
         }
         Err(PresentedHealthError::InvalidUtf8) => (
             stdout,
-            "Cannot connect: callosum socket path is not valid UTF-8\n".to_owned(),
+            render_for(
+                crate::host_locale(),
+                "journal.cli.host.health.socket.encoding",
+                &[],
+            ),
             std::process::ExitCode::FAILURE,
         ),
         #[cfg(any(not(windows), test))]
         Err(PresentedHealthError::NotFound { path }) => (
             stdout,
-            format!(
-                "Cannot connect: callosum socket not found at {}\n",
-                sanitize_for_terminal(&path)
+            display_for(
+                crate::host_locale(),
+                "journal.cli.host.health.socket.missing",
+                [("path", &(sanitize_for_terminal(&path)))],
             ),
             std::process::ExitCode::FAILURE,
         ),
         Err(PresentedHealthError::NotRunning) => (
             stdout,
-            "Cannot connect: your journal isn't running\n".to_owned(),
+            render_for(
+                crate::host_locale(),
+                "journal.cli.host.health.not.running",
+                &[],
+            ),
             std::process::ExitCode::FAILURE,
         ),
         #[cfg(any(not(windows), test))]
         Err(PresentedHealthError::NotInspectable { reason }) => (
             stdout,
-            format!(
-                "Cannot connect: callosum socket is not inspectable: {}\n",
-                sanitize_for_terminal(&reason)
+            display_for(
+                crate::host_locale(),
+                "journal.cli.host.health.socket.inspect",
+                [("reason", &(sanitize_for_terminal(&reason)))],
             ),
             std::process::ExitCode::FAILURE,
         ),
         Err(PresentedHealthError::RuntimeUnavailable { message }) => (
             stdout,
-            format!(
-                "Cannot connect: health runtime unavailable: {}\n",
-                sanitize_for_terminal(&message)
+            display_for(
+                crate::host_locale(),
+                "journal.cli.host.health.runtime",
+                [("message", &(sanitize_for_terminal(&message)))],
             ),
             std::process::ExitCode::FAILURE,
         ),
         Err(PresentedHealthError::Fetch(HealthFetchError::TimedOut)) => (
             stdout,
-            "Timed out waiting for supervisor status (10s)\n".to_owned(),
+            render_for(crate::host_locale(), "journal.cli.host.health.timeout", &[]),
             std::process::ExitCode::FAILURE,
         ),
         Err(PresentedHealthError::Fetch(HealthFetchError::MalformedFrames(count))) => (
             stdout,
-            format!(
-                "Timed out waiting for supervisor status (10s; dropped {count} malformed frame(s))\n"
+            display_for(
+                crate::host_locale(),
+                "journal.cli.host.health.timeout.frames",
+                [("count", &(count))],
             ),
             std::process::ExitCode::FAILURE,
         ),
         Err(PresentedHealthError::Fetch(HealthFetchError::StatusError { service, reason })) => (
             stdout,
-            format!(
-                "Cannot connect: supervisor status error: {}: {}\n",
-                sanitize_for_terminal(&service),
-                sanitize_for_terminal(&reason)
+            display_for(
+                crate::host_locale(),
+                "journal.cli.host.health.status.error",
+                [
+                    ("service", &(sanitize_for_terminal(&service))),
+                    ("reason", &(sanitize_for_terminal(&reason))),
+                ],
             ),
             std::process::ExitCode::FAILURE,
         ),
@@ -257,9 +306,10 @@ fn present_health(
 }
 
 fn invalid_status_message(path: &str) -> String {
-    format!(
-        "Cannot connect: supervisor sent an invalid status payload at {}",
-        sanitize_for_terminal(path)
+    display_for(
+        crate::host_locale(),
+        "journal.cli.host.health.status.invalid",
+        [("path", &(sanitize_for_terminal(path)))],
     )
 }
 
@@ -312,7 +362,11 @@ fn inspect_socket(path: &Path) -> SocketInspection {
         Ok(_metadata) => {
             #[cfg(unix)]
             if !_metadata.file_type().is_socket() {
-                return SocketInspection::NotInspectable("path is not a Unix socket".to_owned());
+                return SocketInspection::NotInspectable(solstone_core_cli_copy::render_for(
+                    crate::host_locale(),
+                    "journal.cli.host.health.socket.type",
+                    &[],
+                ));
             }
             SocketInspection::Present
         }
@@ -562,56 +616,165 @@ struct StaleHeartbeatDetailWireRow {
     reason_code: String,
 }
 
-fn format_uptime(seconds: u64) -> String {
-    if seconds < 60 {
-        return format!("{seconds}s");
-    }
+fn service_line(service: &ServiceWireRow) -> String {
+    let name = sanitize_for_terminal(&format!("{:16}", service.name));
+    let seconds = service.uptime_seconds;
     let days = seconds / 86_400;
-    let remainder = seconds % 86_400;
-    let hours = remainder / 3_600;
-    let minutes = (remainder % 3_600) / 60;
-    let mut parts = Vec::new();
-    if days != 0 {
-        parts.push(format!("{days}d"));
+    let hours = seconds % 86_400 / 3_600;
+    let minutes = seconds % 3_600 / 60;
+    match (days != 0, hours != 0, minutes != 0) {
+        (false, false, false) => display_for(
+            crate::host_locale(),
+            "journal.cli.host.health.service.seconds",
+            [
+                ("name", &(name)),
+                ("pid", &(service.pid)),
+                ("seconds", &(seconds)),
+            ],
+        ),
+        (false, false, true) => display_for(
+            crate::host_locale(),
+            "journal.cli.host.health.service.minutes",
+            [
+                ("name", &(name)),
+                ("pid", &(service.pid)),
+                ("minutes", &(minutes)),
+            ],
+        ),
+        (false, true, false) => display_for(
+            crate::host_locale(),
+            "journal.cli.host.health.service.hours",
+            [
+                ("name", &(name)),
+                ("pid", &(service.pid)),
+                ("hours", &(hours)),
+            ],
+        ),
+        (false, true, true) => display_for(
+            crate::host_locale(),
+            "journal.cli.host.health.service.hours.minutes",
+            [
+                ("name", &(name)),
+                ("pid", &(service.pid)),
+                ("hours", &(hours)),
+                ("minutes", &(minutes)),
+            ],
+        ),
+        (true, false, false) => display_for(
+            crate::host_locale(),
+            "journal.cli.host.health.service.days",
+            [
+                ("name", &(name)),
+                ("pid", &(service.pid)),
+                ("days", &(days)),
+            ],
+        ),
+        (true, false, true) => display_for(
+            crate::host_locale(),
+            "journal.cli.host.health.service.days.minutes",
+            [
+                ("name", &(name)),
+                ("pid", &(service.pid)),
+                ("days", &(days)),
+                ("minutes", &(minutes)),
+            ],
+        ),
+        (true, true, false) => display_for(
+            crate::host_locale(),
+            "journal.cli.host.health.service.days.hours",
+            [
+                ("name", &(name)),
+                ("pid", &(service.pid)),
+                ("days", &(days)),
+                ("hours", &(hours)),
+            ],
+        ),
+        (true, true, true) => display_for(
+            crate::host_locale(),
+            "journal.cli.host.health.service.days.hours.minutes",
+            [
+                ("name", &(name)),
+                ("pid", &(service.pid)),
+                ("days", &(days)),
+                ("hours", &(hours)),
+                ("minutes", &(minutes)),
+            ],
+        ),
     }
-    if hours != 0 {
-        parts.push(format!("{hours}h"));
-    }
-    if minutes != 0 {
-        parts.push(format!("{minutes}m"));
-    }
-    parts.join(" ")
 }
 
 fn render_status(status: &SupervisorStatus) -> String {
-    let mut output = String::from("Services:\n");
+    let mut output = render_for(
+        crate::host_locale(),
+        "journal.cli.host.health.services",
+        &[],
+    );
     for service in &status.services {
-        let _ = writeln!(
-            output,
-            "  {:16} pid {}  uptime {}",
-            sanitize_for_terminal(&format!("{:16}", service.name)),
-            service.pid,
-            format_uptime(service.uptime_seconds)
-        );
+        let _ = writeln!(output, "{}", service_line(service));
     }
     if !status.crashed.is_empty() {
-        output.push_str("\nCrashed:\n");
+        output.push_str(&render_for(
+            crate::host_locale(),
+            "journal.cli.host.health.crashed",
+            &[],
+        ));
         for service in &status.crashed {
             let name = sanitize_for_terminal(&format!("{:16}", service.name));
             match service.reason_code.as_deref() {
                 None => {
                     let _ = writeln!(
                         output,
-                        "  {name:16} {} restart attempts",
-                        service.restart_attempts
+                        "{}",
+                        render_for(
+                            crate::host_locale(),
+                            "journal.cli.host.health.crash.attempts",
+                            &[
+                                (
+                                    "name",
+                                    CopyValue::String(&(format!("{name:16}")).to_string())
+                                ),
+                                (
+                                    "attempts",
+                                    CopyValue::String(&(service.restart_attempts).to_string())
+                                ),
+                                (
+                                    "quantity",
+                                    CopyValue::Cardinal(crate::host_count_quantity(u64::from(
+                                        service.restart_attempts
+                                    )))
+                                )
+                            ]
+                        )
                     );
                 }
                 Some(code) => {
                     let _ = writeln!(
                         output,
-                        "  {name:16} {} restart attempts  {}",
-                        service.restart_attempts,
-                        sanitize_for_terminal(code)
+                        "{}",
+                        render_for(
+                            crate::host_locale(),
+                            "journal.cli.host.health.crash.reason",
+                            &[
+                                (
+                                    "name",
+                                    CopyValue::String(&(format!("{name:16}")).to_string())
+                                ),
+                                (
+                                    "attempts",
+                                    CopyValue::String(&(service.restart_attempts).to_string())
+                                ),
+                                (
+                                    "reason",
+                                    CopyValue::String(&(sanitize_for_terminal(code)).to_string())
+                                ),
+                                (
+                                    "quantity",
+                                    CopyValue::Cardinal(crate::host_count_quantity(u64::from(
+                                        service.restart_attempts
+                                    )))
+                                )
+                            ]
+                        )
                     );
                 }
             }
@@ -629,50 +792,98 @@ fn render_status(status: &SupervisorStatus) -> String {
         && status.held.is_empty()
         && status.queue_hold.is_none()
     {
-        output.push_str("Tasks: none\n");
+        output.push_str(&render_for(
+            crate::host_locale(),
+            "journal.cli.host.health.tasks.empty",
+            &[],
+        ));
     } else {
-        output.push_str("Tasks:\n");
+        output.push_str(&render_for(
+            crate::host_locale(),
+            "journal.cli.host.health.tasks",
+            &[],
+        ));
         for task in &status.tasks {
-            let _ = write!(
-                output,
-                "  {:16} {}s",
-                sanitize_for_terminal(&format!("{:16}", task.name)),
-                task.duration_seconds
-            );
-            if task.stuck {
-                let _ = write!(output, "  STUCK (cap {}s)", task.max_runtime_seconds);
+            let name = sanitize_for_terminal(&format!("{:16}", task.name));
+            let line = if task.stuck {
+                display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.health.task.stuck",
+                    [
+                        ("name", &(name)),
+                        ("duration", &(task.duration_seconds)),
+                        ("limit", &(task.max_runtime_seconds)),
+                    ],
+                )
             } else if task.slow {
-                let _ = write!(output, "  SLOW (cap {}s)", task.max_runtime_seconds);
-            }
-            output.push('\n');
+                display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.health.task.slow",
+                    [
+                        ("name", &(name)),
+                        ("duration", &(task.duration_seconds)),
+                        ("limit", &(task.max_runtime_seconds)),
+                    ],
+                )
+            } else {
+                display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.health.task.running",
+                    [("name", &(name)), ("duration", &(task.duration_seconds))],
+                )
+            };
+            let _ = writeln!(output, "{line}");
         }
         for (name, count) in non_zero_queues {
             let _ = writeln!(
                 output,
-                "  queued {} {count}",
-                sanitize_for_terminal(&format!("{name:9}"))
+                "{}",
+                display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.health.queue",
+                    [
+                        ("name", &(sanitize_for_terminal(&format!("{name:9}")))),
+                        ("count", &(count))
+                    ]
+                )
             );
         }
         for held in &status.held {
             let reason = held.reasons.first().map(|s| s.as_str()).unwrap_or("-");
             let _ = writeln!(
                 output,
-                "  held {} {}",
-                sanitize_for_terminal(&held.partition),
-                sanitize_for_terminal(reason)
+                "{}",
+                display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.health.held",
+                    [
+                        ("partition", &(sanitize_for_terminal(&held.partition))),
+                        ("reason", &(sanitize_for_terminal(reason)))
+                    ]
+                )
             );
         }
         if let Some(queue_hold) = &status.queue_hold {
             let _ = writeln!(
                 output,
-                "  queue-hold {} {}",
-                sanitize_for_terminal(&queue_hold.reason),
-                sanitize_for_terminal(&queue_hold.details)
+                "{}",
+                display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.health.queue.hold",
+                    [
+                        ("reason", &(sanitize_for_terminal(&queue_hold.reason))),
+                        ("details", &(sanitize_for_terminal(&queue_hold.details)))
+                    ]
+                )
             );
         }
     }
     if status.stale_heartbeats.is_empty() {
-        output.push_str("Heartbeat: ok\n");
+        output.push_str(&render_for(
+            crate::host_locale(),
+            "journal.cli.host.health.heartbeat.ok",
+            &[],
+        ));
     } else {
         let stale = status
             .stale_heartbeats
@@ -680,48 +891,142 @@ fn render_status(status: &SupervisorStatus) -> String {
             .map(|entry| sanitize_for_terminal(entry))
             .collect::<Vec<_>>()
             .join(", ");
-        let _ = writeln!(output, "\nHeartbeat: STALE ({stale})");
+        let _ = writeln!(
+            output,
+            "{}",
+            display_for(
+                crate::host_locale(),
+                "journal.cli.host.health.heartbeat.stale",
+                [("stale", &(stale))]
+            )
+        );
     }
-    let _ = writeln!(output, "Callosum: {} clients", status.callosum_clients);
+    let _ = writeln!(
+        output,
+        "{}",
+        render_for(
+            crate::host_locale(),
+            "journal.cli.host.health.callosum.clients",
+            &[
+                (
+                    "clients",
+                    CopyValue::String(&(status.callosum_clients).to_string())
+                ),
+                (
+                    "quantity",
+                    CopyValue::Cardinal(crate::host_count_quantity(status.callosum_clients as u64))
+                )
+            ]
+        )
+    );
     if !status.sense_pending_received {
-        let _ = writeln!(output, "{SENSE_NOT_RUNNING_LABEL}");
+        let _ = writeln!(
+            output,
+            "{}",
+            render_for(
+                crate::host_locale(),
+                "journal.cli.host.health.media.absent",
+                &[]
+            )
+        );
     } else if let Some(age_ms) = status.sense_pending_age_ms {
         if age_ms > SENSE_STALENESS_THRESHOLD_MS {
             let s = age_ms / 1000;
             if let Some(depth) = status.sense_pending_queue_depth {
                 let _ = writeln!(
                     output,
-                    "Media processor: {depth} pending ({SENSE_STALE_LABEL}, {s}s since beacon)"
+                    "{}",
+                    display_for(
+                        crate::host_locale(),
+                        "journal.cli.host.health.media.depth.stale",
+                        [("depth", &(depth)), ("seconds", &(s))]
+                    )
                 );
             } else {
                 let _ = writeln!(
                     output,
-                    "Media processor: {SENSE_STALE_LABEL} ({s}s since beacon)"
+                    "{}",
+                    display_for(
+                        crate::host_locale(),
+                        "journal.cli.host.health.media.stale",
+                        [("seconds", &(s))]
+                    )
                 );
             }
         } else if let Some(depth) = status.sense_pending_queue_depth {
             if depth == 0 {
-                let _ = writeln!(output, "{SENSE_IDLE_LABEL}");
+                let _ = writeln!(
+                    output,
+                    "{}",
+                    render_for(
+                        crate::host_locale(),
+                        "journal.cli.host.health.media.idle",
+                        &[]
+                    )
+                );
             } else {
-                let _ = writeln!(output, "Media processor: {depth} pending");
+                let _ = writeln!(
+                    output,
+                    "{}",
+                    display_for(
+                        crate::host_locale(),
+                        "journal.cli.host.health.media.pending",
+                        [("depth", &(depth))]
+                    )
+                );
             }
         } else {
-            let _ = writeln!(output, "{SENSE_IDLE_LABEL}");
+            let _ = writeln!(
+                output,
+                "{}",
+                render_for(
+                    crate::host_locale(),
+                    "journal.cli.host.health.media.idle",
+                    &[]
+                )
+            );
         }
     } else if let Some(depth) = status.sense_pending_queue_depth {
         if depth == 0 {
-            let _ = writeln!(output, "{SENSE_IDLE_LABEL}");
+            let _ = writeln!(
+                output,
+                "{}",
+                render_for(
+                    crate::host_locale(),
+                    "journal.cli.host.health.media.idle",
+                    &[]
+                )
+            );
         } else {
-            let _ = writeln!(output, "Media processor: {depth} pending");
+            let _ = writeln!(
+                output,
+                "{}",
+                display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.health.media.pending",
+                    [("depth", &(depth))]
+                )
+            );
         }
     } else {
-        let _ = writeln!(output, "{SENSE_NOT_RUNNING_LABEL}");
+        let _ = writeln!(
+            output,
+            "{}",
+            render_for(
+                crate::host_locale(),
+                "journal.cli.host.health.media.absent",
+                &[]
+            )
+        );
     }
     output
 }
 
+#[cfg(test)]
 pub(crate) const SENSE_NOT_RUNNING_LABEL: &str = "Media processor: not reporting";
+#[cfg(test)]
 pub(crate) const SENSE_IDLE_LABEL: &str = "Media processor: idle";
+#[cfg(test)]
 pub(crate) const SENSE_STALE_LABEL: &str = "stale";
 pub(crate) const SENSE_STALENESS_THRESHOLD_MS: u64 = 15_000;
 
@@ -1026,13 +1331,13 @@ mod tests {
             "plain reason_code must be a same-line suffix: {rendered}"
         );
         assert!(
-            rendered.contains("  sense            1 restart attempts  bad\\n\\x1b\n"),
+            rendered.contains("  sense            1 restart attempt  bad\\n\\x1b\n"),
             "hostile reason_code must be sanitized on the same line: {rendered}"
         );
         assert_eq!(
             rendered
                 .lines()
-                .filter(|line| line.contains("restart attempts"))
+                .filter(|line| line.contains(" restart attempt"))
                 .count(),
             3,
             "each crashed row stays one line: {rendered}"

@@ -1,0 +1,16 @@
+{
+  "description": "Journal host service service registration has no matching managed file.",
+  "context": "Journal host service service registration has no matching managed file.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "71bef6948c5756c3206b2bab9fc42f9c5ff574bff809389b616acf3009a83d2f",
+  "max_length": 147,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

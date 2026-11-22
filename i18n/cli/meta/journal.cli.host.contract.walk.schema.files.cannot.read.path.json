@@ -1,0 +1,25 @@
+{
+  "description": "Native contract bundle command, walk schema files. Preserve terminal syntax and supplied data.",
+  "context": "Native contract bundle command, walk schema files. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3b2dbac22b280988e022758f048fbc5b2e9314ce7ea9713ea19f7899d5e12e05",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

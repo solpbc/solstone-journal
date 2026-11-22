@@ -1,0 +1,16 @@
+{
+  "description": "Journal host service route repair service launcher is not an executable regular.",
+  "context": "Journal host service route repair service launcher is not an executable regular.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fab1446095f8dccb0703c05d578150902d327139ef160ffaf8a8dea4fa9af955",
+  "max_length": 189,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

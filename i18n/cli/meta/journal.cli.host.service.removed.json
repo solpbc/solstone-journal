@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service removed.",
+  "context": "Journal host service removed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8e12223c4e58c1ba4694f0edefc5f70ef14b7472fc008612a825e2cd23f890eb",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

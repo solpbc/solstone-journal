@@ -1,0 +1,23 @@
+{
+  "description": "Journal host service launchd accepted the unload request but the service is.",
+  "context": "Journal host service launchd accepted the unload request but the service is.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "77432cdb12cd9b1d288bdf136a395a51d76c431563f110317f2fee02fba34ed6",
+  "max_length": 222,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "launchd",
+      "kind": "accepted-input",
+      "value": "launchd"
+    }
+  ]
+}

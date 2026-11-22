@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service manager reload systemd.",
+  "context": "Journal host service manager reload systemd.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "result",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e370e85ee8e8299820daaa88b384685f768a0d1361a801d2729ce4a315a49784",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

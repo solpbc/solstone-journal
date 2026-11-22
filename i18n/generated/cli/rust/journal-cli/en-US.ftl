@@ -2747,6 +2747,1959 @@ m6a6f75726e616c2e636c692e646f63746f722e77696e646f77732e706172616b6565742e726f6f7
 
 m6a6f75726e616c2e636c692e646f63746f722e77696e646f77732e706172616b6565742e766572696669636174696f6e = could not verify the signed { "Parakeet" } app payload: { $error }
 
+m6a6f75726e616c2e636c692e686f73742e617267756d656e74732e696e76616c6964 = { $command }: error: invalid arguments
+
+m6a6f75726e616c2e636c692e686f73742e6261636b66696c6c2e66616365742e6964732e68656c70 = usage: { "solstone journal backfill-facet-ids [-h] [--commit]" }{ "\u000a" }{ "\u000a" }Backfill missing { "UUIDv4" } identifiers across all facet declarations.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "  " }show this help message and exit{ "\u000a" }{ "  " }{ "--commit" }{ "    " }Write backfilled facet IDs to disk (default is dry run){ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6261636b66696c6c2e66616365742e6964732e736f6c73746f6e652e6a6f75726e616c2e6261636b66696c6c2e66616365742e6964732e6572726f72 = { "solstone journal backfill-facet-ids" }: error: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e6261636b66696c6c2e66616365742e6964732e7573616765 = usage: { "solstone journal backfill-facet-ids [-h] [--commit]" }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6261636b66696c6c2e6661636574732e6170706c696564 = { $i18nCategory ->
+    [one] { $i18nCategory-backfilled_quantity ->
+        [one] Examined { $scanned } facet; backfilled an ID for { $backfilled } facet.
+       *[other] Examined { $scanned } facet; backfilled IDs for { $backfilled } facets.
+    }
+   *[other] { $i18nCategory-backfilled_quantity ->
+        [one] Examined { $scanned } facets; backfilled an ID for { $backfilled } facet.
+       *[other] Examined { $scanned } facets; backfilled IDs for { $backfilled } facets.
+    }
+}
+
+m6a6f75726e616c2e636c692e686f73742e6261636b66696c6c2e6661636574732e647279 = { $i18nCategory ->
+    [one] { $i18nCategory-backfilled_quantity ->
+        [one] Dry run: examined { $scanned } facet; { $backfilled } facet requires an ID (pass { "--commit" } to apply).
+       *[other] Dry run: examined { $scanned } facet; { $backfilled } facets require IDs (pass { "--commit" } to apply).
+    }
+   *[other] { $i18nCategory-backfilled_quantity ->
+        [one] Dry run: examined { $scanned } facets; { $backfilled } facet requires an ID (pass { "--commit" } to apply).
+       *[other] Dry run: examined { $scanned } facets; { $backfilled } facets require IDs (pass { "--commit" } to apply).
+    }
+}
+
+m6a6f75726e616c2e636c692e686f73742e636865636b2e68656c70 = usage: { "solstone journal check [-h] [--json]" }{ "\u000a" }{ "\u000a" }Readiness verdict for bundled local journal models.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "  " }show this help message and exit{ "\u000a" }{ "  " }{ "--json" }{ "      " }emit the readiness verdict as { "JSON" } for agents{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e636865636b2e7573616765 = usage: { "solstone journal check [-h] [--json]" }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e61646d69742e726577726974652e6964656e746974792e61646d697373696f6e = solstone journal config: identity admission refused: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e61646d69742e726577726974652e6964656e746974792e6f776e6572 = solstone journal config: identity owner refused: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e61646d69742e726577726974652e6964656e746974792e726f6f74 = solstone journal config: identity root refused: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e61646d69742e726577726974652e70617468 = solstone journal config: journal path refused: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e636f72727570742e73657474696e67732e66696c652e61742e706174682e636f756c646e = your settings file at { $path } couldn't be read. your settings were not changed. repair the file or restore { "config/journal.json" } from a backup, then try again.
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e63726f73732e66696c6573797374656d2e63616e6e6f742e6d6f76652e6163726f73732e66696c6573797374656d732e66696c6573797374656d = solstone journal config: refused: cannot move across filesystems (filesystem ids { $source_device } and { $target_device }); stop your journal with '{ "solstone journal down" }', copy the journal folder to the new path, use { "--switch" }, then start it again with '{ "solstone journal up" }'
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e6465636964652e6d6f76652e72657175697265732e6e6f742e6163746976652e746172676574 = solstone journal config: refused: { "--move" } requires a not active target; current is { $current_state } and target is { $target_state }; valid flags: { "--switch" }, { "--force" }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e657865637574652e616c72656164792e7365742e70617468 = solstone journal config: journal already set to { $path }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e657865637574652e6265666f72652e6d75746174696f6e = solstone journal config: refused before mutation: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e657865637574652e7761726e696e672e666f7263652e62797061737365732e636f6e6669726d6174696f6e2e616e64 = solstone journal config: warning: { "--force" } bypasses confirmation and target activity checks
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e6578697374696e672e7461726765742e6d6f76652e7461726765742e616c72656164792e6578697374732e70617468 = solstone journal config: refused: move target already exists: { $path }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e68656c70 = usage: { "solstone journal config [-h] {show,journal} ..." }{ "\u000a" }{ "       " }{ "solstone journal config journal PATH [--move | --switch | --force] [--yes | --dry-run]" }{ "\u000a" }{ "\u000a" }positional arguments:{ "\u000a" }{ "  " }{ "{show,journal}" }{ "\u000a" }{ "    " }{ "show" }{ "          " }show the configured journal path and source{ "\u000a" }{ "    " }{ "journal PATH" }{ "  " }change the journal path used by this installation{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e6964656e746974792e726f6f742e66726f6d2e63757272656e742e65786563757461626c65 = solstone journal config: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e6a6f75726e616c2e706174682e636f6e7461696e732e7368656c6c2e6163746976652e636861726163746572 = solstone journal config: refused: journal path contains shell-active character: { $path }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e6a6f75726e616c2e706174682e736f757263652e747265652e66616c6c6261636b2e70617468 = solstone journal config: refused: { $path } is the source-tree fallback path but this is not a source checkout
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e6d617962652e726573746172742e63757272656e742e736572766963652e636f756c642e6e6f742e726573746172742e736572766963652e6174 = could not restart service at the original journal folder
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e6d697373696e672e63757272656e742e6d6f76652e736f757263652e646f65732e6e6f742e6578697374 = solstone journal config: refused: move source does not exist: { $path }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e6d697373696e672e706172656e742e6d6f76652e7461726765742e706172656e742e646f65732e6e6f74 = solstone journal config: refused: move target parent does not exist: { $directory }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e706c616e2e616374696f6e2e616374696f6e = action:  { $action }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e706c616e2e63757272656e742e6c6566742e696e746163742e72652e61646f7074 = current journal is left intact. to re-adopt it later: { "solstone journal config journal" } { $path } { "--switch" } { "--yes" }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e706c616e2e63757272656e742e706174682e7374617465 = current: { $path } ({ $state })
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e706c616e2e6472792e72756e2e7965732e6e6f7468696e672e77696c6c = dry-run: yes; nothing will be changed
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e706c616e2e66696c6573797374656d2e646966666572656e742e64657669636573 = filesystem: different devices
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e706c616e2e66696c6573797374656d2e73616d652e646576696365 = filesystem: same device
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e706c616e2e6d6f7665 = move
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e706c616e2e706c616e2e73756d6d617279 = { "solstone journal config journal" } - plan summary
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e706c616e2e70726f63656564 = proceed
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e706c616e2e72652e72756e2e776974682e7965732e70726f63656564 = re-run with { "--yes" } to proceed
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e706c616e2e737769746368 = switch
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e706c616e2e7461726765742e706174682e7374617465 = target:  { $path } ({ $state })
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e707265666c696768742e636f6f7264696e617465732e73617665642e6c6f636174696f6e2e6e6f742e7265636f676e697a65642e6f72 = the saved journal location is not recognized or could not be read; settings were not changed
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e707265666c696768742e636f6f7264696e617465732e73657474696e67732e636f756c642e6e6f742e62652e72656164 = your settings could not be read; settings were not changed: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e707265706172652e666f6c6465722e72656c6f636174696f6e2e72657175697265732e6d616e616765642e706f736978 = journal-folder relocation requires a managed { "POSIX" } installation
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e726561642e777261707065722e746172676574732e63616e6e6f742e726561642e706174682e65 = solstone journal config: refused: cannot read { $path }: { $e }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e726561642e777261707065722e746172676574732e6c6f636174696f6e2e6368616e6765642e7768696c652e746869732e636f6d6d616e64 = journal location changed while this command waited; try the folder change again
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e7265667573616c2e63757272656e742e63757272656e742e73746174652e616e642e746172676574 = solstone journal config: refused: current is { $current_state } and target is { $target_state }; valid flags: { $flags }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e726577726974652e707265666c6967687465642e776974682e706174682e6e6f742e75746638 = journal path is not { "UTF-8" }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e72756e2e6d6f76652e636f756c642e6e6f742e73746f702e736572766963652e6265666f7265 = solstone journal config: could not stop service before move ({ $error })
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e72756e2e6d6f76652e636f756c642e6e6f742e73746f702e736572766963652e6265666f72652e73746f702e736572766963652e6265666f72652e6d6f7665 = solstone journal config: could not stop service before move
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e72756e2e6d6f76652e6d6f76652e6661696c65642e65 = solstone journal config: move failed: { $e }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e72756e2e6d6f76652e6d6f7665642e777261707065722e757064617465642e736572766963652e726573746172746564 = journal moved; wrapper updated; service restarted.
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e72756e2e6d6f76652e72656d61696e732e61742e7461726765742e636f756c642e6e6f74 = journal remains at { $target }; could not finish saving the new location: { $e }; retry: { "solstone journal config journal" } { $path } { "--switch" } { "--yes" }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e72756e2e6d6f76652e72656d61696e732e61742e7461726765742e72657472792e70617468 = journal remains at { $target }; retry: { "solstone journal config journal" } { $path } { "--switch" } { "--yes" }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e72756e2e6d6f76652e736572766963652e696e7374616c6c65642e6275742e6e6f742e72756e6e696e67 = service installed but not running; journal moved; wrapper updated.
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e72756e2e6d6f76652e736572766963652e6e6f742e696e7374616c6c65642e6d6f7665642e77726170706572 = service not installed; journal moved; wrapper updated.
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e72756e2e6d6f76652e777261707065722e757064617465642e7461726765742e6275742e73657276696365 = wrapper updated to { $target } but service start failed; restart manually
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e72756e2e7377697463682e63616e6e6f742e6372656174652e706174682e65 = solstone journal config: refused: cannot create { $path }: { $e }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e72756e2e7377697463682e63616e6e6f742e696e73706563742e6d616e616765642e7772617070657273 = solstone journal config: refused: cannot inspect managed wrappers: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e72756e2e7377697463682e63616e6e6f742e6c6f636b2e6d616e616765642e7772617070657273 = solstone journal config: refused: cannot lock managed wrappers: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e72756e2e7377697463682e636f756c642e6e6f742e66696e6973682e736176696e672e6e6577 = could not finish saving the new journal location: { $message }; retry: { "solstone journal config journal" } { $path } { "--switch" } { "--yes" }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e72756e2e7377697463682e636f756c642e6e6f742e66696e6973682e736176696e672e6e65772e6a6f75726e616c2e706174682e7377697463682e796573 = could not finish saving the new journal location: { $e }; retry: { "solstone journal config journal" } { $path } { "--switch" } { "--yes" }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e72756e2e7377697463682e636f756c642e6e6f742e73746f702e736572766963652e6265666f7265 = could not stop service before changing journal folder
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e72756e2e7377697463682e6e6f772e61742e7461726765742e636f756c642e6e6f74 = your journal is now at { $target }; could not update its service: { $error }; retry: { "solstone journal config journal" } { $path } { "--switch" } { "--yes" }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e72756e2e7377697463682e736572766963652e696e7374616c6c65642e6275742e6e6f742e72756e6e696e67 = service installed but not running; wrapper updated.
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e72756e2e7377697463682e736572766963652e6e6f742e696e7374616c6c65642e777261707065722e75706461746564 = service not installed; wrapper updated.
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e72756e2e7377697463682e777261707065722e72657772697474656e2e7461726765742e6275742e73657276696365 = solstone journal config: wrapper rewritten to { $target } but journal service restart could not run ({ $error }); restart manually
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e72756e2e7377697463682e777261707065722e72657772697474656e2e7461726765742e6275742e736572766963652e696e7665737469676174652e616e642e726573746172742e6d616e75616c6c79 = solstone journal config: wrapper rewritten to { $target } but '{ "solstone journal service restart --if-installed" }' exited { $code }; investigate and restart manually
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e72756e2e7377697463682e777261707065722e757064617465642e736572766963652e726573746172746564 = wrapper updated; service restarted.
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e72756e2e756e737570706f727465642e666f6c6465722e736572766963652e616374696f6e = unsupported journal-folder service action
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e736572766963652e73756d6d6172792e736572766963652e696e7374616c6c65642e616e642e72756e6e696e672e77696c6c = service: installed and running; will stop, move, rewrite wrapper, restart
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e736572766963652e73756d6d6172792e736572766963652e696e7374616c6c65642e616e642e72756e6e696e672e77696c6c2e77696c6c2e726577726974652e777261707065722e72657374617274 = service: installed and running; will rewrite wrapper, restart
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e736572766963652e73756d6d6172792e736572766963652e696e7374616c6c65642e6275742e6e6f742e72756e6e696e67 = service: installed but not running; will move and rewrite wrapper
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e736572766963652e73756d6d6172792e736572766963652e696e7374616c6c65642e6275742e6e6f742e72756e6e696e672e72756e6e696e672e77696c6c2e726577726974652e77726170706572 = service: installed but not running; will rewrite wrapper
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e736572766963652e73756d6d6172792e736572766963652e6e6f742e696e7374616c6c65642e77696c6c2e6d6f7665 = service: not installed; will move and rewrite wrapper
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e736572766963652e73756d6d6172792e736572766963652e6e6f742e696e7374616c6c65642e77696c6c2e72657772697465 = service: not installed; will rewrite wrapper
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e73686f772e6e6578742e6e657874 = next: { $next }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e73686f772e736f757263652e6275696c742e696e2e64656661756c74 = built-in default ({ "~/journal" })
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e73686f772e736f757263652e736f757263652e747265652e66616c6c6261636b = source-tree fallback
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e73686f772e736f757263652e757365722e746f6d6c = user config ({ "~/.config/solstone/config.toml" })
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e73746174652e616374697665 = active
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e73746174652e6e6f742e616374697665 = not active
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e7573616765 = usage: { "solstone journal config [-h] {show,journal} ..." }{ "\u000a" }{ "       " }{ "solstone journal config journal PATH [--move | --switch | --force] [--yes | --dry-run]" }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e777261707065722e6e6578742e6d6f76652e706174682e61736964652e7468656e2e72756e = move { $path } aside, then run '{ "solstone journal setup" }' from the solstone source checkout
+
+m6a6f75726e616c2e636c692e686f73742e636f6e6669672e777261707065722e7265667573616c2e777261707065722e6e6f742e6d616e616765642e777261707065722e72756e = solstone journal config: refused: { $wrapper } is not a managed wrapper (run '{ "solstone journal setup" }' from the solstone source checkout to install the wrapper first)
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e6275696c642e62756e646c652e62726f777365722e736368656d612e62797465732e64697665726765642e66726f6d = contract: browser schema bytes diverged from { "solstone-core-ingest-contract" }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e6275696c642e62756e646c652e63616e6e6f742e726561642e62726f777365722e736368656d612e70617468 = contract: cannot read browser schema { $path }: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e6275696c642e62756e646c652e696e76616c69642e6a736f6e2e736368656d612e70617468 = contract: invalid { "JSON" } Schema { $path }: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e6275696c642e62756e646c652e6d697373696e672e72657175697265642e736368656d612e736f75726365732e736f7572636573 = contract: missing required schema sources: { $sources }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e6275696c642e62756e646c652e706174682e6475706c69636174652e666f726d61742e69642e666f726d6174 = contract: { $path }: duplicate journal contract format id '{ $format_id }'
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e6275696c642e62756e646c652e706174682e666f726d61742e69642e6d7573742e6265 = contract: { $path }: { "format_id" } must be a string
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e6275696c642e62756e646c652e736368656d612e6d7573742e62652e6a736f6e2e6f626a656374 = contract: schema must be a { "JSON" } object: { $path }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e6275696c642e68656c70 = usage: { "solstone journal contract build [-h] [--check] [--root PATH]" }{ "\u000a" }{ "\u000a" }Build the journal contract bundle.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "            " }show this help message and exit{ "\u000a" }{ "  " }{ "--check" }{ "               " }Check whether the bundle is current without writing.{ "\u000a" }{ "  " }{ "--root PATH" }{ "           " }Contract checkout or installed-package root.{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e6275696c642e7573616765 = usage: { "solstone journal contract build [-h] [--check] [--root PATH]" }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e636865636b2e68656c70 = usage: { "solstone journal contract check [-h] [--journal PATH]... [--root PATH]" }{ "\u000a" }{ "\u000a" }Check the bundle and journal files against their schemas.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "            " }show this help message and exit{ "\u000a" }{ "  " }{ "--journal PATH" }{ "        " }Additional journal root to validate (repeatable).{ "\u000a" }{ "  " }{ "--root PATH" }{ "           " }Contract checkout or installed-package root.{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e636865636b2e7573616765 = usage: { "solstone journal contract check [-h] [--journal PATH]... [--root PATH]" }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e636c6173736966792e627265616b696e672e6368616e6765732e62756e646c652e6d616c666f726d6564 = solstone journal contract bundle is malformed
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e636c6173736966792e627265616b696e672e6368616e6765732e666f726d61742e72656d6f7665642e666f726d6174 = { $format }: removed format
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e636c6173736966792e627265616b696e672e6368616e6765732e666f726d61742e72656d6f7665642e6b65792e6669656c642e6669656c64 = { $format }: removed key field '{ $field }'
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e636c6173736966792e627265616b696e672e6368616e6765732e666f726d61742e72656d6f7665642e70726f64756365722e706174682e70617468 = { $format }: removed producer path '{ $path }'
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e646973636f7665722e736368656d612e736f75726365732e706174682e6d697373696e672e6d657461 = contract: { $path }: missing { $contract_meta }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e666978747572652e6a6f75726e616c2e666978747572652e6d697373696e672e70617468 = contract: fixture journal missing: { $path }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e666f726d61742e6572726f72732e696e76616c69642e6a736f6e2e736368656d61 = invalid { "JSON" } Schema: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e66726f6d2e726f6f742e7061636b6167652e747265652e6e6f742e666f756e642e70617468 = contract: solstone package tree not found: { $path }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e68656c70 = usage: { "solstone journal contract [-h] {build,check} ..." }{ "\u000a" }{ "\u000a" }Build and validate the journal contract bundle.{ "\u000a" }{ "\u000a" }positional arguments:{ "\u000a" }{ "  " }{ "{build,check}" }{ "\u000a" }{ "    " }{ "build" }{ "               " }Build the contract bundle.{ "\u000a" }{ "    " }{ "check" }{ "               " }Check the bundle and journal files.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "            " }show this help message and exit{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e6c6f61642e6a736f6e2e696e76616c69642e6a736f6e2e696e2e70617468 = contract: invalid { "JSON" } in { $path }: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e6d657461646174612e706174682e616c6c6f7765642e70726f6475636572732e6d7573742e6265 = contract: { $path }: { "allowed_producers" } must be a list
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e6d657461646174612e706174682e6b65792e6669656c64732e6d7573742e6265 = contract: { $path }: { "key_fields" } must be a list
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e6d657461646174612e706174682e6d697373696e672e6d657461646174612e6b6579 = contract: { $path }: missing contract metadata: { $key }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e7265736f6c76652e636f756c642e6e6f742e696e73706563742e63757272656e742e65786563757461626c65 = contract: could not inspect current executable: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e7265736f6c76652e66726f6d2e65786563757461626c652e636f756c642e6e6f742e6c6f636174652e696e7374616c6c65642e7061636b616765 = contract: could not locate installed solstone package or source checkout from { $path }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e72756e2e6275696c642e63616e6e6f742e6372656174652e62756e646c652e6469726563746f7279 = contract: cannot create bundle directory: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e72756e2e6275696c642e63616e6e6f742e77726974652e70617468 = contract: cannot write { $path }: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e72756e2e6275696c642e706174682e7374616c652e72756e2e6275696c64 = { $path } is stale; run `{ "solstone journal contract build" }`
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e72756e2e6275696c642e77726f74652e70617468 = wrote { $path }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e72756e2e636865636b2e62756e646c652e61727469666163742e6d697373696e672e70617468 = contract: bundle artifact missing: { $path }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e72756e2e636865636b2e6e6f2e636f76657265642e66696c65732e666f756e642e756e646572 = contract: no contract-covered files found under { $path }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e72756e2e636865636b2e747265652e6e6f742e666f756e642e706174682e6578706563746564 = contract: journal tree not found: { $path } (expected { $expected })
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e7573616765 = usage: { "solstone journal contract [-h] {build,check} ..." }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e76616c69646174652e636f6e74726163742e66696c652e756e737570706f727465642e66696c652e6b696e642e6b696e64 = unsupported contract file kind: { $kind }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e76616c69646174652e68656164657265642e6a736f6e6c2e68656164657265642e6a736f6e6c2e72657175697265732e6865616465722e6c696e65 = { "headered JSONL" } requires a header line
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e76616c69646174652e68656164657265642e6a736f6e6c2e696e76616c69642e75746638 = invalid { "UTF-8" }: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e76616c69646174652e68656164657265642e6a736f6e6c2e6c696e652e6d7573742e62652e6a736f6e2e6f626a656374 = line must be a { "JSON" } object
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e76616c69646174652e68656164657265642e6a736f6e6c2e6d697373696e672e736368656d612e646566696e6974696f6e = missing schema definition
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e76616c69646174652e6a736f6e2e696e76616c69642e6a736f6e = invalid { "JSON" }: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e76616c696461746564 = { $i18nCategory ->
+    [one] validated { $display_count } contract-covered file under { $root }
+   *[other] validated { $display_count } contract-covered files under { $root }
+}
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e77616c6b2e666f75722e6c6576656c732e63616e6e6f742e726561642e656e747279 = contract: cannot read journal entry: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e77616c6b2e736368656d612e66696c65732e63616e6e6f742e726561642e70617468 = contract: cannot read { $path }: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e74726163742e77616c6b2e736368656d612e66696c65732e63616e6e6f742e726561642e736368656d612e656e747279 = contract: cannot read schema entry: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e7665792e68656c70 = usage: { "solstone journal convey [-h] --port PORT [-v] [-d]" }{ "\u000a" }{ "\u000a" }{ "Convey" } web interface{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "     " }show this help message and exit{ "\u000a" }{ "  " }{ "--port PORT" }{ "    " }Port to serve on{ "\u000a" }{ "  " }{ "-v, --verbose" }{ "  " }Enable verbose output{ "\u000a" }{ "  " }{ "-d, --debug" }{ "    " }Enable debug logging{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e636f6e7665792e7573616765 = usage: { "solstone journal convey [-h] --port PORT [-v] [-d]" }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e636f727465782e68656c70 = usage: { "solstone journal cortex [-h] [-v] [-d]" }{ "\u000a" }{ "\u000a" }{ "solstone" } { "Cortex" } Talent Manager{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "     " }show this help message and exit{ "\u000a" }{ "  " }{ "-v, --verbose" }{ "  " }Enable verbose output{ "\u000a" }{ "  " }{ "-d, --debug" }{ "    " }Enable debug logging{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e636f727465782e736572766963652e636f727465782e736572766963652e6661696c6564 = cortex service failed: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e636f727465782e7573616765 = usage: { "solstone journal cortex [-h] [-v] [-d]" }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e646f776e2e68656c70 = usage: { "solstone journal down [-h]" }{ "\u000a" }{ "\u000a" }Stop the journal service.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "  " }show this help message and exit{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e66616365742e63616e646964617465732e68656c70 = usage: { "solstone journal facet-candidates [-h] [-v] [-d]" }{ "\u000a" }{ "\u000a" }Record recurring facet review candidates.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "     " }show this help message and exit{ "\u000a" }{ "  " }{ "-v, --verbose" }{ "  " }Enable verbose output{ "\u000a" }{ "  " }{ "-d, --debug" }{ "    " }Enable debug logging{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e66616365742e63616e646964617465732e7265636f72646564 = { $i18nCategory ->
+    [one] Recorded/updated { $display_count } facet candidate.
+   *[other] Recorded/updated { $display_count } facet candidate(s).
+}
+
+m6a6f75726e616c2e636c692e686f73742e66616365742e63616e646964617465732e72756e2e66616365742e63616e64696461746573 = solstone journal facet-candidates: error: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e66616365742e63616e646964617465732e72756e2e66616365742e63616e646964617465732e726f6f742e706174682e6e6f74 = solstone journal facet-candidates: error: journal root { $path } is not a directory
+
+m6a6f75726e616c2e636c692e686f73742e66616365742e63616e646964617465732e7573616765 = usage: { "solstone journal facet-candidates [-h] [-v] [-d]" }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e677261622e68656c70 = usage: { "solstone journal grab [-h] [--out OUT] [--force] [--json] [-v] [-d] [args ...]" }{ "\u000a" }{ "\u000a" }Walk observed screen frames and optionally write frame images.{ "\u000a" }{ "\u000a" }positional arguments:{ "\u000a" }{ "  " }{ "args" }{ "           " }Path tokens: { "[day] [stream] [segment] [screen] [frame-\u000a                 id[,frame-id...]]" }{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "     " }show this help message and exit{ "\u000a" }{ "  " }{ "--out OUT" }{ "      " }Write the selected frame image here ({ ".png" }, { ".jpg" }, { ".jpeg" }, or{ "\u000a" }{ "                 " }{ ".webp" }).{ "\u000a" }{ "  " }{ "--force" }{ "        " }Replace an existing output path.{ "\u000a" }{ "  " }{ "--json" }{ "         " }Emit { "JSON" } instead of table or plain output.{ "\u000a" }{ "  " }{ "-v, --verbose" }{ "  " }Enable verbose output{ "\u000a" }{ "  " }{ "-d, --debug" }{ "    " }Enable debug logging{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e677261622e7573616765 = usage: { "solstone journal grab [-h] [--out OUT] [--force] [--json] [-v] [-d] [args ...]" }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e63616c6c6f73756d2e636c69656e7473 = { $i18nCategory ->
+    [one] Callosum: { $clients } client
+   *[other] Callosum: { $clients } clients
+}
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e6365642e7265616479 = ced.cpp sound-tag engine and model are ready
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e6365642e756e737570706f72746564 = ced install: unsupported platform { $os }/{ $arch }; skipping ced sound-tag assets
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e63726173682e617474656d707473 = { $i18nCategory ->
+    [one] { "  " }{ $name } { $attempts } restart attempt
+   *[other] { "  " }{ $name } { $attempts } restart attempts
+}
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e63726173682e726561736f6e = { $i18nCategory ->
+    [one] { "  " }{ $name } { $attempts } restart attempt{ "  " }{ $reason }
+   *[other] { "  " }{ $name } { $attempts } restart attempts{ "  " }{ $reason }
+}
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e63726173686564 = { "\u000a" }Crashed:{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e6865617274626561742e6f6b = Heartbeat: ok{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e6865617274626561742e7374616c65 = { "\u000a" }Heartbeat: STALE ({ $stale })
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e68656c64 = { "  " }held { $partition } { $reason }
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e68656c70 = usage: { "solstone journal health [-h] [-v] [-d]" }{ "\u000a" }{ "\u000a" }Show the retained supervisor service-health status.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "     " }show this help message and exit{ "\u000a" }{ "  " }{ "-v, --verbose" }{ "  " }enable verbose output{ "\u000a" }{ "  " }{ "-d, --debug" }{ "    " }enable debug output{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e6c6f67732e68656c70 = usage: { "solstone journal health logs [-h] [-c N] [-f] [--since TIME] [--service NAME] [--grep PATTERN] [-v] [-d]" }{ "\u000a" }{ "\u000a" }View operational service logs.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "            " }show this help message and exit{ "\u000a" }{ "  " }{ "-c N" }{ "                  " }number of lines to show (default: 5){ "\u000a" }{ "  " }{ "-f" }{ "                    " }follow log output{ "\u000a" }{ "  " }{ "--since TIME" }{ "          " }show rows at or after { "TIME" }{ "\u000a" }{ "  " }{ "--service NAME" }{ "        " }show rows for one service{ "\u000a" }{ "  " }{ "--grep PATTERN" }{ "        " }show rows matching { "PATTERN" }{ "\u000a" }{ "  " }{ "-v, --verbose" }{ "         " }enable verbose output{ "\u000a" }{ "  " }{ "-d, --debug" }{ "           " }enable debug output{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e6c6f67732e7573616765 = usage: { "solstone journal health logs [-h] [-c N] [-f] [--since TIME] [--service NAME] [--grep PATTERN] [-v] [-d]" }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e6d656469612e616273656e74 = Media processor: not reporting
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e6d656469612e64657074682e7374616c65 = Media processor: { $depth } pending (stale, { $seconds }s since beacon)
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e6d656469612e69646c65 = Media processor: idle
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e6d656469612e70656e64696e67 = Media processor: { $depth } pending
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e6d656469612e7374616c65 = Media processor: stale ({ $seconds }s since beacon)
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e6e6f742e72756e6e696e67 = Cannot connect: your journal isn't running{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e7175657565 = { "  " }queued { $name } { $count }
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e71756575652e686f6c64 = { "  " }queue-hold { $reason } { $details }
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e7266646574722e617373657473 = Object detection is degraded because its RF-DETR assets are unavailable. Screen descriptions will continue. Use `{ "solstone journal install-models" }` to check or repair the RF-DETR assets.
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e7266646574722e7061636b616765 = object detection is unavailable. repair or reinstall your journal.
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e7266646574722e7265616479 = rf-detr.cpp object-detection engine and model are ready
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e7266646574722e756e737570706f72746564 = rf-detr install: unsupported platform { $os }/{ $arch }; skipping rf-detr object-detection assets
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e72756e74696d65 = Cannot connect: health runtime unavailable: { $message }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e736572766963652e64617973 = { "  " }{ $name } pid { $pid }{ "  " }uptime { $days }d
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e736572766963652e646179732e686f757273 = { "  " }{ $name } pid { $pid }{ "  " }uptime { $days }d { $hours }h
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e736572766963652e646179732e686f7572732e6d696e75746573 = { "  " }{ $name } pid { $pid }{ "  " }uptime { $days }d { $hours }h { $minutes }m
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e736572766963652e646179732e6d696e75746573 = { "  " }{ $name } pid { $pid }{ "  " }uptime { $days }d { $minutes }m
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e736572766963652e686f757273 = { "  " }{ $name } pid { $pid }{ "  " }uptime { $hours }h
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e736572766963652e686f7572732e6d696e75746573 = { "  " }{ $name } pid { $pid }{ "  " }uptime { $hours }h { $minutes }m
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e736572766963652e6d696e75746573 = { "  " }{ $name } pid { $pid }{ "  " }uptime { $minutes }m
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e736572766963652e7365636f6e6473 = { "  " }{ $name } pid { $pid }{ "  " }uptime { $seconds }s
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e7365727669636573 = Services:{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e736f636b65742e656e636f64696e67 = Cannot connect: callosum socket path is not valid UTF-8{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e736f636b65742e696e7370656374 = Cannot connect: callosum socket is not inspectable: { $reason }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e736f636b65742e6d697373696e67 = Cannot connect: callosum socket not found at { $path }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e736f636b65742e74797065 = path is not a Unix socket
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e7374617475732e6572726f72 = Cannot connect: supervisor status error: { $service }: { $reason }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e7374617475732e696e76616c6964 = Cannot connect: supervisor sent an invalid status payload at { $path }
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e7461736b2e72756e6e696e67 = { "  " }{ $name } { $duration }s
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e7461736b2e736c6f77 = { "  " }{ $name } { $duration }s{ "  " }SLOW (cap { $limit }s)
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e7461736b2e737475636b = { "  " }{ $name } { $duration }s{ "  " }STUCK (cap { $limit }s)
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e7461736b73 = Tasks:{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e7461736b732e656d707479 = Tasks: none{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e74696d656f7574 = Timed out waiting for supervisor status (10s){ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e74696d656f75742e6672616d6573 = Timed out waiting for supervisor status (10s; dropped { $count } malformed frame(s)){ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6865616c74682e7573616765 = usage: { "solstone journal health [-h] [-v] [-d]" }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6865617274626561742e6572726f72 = { "solstone journal heartbeat" }: { $detail }
+
+m6a6f75726e616c2e636c692e686f73742e6865617274626561742e68656c70 = usage: { "solstone journal heartbeat [-h] [--force]" }{ "\u000a" }{ "\u000a" }Run deterministic health repair pass{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "  " }show this help message and exit{ "\u000a" }{ "  " }{ "--force" }{ "     " }Run full check regardless of recency{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6865617274626561742e6f706c6f67 = failed to create heartbeat oplog: { $detail }
+
+m6a6f75726e616c2e636c692e686f73742e6865617274626561742e7573616765 = usage: { "solstone journal heartbeat [-h] [--force]" }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e686f737465642e736572766963652e686f737465642e736572766963652e61646d697373696f6e2e72656675736564 = hosted { $service } service admission refused: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e696d706f727465722e6465736b746f702e72756e2e7265736f6c7665642e636f756c642e6e6f742e73686f772e696d706f72742e646179 = could not show import day notice: { $error }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e696d706f727465722e6465736b746f702e72756e2e7265736f6c7665642e636f756c642e6e6f742e73686f772e696d706f72742e73697a65 = could not show import size: { $error }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e6d6f64656c732e636f72656d6c2e646973636c6f737572652e706172616b6565742e6173736574732e646f776e6c6f6164696e672e706172616b6565742e746474 = parakeet assets: downloading the { "parakeet-tdt-0.6b-v3" } { "Core ML" } model ({ "CC-BY-4.0" }) from { "updates.solstone.app" }. see { "THIRD_PARTY_NOTICES.md" }.
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e6d6f64656c732e68656c70 = usage: { "solstone journal install-models [-h] [--check | --force]" }{ "\u000a" }{ "                              " }{ "[--required-only]" }{ "\u000a" }{ "                              " }{ "[--variant {auto,cpu,cuda,coreml}]" }{ "\u000a" }{ "\u000a" }install and verify { "solstone" }'s bundled { "ML" } models (local { "STT" } plus bundled{ "\u000a" }{ "wespeaker" }{ "/pyannote" } assets). default action checks the local { "STT" } artifacts and{ "\u000a" }fetches if missing; { "--force" } re-fetches; { "--check" } verifies only and exits{ "\u000a" }nonzero on any problem.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "            " }show this help message and exit{ "\u000a" }{ "  " }{ "--check" }{ "               " }verify bundled assets and local { "STT" } artifacts without{ "\u000a" }{ "                        " }fetching.{ "\u000a" }{ "  " }{ "--force" }{ "               " }ignore readiness and refetch{ "/verify" } local { "STT" }{ "\u000a" }{ "                        " }artifacts.{ "\u000a" }{ "  " }{ "--required-only" }{ "       " }install or verify only bundled models required for{ "\u000a" }{ "                        " }journal readiness; do not fetch optional providers.{ "\u000a" }{ "  " }{ "--variant" } { "{auto,cpu,cuda,coreml}" }{ "\u000a" }{ "                        " }journal variant to install or verify. { "auto" } honors{ "\u000a" }{ "                        " }{ "JOURNAL_VARIANT" } on { "linux" }{ "/x86_64" }, then { "auto" }detects.{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e6d6f64656c732e696e7374616c6c2e72657175697265642e7266646574722e72662e646574722e696e7374616c6c2e756e737570706f727465642e706c6174666f726d = { "rf-detr" } install: unsupported platform { $os }/{ $arch }; skipping { "rf-detr" } object-detection assets
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e6d6f64656c732e696e7374616c6c2e776974682e6c6976652e70726f67726573732e706172616b6565742e6d6f64656c2e6d6f64656c2e6e616d652e70657263656e74 = parakeet model { $model_name }: { $percent }% ({ $received } / { $total } MB)
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e6d6f64656c732e696e7374616c6c2e776974682e6c6976652e70726f67726573732e706172616b6565742e6d6f64656c2e6d6f64656c2e6e616d652e766572696679696e67 = parakeet model { $model_name }: verifying download
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e6d6f64656c732e696e7374616c6c2e776974682e6c6976652e70726f67726573732e706172616b6565742e73657475702e646f776e6c6f61642e7374617274696e67 = parakeet setup: download starting
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e6d6f64656c732e696e7374616c6c2e776974682e6c6976652e70726f67726573732e706172616b6565742e73657475702e646f776e6c6f6164696e672e72657175697265642e66696c6573 = parakeet setup: downloading required files { $percent }% ({ $received } / { $total } MB)
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e6d6f64656c732e696e7374616c6c2e776974682e6c6976652e70726f67726573732e707265706172696e672e706172616b6565742e7370656563682e6d6f64656c2e6d6f64656c = preparing parakeet speech model: { $model_name }
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e6d6f64656c732e706172616b6565742e72656164792e706172616b6565742e6370702e636865636b2e6661696c65642e6d6f64656c = { "parakeet-cpp" } check failed: model missing at { $path }
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e6d6f64656c732e706172616b6565742e72656164792e706172616b6565742e6370702e636865636b2e6661696c65642e6e616d65 = { "parakeet-cpp" } check failed: { $name } missing at { $path }
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e6d6f64656c732e706172616b6565742e72656164792e706172616b6565742e6370702e636865636b2e6661696c65642e6e616d652e6e6f742e65786563757461626c652e61742e70617468 = { "parakeet-cpp" } check failed: { $name } not executable at { $path }
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e6d6f64656c732e706172616b6565742e72656164792e706172616b6565742e6d6f64656c2e706174682e6d697373696e67 = parakeet model path missing
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e6d6f64656c732e706172616b6565742e72656164792e706172616b6565742e706174682e6d697373696e67 = parakeet path missing
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e6d6f64656c732e706172616b6565742e776974686f75742e646f776e6c6f61642e706172616b6565742e696e7374616c6c2e756e737570706f727465642e706c6174666f726d2e6f73 = parakeet install: unsupported platform { $os }/{ $arch }; supported: { "darwin/arm64" }, { "linux/x86_64" }
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e6d6f64656c732e706172616b6565742e776974686f75742e646f776e6c6f61642e706172616b6565742e7370656563682e7265636f676e6974696f6e2e73686970732e696e73696465 = parakeet: speech recognition ships inside the journal app on windows, so there is nothing to download
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e6d6f64656c732e72656164792e6c696e652e6d6f64656c2e72656164792e70617468 = model ready: { $path }
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e6d6f64656c732e7265736f6c76652e76617269616e742e696e76616c69642e76617269616e742e637564612e7573652e637075 = invalid { "JOURNAL_VARIANT" }={ "'cuda'" }; use { "'cpu'" } on { $os }/{ $arch }
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e6d6f64656c732e7265736f6c76652e76617269616e742e696e76616c69642e76617269616e742e76616c75652e7573652e637075 = invalid { "JOURNAL_VARIANT" }='{ $value }'; use { "'cpu'" } or { "'cuda'" }
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e6d6f64656c732e7265736f6c76652e76617269616e742e76617269616e742e636f72656d6c2e6e6f742e737570706f727465642e6f6e = variant { "'coreml'" } not supported on { $os }
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e6d6f64656c732e7265736f6c76652e76617269616e742e76617269616e742e636f72656d6c2e6e6f742e737570706f727465642e6f6e2e737570706f727465642e6f6e2e6f732e61726368 = variant { "'coreml'" } not supported on { $os }/{ $arch }
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e6d6f64656c732e7265736f6c76652e76617269616e742e76617269616e742e6370752e6e6f742e737570706f727465642e6f6e = variant { "'cpu'" } not supported on { $os }
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e6d6f64656c732e7265736f6c76652e76617269616e742e76617269616e742e6370752e6e6f742e737570706f727465642e6f6e2e737570706f727465642e6f6e2e6f732e61726368 = variant { "'cpu'" } not supported on { $os }/{ $arch }
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e6d6f64656c732e7265736f6c76652e76617269616e742e76617269616e742e637564612e6e6f742e737570706f727465642e6f6e = variant { "'cuda'" } not supported on { $os }
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e6d6f64656c732e7265736f6c76652e76617269616e742e76617269616e742e637564612e6e6f742e737570706f727465642e6f6e2e737570706f727465642e6f6e2e6f732e61726368 = variant { "'cuda'" } not supported on { $os }/{ $arch }
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e6d6f64656c732e7266646574722e62756e646c65642e61737365742e646973636c6f737572652e72662e646574722e6173736574732e766572696679696e672e62756e646c6564 = rf-detr assets: verifying the bundled { "rf-detr.cpp" } { $version } engine ({ "Apache-2.0" }) and { "RF-DETR" } nano { "GGUF" } weights ({ "Apache-2.0" }). see { "THIRD_PARTY_NOTICES.md" }.
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e6d6f64656c732e7266646574722e7265706169722e6f626a6563742e646574656374696f6e2e756e617661696c61626c652e7265706169722e6f72 = object detection is unavailable. repair or reinstall your journal. { $error }
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e6d6f64656c732e72756e2e696e6e65722e7370656563682e696e7374616c6c2e616c72656164792e72756e6e696e672e77616974 = speech install is already running; wait for it to finish
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e6d6f64656c732e72756e2e696e6e65722e776974682e62756e646c65642e61737365742e766572696669636174696f6e2e6661696c6564 = bundled asset verification failed: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e6d6f64656c732e72756e2e696e6e65722e776974682e6f6273657276696e672e706172616b6565742e696e7374616c6c2e73746174652e737566666978 = observing parakeet install: { $state }{ $suffix }
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e6d6f64656c732e72756e2e696e6e65722e776974682e706172616b6565742e696e7374616c6c2e616c72656164792e72756e6e696e672e666f72 = parakeet install already running for a different target
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e6d6f64656c732e72756e2e696e6e65722e776974682e706172616b6565742e696e7374616c6c2e6661696c6564 = parakeet install failed
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e6d6f64656c732e72756e2e696e6e65722e776974682e74696d65642e6f75742e6f6273657276696e672e706172616b6565742e696e7374616c6c = timed out observing parakeet install
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e6d6f64656c732e7573616765 = usage: { "solstone journal install-models [-h] [--check | --force]" }{ "\u000a" }{ "                              " }{ "[--required-only]" }{ "\u000a" }{ "                              " }{ "[--variant {auto,cpu,cuda,coreml}]" }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e70726f76696465722e64697370617463682e6d6573736167652e70726f76696465722e696e7374616c6c2e6661696c6564 = { $provider } install failed
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e70726f76696465722e676c6f62616c2e6c6f63616c2e6d6f64656c2e6173736574732e646f776e6c6f6164696e672e6c6c616d61 = local model assets: downloading the { "llama.cpp" } runtime ({ "MIT" }; the { "CUDA" } build also carries { "NVIDIA" }-licensed runtime components) and the model ({ "Apache-2.0" }) from { "updates.solstone.app" }. see { "THIRD_PARTY_NOTICES.md" }.
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e70726f76696465722e676c6f62616c2e6c6f63616c2e7468696e6b696e672e646f776e6c6f6164732e6d6f64656c2e616e64 = local thinking downloads the model and vision projector ({ "Apache-2.0" }) from { "updates.solstone.app" } when needed. the runtime is included with the journal. see { "THIRD_PARTY_NOTICES.md" }.
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e70726f76696465722e676c6f62616c2e6c6f63616c2e7468696e6b696e672e646f776e6c6f6164732e6d6f64656c2e617061636865 = local thinking downloads the model ({ "Apache-2.0" }) from { "updates.solstone.app" }. the { "MLX" } runtime is included with the journal. see { "THIRD_PARTY_NOTICES.md" }.
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e70726f76696465722e676c6f62616c2e706172616b6565742e6370702e616e642e6974732e737065656368 = { "parakeet.cpp" } and its speech model come with the journal on windows, so there's nothing to install. see { "THIRD_PARTY_NOTICES.md" }.
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e70726f76696465722e676c6f62616c2e706172616b6565742e6370702e63616e2e742e72756e = { "parakeet.cpp" } can't run on a mac. a mac transcribes with its { "Core ML" } model instead.
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e70726f76696465722e676c6f62616c2e706172616b6565742e6370702e666574636865732e74776f2e617274696661637473 = { "parakeet-cpp" } fetches two artifacts into this journal's provider cache before it can run, both from { "updates.solstone.app" }: the { "parakeet.cpp" } server binary ({ "MIT" }) and the speech model ({ "CC-BY-4.0" }). see { "THIRD_PARTY_NOTICES.md" }.
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e70726f76696465722e68656c70 = usage: { "solstone journal install-provider [-h] name" }{ "\u000a" }{ "\u000a" }Install or retry a provider runtime.{ "\u000a" }{ "\u000a" }positional arguments:{ "\u000a" }{ "  " }{ "name" }{ "        " }Provider to install: '{ "local" }' or '{ "parakeet" }'.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "  " }show this help message and exit{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e70726f76696465722e6c6f63616c2e7461726765742e7368612e6c6f63616c2e66696e6765727072696e742e64697370617463682e6f6d69747465642e746172676574 = local fingerprint dispatch omitted target_fingerprint_sha256
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e70726f76696465722e6f6273657276652e6578697374696e672e776974682e70726f76696465722e696e7374616c6c2e616c72656164792e72756e6e696e672e666f72 = { $provider } install already running for a different target
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e70726f76696465722e6f6273657276652e6578697374696e672e776974682e74696d65642e6f75742e6f6273657276696e672e70726f76696465722e696e7374616c6c = timed out observing { $provider } install
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e70726f76696465722e70726f67726573732e6c696e652e6f6273657276696e672e70726f76696465722e696e7374616c6c2e73746174652e737566666978 = observing { $provider } install: { $state }{ $suffix }
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e70726f76696465722e72756e2e696e6e65722e776974682e706172616b6565742e616c72656164792e696e7374616c6c6564 = parakeet already installed
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e70726f76696465722e72756e2e696e6e65722e776974682e756e737570706f727465642e70726f76696465722e70726f76696465722e737570706f727465642e6c6f63616c = unsupported provider { $provider }; supported: { "local, parakeet" }
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e70726f76696465722e72756e2e6c6f63616c2e696e6e65722e776974682e706c6174666f726d2e616e642e7461726765742e7368612e6c6f63616c2e616c72656164792e696e7374616c6c6564 = local already installed
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e70726f76696465722e756e617661696c61626c652e7374617475732e6572726f722e636f756c642e6e6f742e726561642e7065727369737465642e70726f7669646572 = could not read persisted { $provider } install status: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c2e70726f76696465722e7573616765 = usage: { "solstone journal install-provider [-h] name" }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c6174696f6e2e65786563757461626c65 = could not resolve current executable: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c6174696f6e2e65786563757461626c652e706172656e74 = current executable has no containing directory
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c6174696f6e2e7265636f76657279 = this installation couldn't be verified.{ "\u000a" }run `{ "solstone journal setup" }` to check it. if setup finishes successfully, try again.{ "\u000a" }details: { $detail }
+
+m6a6f75726e616c2e636c692e686f73742e696e7374616c6c6174696f6e2e726f6f74 = could not resolve installation identity root from { $directory }
+
+m6a6f75726e616c2e636c692e686f73742e6c6f67732e636f756e74 = invalid count: { $detail }
+
+m6a6f75726e616c2e636c692e686f73742e6c6f67732e666f6c6c6f772e64657363726970746f72 = catalog failed for { $path }: oplog descriptor changed while following
+
+m6a6f75726e616c2e636c692e686f73742e6c6f67732e666f6c6c6f772e656d707479 = No log files found.
+
+m6a6f75726e616c2e636c692e686f73742e6c6f67732e666f6c6c6f772e6661696c6564 = { $operation } failed for { $path }
+
+m6a6f75726e616c2e636c692e686f73742e6c6f67732e666f6c6c6f772e726f6f74 = catalog failed for { $path }: journal root unavailable
+
+m6a6f75726e616c2e636c692e686f73742e6c6f67732e666f6c6c6f772e736f75726365 = { $operation } failed for { $path }: { $source }
+
+m6a6f75726e616c2e636c692e686f73742e6c6f67732e677265702e636f6d70696c65 = regex pattern could not be compiled
+
+m6a6f75726e616c2e636c692e686f73742e6c6f67732e677265702e696e76616c6964 = invalid regex pattern at byte offset { $offset }
+
+m6a6f75726e616c2e636c692e686f73742e6c6f67732e677265702e756e737570706f72746564 = unsupported regex feature '{ $family }' at byte offset { $offset }
+
+m6a6f75726e616c2e636c692e686f73742e6c6f67732e6865616c74682e6572726f72 = health logs: { $detail }
+
+m6a6f75726e616c2e636c692e686f73742e6c6f67732e6865616c74682e7573616765 = { "solstone journal health logs" }: error: { $detail }
+
+m6a6f75726e616c2e636c692e686f73742e6c6f67732e736572766963652e656d707479 = === service logs === (no oplog leaves)
+
+m6a6f75726e616c2e636c692e686f73742e6c6f67732e736572766963652e6572726f72 = service logs: { $detail }
+
+m6a6f75726e616c2e636c692e686f73742e6c6f67732e736572766963652e68656164696e67 = === service logs ===
+
+m6a6f75726e616c2e636c692e686f73742e6c6f67732e736572766963652e6f7065726174696f6e = { $operation } failed: { $source }
+
+m6a6f75726e616c2e636c692e686f73742e6c6f67732e736572766963652e756e737570706f72746564 = Error: unsupported platform '{ $platform }'
+
+m6a6f75726e616c2e636c692e686f73742e6c6f67732e73696e63652e696e76616c6964 = Invalid time: '{ $input }'. Use e.g., { "30m, 2h, 1d, 4pm, 16:00" }
+
+m6a6f75726e616c2e636c692e686f73742e6c6f67732e73696e63652e6f766572666c6f77 = Python int too large to convert to C int
+
+m6a6f75726e616c2e636c692e686f73742e6d61696e2e77696e646f77732e736572766963652e61646d697373696f6e2e6661696c6564 = windows service admission failed: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e6d616c666f726d65642e6a736f6e6c2e7761726e696e672e736f6c73746f6e652e6f6273657276652e7574696c732e696e76616c69642e6a736f6e2e61742e6c696e652e696e = { "WARNING:solstone.observe.utils" }:Invalid { "JSON" } at line { $line } in { $path }: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e61637469766974792e6163746976697479 = { "solstone journal mcp activity" }: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e61637469766974792e61637469766974792e69732e6e6f742e636f6d70696c65642e696e746f2e746869732e6275696c64 = { "solstone journal mcp activity" } is not compiled into this build
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e61637469766974792e61637469766974792e756e6b6e6f776e2e6f7574636f6d65 = { "solstone journal mcp activity" }: unknown outcome { $value }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e61637469766974792e61637469766974792e756e6b6e6f776e2e746f6f6c = { "solstone journal mcp activity" }: unknown tool { $value }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e61637469766974792e6279746573 = { "    " }bytes:{ "   " }{ $byte_count }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e61637469766974792e63726561746564 = { "    " }created: { $created }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e61637469766974792e68656c70 = usage: { "solstone journal mcp activity [-h] [--token LABEL | --oauth CLIENT_ID [--created TIMESTAMP]]" }{ "\u000a" }{ "                                     " }{ "[--tool TOOL] [--outcome OUTCOME] [--day-from YYYYMMDD]" }{ "\u000a" }{ "                                     " }{ "[--day-to YYYYMMDD] [--limit N] [--json]" }{ "\u000a" }{ "\u000a" }Show what connections asked for and how each request ended.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "           " }show this help message and exit{ "\u000a" }{ "  " }{ "--token LABEL" }{ "        " }only a bearer-token connection, by its label{ "\u000a" }{ "  " }{ "--oauth CLIENT_ID" }{ "    " }only an { "OAuth" } connection, by its client id{ "\u000a" }{ "  " }{ "--created TIMESTAMP" }{ "  " }with { "--oauth" }, which grant, when one client id has several{ "\u000a" }{ "  " }{ "--tool TOOL" }{ "          " }only requests to this tool{ "\u000a" }{ "  " }{ "--outcome OUTCOME" }{ "    " }only requests that ended this way{ "\u000a" }{ "  " }{ "--day-from YYYYMMDD" }{ "  " }from this day{ "\u000a" }{ "  " }{ "--day-to YYYYMMDD" }{ "    " }up to and including this day{ "\u000a" }{ "  " }{ "--limit N" }{ "            " }at most N requests, 1 to 1000 (default: 20){ "\u000a" }{ "  " }{ "--json" }{ "               " }print { "JSON" }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e61637469766974792e6e6f2e6d61746368 = { $i18nCategory ->
+    [one] No match in the { $examined } record examined; more may exist further back.
+   *[other] No match in the { $examined } records examined; more may exist further back.
+}
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e61637469766974792e6e6f2e7265636f726465642e6d63702e61637469766974792e6d617463686573 = No recorded { "MCP" } activity matches.
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e61637469766974792e6f726967696e = { "    " }origin:{ "  " }{ $origin }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e61637469766974792e72616973652e6c696d69742e6f722e6e6172726f772e6461792e66726f6d2e6461792e746f2e746f2e736565 = Raise { "--limit" } or narrow { "--day-from" }/{ "--day-to" } to see more.
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e61637469766974792e726561736f6e = { "    " }reason:{ "  " }{ $reason }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e61637469766974792e7265636f7264 = { "    " }record:{ "  " }{ $day }/{ $segment }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e61637469766974792e72657175657374 = { "    " }request: { $rendered }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e61637469766974792e726571756573742e617267756d656e74732e65786365656465642e7468652e7265636f72642e626f756e642e616e642e776572652e6e6f742e73746f726564 = { "    " }request: (arguments exceeded the record bound and were not stored)
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e61637469766974792e726571756573742e6c6567616379 = { "    " }request: (schema 1: not recorded)
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e61637469766974792e726573756c74 = { $i18nCategory ->
+    [one] { "    " }result:{ "  " }{ $count } result, digest { $digest }
+   *[other] { "    " }result:{ "  " }{ $count } result(s), digest { $digest }
+}
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e61637469766974792e726573756c742e74617267657473 = { $i18nCategory ->
+    [one] { "    " }result:{ "  " }{ $count } result, digest { $digest }, targets { $targets }
+   *[other] { "    " }result:{ "  " }{ $count } result(s), digest { $digest }, targets { $targets }
+}
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e61637469766974792e726573756c742e7472756e6361746564 = { $i18nCategory ->
+    [one] { "    " }result:{ "  " }{ $count } result, digest { $digest }, targets { $targets }, ...
+   *[other] { "    " }result:{ "  " }{ $count } result(s), digest { $digest }, targets { $targets }, ...
+}
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e61637469766974792e736368656d612e636f6e6e656374696f6e = (schema 1: no connection recorded)
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e61637469766974792e73686f776e2e636f6d706c657465 = { $i18nCategory ->
+    [one] { $shown } record shown of { $examined } examined. { $counts }
+   *[other] { $shown } record(s) shown of { $examined } examined. { $counts }
+}
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e61637469766974792e73686f776e2e7061727469616c = { $i18nCategory ->
+    [one] { $shown } record shown of { $examined } examined (more may exist further back). { $counts }
+   *[other] { $shown } record(s) shown of { $examined } examined (more may exist further back). { $counts }
+}
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e61637469766974792e756e7265616461626c65 = { $i18nCategory ->
+    [one] { $count } record in range could not be parsed and is not counted above.
+   *[other] { $count } record(s) in range could not be parsed and are not counted above.
+}
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e68656c70 = usage: { "solstone journal mcp [-h] {service,local-door,status,token,pairing,oauth,permission,activity,probe} ..." }{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "            " }show this help message and exit{ "\u000a" }{ "\u000a" }subcommands:{ "\u000a" }{ "  " }{ "service" }{ "               " }Run the { "MCP" } endpoint{ "\u000a" }{ "  " }{ "local-door" }{ "            " }Run the connection for agents on this computer{ "\u000a" }{ "  " }{ "status" }{ "                " }Show { "MCP" } endpoint status{ "\u000a" }{ "  " }{ "token" }{ "                 " }Manage { "MCP" } bearer tokens{ "\u000a" }{ "  " }{ "pairing" }{ "               " }Manage the agent pairing code{ "\u000a" }{ "  " }{ "oauth" }{ "                 " }Manage registered { "OAuth" } clients{ "\u000a" }{ "  " }{ "permission" }{ "            " }Manage connection read permissions{ "\u000a" }{ "  " }{ "activity" }{ "              " }Show what connections asked for and how each request ended{ "\u000a" }{ "  " }{ "probe" }{ "                 " }Invoke one { "MCP" } read without opening a port{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e6c6f63616c2e646f6f722e68656c70 = usage: { "solstone journal mcp local-door [-h]" }{ "\u000a" }{ "\u000a" }Run the connection for agents on this computer.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "  " }show this help message and exit{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e6c6f63616c2e646f6f722e6c6f63616c2e646f6f722e69732e6e6f742e636f6d70696c65642e696e746f2e746869732e6275696c64 = { "solstone journal mcp local-door" } is not compiled into this build
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e6c6f63616c2e646f6f722e6d63702e6c6f63616c2e646f6f722e6661696c6564 = mcp local-door failed: { $class }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e6f617574682e6572726f722e64657461696c = { "solstone journal mcp" } { $command } { $operation }: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e6f617574682e68656c70 = usage: { "solstone journal mcp oauth [-h] {list,revoke} ..." }{ "\u000a" }{ "\u000a" }Manage registered { "OAuth" } clients.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "  " }show this help message and exit{ "\u000a" }{ "\u000a" }subcommands:{ "\u000a" }{ "  " }{ "list" }{ "        " }List registered { "OAuth" } clients{ "\u000a" }{ "  " }{ "revoke" }{ "      " }Revoke a registered { "OAuth" } client{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e6f617574682e6c6973742e68656c70 = usage: { "solstone journal mcp oauth list [-h]" }{ "\u000a" }{ "\u000a" }List registered { "OAuth" } clients.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "  " }show this help message and exit{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e6f617574682e6f617574682e69732e6e6f742e636f6d70696c65642e696e746f2e746869732e6275696c64 = { "solstone journal mcp oauth" } is not compiled into this build
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e6f617574682e6f617574682e7265766f6b652e6e6f2e737563682e6f617574682e636c69656e74 = { "solstone journal mcp oauth revoke" }: no such { "OAuth" } client
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e6f617574682e7265766f6b652e68656c70 = usage: { "solstone journal mcp oauth revoke [-h] --client-id CLIENT_ID" }{ "\u000a" }{ "\u000a" }Revoke a registered { "OAuth" } client.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "             " }show this help message and exit{ "\u000a" }{ "  " }{ "--client-id CLIENT_ID" }{ "  " }the client to revoke{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e6f617574682e7265766f6b65642e6f617574682e636c69656e74 = Revoked { "OAuth" } client { $client_id }.
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e70616972696e672e61742e657870697265732e6174 = Expires at { $expires_at }.
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e70616972696e672e61742e69742e776f726b732e6f6e6c792e61742e796f75722e6f776e2e646f6d61696e = It works only at your own domain.
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e70616972696e672e61742e69742e776f726b732e6f6e6c792e666f722e616e2e6167656e742e6f6e2e746869732e636f6d7075746572 = It works only for an agent on this computer.
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e70616972696e672e61742e69742e776f726b732e6f6e6c792e666f722e616e2e6167656e742e6f6e2e746869732e636f6d70757465722e746f = It works only for an agent on this computer. To connect an agent another way, use { "--door" } lan, { "solstone.me" } or hostname.
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e70616972696e672e61742e69742e776f726b732e6f6e6c792e666f722e616e2e6167656e742e6f6e2e796f75722e6e6574776f726b = It works only for an agent on your network.
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e70616972696e672e61742e69742e776f726b732e6f6e6c792e7468726f7567682e736f6c73746f6e652e6d65 = It works only through { "solstone.me" }.
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e70616972696e672e61742e70616972696e672e67656e65726174652e6e6f2e686f73746e616d652e69732e7365742e75702e666f722e746869732e6a6f75726e616c = { "solstone journal mcp pairing generate" }: no hostname is set up for this journal. set one up in the agents app first.
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e70616972696e672e61742e70616972696e672e67656e65726174652e746869732e6a6f75726e616c2e732e636f6e6669672e636f756c642e6e6f742e62652e72656164 = { "solstone journal mcp pairing generate" }: this journal's config could not be read.
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e70616972696e672e61742e70616972696e672e7265766f6b652e6e6f2e6163746976652e70616972696e672e636f64652e746f2e7265766f6b65 = { "solstone journal mcp pairing revoke" }: no active pairing code to revoke
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e70616972696e672e61742e7265766f6b65642e7468652e6163746976652e70616972696e672e636f6465 = Revoked the active pairing code.
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e70616972696e672e61742e736176652e746869732e6e6f772e69742e77696c6c2e6e6f742e62652e73686f776e2e616761696e2e616e64 = Save this now. It will not be shown again and cannot be recovered:
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e70616972696e672e67656e65726174652e68656c70 = usage: { "solstone journal mcp pairing generate [-h] [--door {local,lan,solstone.me,hostname}]" }{ "\u000a" }{ "\u000a" }Generate a pairing code for an agent, valid for 10 minutes and one use. It is shown once.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "            " }show this help message and exit{ "\u000a" }{ "  " }{ "--door" } { "{local,lan,solstone.me,hostname}" }{ "\u000a" }{ "                        " }where the code works (default: { "local" }, an agent on this computer){ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e70616972696e672e67656e657261746564 = Generated a pairing code, valid for 10 minutes and one use.
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e70616972696e672e68656c70 = usage: { "solstone journal mcp pairing [-h] {generate,revoke} ..." }{ "\u000a" }{ "\u000a" }Manage the agent pairing code.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "  " }show this help message and exit{ "\u000a" }{ "\u000a" }subcommands:{ "\u000a" }{ "  " }{ "generate" }{ "    " }Generate a pairing code{ "\u000a" }{ "  " }{ "revoke" }{ "      " }Revoke the current pairing code{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e70616972696e672e70616972696e672e69732e6e6f742e636f6d70696c65642e696e746f2e746869732e6275696c64 = { "solstone journal mcp pairing" } is not compiled into this build
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e70616972696e672e7265766f6b652e68656c70 = usage: { "solstone journal mcp pairing revoke [-h]" }{ "\u000a" }{ "\u000a" }Revoke the current pairing code.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "  " }show this help message and exit{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e63617465676f72696573 = Categories: { $categories }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e636c6561722e68656c70 = usage: { "solstone journal mcp permission clear [-h] (--token LABEL | --oauth CLIENT_ID [--created TIMESTAMP])" }{ "\u000a" }{ "\u000a" }Clear one connection's read permission.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "           " }show this help message and exit{ "\u000a" }{ "  " }{ "--token LABEL" }{ "        " }a bearer-token connection, by its label{ "\u000a" }{ "  " }{ "--oauth CLIENT_ID" }{ "    " }an { "OAuth" } connection, by its client id{ "\u000a" }{ "  " }{ "--created TIMESTAMP" }{ "  " }with { "--oauth" }, which grant, when one client id has several{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e636c65617265642e7065726d697373696f6e2e666f722e636f6e6e656374696f6e = Cleared permission for connection { $connection }.
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e636f6e6e656374696f6e = Connection: { $connection }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e6576616c756174696f6e = Evaluation: { $evaluation }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e67656e65726174696f6e = Generation: { $generation }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e68656c70 = usage: { "solstone journal mcp permission [-h] {show,set,clear} ..." }{ "\u000a" }{ "\u000a" }Manage connection read permissions.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "  " }show this help message and exit{ "\u000a" }{ "\u000a" }subcommands:{ "\u000a" }{ "  " }{ "show" }{ "        " }Show read permissions, for every connection or one{ "\u000a" }{ "  " }{ "set" }{ "         " }Set what one connection may read{ "\u000a" }{ "  " }{ "clear" }{ "       " }Clear one connection's read permission{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e6c6973742e666163657473 = { $connection }{ "\u0009" }generation: { $generation }{ "\u0009" }evaluation: { $evaluation }{ "\u0009" }read: facets ({ $facets })
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e6c6973742e6e6f6e65 = { $connection }{ "\u0009" }generation: { $generation }{ "\u0009" }evaluation: { $evaluation }{ "\u0009" }no read permission
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e6c6973742e77686f6c65 = { $connection }{ "\u0009" }generation: { $generation }{ "\u0009" }evaluation: { $evaluation }{ "\u0009" }read: { "whole_journal" }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e6e6f2e6d63702e636f6e6e656374696f6e2e7065726d697373696f6e732e636f6e66696775726564 = No { "MCP" } connection permissions configured.
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e6e6f2e7065726d697373696f6e2e7761732e636f6e666967757265642e666f722e636f6e6e656374696f6e = No permission was configured for connection { $connection }.
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e7065726d697373696f6e2e636c656172 = { "solstone journal mcp permission clear" }: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e7065726d697373696f6e2e6d616e6167656d656e742e69732e6e6f742e636f6d70696c65642e696e746f2e746869732e6275696c64 = { "solstone journal mcp permission" } management is not compiled into this build
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e7065726d697373696f6e2e6e6f2e7065726d697373696f6e2e636f6e66696775726564 = Permission: no permission configured
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e7065726d697373696f6e2e736574 = { "solstone journal mcp permission set" }: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e7065726d697373696f6e2e7365742e63686f6f73652e612e63617465676f72792e66726f6d = { "solstone journal mcp permission set" }: choose a category from { $categories }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e7065726d697373696f6e2e73686f77 = { "solstone journal mcp permission show" }: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e726561642e6e6f2e726561642e7065726d697373696f6e2e636f6e66696775726564 = Read:{ "       " }no read permission configured
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e73636f70652e666163657473 = Read scope: facets ({ $facets })
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e73636f70652e77686f6c65 = Read scope: { "whole_journal" }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e7365742e68656c70 = usage: { "solstone journal mcp permission set [-h] (--token LABEL | --oauth CLIENT_ID [--created TIMESTAMP])" }{ "\u000a" }{ "                                           " }{ "--category CATEGORY [--category CATEGORY ...]" }{ "\u000a" }{ "                                           " }{ "[--facet FACET ...]" }{ "\u000a" }{ "\u000a" }Set what one connection may read.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "           " }show this help message and exit{ "\u000a" }{ "  " }{ "--token LABEL" }{ "        " }a bearer-token connection, by its label{ "\u000a" }{ "  " }{ "--oauth CLIENT_ID" }{ "    " }an { "OAuth" } connection, by its client id{ "\u000a" }{ "  " }{ "--created TIMESTAMP" }{ "  " }with { "--oauth" }, which grant, when one client id has several{ "\u000a" }{ "  " }{ "--category CATEGORY" }{ "  " }a kind this connection may read (repeat for each kind){ "\u000a" }{ "  " }{ "--facet FACET" }{ "        " }only this facet, by name; repeat for more (default: the whole journal){ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e7365742e6d63702e726561642e7065726d697373696f6e2e666f722e636f6e6e656374696f6e2e67656e65726174696f6e = Set { "MCP" } read permission for connection { $connection } (generation { $generation }).
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7065726d697373696f6e2e73686f772e68656c70 = usage: { "solstone journal mcp permission show [-h] [--token LABEL | --oauth CLIENT_ID [--created TIMESTAMP]]" }{ "\u000a" }{ "\u000a" }Show read permissions, for every connection or for one.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "           " }show this help message and exit{ "\u000a" }{ "  " }{ "--token LABEL" }{ "        " }a bearer-token connection, by its label{ "\u000a" }{ "  " }{ "--oauth CLIENT_ID" }{ "    " }an { "OAuth" } connection, by its client id{ "\u000a" }{ "  " }{ "--created TIMESTAMP" }{ "  " }with { "--oauth" }, which grant, when one client id has several{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e70726f62652e68656c70 = usage: { "solstone journal mcp probe [-h] (--token LABEL | --oauth CLIENT_ID [--created TIMESTAMP])" }{ "\u000a" }{ "                                  " }{ "--tool" } { "TOOL" } { "--arguments" } { "JSON" }{ "\u000a" }{ "\u000a" }Invoke one { "MCP" } read as a connection, without opening a port.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "           " }show this help message and exit{ "\u000a" }{ "  " }{ "--token LABEL" }{ "        " }a bearer-token connection, by its label{ "\u000a" }{ "  " }{ "--oauth CLIENT_ID" }{ "    " }an { "OAuth" } connection, by its client id{ "\u000a" }{ "  " }{ "--created TIMESTAMP" }{ "  " }with { "--oauth" }, which grant, when one client id has several{ "\u000a" }{ "  " }{ "--tool TOOL" }{ "          " }the tool to call{ "\u000a" }{ "  " }{ "--arguments JSON" }{ "     " }the tool's arguments, as a { "JSON" } object{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e736572766963652e68656c70 = usage: { "solstone journal mcp service [-h]" }{ "\u000a" }{ "\u000a" }Run the { "MCP" } endpoint.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "  " }show this help message and exit{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e736572766963652e6d63702e736572766963652e6661696c6564 = mcp service failed: { $class }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e736572766963652e736572766963652e69732e6e6f742e636f6d70696c65642e696e746f2e746869732e6275696c64 = { "solstone journal mcp service" } is not compiled into this build
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7374617475732e6361706162696c6974792e636f6d70696c65642e696e2e74727565 = capability compiled in: true
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7374617475732e6361706162696c6974792e64697361626c6564 = capability: disabled
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7374617475732e6361706162696c6974792e656e61626c6564 = capability: enabled
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7374617475732e6361706162696c6974792e6572726f72 = capability: error
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7374617475732e68656c70 = usage: { "solstone journal mcp status [-h]" }{ "\u000a" }{ "\u000a" }Show { "MCP" } endpoint status.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "  " }show this help message and exit{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7374617475732e6c616e2e64697361626c6564 = lan door: off at port { $port }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7374617475732e6c616e2e656e61626c6564 = lan door: enabled at port { $port }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7374617475732e6c6f63616c2e64697361626c6564 = local door: not enabled at { $resource }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7374617475732e6c6f63616c2e656e61626c6564 = local door: enabled at { $resource }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7374617475732e6d63702e6361706162696c6974792e636f6e6669672e7374617475732e6f6e6c792e746869732e646f65732e6e6f742e7265706f72742e73657276696365 = { "MCP" } capability/config status only; this does not report service liveness.
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7374617475732e7374617475732e636f756c642e6e6f742e726561642e6265617265722e746f6b656e2e6c6564676572 = { "solstone journal mcp status" }: could not read bearer-token ledger: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7374617475732e7374617475732e636f756c642e6e6f742e726561642e6d63702e6361706162696c6974792e636f6e66696775726174696f6e = { "solstone journal mcp status" }: could not read { "MCP" } capability configuration: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7374617475732e7374617475732e69732e6e6f742e636f6d70696c65642e696e746f2e746869732e6275696c64 = { "solstone journal mcp status" } is not compiled into this build
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7374617475732e7374617475732e6d63702e6361706162696c6974792e636f6e66696775726174696f6e2e69732e696e76616c6964 = { "solstone journal mcp status" }: { "MCP" } capability configuration is invalid: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7374617475732e746f6b656e2e636f756e74 = token count: { $count }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7374617475732e746f6b656e2e756e617661696c61626c65 = token count: unavailable
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e746f6b656e2e6372656174652e68656c70 = usage: { "solstone journal mcp token create [-h] --label LABEL" }{ "\u000a" }{ "\u000a" }Create a bearer token for a connection. The token is shown once.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "     " }show this help message and exit{ "\u000a" }{ "  " }{ "--label LABEL" }{ "  " }a name for the connection the token is for{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e746f6b656e2e637265617465642e6265617265722e746f6b656e2e666f722e6c6162656c = Created bearer token for label { $label }.
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e746f6b656e2e6772616e742e6265666f72652e7468652e6167656e742e636f6e6e656374732e616e2e6167656e742e746861742e636f6e6e65637465642e6669727374 = Grant before the agent connects. An agent that connected first keeps its old tool list until it reconnects.
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e746f6b656e2e68656c70 = usage: { "solstone journal mcp token [-h] {create,list,revoke} ..." }{ "\u000a" }{ "\u000a" }Manage { "MCP" } bearer tokens.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "  " }show this help message and exit{ "\u000a" }{ "\u000a" }subcommands:{ "\u000a" }{ "  " }{ "create" }{ "      " }Create a bearer token for a connection{ "\u000a" }{ "  " }{ "list" }{ "        " }List tokens{ "\u000a" }{ "  " }{ "revoke" }{ "      " }Revoke a token{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e746f6b656e2e6c6973742e68656c70 = usage: { "solstone journal mcp token list [-h]" }{ "\u000a" }{ "\u000a" }List each token's label and when it was created.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "  " }show this help message and exit{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e746f6b656e2e7265766f6b652e68656c70 = usage: { "solstone journal mcp token revoke [-h] --label LABEL" }{ "\u000a" }{ "\u000a" }Revoke the bearer token for a label.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "     " }show this help message and exit{ "\u000a" }{ "  " }{ "--label LABEL" }{ "  " }the label of the token to revoke{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e746f6b656e2e7265766f6b65642e6265617265722e746f6b656e2e666f722e6c6162656c = Revoked bearer token for label { $label }.
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e746f6b656e2e736176652e746869732e746f6b656e2e6e6f772e69742e77696c6c2e6e6f742e62652e73686f776e2e616761696e = Save this token now. It will not be shown again and cannot be recovered:
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e746f6b656e2e746f6b656e2e6d616e6167656d656e742e69732e6e6f742e636f6d70696c65642e696e746f2e746869732e6275696c64 = { "solstone journal mcp token" } management is not compiled into this build
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e746f6b656e2e756e74696c2e796f752e6772616e742e69742e726561642e6163636573732e616e2e6167656e742e7573696e672e74686973 = Until you grant it read access, an agent using this token sees only { "save_memory" } and { "recall_memory" }. To let it read your whole journal (add { "--facet" } NAME to allow only that facet):
+
+m6a6f75726e616c2e636c692e686f73742e6d63702e7573616765 = usage: { "solstone journal mcp [-h] {service,local-door,status,token,pairing,oauth,permission,activity,probe} ..." }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6e617669676174652e6572726f722e69732e6e6f2e6c6f6e6765722e737570706f727465642e7075742e66616365742e73656c656374696f6e2e696e2e7468652e64657374696e6174696f6e2e75726c2e666f72 = { "solstone journal navigate" }: error: { $option } is no longer supported. Put facet selection in the destination { "URL" }; for example, { "/app/entities?facet=work." }
+
+m6a6f75726e616c2e636c692e686f73742e6e617669676174652e68656c70 = usage: { "solstone journal navigate [-h] PATH" }{ "\u000a" }{ "\u000a" }Navigate the browser to a path.{ "\u000a" }{ "\u000a" }positional arguments:{ "\u000a" }{ "  " }{ "PATH" }{ "                  " }{ "URL" } path to navigate to.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "            " }show this help message and exit{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6e617669676174652e7072696e742e6e617669676174696f6e2e6e617669676174652e70617468 = Navigate: { $path }
+
+m6a6f75726e616c2e636c692e686f73742e6e617669676174652e72756e2e6e617669676174652e63616c6c6f73756d2e736f636b65742e756e617661696c61626c652e70617468 = solstone journal navigate: error: { "Callosum" } socket unavailable: { $path }
+
+m6a6f75726e616c2e636c692e686f73742e6e617669676174652e72756e2e6e617669676174652e6661696c65642e656e636f64652e63616c6c6f73756d2e72657175657374 = solstone journal navigate: error: failed to encode { "Callosum" } request: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e6e617669676174652e7573616765 = usage: { "solstone journal navigate [-h] PATH" }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6f70656e2e68656c70 = usage: { "solstone journal open [-h] [--print-url] [PATH]" }{ "\u000a" }{ "\u000a" }open your journal in your browser with a one-time link.{ "\u000a" }{ "\u000a" }positional arguments:{ "\u000a" }{ "  " }{ "PATH" }{ "          " }page to open (default: /){ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "    " }show this help message and exit{ "\u000a" }{ "  " }{ "--print-url" }{ "   " }print the one-time link instead of opening a browser{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e6f70656e2e6d696e742e636f756c642e6e6f742e6d616b652e6c696e6b = your journal could not make a link: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e6f70656e2e6d696e742e636f756c642e6e6f742e6d616b652e6c696e6b2e747279 = your journal could not make a link. try again.
+
+m6a6f75726e616c2e636c692e686f73742e6f70656e2e6d696e742e726573706f6e73652e66726f6d2e636f756c642e6e6f742e6265 = the response from your journal could not be read. try again.
+
+m6a6f75726e616c2e636c692e686f73742e6f70656e2e72756e2e62726f777365722e636f756c642e6e6f742e62652e6f70656e6564 = a browser could not be opened here. run this command again with { "--print-url" }, and open the link it prints within a minute.
+
+m6a6f75726e616c2e636c692e686f73742e6f70656e2e72756e2e6f70656e2e69742e66726f6d2e616e6f746865722e636f6d7075746572 = to open it from another computer, first forward the journal's ports over { "SSH" }, and keep that terminal open:
+
+m6a6f75726e616c2e636c692e686f73742e6f70656e2e72756e2e6f70656e2e75726c2e70617468 = open your journal: { $url }{ $path }
+
+m6a6f75726e616c2e636c692e686f73742e6f70656e2e736f636b65742e6c696e75782e646f776e2e69736e2e742e72756e6e696e672e666f722e74686973 = your journal isn't running for this account on this computer, so there is nothing to open. start it with { "solstone journal up" }.
+
+m6a6f75726e616c2e636c692e686f73742e6f70656e2e736f636b65742e6c696e75782e6f6c642e72756e6e696e672e6f6c6465722e7468616e2e746869732e636f6d6d616e64 = your running journal is older than this command. restart it with { "solstone journal down" }, then { "solstone journal up" }, and try again.
+
+m6a6f75726e616c2e636c692e686f73742e6f70656e2e736f636b65742e6d61632e646f776e2e69736e2e742e72756e6e696e672e666f722e74686973 = your journal isn't running for this account on this computer, so there is nothing to open. open the journal app to start it.
+
+m6a6f75726e616c2e636c692e686f73742e6f70656e2e736f636b65742e6d61632e6f6c642e72756e6e696e672e6f6c6465722e7468616e2e746869732e636f6d6d616e64 = your running journal is older than this command. quit the journal app, open it again, and try again.
+
+m6a6f75726e616c2e636c692e686f73742e6f70656e2e736f636b65742e77696e646f77732e646f776e2e69736e2e742e72756e6e696e672e666f722e74686973 = your journal isn't running for this account on this computer, so there is nothing to open. start it from the journal app, and try again.
+
+m6a6f75726e616c2e636c692e686f73742e6f70656e2e736f636b65742e77696e646f77732e6f6c642e72756e6e696e672e6f6c6465722e7468616e2e746869732e636f6d6d616e64 = your running journal is older than this command. restart it from the journal app, and try again.
+
+m6a6f75726e616c2e636c692e686f73742e6f70656e2e7573616765 = usage: { "solstone journal open [-h] [--print-url] [PATH]" }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e636f6e7665792e617267756d656e742e6a6f75726e616c2e65787065637465642e6f6e652e617267756d656e74 = { $command }: error: argument { "--journal" }: expected one argument
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e636f6e7665792e617267756d656e742e706f72742e65787065637465642e6f6e652e617267756d656e74 = { $command }: error: argument { "--port" }: expected one argument
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e636f6e7665792e617267756d656e742e706f72742e696e76616c69642e696e742e76616c7565 = { $command }: error: argument { "--port" }: invalid int value
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e636f6e7665792e617267756d656e742e706f72742e696e76616c69642e696e742e76616c75652e76616c7565 = { $command }: error: argument { "--port" }: invalid int value: '{ $value }'
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e636f6e7665792e617267756d656e742e706f72742e6d7573742e62652e6265747765656e2e6e312e616e642e6e3635353335 = { $command }: error: argument { "--port" }: must be between 1 and 65535
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e636f6e7665792e7468652e666f6c6c6f77696e672e617267756d656e74732e6172652e72657175697265642e706f7274 = { $command }: error: the following arguments are required: { "--port" }
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e636f6e7665792e756e7265636f676e697a65642e617267756d656e74732e617267756d656e7473 = { $command }: error: unrecognized arguments: { $arguments }
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e636f727465782e756e7265636f676e697a65642e617267756d656e74732e617267756d656e7473 = { $command }: error: unrecognized arguments: { $arguments }
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6469726563742e706f72742e76616c75652e617267756d656e742e6469726563742e706f72742e696e76616c69642e696e742e76616c75652e76616c7565 = { $command }: error: argument { "--direct-port" }: invalid int value: '{ $value }'
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6469726563742e706f72742e76616c75652e617267756d656e742e6469726563742e706f72742e6d7573742e62652e6265747765656e2e6e312e616e642e6e3635353335 = { $command }: error: argument { "--direct-port" }: must be between 1 and 65535
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e677261622e617267756d656e742e6f75742e65787065637465642e6f6e652e617267756d656e74 = { $command }: error: argument { "--out" }: expected one argument
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e677261622e706174682e746f6b656e732e6d7573742e62652e76616c69642e756e69636f6465 = { $command }: error: path tokens must be valid Unicode
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e677261622e756e7265636f676e697a65642e617267756d656e74732e617267756d656e7473 = { $command }: error: unrecognized arguments: { $arguments }
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e61637469766974792e65787065637465642e617267756d656e742e61667465722e6e616d65 = { $command }: error: expected argument after { $name }
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e61637469766974792e6c696d69742e6d7573742e62652e6265747765656e2e6e312e616e642e6e31303030 = { $command }: error: { "--limit" } must be between 1 and 1000
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e61637469766974792e6d7573742e62652e6e6f6e656d7074792e6e616d65 = { $command }: error: { $name } must be nonempty
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e61637469766974792e756e6b6e6f776e2e6f7074696f6e2e61636365707465642e746f6b656e2e6f617574682e637265617465642e746f6f6c2e6f7574636f6d652e6461792e66726f6d2e6461792e746f2e6c696d69742e6a736f6e2e6f74686572 = { $command }: error: unknown option { $other }; accepted: { "--token" }, { "--oauth" }, { "--created" }, { "--tool" }, { "--outcome" }, { "--day-from" }, { "--day-to" }, { "--limit" }, { "--json" }
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e696e76616c69642e6d63702e636f6d6d616e642e76616c7565 = { $command }: error: invalid { "MCP" } command: { $value }
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e6f617574682e636c69656e742e69642e636c69656e742e69642e6d7573742e62652e76616c69642e7574662e6e382e616e642e6e6f6e656d707479 = { $command }: error: client-id must be valid { "UTF-8" } and nonempty
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e6f617574682e636c69656e742e69642e65787065637465642e65786163746c792e6f6e652e636c69656e742e69642e636c69656e742e69642e617267756d656e74 = { $command }: error: expected exactly one { "--client-id" } { "CLIENT_ID" } argument
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e6f617574682e636c69656e742e69642e7468652e666f6c6c6f77696e672e617267756d656e74732e6172652e72657175697265642e636c69656e742e69642e636c69656e742e6964 = { $command }: error: the following arguments are required: { "--client-id" } { "CLIENT_ID" }
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e6f617574682e696e76616c69642e6d63702e6f617574682e636f6d6d616e642e76616c7565 = { $command }: error: invalid { "MCP" } oauth command: { $value }
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e6f617574682e7468652e666f6c6c6f77696e672e617267756d656e74732e6172652e72657175697265642e6c6973742e7265766f6b65 = { $command }: error: the following arguments are required: { "list" }, { "revoke" }
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e70616972696e672e65787065637465642e6f7074696f6e616c2e646f6f722e6c6f63616c2e6c616e2e736f6c73746f6e652e6d652e686f73746e616d652e617267756d656e74 = { $command }: error: expected optional { "`--door local|lan|solstone.me|hostname`" } argument
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e70616972696e672e696e76616c69642e6d63702e70616972696e672e636f6d6d616e642e76616c7565 = { $command }: error: invalid { "MCP" } pairing command: { $value }
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e70616972696e672e7468652e666f6c6c6f77696e672e617267756d656e74732e6172652e72657175697265642e67656e65726174652e7265766f6b65 = { $command }: error: the following arguments are required: { "generate" }, { "revoke" }
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e70616972696e672e756e6b6e6f776e2e646f6f722e63686f6f73652e6f6e652e6f662e6c6f63616c2e6c616e2e736f6c73746f6e652e6d652e686f73746e616d65 = { $command }: error: unknown door, choose one of { "local" }, { "lan" }, { "solstone.me" }, { "hostname" }
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e696e76616c69642e6d63702e7065726d697373696f6e2e636f6d6d616e642e76616c7565 = { $command }: error: invalid { "MCP" } permission command: { $value }
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7365742e61742e6c656173742e6f6e652e63617465676f72792e69732e7265717569726564 = { $command }: error: at least one { "--category" } is required
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7365742e63617465676f72792e6d7573742e62652e6e6f6e656d707479 = { $command }: error: category must be nonempty
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7365742e63617465676f72792e6d7573742e62652e76616c69642e7574662e6e382e616e642e6e6f6e656d707479 = { $command }: error: category must be valid { "UTF-8" } and nonempty
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7365742e65787065637465642e617267756d656e742e61667465722e63617465676f7279 = { $command }: error: expected argument after { "--category" }
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7365742e65787065637465642e617267756d656e742e61667465722e6661636574 = { $command }: error: expected argument after { "--facet" }
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7365742e66616365742e6e616d652e6d7573742e62652e6e6f6e656d707479 = { $command }: error: facet name must be nonempty
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7365742e66616365742e6e616d652e6d7573742e62652e76616c69642e7574662e6e382e616e642e6e6f6e656d707479 = { $command }: error: facet name must be valid { "UTF-8" } and nonempty
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7065726d697373696f6e2e7468652e666f6c6c6f77696e672e617267756d656e74732e6172652e72657175697265642e73686f772e7365742e636c656172 = { $command }: error: the following arguments are required: { "show" }, { "set" }, { "clear" }
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e70726f62652e617267756d656e74732e69732e7265717569726564 = { $command }: error: { "--arguments" } is required
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e70726f62652e65787065637465642e617267756d656e742e61667465722e617267756d656e7473 = { $command }: error: expected argument after { "--arguments" }
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e70726f62652e65787065637465642e617267756d656e742e61667465722e746f6f6c = { $command }: error: expected argument after { "--tool" }
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e70726f62652e746f6f6c2e69732e7265717569726564 = { $command }: error: { "--tool" } is required
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7461726765742e637265617465642e63616e6e6f742e62652e757365642e776974682e746f6b656e = { $command }: error: { "--created" } cannot be used with { "--token" }
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7461726765742e637265617465642e74696d657374616d702e6d7573742e62652e6e6f6e656d707479 = { $command }: error: created timestamp must be nonempty
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7461726765742e637265617465642e74696d657374616d702e6d7573742e62652e76616c69642e7574662e6e382e616e642e6e6f6e656d707479 = { $command }: error: created timestamp must be valid { "UTF-8" } and nonempty
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7461726765742e65787065637465642e617267756d656e742e61667465722e63726561746564 = { $command }: error: expected argument after { "--created" }
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7461726765742e65787065637465642e617267756d656e742e61667465722e6f61757468 = { $command }: error: expected argument after { "--oauth" }
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7461726765742e65787065637465642e617267756d656e742e61667465722e746f6b656e = { $command }: error: expected argument after { "--token" }
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7461726765742e6f617574682e636c69656e742e69642e6d7573742e62652e6e6f6e656d707479 = { $command }: error: oauth client-id must be nonempty
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7461726765742e6f617574682e636c69656e742e69642e6d7573742e62652e76616c69642e7574662e6e382e616e642e6e6f6e656d707479 = { $command }: error: oauth client-id must be valid { "UTF-8" } and nonempty
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7461726765742e6f6e652e6f662e746f6b656e2e6f722e6f617574682e69732e7265717569726564 = { $command }: error: one of { "--token" } or { "--oauth" } is required
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7461726765742e737065636966792e6569746865722e746f6b656e2e6f722e6f617574682e6e6f742e626f7468 = { $command }: error: specify either { "--token" } or { "--oauth" }, not both
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7461726765742e746f6b656e2e6c6162656c2e6d7573742e62652e6e6f6e656d707479 = { $command }: error: token label must be nonempty
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7461726765742e746f6b656e2e6c6162656c2e6d7573742e62652e76616c69642e7574662e6e382e616e642e6e6f6e656d707479 = { $command }: error: token label must be valid { "UTF-8" } and nonempty
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7461726765742e756e65787065637465642e617267756d656e742e6f7074696f6e = { $command }: error: unexpected argument: { $option }
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e7468652e666f6c6c6f77696e672e617267756d656e74732e6172652e72657175697265642e736572766963652e6c6f63616c2e646f6f722e7374617475732e746f6b656e2e70616972696e672e6f617574682e7065726d697373696f6e2e61637469766974792e70726f6265 = { $command }: error: the following arguments are required: { "service" }, { "local-door" }, { "status" }, { "token" }, { "pairing" }, { "oauth" }, { "permission" }, { "activity" }, { "probe" }
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e746f6b656e2e696e76616c69642e6d63702e746f6b656e2e636f6d6d616e642e76616c7565 = { $command }: error: invalid { "MCP" } token command: { $value }
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e746f6b656e2e6c6162656c2e65787065637465642e65786163746c792e6f6e652e6c6162656c2e6c6162656c2e617267756d656e74 = { $command }: error: expected exactly one { "--label" } { "LABEL" } argument
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e746f6b656e2e6c6162656c2e6c6162656c2e6d7573742e62652e76616c69642e7574662e6e382e616e642e6e6f6e656d707479 = { $command }: error: label must be valid { "UTF-8" } and nonempty
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e746f6b656e2e6c6162656c2e7468652e666f6c6c6f77696e672e617267756d656e74732e6172652e72657175697265642e6c6162656c2e6c6162656c = { $command }: error: the following arguments are required: { "--label" } { "LABEL" }
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e6d63702e746f6b656e2e7468652e666f6c6c6f77696e672e617267756d656e74732e6172652e72657175697265642e6372656174652e6c6973742e7265766f6b65 = { $command }: error: the following arguments are required: { "create" }, { "list" }, { "revoke" }
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e7363686564756c652e756e7265636f676e697a65642e617267756d656e74732e617267756d656e7473 = { $command }: error: unrecognized arguments: { $arguments }
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e73706c2e696e76616c69642e63686f6963652e63686f6f73652e66726f6d2e736572766963652e76616c7565 = { $command }: error: invalid choice: { $value } (choose from { "service" })
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e73706c2e7468652e666f6c6c6f77696e672e617267756d656e74732e6172652e72657175697265642e73657276696365 = { $command }: error: the following arguments are required: { "service" }
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e73706c2e756e7265636f676e697a65642e617267756d656e74732e617267756d656e7473 = { $command }: error: unrecognized arguments: { $arguments }
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e73757065727669736f722e617267756d656e742e6469726563742e706f72742e63616e6e6f742e62652e7265706561746564 = { $command }: error: argument { "--direct-port" }: cannot be repeated
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e73757065727669736f722e617267756d656e742e6469726563742e706f72742e65787065637465642e6f6e652e617267756d656e74 = { $command }: error: argument { "--direct-port" }: expected one argument
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e73757065727669736f722e617267756d656e742e6469726563742e706f72742e696e76616c69642e696e742e76616c7565 = { $command }: error: argument { "--direct-port" }: invalid int value
+
+m6a6f75726e616c2e636c692e686f73742e7061727365722e76616c69646174652e6461792e6461792e6d7573742e62652e65696768742e6469676974732e797979796d6d64642e676f742e76616c7565 = { $command }: error: day must be eight digits ({ "YYYYMMDD" }), got { $value }
+
+m6a6f75726e616c2e636c692e686f73742e70726f636573732e61646d697373696f6e = journal process admission failed: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e726561642e6572726f722e6572726f722e736f6c73746f6e652e6f6273657276652e7574696c732e6572726f722e72656164696e67 = { "ERROR:solstone.observe.utils" }:Error reading { $path }: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e72656e6465722e6f617574682e73746f72652e6572726f722e6e6f2e6163746976652e70616972696e672e636f6465 = { "solstone journal mcp" } { $command } { $operation }: no active pairing code
+
+m6a6f75726e616c2e636c692e686f73742e72656e6465722e6f617574682e73746f72652e6572726f722e6e6f2e737563682e6f617574682e636c69656e74 = { "solstone journal mcp" } { $command } { $operation }: no such { "OAuth" } client
+
+m6a6f75726e616c2e636c692e686f73742e72656e6465722e73757065727669736f722e686f73742e6f7574636f6d652e73757065727669736f722e6661696c65642e746f2e626f6f74 = supervisor failed to boot: { $reason }
+
+m6a6f75726e616c2e636c692e686f73742e72656e6465722e73757065727669736f722e686f73742e6f7574636f6d652e73757065727669736f722e6c6966656379636c652e73687574646f776e2e6661696c65642e63617573652e72656164696e6573732e73656c662e6865617274626561742e6964656e74697479 = supervisor lifecycle shutdown failed: cause={ $cause }, readiness={ $readiness }, self_heartbeat={ $self_heartbeat }, identity={ $identity }
+
+m6a6f75726e616c2e636c692e686f73742e72656e6465722e746f6b656e2e73746f72652e6572726f722e746f6b656e = { "solstone journal mcp token" } { $operation }: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e72656e6465722e746f6b656e2e73746f72652e6572726f722e746f6b656e2e612e6265617265722e746f6b656e2e616c72656164792e6578697374732e666f722e6c6162656c = { "solstone journal mcp token" } { $operation }: a bearer token already exists for label { $label }
+
+m6a6f75726e616c2e636c692e686f73742e72656e6465722e746f6b656e2e73746f72652e6572726f722e746f6b656e2e696e76616c69642e6c6162656c = { "solstone journal mcp token" } { $operation }: invalid label: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e72656e6465722e746f6b656e2e73746f72652e6572726f722e746f6b656e2e6e6f2e6265617265722e746f6b656e2e6578697374732e666f722e6c6162656c = { "solstone journal mcp token" } { $operation }: no bearer token exists for label { $label }
+
+m6a6f75726e616c2e636c692e686f73742e7265736f6c76652e636f6e6e656374696f6e2e6b65792e736f6c73746f6e652e6a6f75726e616c2e6d63702e6661696c65642e746f2e71756572792e6f617574682e73746f7265 = { "solstone journal mcp" }: failed to query oauth store: { $e }
+
+m6a6f75726e616c2e636c692e686f73742e7265736f6c76652e636f6e6e656374696f6e2e6b65792e736f6c73746f6e652e6a6f75726e616c2e6d63702e6661696c65642e746f2e71756572792e746f6b656e2e73746f7265 = { "solstone journal mcp" }: failed to query token store: { $e }
+
+m6a6f75726e616c2e636c692e686f73742e7265736f6c76652e636f6e6e656374696f6e2e6b65792e736f6c73746f6e652e6a6f75726e616c2e6d63702e6d756c7469706c652e6f617574682e6772616e74732e6d6174636865642e636c69656e742e69642e73706563696679 = { "solstone journal mcp" }: multiple { "OAuth" } grants matched { "client_id" } { $client_id }; specify { "--created" } { "<timestamp>" }
+
+m6a6f75726e616c2e636c692e686f73742e7265736f6c76652e636f6e6e656374696f6e2e6b65792e736f6c73746f6e652e6a6f75726e616c2e6d63702e6e6f2e6265617265722e746f6b656e2e6578697374732e666f722e6c6162656c = { "solstone journal mcp" }: no bearer token exists for label { $label }
+
+m6a6f75726e616c2e636c692e686f73742e7265736f6c76652e636f6e6e656374696f6e2e6b65792e736f6c73746f6e652e6a6f75726e616c2e6d63702e6e6f2e6f617574682e6772616e742e666f756e642e6d61746368696e672e636c69656e742e6964 = { "solstone journal mcp" }: no { "OAuth" } grant found matching { "client_id" } { $client_id }
+
+m6a6f75726e616c2e636c692e686f73742e7363686564756c652e68656c70 = usage: { "solstone journal schedule [-h] [-v] [-d]" }{ "\u000a" }{ "\u000a" }Show scheduled tasks{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "     " }show this help message and exit{ "\u000a" }{ "  " }{ "-v, --verbose" }{ "  " }Enable verbose output{ "\u000a" }{ "  " }{ "-d, --debug" }{ "    " }Enable debug logging{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e7363686564756c652e7573616765 = usage: { "solstone journal schedule [-h] [-v] [-d]" }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e73656e73652e68656c70 = usage: { "solstone journal sense [-h] [--day DAY] [-j JOBS]" }{ "\u000a" }{ "                    " }{ "[--reprocess {screen,audio,image,all}] [--segment SEGMENT]" }{ "\u000a" }{ "                    " }{ "[--stream STREAM] [--dry-run] [-v] [-d]" }{ "\u000a" }{ "\u000a" }Unified observe file processor{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "            " }show this help message and exit{ "\u000a" }{ "  " }{ "--day DAY" }{ "             " }Process files from specific day ({ "YYYYMMDD" } format) instead of watching{ "\u000a" }{ "  " }{ "-j JOBS, --jobs JOBS" }{ "  " }Max concurrent screen-describe jobs when using { "--day" } (default: 1).{ "\u000a" }{ "  " }{ "--reprocess" } { "{screen,audio,image,all}" }{ "\u000a" }{ "                        " }Delete existing screen or audio outputs and reprocess (requires { "--day" }){ "\u000a" }{ "  " }{ "--segment SEGMENT" }{ "     " }Filter to specific segment ({ "HHMMSS_LEN" } format, requires { "--day" }){ "\u000a" }{ "  " }{ "--stream STREAM" }{ "       " }Filter to specific stream (requires { "--day" }){ "\u000a" }{ "  " }{ "--dry-run" }{ "             " }Show what would be processed (or deleted with { "--reprocess" }) without making changes{ "\u000a" }{ "  " }{ "-v, --verbose" }{ "         " }Enable verbose output{ "\u000a" }{ "  " }{ "-d, --debug" }{ "           " }Enable debug logging{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e73656e73652e73656e73652e62617463682e6661696c6564 = sense batch failed: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e73656e73652e73656e73652e706172656e742e6c6f73732e61646d697373696f6e2e6661696c6564 = sense parent-loss admission failed: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e73656e73652e736572766963652e73656e73652e736572766963652e6661696c6564 = sense service failed: { $class }
+
+m6a6f75726e616c2e636c692e686f73742e73656e73652e7573616765 = usage: { "solstone journal sense [-h] [--day DAY] [-j JOBS]" }{ "\u000a" }{ "                    " }{ "[--reprocess {screen,audio,image,all}] [--segment SEGMENT]" }{ "\u000a" }{ "                    " }{ "[--stream STREAM] [--dry-run] [-v] [-d]" }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e617267756d656e742e706f7274 = error: unexpected argument '{ $text }'; pass the port as { "--port" } { $port }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e617267756d656e742e72616e6765 = error: unexpected argument '{ $text }'; pass a port between 1 and 65535 as { "--port" } { "PORT" }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e617267756d656e742e756e6578706563746564 = error: unexpected argument '{ $text }'; pass the port as { "--port" } { "PORT" }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e636f6e666c696374696e672e616273656e742e73797374656d642e7374617465 = conflicting absent { "systemd" } state
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e636f756c642e6e6f742e636c6561722e7468652e736572766963652e732e72656164792e7374617465 = could not clear the service's ready state: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e636f756c642e6e6f742e66696e642e7468652e736f6c73746f6e652e696e7374616c6c6174696f6e2e66726f6d = could not find the { "solstone" } installation from { $path }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e636f756c642e6e6f742e7265736f6c76652e6a6f75726e616c = could not resolve journal
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e636f756c642e6e6f742e7265736f6c76652e7468652e736f6c73746f6e652e65786563757461626c65 = could not resolve the { "solstone" } executable: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e636f756c642e6e6f742e7665726966792e7468652e73617665642e696e7374616c6c6174696f6e = could not verify the saved installation: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e636f756c642e6e6f742e7665726966792e7468652e736f6c73746f6e652e696e7374616c6c6174696f6e = could not verify the { "solstone" } installation: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e636f756c642e6e6f742e7665726966792e7468652e736f6c73746f6e652e73657475702e73746f72616765 = could not verify the { "solstone" } setup storage: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e636f756c646e2e742e636f6e6669726d2e746861742e7468652e736572766963652e757365732e746869732e6a6f75726e616c = couldn't confirm that the service uses this journal. run '{ "solstone journal setup" }' to update its saved location.
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e6372656174652e736572766963652e6469726563746f7279 = create service directory: { $source }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e6372656174652e736572766963652e6865616c74682e6469726563746f7279 = create service health directory: { $source }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e6475706c69636174652e73797374656d642e70726f7065727479 = duplicate { "systemd" } property: { $key }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e656e7472792e69732e6e6f742e612e726567756c61722e66696c65 = entry is not a regular file
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e6572726f722e64657461696c73 = error: { $detail }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e65786563757461626c652e706172656e74 = service executable has no parent
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e66696c652e616273656e74_v6368616e67652d6a6f75726e616c2d666f6c646572 = service change journal folder refused { $path }: absent
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e66696c652e616273656e74_v696e7374616c6c = service install refused { $path }: absent
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e66696c652e616273656e74_v6f706572617465 = service operate refused { $path }: absent
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e66696c652e616273656e74_v72657374617274 = service restart refused { $path }: absent
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e66696c652e616273656e74_v726f7574652d726570616972 = service route repair refused { $path }: absent
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e66696c652e616273656e74_v737461747573 = service status refused { $path }: absent
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e66696c652e616273656e74_v73746f70 = service stop refused { $path }: absent
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e66696c652e616273656e74_v756e696e7374616c6c = service uninstall refused { $path }: absent
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e66696c652e666f726569676e_v6368616e67652d6a6f75726e616c2d666f6c646572 = service change journal folder refused { $path }: not recognized as a service file created by journal
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e66696c652e666f726569676e_v696e7374616c6c = service install refused { $path }: not recognized as a service file created by journal
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e66696c652e666f726569676e_v6f706572617465 = service operate refused { $path }: not recognized as a service file created by journal
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e66696c652e666f726569676e_v72657374617274 = service restart refused { $path }: not recognized as a service file created by journal
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e66696c652e666f726569676e_v726f7574652d726570616972 = service route repair refused { $path }: not recognized as a service file created by journal
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e66696c652e666f726569676e_v737461747573 = service status refused { $path }: not recognized as a service file created by journal
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e66696c652e666f726569676e_v73746f70 = service stop refused { $path }: not recognized as a service file created by journal
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e66696c652e666f726569676e_v756e696e7374616c6c = service uninstall refused { $path }: not recognized as a service file created by journal
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e66696c652e6d616e61676564_v6368616e67652d6a6f75726e616c2d666f6c646572 = service change journal folder refused { $path }: managed
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e66696c652e6d616e61676564_v696e7374616c6c = service install refused { $path }: managed
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e66696c652e6d616e61676564_v6f706572617465 = service operate refused { $path }: managed
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e66696c652e6d616e61676564_v72657374617274 = service restart refused { $path }: managed
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e66696c652e6d616e61676564_v726f7574652d726570616972 = service route repair refused { $path }: managed
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e66696c652e6d616e61676564_v737461747573 = service status refused { $path }: managed
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e66696c652e6d616e61676564_v73746f70 = service stop refused { $path }: managed
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e66696c652e6d616e61676564_v756e696e7374616c6c = service uninstall refused { $path }: managed
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e66696c652e756e6b6e6f776e_v6368616e67652d6a6f75726e616c2d666f6c646572 = service change journal folder refused { $path }: could not verify the service file: { $cause }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e66696c652e756e6b6e6f776e_v696e7374616c6c = service install refused { $path }: could not verify the service file: { $cause }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e66696c652e756e6b6e6f776e_v6f706572617465 = service operate refused { $path }: could not verify the service file: { $cause }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e66696c652e756e6b6e6f776e_v72657374617274 = service restart refused { $path }: could not verify the service file: { $cause }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e66696c652e756e6b6e6f776e_v726f7574652d726570616972 = service route repair refused { $path }: could not verify the service file: { $cause }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e66696c652e756e6b6e6f776e_v737461747573 = service status refused { $path }: could not verify the service file: { $cause }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e66696c652e756e6b6e6f776e_v73746f70 = service stop refused { $path }: could not verify the service file: { $cause }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e66696c652e756e6b6e6f776e_v756e696e7374616c6c = service uninstall refused { $path }: could not verify the service file: { $cause }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e696e636f6d706c6574652e73797374656d642e70726f70657274792e736574 = incomplete { "systemd" } property set
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e696e73706563742e6c61756e6368642e6469726563746f7279 = inspect { "launchd" } directory: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e696e73706563742e736572766963652e6469726563746f7279 = inspect service directory: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e696e73706563742e736572766963652e6865616c74682e6469726563746f7279 = inspect service health directory: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e696e73706563742e736572766963652e6a6f75726e616c2e726f6f74 = inspect service journal root: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e696e73706563742e7374616c652e6c61756e6368642e756e6974 = inspect stale { "launchd" } unit: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e696e7374616c6c6174696f6e2e6368616e6765642e7768696c652e77616974696e672e666f722e7468652e6e65772e6a6f75726e616c2e666f6c646572 = installation changed while waiting for the new journal folder
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e6c61756e6368642e61636365707465642e7468652e756e6c6f61642e726571756573742e6275742e7468652e736572766963652e6973 = { "launchd" } accepted the unload request, but the service is still present
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e6c61756e6368642e6469726563746f72792e69732e6e6f742e612e7265616c2e6469726563746f7279 = { "launchd" } directory is not a real directory
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e6c61756e6368642e6f62736572766174696f6e2e7761732e6e6f742e757466 = { "launchd" } observation was not UTF-8
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e6c61756e6368642e6f6d69747465642e6f722e6d616c666f726d65642e617267756d656e7473 = { "launchd" } omitted or malformed arguments
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e6c61756e6368642e6f6d69747465642e7468652e72756e74696d652e7374617465 = { "launchd" } omitted the runtime state
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e6d616c666f726d65642e73797374656d642e70726f7065727479 = malformed { "systemd" } property
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e6d616e616765722e64697361626c652e73657276696365 = disable service failed: { $result }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e6d616e616765722e64697361626c652e7374616c652e73657276696365 = disable stale service failed: { $result }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e6d616e616765722e656e61626c652e73657276696365 = enable service failed: { $result }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e6d616e616765722e6c6f61642e696e7374616c6c65642e73657276696365 = load installed service failed: { $result }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e6d616e616765722e6c6f61642e73657276696365 = load service failed: { $result }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e6d616e616765722e6c6f61642e736572766963652e61667465722e6368616e67696e672e6a6f75726e616c2e666f6c646572 = load service after changing journal folder failed: { $result }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e6d616e616765722e72656c6f61642e736572766963652e61667465722e6368616e67696e672e6a6f75726e616c2e666f6c646572 = reload service after changing journal folder failed: { $result }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e6d616e616765722e72656c6f61642e73797374656d64 = reload systemd failed: { $result }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e6d616e616765722e72656c6f61642e73797374656d642e666f722e726f7574652e726570616972 = reload systemd for route repair failed: { $result }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e6d616e616765722e726571756573742e6c61756e6368642e756e6c6f6164 = request launchd unload failed: { $result }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e6d616e616765722e726573746172742e73657276696365 = restart service failed: { $result }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e6d616e616765722e726573746172742e736572766963652e666f722e726f7574652e726570616972 = restart service for route repair failed: { $result }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e6d616e616765722e73746172742e61667465722e6368616e67696e672e6a6f75726e616c2e666f6c646572 = start after changing journal folder failed: { $result }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e6d616e616765722e73746172742e73657276696365 = start service failed: { $result }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e6d616e616765722e73746f702e73657276696365 = stop service failed: { $result }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e6d616e616765722e73746f702e736572766963652e6265666f72652e6368616e67696e672e6a6f75726e616c2e666f6c646572 = stop service before changing journal folder failed: { $result }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e6d616e616765722e73746f702e736572766963652e6265666f72652e72657374617274 = stop service before restart failed: { $result }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e6d616e616765722e73746f702e7374616c652e73657276696365 = stop stale service failed: { $result }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e6d616e616765722e756e6c6f61642e7374616c652e6c61756e6368642e73657276696365 = unload stale launchd service failed: { $result }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e6d616e616765722e756e6c6f61642e7374616c652e73657276696365 = unload stale service failed: { $result }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e6d65746164617461 = metadata: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e6f70656e2e796f75722e6a6f75726e616c = open your journal: { $url }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e6f70656e2e796f75722e6a6f75726e616c2e736f6c73746f6e652e6a6f75726e616c2e6f70656e = open your journal: { "solstone journal open" }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e70617273652e7374616c652e6c61756e6368642e756e6974 = parse stale { "launchd" } unit: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e706f72742e696e76616c6964 = error: invalid port '{ $value }'
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e7072657365727665642e736572766963652e756e6974 = preserved service unit { $path }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e72656164 = read: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e72656164792e74696d656f7574 = service did not become ready within 120 seconds
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e7265636865636b2e7374616c652e6c61756e6368642e756e6974 = recheck stale { "launchd" } unit: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e612e646966666572656e742e756e69742e616e73776572732e746f2e746869732e6e616d65_v6368616e67652d6a6f75726e616c2d666f6c646572 = service change journal folder refused: a different unit answers to this name. journal will not overwrite it. If that is deliberate, finish the change journal folder yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e612e646966666572656e742e756e69742e616e73776572732e746f2e746869732e6e616d65_v636c65616e2d7374616c652d6c61756e6368642d73657276696365 = service clean stale launchd service refused: a different unit answers to this name. journal will not overwrite it. If that is deliberate, finish the clean stale launchd service yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e612e646966666572656e742e756e69742e616e73776572732e746f2e746869732e6e616d65_v696e7374616c6c = service install refused: a different unit answers to this name. journal will not overwrite it. If that is deliberate, finish the install yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e612e646966666572656e742e756e69742e616e73776572732e746f2e746869732e6e616d65_v6f706572617465 = service operate refused: a different unit answers to this name. journal will not overwrite it. If that is deliberate, finish the operate yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e612e646966666572656e742e756e69742e616e73776572732e746f2e746869732e6e616d65_v73746172742d61667465722d6368616e67696e672d6a6f75726e616c2d666f6c646572 = service start after changing journal folder refused: a different unit answers to this name. journal will not overwrite it. If that is deliberate, finish the start after changing journal folder yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e612e646966666572656e742e756e69742e616e73776572732e746f2e746869732e6e616d65_v737461747573 = service status refused: a different unit answers to this name. journal will not overwrite it. If that is deliberate, finish the status yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e612e646966666572656e742e756e69742e616e73776572732e746f2e746869732e6e616d65_v73746f70 = service stop refused: a different unit answers to this name. journal will not overwrite it. If that is deliberate, finish the stop yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e612e646966666572656e742e756e69742e616e73776572732e746f2e746869732e6e616d65_v756e696e7374616c6c = service uninstall refused: a different unit answers to this name. journal will not overwrite it. If that is deliberate, finish the uninstall yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e612e646966666572656e742e756e69742e616e73776572732e746f2e746869732e6e616d65_v7570 = service up refused: a different unit answers to this name. journal will not overwrite it. If that is deliberate, finish the up yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e612e646966666572656e742e756e69742e616e73776572732e746f2e746869732e6e616d65_v7665726966792d736572766963652d73746f70 = service verify service stop refused: a different unit answers to this name. journal will not overwrite it. If that is deliberate, finish the verify service stop yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e612e646966666572656e742e756e69742e616e73776572732e746f2e746869732e6e616d65_v7665726966792d756e6c6f6164 = service verify unload refused: a different unit answers to this name. journal will not overwrite it. If that is deliberate, finish the verify unload yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e6c61756e63682e6167656e742e69732e6e6f742e7468652e6f6e652e6a6f75726e616c2e6d616e61676573_v6368616e67652d6a6f75726e616c2d666f6c646572 = service change journal folder refused: the launch agent is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the change journal folder yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e6c61756e63682e6167656e742e69732e6e6f742e7468652e6f6e652e6a6f75726e616c2e6d616e61676573_v636c65616e2d7374616c652d6c61756e6368642d73657276696365 = service clean stale launchd service refused: the launch agent is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the clean stale launchd service yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e6c61756e63682e6167656e742e69732e6e6f742e7468652e6f6e652e6a6f75726e616c2e6d616e61676573_v696e7374616c6c = service install refused: the launch agent is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the install yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e6c61756e63682e6167656e742e69732e6e6f742e7468652e6f6e652e6a6f75726e616c2e6d616e61676573_v6f706572617465 = service operate refused: the launch agent is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the operate yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e6c61756e63682e6167656e742e69732e6e6f742e7468652e6f6e652e6a6f75726e616c2e6d616e61676573_v73746172742d61667465722d6368616e67696e672d6a6f75726e616c2d666f6c646572 = service start after changing journal folder refused: the launch agent is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the start after changing journal folder yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e6c61756e63682e6167656e742e69732e6e6f742e7468652e6f6e652e6a6f75726e616c2e6d616e61676573_v737461747573 = service status refused: the launch agent is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the status yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e6c61756e63682e6167656e742e69732e6e6f742e7468652e6f6e652e6a6f75726e616c2e6d616e61676573_v73746f70 = service stop refused: the launch agent is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the stop yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e6c61756e63682e6167656e742e69732e6e6f742e7468652e6f6e652e6a6f75726e616c2e6d616e61676573_v756e696e7374616c6c = service uninstall refused: the launch agent is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the uninstall yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e6c61756e63682e6167656e742e69732e6e6f742e7468652e6f6e652e6a6f75726e616c2e6d616e61676573_v7570 = service up refused: the launch agent is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the up yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e6c61756e63682e6167656e742e69732e6e6f742e7468652e6f6e652e6a6f75726e616c2e6d616e61676573_v7665726966792d736572766963652d73746f70 = service verify service stop refused: the launch agent is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the verify service stop yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e6c61756e63682e6167656e742e69732e6e6f742e7468652e6f6e652e6a6f75726e616c2e6d616e61676573_v7665726966792d756e6c6f6164 = service verify unload refused: the launch agent is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the verify unload yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e6c61756e63682e6167656e742e732e70726f6772616d2e69732e6e6f742e612e6a6f75726e616c_v6368616e67652d6a6f75726e616c2d666f6c646572 = service change journal folder refused: the launch agent's program is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the change journal folder yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e6c61756e63682e6167656e742e732e70726f6772616d2e69732e6e6f742e612e6a6f75726e616c_v636c65616e2d7374616c652d6c61756e6368642d73657276696365 = service clean stale launchd service refused: the launch agent's program is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the clean stale launchd service yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e6c61756e63682e6167656e742e732e70726f6772616d2e69732e6e6f742e612e6a6f75726e616c_v696e7374616c6c = service install refused: the launch agent's program is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the install yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e6c61756e63682e6167656e742e732e70726f6772616d2e69732e6e6f742e612e6a6f75726e616c_v6f706572617465 = service operate refused: the launch agent's program is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the operate yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e6c61756e63682e6167656e742e732e70726f6772616d2e69732e6e6f742e612e6a6f75726e616c_v73746172742d61667465722d6368616e67696e672d6a6f75726e616c2d666f6c646572 = service start after changing journal folder refused: the launch agent's program is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the start after changing journal folder yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e6c61756e63682e6167656e742e732e70726f6772616d2e69732e6e6f742e612e6a6f75726e616c_v737461747573 = service status refused: the launch agent's program is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the status yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e6c61756e63682e6167656e742e732e70726f6772616d2e69732e6e6f742e612e6a6f75726e616c_v73746f70 = service stop refused: the launch agent's program is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the stop yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e6c61756e63682e6167656e742e732e70726f6772616d2e69732e6e6f742e612e6a6f75726e616c_v756e696e7374616c6c = service uninstall refused: the launch agent's program is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the uninstall yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e6c61756e63682e6167656e742e732e70726f6772616d2e69732e6e6f742e612e6a6f75726e616c_v7570 = service up refused: the launch agent's program is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the up yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e6c61756e63682e6167656e742e732e70726f6772616d2e69732e6e6f742e612e6a6f75726e616c_v7665726966792d736572766963652d73746f70 = service verify service stop refused: the launch agent's program is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the verify service stop yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e6c61756e63682e6167656e742e732e70726f6772616d2e69732e6e6f742e612e6a6f75726e616c_v7665726966792d756e6c6f6164 = service verify unload refused: the launch agent's program is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the verify unload yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e636172726965732e612e64726f702e696e2e6a6f75726e616c2e6469642e6e6f74_v6368616e67652d6a6f75726e616c2d666f6c646572 = service change journal folder refused: the unit carries a drop-in journal did not write. journal will not overwrite it. If that is deliberate, finish the change journal folder yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e636172726965732e612e64726f702e696e2e6a6f75726e616c2e6469642e6e6f74_v636c65616e2d7374616c652d6c61756e6368642d73657276696365 = service clean stale launchd service refused: the unit carries a drop-in journal did not write. journal will not overwrite it. If that is deliberate, finish the clean stale launchd service yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e636172726965732e612e64726f702e696e2e6a6f75726e616c2e6469642e6e6f74_v696e7374616c6c = service install refused: the unit carries a drop-in journal did not write. journal will not overwrite it. If that is deliberate, finish the install yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e636172726965732e612e64726f702e696e2e6a6f75726e616c2e6469642e6e6f74_v6f706572617465 = service operate refused: the unit carries a drop-in journal did not write. journal will not overwrite it. If that is deliberate, finish the operate yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e636172726965732e612e64726f702e696e2e6a6f75726e616c2e6469642e6e6f74_v73746172742d61667465722d6368616e67696e672d6a6f75726e616c2d666f6c646572 = service start after changing journal folder refused: the unit carries a drop-in journal did not write. journal will not overwrite it. If that is deliberate, finish the start after changing journal folder yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e636172726965732e612e64726f702e696e2e6a6f75726e616c2e6469642e6e6f74_v737461747573 = service status refused: the unit carries a drop-in journal did not write. journal will not overwrite it. If that is deliberate, finish the status yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e636172726965732e612e64726f702e696e2e6a6f75726e616c2e6469642e6e6f74_v73746f70 = service stop refused: the unit carries a drop-in journal did not write. journal will not overwrite it. If that is deliberate, finish the stop yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e636172726965732e612e64726f702e696e2e6a6f75726e616c2e6469642e6e6f74_v756e696e7374616c6c = service uninstall refused: the unit carries a drop-in journal did not write. journal will not overwrite it. If that is deliberate, finish the uninstall yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e636172726965732e612e64726f702e696e2e6a6f75726e616c2e6469642e6e6f74_v7570 = service up refused: the unit carries a drop-in journal did not write. journal will not overwrite it. If that is deliberate, finish the up yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e636172726965732e612e64726f702e696e2e6a6f75726e616c2e6469642e6e6f74_v7665726966792d736572766963652d73746f70 = service verify service stop refused: the unit carries a drop-in journal did not write. journal will not overwrite it. If that is deliberate, finish the verify service stop yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e636172726965732e612e64726f702e696e2e6a6f75726e616c2e6469642e6e6f74_v7665726966792d756e6c6f6164 = service verify unload refused: the unit carries a drop-in journal did not write. journal will not overwrite it. If that is deliberate, finish the verify unload yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e66696c652e69732e6e6f742e7468652e6f6e652e6a6f75726e616c2e6d616e61676573_v6368616e67652d6a6f75726e616c2d666f6c646572 = service change journal folder refused: the unit file is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the change journal folder yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e66696c652e69732e6e6f742e7468652e6f6e652e6a6f75726e616c2e6d616e61676573_v636c65616e2d7374616c652d6c61756e6368642d73657276696365 = service clean stale launchd service refused: the unit file is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the clean stale launchd service yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e66696c652e69732e6e6f742e7468652e6f6e652e6a6f75726e616c2e6d616e61676573_v696e7374616c6c = service install refused: the unit file is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the install yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e66696c652e69732e6e6f742e7468652e6f6e652e6a6f75726e616c2e6d616e61676573_v6f706572617465 = service operate refused: the unit file is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the operate yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e66696c652e69732e6e6f742e7468652e6f6e652e6a6f75726e616c2e6d616e61676573_v73746172742d61667465722d6368616e67696e672d6a6f75726e616c2d666f6c646572 = service start after changing journal folder refused: the unit file is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the start after changing journal folder yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e66696c652e69732e6e6f742e7468652e6f6e652e6a6f75726e616c2e6d616e61676573_v737461747573 = service status refused: the unit file is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the status yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e66696c652e69732e6e6f742e7468652e6f6e652e6a6f75726e616c2e6d616e61676573_v73746f70 = service stop refused: the unit file is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the stop yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e66696c652e69732e6e6f742e7468652e6f6e652e6a6f75726e616c2e6d616e61676573_v756e696e7374616c6c = service uninstall refused: the unit file is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the uninstall yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e66696c652e69732e6e6f742e7468652e6f6e652e6a6f75726e616c2e6d616e61676573_v7570 = service up refused: the unit file is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the up yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e66696c652e69732e6e6f742e7468652e6f6e652e6a6f75726e616c2e6d616e61676573_v7665726966792d736572766963652d73746f70 = service verify service stop refused: the unit file is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the verify service stop yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e66696c652e69732e6e6f742e7468652e6f6e652e6a6f75726e616c2e6d616e61676573_v7665726966792d756e6c6f6164 = service verify unload refused: the unit file is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the verify unload yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e69732e696e2e616e2e756e65787065637465642e7374617465_v6368616e67652d6a6f75726e616c2d666f6c646572 = service change journal folder refused: the unit is in an unexpected state. journal will not overwrite it. If that is deliberate, finish the change journal folder yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e69732e696e2e616e2e756e65787065637465642e7374617465_v636c65616e2d7374616c652d6c61756e6368642d73657276696365 = service clean stale launchd service refused: the unit is in an unexpected state. journal will not overwrite it. If that is deliberate, finish the clean stale launchd service yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e69732e696e2e616e2e756e65787065637465642e7374617465_v696e7374616c6c = service install refused: the unit is in an unexpected state. journal will not overwrite it. If that is deliberate, finish the install yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e69732e696e2e616e2e756e65787065637465642e7374617465_v6f706572617465 = service operate refused: the unit is in an unexpected state. journal will not overwrite it. If that is deliberate, finish the operate yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e69732e696e2e616e2e756e65787065637465642e7374617465_v73746172742d61667465722d6368616e67696e672d6a6f75726e616c2d666f6c646572 = service start after changing journal folder refused: the unit is in an unexpected state. journal will not overwrite it. If that is deliberate, finish the start after changing journal folder yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e69732e696e2e616e2e756e65787065637465642e7374617465_v737461747573 = service status refused: the unit is in an unexpected state. journal will not overwrite it. If that is deliberate, finish the status yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e69732e696e2e616e2e756e65787065637465642e7374617465_v73746f70 = service stop refused: the unit is in an unexpected state. journal will not overwrite it. If that is deliberate, finish the stop yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e69732e696e2e616e2e756e65787065637465642e7374617465_v756e696e7374616c6c = service uninstall refused: the unit is in an unexpected state. journal will not overwrite it. If that is deliberate, finish the uninstall yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e69732e696e2e616e2e756e65787065637465642e7374617465_v7570 = service up refused: the unit is in an unexpected state. journal will not overwrite it. If that is deliberate, finish the up yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e69732e696e2e616e2e756e65787065637465642e7374617465_v7665726966792d736572766963652d73746f70 = service verify service stop refused: the unit is in an unexpected state. journal will not overwrite it. If that is deliberate, finish the verify service stop yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e69732e696e2e616e2e756e65787065637465642e7374617465_v7665726966792d756e6c6f6164 = service verify unload refused: the unit is in an unexpected state. journal will not overwrite it. If that is deliberate, finish the verify unload yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e732e6578656373746172742e69732e6e6f742e612e6a6f75726e616c2e6c61756e63686572_v6368616e67652d6a6f75726e616c2d666f6c646572 = service change journal folder refused: the unit's ExecStart is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the change journal folder yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e732e6578656373746172742e69732e6e6f742e612e6a6f75726e616c2e6c61756e63686572_v636c65616e2d7374616c652d6c61756e6368642d73657276696365 = service clean stale launchd service refused: the unit's ExecStart is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the clean stale launchd service yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e732e6578656373746172742e69732e6e6f742e612e6a6f75726e616c2e6c61756e63686572_v696e7374616c6c = service install refused: the unit's ExecStart is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the install yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e732e6578656373746172742e69732e6e6f742e612e6a6f75726e616c2e6c61756e63686572_v6f706572617465 = service operate refused: the unit's ExecStart is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the operate yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e732e6578656373746172742e69732e6e6f742e612e6a6f75726e616c2e6c61756e63686572_v73746172742d61667465722d6368616e67696e672d6a6f75726e616c2d666f6c646572 = service start after changing journal folder refused: the unit's ExecStart is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the start after changing journal folder yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e732e6578656373746172742e69732e6e6f742e612e6a6f75726e616c2e6c61756e63686572_v737461747573 = service status refused: the unit's ExecStart is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the status yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e732e6578656373746172742e69732e6e6f742e612e6a6f75726e616c2e6c61756e63686572_v73746f70 = service stop refused: the unit's ExecStart is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the stop yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e732e6578656373746172742e69732e6e6f742e612e6a6f75726e616c2e6c61756e63686572_v756e696e7374616c6c = service uninstall refused: the unit's ExecStart is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the uninstall yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e732e6578656373746172742e69732e6e6f742e612e6a6f75726e616c2e6c61756e63686572_v7570 = service up refused: the unit's ExecStart is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the up yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e732e6578656373746172742e69732e6e6f742e612e6a6f75726e616c2e6c61756e63686572_v7665726966792d736572766963652d73746f70 = service verify service stop refused: the unit's ExecStart is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the verify service stop yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e7468652e756e69742e732e6578656373746172742e69732e6e6f742e612e6a6f75726e616c2e6c61756e63686572_v7665726966792d756e6c6f6164 = service verify unload refused: the unit's ExecStart is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the verify unload yourself -- on Linux: `{ "systemctl --user daemon-reload && systemctl --user restart solstone.service" }` -- then confirm the running build with `{ "readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe" }`
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e756e6b6e6f776e_v6368616e67652d6a6f75726e616c2d666f6c646572 = service change journal folder could not check the service registration: { $cause }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e756e6b6e6f776e_v636c65616e2d7374616c652d6c61756e6368642d73657276696365 = service clean stale launchd service could not check the service registration: { $cause }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e756e6b6e6f776e_v696e7374616c6c = service install could not check the service registration: { $cause }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e756e6b6e6f776e_v6f706572617465 = service operate could not check the service registration: { $cause }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e756e6b6e6f776e_v73746172742d61667465722d6368616e67696e672d6a6f75726e616c2d666f6c646572 = service start after changing journal folder could not check the service registration: { $cause }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e756e6b6e6f776e_v737461747573 = service status could not check the service registration: { $cause }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e756e6b6e6f776e_v73746f70 = service stop could not check the service registration: { $cause }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e756e6b6e6f776e_v756e696e7374616c6c = service uninstall could not check the service registration: { $cause }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e756e6b6e6f776e_v7570 = service up could not check the service registration: { $cause }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e756e6b6e6f776e_v7665726966792d736572766963652d73746f70 = service verify service stop could not check the service registration: { $cause }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726567697374726174696f6e2e756e6b6e6f776e_v7665726966792d756e6c6f6164 = service verify unload could not check the service registration: { $cause }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e72656d6f76652e736572766963652e756e6974 = remove service unit: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e72656d6f76652e7374616c652e6c61756e6368642e756e6974 = remove stale { "launchd" } unit: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e72656d6f766564 = removed { $path }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e72656d6f7665642e7374616c652e6c61756e6368642e706c697374 = removed stale { "launchd" } plist { $path }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e72656d6f7665642e7374616c652e736572766963652e726567697374726174696f6e = removed stale service registration
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726f7574652e7265706169722e736572766963652e6c61756e636865722e69732e6e6f742e616e2e65786563757461626c652e726567756c6172 = route repair service launcher is not an executable regular file
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726f7574652e7265706169722e736572766963652e6c61756e636865722e69732e756e617661696c61626c65 = route repair service launcher is unavailable: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726f7574652e7265706169722e736572766963652e756e69742e6861732e616e2e696e76616c69642e636f6d6d616e642e7461696c = route repair service unit has an invalid command tail
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726f7574652e7265706169722e736572766963652e756e69742e6861732e616e2e696e76616c69642e657865637374617274 = route repair service unit has an invalid { "ExecStart" }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726f7574652e7265706169722e736572766963652e756e69742e6861732e6e6f2e657865637374617274 = route repair service unit has no { "ExecStart" }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e726f7574652e7265706169722e736572766963652e756e69742e69732e6e6f742e757466 = route repair service unit is not UTF-8
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e72756e2e736f6c73746f6e652e6a6f75726e616c2e73657475702e6f722e736f6c73746f6e652e6a6f75726e616c2e736572766963652e696e7374616c6c = run '{ "solstone journal setup" }' or '{ "solstone journal service install" }' to install it.
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e7363616e2e6c61756e6368642e6469726563746f7279 = scan { "launchd" } directory: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e7363616e2e6c61756e6368642e656e747279 = scan { "launchd" } entry: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e626563616d652e6163746976652e647572696e672e7468652e6a6f75726e616c2e666f6c6465722e6368616e6765 = service became active during the journal-folder change
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e636f6d6d616e642e6f75747075742e65786365656465642e6b6962 = service command output exceeded 256 KiB
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e636f6d6d616e642e6f75747075742e6661696c6564 = service command output failed: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e636f6d6d616e642e737061776e2e6661696c6564 = service command spawn failed: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e636f6d6d616e642e74696d65642e6f7574 = service command timed out
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e636f6d6d616e642e776169742e6661696c6564 = service command wait failed: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e6469726563746f72792e636f6e7461696e732e756e736166652e636f6d706f6e656e74 = service directory contains unsafe component
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e6469726563746f72792e657363617065642e686f6d65 = service directory escaped home
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e656e61626c6564 = service enabled
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e6865616c74682e706174682e69732e6e6f742e612e7265616c2e6469726563746f7279 = service health path is not a real directory
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e686f6d65 = service home: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e696e7374616c6c2e636f756c642e6e6f742e7265736f6c76652e6a6f75726e616c = service install: could not resolve journal
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e696e7374616c6c2e63757272656e742e65786563757461626c652e6861732e6e6f2e6469726563746f7279 = service install: current executable has no directory
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e696e7374616c6c2e696e76616c69642e696e7374616c6c6174696f6e2e6964656e746974792e617267756d656e7473 = service install: invalid installation identity arguments: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e696e7374616c6c2e72657175697265732e696e7374616c6c6174696f6e2e6964656e746974792e617267756d656e7473 = service install requires installation identity arguments
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e696e7374616c6c6564 = service: installed
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e6a6f75726e616c2e726f6f742e69732e6e6f742e612e7265616c2e6469726563746f7279 = service journal root is not a real directory
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e6c61756e636865722e69732e6e6f742e616e2e65786563757461626c652e726567756c61722e66696c65 = service launcher is not an executable regular file
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e6c61756e636865722e69732e756e617661696c61626c65 = service launcher is unavailable: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e6c6f616465642e696e746f2e6c61756e636864 = service loaded into { "launchd" }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e6c6f636b = service lock: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e6d616e6167656d656e742e69732e737570706f727465642e6f6e6c792e6f6e2e6c696e75782e616e642e6d6163 = service management is supported only on linux and mac
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e6e6f742e696e7374616c6c6564 = service: not installed
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e6e6f742e696e7374616c6c65642e72756e2e736f6c73746f6e652e6a6f75726e616c2e736572766963652e696e7374616c6c2e6669727374 = service not installed. run '{ "solstone journal service install" }' first.
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e706174682e69732e6e6f742e757466 = service path is not UTF-8
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e726567697374726174696f6e2e6861732e6e6f2e6d61746368696e672e6d616e616765642e66696c65 = service registration has no matching managed file
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e726567697374726174696f6e2e6861732e6e6f2e76616c69642e706f7274 = service registration has no valid port
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e726573746172746564 = service restarted
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e72756e74696d652e73746174652e7761732e756e6578706563746564_v6368616e67652d6a6f75726e616c2d666f6c646572 = service change journal folder runtime state was unexpected
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e72756e74696d652e73746174652e7761732e756e6578706563746564_v636c65616e2d7374616c652d6c61756e6368642d73657276696365 = service clean stale launchd service runtime state was unexpected
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e72756e74696d652e73746174652e7761732e756e6578706563746564_v696e7374616c6c = service install runtime state was unexpected
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e72756e74696d652e73746174652e7761732e756e6578706563746564_v6f706572617465 = service operate runtime state was unexpected
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e72756e74696d652e73746174652e7761732e756e6578706563746564_v73746172742d61667465722d6368616e67696e672d6a6f75726e616c2d666f6c646572 = service start after changing journal folder runtime state was unexpected
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e72756e74696d652e73746174652e7761732e756e6578706563746564_v737461747573 = service status runtime state was unexpected
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e72756e74696d652e73746174652e7761732e756e6578706563746564_v73746f70 = service stop runtime state was unexpected
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e72756e74696d652e73746174652e7761732e756e6578706563746564_v756e696e7374616c6c = service uninstall runtime state was unexpected
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e72756e74696d652e73746174652e7761732e756e6578706563746564_v7570 = service up runtime state was unexpected
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e72756e74696d652e73746174652e7761732e756e6578706563746564_v7665726966792d736572766963652d73746f70 = service verify service stop runtime state was unexpected
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e72756e74696d652e73746174652e7761732e756e6578706563746564_v7665726966792d756e6c6f6164 = service verify unload runtime state was unexpected
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e73746172746564 = service started
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e7374646572722e7265616465722e70616e69636b6564 = service stderr reader panicked
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e7374646572722e756e617661696c61626c65 = service stderr unavailable
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e7374646f75742e7265616465722e70616e69636b6564 = service stdout reader panicked
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e7374646f75742e756e617661696c61626c65 = service stdout unavailable
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e73746f70706564 = service stopped
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e73746f707065642e6275742e6974732e72656164792e73746174652e636f756c642e6e6f742e6265 = service stopped, but its ready state could not be cleared: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e756e69742e6368616e6765642e6265666f72652e7075626c69636174696f6e2e6e6f7468696e672e7761732e7772697474656e = service unit changed before publication; nothing was written
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e756e69742e6368616e6765642e647572696e672e6f7065726174696f6e2e7072657365727665642e7265706c6163656d656e74 = service unit changed during operation; preserved replacement
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e756e69742e6861732e6e6f2e706172656e74 = service unit has no parent
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e756e69742e6861732e6e6f2e747275737465642e686f6d652e616e636573746f72 = service unit has no trusted home ancestor
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e756e69742e7075626c69636174696f6e2e6661696c6564 = service unit publication failed: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e756e69742e7075626c69736865642e776974682e756e6365727461696e2e6475726162696c697479 = service unit published with uncertain durability: { $other }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e736572766963652e7761732e6e6f742e696e7374616c6c6564 = service was not installed
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e7369676e2e696e2e696e76616c6964 = error: { "--initial-start-at-sign-in" } expects { "on" } or { "off" }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e7374616c652e6c61756e6368642e706c6973742e6368616e6765642e647572696e672e636c65616e75702e707265736572766564 = stale { "launchd" } plist changed during cleanup; preserved { $path }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e7374616c652e6c61756e6368642e756e69742e6861732e612e666f726569676e2e6c6162656c = stale { "launchd" } unit has a foreign label
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e7374616c652e6c61756e6368642e756e69742e6861732e636f6e666c696374696e672e70726f6772616d2e6669656c6473 = stale { "launchd" } unit has conflicting program fields
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e7374616c652e6c61756e6368642e756e69742e6861732e6e6f2e6c6162656c = stale { "launchd" } unit has no label
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e7374616c652e6c61756e6368642e756e69742e6861732e6e6f2e6c61756e63686572 = stale { "launchd" } unit has no launcher
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e7374616c652e6c61756e6368642e756e69742e69732e666f726569676e2e6f722e756e7265636f676e697a6564 = stale { "launchd" } unit is foreign or unrecognized
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e7374616c652e6c61756e6368642e756e69742e69732e6e6f742e612e64696374696f6e617279 = stale { "launchd" } unit is not a dictionary
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e73746174652e72756e6e696e67 = state: running ({ $manager })
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e73746174652e73746f70706564 = state: stopped
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e737562636f6d6d616e642e756e6b6e6f776e = unknown subcommand: { $value }; available: { "install, uninstall, start, stop, restart, status, logs" }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e73797374656d642e6f62736572766174696f6e2e7761732e6e6f742e757466 = { "systemd" } observation was not UTF-8
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e7468652e70726576696f75732e736572766963652e6469642e6e6f742e73746f702e6265666f72652e7265706c6163656d656e74 = the previous service did not stop before replacement
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e7468652e736f6c73746f6e652e65786563757461626c652e6861732e6e6f2e636f6e7461696e696e672e6469726563746f7279 = the { "solstone" } executable has no containing directory
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e756e69742e657863656564732e6d6962 = unit exceeds 1 MiB
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e756e69742e706174682e6861732e6e6f2e747275737465642e686f6d652e616e636573746f72 = unit path has no trusted home ancestor
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e756e7265636f676e697a65642e73797374656d642e6163746976652e73756273746174652e70616972 = unrecognized { "systemd" } active/substate pair
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e756e736166652e736572766963652e6469726563746f7279 = unsafe service directory: { $path }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e7573616765 = Usage: { "solstone journal service <install|uninstall|start|stop|restart|status|logs>" }{ "\u000a" }{ "       " }{ "solstone journal service install [--port PORT] [--initial-start-at-sign-in {on,off}]" }{ "  " }(default: 5015; { "Windows" } only){ "\u000a" }{ "       " }{ "solstone journal service restart [--if-installed]" }{ "  " }(restart; { "--if-installed" } noops if not installed){ "\u000a" }{ "       " }{ "solstone journal up" }{ "                             " }(start + status; service must be installed){ "\u000a" }{ "       " }{ "solstone journal down" }{ "                           " }(stop){ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e77696e646f77732e6f6e6c79 = this service command is only available on Windows
+
+m6a6f75726e616c2e636c692e686f73742e736572766963652e77726f7465 = wrote { $path }
+
+m6a6f75726e616c2e636c692e686f73742e73657474696e67732e62696e64 = convey{ "\u000a" }{ "  " }bind:{ "              " }{ $address }
+
+m6a6f75726e616c2e636c692e686f73742e73657474696e67732e636f6e7665792e6572726f722e617267756d656e742e636f6e7665792e636f6d6d616e642e696e76616c69642e63686f6963652e63686f6f73652e66726f6d2e737461747573 = { "solstone journal settings convey" }: error: argument { "convey_command" }: invalid choice: '{ $value }' (choose from { "status" })
+
+m6a6f75726e616c2e636c692e686f73742e73657474696e67732e636f6e7665792e68656c70 = usage: { "solstone journal settings convey [-h] {status} ..." }{ "\u000a" }{ "\u000a" }positional arguments:{ "\u000a" }{ "  " }{ "{status}" }{ "\u000a" }{ "    " }{ "status" }{ "    " }Show convey bind and dashboard { "URL" } status{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "  " }show this help message and exit{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e73657474696e67732e636f6e7665792e7573616765 = usage: { "solstone journal settings convey [-h] {status} ..." }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e73657474696e67732e6572726f722e617267756d656e742e73656374696f6e2e696e76616c69642e63686f6963652e63686f6f73652e66726f6d2e636f6e766579 = { "solstone journal settings" }: error: argument { "section" }: invalid choice: '{ $value }' (choose from { "convey" })
+
+m6a6f75726e616c2e636c692e686f73742e73657474696e67732e6572726f722e756e7265636f676e697a65642e617267756d656e7473 = { "solstone journal settings" }: error: unrecognized arguments: { $value }
+
+m6a6f75726e616c2e636c692e686f73742e73657474696e67732e68656c70 = usage: { "solstone journal settings [-h] [-v] [-d] {convey} ..." }{ "\u000a" }{ "\u000a" }Manage local journal settings{ "\u000a" }{ "\u000a" }positional arguments:{ "\u000a" }{ "  " }{ "{convey}" }{ "\u000a" }{ "    " }{ "convey" }{ "       " }Manage convey settings{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "     " }show this help message and exit{ "\u000a" }{ "  " }{ "-v, --verbose" }{ "  " }Enable verbose output{ "\u000a" }{ "  " }{ "-d, --debug" }{ "    " }Enable debug logging{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e73657474696e67732e6f70656e = open it with:{ "      " }{ "solstone journal open" }
+
+m6a6f75726e616c2e636c692e686f73742e73657474696e67732e706f72742e72656164 = Error: { $path }: { $detail }
+
+m6a6f75726e616c2e636c692e686f73742e73657474696e67732e7374617475732e68656c70 = usage: { "solstone journal settings convey status [-h] [--json]" }{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "  " }show this help message and exit{ "\u000a" }{ "  " }{ "--json" }{ "      " }Print machine-readable status.{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e73657474696e67732e75726c = dashboard url:{ "     " }{ $url }
+
+m6a6f75726e616c2e636c692e686f73742e73657474696e67732e7573616765 = usage: { "solstone journal settings [-h] [-v] [-d] {convey} ..." }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e73657475702e6572726f72 = { "solstone journal setup" }: error: { $detail }
+
+m6a6f75726e616c2e636c692e686f73742e73657475702e7573616765 = usage: { "solstone journal setup [-h] [--journal PATH] [--port INT]" }{ "\u000a" }{ "                     " }{ "[--variant {auto,cpu,cuda,coreml}] [--step-timeout-seconds INT]" }{ "\u000a" }{ "                     " }{ "[-y] [--dry-run] [--jsonl] [--explain] [--skip-models]" }{ "\u000a" }{ "                     " }{ "[--skip-brain] [--skip-skills] [--skip-service] [--skip-wrapper]" }{ "\u000a" }{ "                     " }{ "[--skip-path]" }{ "\u000a" }{ "                     " }{ "[--accept-existing-journal] [--force] [--clean-uninstall]" }{ "\u000a" }{ "                     " }{ "[--initial-start-at-sign-in {on,off}]" } ({ "Windows" } only){ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e73706c2e68656c70 = usage: { "solstone journal spl [-h] [-v] [-d]" }{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "     " }show this help message and exit{ "\u000a" }{ "  " }{ "-v, --verbose" }{ "  " }Enable verbose output{ "\u000a" }{ "  " }{ "-d, --debug" }{ "    " }Enable debug logging{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e73706c2e736572766963652e73706c2e736572766963652e6661696c6564 = spl service failed: { $class }
+
+m6a6f75726e616c2e636c692e686f73742e73706c2e7573616765 = usage: { "solstone journal spl [-h] [-v] [-d]" }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e73746172742e68656c70 = usage: { "solstone journal start [-h] [--no-daily] [--no-cortex] [--no-spl]" }{ "\u000a" }{ "                     " }{ "[--no-convey] [--no-schedule]" }{ "\u000a" }{ "                     " }{ "[--hosted-parent] [--journal JOURNAL]" }{ "\u000a" }{ "                     " }{ "[--direct-port DIRECT_PORT] [-v] [-d]" }{ "\u000a" }{ "                     " }{ "[port]" }{ "\u000a" }{ "\u000a" }Monitor journal system health{ "\u000a" }{ "\u000a" }positional arguments:{ "\u000a" }{ "  " }{ "port" }{ "               " }{ "Convey" } port (0 = auto-select available port){ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "         " }show this help message and exit{ "\u000a" }{ "  " }{ "--no-daily" }{ "         " }Disable daily processing run at midnight{ "\u000a" }{ "  " }{ "--no-cortex" }{ "        " }Do not start the { "Cortex" } server (run it manually for{ "\u000a" }{ "                     " }debugging){ "\u000a" }{ "  " }{ "--no-spl" }{ "           " }Do not start the private network relay{ "\u000a" }{ "  " }{ "--no-convey" }{ "        " }Do not start the { "Convey" } web application{ "\u000a" }{ "  " }{ "--no-schedule" }{ "      " }Do not initialize or run the schedule engine{ "\u000a" }{ "  " }{ "--hosted-parent" }{ "    " }Require the direct parent process to remain live{ "\u000a" }{ "  " }{ "--journal JOURNAL" }{ "  " }Use this path as the journal root instead of normal{ "\u000a" }{ "                     " }journal resolution.{ "\u000a" }{ "  " }{ "--direct-port" } { "DIRECT_PORT" }{ "\u000a" }{ "                     " }Paired-device door port (default: 7657){ "\u000a" }{ "  " }{ "-v, --verbose" }{ "      " }Enable verbose output{ "\u000a" }{ "  " }{ "-d, --debug" }{ "        " }Enable debug logging{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e73746172742e7573616765 = usage: { "solstone journal start [-h] [--no-daily] [--no-cortex] [--no-spl]" }{ "\u000a" }{ "                     " }{ "[--no-convey] [--no-schedule]" }{ "\u000a" }{ "                     " }{ "[--hosted-parent] [--journal JOURNAL]" }{ "\u000a" }{ "                     " }{ "[--direct-port DIRECT_PORT] [-v] [-d]" }{ "\u000a" }{ "                     " }{ "[port]" }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e73757065727669736f722e61646d697373696f6e2e776169742e616374697665 = another { "solstone" } start is waiting after finding recent journal activity.{ "\u000a" }this start did not continue while that wait was active.{ "\u000a" }wait a moment, then try again.
+
+m6a6f75726e616c2e636c692e686f73742e73757065727669736f722e61646d697373696f6e2e776169742e7465726d696e616c = a recent heartbeat from another run is present.{ "\u000a" }the solstone app did not start while that heartbeat was still present.{ "\u000a" }wait a moment, then try again.
+
+m6a6f75726e616c2e636c692e686f73742e73757065727669736f722e61646d697373696f6e2e776169742e756e76657269666961626c65 = startup status couldn't be verified.{ "\u000a" }wait a moment, then try again.
+
+m6a6f75726e616c2e636c692e686f73742e73757065727669736f722e616c72656164792e72756e6e696e67 = your journal is already running.{ "\u000a" }{ "\u000a" }this start stepped aside so the running one is not disturbed. nothing needs doing.{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e73757065727669736f722e62696e64696e672e686f6d65 = home: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e73757065727669736f722e62696e64696e672e696e7374616c6c6174696f6e2e726f6f74 = installation root: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e73757065727669736f722e62696e64696e672e6a6f75726e616c2e746f6b656e = journal token: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e73757065727669736f722e62696e64696e672e6f776e65722e73746f72616765 = owner storage: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e73757065727669736f722e62696e64696e672e726f6f742e746f6b656e = root token: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e73757065727669736f722e62696e64696e672e73617665642e62696e64696e67 = saved binding: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e73757065727669736f722e62696e64696e672e756e7265616461626c65 = the saved installation binding could not be loaded
+
+m6a6f75726e616c2e636c692e686f73742e73757065727669736f722e68656c70 = usage: { "solstone journal supervisor [-h] [--no-daily] [--no-cortex] [--no-spl]" }{ "\u000a" }{ "                          " }{ "[--no-convey] [--no-schedule]" }{ "\u000a" }{ "                          " }{ "[--journal JOURNAL] [--direct-port DIRECT_PORT]" }{ "\u000a" }{ "                          " }{ "[-v] [-d]" }{ "\u000a" }{ "                          " }{ "[port]" }{ "\u000a" }{ "\u000a" }Monitor journal system health{ "\u000a" }{ "\u000a" }positional arguments:{ "\u000a" }{ "  " }{ "port" }{ "               " }{ "Convey" } port (0 = auto-select available port){ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "         " }show this help message and exit{ "\u000a" }{ "  " }{ "--no-daily" }{ "         " }Disable daily processing run at midnight{ "\u000a" }{ "  " }{ "--no-cortex" }{ "        " }Do not start the { "Cortex" } server (run it manually for{ "\u000a" }{ "                     " }debugging){ "\u000a" }{ "  " }{ "--no-spl" }{ "           " }Do not start the private network relay{ "\u000a" }{ "  " }{ "--no-convey" }{ "        " }Do not start the { "Convey" } web application{ "\u000a" }{ "  " }{ "--no-schedule" }{ "      " }Do not initialize or run the schedule engine{ "\u000a" }{ "  " }{ "--journal JOURNAL" }{ "  " }Use this path as the journal root instead of normal{ "\u000a" }{ "                     " }journal resolution.{ "\u000a" }{ "  " }{ "--direct-port" } { "DIRECT_PORT" }{ "\u000a" }{ "                     " }Paired-device door port (default: 7657){ "\u000a" }{ "  " }{ "-v, --verbose" }{ "      " }Enable verbose output{ "\u000a" }{ "  " }{ "-d, --debug" }{ "        " }Enable debug logging{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e73757065727669736f722e6a6f75726e616c2e70726f6772616d2e666f6c646572 = Reinstalling or uninstalling removes this program folder. Choose a journal location outside it. If your journal is already there, quit the journal app. If setup completed, run `{ "solstone journal service stop" }`, then `{ "solstone journal service uninstall" }` and wait for it to succeed. Move the whole journal folder outside the program folder before reinstalling or uninstalling, then select its new location with `{ "solstone journal setup --accept-existing-journal --journal \"D:\\journal\"" }`, replacing { "D:\\journal" } with its new location.
+
+m6a6f75726e616c2e636c692e686f73742e73757065727669736f722e6a6f75726e616c2e746f6b656e2e6d69736d61746368 = this installation couldn't be verified.{ "\u000a" }run `{ "solstone journal setup" }` to check it. if setup finishes successfully, try again.{ "\u000a" }details: the saved installation binding is for a different journal
+
+m6a6f75726e616c2e636c692e686f73742e73757065727669736f722e6c6966656379636c652e7265646972656374 = { $supervisor } is the server-launch command (takes a port). For lifecycle, use: { $service_verb }. Did you mean: { $requested } ?
+
+m6a6f75726e616c2e636c692e686f73742e73757065727669736f722e7265636f766572792e636c6f73696e67 = this start could not continue.{ "\u000a" }{ "\u000a" }the last run is still shutting down. wait a moment, then try again.{ "\u000a" }{ "\u000a" }your memories are untouched.{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e73757065727669736f722e7265636f766572792e636f6f7264696e61746f722e7265746972656d656e742e756e7665726966696564 = details: a helper process could not be confirmed stopped
+
+m6a6f75726e616c2e636c692e686f73742e73757065727669736f722e7265636f766572792e636f6f7264696e61746f722e73746f707065642e6265666f72652e7265616479 = details: a helper process stopped before it was ready
+
+m6a6f75726e616c2e636c692e686f73742e73757065727669736f722e7265636f766572792e6964656e746974792e65737461626c6973686d656e74 = details: a helper process could not be identified
+
+m6a6f75726e616c2e636c692e686f73742e73757065727669736f722e7265636f766572792e696e697469616c2e61646d697373696f6e2e68616e647368616b65 = details: a helper process did not answer in time
+
+m6a6f75726e616c2e636c692e686f73742e73757065727669736f722e7265636f766572792e6c61756e6368 = details: a helper process could not be started
+
+m6a6f75726e616c2e636c692e686f73742e73757065727669736f722e7265636f766572792e7265747279 = this start could not continue.{ "\u000a" }{ "\u000a" }wait a moment, then try again.{ "\u000a" }{ "\u000a" }your memories are untouched.{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e73757065727669736f722e73757065727669736f722e72756e74696d652e756e617661696c61626c65 = supervisor runtime unavailable: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e73757065727669736f722e73757065727669736f722e736572766963652e636170747572652e756e617661696c61626c65 = supervisor service capture unavailable: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e73757065727669736f722e7573616765 = usage: { "solstone journal supervisor [-h] [--no-daily] [--no-cortex] [--no-spl]" }{ "\u000a" }{ "                          " }{ "[--no-convey] [--no-schedule]" }{ "\u000a" }{ "                          " }{ "[--journal JOURNAL] [--direct-port DIRECT_PORT]" }{ "\u000a" }{ "                          " }{ "[-v] [-d]" }{ "\u000a" }{ "                          " }{ "[port]" }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e73757065727669736f722e796f75722e6a6f75726e616c2e63616e2e742e73746172742e626563617573652e616e6f746865722e6163636f756e742e6f6e2e74686973 = your journal can't start because another account on this computer is running its journal. one journal runs on a computer at a time, so yours can start once that account stops its journal or logs off.
+
+m6a6f75726e616c2e636c692e686f73742e73757065727669736f722e796f75722e6a6f75726e616c2e63616e2e742e73746172742e626563617573652e706f72742e6f6e2e746869732e636f6d7075746572 = your journal can't start because port { $port } on this computer is already in use, usually by a journal running under another account. only one journal can run on this computer at a time.
+
+m6a6f75726e616c2e636c692e686f73742e7468696e6b696e672e636861746770742e68656c70 = usage: { "solstone journal thinking chatgpt [-h] {sign-in,sign-out,status,models} ..." }{ "\u000a" }{ "\u000a" }Manage { "ChatGPT" } sign-in, tokens, and model catalog.{ "\u000a" }{ "\u000a" }positional arguments:{ "\u000a" }{ "  " }{ "{sign-in,sign-out,status,models}" }{ "\u000a" }{ "    " }{ "sign-in" }{ "              " }Sign in to { "ChatGPT" } via browser { "OAuth" }{ "\u000a" }{ "    " }{ "sign-out" }{ "             " }Sign out and revoke active { "ChatGPT" } credentials{ "\u000a" }{ "    " }{ "status" }{ "               " }Show current { "ChatGPT" } authentication status{ "\u000a" }{ "    " }{ "models" }{ "               " }List available { "ChatGPT" } models{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "            " }show this help message and exit{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e7468696e6b696e672e636861746770742e6d6f64656c732e68656c70 = usage: { "solstone journal thinking chatgpt models [-h] [--journal PATH] [--json]" }{ "\u000a" }{ "\u000a" }List available { "ChatGPT" } models.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "            " }show this help message and exit{ "\u000a" }{ "  " }{ "--journal PATH" }{ "        " }Journal root{ "\u000a" }{ "  " }{ "--json" }{ "                " }Emit machine-readable { "JSON" }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e7468696e6b696e672e636861746770742e6d6f64656c732e7573616765 = usage: { "solstone journal thinking chatgpt models [-h] [--journal PATH] [--json]" }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e7468696e6b696e672e636861746770742e7369676e2e696e2e68656c70 = usage: { "solstone journal thinking chatgpt sign-in [-h] [--journal PATH] [--no-browser]" }{ "\u000a" }{ "\u000a" }Sign in to { "ChatGPT" } via browser { "OAuth" }.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "            " }show this help message and exit{ "\u000a" }{ "  " }{ "--journal PATH" }{ "        " }Journal root{ "\u000a" }{ "  " }{ "--no-browser" }{ "          " }Do not open default browser automatically{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e7468696e6b696e672e636861746770742e7369676e2e696e2e7573616765 = usage: { "solstone journal thinking chatgpt sign-in [-h] [--journal PATH] [--no-browser]" }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e7468696e6b696e672e636861746770742e7369676e2e6f75742e68656c70 = usage: { "solstone journal thinking chatgpt sign-out [-h] [--journal PATH] [--forget]" }{ "\u000a" }{ "\u000a" }Sign out and revoke active { "ChatGPT" } credentials.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "            " }show this help message and exit{ "\u000a" }{ "  " }{ "--journal PATH" }{ "        " }Journal root{ "\u000a" }{ "  " }{ "--forget" }{ "              " }Remove stored credential file and registration{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e7468696e6b696e672e636861746770742e7369676e2e6f75742e7573616765 = usage: { "solstone journal thinking chatgpt sign-out [-h] [--journal PATH] [--forget]" }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e7468696e6b696e672e636861746770742e7374617475732e68656c70 = usage: { "solstone journal thinking chatgpt status [-h] [--journal PATH] [--json]" }{ "\u000a" }{ "\u000a" }Show current { "ChatGPT" } authentication status.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "            " }show this help message and exit{ "\u000a" }{ "  " }{ "--journal PATH" }{ "        " }Journal root{ "\u000a" }{ "  " }{ "--json" }{ "                " }Emit machine-readable { "JSON" }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e7468696e6b696e672e636861746770742e7374617475732e7573616765 = usage: { "solstone journal thinking chatgpt status [-h] [--journal PATH] [--json]" }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e7468696e6b696e672e636861746770742e7573616765 = usage: { "solstone journal thinking chatgpt [-h] {sign-in,sign-out,status,models} ..." }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e7468696e6b696e672e63726564656e7469616c2e636861746770742e617574682e7365727665722e74656d706f726172696c792e756e617661696c61626c65 = { "ChatGPT" } auth server is temporarily unavailable (429 or 5xx)
+
+m6a6f75726e616c2e636c692e686f73742e7468696e6b696e672e63726564656e7469616c2e636861746770742e63726564656e7469616c2e73746f72652e62757379 = { "ChatGPT" } credential store is busy
+
+m6a6f75726e616c2e636c692e686f73742e7468696e6b696e672e63726564656e7469616c2e636861746770742e726571756573742e7761732e62792e61757468 = { "ChatGPT" } request was refused by the auth server
+
+m6a6f75726e616c2e636c692e686f73742e7468696e6b696e672e63726564656e7469616c2e636861746770742e726571756573742e7761732e636f6465 = { "ChatGPT" } request was refused: { $code }
+
+m6a6f75726e616c2e636c692e686f73742e7468696e6b696e672e63726564656e7469616c2e636861746770742e7365727665722e72657475726e65642e6d616c666f726d65642e7061796c6f6164 = { "ChatGPT" } server returned malformed payload (missing or invalid { $field })
+
+m6a6f75726e616c2e636c692e686f73742e7468696e6b696e672e63726564656e7469616c2e636861746770742e7365727665722e72657475726e65642e6d616c666f726d65642e7061796c6f61642e7365727665722e72657475726e65642e6d616c666f726d65642e7061796c6f6164 = { "ChatGPT" } server returned malformed payload
+
+m6a6f75726e616c2e636c692e686f73742e7468696e6b696e672e63726564656e7469616c2e636861746770742e746f6b656e2e6772616e742e7761732e7265636569766564 = { "ChatGPT" } token grant was received from the server but could not be saved to disk
+
+m6a6f75726e616c2e636c692e686f73742e7468696e6b696e672e63726564656e7469616c2e692e6f2e647572696e672e63726564656e7469616c2e6f7065726174696f6e = I/O error during credential operation: { $msg }
+
+m6a6f75726e616c2e636c692e686f73742e7468696e6b696e672e63726564656e7469616c2e6e6574776f726b2e636f6d6d756e69636174696e672e776974682e636861746770742e61757468 = network error communicating with { "ChatGPT" } auth servers
+
+m6a6f75726e616c2e636c692e686f73742e7468696e6b696e672e63726564656e7469616c2e706174682e63726564656e7469616c2e73746f726167652e756e7265616461626c652e6f72 = { $path }: credential storage is unreadable or corrupted; run '{ "solstone journal thinking chatgpt sign-out --forget" }'
+
+m6a6f75726e616c2e636c692e686f73742e7468696e6b696e672e63726564656e7469616c2e746869732e636861746770742e6163636f756e742e69736e2e74 = this { "ChatGPT" } account isn't eligible
+
+m6a6f75726e616c2e636c692e686f73742e7468696e6b696e672e68656c70 = usage: { "solstone journal thinking [-h] {set-lane,chatgpt} ..." }{ "\u000a" }{ "\u000a" }Select the journal thinking lane or manage { "ChatGPT" } authentication.{ "\u000a" }{ "\u000a" }positional arguments:{ "\u000a" }{ "  " }{ "{set-lane,chatgpt}" }{ "\u000a" }{ "    " }{ "set-lane" }{ "             " }Set the thinking lane ({ "local" }, { "byo" }, or { "confidential" }){ "\u000a" }{ "    " }{ "chatgpt" }{ "              " }Manage { "ChatGPT" } sign-in and tokens{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "            " }show this help message and exit{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e7468696e6b696e672e72756e2e636861746770742e7369676e2e696e2e6163636f756e742e6d69736d617463682e72756e2e7468696e6b696e672e63686174677074 = account mismatch: run '{ "solstone journal thinking chatgpt sign-out --forget" }'
+
+m6a6f75726e616c2e636c692e686f73742e7468696e6b696e672e72756e2e636861746770742e7369676e2e696e2e636861746770742e7369676e2e696e2e6661696c65642e6f7574636f6d65 = { "ChatGPT" } sign-in failed: { $outcome }
+
+m6a6f75726e616c2e636c692e686f73742e7468696e6b696e672e72756e2e636861746770742e7369676e2e696e2e636861746770742e7369676e2e696e2e72657175697265642e72756e = { "ChatGPT" } sign-in required: run '{ "solstone journal thinking chatgpt sign-in" }'
+
+m6a6f75726e616c2e636c692e686f73742e7468696e6b696e672e72756e2e636861746770742e7369676e2e696e2e7369676e65642e696e2e636861746770742e7375636365737366756c6c79 = signed in to { "ChatGPT" } successfully.
+
+m6a6f75726e616c2e636c692e686f73742e7468696e6b696e672e72756e2e636861746770742e7369676e2e6f75742e7369676e65642e6f75742e63686174677074 = signed out of { "ChatGPT" }.
+
+m6a6f75726e616c2e636c692e686f73742e7468696e6b696e672e72756e2e636861746770742e7369676e2e6f75742e7369676e65642e6f75742e636861746770742e636f6d706c6574652e7369676e = signed out of { "ChatGPT" }.{ "\u000a" }To complete sign-out, disconnect solstone in your { "ChatGPT" } account settings.
+
+m6a6f75726e616c2e636c692e686f73742e7468696e6b696e672e72756e2e636861746770742e7374617475732e706c616e2e75736167652e6465636c696e6564 = plan usage: declined
+
+m6a6f75726e616c2e636c692e686f73742e7468696e6b696e672e72756e2e636861746770742e7374617475732e7374617475732e6e6f742e7369676e65642e696e = status: not signed in
+
+m6a6f75726e616c2e636c692e686f73742e7468696e6b696e672e72756e2e636861746770742e7374617475732e7374617475732e7369676e65642e696e = status: signed in
+
+m6a6f75726e616c2e636c692e686f73742e7468696e6b696e672e7365742e6c616e652e68656c70 = usage: { "solstone journal thinking set-lane [-h] {local,byo,confidential} [--provider PROVIDER] [--model MODEL] [--journal PATH]" }{ "\u000a" }{ "\u000a" }Set the thinking lane used by { "generate" }.{ "\u000a" }{ "\u000a" }positional arguments:{ "\u000a" }{ "  " }{ "{local,byo,confidential}" }{ "\u000a" }{ "                        " }Thinking lane to activate.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "            " }show this help message and exit{ "\u000a" }{ "  " }{ "--provider PROVIDER" }{ "   " }{ "BYO" } provider: { "anthropic" }, { "chatgpt" }, { "google" }, { "local" }, or { "openai" }{ "\u000a" }{ "  " }{ "--model MODEL" }{ "         " }Cloud { "BYO" } model name{ "\u000a" }{ "  " }{ "--journal PATH" }{ "        " }Journal root{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e7468696e6b696e672e7365742e6c616e652e7573616765 = usage: { "solstone journal thinking set-lane [-h] {local,byo,confidential} [--provider PROVIDER] [--model MODEL] [--journal PATH]" }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e7468696e6b696e672e7573616765 = usage: { "solstone journal thinking [-h] {set-lane,chatgpt} ..." }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e746f702e6661696c757265 = { "solstone journal" } top: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e746f702e68656c70 = usage: { "solstone journal top [-h] [-v] [-d]" }{ "\u000a" }{ "\u000a" }Show interactive service, observation, task, and brain activity.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "     " }show this help message and exit{ "\u000a" }{ "  " }{ "-v, --verbose" }{ "  " }enable verbose output{ "\u000a" }{ "  " }{ "-d, --debug" }{ "    " }enable debug output{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e746f702e7573616765 = usage: { "solstone journal top [-h] [-v] [-d]" }{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e75702e68656c70 = usage: { "solstone journal up [-h]" }{ "\u000a" }{ "\u000a" }Start the installed journal service if it is not running, then wait until it is ready.{ "\u000a" }{ "\u000a" }options:{ "\u000a" }{ "  " }{ "-h, --help" }{ "  " }show this help message and exit{ "\u000a" }
+
+m6a6f75726e616c2e636c692e686f73742e75736167652e636f6d6d616e6473 = Usage:{ "\u000a" }{ $commands }
+
+m6a6f75726e616c2e636c692e686f73742e7761726d2e646576656c6f706d656e74 = A GAP is a development-layout sibling that was not built and therefore was not exercised; it is reported by name but does not fail warm.
+
+m6a6f75726e616c2e636c692e686f73742e7761726d2e696e76656e746f7279 = Warm checks the { $count } native binaries declared by the host maturin { "bindings=\"bin\"" } packaging leaves.
+
+m6a6f75726e616c2e636c692e686f73742e7761726d2e6c696e75782e64796e616d6963 = On Linux, { "solstone-core-speakers-analyze" } and { "solstone-core-vad-analyze" } dynamically load the bundled { "ONNX Runtime" }, and { "solstone-core-vulkan-probe" } dynamically loads the host { "Vulkan" } loader. Warm proves their loader resolution as well as their start-up. { "solstone-core-describe" } is asserted neither static nor dynamic here; wheel validation only forbids dynamically linked { "FFmpeg" }.
+
+m6a6f75726e616c2e636c692e686f73742e7761726d2e6c696e75782e737461746963 = On Linux, { "solstone-core" }, { "solstone-core-journal" }, { "solstone-retention" }, { "solstone-core-sol" }, and { "solstone-core-depict" } are statically linked musl. Warm proves that they start and reach their own code; there is no dynamic loader resolution to prove.
+
+m6a6f75726e616c2e636c692e686f73742e7761726d2e6d6163 = On macOS every Mach-O links { "libSystem" }. The property is non-empty but differs from Linux: warm exposes signing, quarantine, and { "dyld" } failures there.
+
+m6a6f75726e616c2e636c692e686f73742e7761726d2e706c6174666f726d73 = Platform-restricted warm rows: { $rows }. They report NOT APPLICABLE when their applicability does not include this host and do not fail warm.
+
+m6a6f75726e616c2e636c692e686f73742e7761726d2e7265706169722e646576656c6f706d656e74 = { "  " }repair: Build this crate in a configured development environment.
+
+m6a6f75726e616c2e636c692e686f73742e7761726d2e7265706169722e657865637574696f6e = { "  " }repair: Repair the reported host execution failure, then reinstall the owning host tool if needed.
+
+m6a6f75726e616c2e636c692e686f73742e7761726d2e7265706169722e6d697373696e67 = { "  " }repair: Reinstall or upgrade the owning host tool with the installer family that created this environment.
+
+m6a6f75726e616c2e636c692e686f73742e7761726d2e7265706169722e706c6174666f726d = { "  " }repair: No repair needed on this platform.
+
+m6a6f75726e616c2e636c692e686f73742e7761726d2e726f772e646576656c6f706d656e74 = GAP { $binary }: { $path } is absent beside the development executable
+
+m6a6f75726e616c2e636c692e686f73742e7761726d2e726f772e65786563757461626c65 = CANNOT LOAD { $binary }: cannot resolve current executable: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e7761726d2e726f772e65786974 = RAN { $binary }: returned exit { $code }
+
+m6a6f75726e616c2e636c692e686f73742e7761726d2e726f772e6c696272617279 = CANNOT LOAD { $binary }: shared library { $library } could not be loaded
+
+m6a6f75726e616c2e636c692e686f73742e7761726d2e726f772e6d697373696e67 = MISSING { $binary }: { $path } is absent beside the running executable
+
+m6a6f75726e616c2e636c692e686f73742e7761726d2e726f772e6e6f2e636f6465 = CANNOT LOAD { $binary }: terminated without an exit code
+
+m6a6f75726e616c2e636c692e686f73742e7761726d2e726f772e706c6174666f726d = NOT APPLICABLE { $binary }: Linux-only binary is not applicable on this platform
+
+m6a6f75726e616c2e636c692e686f73742e7761726d2e726f772e7369676e616c = CANNOT LOAD { $binary }: terminated by signal { $signal }
+
+m6a6f75726e616c2e636c692e686f73742e7761726d2e726f772e737061776e = CANNOT LOAD { $binary }: failed to spawn { $path }: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e7761726d2e73756d6d617279 = { $i18nCategory ->
+    [one] Summary: { $ran } ran, { $missing } missing, { $cannot_load } cannot load, { $gaps } gap, { $not_applicable } not applicable.
+   *[other] Summary: { $ran } ran, { $missing } missing, { $cannot_load } cannot load, { $gaps } gaps, { $not_applicable } not applicable.
+}
+
+m6a6f75726e616c2e636c692e686f73742e7761726d2e756e7265736f6c766564 = { "  " }unresolved library: { $library }
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e61646f707465642e696e7374616c6c6174696f6e2e6861732e6e6f2e6a6f75726e616c2e70617468 = adopted installation has no journal path
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e6261636b67726f756e642e736572766963652e69732e6e6f742e696e7374616c6c6564 = background service is not installed
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e6261636b67726f756e642e736572766963652e73746f70706564 = background service stopped
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e6261636b67726f756e642e737570706f72742e666f722e796f75722e6a6f75726e616c2e636f756c646e2e742e62652e6368616e6765642e72756e = background support for your journal couldn't be changed.{ "\u000a" }run `{ "solstone journal service status" }` to check it.{ "\u000a" }details: { $reason }
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e6261636b67726f756e642e737570706f72742e666f722e796f75722e6a6f75726e616c2e636f756c646e2e742e62652e636865636b65642e747279 = background support for your journal couldn't be checked.{ "\u000a" }try again in a moment. if it keeps failing, include the details below in a support request.{ "\u000a" }details: { $reason }
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e6265666f72652e756e696e7374616c6c2e646561646c696e652e69732e6f75742e6f662e72616e6765 = before-uninstall deadline is out of range
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e63616e6e6f742e6964656e746966792e6f6e652e72756e6e696e672e736572766963652e7461736b = cannot identify one running service task
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e63616e6e6f742e7265736f6c76652e7461736b2e61727469666163742e6469726563746f7279 = cannot resolve task artifact directory
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e636c65616e2e756e696e7374616c6c2e72657175697265732e616e2e61646f707465642e696e7374616c6c6174696f6e2e6964656e74697479 = clean uninstall requires an adopted installation identity
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e636f756c642e6e6f742e636c6561722e7072696f722e7570646174652e696e74656e74 = could not clear prior update intent: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e636f756c642e6e6f742e636c6561722e77696e646f77732e7369676e2e696e2e726573756d65 = could not clear { "Windows" } sign-in resume: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e636f756c642e6e6f742e636f6e73756d652e7570646174652e696e74656e74 = could not consume update intent: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e636f756c642e6e6f742e696e73706563742e63757272656e742e65786563757461626c65 = could not inspect current executable: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e636f756c642e6e6f742e6c6f61642e696e7374616c6c6174696f6e2e62696e64696e67 = could not load installation binding: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e636f756c642e6e6f742e6c6f636174652e6f776e65722e62617365 = could not locate owner base: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e636f756c642e6e6f742e707265706172652e77696e646f77732e7369676e2e696e2e726573756d65 = could not prepare { "Windows" } sign-in resume: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e636f756c642e6e6f742e726561642e7570646174652e696e74656e742e7265636f7264 = could not read update intent record: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e636f756c642e6e6f742e7265736f6c76652e6964656e746974792e726f6f742e66726f6d2e65786563757461626c652e6469726563746f7279 = could not resolve identity root from executable directory
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e636f756c642e6e6f742e7265736f6c76652e726f6f742e746f6b656e = could not resolve root token: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e636f756c642e6e6f742e7265736f6c76652e756e696e7374616c6c2e726f6f74 = could not resolve uninstall root
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e636f756c642e6e6f742e72657472696576652e757365722e736964 = could not retrieve user { "SID" }: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e636f756c642e6e6f742e77726974652e7570646174652e696e74656e742e7265636f7264 = could not write update intent record: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e6469726563742e776f726b65722e73746f702e726571756573742e6469726563742e776f726b65722e6f62736572766174696f6e = direct-worker stop request: { $termination }; direct-worker observation: { $observed }
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e6572726f722e696e76616c69642e706f7274 = error: invalid port '{ $port }'
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e696e7374616c6c6174696f6e2e6964656e746974792e63656e7375732e69732e756e7265616461626c65 = installation identity census is unreadable
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e696e7374616c6c6174696f6e2e70726f76696465722e6c6f636174696f6e2e69732e756e617661696c61626c65 = installation provider location is unavailable
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e696e7374616c6c65642e636f6d6d616e642e636f6e7461696e732e696e76616c69642e74657874 = installed command contains invalid text
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e696e7374616c6c65642e7461736b2e616374696f6e2e6469642e6e6f742e6d617463682e6974732e726561646261636b = installed task action did not match its readback
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e69732e726567697374657265642e6578706563746564 = { $registered } is registered, expected { $expected }
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e69742e62656c6f6e67732e746f2e612e646966666572656e742e696e7374616c6c6174696f6e2e6f662e7468652e6a6f75726e616c = it belongs to a different installation of the journal
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e69742e69732e726567697374657265642e746f2e616e6f746865722e6163636f756e74 = it is registered to another account
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e69742e72756e732e7468652e6a6f75726e616c2e61742e6578706563746564 = it runs the journal at { $registered }, expected { $journal }
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e6a6f75726e616c = journal: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e6a6f75726e616c2e706174682e636f6e7461696e732e696e76616c69642e74657874 = journal path contains invalid text
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e6e61746976652e70726f636573732e62697274682e6368616e676564 = native process birth changed
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e6e61746976652e70726f636573732e62697274682e69732e6d697373696e67 = native process birth is missing
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e6e61746976652e70726f636573732e7069642e69732e696e76616c6964 = native process PID is invalid
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e6e61746976652e77696e646f77732e6469726563746f72792e69732e756e617661696c61626c65 = native { "Windows" } directory is unavailable
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e6e6f2e726561736f6e = windows gave no reason.
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e7363686564756c65722e72657475726e65642e6e6f2e7461736b2e72756e2e696e7374616e6365 = scheduler returned no task run instance
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e7363686564756c65722e7270632e6d61792e686176652e6368616e6765642e73746174652e72652e696e7370656374696f6e2e7265717569726564 = { $reason }; { $observation }; scheduler RPC may have changed state; re-inspection required
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e73656c65637465642e6a6f75726e616c2e646966666572732e66726f6d2e7468652e73617665642e696e7374616c6c6174696f6e2e62696e64696e67 = selected journal differs from the saved installation binding
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e736572766963652e6578697465642e61626e6f726d616c6c792e636c65616e75702e72656d61696e732e756e7665726966696564 = service exited abnormally; cleanup remains unverified
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e736572766963652e666f727761726465722e61646d697373696f6e2e69732e696e76616c6964 = service forwarder admission is invalid
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e736572766963652e696e7374616c6c6174696f6e2e67756172642e646966666572732e66726f6d2e7468652e73617665642e62696e64696e67 = service installation guard differs from the saved binding
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e736572766963652e72656164696e6573732e6861732e6e6f2e65786163742e6e61746976652e6964656e74697479 = service readiness has no exact native identity
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e736572766963652e72656164696e6573732e6861732e6e6f2e696e7374616c6c65642e666f727761726465722e61646d697373696f6e = service readiness has no installed forwarder admission
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e736572766963652e72656164696e6573732e6964656e746974792e6368616e676564 = service readiness identity changed
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e736572766963652e72756e2e6578697465642e647572696e672e61646d697373696f6e = service run exited during admission
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e736572766963652e7363686564756c65722e696e7374616e63652e646f65732e6e6f742e6d617463682e6974732e61646d69747465642e666f72776172646572 = service scheduler instance does not match its admitted forwarder
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e736572766963652e73746f702e646561646c696e652e656c61707365642e636c65616e75702e72656d61696e732e756e7665726966696564 = service stop deadline elapsed; cleanup remains unverified
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e736572766963652e7461736b2e6368616e6765642e647572696e672e72756e2e61646d697373696f6e = service task changed during run admission
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e736572766963652e7461736b2e6368616e6765642e647572696e672e7374617274 = service task changed during start
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e736572766963652e7461736b2e6368616e6765642e647572696e672e73746f70 = service task changed during stop
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e736572766963652e7461736b2e6368616e6765642e7768696c652e7265636f7264696e672e6974732e7374617465 = service task changed while recording its state
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e736572766963652e7461736b2e64656c6574696f6e2e7761732e6e6f742e6f62736572766564 = service task deletion was not observed
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e736572766963652e7461736b2e646966666572732e66726f6d2e7468652e63757272656e742e696e7374616c6c6174696f6e2e62696e64696e67 = service task differs from the current installation binding
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e736572766963652e7461736b2e696e7374616e63652e6368616e6765642e647572696e672e73746f70 = service task instance changed during stop
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e736572766963652e7461736b2e696e7374616e63652e6368616e6765642e7768696c652e72657461696e696e672e6e61746976652e68616e646c6573 = service task instance changed while retaining native handles
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e736572766963652e7461736b2e69732e616273656e742e616e642e6974732e666f727761726465722e636c65616e75702e63616e6e6f742e6265 = service task is absent and its forwarder cleanup cannot be verified
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e736572766963652e7461736b2e69732e6e6f742e696e7374616c6c6564 = service task is not installed
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e73746f707065642e6261636b67726f756e642e737570706f72742e666f722e796f75722e6a6f75726e616c2e7374617274732e616761696e2e7768656e2e796f75 = Stopped: background support for your journal starts again when you next sign in.
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e73746f707065642e6261636b67726f756e642e737570706f72742e666f722e796f75722e6a6f75726e616c2e73746179732e6f66662e756e74696c2e796f75 = Stopped: background support for your journal stays off until you start it or open the journal app.
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e73757065727669736f722e72656164696e6573732e6e6f742e7265616479 = Supervisor readiness: not ready
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e73757065727669736f722e72656164696e6573732e7265616479 = Supervisor readiness: ready
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e73797374656d726f6f742e69732e756e617661696c61626c65 = SystemRoot is unavailable
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e7461736b = Task: { $task }
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e7461736b2e636f6e74726f6c2e646561646c696e652e656c61707365642e6265666f72652e737061776e = task control deadline elapsed before spawn
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e7461736b2e636f6e74726f6c2e65786368616e67652e6661696c6564 = task control exchange failed: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e7461736b2e636f6e74726f6c2e65786368616e67652e6661696c65642e776f726b65722e6368616e6e656c2e636c6f736564 = task control exchange failed: worker channel closed
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e7461736b2e636f6e74726f6c2e65786368616e67652e74696d65642e6f7574 = task control exchange timed out
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e7461736b2e636f6e74726f6c2e696e7075742e657863656564732e6974732e627974652e6c696d6974 = task control input exceeds its byte limit
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e7461736b2e636f6e74726f6c2e6f75747075742e657863656564732e6974732e627974652e6c696d6974 = task control output exceeds its byte limit
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e7461736b2e636f6e74726f6c2e737061776e2e6661696c6564 = task control spawn failed: { $error }
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e7461736b2e636f6e74726f6c2e737464696f2e6d697373696e67 = task control stdio missing
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e7461736b2e636f6e74726f6c2e776f726b65722e657869746564 = task control worker exited
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e7461736b2e6f7065726174696f6e2e72657475726e65642e696e636f6e73697374656e742e65766964656e6365 = task operation returned inconsistent evidence
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e7461736b2e6f7065726174696f6e2e72657475726e65642e696e76616c69642e6a736f6e = task operation returned invalid { "JSON" }
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e7461736b2e726571756573742e69732e6e6f742e612e6a736f6e2e6f626a656374 = task request is not a { "JSON" } object
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e7461736b2e786d6c2e726561646261636b2e6d697373696e67 = task XML readback missing
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e7468652e696e7374616c6c65642e736f6c73746f6e652e6578652e6661636164652e69732e756e617661696c61626c65 = the installed solstone.exe facade is unavailable
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e7468652e726567697374657265642e7461736b2e6861732e6e6f2e7265616461626c652e646566696e6974696f6e = the registered task has no readable definition
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e7570646174652e696e74656e742e7265636f72642e69732e696e76616c6964 = update intent record is invalid
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e77696e646f77732e72756e2e6b65792e7761732e6e6f742e6f70656e6564 = { "Windows" } Run key was not opened
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e77696e646f77732e736572766963652e616374696f6e2e636f6e7461696e732e6e6f6e2e756e69636f64652e74657874 = windows service action contains non-Unicode text
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e77696e646f77732e736572766963652e616374696f6e2e646966666572732e66726f6d2e7468652e636f6d706c6574652e73617665642e62696e64696e67 = windows service action differs from the complete saved binding
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e77696e646f77732e736572766963652e62696e64696e672e756e617661696c61626c65 = windows service binding unavailable
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e77696e646f77732e7369676e2e696e2e726573756d652e636f6d6d616e642e657863656564732e7468652e72756e2e6b65792e6c696d6974 = { "Windows" } sign-in resume command exceeds the Run key limit or has an invalid path
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e77696e646f77732e7369676e2e696e2e726573756d652e6661696c65642e77696e646f77732e6572726f72 = { "Windows" } sign-in resume { $action } failed ({ "Windows" } error { $code })
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e77696e646f77732e7369676e2e696e2e726573756d652e72656769737472792e726561646261636b2e6469666665726564 = { "Windows" } sign-in resume registry readback differed
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e796f75722e6a6f75726e616c2e6469646e2e742e7265706f72742e72656164792e736f2e7468652e73746172742e63616e = your journal didn't report ready, so the start can't be confirmed. run `{ "solstone journal service" } logs` to see why
+
+m6a6f75726e616c2e636c692e686f73742e77696e646f77732e736572766963652e796f75722e6a6f75726e616c2e69732e7265616479 = your journal is ready
+
 m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e646f6e65 = { "Plaud" } is connected, and your sign-in is saved in this journal.
 
 m6a6f75726e616c2e636c692e696d706f727465722e706c6175642e636f6e6e6563742e646f6e652e6163636f756e74 = { "Plaud" } is connected as { $account }, and your sign-in is saved in this journal.
@@ -5061,6 +7014,28 @@ m6a6f75726e616c2e636c692e7365676d656e742e7665726966792e726573756c74 = { $i18nCat
     [one] { NUMBER($passed, useGrouping: 0) }/{ NUMBER($total, useGrouping: 0) } check passed
    *[other] { NUMBER($passed, useGrouping: 0) }/{ NUMBER($total, useGrouping: 0) } checks passed
 }
+
+m6a6f75726e616c2e636c692e73657475702e7061727365722e637764 = could not determine current directory: { $error }
+
+m6a6f75726e616c2e636c692e73657475702e7061727365722e706174682e656d707479 = { "--journal" } must not be empty
+
+m6a6f75726e616c2e636c692e73657475702e7061727365722e706174682e656e636f64696e67 = { "--journal" } could not be resolved: path is not { "UTF-8" }
+
+m6a6f75726e616c2e636c692e73657475702e7061727365722e706174682e7265736f6c7665 = { "--journal" } could not be resolved: { $error }
+
+m6a6f75726e616c2e636c692e73657475702e7061727365722e706f7274 = { "--port" } must be in { "1024-65535" } (got { $value })
+
+m6a6f75726e616c2e636c692e73657475702e7061727365722e7369676e2e696e2e656e636f64696e67 = argument { "--initial-start-at-sign-in" }: expected { "on" } or { "off" }
+
+m6a6f75726e616c2e636c692e73657475702e7061727365722e7369676e2e696e2e696e76616c6964 = argument { "--initial-start-at-sign-in" }: invalid choice: { $value } (choose from { "on, off" })
+
+m6a6f75726e616c2e636c692e73657475702e7061727365722e7369676e2e696e2e7265706561746564 = argument { "--initial-start-at-sign-in" }: must not be repeated
+
+m6a6f75726e616c2e636c692e73657475702e7061727365722e74696d656f7574 = argument { "--step-timeout-seconds" }: invalid int value
+
+m6a6f75726e616c2e636c692e73657475702e7061727365722e756e6b6e6f776e = unrecognized arguments
+
+m6a6f75726e616c2e636c692e73657475702e7061727365722e76617269616e74 = argument { "--variant" }: invalid choice: { $value } (choose from { "auto, cpu, cuda, coreml" })
 
 m6a6f75726e616c2e636c692e73686172652e61637469766974696573 = could not read { $facet } activities for { $day }: { $detail }
 

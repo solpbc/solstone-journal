@@ -1,0 +1,28 @@
+{
+  "description": "Native navigate command, run. Preserve terminal syntax and supplied data.",
+  "context": "Native navigate command, run. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "266ded1b0462d9274256c84cc9f02371f641448c1a6c7d31e94d42f4a6e9692c",
+  "max_length": 216,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_1",
+      "kind": "accepted-input",
+      "value": "Callosum"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Journal host health socket inspect.",
+  "context": "Journal host health socket inspect.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "af8f778bf8fa4df1baa6d998a19a07db5bfdcfb23508e05e97fe129d77896f78",
+  "max_length": 234,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal host health media stale.",
+  "context": "Journal host health media stale.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "seconds",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "969516b70aef944cde0821e7c89eb60557eed89611505b715970f128e819a4b5",
+  "max_length": 153,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

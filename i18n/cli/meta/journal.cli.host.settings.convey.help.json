@@ -1,0 +1,58 @@
+{
+  "description": "Terminal help and usage for settings convey help.",
+  "context": "Terminal help and usage for settings convey help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6e8edbd23a3a451a7c4049f1df92f5582119959fb13b91a7ee71d70f737b6094",
+  "max_length": 1044,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal settings convey [-h] {status} ...",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "choices",
+      "value": "{status}",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "spaces_4",
+      "value": "    ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "subcommand",
+      "value": "status",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "term",
+      "value": "URL",
+      "kind": "mark-word"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    }
+  ]
+}

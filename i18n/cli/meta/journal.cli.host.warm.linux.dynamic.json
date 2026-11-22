@@ -1,0 +1,53 @@
+{
+  "description": "Journal host warm linux dynamic.",
+  "context": "Journal host warm linux dynamic.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7801340ef342711b015240ba5dd54ac540ce8f199d481e11680b7b6b85a7b16e",
+  "max_length": 1203,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_core_speakers_analyze",
+      "kind": "accepted-input",
+      "value": "solstone-core-speakers-analyze"
+    },
+    {
+      "name": "solstone_core_vulkan_probe",
+      "kind": "accepted-input",
+      "value": "solstone-core-vulkan-probe"
+    },
+    {
+      "name": "solstone_core_vad_analyze",
+      "kind": "accepted-input",
+      "value": "solstone-core-vad-analyze"
+    },
+    {
+      "name": "solstone_core_describe",
+      "kind": "accepted-input",
+      "value": "solstone-core-describe"
+    },
+    {
+      "name": "onnx",
+      "kind": "accepted-input",
+      "value": "ONNX Runtime"
+    },
+    {
+      "name": "ffmpeg",
+      "kind": "accepted-input",
+      "value": "FFmpeg"
+    },
+    {
+      "name": "vulkan",
+      "kind": "accepted-input",
+      "value": "Vulkan"
+    }
+  ]
+}

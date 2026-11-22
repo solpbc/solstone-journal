@@ -1,0 +1,25 @@
+{
+  "description": "MCP owner diagnostic for token read.",
+  "context": "MCP owner diagnostic for token read.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "93936c100226d9eb7be86b7520183f82bade75173b355dc1f4a6583a0c4e539d",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

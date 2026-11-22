@@ -1,0 +1,148 @@
+{
+  "description": "Terminal help and usage for sense help.",
+  "context": "Terminal help and usage for sense help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "19e0890f63b7d69fd080bd05eda540ecd2d1783087b840d3f9a000a7ff28ebfe",
+  "max_length": 3681,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal sense [-h] [--day DAY] [-j JOBS]",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "spaces_20",
+      "value": "                    ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "syntax_4",
+      "value": "[--reprocess {screen,audio,image,all}] [--segment SEGMENT]",
+      "kind": "command"
+    },
+    {
+      "name": "syntax_5",
+      "value": "[--stream STREAM] [--dry-run] [-v] [-d]",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_12",
+      "value": "            ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_9",
+      "value": "--day DAY",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_13",
+      "value": "             ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "argument",
+      "value": "YYYYMMDD",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "option_12",
+      "value": "-j JOBS, --jobs JOBS",
+      "kind": "command"
+    },
+    {
+      "name": "flag",
+      "value": "--day",
+      "kind": "flag"
+    },
+    {
+      "name": "flag_14",
+      "value": "--reprocess",
+      "kind": "flag"
+    },
+    {
+      "name": "choices",
+      "value": "{screen,audio,image,all}",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "spaces_24",
+      "value": "                        ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_17",
+      "value": "--segment SEGMENT",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_5",
+      "value": "     ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "argument_19",
+      "value": "HHMMSS_LEN",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "option_20",
+      "value": "--stream STREAM",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_7",
+      "value": "       ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_22",
+      "value": "--dry-run",
+      "kind": "command"
+    },
+    {
+      "name": "option_23",
+      "value": "-v, --verbose",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_9",
+      "value": "         ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_25",
+      "value": "-d, --debug",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_11",
+      "value": "           ",
+      "kind": "whitespace"
+    }
+  ]
+}

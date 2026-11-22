@@ -1,0 +1,28 @@
+{
+  "description": "Journal setup argument validation: path resolve.",
+  "context": "Journal setup argument validation: path resolve.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "34555bf55a1c0e10a193c1240064ba39cf53d8add48c1042e36bacc20ad7edd4",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "journal_flag",
+      "value": "--journal",
+      "kind": "flag"
+    }
+  ]
+}

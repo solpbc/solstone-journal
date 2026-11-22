@@ -1,0 +1,128 @@
+{
+  "description": "Terminal help and usage for mcp probe help.",
+  "context": "Terminal help and usage for mcp probe help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ce84f83e505baa1e7355c96502b6d0d7852dc31e2437e759ee262acf8c45c94c",
+  "max_length": 2421,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal mcp probe [-h] (--token LABEL | --oauth CLIENT_ID [--created TIMESTAMP])",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "spaces_34",
+      "value": "                                  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "flag",
+      "value": "--tool",
+      "kind": "flag"
+    },
+    {
+      "name": "argument",
+      "value": "TOOL",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "flag_6",
+      "value": "--arguments",
+      "kind": "flag"
+    },
+    {
+      "name": "term",
+      "value": "JSON",
+      "kind": "mark-word"
+    },
+    {
+      "name": "term_8",
+      "value": "MCP",
+      "kind": "mark-word"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_11",
+      "value": "           ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_12",
+      "value": "--token LABEL",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_8",
+      "value": "        ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_14",
+      "value": "--oauth CLIENT_ID",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_4",
+      "value": "    ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "term_16",
+      "value": "OAuth",
+      "kind": "mark-word"
+    },
+    {
+      "name": "option_17",
+      "value": "--created TIMESTAMP",
+      "kind": "command"
+    },
+    {
+      "name": "flag_18",
+      "value": "--oauth",
+      "kind": "flag"
+    },
+    {
+      "name": "option_19",
+      "value": "--tool TOOL",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_10",
+      "value": "          ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_21",
+      "value": "--arguments JSON",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_5",
+      "value": "     ",
+      "kind": "whitespace"
+    }
+  ]
+}

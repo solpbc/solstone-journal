@@ -18,27 +18,35 @@ macro_rules! speaker_resolve_usage {
     };
 }
 
-pub const USAGE: &str = concat!(
-    "Usage:\n  solstone-core --version\n  solstone-core warm [--json]\n  solstone-core check [--json]\n  solstone-core setup-copy [-h] [--json]\n  solstone-core assets\n  solstone-core doctor [--verbose] [--json | --jsonl] [--port PORT] [--feature NAME] [--readiness]\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core indexer path-lookup [--journal PATH] [--json] [--apply]\n  solstone-core indexer classifications [--journal PATH] [--json] [--apply] [--drain]\n  solstone-core indexer drain [--journal PATH] [--json] [--force] [--budget-seconds N]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core speaker-transcript-write\n",
-    speaker_resolve_usage!(),
-    "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone journal convey --port PORT [--journal PATH]\n  solstone journal schedule [-v | --verbose] [-d | --debug]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [PORT] [--direct-port DIRECT_PORT] [--no-daily] [--journal PATH] [--no-convey] [--no-cortex] [--no-spl] [--no-schedule]\n",
-    "  solstone journal top [-h] [-v | --verbose] [-d | --debug]\n  solstone journal health [-h] [-v | --verbose] [-d | --debug]\n  solstone journal health logs [-h] [-c N] [-f] [--since TIME] [--service NAME] [--grep PATTERN] [-v | --verbose] [-d | --debug]\n",
-    "  solstone-core sense [-v | --verbose] [-d | --debug]\n",
-    "  solstone-core navigate [-h | --help] PATH\n",
-    "  solstone-core settings [-h | --help] [-v | --verbose] [-d | --debug] [convey [status [--json]]]\n",
-    "  solstone-core contract <build|check> ...\n",
-    "  solstone-core transcribe [-h] [--all] [--redo] [--backend {parakeet,parakeet-cpp,confidential}] [-v] [-d] [audio_path]\n",
-    "  solstone-core facet-candidates [-h] [-v] [-d]\n  solstone-core install-models [--check | --force] [--variant {auto,cpu,cuda,coreml}]\n  solstone-core install-provider <name>\n  solstone-core thinking set-lane {local,byo,confidential} [--provider PROVIDER] [--model MODEL] [--journal PATH]\n",
-    "  solstone-core streams [args...]\n",
-    "  solstone-core importer [args...]\n",
-    "  solstone-core segment [args...]\n",
-    "  solstone-core backup [args...]\n",
-    "  solstone-core journal-stats [args...]\n",
-    "  solstone-core talent [args...]\n",
-    "  solstone-core share [args...]\n",
-    "  solstone-core reprocess [args...]\n",
-    "  solstone-core backfill-processing-records [args...]\n"
-);
+// Embedded callers and the terminal share the same command inventory.
+macro_rules! core_usage_syntax {
+    () => {
+        concat!(
+            "  solstone-core --version\n  solstone-core warm [--json]\n  solstone-core check [--json]\n  solstone-core setup-copy [-h] [--json]\n  solstone-core assets\n  solstone-core doctor [--verbose] [--json | --jsonl] [--port PORT] [--feature NAME] [--readiness]\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core indexer path-lookup [--journal PATH] [--json] [--apply]\n  solstone-core indexer classifications [--journal PATH] [--json] [--apply] [--drain]\n  solstone-core indexer drain [--journal PATH] [--json] [--force] [--budget-seconds N]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core speaker-transcript-write\n",
+            speaker_resolve_usage!(),
+            "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone journal convey --port PORT [--journal PATH]\n  solstone journal schedule [-v | --verbose] [-d | --debug]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [PORT] [--direct-port DIRECT_PORT] [--no-daily] [--journal PATH] [--no-convey] [--no-cortex] [--no-spl] [--no-schedule]\n",
+            "  solstone journal top [-h] [-v | --verbose] [-d | --debug]\n  solstone journal health [-h] [-v | --verbose] [-d | --debug]\n  solstone journal health logs [-h] [-c N] [-f] [--since TIME] [--service NAME] [--grep PATTERN] [-v | --verbose] [-d | --debug]\n",
+            "  solstone-core sense [-v | --verbose] [-d | --debug]\n",
+            "  solstone-core navigate [-h | --help] PATH\n",
+            "  solstone-core settings [-h | --help] [-v | --verbose] [-d | --debug] [convey [status [--json]]]\n",
+            "  solstone-core contract <build|check> ...\n",
+            "  solstone-core transcribe [-h] [--all] [--redo] [--backend {parakeet,parakeet-cpp,confidential}] [-v] [-d] [audio_path]\n",
+            "  solstone-core facet-candidates [-h] [-v] [-d]\n  solstone-core install-models [--check | --force] [--variant {auto,cpu,cuda,coreml}]\n  solstone-core install-provider <name>\n  solstone-core thinking set-lane {local,byo,confidential} [--provider PROVIDER] [--model MODEL] [--journal PATH]\n",
+            "  solstone-core streams [args...]\n",
+            "  solstone-core importer [args...]\n",
+            "  solstone-core segment [args...]\n",
+            "  solstone-core backup [args...]\n",
+            "  solstone-core journal-stats [args...]\n",
+            "  solstone-core talent [args...]\n",
+            "  solstone-core share [args...]\n",
+            "  solstone-core reprocess [args...]\n",
+            "  solstone-core backfill-processing-records [args...]\n"
+        )
+    };
+}
+
+pub const USAGE: &str = concat!("Usage:\n", core_usage_syntax!());
+pub const USAGE_COMMANDS: &str = core_usage_syntax!();
 
 pub const SPEAKER_RESOLVE_USAGE: &str = speaker_resolve_usage!();
 pub const THINK_USAGE: &str = "usage: solstone journal think [-h] [--day DAY] [--segment SEGMENT] [--refresh] [--from-scratch] [--segments] [--facet NAME] [--activity ID] [--reactivate] [--stream STREAM] [--flush] [--settle] [-j N] [--no-timeout] [--segment-workers N] [--no-activity-prompts] [--skip-talents SKIP_TALENTS] [--live] [--updated] [--weekly] [--cadence] [--dry-run] [--sense-batch] [-v] [-d]\n";
@@ -681,175 +689,111 @@ pub fn permission_kind_label(kind: &solstone_core_format::content::kinds::KindSp
     text(ENGLISH, copy.label_id)
 }
 
-fn mcp_subcommand_help(words: &[&str]) -> &'static str {
+fn mcp_subcommand_help(locale: &str, words: &[&str]) -> String {
     match words {
-        ["service", ..] => concat!(
-            "usage: solstone journal mcp service [-h]\n\nRun the MCP endpoint.\n\n",
-            "options:\n  -h, --help  show this help message and exit\n",
+        ["service", ..] => {
+            solstone_core_cli_copy::render_for(locale, "journal.cli.host.mcp.service.help", &[])
+        }
+        ["local-door", ..] => {
+            solstone_core_cli_copy::render_for(locale, "journal.cli.host.mcp.local.door.help", &[])
+        }
+        ["status", ..] => {
+            solstone_core_cli_copy::render_for(locale, "journal.cli.host.mcp.status.help", &[])
+        }
+        ["token", "create", ..] => solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.host.mcp.token.create.help",
+            &[],
         ),
-        ["local-door", ..] => concat!(
-            "usage: solstone journal mcp local-door [-h]\n\nRun the connection for agents on this computer.\n\n",
-            "options:\n  -h, --help  show this help message and exit\n",
+        ["token", "list", ..] => {
+            solstone_core_cli_copy::render_for(locale, "journal.cli.host.mcp.token.list.help", &[])
+        }
+        ["token", "revoke", ..] => solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.host.mcp.token.revoke.help",
+            &[],
         ),
-        ["status", ..] => concat!(
-            "usage: solstone journal mcp status [-h]\n\nShow MCP endpoint status.\n\n",
-            "options:\n  -h, --help  show this help message and exit\n",
+        ["token", ..] => {
+            solstone_core_cli_copy::render_for(locale, "journal.cli.host.mcp.token.help", &[])
+        }
+        ["pairing", "generate", ..] => solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.host.mcp.pairing.generate.help",
+            &[],
         ),
-        ["token", "create", ..] => concat!(
-            "usage: solstone journal mcp token create [-h] --label LABEL\n\n",
-            "Create a bearer token for a connection. The token is shown once.\n\n",
-            "options:\n  -h, --help     show this help message and exit\n",
-            "  --label LABEL  a name for the connection the token is for\n",
+        ["pairing", "revoke", ..] => solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.host.mcp.pairing.revoke.help",
+            &[],
         ),
-        ["token", "list", ..] => concat!(
-            "usage: solstone journal mcp token list [-h]\n\n",
-            "List each token's label and when it was created.\n\n",
-            "options:\n  -h, --help  show this help message and exit\n",
+        ["pairing", ..] => {
+            solstone_core_cli_copy::render_for(locale, "journal.cli.host.mcp.pairing.help", &[])
+        }
+        ["oauth", "list", ..] => {
+            solstone_core_cli_copy::render_for(locale, "journal.cli.host.mcp.oauth.list.help", &[])
+        }
+        ["oauth", "revoke", ..] => solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.host.mcp.oauth.revoke.help",
+            &[],
         ),
-        ["token", "revoke", ..] => concat!(
-            "usage: solstone journal mcp token revoke [-h] --label LABEL\n\n",
-            "Revoke the bearer token for a label.\n\n",
-            "options:\n  -h, --help     show this help message and exit\n",
-            "  --label LABEL  the label of the token to revoke\n",
-        ),
-        ["token", ..] => concat!(
-            "usage: solstone journal mcp token [-h] {create,list,revoke} ...\n\n",
-            "Manage MCP bearer tokens.\n\n",
-            "options:\n  -h, --help  show this help message and exit\n\n",
-            "subcommands:\n",
-            "  create      Create a bearer token for a connection\n",
-            "  list        List tokens\n",
-            "  revoke      Revoke a token\n",
-        ),
-        ["pairing", "generate", ..] => concat!(
-            "usage: solstone journal mcp pairing generate [-h] [--door {local,lan,solstone.me,hostname}]\n\n",
-            "Generate a pairing code for an agent, valid for 10 minutes and one use. It is shown once.\n\n",
-            "options:\n  -h, --help            show this help message and exit\n",
-            "  --door {local,lan,solstone.me,hostname}\n",
-            "                        where the code works (default: local, an agent on this computer)\n",
-        ),
-        ["pairing", "revoke", ..] => concat!(
-            "usage: solstone journal mcp pairing revoke [-h]\n\n",
-            "Revoke the current pairing code.\n\n",
-            "options:\n  -h, --help  show this help message and exit\n",
-        ),
-        ["pairing", ..] => concat!(
-            "usage: solstone journal mcp pairing [-h] {generate,revoke} ...\n\n",
-            "Manage the agent pairing code.\n\n",
-            "options:\n  -h, --help  show this help message and exit\n\n",
-            "subcommands:\n",
-            "  generate    Generate a pairing code\n",
-            "  revoke      Revoke the current pairing code\n",
-        ),
-        ["oauth", "list", ..] => concat!(
-            "usage: solstone journal mcp oauth list [-h]\n\n",
-            "List registered OAuth clients.\n\n",
-            "options:\n  -h, --help  show this help message and exit\n",
-        ),
-        ["oauth", "revoke", ..] => concat!(
-            "usage: solstone journal mcp oauth revoke [-h] --client-id CLIENT_ID\n\n",
-            "Revoke a registered OAuth client.\n\n",
-            "options:\n  -h, --help             show this help message and exit\n",
-            "  --client-id CLIENT_ID  the client to revoke\n",
-        ),
-        ["oauth", ..] => concat!(
-            "usage: solstone journal mcp oauth [-h] {list,revoke} ...\n\n",
-            "Manage registered OAuth clients.\n\n",
-            "options:\n  -h, --help  show this help message and exit\n\n",
-            "subcommands:\n",
-            "  list        List registered OAuth clients\n",
-            "  revoke      Revoke a registered OAuth client\n",
-        ),
-        ["permission", "show", ..] => concat!(
-            "usage: solstone journal mcp permission show [-h] [--token LABEL | --oauth CLIENT_ID [--created TIMESTAMP]]\n\n",
-            "Show read permissions, for every connection or for one.\n\n",
-            "options:\n  -h, --help           show this help message and exit\n",
-            "  --token LABEL        a bearer-token connection, by its label\n",
-            "  --oauth CLIENT_ID    an OAuth connection, by its client id\n",
-            "  --created TIMESTAMP  with --oauth, which grant, when one client id has several\n",
+        ["oauth", ..] => {
+            solstone_core_cli_copy::render_for(locale, "journal.cli.host.mcp.oauth.help", &[])
+        }
+        ["permission", "show", ..] => solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.host.mcp.permission.show.help",
+            &[],
         ),
         ["permission", "set", ..] => {
-            static HELP: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-            HELP.get_or_init(|| {
-            let mut help = concat!(
-            "usage: solstone journal mcp permission set [-h] (--token LABEL | --oauth CLIENT_ID [--created TIMESTAMP])\n",
-            "                                           --category CATEGORY [--category CATEGORY ...]\n",
-            "                                           [--facet FACET ...]\n\n",
-            "Set what one connection may read.\n\n",
-            "options:\n  -h, --help           show this help message and exit\n",
-            "  --token LABEL        a bearer-token connection, by its label\n",
-            "  --oauth CLIENT_ID    an OAuth connection, by its client id\n",
-            "  --created TIMESTAMP  with --oauth, which grant, when one client id has several\n",
-            "  --category CATEGORY  a kind this connection may read (repeat for each kind)\n",
-            "  --facet FACET        only this facet, by name; repeat for more (default: the whole journal)\n",
-            ).to_owned();
+            let mut help = solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.host.mcp.permission.set.help",
+                &[],
+            );
             use std::fmt::Write as _;
-            use solstone_core_window_catalog::{ENGLISH, text};
             for kind in solstone_core_format::content::kinds::permission_kinds() {
-                let copy = kind.permission_copy.expect("registered permissions have copy");
-                let _ = writeln!(help, "  {:<12} {}: {}", kind.stored_word, permission_kind_label(kind), text(ENGLISH, copy.description_id));
+                let copy = kind
+                    .permission_copy
+                    .expect("registered permissions have copy");
+                let _ = writeln!(
+                    help,
+                    "  {:<12} {}: {}",
+                    kind.stored_word,
+                    solstone_core_window_catalog::text(locale, copy.label_id),
+                    solstone_core_window_catalog::text(locale, copy.description_id)
+                );
             }
             help
-            }).as_str()
         }
-        ["permission", "clear", ..] => concat!(
-            "usage: solstone journal mcp permission clear [-h] (--token LABEL | --oauth CLIENT_ID [--created TIMESTAMP])\n\n",
-            "Clear one connection's read permission.\n\n",
-            "options:\n  -h, --help           show this help message and exit\n",
-            "  --token LABEL        a bearer-token connection, by its label\n",
-            "  --oauth CLIENT_ID    an OAuth connection, by its client id\n",
-            "  --created TIMESTAMP  with --oauth, which grant, when one client id has several\n",
+        ["permission", "clear", ..] => solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.host.mcp.permission.clear.help",
+            &[],
         ),
-        ["permission", ..] => concat!(
-            "usage: solstone journal mcp permission [-h] {show,set,clear} ...\n\n",
-            "Manage connection read permissions.\n\n",
-            "options:\n  -h, --help  show this help message and exit\n\n",
-            "subcommands:\n",
-            "  show        Show read permissions, for every connection or one\n",
-            "  set         Set what one connection may read\n",
-            "  clear       Clear one connection's read permission\n",
-        ),
-        ["activity", ..] => concat!(
-            "usage: solstone journal mcp activity [-h] [--token LABEL | --oauth CLIENT_ID [--created TIMESTAMP]]\n",
-            "                                     [--tool TOOL] [--outcome OUTCOME] [--day-from YYYYMMDD]\n",
-            "                                     [--day-to YYYYMMDD] [--limit N] [--json]\n\n",
-            "Show what connections asked for and how each request ended.\n\n",
-            "options:\n  -h, --help           show this help message and exit\n",
-            "  --token LABEL        only a bearer-token connection, by its label\n",
-            "  --oauth CLIENT_ID    only an OAuth connection, by its client id\n",
-            "  --created TIMESTAMP  with --oauth, which grant, when one client id has several\n",
-            "  --tool TOOL          only requests to this tool\n",
-            "  --outcome OUTCOME    only requests that ended this way\n",
-            "  --day-from YYYYMMDD  from this day\n",
-            "  --day-to YYYYMMDD    up to and including this day\n",
-            "  --limit N            at most N requests, 1 to 1000 (default: 20)\n",
-            "  --json               print JSON\n",
-        ),
-        ["probe", ..] => concat!(
-            "usage: solstone journal mcp probe [-h] (--token LABEL | --oauth CLIENT_ID [--created TIMESTAMP])\n",
-            "                                  --tool TOOL --arguments JSON\n\n",
-            "Invoke one MCP read as a connection, without opening a port.\n\n",
-            "options:\n  -h, --help           show this help message and exit\n",
-            "  --token LABEL        a bearer-token connection, by its label\n",
-            "  --oauth CLIENT_ID    an OAuth connection, by its client id\n",
-            "  --created TIMESTAMP  with --oauth, which grant, when one client id has several\n",
-            "  --tool TOOL          the tool to call\n",
-            "  --arguments JSON     the tool's arguments, as a JSON object\n",
-        ),
-        _ => MCP_HELP,
+        ["permission", ..] => {
+            solstone_core_cli_copy::render_for(locale, "journal.cli.host.mcp.permission.help", &[])
+        }
+        ["activity", ..] => {
+            solstone_core_cli_copy::render_for(locale, "journal.cli.host.mcp.activity.help", &[])
+        }
+        ["probe", ..] => {
+            solstone_core_cli_copy::render_for(locale, "journal.cli.host.mcp.probe.help", &[])
+        }
+        _ => solstone_core_cli_copy::render_for(locale, "journal.cli.host.mcp.help", &[]),
     }
 }
 
 /// `journal mcp ... --help` prints the help of the deepest subcommand named
 /// before the help flag; with none named, the `journal mcp` help.
-fn mcp_help(args: &[OsString]) -> &'static str {
+fn mcp_help(locale: &str, args: &[OsString]) -> String {
     let words: Vec<&str> = args
         .iter()
         .take_while(|argument| *argument != OsStr::new("--help") && *argument != OsStr::new("-h"))
         .take(2)
         .filter_map(|argument| argument.to_str())
         .collect();
-    mcp_subcommand_help(&words)
+    mcp_subcommand_help(locale, &words)
 }
 
 pub const BACKFILL_FACET_IDS_USAGE: &str =
@@ -947,7 +891,7 @@ pub enum Command {
     SplHelp,
     Mcp(McpCommand),
     McpUsage(McpUsageError),
-    McpHelp(&'static str),
+    McpHelp(String),
     Sense(SenseOptions),
     SenseUsage,
     SenseHelp,
@@ -1621,7 +1565,234 @@ pub struct IndexerReadOptions {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UsageError;
 
+#[derive(Clone, Copy, Default)]
+struct ParserCopy<'a> {
+    locale: Option<&'a str>,
+    command: &'a str,
+}
+
+impl<'a> ParserCopy<'a> {
+    // Library and machine callers historically receive the bare parser reason.
+    // The terminal receives a complete sentence with its command and literal arguments.
+    fn diagnostic<const N: usize>(
+        self,
+        id: &str,
+        values: [(&str, &dyn std::fmt::Display); N],
+        canonical_reason: impl FnOnce() -> String,
+    ) -> String {
+        match self.locale {
+            Some(locale) => solstone_core_cli_copy::display_for(locale, id, values),
+            None => canonical_reason(),
+        }
+    }
+
+    fn language(self) -> &'a str {
+        self.locale.unwrap_or(solstone_core_cli_copy::ENGLISH)
+    }
+}
+
+/// Select the language for a public terminal invocation. A switch consumed as
+/// an option value is ordinary data. Protocol-only verbs retain their source bytes.
+pub fn parser_locale(args: &[OsString]) -> &'static str {
+    use solstone_core_cli_copy::{ENGLISH, terminal_locale};
+    let Some(locale) = terminal_locale() else {
+        return ENGLISH;
+    };
+    let Some((verb, rest)) = args.split_first() else {
+        return ENGLISH;
+    };
+    let verb = verb.to_str().unwrap_or_default();
+    let word = |n: usize| rest.get(n).and_then(|arg| arg.to_str());
+    let has_help = rest.iter().any(|arg| arg == "-h" || arg == "--help");
+    let options: &[&str] = match verb {
+        "mcp" => match (word(0), word(1)) {
+            (Some("token"), Some("create" | "revoke")) => &["--label"],
+            (Some("oauth"), Some("revoke")) => &["--client-id"],
+            (Some("pairing"), Some("generate")) => &["--door"],
+            (Some("permission"), _) => {
+                &["--token", "--oauth", "--created", "--category", "--facet"]
+            }
+            // Connection selectors are parsed from the leftovers. A following
+            // --json is recognized by the activity grammar itself.
+            (Some("activity"), _) => &["--tool", "--outcome", "--day-from", "--day-to", "--limit"],
+            (Some("probe"), _) if !has_help => return ENGLISH,
+            (Some("probe"), _) => &["--token", "--oauth", "--created", "--tool", "--arguments"],
+            (Some("local-door"), _) | (Some("token" | "oauth"), Some("list")) if !has_help => {
+                return ENGLISH;
+            }
+            _ => &[],
+        },
+        "service" if word(0).is_some_and(|s| s.starts_with("__")) => return ENGLISH,
+        "service" if word(0) == Some("install") => &[
+            "--port",
+            "--initial-start-at-sign-in",
+            "--installation-generation",
+            "--installation-id",
+            "--installation-namespace",
+            "--installation-journal-token",
+        ],
+        "setup" => &[
+            "--journal",
+            "--port",
+            "--variant",
+            "--step-timeout-seconds",
+            "--initial-start-at-sign-in",
+        ],
+        "doctor" => &["--port"],
+        "supervisor" | "start" => &["--journal", "--direct-port"],
+        "convey" => &["--journal", "--port"],
+        "grab" => &["--out"],
+
+        "thinking" if word(0) == Some("set-lane") => &["--provider", "--model", "--journal"],
+        "thinking" if word(0) == Some("chatgpt") => &["--journal"],
+        "contract" if word(0) == Some("check") => &["--root", "--journal"],
+        "contract" if word(0) == Some("build") => &["--root"],
+        "contract" => &[],
+        "install-models" => &["--variant"],
+        // Match the installed importer grammar in import-host::cli_argv::takes_value.
+        "importer" => &[
+            "--preview-token",
+            "--preview-zone",
+            "--preview-stamp",
+            "--fallback-timestamp",
+            "--snapshot-digest",
+            "--timestamp",
+            "--facet",
+            "--listed-moves-shown",
+            "--import-id",
+            "--setting",
+            "--source",
+            "--sync",
+            "--path",
+            "--window-days",
+            "--connect",
+            "--date-from",
+            "--date-to",
+            "--audio-archive",
+            "--archive-identity",
+            "--source-zone",
+            "--resume",
+            "--audio-archive-status",
+            "--audio-archive-members",
+            "--offset",
+            "--limit",
+        ],
+        "sense" => &[
+            "--day",
+            "--segment",
+            "--stream",
+            "--reprocess",
+            "-j",
+            "--jobs",
+        ],
+        "transcribe" => &["--backend"],
+        "think" => &[
+            "--day",
+            "--segment",
+            "--facet",
+            "--activity",
+            "--stream",
+            "-j",
+            "--segment-workers",
+            "--skip-talents",
+            "--work-intent",
+            "--retry-unit",
+            "--retry-cause",
+            "--jobs",
+        ],
+        "config"
+        | "settings"
+        | "schedule"
+        | "cortex"
+        | "backend"
+        | "navigate"
+        | "open"
+        | "install-provider"
+        | "service"
+        | "thinking"
+        | "up"
+        | "down"
+        | "heartbeat"
+        | "check"
+        | "top"
+        | "backfill-facet-ids"
+        | "facet-candidates"
+        | "spl"
+        | "health"
+        | "setup-copy"
+        | "backup"
+        | "maintenance"
+        | "segment"
+        | "streams"
+        | "journal-stats"
+        | "reprocess"
+        | "backfill-processing-records"
+        | "share" => &[],
+        "talent" if word(0) == Some("worker") => return ENGLISH,
+        "talent" => &[],
+        JOURNAL_BRAIN_OWNER_SENTINEL => &["--expected-fingerprint"],
+        _ => return ENGLISH,
+    };
+    let mut iter = rest.iter();
+    while let Some(arg) = iter.next() {
+        if matches!(verb, "grab" | "navigate" | "importer") && arg == "--" {
+            break;
+        }
+        if matches!(arg.to_str(), Some("--json" | "--jsonl"))
+            || (verb == "supervisor" && arg == "--windows-service")
+            || (verb == "mcp"
+                && word(0) == Some("activity")
+                && arg.to_str().is_some_and(|v| v.starts_with("--json=")))
+            || (verb == "open" && arg == "--print-url")
+            || (verb == "think" && arg == "--updated")
+        {
+            return ENGLISH;
+        }
+        if arg.to_str().is_some_and(|arg| {
+            if verb == "health" && word(0) == Some("logs") {
+                return matches!(
+                    health_logs_long_option(arg),
+                    Ok(Some((
+                        HealthLogsLongOption::Since
+                            | HealthLogsLongOption::Service
+                            | HealthLogsLongOption::Grep,
+                        None
+                    )))
+                ) || arg
+                    .strip_prefix('-')
+                    .and_then(|value| value.strip_suffix('c'))
+                    .is_some_and(|flags| flags.bytes().all(|v| matches!(v, b'f' | b'v' | b'd')));
+            }
+            options.contains(&arg)
+        }) {
+            iter.next();
+        }
+    }
+    locale
+}
+
+/// Parse a command for library callers that consume canonical diagnostics.
 pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
+    evaluate_args_with_copy(ParserCopy::default(), args)
+}
+
+/// Render complete terminal errors at the point where the parser knows their cause.
+pub fn evaluate_args_for(locale: &str, args: &[OsString]) -> Result<Command, UsageError> {
+    let verb = args
+        .first()
+        .and_then(|word| word.to_str())
+        .unwrap_or_default();
+    let command = format!("solstone journal {verb}");
+    evaluate_args_with_copy(
+        ParserCopy {
+            locale: Some(locale),
+            command: &command,
+        },
+        args,
+    )
+}
+
+fn evaluate_args_with_copy(copy: ParserCopy<'_>, args: &[OsString]) -> Result<Command, UsageError> {
     match args {
         [sentinel, command, rest @ ..]
             if sentinel == OsStr::new(JOURNAL_BRAIN_OWNER_SENTINEL)
@@ -1647,8 +1818,10 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
             if rest.iter().any(help) {
                 Ok(Command::SetupHelp)
             } else {
-                Ok(solstone_core_setup::args::parse_args(rest)
-                    .map_or_else(Command::SetupUsage, Command::Setup))
+                Ok(
+                    solstone_core_setup::args::parse_args_for(copy.language(), rest)
+                        .map_or_else(Command::SetupUsage, Command::Setup),
+                )
             }
         }
         [command, rest @ ..] if command == OsStr::new("setup-copy") => {
@@ -1817,18 +1990,20 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
             Ok(parse_install_provider(rest)
                 .map_or(Command::InstallProviderUsage, Command::InstallProvider))
         }
-        [command, rest @ ..] if command == OsStr::new("convey") => match parse_convey(rest) {
+        [command, rest @ ..] if command == OsStr::new("convey") => match parse_convey(copy, rest) {
             Ok(ConveyParse::Run(options)) => Ok(Command::Convey(options)),
             Ok(ConveyParse::Help) => Ok(Command::ConveyHelp),
             Err(error) => Ok(Command::ConveyUsage(error)),
         },
-        [command, rest @ ..] if command == OsStr::new("schedule") => match parse_schedule(rest) {
-            Ok(ScheduleParse::Run(options)) => Ok(Command::Schedule(options)),
-            Ok(ScheduleParse::Help) => Ok(Command::ScheduleHelp),
-            Err(error) => Ok(Command::ScheduleUsage(error)),
-        },
+        [command, rest @ ..] if command == OsStr::new("schedule") => {
+            match parse_schedule(copy, rest) {
+                Ok(ScheduleParse::Run(options)) => Ok(Command::Schedule(options)),
+                Ok(ScheduleParse::Help) => Ok(Command::ScheduleHelp),
+                Err(error) => Ok(Command::ScheduleUsage(error)),
+            }
+        }
         [command, rest @ ..] if command == OsStr::new("grab") => {
-            Ok(Command::Grab(parse_grab(rest)))
+            Ok(Command::Grab(parse_grab(copy, rest)))
         }
         [command, rest @ ..] if command == OsStr::new("spl") => {
             let help = |argument: &OsString| {
@@ -1837,7 +2012,7 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
             if rest.iter().any(help) {
                 return Ok(Command::SplHelp);
             }
-            match parse_spl(rest) {
+            match parse_spl(copy, rest) {
                 Ok(command) => Ok(Command::Spl(command)),
                 Err(error) => Ok(Command::SplUsage(error)),
             }
@@ -1847,9 +2022,9 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
                 argument == OsStr::new("--help") || argument == OsStr::new("-h")
             };
             if rest.iter().any(help) {
-                return Ok(Command::McpHelp(mcp_help(rest)));
+                return Ok(Command::McpHelp(mcp_help(copy.language(), rest)));
             }
-            match parse_mcp(rest) {
+            match parse_mcp(copy, rest) {
                 Ok(command) => Ok(Command::Mcp(command)),
                 Err(error) => Ok(Command::McpUsage(error)),
             }
@@ -1859,15 +2034,21 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
             Ok(SenseParse::Help) => Ok(Command::SenseHelp),
             Err(()) => Ok(Command::SenseUsage),
         },
-        [command, rest @ ..] if command == OsStr::new("cortex") => match parse_cortex(rest) {
+        [command, rest @ ..] if command == OsStr::new("cortex") => match parse_cortex(copy, rest) {
             Ok(CortexParse::Run(options)) => Ok(Command::Cortex(options)),
             Ok(CortexParse::Help) => Ok(Command::CortexHelp),
             Err(error) => Ok(Command::CortexUsage(error)),
         },
-        [command, rest @ ..] if command == OsStr::new("supervisor") => Ok(
-            parse_supervisor_invocation(rest, Command::SupervisorUsage, Command::SupervisorHelp),
-        ),
+        [command, rest @ ..] if command == OsStr::new("supervisor") => {
+            Ok(parse_supervisor_invocation(
+                copy,
+                rest,
+                Command::SupervisorUsage,
+                Command::SupervisorHelp,
+            ))
+        }
         [command, rest @ ..] if command == OsStr::new("start") => Ok(parse_supervisor_invocation(
+            copy,
             rest,
             Command::StartUsage,
             Command::StartHelp,
@@ -1930,14 +2111,32 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
             })
         }
         [command, rest @ ..] if command == OsStr::new("service") => {
-            Ok(Command::Service(parse_service_args(rest)))
+            Ok(Command::Service(parse_service_args_with_copy(copy, rest)))
         }
-        [command, rest @ ..] if command == OsStr::new("up") => Ok(Command::Service(
-            parse_up_down_alias(rest, ServiceAction::Up, UP_HELP),
-        )),
-        [command, rest @ ..] if command == OsStr::new("down") => Ok(Command::Service(
-            parse_up_down_alias(rest, ServiceAction::Down, DOWN_HELP),
-        )),
+        [command, rest @ ..] if command == OsStr::new("up") => {
+            Ok(Command::Service(parse_up_down_alias(
+                copy,
+                rest,
+                ServiceAction::Up,
+                solstone_core_cli_copy::render_for(
+                    copy.language(),
+                    "journal.cli.host.up.help",
+                    &[],
+                ),
+            )))
+        }
+        [command, rest @ ..] if command == OsStr::new("down") => {
+            Ok(Command::Service(parse_up_down_alias(
+                copy,
+                rest,
+                ServiceAction::Down,
+                solstone_core_cli_copy::render_for(
+                    copy.language(),
+                    "journal.cli.host.down.help",
+                    &[],
+                ),
+            )))
+        }
         _ => Err(UsageError),
     }
 }
@@ -2310,7 +2509,7 @@ enum GrabParseState {
     TrailingOptions,
 }
 
-fn parse_grab(args: &[OsString]) -> GrabCommand {
+fn parse_grab(copy: ParserCopy<'_>, args: &[OsString]) -> GrabCommand {
     let mut state = GrabParseState::LeadingOptions;
     let mut end_of_options = false;
     let mut tokens = Vec::new();
@@ -2345,10 +2544,18 @@ fn parse_grab(args: &[OsString]) -> GrabCommand {
                 debug = true;
             } else if argument == OsStr::new("--out") {
                 let Some(value) = args.get(index + 1) else {
-                    return grab_parse_error("argument --out: expected one argument");
+                    return grab_parse_error(copy.diagnostic(
+                        "journal.cli.host.parser.grab.argument.out.expected.one.argument",
+                        [("command", &copy.command)],
+                        || "argument --out: expected one argument".to_owned(),
+                    ));
                 };
                 if looks_like_grab_option(value.as_os_str()) {
-                    return grab_parse_error("argument --out: expected one argument");
+                    return grab_parse_error(copy.diagnostic(
+                        "journal.cli.host.parser.grab.argument.out.expected.one.argument",
+                        [("command", &copy.command)],
+                        || "argument --out: expected one argument".to_owned(),
+                    ));
                 }
                 out = Some(value.clone());
                 index += 1;
@@ -2357,32 +2564,52 @@ fn parse_grab(args: &[OsString]) -> GrabCommand {
                 .and_then(|value| value.strip_prefix("--out="))
             {
                 if value.is_empty() {
-                    return grab_parse_error("argument --out: expected one argument");
+                    return grab_parse_error(copy.diagnostic(
+                        "journal.cli.host.parser.grab.argument.out.expected.one.argument",
+                        [("command", &copy.command)],
+                        || "argument --out: expected one argument".to_owned(),
+                    ));
                 }
                 out = Some(OsString::from(value));
             } else {
-                return grab_parse_error(&format!(
-                    "unrecognized arguments: {}",
-                    argument.to_string_lossy()
+                return grab_parse_error(copy.diagnostic(
+                    "journal.cli.host.parser.grab.unrecognized.arguments.arguments",
+                    [
+                        ("command", &copy.command),
+                        ("arguments", &(argument.to_string_lossy())),
+                    ],
+                    || format!("unrecognized arguments: {}", argument.to_string_lossy()),
                 ));
             }
             index += 1;
             continue;
         }
         if !end_of_options && looks_like_grab_option(argument) {
-            return grab_parse_error(&format!(
-                "unrecognized arguments: {}",
-                argument.to_string_lossy()
+            return grab_parse_error(copy.diagnostic(
+                "journal.cli.host.parser.grab.unrecognized.arguments.arguments",
+                [
+                    ("command", &copy.command),
+                    ("arguments", &(argument.to_string_lossy())),
+                ],
+                || format!("unrecognized arguments: {}", argument.to_string_lossy()),
             ));
         }
         if state == GrabParseState::TrailingOptions {
-            return grab_parse_error(&format!(
-                "unrecognized arguments: {}",
-                argument.to_string_lossy()
+            return grab_parse_error(copy.diagnostic(
+                "journal.cli.host.parser.grab.unrecognized.arguments.arguments",
+                [
+                    ("command", &copy.command),
+                    ("arguments", &(argument.to_string_lossy())),
+                ],
+                || format!("unrecognized arguments: {}", argument.to_string_lossy()),
             ));
         }
         let Some(token) = argument.to_str() else {
-            return grab_parse_error("path tokens must be valid Unicode");
+            return grab_parse_error(copy.diagnostic(
+                "journal.cli.host.parser.grab.path.tokens.must.be.valid.unicode",
+                [("command", &copy.command)],
+                || "path tokens must be valid Unicode".to_owned(),
+            ));
         };
         tokens.push(token.to_owned());
         state = GrabParseState::Positionals;
@@ -2424,16 +2651,21 @@ fn looks_like_grab_option(argument: &OsStr) -> bool {
             .is_some_and(|value| value.starts_with('-') && value.parse::<f64>().is_err())
 }
 
-fn grab_parse_error(message: &str) -> GrabCommand {
-    GrabCommand::ParseError(message.to_owned())
+fn grab_parse_error(message: String) -> GrabCommand {
+    GrabCommand::ParseError(message)
 }
 
-fn parse_supervisor_invocation(rest: &[OsString], usage: Command, help: Command) -> Command {
+fn parse_supervisor_invocation(
+    copy: ParserCopy<'_>,
+    rest: &[OsString],
+    usage: Command,
+    help: Command,
+) -> Command {
     let is_start = matches!(usage, Command::StartUsage);
     if rest.iter().any(is_help) {
         return help;
     }
-    match parse_supervisor(rest, is_start) {
+    match parse_supervisor(copy, rest, is_start) {
         Ok(options) => Command::Supervisor(options),
         Err(SupervisorParseError::Invalid(error)) => {
             if is_start {
@@ -2449,9 +2681,10 @@ fn parse_supervisor_invocation(rest: &[OsString], usage: Command, help: Command)
 }
 
 fn parse_up_down_alias(
+    copy: ParserCopy<'_>,
     rest: &[OsString],
     action: ServiceAction,
-    help: &'static str,
+    help: String,
 ) -> ServiceParseOutcome {
     if rest.iter().any(is_help) {
         return ServiceParseOutcome::Exit {
@@ -2467,6 +2700,7 @@ fn parse_up_down_alias(
             code: 1,
             stdout: None,
             stderr: Some(SafeServiceDiagnostic::unknown_subcommand(
+                copy,
                 rest[0].as_os_str(),
             )),
         }
@@ -2491,21 +2725,30 @@ enum SupervisorParseError {
     Invalid(SupervisorUsageError),
 }
 
-fn parse_direct_port_value(value: &str) -> Result<u16, SupervisorParseError> {
+fn parse_direct_port_value(copy: ParserCopy<'_>, value: &str) -> Result<u16, SupervisorParseError> {
     let parsed = value.parse::<i32>().map_err(|_| {
-        SupervisorParseError::Invalid(SupervisorUsageError(format!(
-            "argument --direct-port: invalid int value: '{value}'"
+        SupervisorParseError::Invalid(SupervisorUsageError(copy.diagnostic(
+            "journal.cli.host.parser.direct.port.value.argument.direct.port.invalid.int.value.value",
+            [("command", &copy.command), ("value", &(value))],
+            || format!(
+                "argument --direct-port: invalid int value: '{value}'"
+            ),
         )))
     })?;
     if !(1..=65535).contains(&parsed) {
         return Err(SupervisorParseError::Invalid(SupervisorUsageError(
-            "argument --direct-port: must be between 1 and 65535".to_owned(),
+            copy.diagnostic(
+                "journal.cli.host.parser.direct.port.value.argument.direct.port.must.be.between.n1.and.n65535",
+                [("command", &copy.command)],
+                || "argument --direct-port: must be between 1 and 65535".to_owned(),
+            ),
         )));
     }
     Ok(parsed as u16)
 }
 
 fn parse_supervisor(
+    copy: ParserCopy<'_>,
     args: &[OsString],
     is_start: bool,
 ) -> Result<SupervisorOptions, SupervisorParseError> {
@@ -2567,20 +2810,28 @@ fn parse_supervisor(
             value if value == OsStr::new("--direct-port") => {
                 if direct_port.is_some() {
                     return Err(SupervisorParseError::Invalid(SupervisorUsageError(
-                        "argument --direct-port: cannot be repeated".to_owned(),
+                        copy.diagnostic(
+                            "journal.cli.host.parser.supervisor.argument.direct.port.cannot.be.repeated",
+                            [("command", &copy.command)],
+                            || "argument --direct-port: cannot be repeated".to_owned(),
+                        ),
                     )));
                 }
                 let value = args.get(index + 1).ok_or_else(|| {
-                    SupervisorParseError::Invalid(SupervisorUsageError(
-                        "argument --direct-port: expected one argument".to_owned(),
-                    ))
+                    SupervisorParseError::Invalid(SupervisorUsageError(copy.diagnostic(
+                        "journal.cli.host.parser.supervisor.argument.direct.port.expected.one.argument",
+                        [("command", &copy.command)],
+                        || "argument --direct-port: expected one argument".to_owned(),
+                    )))
                 })?;
                 let value = value.to_str().ok_or_else(|| {
-                    SupervisorParseError::Invalid(SupervisorUsageError(
-                        "argument --direct-port: invalid int value".to_owned(),
-                    ))
+                    SupervisorParseError::Invalid(SupervisorUsageError(copy.diagnostic(
+                        "journal.cli.host.parser.supervisor.argument.direct.port.invalid.int.value",
+                        [("command", &copy.command)],
+                        || "argument --direct-port: invalid int value".to_owned(),
+                    )))
                 })?;
-                direct_port = Some(parse_direct_port_value(value)?);
+                direct_port = Some(parse_direct_port_value(copy, value)?);
                 index += 2;
             }
             value
@@ -2590,14 +2841,18 @@ fn parse_supervisor(
             {
                 if direct_port.is_some() {
                     return Err(SupervisorParseError::Invalid(SupervisorUsageError(
-                        "argument --direct-port: cannot be repeated".to_owned(),
+                        copy.diagnostic(
+                            "journal.cli.host.parser.supervisor.argument.direct.port.cannot.be.repeated",
+                            [("command", &copy.command)],
+                            || "argument --direct-port: cannot be repeated".to_owned(),
+                        ),
                     )));
                 }
                 let value = value
                     .to_str()
                     .and_then(|item| item.strip_prefix("--direct-port="))
                     .expect("prefix checked");
-                direct_port = Some(parse_direct_port_value(value)?);
+                direct_port = Some(parse_direct_port_value(copy, value)?);
                 index += 1;
             }
             value if value == OsStr::new("--journal") => {
@@ -2680,7 +2935,7 @@ enum ConveyParse {
     Help,
 }
 
-fn parse_convey(args: &[OsString]) -> Result<ConveyParse, ConveyUsageError> {
+fn parse_convey(copy: ParserCopy<'_>, args: &[OsString]) -> Result<ConveyParse, ConveyUsageError> {
     let mut port = None;
     let mut journal_override = None;
     let mut index = 0;
@@ -2698,18 +2953,32 @@ fn parse_convey(args: &[OsString]) -> Result<ConveyParse, ConveyUsageError> {
         }
         if argument == OsStr::new("--port") {
             let value = args.get(index + 1).ok_or_else(|| {
-                ConveyUsageError("argument --port: expected one argument".to_owned())
+                ConveyUsageError(copy.diagnostic(
+                    "journal.cli.host.parser.convey.argument.port.expected.one.argument",
+                    [("command", &copy.command)],
+                    || "argument --port: expected one argument".to_owned(),
+                ))
             })?;
-            let value = value
-                .to_str()
-                .ok_or_else(|| ConveyUsageError("argument --port: invalid int value".to_owned()))?;
+            let value = value.to_str().ok_or_else(|| {
+                ConveyUsageError(copy.diagnostic(
+                    "journal.cli.host.parser.convey.argument.port.invalid.int.value",
+                    [("command", &copy.command)],
+                    || "argument --port: invalid int value".to_owned(),
+                ))
+            })?;
             let parsed = value.parse::<i32>().map_err(|_| {
-                ConveyUsageError(format!("argument --port: invalid int value: '{value}'"))
+                ConveyUsageError(copy.diagnostic(
+                    "journal.cli.host.parser.convey.argument.port.invalid.int.value.value",
+                    [("command", &copy.command), ("value", &(value))],
+                    || format!("argument --port: invalid int value: '{value}'"),
+                ))
             })?;
             if !(1..=65535).contains(&parsed) {
-                return Err(ConveyUsageError(
-                    "argument --port: must be between 1 and 65535".to_owned(),
-                ));
+                return Err(ConveyUsageError(copy.diagnostic(
+                    "journal.cli.host.parser.convey.argument.port.must.be.between.n1.and.n65535",
+                    [("command", &copy.command)],
+                    || "argument --port: must be between 1 and 65535".to_owned(),
+                )));
             }
             port = Some(parsed as u16);
             index += 2;
@@ -2720,12 +2989,18 @@ fn parse_convey(args: &[OsString]) -> Result<ConveyParse, ConveyUsageError> {
             .and_then(|item| item.strip_prefix("--port="))
         {
             let parsed = value.parse::<i32>().map_err(|_| {
-                ConveyUsageError(format!("argument --port: invalid int value: '{value}'"))
+                ConveyUsageError(copy.diagnostic(
+                    "journal.cli.host.parser.convey.argument.port.invalid.int.value.value",
+                    [("command", &copy.command), ("value", &(value))],
+                    || format!("argument --port: invalid int value: '{value}'"),
+                ))
             })?;
             if !(1..=65535).contains(&parsed) {
-                return Err(ConveyUsageError(
-                    "argument --port: must be between 1 and 65535".to_owned(),
-                ));
+                return Err(ConveyUsageError(copy.diagnostic(
+                    "journal.cli.host.parser.convey.argument.port.must.be.between.n1.and.n65535",
+                    [("command", &copy.command)],
+                    || "argument --port: must be between 1 and 65535".to_owned(),
+                )));
             }
             port = Some(parsed as u16);
             index += 1;
@@ -2733,24 +3008,50 @@ fn parse_convey(args: &[OsString]) -> Result<ConveyParse, ConveyUsageError> {
         }
         if argument == OsStr::new("--journal") {
             let value = args.get(index + 1).ok_or_else(|| {
-                ConveyUsageError("argument --journal: expected one argument".to_owned())
+                ConveyUsageError(copy.diagnostic(
+                    "journal.cli.host.parser.convey.argument.journal.expected.one.argument",
+                    [("command", &copy.command)],
+                    || "argument --journal: expected one argument".to_owned(),
+                ))
             })?;
             journal_override = Some(value.clone());
             index += 2;
             continue;
         }
-        return Err(ConveyUsageError(format!(
-            "unrecognized arguments: {}",
-            args[index..]
-                .iter()
-                .map(|value| value.to_string_lossy())
-                .collect::<Vec<_>>()
-                .join(" ")
-        )));
+        return Err(ConveyUsageError(
+            copy.diagnostic(
+                "journal.cli.host.parser.convey.unrecognized.arguments.arguments",
+                [
+                    ("command", &copy.command),
+                    (
+                        "arguments",
+                        &(args[index..]
+                            .iter()
+                            .map(|value| value.to_string_lossy())
+                            .collect::<Vec<_>>()
+                            .join(" ")),
+                    ),
+                ],
+                || {
+                    format!(
+                        "unrecognized arguments: {}",
+                        args[index..]
+                            .iter()
+                            .map(|value| value.to_string_lossy())
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    )
+                },
+            ),
+        ));
     }
     Ok(ConveyParse::Run(ConveyOptions {
         port: port.ok_or_else(|| {
-            ConveyUsageError("the following arguments are required: --port".to_owned())
+            ConveyUsageError(copy.diagnostic(
+                "journal.cli.host.parser.convey.the.following.arguments.are.required.port",
+                [("command", &copy.command)],
+                || "the following arguments are required: --port".to_owned(),
+            ))
         })?,
         journal_override,
     }))
@@ -2761,7 +3062,10 @@ enum ScheduleParse {
     Help,
 }
 
-fn parse_schedule(args: &[OsString]) -> Result<ScheduleParse, ScheduleUsageError> {
+fn parse_schedule(
+    copy: ParserCopy<'_>,
+    args: &[OsString],
+) -> Result<ScheduleParse, ScheduleUsageError> {
     let mut verbose = false;
     let mut debug = false;
     for (index, argument) in args.iter().enumerate() {
@@ -2770,14 +3074,32 @@ fn parse_schedule(args: &[OsString]) -> Result<ScheduleParse, ScheduleUsageError
             Some("-v" | "--verbose") => verbose = true,
             Some("-d" | "--debug") => debug = true,
             _ => {
-                return Err(ScheduleUsageError(format!(
-                    "unrecognized arguments: {}",
-                    args[index..]
-                        .iter()
-                        .map(|value| value.to_string_lossy())
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                )));
+                return Err(ScheduleUsageError(
+                    copy.diagnostic(
+                        "journal.cli.host.parser.schedule.unrecognized.arguments.arguments",
+                        [
+                            ("command", &copy.command),
+                            (
+                                "arguments",
+                                &(args[index..]
+                                    .iter()
+                                    .map(|value| value.to_string_lossy())
+                                    .collect::<Vec<_>>()
+                                    .join(" ")),
+                            ),
+                        ],
+                        || {
+                            format!(
+                                "unrecognized arguments: {}",
+                                args[index..]
+                                    .iter()
+                                    .map(|value| value.to_string_lossy())
+                                    .collect::<Vec<_>>()
+                                    .join(" ")
+                            )
+                        },
+                    ),
+                ));
             }
         }
     }
@@ -3635,97 +3957,157 @@ fn is_journal_config_flag(value: &OsStr) -> bool {
     )
 }
 
-fn parse_spl(args: &[OsString]) -> Result<SplCommand, SplUsageError> {
+fn parse_spl(copy: ParserCopy<'_>, args: &[OsString]) -> Result<SplCommand, SplUsageError> {
     let [command, rest @ ..] = args else {
-        return Err(SplUsageError(
-            "the following arguments are required: service".to_owned(),
-        ));
+        return Err(SplUsageError(copy.diagnostic(
+            "journal.cli.host.parser.spl.the.following.arguments.are.required.service",
+            [("command", &copy.command)],
+            || "the following arguments are required: service".to_owned(),
+        )));
     };
     if command != OsStr::new("service") {
-        return Err(SplUsageError(format!(
-            "invalid choice: {} (choose from service)",
-            command.to_string_lossy()
+        return Err(SplUsageError(copy.diagnostic(
+            "journal.cli.host.parser.spl.invalid.choice.choose.from.service.value",
+            [
+                ("command", &copy.command),
+                ("value", &(command.to_string_lossy())),
+            ],
+            || {
+                format!(
+                    "invalid choice: {} (choose from service)",
+                    command.to_string_lossy()
+                )
+            },
         )));
     }
     parse_service(rest).map(SplCommand::Service).map_err(|_| {
-        SplUsageError(format!(
-            "unrecognized arguments: {}",
-            rest.iter()
-                .map(|value| value.to_string_lossy())
-                .collect::<Vec<_>>()
-                .join(" ")
-        ))
+        SplUsageError(
+            copy.diagnostic(
+                "journal.cli.host.parser.spl.unrecognized.arguments.arguments",
+                [
+                    ("command", &copy.command),
+                    (
+                        "arguments",
+                        &(rest
+                            .iter()
+                            .map(|value| value.to_string_lossy())
+                            .collect::<Vec<_>>()
+                            .join(" ")),
+                    ),
+                ],
+                || {
+                    format!(
+                        "unrecognized arguments: {}",
+                        rest.iter()
+                            .map(|value| value.to_string_lossy())
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    )
+                },
+            ),
+        )
     })
 }
 
-fn parse_mcp(args: &[OsString]) -> Result<McpCommand, McpUsageError> {
+fn parse_mcp(copy: ParserCopy<'_>, args: &[OsString]) -> Result<McpCommand, McpUsageError> {
     let [command, rest @ ..] = args else {
-        return Err(McpUsageError(
-            "the following arguments are required: service, local-door, status, token, pairing, oauth, permission, activity, probe"
+        return Err(McpUsageError(copy.diagnostic(
+            "journal.cli.host.parser.mcp.the.following.arguments.are.required.service.local.door.status.token.pairing.oauth.permission.activity.probe",
+            [("command", &copy.command)],
+            || "the following arguments are required: service, local-door, status, token, pairing, oauth, permission, activity, probe"
                 .to_owned(),
-        ));
+        )));
     };
     match command.to_str() {
         Some("service") if rest.is_empty() => Ok(McpCommand::Service),
         Some("local-door") if rest.is_empty() => Ok(McpCommand::LocalDoor),
         Some("status") if rest.is_empty() => Ok(McpCommand::Status),
-        Some("token") => parse_mcp_token(rest).map(McpCommand::Token),
-        Some("pairing") => parse_mcp_pairing(rest).map(McpCommand::Pairing),
-        Some("oauth") => parse_mcp_oauth(rest).map(McpCommand::Oauth),
-        Some("permission") => parse_mcp_permission(rest).map(McpCommand::Permission),
-        Some("activity") => parse_mcp_activity(rest).map(McpCommand::Activity),
-        Some("probe") => parse_mcp_probe(rest).map(McpCommand::Probe),
-        _ => Err(McpUsageError(format!(
-            "invalid MCP command: {}",
-            command.to_string_lossy()
+        Some("token") => parse_mcp_token(copy, rest).map(McpCommand::Token),
+        Some("pairing") => parse_mcp_pairing(copy, rest).map(McpCommand::Pairing),
+        Some("oauth") => parse_mcp_oauth(copy, rest).map(McpCommand::Oauth),
+        Some("permission") => parse_mcp_permission(copy, rest).map(McpCommand::Permission),
+        Some("activity") => parse_mcp_activity(copy, rest).map(McpCommand::Activity),
+        Some("probe") => parse_mcp_probe(copy, rest).map(McpCommand::Probe),
+        _ => Err(McpUsageError(copy.diagnostic(
+            "journal.cli.host.parser.mcp.invalid.mcp.command.value",
+            [
+                ("command", &copy.command),
+                ("value", &(command.to_string_lossy())),
+            ],
+            || format!("invalid MCP command: {}", command.to_string_lossy()),
         ))),
     }
 }
 
-fn parse_mcp_permission(args: &[OsString]) -> Result<McpPermissionCommand, McpUsageError> {
+fn parse_mcp_permission(
+    copy: ParserCopy<'_>,
+    args: &[OsString],
+) -> Result<McpPermissionCommand, McpUsageError> {
     let [subcommand, rest @ ..] = args else {
-        return Err(McpUsageError(
-            "the following arguments are required: show, set, clear".to_owned(),
-        ));
+        return Err(McpUsageError(copy.diagnostic(
+            "journal.cli.host.parser.mcp.permission.the.following.arguments.are.required.show.set.clear",
+            [("command", &copy.command)],
+            || "the following arguments are required: show, set, clear".to_owned(),
+        )));
     };
     match subcommand.to_str() {
         Some("show") => {
             if rest.is_empty() {
                 Ok(McpPermissionCommand::Show { target: None })
             } else {
-                let target = parse_mcp_target(rest)?;
+                let target = parse_mcp_target(copy, rest)?;
                 Ok(McpPermissionCommand::Show {
                     target: Some(target),
                 })
             }
         }
-        Some("set") => parse_mcp_permission_set(rest),
+        Some("set") => parse_mcp_permission_set(copy, rest),
         Some("clear") => {
-            let target = parse_mcp_target(rest)?;
+            let target = parse_mcp_target(copy, rest)?;
             Ok(McpPermissionCommand::Clear { target })
         }
-        _ => Err(McpUsageError(format!(
-            "invalid MCP permission command: {}",
-            subcommand.to_string_lossy()
+        _ => Err(McpUsageError(copy.diagnostic(
+            "journal.cli.host.parser.mcp.permission.invalid.mcp.permission.command.value",
+            [
+                ("command", &copy.command),
+                ("value", &(subcommand.to_string_lossy())),
+            ],
+            || {
+                format!(
+                    "invalid MCP permission command: {}",
+                    subcommand.to_string_lossy()
+                )
+            },
         ))),
     }
 }
 
-fn parse_mcp_permission_set(args: &[OsString]) -> Result<McpPermissionCommand, McpUsageError> {
+fn parse_mcp_permission_set(
+    copy: ParserCopy<'_>,
+    args: &[OsString],
+) -> Result<McpPermissionCommand, McpUsageError> {
     let mut target_args = Vec::new();
     let mut categories = Vec::new();
     let mut facets = Vec::new();
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
         if arg == OsStr::new("--category") {
-            let value = iter
-                .next()
-                .ok_or_else(|| McpUsageError("expected argument after --category".to_owned()))?;
+            let value = iter.next().ok_or_else(|| {
+                McpUsageError(copy.diagnostic(
+                    "journal.cli.host.parser.mcp.permission.set.expected.argument.after.category",
+                    [("command", &copy.command)],
+                    || "expected argument after --category".to_owned(),
+                ))
+            })?;
             let value = value
                 .to_str()
                 .filter(|value| !value.is_empty())
                 .ok_or_else(|| {
-                    McpUsageError("category must be valid UTF-8 and nonempty".to_owned())
+                    McpUsageError(copy.diagnostic(
+                        "journal.cli.host.parser.mcp.permission.set.category.must.be.valid.utf.n8.and.nonempty",
+                        [("command", &copy.command)],
+                        || "category must be valid UTF-8 and nonempty".to_owned(),
+                    ))
                 })?;
             categories.push(value.to_owned());
         } else if let Some(value) = arg
@@ -3733,18 +4115,30 @@ fn parse_mcp_permission_set(args: &[OsString]) -> Result<McpPermissionCommand, M
             .and_then(|value| value.strip_prefix("--category="))
         {
             if value.is_empty() {
-                return Err(McpUsageError("category must be nonempty".to_owned()));
+                return Err(McpUsageError(copy.diagnostic(
+                    "journal.cli.host.parser.mcp.permission.set.category.must.be.nonempty",
+                    [("command", &copy.command)],
+                    || "category must be nonempty".to_owned(),
+                )));
             }
             categories.push(value.to_owned());
         } else if arg == OsStr::new("--facet") {
-            let value = iter
-                .next()
-                .ok_or_else(|| McpUsageError("expected argument after --facet".to_owned()))?;
+            let value = iter.next().ok_or_else(|| {
+                McpUsageError(copy.diagnostic(
+                    "journal.cli.host.parser.mcp.permission.set.expected.argument.after.facet",
+                    [("command", &copy.command)],
+                    || "expected argument after --facet".to_owned(),
+                ))
+            })?;
             let value = value
                 .to_str()
                 .filter(|value| !value.is_empty())
                 .ok_or_else(|| {
-                    McpUsageError("facet name must be valid UTF-8 and nonempty".to_owned())
+                    McpUsageError(copy.diagnostic(
+                        "journal.cli.host.parser.mcp.permission.set.facet.name.must.be.valid.utf.n8.and.nonempty",
+                        [("command", &copy.command)],
+                        || "facet name must be valid UTF-8 and nonempty".to_owned(),
+                    ))
                 })?;
             facets.push(value.to_owned());
         } else if let Some(value) = arg
@@ -3752,18 +4146,24 @@ fn parse_mcp_permission_set(args: &[OsString]) -> Result<McpPermissionCommand, M
             .and_then(|value| value.strip_prefix("--facet="))
         {
             if value.is_empty() {
-                return Err(McpUsageError("facet name must be nonempty".to_owned()));
+                return Err(McpUsageError(copy.diagnostic(
+                    "journal.cli.host.parser.mcp.permission.set.facet.name.must.be.nonempty",
+                    [("command", &copy.command)],
+                    || "facet name must be nonempty".to_owned(),
+                )));
             }
             facets.push(value.to_owned());
         } else {
             target_args.push(arg.clone());
         }
     }
-    let target = parse_mcp_target(&target_args)?;
+    let target = parse_mcp_target(copy, &target_args)?;
     if categories.is_empty() {
-        return Err(McpUsageError(
-            "at least one --category is required".to_owned(),
-        ));
+        return Err(McpUsageError(copy.diagnostic(
+            "journal.cli.host.parser.mcp.permission.set.at.least.one.category.is.required",
+            [("command", &copy.command)],
+            || "at least one --category is required".to_owned(),
+        )));
     }
     Ok(McpPermissionCommand::Set {
         target,
@@ -3774,7 +4174,10 @@ fn parse_mcp_permission_set(args: &[OsString]) -> Result<McpPermissionCommand, M
 
 const DEFAULT_ACTIVITY_LIMIT: usize = 20;
 
-fn parse_mcp_activity(args: &[OsString]) -> Result<McpActivityCommand, McpUsageError> {
+fn parse_mcp_activity(
+    copy: ParserCopy<'_>,
+    args: &[OsString],
+) -> Result<McpActivityCommand, McpUsageError> {
     let mut target_args = Vec::new();
     let mut command = McpActivityCommand {
         limit: DEFAULT_ACTIVITY_LIMIT,
@@ -3795,19 +4198,29 @@ fn parse_mcp_activity(args: &[OsString]) -> Result<McpActivityCommand, McpUsageE
         let mut take = |name: &str| -> Result<String, McpUsageError> {
             match inline.clone() {
                 Some(value) if !value.is_empty() => Ok(value),
-                Some(_) => Err(McpUsageError(format!("{name} must be nonempty"))),
+                Some(_) => Err(McpUsageError(copy.diagnostic(
+                    "journal.cli.host.parser.mcp.activity.must.be.nonempty.name",
+                    [("command", &copy.command), ("name", &(name))],
+                    || format!("{name} must be nonempty"),
+                ))),
                 None => iter
                     .next()
                     .and_then(|value| value.to_str().map(str::to_owned))
                     .filter(|value| !value.is_empty())
-                    .ok_or_else(|| McpUsageError(format!("expected argument after {name}"))),
+                    .ok_or_else(|| {
+                        McpUsageError(copy.diagnostic(
+                            "journal.cli.host.parser.mcp.activity.expected.argument.after.name",
+                            [("command", &copy.command), ("name", &(name))],
+                            || format!("expected argument after {name}"),
+                        ))
+                    }),
             }
         };
         match flag.as_str() {
             "--tool" => command.tool = Some(take("--tool")?),
             "--outcome" => command.outcome = Some(take("--outcome")?),
-            "--day-from" => command.day_from = Some(validate_day(&take("--day-from")?)?),
-            "--day-to" => command.day_to = Some(validate_day(&take("--day-to")?)?),
+            "--day-from" => command.day_from = Some(validate_day(copy, &take("--day-from")?)?),
+            "--day-to" => command.day_to = Some(validate_day(copy, &take("--day-to")?)?),
             "--limit" => {
                 let value = take("--limit")?;
                 command.limit = value
@@ -3815,7 +4228,11 @@ fn parse_mcp_activity(args: &[OsString]) -> Result<McpActivityCommand, McpUsageE
                     .ok()
                     .filter(|limit| (1..=1000).contains(limit))
                     .ok_or_else(|| {
-                        McpUsageError("--limit must be between 1 and 1000".to_owned())
+                        McpUsageError(copy.diagnostic(
+                            "journal.cli.host.parser.mcp.activity.limit.must.be.between.n1.and.n1000",
+                            [("command", &copy.command)],
+                            || "--limit must be between 1 and 1000".to_owned(),
+                        ))
                     })?;
             }
             "--json" => command.json = true,
@@ -3827,16 +4244,20 @@ fn parse_mcp_activity(args: &[OsString]) -> Result<McpActivityCommand, McpUsageE
             // through to the target: `--tools search` would otherwise be
             // reported as a bad connection target rather than as the typo it is.
             other if other.starts_with("--") => {
-                return Err(McpUsageError(format!(
-                    "unknown option {other}; accepted: --token, --oauth, --created, --tool, \
-                     --outcome, --day-from, --day-to, --limit, --json"
+                return Err(McpUsageError(copy.diagnostic(
+                    "journal.cli.host.parser.mcp.activity.unknown.option.accepted.token.oauth.created.tool.outcome.day.from.day.to.limit.json.other",
+                    [("command", &copy.command), ("other", &(other))],
+                    || format!(
+                        "unknown option {other}; accepted: --token, --oauth, --created, --tool, \
+                        --outcome, --day-from, --day-to, --limit, --json"
+                    ),
                 )));
             }
             _ => target_args.push(arg.clone()),
         }
     }
     if !target_args.is_empty() {
-        command.target = Some(parse_mcp_target(&target_args)?);
+        command.target = Some(parse_mcp_target(copy, &target_args)?);
     }
     Ok(command)
 }
@@ -3844,17 +4265,25 @@ fn parse_mcp_activity(args: &[OsString]) -> Result<McpActivityCommand, McpUsageE
 /// ⚠ A day bound is compared as bytes against an eight-digit chronicle
 /// directory name, so anything else silently compares wrong rather than
 /// failing. Reject it here instead.
-fn validate_day(value: &str) -> Result<String, McpUsageError> {
+fn validate_day(copy: ParserCopy<'_>, value: &str) -> Result<String, McpUsageError> {
     if value.len() == 8 && value.bytes().all(|byte| byte.is_ascii_digit()) {
         Ok(value.to_owned())
     } else {
-        Err(McpUsageError(format!(
-            "day must be eight digits (YYYYMMDD), got {value:?}"
+        Err(McpUsageError(copy.diagnostic(
+            "journal.cli.host.parser.validate.day.day.must.be.eight.digits.yyyymmdd.got.value",
+            [
+                ("command", &copy.command),
+                ("value", &(format!("{value:?}"))),
+            ],
+            || format!("day must be eight digits (YYYYMMDD), got {value:?}"),
         )))
     }
 }
 
-fn parse_mcp_probe(args: &[OsString]) -> Result<McpProbeCommand, McpUsageError> {
+fn parse_mcp_probe(
+    copy: ParserCopy<'_>,
+    args: &[OsString],
+) -> Result<McpProbeCommand, McpUsageError> {
     let mut target_args = Vec::new();
     let mut tool = None;
     let mut arguments = None;
@@ -3863,7 +4292,13 @@ fn parse_mcp_probe(args: &[OsString]) -> Result<McpProbeCommand, McpUsageError> 
         if arg == OsStr::new("--tool") {
             tool = Some(
                 iter.next()
-                    .ok_or_else(|| McpUsageError("expected argument after --tool".to_owned()))?
+                    .ok_or_else(|| {
+                        McpUsageError(copy.diagnostic(
+                            "journal.cli.host.parser.mcp.probe.expected.argument.after.tool",
+                            [("command", &copy.command)],
+                            || "expected argument after --tool".to_owned(),
+                        ))
+                    })?
                     .to_string_lossy()
                     .into_owned(),
             );
@@ -3872,7 +4307,13 @@ fn parse_mcp_probe(args: &[OsString]) -> Result<McpProbeCommand, McpUsageError> 
         } else if arg == OsStr::new("--arguments") {
             arguments = Some(
                 iter.next()
-                    .ok_or_else(|| McpUsageError("expected argument after --arguments".to_owned()))?
+                    .ok_or_else(|| {
+                        McpUsageError(copy.diagnostic(
+                            "journal.cli.host.parser.mcp.probe.expected.argument.after.arguments",
+                            [("command", &copy.command)],
+                            || "expected argument after --arguments".to_owned(),
+                        ))
+                    })?
                     .to_string_lossy()
                     .into_owned(),
             );
@@ -3885,20 +4326,28 @@ fn parse_mcp_probe(args: &[OsString]) -> Result<McpProbeCommand, McpUsageError> 
             target_args.push(arg.clone());
         }
     }
-    let tool = tool
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| McpUsageError("--tool is required".to_owned()))?;
-    let arguments = arguments
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| McpUsageError("--arguments is required".to_owned()))?;
+    let tool = tool.filter(|value| !value.is_empty()).ok_or_else(|| {
+        McpUsageError(copy.diagnostic(
+            "journal.cli.host.parser.mcp.probe.tool.is.required",
+            [("command", &copy.command)],
+            || "--tool is required".to_owned(),
+        ))
+    })?;
+    let arguments = arguments.filter(|value| !value.is_empty()).ok_or_else(|| {
+        McpUsageError(copy.diagnostic(
+            "journal.cli.host.parser.mcp.probe.arguments.is.required",
+            [("command", &copy.command)],
+            || "--arguments is required".to_owned(),
+        ))
+    })?;
     Ok(McpProbeCommand {
-        target: parse_mcp_target(&target_args)?,
+        target: parse_mcp_target(copy, &target_args)?,
         tool,
         arguments,
     })
 }
 
-fn parse_mcp_target(args: &[OsString]) -> Result<McpTarget, McpUsageError> {
+fn parse_mcp_target(copy: ParserCopy<'_>, args: &[OsString]) -> Result<McpTarget, McpUsageError> {
     let mut token_label: Option<String> = None;
     let mut oauth_client_id: Option<String> = None;
     let mut oauth_created: Option<String> = None;
@@ -3906,50 +4355,88 @@ fn parse_mcp_target(args: &[OsString]) -> Result<McpTarget, McpUsageError> {
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
         if arg == OsStr::new("--token") {
-            let val = iter
-                .next()
-                .ok_or_else(|| McpUsageError("expected argument after --token".to_owned()))?;
+            let val = iter.next().ok_or_else(|| {
+                McpUsageError(copy.diagnostic(
+                    "journal.cli.host.parser.mcp.target.expected.argument.after.token",
+                    [("command", &copy.command)],
+                    || "expected argument after --token".to_owned(),
+                ))
+            })?;
             let s = val.to_str().filter(|s| !s.is_empty()).ok_or_else(|| {
-                McpUsageError("token label must be valid UTF-8 and nonempty".to_owned())
+                McpUsageError(copy.diagnostic(
+                    "journal.cli.host.parser.mcp.target.token.label.must.be.valid.utf.n8.and.nonempty",
+                    [("command", &copy.command)],
+                    || "token label must be valid UTF-8 and nonempty".to_owned(),
+                ))
             })?;
             token_label = Some(s.to_owned());
         } else if let Some(val) = arg.to_str().and_then(|s| s.strip_prefix("--token=")) {
             if val.is_empty() {
-                return Err(McpUsageError("token label must be nonempty".to_owned()));
+                return Err(McpUsageError(copy.diagnostic(
+                    "journal.cli.host.parser.mcp.target.token.label.must.be.nonempty",
+                    [("command", &copy.command)],
+                    || "token label must be nonempty".to_owned(),
+                )));
             }
             token_label = Some(val.to_owned());
         } else if arg == OsStr::new("--oauth") {
-            let val = iter
-                .next()
-                .ok_or_else(|| McpUsageError("expected argument after --oauth".to_owned()))?;
+            let val = iter.next().ok_or_else(|| {
+                McpUsageError(copy.diagnostic(
+                    "journal.cli.host.parser.mcp.target.expected.argument.after.oauth",
+                    [("command", &copy.command)],
+                    || "expected argument after --oauth".to_owned(),
+                ))
+            })?;
             let s = val.to_str().filter(|s| !s.is_empty()).ok_or_else(|| {
-                McpUsageError("oauth client-id must be valid UTF-8 and nonempty".to_owned())
+                McpUsageError(copy.diagnostic(
+                    "journal.cli.host.parser.mcp.target.oauth.client.id.must.be.valid.utf.n8.and.nonempty",
+                    [("command", &copy.command)],
+                    || "oauth client-id must be valid UTF-8 and nonempty".to_owned(),
+                ))
             })?;
             oauth_client_id = Some(s.to_owned());
         } else if let Some(val) = arg.to_str().and_then(|s| s.strip_prefix("--oauth=")) {
             if val.is_empty() {
-                return Err(McpUsageError("oauth client-id must be nonempty".to_owned()));
+                return Err(McpUsageError(copy.diagnostic(
+                    "journal.cli.host.parser.mcp.target.oauth.client.id.must.be.nonempty",
+                    [("command", &copy.command)],
+                    || "oauth client-id must be nonempty".to_owned(),
+                )));
             }
             oauth_client_id = Some(val.to_owned());
         } else if arg == OsStr::new("--created") {
-            let val = iter
-                .next()
-                .ok_or_else(|| McpUsageError("expected argument after --created".to_owned()))?;
+            let val = iter.next().ok_or_else(|| {
+                McpUsageError(copy.diagnostic(
+                    "journal.cli.host.parser.mcp.target.expected.argument.after.created",
+                    [("command", &copy.command)],
+                    || "expected argument after --created".to_owned(),
+                ))
+            })?;
             let s = val.to_str().filter(|s| !s.is_empty()).ok_or_else(|| {
-                McpUsageError("created timestamp must be valid UTF-8 and nonempty".to_owned())
+                McpUsageError(copy.diagnostic(
+                    "journal.cli.host.parser.mcp.target.created.timestamp.must.be.valid.utf.n8.and.nonempty",
+                    [("command", &copy.command)],
+                    || "created timestamp must be valid UTF-8 and nonempty".to_owned(),
+                ))
             })?;
             oauth_created = Some(s.to_owned());
         } else if let Some(val) = arg.to_str().and_then(|s| s.strip_prefix("--created=")) {
             if val.is_empty() {
-                return Err(McpUsageError(
-                    "created timestamp must be nonempty".to_owned(),
-                ));
+                return Err(McpUsageError(copy.diagnostic(
+                    "journal.cli.host.parser.mcp.target.created.timestamp.must.be.nonempty",
+                    [("command", &copy.command)],
+                    || "created timestamp must be nonempty".to_owned(),
+                )));
             }
             oauth_created = Some(val.to_owned());
         } else {
-            return Err(McpUsageError(format!(
-                "unexpected argument: {}",
-                arg.to_string_lossy()
+            return Err(McpUsageError(copy.diagnostic(
+                "journal.cli.host.parser.mcp.target.unexpected.argument.option",
+                [
+                    ("command", &copy.command),
+                    ("option", &(arg.to_string_lossy())),
+                ],
+                || format!("unexpected argument: {}", arg.to_string_lossy()),
             )));
         }
     }
@@ -3957,9 +4444,11 @@ fn parse_mcp_target(args: &[OsString]) -> Result<McpTarget, McpUsageError> {
     match (token_label, oauth_client_id) {
         (Some(label), None) => {
             if oauth_created.is_some() {
-                return Err(McpUsageError(
-                    "--created cannot be used with --token".to_owned(),
-                ));
+                return Err(McpUsageError(copy.diagnostic(
+                    "journal.cli.host.parser.mcp.target.created.cannot.be.used.with.token",
+                    [("command", &copy.command)],
+                    || "--created cannot be used with --token".to_owned(),
+                )));
             }
             Ok(McpTarget::Token { label })
         }
@@ -3967,12 +4456,16 @@ fn parse_mcp_target(args: &[OsString]) -> Result<McpTarget, McpUsageError> {
             client_id,
             created_at: oauth_created,
         }),
-        (Some(_), Some(_)) => Err(McpUsageError(
-            "specify either --token or --oauth, not both".to_owned(),
-        )),
-        (None, None) => Err(McpUsageError(
-            "one of --token or --oauth is required".to_owned(),
-        )),
+        (Some(_), Some(_)) => Err(McpUsageError(copy.diagnostic(
+            "journal.cli.host.parser.mcp.target.specify.either.token.or.oauth.not.both",
+            [("command", &copy.command)],
+            || "specify either --token or --oauth, not both".to_owned(),
+        ))),
+        (None, None) => Err(McpUsageError(copy.diagnostic(
+            "journal.cli.host.parser.mcp.target.one.of.token.or.oauth.is.required",
+            [("command", &copy.command)],
+            || "one of --token or --oauth is required".to_owned(),
+        ))),
     }
 }
 
@@ -3984,50 +4477,74 @@ fn parse_backfill_facet_ids(args: &[OsString]) -> Result<bool, ()> {
     }
 }
 
-fn parse_mcp_token(args: &[OsString]) -> Result<McpTokenCommand, McpUsageError> {
+fn parse_mcp_token(
+    copy: ParserCopy<'_>,
+    args: &[OsString],
+) -> Result<McpTokenCommand, McpUsageError> {
     let [command, rest @ ..] = args else {
-        return Err(McpUsageError(
-            "the following arguments are required: create, list, revoke".to_owned(),
-        ));
+        return Err(McpUsageError(copy.diagnostic(
+            "journal.cli.host.parser.mcp.token.the.following.arguments.are.required.create.list.revoke",
+            [("command", &copy.command)],
+            || "the following arguments are required: create, list, revoke".to_owned(),
+        )));
     };
     match command.to_str() {
         Some("list") if rest.is_empty() => Ok(McpTokenCommand::List),
         Some("create") => {
-            parse_mcp_token_label(rest).map(|label| McpTokenCommand::Create { label })
+            parse_mcp_token_label(copy, rest).map(|label| McpTokenCommand::Create { label })
         }
         Some("revoke") => {
-            parse_mcp_token_label(rest).map(|label| McpTokenCommand::Revoke { label })
+            parse_mcp_token_label(copy, rest).map(|label| McpTokenCommand::Revoke { label })
         }
-        _ => Err(McpUsageError(format!(
-            "invalid MCP token command: {}",
-            command.to_string_lossy()
+        _ => Err(McpUsageError(copy.diagnostic(
+            "journal.cli.host.parser.mcp.token.invalid.mcp.token.command.value",
+            [
+                ("command", &copy.command),
+                ("value", &(command.to_string_lossy())),
+            ],
+            || format!("invalid MCP token command: {}", command.to_string_lossy()),
         ))),
     }
 }
 
-fn parse_mcp_token_label(args: &[OsString]) -> Result<String, McpUsageError> {
+fn parse_mcp_token_label(copy: ParserCopy<'_>, args: &[OsString]) -> Result<String, McpUsageError> {
     let [flag, label] = args else {
-        return Err(McpUsageError(
-            "the following arguments are required: --label LABEL".to_owned(),
-        ));
+        return Err(McpUsageError(copy.diagnostic(
+            "journal.cli.host.parser.mcp.token.label.the.following.arguments.are.required.label.label",
+            [("command", &copy.command)],
+            || "the following arguments are required: --label LABEL".to_owned(),
+        )));
     };
     if flag != OsStr::new("--label") || label.is_empty() {
-        return Err(McpUsageError(
-            "expected exactly one --label LABEL argument".to_owned(),
-        ));
+        return Err(McpUsageError(copy.diagnostic(
+            "journal.cli.host.parser.mcp.token.label.expected.exactly.one.label.label.argument",
+            [("command", &copy.command)],
+            || "expected exactly one --label LABEL argument".to_owned(),
+        )));
     }
     label
         .to_str()
         .filter(|label| !label.is_empty())
         .map(str::to_owned)
-        .ok_or_else(|| McpUsageError("label must be valid UTF-8 and nonempty".to_owned()))
+        .ok_or_else(|| {
+            McpUsageError(copy.diagnostic(
+                "journal.cli.host.parser.mcp.token.label.label.must.be.valid.utf.n8.and.nonempty",
+                [("command", &copy.command)],
+                || "label must be valid UTF-8 and nonempty".to_owned(),
+            ))
+        })
 }
 
-fn parse_mcp_pairing(args: &[OsString]) -> Result<McpPairingCommand, McpUsageError> {
+fn parse_mcp_pairing(
+    copy: ParserCopy<'_>,
+    args: &[OsString],
+) -> Result<McpPairingCommand, McpUsageError> {
     let [command, rest @ ..] = args else {
-        return Err(McpUsageError(
-            "the following arguments are required: generate, revoke".to_owned(),
-        ));
+        return Err(McpUsageError(copy.diagnostic(
+            "journal.cli.host.parser.mcp.pairing.the.following.arguments.are.required.generate.revoke",
+            [("command", &copy.command)],
+            || "the following arguments are required: generate, revoke".to_owned(),
+        )));
     };
     match command.to_str() {
         Some("generate") => {
@@ -4035,10 +4552,14 @@ fn parse_mcp_pairing(args: &[OsString]) -> Result<McpPairingCommand, McpUsageErr
                 Ok(McpPairingCommand::Generate { door: None })
             } else if let [flag, door] = rest {
                 if flag != OsStr::new("--door") {
-                    return Err(McpUsageError(
-                        "expected optional `--door local|lan|solstone.me|hostname` argument"
-                            .to_owned(),
-                    ));
+                    return Err(McpUsageError(copy.diagnostic(
+                        "journal.cli.host.parser.mcp.pairing.expected.optional.door.local.lan.solstone.me.hostname.argument",
+                        [("command", &copy.command)],
+                        || {
+                            "expected optional `--door local|lan|solstone.me|hostname` argument"
+                            .to_owned()
+                            },
+                    )));
                 }
                 let door_str = door.to_str().unwrap_or("");
                 match door_str {
@@ -4047,58 +4568,89 @@ fn parse_mcp_pairing(args: &[OsString]) -> Result<McpPairingCommand, McpUsageErr
                             door: Some(door_str.to_owned()),
                         })
                     }
-                    _ => Err(McpUsageError(
-                        "unknown door, choose one of local, lan, solstone.me, hostname".to_owned(),
-                    )),
+                    _ => Err(McpUsageError(copy.diagnostic(
+                        "journal.cli.host.parser.mcp.pairing.unknown.door.choose.one.of.local.lan.solstone.me.hostname",
+                        [("command", &copy.command)],
+                        || "unknown door, choose one of local, lan, solstone.me, hostname"
+                            .to_owned(),
+                    ))),
                 }
             } else {
-                Err(McpUsageError(
-                    "expected optional `--door local|lan|solstone.me|hostname` argument".to_owned(),
-                ))
+                Err(McpUsageError(copy.diagnostic(
+                    "journal.cli.host.parser.mcp.pairing.expected.optional.door.local.lan.solstone.me.hostname.argument",
+                    [("command", &copy.command)],
+                    || "expected optional `--door local|lan|solstone.me|hostname` argument"
+                        .to_owned(),
+                )))
             }
         }
         Some("revoke") if rest.is_empty() => Ok(McpPairingCommand::Revoke),
-        _ => Err(McpUsageError(format!(
-            "invalid MCP pairing command: {}",
-            command.to_string_lossy()
+        _ => Err(McpUsageError(copy.diagnostic(
+            "journal.cli.host.parser.mcp.pairing.invalid.mcp.pairing.command.value",
+            [
+                ("command", &copy.command),
+                ("value", &(command.to_string_lossy())),
+            ],
+            || format!("invalid MCP pairing command: {}", command.to_string_lossy()),
         ))),
     }
 }
 
-fn parse_mcp_oauth(args: &[OsString]) -> Result<McpOauthCommand, McpUsageError> {
+fn parse_mcp_oauth(
+    copy: ParserCopy<'_>,
+    args: &[OsString],
+) -> Result<McpOauthCommand, McpUsageError> {
     let [command, rest @ ..] = args else {
-        return Err(McpUsageError(
-            "the following arguments are required: list, revoke".to_owned(),
-        ));
+        return Err(McpUsageError(copy.diagnostic(
+            "journal.cli.host.parser.mcp.oauth.the.following.arguments.are.required.list.revoke",
+            [("command", &copy.command)],
+            || "the following arguments are required: list, revoke".to_owned(),
+        )));
     };
     match command.to_str() {
         Some("list") if rest.is_empty() => Ok(McpOauthCommand::List),
-        Some("revoke") => {
-            parse_mcp_oauth_client_id(rest).map(|client_id| McpOauthCommand::Revoke { client_id })
-        }
-        _ => Err(McpUsageError(format!(
-            "invalid MCP oauth command: {}",
-            command.to_string_lossy()
+        Some("revoke") => parse_mcp_oauth_client_id(copy, rest)
+            .map(|client_id| McpOauthCommand::Revoke { client_id }),
+        _ => Err(McpUsageError(copy.diagnostic(
+            "journal.cli.host.parser.mcp.oauth.invalid.mcp.oauth.command.value",
+            [
+                ("command", &copy.command),
+                ("value", &(command.to_string_lossy())),
+            ],
+            || format!("invalid MCP oauth command: {}", command.to_string_lossy()),
         ))),
     }
 }
 
-fn parse_mcp_oauth_client_id(args: &[OsString]) -> Result<String, McpUsageError> {
+fn parse_mcp_oauth_client_id(
+    copy: ParserCopy<'_>,
+    args: &[OsString],
+) -> Result<String, McpUsageError> {
     let [flag, client_id] = args else {
-        return Err(McpUsageError(
-            "the following arguments are required: --client-id CLIENT_ID".to_owned(),
-        ));
+        return Err(McpUsageError(copy.diagnostic(
+            "journal.cli.host.parser.mcp.oauth.client.id.the.following.arguments.are.required.client.id.client.id",
+            [("command", &copy.command)],
+            || "the following arguments are required: --client-id CLIENT_ID".to_owned(),
+        )));
     };
     if flag != OsStr::new("--client-id") || client_id.is_empty() {
-        return Err(McpUsageError(
-            "expected exactly one --client-id CLIENT_ID argument".to_owned(),
-        ));
+        return Err(McpUsageError(copy.diagnostic(
+            "journal.cli.host.parser.mcp.oauth.client.id.expected.exactly.one.client.id.client.id.argument",
+            [("command", &copy.command)],
+            || "expected exactly one --client-id CLIENT_ID argument".to_owned(),
+        )));
     }
     client_id
         .to_str()
         .filter(|client_id| !client_id.is_empty())
         .map(str::to_owned)
-        .ok_or_else(|| McpUsageError("client-id must be valid UTF-8 and nonempty".to_owned()))
+        .ok_or_else(|| {
+            McpUsageError(copy.diagnostic(
+                "journal.cli.host.parser.mcp.oauth.client.id.client.id.must.be.valid.utf.n8.and.nonempty",
+                [("command", &copy.command)],
+                || "client-id must be valid UTF-8 and nonempty".to_owned(),
+            ))
+        })
 }
 
 fn parse_service(args: &[OsString]) -> Result<ServiceOptions, UsageError> {
@@ -4135,7 +4687,7 @@ enum CortexParse {
     Help,
 }
 
-fn parse_cortex(args: &[OsString]) -> Result<CortexParse, CortexUsageError> {
+fn parse_cortex(copy: ParserCopy<'_>, args: &[OsString]) -> Result<CortexParse, CortexUsageError> {
     let mut verbose = false;
     let mut debug = false;
     let mut index = 0;
@@ -4145,14 +4697,32 @@ fn parse_cortex(args: &[OsString]) -> Result<CortexParse, CortexUsageError> {
             Some("-v" | "--verbose") if !verbose => verbose = true,
             Some("-d" | "--debug") if !debug => debug = true,
             _ => {
-                return Err(CortexUsageError(format!(
-                    "unrecognized arguments: {}",
-                    args[index..]
-                        .iter()
-                        .map(|value| value.to_string_lossy())
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                )));
+                return Err(CortexUsageError(
+                    copy.diagnostic(
+                        "journal.cli.host.parser.cortex.unrecognized.arguments.arguments",
+                        [
+                            ("command", &copy.command),
+                            (
+                                "arguments",
+                                &(args[index..]
+                                    .iter()
+                                    .map(|value| value.to_string_lossy())
+                                    .collect::<Vec<_>>()
+                                    .join(" ")),
+                            ),
+                        ],
+                        || {
+                            format!(
+                                "unrecognized arguments: {}",
+                                args[index..]
+                                    .iter()
+                                    .map(|value| value.to_string_lossy())
+                                    .collect::<Vec<_>>()
+                                    .join(" ")
+                            )
+                        },
+                    ),
+                ));
             }
         }
         index += 1;
@@ -4402,17 +4972,27 @@ fn is_port_shaped(text: &str) -> bool {
 }
 
 impl SafeServiceDiagnostic {
-    fn invalid_port_text(value: &str) -> Self {
-        Self(format!(
-            "error: invalid port '{}'",
-            solstone_core_system_health::sanitize_for_terminal(value)
+    fn invalid_port_text(copy: ParserCopy<'_>, value: &str) -> Self {
+        Self(solstone_core_cli_copy::display_for(
+            copy.language(),
+            "journal.cli.host.service.port.invalid",
+            [(
+                "value",
+                &(solstone_core_system_health::sanitize_for_terminal(value)),
+            )],
         ))
     }
 
-    fn invalid_port_value(value: &OsStr) -> Self {
-        Self(format!(
-            "error: invalid port '{}'",
-            solstone_core_system_health::sanitize_os_bytes_for_terminal(value.as_encoded_bytes())
+    fn invalid_port_value(copy: ParserCopy<'_>, value: &OsStr) -> Self {
+        Self(solstone_core_cli_copy::display_for(
+            copy.language(),
+            "journal.cli.host.service.port.invalid",
+            [(
+                "value",
+                &(solstone_core_system_health::sanitize_os_bytes_for_terminal(
+                    value.as_encoded_bytes(),
+                )),
+            )],
         ))
     }
 
@@ -4426,7 +5006,7 @@ impl SafeServiceDiagnostic {
         Self("Error: installation identity arguments must be supplied together".to_owned())
     }
 
-    fn unexpected_install_argument(value: &OsStr) -> Self {
+    fn unexpected_install_argument(copy: ParserCopy<'_>, value: &OsStr) -> Self {
         // A bare port was accepted silently and then ignored, so
         // `journal service install 6123` re-registered the task on the default
         // and exited 0. Name the argument, then add a remedy that fits what the
@@ -4472,28 +5052,49 @@ impl SafeServiceDiagnostic {
         let accepted_port = literal
             .and_then(|text| text.parse::<u16>().ok())
             .is_some_and(|port| port != 0);
-        let remedy = if let (true, Some(port)) = (accepted_port, literal) {
-            format!("; pass the port as --port {port}")
+        Self(if let (true, Some(port)) = (accepted_port, literal) {
+            solstone_core_cli_copy::display_for(
+                copy.language(),
+                "journal.cli.host.service.argument.port",
+                [("text", &(text)), ("port", &(port))],
+            )
         } else if literal.is_some_and(is_port_shaped) {
-            "; pass a port between 1 and 65535 as --port PORT".to_owned()
+            solstone_core_cli_copy::display_for(
+                copy.language(),
+                "journal.cli.host.service.argument.range",
+                [("text", &(text))],
+            )
         } else {
-            "; pass the port as --port PORT".to_owned()
-        };
-        Self(format!("error: unexpected argument '{text}'{remedy}"))
+            solstone_core_cli_copy::display_for(
+                copy.language(),
+                "journal.cli.host.service.argument.unexpected",
+                [("text", &(text))],
+            )
+        })
     }
 
-    fn invalid_initial_start_at_sign_in() -> Self {
-        Self("error: --initial-start-at-sign-in expects on or off".to_owned())
+    fn invalid_initial_start_at_sign_in(copy: ParserCopy<'_>) -> Self {
+        Self(solstone_core_cli_copy::render_for(
+            copy.language(),
+            "journal.cli.host.service.sign.in.invalid",
+            &[],
+        ))
     }
 
-    fn unknown_subcommand(value: &OsStr) -> Self {
+    fn unknown_subcommand(copy: ParserCopy<'_>, value: &OsStr) -> Self {
         // The retained Python owner prints this guidance on two lines. This pure
         // foundation deliberately keeps dynamic failures to one physical line.
         // Both tokens stay lowercase: the command list is part of the sentence,
         // not a title-cased list heading.
-        Self(format!(
-            "unknown subcommand: {}; available: install, uninstall, start, stop, restart, status, logs",
-            solstone_core_system_health::sanitize_os_bytes_for_terminal(value.as_encoded_bytes())
+        Self(solstone_core_cli_copy::display_for(
+            copy.language(),
+            "journal.cli.host.service.subcommand.unknown",
+            [(
+                "value",
+                &(solstone_core_system_health::sanitize_os_bytes_for_terminal(
+                    value.as_encoded_bytes(),
+                )),
+            )],
         ))
     }
 
@@ -4517,7 +5118,7 @@ pub enum ServiceParseOutcome {
     Dispatch(ServiceAction),
     Exit {
         code: u8,
-        stdout: Option<&'static str>,
+        stdout: Option<String>,
         stderr: Option<SafeServiceDiagnostic>,
     },
 }
@@ -4528,11 +5129,17 @@ pub enum ServiceParseOutcome {
 pub fn parse_service_port_argv(
     args: &[OsString],
 ) -> Result<solstone_core_operational_logs::ServicePort, SafeServiceDiagnostic> {
-    match parse_service_port_argv_opt(args)? {
+    parse_service_port_argv_with_copy(ParserCopy::default(), args)
+}
+fn parse_service_port_argv_with_copy(
+    copy: ParserCopy<'_>,
+    args: &[OsString],
+) -> Result<solstone_core_operational_logs::ServicePort, SafeServiceDiagnostic> {
+    match parse_service_port_argv_opt_with_copy(copy, args)? {
         Some(port) => Ok(port),
         None => {
             solstone_core_operational_logs::parse_service_port(SERVICE_DEFAULT_PORT).map_err(|_| {
-                SafeServiceDiagnostic::invalid_port_value(OsStr::new(SERVICE_DEFAULT_PORT))
+                SafeServiceDiagnostic::invalid_port_value(copy, OsStr::new(SERVICE_DEFAULT_PORT))
             })
         }
     }
@@ -4547,6 +5154,12 @@ const SERVICE_DEFAULT_PORT: &str = "5015";
 pub fn parse_service_port_argv_opt(
     args: &[OsString],
 ) -> Result<Option<solstone_core_operational_logs::ServicePort>, SafeServiceDiagnostic> {
+    parse_service_port_argv_opt_with_copy(ParserCopy::default(), args)
+}
+fn parse_service_port_argv_opt_with_copy(
+    copy: ParserCopy<'_>,
+    args: &[OsString],
+) -> Result<Option<solstone_core_operational_logs::ServicePort>, SafeServiceDiagnostic> {
     let mut index = 0;
     while index < args.len() {
         let argument = args[index].as_os_str();
@@ -4555,18 +5168,21 @@ pub fn parse_service_port_argv_opt(
                 break;
             };
             let Some(value_text) = value.to_str() else {
-                return Err(SafeServiceDiagnostic::invalid_port_value(value.as_os_str()));
+                return Err(SafeServiceDiagnostic::invalid_port_value(
+                    copy,
+                    value.as_os_str(),
+                ));
             };
             return solstone_core_operational_logs::parse_service_port(value_text)
                 .map(Some)
-                .map_err(|_| SafeServiceDiagnostic::invalid_port_text(value_text));
+                .map_err(|_| SafeServiceDiagnostic::invalid_port_text(copy, value_text));
         }
         if let Some(argument_text) = argument.to_str()
             && let Some(value) = argument_text.strip_prefix("--port=")
         {
             return solstone_core_operational_logs::parse_service_port(value)
                 .map(Some)
-                .map_err(|_| SafeServiceDiagnostic::invalid_port_text(argument_text));
+                .map_err(|_| SafeServiceDiagnostic::invalid_port_text(copy, argument_text));
         }
         index += 1;
     }
@@ -4575,6 +5191,7 @@ pub fn parse_service_port_argv_opt(
 
 #[allow(clippy::type_complexity)]
 fn parse_service_install_argv(
+    copy: ParserCopy<'_>,
     args: &[OsString],
 ) -> Result<
     (
@@ -4584,7 +5201,7 @@ fn parse_service_install_argv(
     ),
     SafeServiceDiagnostic,
 > {
-    let port = parse_service_port_argv_opt(args)?;
+    let port = parse_service_port_argv_opt_with_copy(copy, args)?;
     let mut namespace = None;
     let mut id = None;
     let mut generation = None;
@@ -4594,7 +5211,9 @@ fn parse_service_install_argv(
     while index < args.len() {
         let argument = args[index].as_os_str();
         let Some(name) = argument.to_str() else {
-            return Err(SafeServiceDiagnostic::unexpected_install_argument(argument));
+            return Err(SafeServiceDiagnostic::unexpected_install_argument(
+                copy, argument,
+            ));
         };
         if name == "--port" {
             // Consumed by the port grammar above, value included.
@@ -4607,14 +5226,20 @@ fn parse_service_install_argv(
         }
         if name == "--initial-start-at-sign-in" {
             if initial_start_at_sign_in.is_some() {
-                return Err(SafeServiceDiagnostic::invalid_initial_start_at_sign_in());
+                return Err(SafeServiceDiagnostic::invalid_initial_start_at_sign_in(
+                    copy,
+                ));
             }
             let Some(value) = args.get(index + 1).and_then(|v| v.to_str()) else {
-                return Err(SafeServiceDiagnostic::invalid_initial_start_at_sign_in());
+                return Err(SafeServiceDiagnostic::invalid_initial_start_at_sign_in(
+                    copy,
+                ));
             };
             let Some(choice) = solstone_core_setup::args::InitialStartAtSignIn::parse_token(value)
             else {
-                return Err(SafeServiceDiagnostic::invalid_initial_start_at_sign_in());
+                return Err(SafeServiceDiagnostic::invalid_initial_start_at_sign_in(
+                    copy,
+                ));
             };
             initial_start_at_sign_in = Some(choice);
             index += 2;
@@ -4622,11 +5247,15 @@ fn parse_service_install_argv(
         }
         if let Some(value) = name.strip_prefix("--initial-start-at-sign-in=") {
             if initial_start_at_sign_in.is_some() {
-                return Err(SafeServiceDiagnostic::invalid_initial_start_at_sign_in());
+                return Err(SafeServiceDiagnostic::invalid_initial_start_at_sign_in(
+                    copy,
+                ));
             }
             let Some(choice) = solstone_core_setup::args::InitialStartAtSignIn::parse_token(value)
             else {
-                return Err(SafeServiceDiagnostic::invalid_initial_start_at_sign_in());
+                return Err(SafeServiceDiagnostic::invalid_initial_start_at_sign_in(
+                    copy,
+                ));
             };
             initial_start_at_sign_in = Some(choice);
             index += 1;
@@ -4639,7 +5268,11 @@ fn parse_service_install_argv(
             "--installation-journal-token" => Some(&mut journal_token),
             // Everything else used to be skipped in silence, which is how a
             // bare positional port reached the default branch unnoticed.
-            _ => return Err(SafeServiceDiagnostic::unexpected_install_argument(argument)),
+            _ => {
+                return Err(SafeServiceDiagnostic::unexpected_install_argument(
+                    copy, argument,
+                ));
+            }
         };
         let Some(field) = field else {
             index += 1;
@@ -4672,6 +5305,9 @@ fn parse_service_install_argv(
 /// Parse the complete retained service lifecycle grammar without dispatching it.
 #[doc(hidden)]
 pub fn parse_service_args(args: &[OsString]) -> ServiceParseOutcome {
+    parse_service_args_with_copy(ParserCopy::default(), args)
+}
+fn parse_service_args_with_copy(copy: ParserCopy<'_>, args: &[OsString]) -> ServiceParseOutcome {
     if let [command, rest @ ..] = args
         && command == OsStr::new("logs")
     {
@@ -4686,20 +5322,28 @@ pub fn parse_service_args(args: &[OsString]) -> ServiceParseOutcome {
     {
         return ServiceParseOutcome::Exit {
             code: 0,
-            stdout: Some(SERVICE_USAGE),
+            stdout: Some(solstone_core_cli_copy::render_for(
+                copy.language(),
+                "journal.cli.host.service.usage",
+                &[],
+            )),
             stderr: None,
         };
     }
     let Some(command) = args.first() else {
         return ServiceParseOutcome::Exit {
             code: 1,
-            stdout: Some(SERVICE_USAGE),
+            stdout: Some(solstone_core_cli_copy::render_for(
+                copy.language(),
+                "journal.cli.host.service.usage",
+                &[],
+            )),
             stderr: None,
         };
     };
     let rest = &args[1..];
     if command == OsStr::new("install") {
-        return match parse_service_install_argv(rest) {
+        return match parse_service_install_argv(copy, rest) {
             Ok((port, installation_guard, initial_start_at_sign_in)) => {
                 ServiceParseOutcome::Dispatch(ServiceAction::Install {
                     port,
@@ -4756,6 +5400,7 @@ pub fn parse_service_args(args: &[OsString]) -> ServiceParseOutcome {
             code: 1,
             stdout: None,
             stderr: Some(SafeServiceDiagnostic::unknown_subcommand(
+                copy,
                 command.as_os_str(),
             )),
         },
@@ -6063,7 +6708,7 @@ mod tests {
             parse_service_args(&args(&["install", "--help"])),
             ServiceParseOutcome::Exit {
                 code: 0,
-                stdout: Some(SERVICE_USAGE),
+                stdout: Some(SERVICE_USAGE.to_owned()),
                 stderr: None,
             }
         );
@@ -6071,7 +6716,7 @@ mod tests {
             parse_service_args(&args(&[])),
             ServiceParseOutcome::Exit {
                 code: 1,
-                stdout: Some(SERVICE_USAGE),
+                stdout: Some(SERVICE_USAGE.to_owned()),
                 stderr: None,
             }
         );
@@ -8477,7 +9122,7 @@ mod tests {
             evaluate_args(&args(&["up", "--help"])),
             Ok(Command::Service(ServiceParseOutcome::Exit {
                 code: 0,
-                stdout: Some(UP_HELP),
+                stdout: Some(UP_HELP.to_owned()),
                 stderr: None,
             }))
         );
@@ -8485,7 +9130,7 @@ mod tests {
             evaluate_args(&args(&["down", "-h"])),
             Ok(Command::Service(ServiceParseOutcome::Exit {
                 code: 0,
-                stdout: Some(DOWN_HELP),
+                stdout: Some(DOWN_HELP.to_owned()),
                 stderr: None,
             }))
         );
@@ -8866,17 +9511,17 @@ mod tests {
             evaluate_args(&args(&["service"])),
             Ok(Command::Service(ServiceParseOutcome::Exit {
                 code: 1,
-                stdout: Some(SERVICE_USAGE),
+                stdout: Some(help),
                 stderr: None,
-            }))
+            })) if help == SERVICE_USAGE
         ));
         assert!(matches!(
             evaluate_args(&args(&["service", "--help"])),
             Ok(Command::Service(ServiceParseOutcome::Exit {
                 code: 0,
-                stdout: Some(SERVICE_USAGE),
+                stdout: Some(help),
                 stderr: None,
-            }))
+            })) if help == SERVICE_USAGE
         ));
         assert_eq!(
             evaluate_args(&args(&["service", "status"])),
@@ -9616,7 +10261,7 @@ mod tests {
         );
         assert_eq!(
             evaluate_args(&args(&["mcp", "--help"])),
-            Ok(Command::McpHelp(MCP_HELP))
+            Ok(Command::McpHelp(MCP_HELP.to_owned()))
         );
     }
 

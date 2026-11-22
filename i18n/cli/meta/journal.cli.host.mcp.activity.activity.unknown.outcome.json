@@ -1,0 +1,28 @@
+{
+  "description": "Journal host output for mcp activity activity unknown outcome.",
+  "context": "Journal host output for mcp activity activity unknown outcome.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "37feb4871405a80fdf56a0d9fb4d25161867158f85966c0ee0b6aa59fa6995ea",
+  "max_length": 210,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command_solstone_journal_mcp_activity",
+      "kind": "command",
+      "value": "solstone journal mcp activity"
+    }
+  ]
+}

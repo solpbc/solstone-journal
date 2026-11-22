@@ -1,0 +1,28 @@
+{
+  "description": "Journal host service inspect stale launchd unit.",
+  "context": "Journal host service inspect stale launchd unit.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3296447a57437f3a4d2209e05076c48c15ca2145d028a1b1fb63681b80a484c9",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "launchd",
+      "kind": "accepted-input",
+      "value": "launchd"
+    }
+  ]
+}

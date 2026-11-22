@@ -1,0 +1,63 @@
+{
+  "description": "Terminal help and usage for mcp pairing generate help.",
+  "context": "Terminal help and usage for mcp pairing generate help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2ff2bebdeaacedb1e955657a2395cb222737ec9e2361d3780267177b5886a569",
+  "max_length": 1272,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal mcp pairing generate [-h] [--door {local,lan,solstone.me,hostname}]",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_12",
+      "value": "            ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "flag",
+      "value": "--door",
+      "kind": "flag"
+    },
+    {
+      "name": "choices",
+      "value": "{local,lan,solstone.me,hostname}",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "spaces_24",
+      "value": "                        ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "literal",
+      "value": "local",
+      "kind": "accepted-input"
+    }
+  ]
+}

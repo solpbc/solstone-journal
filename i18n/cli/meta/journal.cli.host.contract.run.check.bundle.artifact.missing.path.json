@@ -1,0 +1,21 @@
+{
+  "description": "Native contract mod command, run check. Preserve terminal syntax and supplied data.",
+  "context": "Native contract mod command, run check. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6dfe6407a032c6d865fe81967399b2c22372b05a4170abd4a81f6c3927f8ba0b",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

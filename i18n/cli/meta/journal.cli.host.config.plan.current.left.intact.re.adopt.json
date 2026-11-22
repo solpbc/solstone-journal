@@ -1,0 +1,38 @@
+{
+  "description": "Native config command, plan. Preserve terminal syntax and supplied data.",
+  "context": "Native config command, plan. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "40a3ededd4ab72f1609175367b7de48721b09596e24796b432a5f8616e4927ea",
+  "max_length": 330,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_1",
+      "kind": "command",
+      "value": "solstone journal config journal"
+    },
+    {
+      "name": "literal_2",
+      "kind": "accepted-input",
+      "value": "--switch"
+    },
+    {
+      "name": "literal_3",
+      "kind": "accepted-input",
+      "value": "--yes"
+    }
+  ]
+}

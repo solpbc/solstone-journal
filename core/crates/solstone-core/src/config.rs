@@ -88,8 +88,20 @@ fn decision(action: Action, exit_code: u8) -> Decision {
         plan_only: false,
     }
 }
-fn state(active: bool) -> &'static str {
-    if active { "active" } else { "not active" }
+fn state(active: bool) -> String {
+    if active {
+        solstone_core_cli_copy::render_for(
+            crate::host_locale(),
+            "journal.cli.host.config.state.active",
+            &[],
+        )
+    } else {
+        solstone_core_cli_copy::render_for(
+            crate::host_locale(),
+            "journal.cli.host.config.state.not.active",
+            &[],
+        )
+    }
 }
 fn valid_flags(c: &JournalChange) -> &'static str {
     if c.current_active && !c.target_active {
@@ -99,38 +111,53 @@ fn valid_flags(c: &JournalChange) -> &'static str {
     }
 }
 fn refusal(c: &JournalChange) -> String {
-    format!(
-        "solstone journal config: refused: current is {} and target is {}; valid flags: {}",
-        state(c.current_active),
-        state(c.target_active),
-        valid_flags(c)
+    solstone_core_cli_copy::display_for(
+        crate::host_locale(),
+        "journal.cli.host.config.refusal.current.current.state.and.target",
+        [
+            ("current_state", &state(c.current_active)),
+            ("target_state", &state(c.target_active)),
+            ("flags", &valid_flags(c)),
+        ],
     )
 }
 fn missing_parent(c: &JournalChange) -> String {
-    format!(
-        "solstone journal config: refused: move target parent does not exist: {}",
-        c.target_path.parent().unwrap().display()
+    solstone_core_cli_copy::display_for(
+        crate::host_locale(),
+        "journal.cli.host.config.missing.parent.move.target.parent.does.not",
+        [("directory", &c.target_path.parent().unwrap().display())],
     )
 }
 fn missing_current(c: &JournalChange) -> String {
-    format!(
-        "solstone journal config: refused: move source does not exist: {}",
-        c.current_path.display()
+    solstone_core_cli_copy::display_for(
+        crate::host_locale(),
+        "journal.cli.host.config.missing.current.move.source.does.not.exist",
+        [("path", &c.current_path.display())],
     )
 }
 fn existing_target(c: &JournalChange) -> String {
-    format!(
-        "solstone journal config: refused: move target already exists: {}",
-        c.target_path.display()
+    solstone_core_cli_copy::display_for(
+        crate::host_locale(),
+        "journal.cli.host.config.existing.target.move.target.already.exists.path",
+        [("path", &c.target_path.display())],
     )
 }
 fn cross_filesystem(c: &JournalChange) -> String {
-    format!(
-        "solstone journal config: refused: cannot move across filesystems (filesystem ids {} and {}); stop your journal with 'solstone journal down', copy the journal folder to the new path, use --switch, then start it again with 'solstone journal up'",
-        c.current_device
-            .map_or_else(|| "None".to_owned(), |v| v.to_string()),
-        c.target_parent_device
-            .map_or_else(|| "None".to_owned(), |v| v.to_string())
+    solstone_core_cli_copy::display_for(
+        crate::host_locale(),
+        "journal.cli.host.config.cross.filesystem.cannot.move.across.filesystems.filesystem",
+        [
+            (
+                "source_device",
+                &c.current_device
+                    .map_or_else(|| "None".to_owned(), |v| v.to_string()),
+            ),
+            (
+                "target_device",
+                &c.target_parent_device
+                    .map_or_else(|| "None".to_owned(), |v| v.to_string()),
+            ),
+        ],
     )
 }
 pub(crate) fn decide(c: &JournalChange) -> Decision {
@@ -160,10 +187,13 @@ pub(crate) fn decide(c: &JournalChange) -> Decision {
         } else if c.target_exists {
             Some(existing_target(c))
         } else if c.target_active {
-            Some(format!(
-                "solstone journal config: refused: --move requires a not active target; current is {} and target is {}; valid flags: --switch, --force",
-                state(c.current_active),
-                state(c.target_active)
+            Some(solstone_core_cli_copy::display_for(
+                crate::host_locale(),
+                "journal.cli.host.config.decide.move.requires.not.active.target",
+                [
+                    ("current_state", &state(c.current_active)),
+                    ("target_state", &state(c.target_active)),
+                ],
             ))
         } else if c.same_filesystem == Some(false) {
             Some(cross_filesystem(c))
@@ -224,67 +254,133 @@ pub(crate) fn decide(c: &JournalChange) -> Decision {
 }
 fn plan(c: &JournalChange, d: &Decision) -> String {
     let mut lines = vec![
-        "solstone journal config journal - plan summary".into(),
+        solstone_core_cli_copy::render_for(
+            crate::host_locale(),
+            "journal.cli.host.config.plan.plan.summary",
+            &[],
+        ),
         "".into(),
-        format!(
-            "current: {} ({})",
-            c.current_path.display(),
-            state(c.current_active)
+        solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.config.plan.current.path.state",
+            [
+                ("path", &c.current_path.display()),
+                ("state", &state(c.current_active)),
+            ],
         ),
-        format!(
-            "target:  {} ({})",
-            c.target_path.display(),
-            state(c.target_active)
+        solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.config.plan.target.path.state",
+            [
+                ("path", &c.target_path.display()),
+                ("state", &state(c.target_active)),
+            ],
         ),
-        format!(
-            "action:  {}",
-            match d.action {
-                Action::Move => "move",
-                Action::Switch => "switch",
-                _ => "proceed",
-            }
+        solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.config.plan.action.action",
+            [(
+                "action",
+                &match d.action {
+                    Action::Move => solstone_core_cli_copy::render_for(
+                        crate::host_locale(),
+                        "journal.cli.host.config.plan.move",
+                        &[],
+                    ),
+                    Action::Switch => solstone_core_cli_copy::render_for(
+                        crate::host_locale(),
+                        "journal.cli.host.config.plan.switch",
+                        &[],
+                    ),
+                    _ => solstone_core_cli_copy::render_for(
+                        crate::host_locale(),
+                        "journal.cli.host.config.plan.proceed",
+                        &[],
+                    ),
+                },
+            )],
         ),
-        service_summary(c, d).to_owned(),
+        service_summary(c, d),
     ];
     if d.action == Action::Move {
         // Intentionally preserve Python's truthy collapse of an unknown device.
         lines.push(if c.same_filesystem.unwrap_or(false) {
-            "filesystem: same device".into()
+            solstone_core_cli_copy::render_for(
+                crate::host_locale(),
+                "journal.cli.host.config.plan.filesystem.same.device",
+                &[],
+            )
         } else {
-            "filesystem: different devices".into()
+            solstone_core_cli_copy::render_for(
+                crate::host_locale(),
+                "journal.cli.host.config.plan.filesystem.different.devices",
+                &[],
+            )
         });
     }
     if d.action == Action::Switch {
         lines.push(String::new());
-        lines.push(
-            "current journal is left intact. to re-adopt it later: solstone journal config journal "
-                .to_string()
-                + &c.current_path.display().to_string() + " --switch --yes",
-        );
+        lines.push(solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.config.plan.current.left.intact.re.adopt",
+            [("path", &c.current_path.display())],
+        ));
     }
     lines.push(String::new());
     lines.push(if c.dry_run {
-        "dry-run: yes; nothing will be changed".into()
+        solstone_core_cli_copy::render_for(
+            crate::host_locale(),
+            "journal.cli.host.config.plan.dry.run.yes.nothing.will",
+            &[],
+        )
     } else {
-        "re-run with --yes to proceed".into()
+        solstone_core_cli_copy::render_for(
+            crate::host_locale(),
+            "journal.cli.host.config.plan.re.run.with.yes.proceed",
+            &[],
+        )
     });
     lines.join("\n")
 }
-fn service_summary(c: &JournalChange, d: &Decision) -> &'static str {
+fn service_summary(c: &JournalChange, d: &Decision) -> String {
     if d.action == Action::Move {
         if !c.service_installed {
-            "service: not installed; will move and rewrite wrapper"
+            solstone_core_cli_copy::render_for(
+                crate::host_locale(),
+                "journal.cli.host.config.service.summary.service.not.installed.will.move",
+                &[],
+            )
         } else if !c.service_running {
-            "service: installed but not running; will move and rewrite wrapper"
+            solstone_core_cli_copy::render_for(
+                crate::host_locale(),
+                "journal.cli.host.config.service.summary.service.installed.but.not.running",
+                &[],
+            )
         } else {
-            "service: installed and running; will stop, move, rewrite wrapper, restart"
+            solstone_core_cli_copy::render_for(
+                crate::host_locale(),
+                "journal.cli.host.config.service.summary.service.installed.and.running.will",
+                &[],
+            )
         }
     } else if !c.service_installed {
-        "service: not installed; will rewrite wrapper"
+        solstone_core_cli_copy::render_for(
+            crate::host_locale(),
+            "journal.cli.host.config.service.summary.service.not.installed.will.rewrite",
+            &[],
+        )
     } else if !c.service_running {
-        "service: installed but not running; will rewrite wrapper"
+        solstone_core_cli_copy::render_for(
+            crate::host_locale(),
+            "journal.cli.host.config.service.summary.service.installed.but.not.running.running.will.rewrite.wrapper",
+            &[],
+        )
     } else {
-        "service: installed and running; will rewrite wrapper, restart"
+        solstone_core_cli_copy::render_for(
+            crate::host_locale(),
+            "journal.cli.host.config.service.summary.service.installed.and.running.will.will.rewrite.wrapper.restart",
+            &[],
+        )
     }
 }
 
@@ -326,7 +422,11 @@ impl ServiceCommandRunner for RealServiceRunner {
         #[cfg(not(unix))]
         {
             let _ = change;
-            Err("journal-folder relocation requires a managed POSIX installation".into())
+            Err(solstone_core_cli_copy::render_for(
+                crate::host_locale(),
+                "journal.cli.host.config.prepare.folder.relocation.requires.managed.posix",
+                &[],
+            ))
         }
     }
     fn run(&self, executable: &Path, args: &[&str]) -> ServiceCommandResult {
@@ -347,7 +447,11 @@ impl ServiceCommandRunner for RealServiceRunner {
                     .as_mut()
                     .expect("prepared relocation")
                     .start(),
-                _ => Err("unsupported journal-folder service action".to_owned()),
+                _ => Err(solstone_core_cli_copy::render_for(
+                    crate::host_locale(),
+                    "journal.cli.host.config.run.unsupported.folder.service.action",
+                    &[],
+                )),
             };
             if let Err(error) = &result {
                 eprintln!("{error}");
@@ -377,14 +481,19 @@ impl ServiceCommandRunner for RealServiceRunner {
         #[cfg(not(unix))]
         {
             let _ = guard;
-            Err("journal-folder relocation requires a managed POSIX installation".into())
+            Err(solstone_core_cli_copy::render_for(
+                crate::host_locale(),
+                "journal.cli.host.config.prepare.folder.relocation.requires.managed.posix",
+                &[],
+            ))
         }
     }
 }
 fn wrapper_refusal(path: &Path) -> String {
-    format!(
-        "solstone journal config: refused: {} is not a managed wrapper (run 'solstone journal setup' from the solstone source checkout to install the wrapper first)",
-        path.display()
+    solstone_core_cli_copy::display_for(
+        crate::host_locale(),
+        "journal.cli.host.config.wrapper.refusal.wrapper.not.managed.wrapper.run",
+        [("wrapper", &path.display())],
     )
 }
 fn active(path: &Path) -> Result<bool, String> {
@@ -416,9 +525,10 @@ fn active(path: &Path) -> Result<bool, String> {
         .is_some_and(|v| v > 0.0))
 }
 fn corrupt(path: &Path) -> String {
-    format!(
-        "your settings file at {} couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
-        path.display()
+    solstone_core_cli_copy::display_for(
+        crate::host_locale(),
+        "journal.cli.host.config.corrupt.settings.file.at.path.couldn",
+        [("path", &path.display())],
     )
 }
 fn home() -> PathBuf {
@@ -479,8 +589,13 @@ fn project_root() -> Option<PathBuf> {
 }
 
 fn identity_root_from_current_executable() -> Result<PathBuf, String> {
-    solstone_core::installation_context::identity_root_from_current_executable()
-        .map_err(|error| format!("solstone journal config: {error}"))
+    solstone_core::installation_context::identity_root_from_current_executable().map_err(|error| {
+        solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.config.identity.root.from.current.executable",
+            [("error", &error)],
+        )
+    })
 }
 
 fn is_source_checkout() -> bool {
@@ -511,19 +626,21 @@ fn legacy_manifest_for_rewrite(
 fn read_wrapper_targets(change: &JournalChange) -> Result<WrapperTargets, RewriteError> {
     let sol_alias = change.alias.clone();
     let sol_content = fs::read_to_string(&sol_alias).map_err(|e| {
-        RewriteError::Refusal(format!(
-            "solstone journal config: refused: cannot read {}: {e}",
-            sol_alias.display()
+        RewriteError::Refusal(solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.config.read.wrapper.targets.cannot.read.path.e",
+            [("path", &sol_alias.display()), ("e", &e)],
         ))
     })?;
     let Some(sol_wrapper) = parse_wrapper(WrapperCommand::Solstone, &sol_content) else {
         return Err(RewriteError::Refusal(wrapper_refusal(&sol_alias)));
     };
     if resolve_non_strict(Path::new(&sol_wrapper.journal)) != change.current_path {
-        return Err(RewriteError::Refusal(
-            "journal location changed while this command waited; try the folder change again"
-                .into(),
-        ));
+        return Err(RewriteError::Refusal(solstone_core_cli_copy::render_for(
+            crate::host_locale(),
+            "journal.cli.host.config.read.wrapper.targets.location.changed.while.this.command",
+            &[],
+        )));
     }
     validate_wrapper_inputs(
         WrapperCommand::Solstone,
@@ -549,8 +666,10 @@ fn admit_rewrite(
         }
     });
     let root_token = root_token_from_path(&change.identity_root).map_err(|error| {
-        RewriteError::Refusal(format!(
-            "solstone journal config: identity root refused: {error}"
+        RewriteError::Refusal(solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.config.admit.rewrite.identity.root",
+            [("error", &error)],
         ))
     })?;
     let namespace = namespace_name(PlatformTag::current(), &root_token);
@@ -558,15 +677,19 @@ fn admit_rewrite(
         SetupAdmissionRequest {
             owner: OwnerBase::at_home(change.home_dir.clone(), PlatformTag::current()).map_err(
                 |error| {
-                    RewriteError::Refusal(format!(
-                        "solstone journal config: identity owner refused: {error}"
+                    RewriteError::Refusal(solstone_core_cli_copy::display_for(
+                        crate::host_locale(),
+                        "journal.cli.host.config.admit.rewrite.identity.owner",
+                        [("error", &error)],
                     ))
                 },
             )?,
             root_token,
             journal_token: journal_token_from_path(&change.current_path).map_err(|error| {
-                RewriteError::Refusal(format!(
-                    "solstone journal config: journal path refused: {error}"
+                RewriteError::Refusal(solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.config.admit.rewrite.path",
+                    [("error", &error)],
                 ))
             })?,
             journal_is_explicit: false,
@@ -577,8 +700,10 @@ fn admit_rewrite(
         &|token| refuse_journal_in_program_folder(&token.to_path_buf(), &change.sol_bin),
     )
     .map_err(|error| {
-        RewriteError::Refusal(format!(
-            "solstone journal config: identity admission refused: {error}"
+        RewriteError::Refusal(solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.config.admit.rewrite.identity.admission",
+            [("error", &error)],
         ))
     })
 }
@@ -620,10 +745,13 @@ fn rewrite_preflighted_with(
     .map_err(|error| RewriteError::Install(error.to_string()))?;
     solstone_core_setup::user_config::write_user_config(
         &solstone_core_setup::user_config::config_path(&change.home_dir),
-        change
-            .target_path
-            .to_str()
-            .ok_or_else(|| RewriteError::Install("journal path is not UTF-8".into()))?,
+        change.target_path.to_str().ok_or_else(|| {
+            RewriteError::Install(solstone_core_cli_copy::render_for(
+                crate::host_locale(),
+                "journal.cli.host.config.rewrite.preflighted.with.path.not.utf8",
+                &[],
+            ))
+        })?,
     )
     .map_err(|error| RewriteError::Install(error.to_string()))?;
     Ok((targets.solstone.clone(), guard))
@@ -678,16 +806,24 @@ fn preflight_coordinates(change: &JournalChange) -> Result<(), String> {
         &solstone_core_setup::user_config::config_path(&change.home_dir),
     )
     .map_err(|error| {
-        format!("your settings could not be read; settings were not changed: {error}")
+        solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.config.preflight.coordinates.settings.could.not.be.read",
+            [("error", &error)],
+        )
     })?;
     let root = root_token_from_path(&change.identity_root).map_err(|error| error.to_string())?;
     let namespace = namespace_name(PlatformTag::current(), &root);
     match gather_artifact_evidence(&change.home_dir, &namespace) {
         solstone_core_installation_identity::ArtifactBindingEvidence::Foreign
         | solstone_core_installation_identity::ArtifactBindingEvidence::Malformed
-        | solstone_core_installation_identity::ArtifactBindingEvidence::Ambiguous => Err(
-            "the saved journal location is not recognized or could not be read; settings were not changed".into(),
-        ),
+        | solstone_core_installation_identity::ArtifactBindingEvidence::Ambiguous => {
+            Err(solstone_core_cli_copy::render_for(
+                crate::host_locale(),
+                "journal.cli.host.config.preflight.coordinates.saved.location.not.recognized.or",
+                &[],
+            ))
+        }
         _ => Ok(()),
     }
 }
@@ -704,12 +840,24 @@ fn execute(c: &JournalChange, d: &Decision, service: &dyn ServiceCommandRunner) 
     if let Err(error) =
         validate_wrapper_inputs(WrapperCommand::Solstone, &c.target_path, &c.sol_bin)
     {
-        eprintln!("solstone journal config: refused before mutation: {error}");
+        eprintln!(
+            "{}",
+            solstone_core_cli_copy::display_for(
+                crate::host_locale(),
+                "journal.cli.host.config.execute.before.mutation",
+                [("error", &error)]
+            )
+        );
         return 1;
     }
     if c.action == Some(RequestedAction::Force) {
         eprintln!(
-            "solstone journal config: warning: --force bypasses confirmation and target activity checks"
+            "{}",
+            solstone_core_cli_copy::render_for(
+                crate::host_locale(),
+                "!journal.cli.host.config.execute.warning.force.bypasses.confirmation.and",
+                &[]
+            )
         );
     }
     match d.action {
@@ -722,8 +870,12 @@ fn execute(c: &JournalChange, d: &Decision, service: &dyn ServiceCommandRunner) 
         Action::Noop if c.dry_run => 0,
         Action::Noop if coordinates_agree(c) => {
             println!(
-                "solstone journal config: journal already set to {}",
-                c.target_path.display()
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.config.execute.already.set.path",
+                    [("path", &c.target_path.display())]
+                )
             );
             0
         }
@@ -780,7 +932,14 @@ fn run_switch(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
     let _wrapper_lock = match wrapper_lock(&c.home_dir) {
         Ok(lock) => lock,
         Err(error) => {
-            eprintln!("solstone journal config: refused: cannot lock managed wrappers: {error}");
+            eprintln!(
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.config.run.switch.cannot.lock.managed.wrappers",
+                    [("error", &error)]
+                )
+            );
             return 1;
         }
     };
@@ -791,7 +950,14 @@ fn run_switch(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
             return 1;
         }
         Err(RewriteError::Install(error)) => {
-            eprintln!("solstone journal config: refused: cannot inspect managed wrappers: {error}");
+            eprintln!(
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.config.run.switch.cannot.inspect.managed.wrappers",
+                    [("error", &error)]
+                )
+            );
             return 1;
         }
     };
@@ -805,7 +971,14 @@ fn run_switch(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
             ServiceCommandResult::Exited { code: 0 }
         )
     {
-        eprintln!("could not stop service before changing journal folder");
+        eprintln!(
+            "{}",
+            solstone_core_cli_copy::render_for(
+                crate::host_locale(),
+                "journal.cli.host.config.run.switch.could.not.stop.service.before",
+                &[]
+            )
+        );
         return 2;
     }
     if let Err(e) = solstone_core_journal::ensure_journal_dir_with_label(&c.target_path, "config") {
@@ -815,8 +988,12 @@ fn run_switch(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
         drop(admission);
         maybe_restart_current_service(c, service);
         eprintln!(
-            "solstone journal config: refused: cannot create {}: {e}",
-            c.target_path.display()
+            "{}",
+            solstone_core_cli_copy::display_for(
+                crate::host_locale(),
+                "journal.cli.host.config.run.switch.cannot.create.path.e",
+                [("path", &c.target_path.display()), ("e", &e)]
+            )
         );
         return 1;
     }
@@ -824,9 +1001,16 @@ fn run_switch(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
         Ok((binary, guard)) => {
             if let Err(error) = service.publish(&guard) {
                 eprintln!(
-                    "your journal is now at {}; could not update its service: {error}; retry: solstone journal config journal {} --switch --yes",
-                    c.target_path.display(),
-                    shell_word(&c.target_path)
+                    "{}",
+                    solstone_core_cli_copy::display_for(
+                        crate::host_locale(),
+                        "journal.cli.host.config.run.switch.now.at.target.could.not",
+                        [
+                            ("target", &c.target_path.display()),
+                            ("error", &error),
+                            ("path", &shell_word(&c.target_path))
+                        ]
+                    )
                 );
                 return 2;
             }
@@ -834,15 +1018,23 @@ fn run_switch(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
         }
         Err(RewriteError::Refusal(message)) => {
             eprintln!(
-                "could not finish saving the new journal location: {message}; retry: solstone journal config journal {} --switch --yes",
-                shell_word(&c.target_path)
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.config.run.switch.could.not.finish.saving.new",
+                    [("message", &message), ("path", &shell_word(&c.target_path))]
+                )
             );
             return 2;
         }
         Err(RewriteError::Install(e)) => {
             eprintln!(
-                "could not finish saving the new journal location: {e}; retry: solstone journal config journal {} --switch --yes",
-                shell_word(&c.target_path)
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.config.run.switch.could.not.finish.saving.new.journal.path.switch.yes",
+                    [("e", &e), ("path", &shell_word(&c.target_path))]
+                )
             );
             return 2;
         }
@@ -852,11 +1044,25 @@ fn run_switch(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
     drop(_wrapper_lock);
     drop(admission);
     if !c.service_installed {
-        println!("service not installed; wrapper updated.");
+        println!(
+            "{}",
+            solstone_core_cli_copy::render_for(
+                crate::host_locale(),
+                "journal.cli.host.config.run.switch.service.not.installed.wrapper.updated",
+                &[]
+            )
+        );
         return 0;
     }
     if !c.service_running {
-        println!("service installed but not running; wrapper updated.");
+        println!(
+            "{}",
+            solstone_core_cli_copy::render_for(
+                crate::host_locale(),
+                "journal.cli.host.config.run.switch.service.installed.but.not.running",
+                &[]
+            )
+        );
         return 0;
     }
     match service.run(
@@ -864,21 +1070,36 @@ fn run_switch(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
         &["journal", "service", "restart", "--if-installed"],
     ) {
         ServiceCommandResult::Exited { code: 0 } => {
-            println!("wrapper updated; service restarted.");
+            println!(
+                "{}",
+                solstone_core_cli_copy::render_for(
+                    crate::host_locale(),
+                    "journal.cli.host.config.run.switch.wrapper.updated.service.restarted",
+                    &[]
+                )
+            );
             0
         }
         #[cfg(test)]
         ServiceCommandResult::ExecutableMissing { error } => {
             eprintln!(
-                "solstone journal config: wrapper rewritten to {} but journal service restart could not run ({error}); restart manually",
-                c.target_path.display()
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.config.run.switch.wrapper.rewritten.target.but.service",
+                    [("target", &c.target_path.display()), ("error", &error)]
+                )
             );
             2
         }
         ServiceCommandResult::Exited { code } => {
             eprintln!(
-                "solstone journal config: wrapper rewritten to {} but 'solstone journal service restart --if-installed' exited {code}; investigate and restart manually",
-                c.target_path.display()
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.config.run.switch.wrapper.rewritten.target.but.service.investigate.and.restart.manually",
+                    [("target", &c.target_path.display()), ("code", &code)]
+                )
             );
             2
         }
@@ -892,7 +1113,14 @@ fn maybe_restart_current_service(c: &JournalChange, service: &dyn ServiceCommand
         service.run(&c.sol_bin, &["journal", "service", "start"]),
         ServiceCommandResult::Exited { code: 0 }
     ) {
-        eprintln!("could not restart service at the original journal folder");
+        eprintln!(
+            "{}",
+            solstone_core_cli_copy::render_for(
+                crate::host_locale(),
+                "journal.cli.host.config.maybe.restart.current.service.could.not.restart.service.at",
+                &[]
+            )
+        );
     }
 }
 fn run_move(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
@@ -949,7 +1177,14 @@ fn run_move(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
     let _wrapper_lock = match wrapper_lock(&c.home_dir) {
         Ok(lock) => lock,
         Err(error) => {
-            eprintln!("solstone journal config: refused: cannot lock managed wrappers: {error}");
+            eprintln!(
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.config.run.switch.cannot.lock.managed.wrappers",
+                    [("error", &error)]
+                )
+            );
             return 1;
         }
     };
@@ -960,7 +1195,14 @@ fn run_move(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
             return 1;
         }
         Err(RewriteError::Install(error)) => {
-            eprintln!("solstone journal config: refused: cannot inspect managed wrappers: {error}");
+            eprintln!(
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.config.run.switch.cannot.inspect.managed.wrappers",
+                    [("error", &error)]
+                )
+            );
             return 1;
         }
     };
@@ -992,11 +1234,25 @@ fn run_move(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
             ServiceCommandResult::Exited { code: 0 } => {}
             #[cfg(test)]
             ServiceCommandResult::ExecutableMissing { error } => {
-                eprintln!("solstone journal config: could not stop service before move ({error})");
+                eprintln!(
+                    "{}",
+                    solstone_core_cli_copy::display_for(
+                        crate::host_locale(),
+                        "journal.cli.host.config.run.move.could.not.stop.service.before",
+                        [("error", &error)]
+                    )
+                );
                 return 2;
             }
             ServiceCommandResult::Exited { .. } => {
-                eprintln!("solstone journal config: could not stop service before move");
+                eprintln!(
+                    "{}",
+                    solstone_core_cli_copy::render_for(
+                        crate::host_locale(),
+                        "journal.cli.host.config.run.move.could.not.stop.service.before.stop.service.before.move",
+                        &[]
+                    )
+                );
                 return 2;
             }
         }
@@ -1007,16 +1263,30 @@ fn run_move(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
         drop(_wrapper_lock);
         drop(admission);
         maybe_restart_current_service(c, service);
-        eprintln!("solstone journal config: move failed: {e}");
+        eprintln!(
+            "{}",
+            solstone_core_cli_copy::display_for(
+                crate::host_locale(),
+                "journal.cli.host.config.run.move.move.failed.e",
+                [("e", &e)]
+            )
+        );
         return 1;
     }
     let restart = match rewrite_preflighted(c, &targets, &mut admission) {
         Ok((binary, guard)) => {
             if let Err(error) = service.publish(&guard) {
                 eprintln!(
-                    "your journal is now at {}; could not update its service: {error}; retry: solstone journal config journal {} --switch --yes",
-                    c.target_path.display(),
-                    shell_word(&c.target_path)
+                    "{}",
+                    solstone_core_cli_copy::display_for(
+                        crate::host_locale(),
+                        "journal.cli.host.config.run.switch.now.at.target.could.not",
+                        [
+                            ("target", &c.target_path.display()),
+                            ("error", &error),
+                            ("path", &shell_word(&c.target_path))
+                        ]
+                    )
                 );
                 return 2;
             }
@@ -1025,17 +1295,30 @@ fn run_move(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
         Err(RewriteError::Refusal(message)) => {
             eprintln!("{message}");
             eprintln!(
-                "journal remains at {}; retry: solstone journal config journal {} --switch --yes",
-                c.target_path.display(),
-                shell_word(&c.target_path)
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.config.run.move.remains.at.target.retry.path",
+                    [
+                        ("target", &c.target_path.display()),
+                        ("path", &shell_word(&c.target_path))
+                    ]
+                )
             );
             return 1;
         }
         Err(RewriteError::Install(e)) => {
             eprintln!(
-                "journal remains at {}; could not finish saving the new location: {e}; retry: solstone journal config journal {} --switch --yes",
-                c.target_path.display(),
-                shell_word(&c.target_path)
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.config.run.move.remains.at.target.could.not",
+                    [
+                        ("target", &c.target_path.display()),
+                        ("e", &e),
+                        ("path", &shell_word(&c.target_path))
+                    ]
+                )
             );
             return 2;
         }
@@ -1045,22 +1328,47 @@ fn run_move(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
     drop(_wrapper_lock);
     drop(admission);
     if !c.service_installed {
-        println!("service not installed; journal moved; wrapper updated.");
+        println!(
+            "{}",
+            solstone_core_cli_copy::render_for(
+                crate::host_locale(),
+                "journal.cli.host.config.run.move.service.not.installed.moved.wrapper",
+                &[]
+            )
+        );
         return 0;
     }
     if !c.service_running {
-        println!("service installed but not running; journal moved; wrapper updated.");
+        println!(
+            "{}",
+            solstone_core_cli_copy::render_for(
+                crate::host_locale(),
+                "journal.cli.host.config.run.move.service.installed.but.not.running",
+                &[]
+            )
+        );
         return 0;
     }
     match service.run(&restart, &["journal", "service", "start"]) {
         ServiceCommandResult::Exited { code: 0 } => {
-            println!("journal moved; wrapper updated; service restarted.");
+            println!(
+                "{}",
+                solstone_core_cli_copy::render_for(
+                    crate::host_locale(),
+                    "journal.cli.host.config.run.move.moved.wrapper.updated.service.restarted",
+                    &[]
+                )
+            );
             0
         }
         _ => {
             eprintln!(
-                "wrapper updated to {} but service start failed; restart manually",
-                c.target_path.display()
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.config.run.move.wrapper.updated.target.but.service",
+                    [("target", &c.target_path.display())]
+                )
             );
             2
         }
@@ -1090,20 +1398,33 @@ fn wrapper_status(alias: &Path) -> (&'static str, Option<String>) {
 
 fn wrapper_next(status: &str, alias: &Path) -> Option<String> {
     (status == "unmanaged").then(|| {
-        format!(
-            "move {} aside, then run 'solstone journal setup' from the solstone source checkout",
-            alias.display()
+        solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.config.wrapper.next.move.path.aside.then.run",
+            [("path", &alias.display())],
         )
     })
 }
 
-fn show_source(source: Source, embedded: Option<&str>, env_journal: Option<&str>) -> &'static str {
+fn show_source(source: Source, embedded: Option<&str>, env_journal: Option<&str>) -> String {
     match source {
-        Source::Env if embedded == env_journal => "wrapper-embedded",
-        Source::Env => "caller-override",
-        Source::Config => "user config (~/.config/solstone/config.toml)",
-        Source::Default => "built-in default (~/journal)",
-        Source::Source => "source-tree fallback",
+        Source::Env if embedded == env_journal => "wrapper-embedded".to_owned(),
+        Source::Env => "caller-override".to_owned(),
+        Source::Config => solstone_core_cli_copy::render_for(
+            crate::host_locale(),
+            "journal.cli.host.config.show.source.user.toml",
+            &[],
+        ),
+        Source::Default => solstone_core_cli_copy::render_for(
+            crate::host_locale(),
+            "journal.cli.host.config.show.source.built.in.default",
+            &[],
+        ),
+        Source::Source => solstone_core_cli_copy::render_for(
+            crate::host_locale(),
+            "journal.cli.host.config.show.source.source.tree.fallback",
+            &[],
+        ),
     }
 }
 fn show() -> ExitCode {
@@ -1132,7 +1453,14 @@ fn show() -> ExitCode {
         wrapper.0
     );
     if let Some(next) = wrapper_next(wrapper.0, &wrapper_path) {
-        println!("next: {next}");
+        println!(
+            "{}",
+            solstone_core_cli_copy::display_for(
+                crate::host_locale(),
+                "journal.cli.host.config.show.next.next",
+                [("next", &next)]
+            )
+        );
     }
     ExitCode::SUCCESS
 }
@@ -1143,8 +1471,12 @@ fn journal(o: ConfigJournalOptions) -> ExitCode {
         .any(|c| matches!(c, '$' | '`' | '"' | '\\' | '}' | '\n' | '\0'))
     {
         eprintln!(
-            "solstone journal config: refused: journal path contains shell-active character: {:?}",
-            o.path
+            "{}",
+            solstone_core_cli_copy::display_for(
+                crate::host_locale(),
+                "journal.cli.host.config.journal.path.contains.shell.active.character",
+                [("path", &format!("{:?}", o.path))]
+            )
         );
         return ExitCode::from(1);
     }
@@ -1153,15 +1485,23 @@ fn journal(o: ConfigJournalOptions) -> ExitCode {
         && !is_source_checkout()
     {
         eprintln!(
-            "solstone journal config: refused: {} is the source-tree fallback path but this is not a source checkout",
-            target.display()
+            "{}",
+            solstone_core_cli_copy::display_for(
+                crate::host_locale(),
+                "journal.cli.host.config.journal.path.source.tree.fallback.path",
+                [("path", &target.display())]
+            )
         );
         return ExitCode::from(1);
     }
     if o.action == Some(ConfigAction::Move) && !target.parent().is_some_and(Path::exists) {
         eprintln!(
-            "solstone journal config: refused: move target parent does not exist: {}",
-            target.parent().unwrap().display()
+            "{}",
+            solstone_core_cli_copy::display_for(
+                crate::host_locale(),
+                "journal.cli.host.config.missing.parent.move.target.parent.does.not",
+                [("directory", &target.parent().unwrap().display())]
+            )
         );
         return ExitCode::from(1);
     }
@@ -1175,8 +1515,12 @@ fn journal(o: ConfigJournalOptions) -> ExitCode {
         Ok(v) => v,
         Err(e) => {
             eprintln!(
-                "solstone journal config: refused: cannot read {}: {e}",
-                alias.display()
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.config.read.wrapper.targets.cannot.read.path.e",
+                    [("path", &alias.display()), ("e", &e)]
+                )
             );
             return ExitCode::from(1);
         }

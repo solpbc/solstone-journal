@@ -1,0 +1,23 @@
+{
+  "description": "Native config command, prepare. Preserve terminal syntax and supplied data.",
+  "context": "Native config command, prepare. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bf83c08a50dd738c98b5344e38f81a133c4623993458aee9a9249e43f97a1bca",
+  "max_length": 189,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_1",
+      "kind": "accepted-input",
+      "value": "POSIX"
+    }
+  ]
+}

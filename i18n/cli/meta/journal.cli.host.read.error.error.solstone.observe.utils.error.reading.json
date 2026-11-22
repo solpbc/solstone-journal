@@ -1,0 +1,32 @@
+{
+  "description": "Journal host output for read error error solstone observe utils error reading.",
+  "context": "Journal host output for read error error solstone observe utils error reading.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "461c84c15ea1767c2d45f8125b12bf0b06012dc90a8c6822c9653c31c84a51f6",
+  "max_length": 231,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_error_solstone_observe_utils",
+      "kind": "accepted-input",
+      "value": "ERROR:solstone.observe.utils"
+    }
+  ]
+}

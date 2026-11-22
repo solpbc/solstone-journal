@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service manager reload systemd for route repair.",
+  "context": "Journal host service manager reload systemd for route repair.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "result",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d1ea9eda9c7915a9001b8093e169a6b0ecc154b35e376c146b25234be6a4fa31",
+  "max_length": 153,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

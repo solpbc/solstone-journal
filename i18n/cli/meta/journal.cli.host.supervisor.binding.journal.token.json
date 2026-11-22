@@ -1,0 +1,21 @@
+{
+  "description": "Journal host supervisor binding journal token.",
+  "context": "Journal host supervisor binding journal token.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d4cc5c2c59e4ada3de19a08c80b4bb960ceaaff5b1df485cc09a678c01081c44",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

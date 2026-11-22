@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service metadata.",
+  "context": "Journal host service metadata.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "301385f90817bf607c402b912ad81e232c198f3b146f006f68414753a8ecd336",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

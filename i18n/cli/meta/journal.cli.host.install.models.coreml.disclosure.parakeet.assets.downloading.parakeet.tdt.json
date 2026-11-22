@@ -1,0 +1,43 @@
+{
+  "description": "Native install models command, coreml disclosure. Preserve terminal syntax and supplied data.",
+  "context": "Native install models command, coreml disclosure. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8706563cfc20b7736ac4c1ca6bd9d9fb2c7125815b4c5a616fc3d30816162422",
+  "max_length": 402,
+  "risk": "legal",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_1",
+      "kind": "accepted-input",
+      "value": "THIRD_PARTY_NOTICES.md"
+    },
+    {
+      "name": "literal_2",
+      "kind": "accepted-input",
+      "value": "updates.solstone.app"
+    },
+    {
+      "name": "literal_3",
+      "kind": "accepted-input",
+      "value": "CC-BY-4.0"
+    },
+    {
+      "name": "literal_4",
+      "kind": "accepted-input",
+      "value": "Core ML"
+    },
+    {
+      "name": "model",
+      "kind": "accepted-input",
+      "value": "parakeet-tdt-0.6b-v3"
+    }
+  ]
+}

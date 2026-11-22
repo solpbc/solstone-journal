@@ -1,0 +1,23 @@
+{
+  "description": "Journal host service launchd directory is not a real directory.",
+  "context": "Journal host service launchd directory is not a real directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8f9803ee8173c6d6b20029f0377441ac3be13a505b546803ae36ff32cc951abc",
+  "max_length": 138,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "launchd",
+      "kind": "accepted-input",
+      "value": "launchd"
+    }
+  ]
+}

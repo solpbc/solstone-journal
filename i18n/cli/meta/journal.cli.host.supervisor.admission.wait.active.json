@@ -1,0 +1,28 @@
+{
+  "description": "Journal startup refusal while an earlier start is still waiting for recent journal activity.",
+  "context": "Journal startup refusal while an earlier start is still waiting for recent journal activity.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3e6ef51b2901858b81236576ae46ee37a1f2dcc6cc253545a152837a4957b1c9",
+  "max_length": 567,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "break_line",
+      "kind": "whitespace",
+      "value": "\n"
+    },
+    {
+      "name": "brand",
+      "kind": "mark-word",
+      "value": "solstone"
+    }
+  ]
+}

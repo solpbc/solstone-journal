@@ -1,0 +1,21 @@
+{
+  "description": "Journal host health status invalid.",
+  "context": "Journal host health status invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c24d07f800a989d308ebe66ec457e055ee949b1ab0b9993f59c63256442e3aff",
+  "max_length": 210,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -18,19 +18,33 @@ pub fn project_root_from_current_executable() -> Option<PathBuf> {
 }
 
 pub fn identity_root_from_current_executable() -> Result<PathBuf, String> {
-    let executable = std::env::current_exe()
-        .map_err(|error| format!("could not resolve current executable: {error}"))?;
-    let executable_dir = executable
-        .parent()
-        .ok_or_else(|| "current executable has no containing directory".to_owned())?;
+    identity_root_from_current_executable_in(solstone_core_cli_copy::ENGLISH)
+}
+
+pub fn identity_root_from_current_executable_in(locale: &str) -> Result<PathBuf, String> {
+    let executable = std::env::current_exe().map_err(|error| {
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.host.installation.executable",
+            [("error", &(error))],
+        )
+    })?;
+    let executable_dir = executable.parent().ok_or_else(|| {
+        solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.host.installation.executable.parent",
+            &[],
+        )
+    })?;
     let resolved = resolve_identity_root_from_executable_dir(executable_dir)
         .or_else(project_root_from_current_executable);
     #[cfg(debug_assertions)]
     let resolved = resolved.or_else(supervisor_fixture_project_root);
     resolved.ok_or_else(|| {
-        format!(
-            "could not resolve installation identity root from {}",
-            executable_dir.display()
+        solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.host.installation.root",
+            [("directory", &(executable_dir.display()))],
         )
     })
 }
@@ -52,9 +66,15 @@ pub fn owner_base_at_home(home: PathBuf) -> Result<OwnerBase, IdentityError> {
 /// Locked recovery guidance shared by direct service and hosted-supervisor
 /// installation-binding refusals.
 pub fn installation_recovery_copy(detail: &str) -> String {
+    installation_recovery_copy_for(solstone_core_cli_copy::ENGLISH, detail)
+}
+
+pub fn installation_recovery_copy_for(locale: &str, detail: &str) -> String {
     let detail = solstone_core_system_health::sanitize_str_for_terminal_bounded(detail);
-    format!(
-        "this installation couldn't be verified.\nrun `solstone journal setup` to check it. if setup finishes successfully, try again.\ndetails: {detail}"
+    solstone_core_cli_copy::display_for(
+        locale,
+        "journal.cli.host.installation.recovery",
+        [("detail", &(detail))],
     )
 }
 

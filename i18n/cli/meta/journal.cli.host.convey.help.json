@@ -1,0 +1,68 @@
+{
+  "description": "Terminal help and usage for convey help.",
+  "context": "Terminal help and usage for convey help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "42242a441e022fcf521f86411e4fc738499373d382c51c322c169a8979446cfa",
+  "max_length": 1281,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal convey [-h] --port PORT [-v] [-d]",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "term",
+      "value": "Convey",
+      "kind": "mark-word"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_5",
+      "value": "     ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_7",
+      "value": "--port PORT",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_4",
+      "value": "    ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_9",
+      "value": "-v, --verbose",
+      "kind": "command"
+    },
+    {
+      "name": "option_10",
+      "value": "-d, --debug",
+      "kind": "command"
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+{
+  "description": "Terminal help and usage for thinking chatgpt sign out help.",
+  "context": "Terminal help and usage for thinking chatgpt sign out help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "de3c0e1f8b5155505ea04ccb219c806d010776b503f46470696c4adba8509305",
+  "max_length": 1203,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal thinking chatgpt sign-out [-h] [--journal PATH] [--forget]",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "term",
+      "value": "ChatGPT",
+      "kind": "mark-word"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_12",
+      "value": "            ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_7",
+      "value": "--journal PATH",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_8",
+      "value": "        ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_9",
+      "value": "--forget",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_14",
+      "value": "              ",
+      "kind": "whitespace"
+    }
+  ]
+}

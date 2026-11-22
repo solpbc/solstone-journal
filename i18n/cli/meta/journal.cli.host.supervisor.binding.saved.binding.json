@@ -1,0 +1,21 @@
+{
+  "description": "Journal host supervisor binding saved binding.",
+  "context": "Journal host supervisor binding saved binding.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1865ff011570bff06490de65080e998a0d7965262054b0c97f993545d3a0f921",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

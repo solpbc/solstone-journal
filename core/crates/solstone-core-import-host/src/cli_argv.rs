@@ -251,11 +251,25 @@ pub fn force_day_notice_with(
 /// supervisor preflight only in that case. Help and grammar errors are the
 /// same [`CliRun`] values [`run_cli`] returns, and this function does not probe.
 pub fn grammar_outcome_before_preflight(args: &[String]) -> Option<CliRun> {
+    json_mode_before_preflight(args).err()
+}
+
+/// Resolve the output mode before the desktop supervisor check.
+pub fn json_mode_before_preflight(args: &[String]) -> Result<bool, CliRun> {
     match parse_arguments(args) {
-        Ok(ParsedCommand::Help) => Some(success(cli_render::HELP.to_owned())),
-        Ok(ParsedCommand::RetiredNotesFolder) => Some(notes_folder_retired()),
-        Ok(_) => None,
-        Err(arguments) => Some(argparse_error(arguments)),
+        Ok(ParsedCommand::Help) => Err(success(cli_render::HELP.to_owned())),
+        Ok(ParsedCommand::RetiredNotesFolder) => Err(notes_folder_retired()),
+        Err(arguments) => Err(argparse_error(arguments)),
+        Ok(ParsedCommand::Import(options) | ParsedCommand::Sync { options, .. }) => {
+            Ok(options.json)
+        }
+        Ok(
+            ParsedCommand::ListImporters { json }
+            | ParsedCommand::AudioArchiveStatus { json, .. }
+            | ParsedCommand::AudioArchiveMembers { json, .. },
+        ) => Ok(json),
+        Ok(ParsedCommand::AudioArchive(options)) => Ok(options.json),
+        Ok(ParsedCommand::Backends | ParsedCommand::Connect { .. }) => Ok(false),
     }
 }
 

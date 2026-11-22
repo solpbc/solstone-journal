@@ -1,0 +1,16 @@
+{
+  "description": "Native install provider command, local target sha. Preserve terminal syntax and supplied data.",
+  "context": "Native install provider command, local target sha. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3bf2e14396abd2fc6f92bd07f4a250752a734a5a07e135239179ae84fbff85f5",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

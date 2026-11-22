@@ -1,0 +1,23 @@
+{
+  "description": "Journal host warm repair execution.",
+  "context": "Journal host warm repair execution.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3b9003b40b3aebd36f4893ddb374b0abc3111cee12aaa9d6c81d76b3261d69a2",
+  "max_length": 330,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "space_2",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ]
+}

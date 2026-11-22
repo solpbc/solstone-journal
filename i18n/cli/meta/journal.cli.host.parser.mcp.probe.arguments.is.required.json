@@ -1,0 +1,28 @@
+{
+  "description": "Terminal diagnostic for parser mcp probe arguments is required.",
+  "context": "Terminal diagnostic for parser mcp probe arguments is required.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3ed4491092b29a58795b637f194363083d6458e5fe51cd485b3a51a1f15c7872",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "flag",
+      "value": "--arguments",
+      "kind": "flag"
+    }
+  ]
+}

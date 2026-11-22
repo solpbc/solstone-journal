@@ -1,0 +1,21 @@
+{
+  "description": "Native config command, admit rewrite. Preserve terminal syntax and supplied data.",
+  "context": "Native config command, admit rewrite. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a449b2335025fe57f1c368e78ad8e59f7872e29b4ad8d8a860cfd2d203dbf7ce",
+  "max_length": 189,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

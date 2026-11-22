@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use crate::{
     ActivityQuery, AuditToolName, OAuthStore, PermissionStore, ReadPermission, ReadScope,
-    RecordedOutcome, TokenStore, read_activity, resolve_permission_facet_names, tally,
+    RecordedOutcome, TokenStore, read_activity, resolve_permission_facet_names_for, tally,
 };
 use axum::body::Body;
 use axum::extract::{Extension, Path, Query};
@@ -211,18 +211,20 @@ pub(crate) fn state_value_with_iface(
     );
     let tokens = TokenStore::open(root)
         .list()
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| error.message_for(locale))?;
     let oauth = OAuthStore::open(root);
-    let grants = oauth.list_grants().map_err(|error| error.to_string())?;
+    let grants = oauth
+        .list_grants()
+        .map_err(|error| error.message_for(locale))?;
     let replay_notices = oauth
         .list_replay_notices()
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| error.message_for(locale))?;
     let pairing = oauth
         .current_pairing_code()
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| error.message_for(locale))?;
     let permissions = PermissionStore::open(root)
         .read()
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| error.message_for(locale))?;
     let by_key: BTreeMap<_, _> = permissions
         .permissions
         .into_iter()
@@ -2892,7 +2894,11 @@ async fn set_permission(
     let scope = match body.scope.as_str() {
         "whole_journal" => ReadScope::WholeJournal,
         "facets" if !body.facets.is_empty() => {
-            match resolve_permission_facet_names(&journal, &body.facets) {
+            match resolve_permission_facet_names_for(
+                owner_response_locale(),
+                &journal,
+                &body.facets,
+            ) {
                 Ok(ids) => ReadScope::Facets { ids },
                 Err(detail) => {
                     return refusal("permission_facets_invalid", detail, StatusCode::BAD_REQUEST);

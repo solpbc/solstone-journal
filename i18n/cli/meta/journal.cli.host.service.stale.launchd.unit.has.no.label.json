@@ -1,0 +1,23 @@
+{
+  "description": "Journal host service stale launchd unit has no label.",
+  "context": "Journal host service stale launchd unit has no label.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c7b1e995d562581e3c2ba3e45f4f2751c2387c0c0bfcc4c1244e458a67465b21",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "launchd",
+      "kind": "accepted-input",
+      "value": "launchd"
+    }
+  ]
+}

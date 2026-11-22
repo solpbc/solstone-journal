@@ -1,0 +1,25 @@
+{
+  "description": "Journal host output for windows service scheduler rpc may have changed state re inspection required.",
+  "context": "Journal host output for windows service scheduler rpc may have changed state re inspection required.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    },
+    {
+      "name": "observation",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c1514a9b9f30346ec2db9485693e21beff29d843df7141305be426990c42a009",
+  "max_length": 273,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

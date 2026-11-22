@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output for mcp token created bearer token for label.",
+  "context": "Journal host output for mcp token created bearer token for label.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "label",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "27eaa8cb456d5b9b195bd50160632543cf9ddd5776c999a117a40c6851878db6",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Journal host health media depth stale.",
+  "context": "Journal host health media depth stale.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "depth",
+      "type": "string"
+    },
+    {
+      "name": "seconds",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "aecc60067b07d6135a96d0069285618f55312df8992fb5663bdbe6726d1d6464",
+  "max_length": 213,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

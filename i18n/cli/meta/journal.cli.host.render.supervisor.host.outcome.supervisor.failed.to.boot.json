@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output for render supervisor host outcome supervisor failed to boot.",
+  "context": "Journal host output for render supervisor host outcome supervisor failed to boot.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1b47efacf501308725624020e894049d482f86e7c3eaa9500ca547adbb0ba0c4",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

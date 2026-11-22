@@ -1,0 +1,50 @@
+{
+  "description": "Owner terminal count for mcp activity result targets.",
+  "context": "Owner terminal count for mcp activity result targets.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "digest",
+      "type": "string"
+    },
+    {
+      "name": "targets",
+      "type": "string"
+    },
+    {
+      "name": "count_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "59e8f7dfde3fd66808892adadd3733bd9f1a0441693bb28d6c63c3897d96e9fc",
+  "max_length": 702,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "space_4",
+      "kind": "whitespace",
+      "value": "    "
+    },
+    {
+      "name": "space_2",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ],
+  "selector": {
+    "name": "count_quantity",
+    "type": "cardinal"
+  }
+}

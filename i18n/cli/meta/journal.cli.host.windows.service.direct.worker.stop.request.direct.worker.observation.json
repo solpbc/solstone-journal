@@ -1,0 +1,25 @@
+{
+  "description": "Journal host output for windows service direct worker stop request direct worker observation.",
+  "context": "Journal host output for windows service direct worker stop request direct worker observation.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "termination",
+      "type": "string"
+    },
+    {
+      "name": "observed",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c329d29828c27448e2e7473210e2e850c3c0e98b872acaec74de15eacde08333",
+  "max_length": 258,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

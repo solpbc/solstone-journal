@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output for windows service could not load installation binding.",
+  "context": "Journal host output for windows service could not load installation binding.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "08631684fbfe0a87a120165e8faed29687a2f7437bcedf078035d0d50249176f",
+  "max_length": 141,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal host logs follow descriptor.",
+  "context": "Journal host logs follow descriptor.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2ec640239a6870d1a701f7e0d057fb55cd81c484d188367b3b7fa054f5896ce3",
+  "max_length": 210,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

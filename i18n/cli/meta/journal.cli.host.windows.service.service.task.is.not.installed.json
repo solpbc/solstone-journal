@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service service task is not installed.",
+  "context": "Journal host output for windows service service task is not installed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2de33ae34baea437540156c02e8e88d909d136a9bcf1751b8304f756c67e6df1",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

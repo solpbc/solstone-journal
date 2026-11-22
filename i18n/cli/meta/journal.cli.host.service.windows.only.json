@@ -1,0 +1,16 @@
+{
+  "description": "Journal host service windows only.",
+  "context": "Journal host service windows only.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d58579f6eaa9ba1cde3e54abc1f7bd3c954147677dba469450e95d1619052efa",
+  "max_length": 147,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service the installed solstone exe facade is unavailable.",
+  "context": "Journal host output for windows service the installed solstone exe facade is unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "662c3b099de88aa6ed8930a90f83418ce23fc9edbd518669e6440e82562ca457",
+  "max_length": 144,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

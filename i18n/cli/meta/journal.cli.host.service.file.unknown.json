@@ -1,0 +1,44 @@
+{
+  "description": "Journal host service file unknown.",
+  "context": "Journal host service file unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "operation",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "cause",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "beb3db4dd2dbdf6ec1a48d6bd45799f92336a8a6f85c116eef96ebb75f8fde37",
+  "max_length": 2445,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "operation",
+    "type": "string",
+    "enum_values": [
+      "change-journal-folder",
+      "install",
+      "operate",
+      "restart",
+      "route-repair",
+      "status",
+      "stop",
+      "uninstall"
+    ],
+    "enum_default": "uninstall"
+  }
+}

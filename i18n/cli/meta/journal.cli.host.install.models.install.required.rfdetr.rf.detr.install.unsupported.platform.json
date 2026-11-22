@@ -1,0 +1,32 @@
+{
+  "description": "Native install models command, install required rfdetr. Preserve terminal syntax and supplied data.",
+  "context": "Native install models command, install required rfdetr. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "os",
+      "type": "string"
+    },
+    {
+      "name": "arch",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0cb2b6323e4421c6aa2a2db2b40a31f460a734487310a9bbb2ae0cd90c7a17cd",
+  "max_length": 291,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_1",
+      "kind": "accepted-input",
+      "value": "rf-detr"
+    }
+  ]
+}

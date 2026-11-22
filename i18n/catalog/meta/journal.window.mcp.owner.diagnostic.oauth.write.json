@@ -1,0 +1,28 @@
+{
+  "description": "MCP owner diagnostic for oauth write.",
+  "context": "MCP owner diagnostic for oauth write.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c0ce01372f7b5d4c180d18af569513c405a511bd82b3244b9bd7b6e881db60ed",
+  "max_length": 171,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_mcp",
+      "kind": "accepted-input",
+      "value": "MCP"
+    },
+    {
+      "name": "literal_oauth",
+      "kind": "accepted-input",
+      "value": "OAuth"
+    }
+  ]
+}

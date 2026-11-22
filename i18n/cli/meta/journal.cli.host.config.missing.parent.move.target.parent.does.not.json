@@ -1,0 +1,21 @@
+{
+  "description": "Native config command, missing parent. Preserve terminal syntax and supplied data.",
+  "context": "Native config command, missing parent. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "directory",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f23995338baeaceb87e3f0279d910736409b46be9bc7d695fe29260776c5dbfb",
+  "max_length": 249,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

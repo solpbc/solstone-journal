@@ -1,0 +1,28 @@
+{
+  "description": "Terminal diagnostic for parser mcp target created timestamp must be valid utf n8 and nonempty.",
+  "context": "Terminal diagnostic for parser mcp target created timestamp must be valid utf n8 and nonempty.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4afa71fc7e92aeaac1f66759ca8df631665f35ccb9187feb143d9b8af156d664",
+  "max_length": 225,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "term",
+      "value": "UTF-8",
+      "kind": "mark-word"
+    }
+  ]
+}

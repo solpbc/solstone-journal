@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service service stopped but its ready state could not be.",
+  "context": "Journal host service service stopped but its ready state could not be.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2ae31b3c5e4171c12f898b0d8e1479d53523306161560090a4a09ad955348be5",
+  "max_length": 207,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

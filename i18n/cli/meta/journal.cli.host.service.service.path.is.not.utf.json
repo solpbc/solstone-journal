@@ -1,0 +1,16 @@
+{
+  "description": "Journal host service service path is not utf.",
+  "context": "Journal host service service path is not utf.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "274bea5839d239bae147cda47dd980bba55871de86789be13cbed7c0a1603f40",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

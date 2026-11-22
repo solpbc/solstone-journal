@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service create service directory.",
+  "context": "Journal host service create service directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0ec76e0e2d3da1e3ca559abaf46c23b9dc60d1c208ba7c04f7774976eb2d9659",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

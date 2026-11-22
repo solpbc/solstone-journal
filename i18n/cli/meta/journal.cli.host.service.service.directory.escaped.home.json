@@ -1,0 +1,16 @@
+{
+  "description": "Journal host service service directory escaped home.",
+  "context": "Journal host service service directory escaped home.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4e691d4aa0a8e8d1299359b223aa1f7589c1e1b10d27d761dcdf89a297591b86",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

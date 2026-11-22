@@ -1,0 +1,28 @@
+{
+  "description": "Terminal diagnostic for parser mcp permission set at least one category is required.",
+  "context": "Terminal diagnostic for parser mcp permission set at least one category is required.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "51e21bb5700d8d7dc701215c0791ef843c44c99fb956d321c4da7484f64b7ac5",
+  "max_length": 165,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "flag",
+      "value": "--category",
+      "kind": "flag"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output for windows service could not inspect current executable.",
+  "context": "Journal host output for windows service could not inspect current executable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a81f9bae32d1d206013b075f72147856bd8bc5d17b0f51c74b813d0a756f2315",
+  "max_length": 144,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

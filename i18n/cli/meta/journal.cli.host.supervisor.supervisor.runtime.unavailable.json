@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output for supervisor supervisor runtime unavailable.",
+  "context": "Journal host output for supervisor supervisor runtime unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6b4bfc0bcb72119f79b6b0bd4df218aade0baaafee802ac1672ad76eb685fca6",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

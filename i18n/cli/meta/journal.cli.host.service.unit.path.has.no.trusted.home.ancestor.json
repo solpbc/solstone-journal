@@ -1,0 +1,16 @@
+{
+  "description": "Journal host service unit path has no trusted home ancestor.",
+  "context": "Journal host service unit path has no trusted home ancestor.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "359c42b407000452d91c32de1beaf3516e98b2a73313f7e8ae1c90a4200386ab",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

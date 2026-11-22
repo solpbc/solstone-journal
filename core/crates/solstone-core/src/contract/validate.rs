@@ -45,7 +45,11 @@ pub(crate) fn validate_contract_file(
         "browser_jsonl" | "body_jsonl" => Vec::new(),
         _ => vec![ContractIssue {
             path: filename.into(),
-            message: format!("unsupported contract file kind: {kind}"),
+            message: solstone_core_cli_copy::display_for(
+                crate::host_locale(),
+                "journal.cli.host.contract.validate.contract.file.unsupported.file.kind.kind",
+                [("kind", &kind)],
+            ),
         }],
     }
 }
@@ -56,7 +60,11 @@ fn validate_json(filename: &str, content: &[u8], schema: &Value) -> Vec<Contract
         Err(error) => {
             return vec![ContractIssue {
                 path: filename.into(),
-                message: format!("invalid JSON: {error}"),
+                message: solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.contract.validate.json.invalid.json",
+                    [("error", &error)],
+                ),
             }];
         }
     };
@@ -69,7 +77,11 @@ fn validate_headered_jsonl(filename: &str, content: &[u8], schema: &Value) -> Ve
         Err(error) => {
             return vec![ContractIssue {
                 path: filename.into(),
-                message: format!("invalid UTF-8: {error}"),
+                message: solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.contract.validate.headered.jsonl.invalid.utf8",
+                    [("error", &error)],
+                ),
             }];
         }
     };
@@ -80,7 +92,11 @@ fn validate_headered_jsonl(filename: &str, content: &[u8], schema: &Value) -> Ve
     if lines.is_empty() {
         return vec![ContractIssue {
             path: filename.into(),
-            message: "headered JSONL requires a header line".into(),
+            message: solstone_core_cli_copy::render_for(
+                crate::host_locale(),
+                "journal.cli.host.contract.validate.headered.jsonl.headered.jsonl.requires.header.line",
+                &[],
+            ),
         }];
     }
     let header = schema
@@ -99,7 +115,11 @@ fn validate_headered_jsonl(filename: &str, content: &[u8], schema: &Value) -> Ve
             Err(error) => {
                 issues.push(ContractIssue {
                     path: label,
-                    message: format!("invalid JSON: {error}"),
+                    message: solstone_core_cli_copy::display_for(
+                        crate::host_locale(),
+                        "journal.cli.host.contract.validate.json.invalid.json",
+                        [("error", &error)],
+                    ),
                 });
                 continue;
             }
@@ -107,7 +127,11 @@ fn validate_headered_jsonl(filename: &str, content: &[u8], schema: &Value) -> Ve
         if !value.is_object() {
             issues.push(ContractIssue {
                 path: label,
-                message: "line must be a JSON object".into(),
+                message: solstone_core_cli_copy::render_for(
+                    crate::host_locale(),
+                    "journal.cli.host.contract.validate.headered.jsonl.line.must.be.json.object",
+                    &[],
+                ),
             });
             continue;
         }
@@ -116,7 +140,11 @@ fn validate_headered_jsonl(filename: &str, content: &[u8], schema: &Value) -> Ve
             Some(selected) => issues.extend(format_errors(&label, selected, &value)),
             None => issues.push(ContractIssue {
                 path: label,
-                message: "missing schema definition".into(),
+                message: solstone_core_cli_copy::render_for(
+                    crate::host_locale(),
+                    "journal.cli.host.contract.validate.headered.jsonl.missing.schema.definition",
+                    &[],
+                ),
             }),
         }
     }
@@ -129,7 +157,11 @@ fn format_errors(path: &str, schema: &Value, value: &Value) -> Vec<ContractIssue
         Err(error) => {
             return vec![ContractIssue {
                 path: path.into(),
-                message: format!("invalid JSON Schema: {error}"),
+                message: solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.contract.format.errors.invalid.json.schema",
+                    [("error", &error)],
+                ),
             }];
         }
     };
@@ -183,8 +215,13 @@ pub(crate) fn validate_journal_tree(
             continue;
         };
         matched += 1;
-        let bytes = fs::read(&path)
-            .map_err(|error| format!("contract: cannot read {}: {error}", path.display()))?;
+        let bytes = fs::read(&path).map_err(|error| {
+            solstone_core_cli_copy::display_for(
+                crate::host_locale(),
+                "journal.cli.host.contract.walk.schema.files.cannot.read.path",
+                [("path", &path.display()), ("error", &error)],
+            )
+        })?;
         issues.extend(validate_contract_file(
             &repo_relative(&path, root),
             &bytes,
@@ -195,11 +232,21 @@ pub(crate) fn validate_journal_tree(
 }
 
 fn walk_four_levels(path: &Path, level: usize, output: &mut Vec<PathBuf>) -> Result<(), String> {
-    for entry in fs::read_dir(path)
-        .map_err(|error| format!("contract: cannot read {}: {error}", path.display()))?
-    {
+    for entry in fs::read_dir(path).map_err(|error| {
+        solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.contract.walk.schema.files.cannot.read.path",
+            [("path", &path.display()), ("error", &error)],
+        )
+    })? {
         let path = entry
-            .map_err(|error| format!("contract: cannot read journal entry: {error}"))?
+            .map_err(|error| {
+                solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.contract.walk.four.levels.cannot.read.entry",
+                    [("error", &error)],
+                )
+            })?
             .path();
         if level == 3 {
             if path.is_file() {

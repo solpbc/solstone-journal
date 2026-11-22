@@ -1,0 +1,32 @@
+{
+  "description": "Journal host output for windows service windows sign in resume failed windows error.",
+  "context": "Journal host output for windows service windows sign in resume failed windows error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "action",
+      "type": "string"
+    },
+    {
+      "name": "code",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2ca6be35c8a4aa996bb3b472af125c19693263b48c9dc3bb2a94aaa546b506b6",
+  "max_length": 279,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_windows",
+      "kind": "accepted-input",
+      "value": "Windows"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for mcp activity schema connection.",
+  "context": "Journal host output for mcp activity schema connection.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1715fed205d5b51fb6692f4328d90b22b750edd3f3aea884781846228f86dd15",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

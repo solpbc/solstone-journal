@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service adopted installation has no journal path.",
+  "context": "Journal host output for windows service adopted installation has no journal path.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fec1a4e511976ffc5ddf0f79ce6cecc0acf654f57f24c37c97073ef28c32ae28",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

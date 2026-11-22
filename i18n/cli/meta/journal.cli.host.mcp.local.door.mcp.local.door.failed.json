@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output for mcp local door mcp local door failed.",
+  "context": "Journal host output for mcp local door mcp local door failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "class",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "16900c5030e7183467ff64e8773e411ac8b0b780a0f0eaca3363b95f7c31bac1",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

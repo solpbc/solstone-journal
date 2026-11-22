@@ -1,0 +1,21 @@
+{
+  "description": "Journal host heartbeat oplog.",
+  "context": "Journal host heartbeat oplog.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "918c2fb6e4175dddd036f91371769afc5cccd5fd9bbc56a416b0ddf5d8b949b8",
+  "max_length": 135,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

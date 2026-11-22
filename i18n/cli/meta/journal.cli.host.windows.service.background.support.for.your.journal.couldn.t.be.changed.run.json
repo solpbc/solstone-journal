@@ -1,0 +1,33 @@
+{
+  "description": "Journal host output for windows service background support for your journal couldn t be changed run.",
+  "context": "Journal host output for windows service background support for your journal couldn t be changed run.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6cd1dceacfbba3c7c0fcbeb882378ca3c36052cfad62c5b6dd6e8bd5fa604d55",
+  "max_length": 507,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "break_line",
+      "kind": "whitespace",
+      "value": "\n"
+    },
+    {
+      "name": "command_solstone_journal_service_status",
+      "kind": "command",
+      "value": "solstone journal service status"
+    }
+  ]
+}

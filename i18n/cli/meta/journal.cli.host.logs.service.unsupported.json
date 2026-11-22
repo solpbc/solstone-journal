@@ -1,0 +1,21 @@
+{
+  "description": "Journal host logs service unsupported.",
+  "context": "Journal host logs service unsupported.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "platform",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3c4265552c2cbc4adab54df8d36d21b3ae95bc1b03a49524e4cb74b2a7590d4b",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

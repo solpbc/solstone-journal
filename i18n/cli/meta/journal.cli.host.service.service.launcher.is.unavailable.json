@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service service launcher is unavailable.",
+  "context": "Journal host service service launcher is unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6e1d907141cd084e668465a37db189e7eea3fe08a4810991f04be2bd8d7e1179",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

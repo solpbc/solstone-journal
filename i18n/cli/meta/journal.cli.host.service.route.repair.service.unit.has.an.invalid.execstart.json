@@ -1,0 +1,23 @@
+{
+  "description": "Journal host service route repair service unit has an invalid execstart.",
+  "context": "Journal host service route repair service unit has an invalid execstart.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7f19b3b540c5f29c18b854e4b579e67d8ed7589fc526cbcc43ce3e89e62000c9",
+  "max_length": 168,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "exec_start",
+      "kind": "accepted-input",
+      "value": "ExecStart"
+    }
+  ]
+}

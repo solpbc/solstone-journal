@@ -1,0 +1,43 @@
+{
+  "description": "Terminal help and usage for sense usage.",
+  "context": "Terminal help and usage for sense usage.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f0eb9378c8b203e95c757ab9d9bf1c72575cc315384893bbb760b957abaa4280",
+  "max_length": 351,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal sense [-h] [--day DAY] [-j JOBS]",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "spaces_20",
+      "value": "                    ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "syntax_4",
+      "value": "[--reprocess {screen,audio,image,all}] [--segment SEGMENT]",
+      "kind": "command"
+    },
+    {
+      "name": "syntax_5",
+      "value": "[--stream STREAM] [--dry-run] [-v] [-d]",
+      "kind": "command"
+    }
+  ]
+}

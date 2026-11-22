@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service native process birth changed.",
+  "context": "Journal host output for windows service native process birth changed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b407feb2e525dfd1ebfc617837c0ddf8ed59d5d9b97eb79fb91d4df6bab2d21a",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

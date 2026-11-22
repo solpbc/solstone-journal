@@ -1,0 +1,23 @@
+{
+  "description": "Journal host health services.",
+  "context": "Journal host health services.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2c07ee8795b0f8c6c68cb15a70146d753022e95eaabcabf3dcd0c77961c63978",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

@@ -1,0 +1,50 @@
+{
+  "description": "Owner terminal count for mcp activity result truncated.",
+  "context": "Owner terminal count for mcp activity result truncated.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "digest",
+      "type": "string"
+    },
+    {
+      "name": "targets",
+      "type": "string"
+    },
+    {
+      "name": "count_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "ea663123069fef80ebf837fb45848da47159102acf894156daed90dd8343aef8",
+  "max_length": 732,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "space_4",
+      "kind": "whitespace",
+      "value": "    "
+    },
+    {
+      "name": "space_2",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ],
+  "selector": {
+    "name": "count_quantity",
+    "type": "cardinal"
+  }
+}

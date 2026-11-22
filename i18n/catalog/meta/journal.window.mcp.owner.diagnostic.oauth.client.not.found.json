@@ -1,0 +1,23 @@
+{
+  "description": "MCP owner diagnostic for oauth client not found.",
+  "context": "MCP owner diagnostic for oauth client not found.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1a524a9ae6130065dc07c5979f6447437be6aaad6c0372cb4941f4b82d2fd24d",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_oauth",
+      "kind": "accepted-input",
+      "value": "OAuth"
+    }
+  ]
+}

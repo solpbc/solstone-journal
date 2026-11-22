@@ -1,0 +1,16 @@
+{
+  "description": "Journal host supervisor recovery initial admission handshake.",
+  "context": "Journal host supervisor recovery initial admission handshake.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6ce5ff4d401be305751bad5b0c4c0909773e52cf8e2f88695a05c65a6537b4e2",
+  "max_length": 144,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

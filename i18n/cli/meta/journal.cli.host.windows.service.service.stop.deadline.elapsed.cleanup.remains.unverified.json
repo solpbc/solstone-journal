@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service service stop deadline elapsed cleanup remains unverified.",
+  "context": "Journal host output for windows service service stop deadline elapsed cleanup remains unverified.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "75cb320c3295f52c1fb0c8bfa52f4fa60e4b8b855d0652ca1e647508f6531bf0",
+  "max_length": 171,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

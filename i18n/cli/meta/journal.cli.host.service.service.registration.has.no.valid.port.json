@@ -1,0 +1,16 @@
+{
+  "description": "Journal host service service registration has no valid port.",
+  "context": "Journal host service service registration has no valid port.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f55a59bdaca32e169b95c5a09559a8c186a1a825a75203aa9e750efc2c3776d4",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

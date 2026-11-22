@@ -1,0 +1,33 @@
+{
+  "description": "Journal host installation recovery.",
+  "context": "Journal host installation recovery.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "adcd24a00221bfd5fe86b18ad89472b516d395cf2994f3b275cd6fd38f7c867e",
+  "max_length": 483,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "setup",
+      "kind": "accepted-input",
+      "value": "solstone journal setup"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

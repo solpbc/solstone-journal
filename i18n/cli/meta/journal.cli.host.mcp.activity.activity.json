@@ -1,0 +1,28 @@
+{
+  "description": "Journal host output for mcp activity activity.",
+  "context": "Journal host output for mcp activity activity.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "946fd899c5c456bfe0608c3e95a0de1cf7579aa47b48e8dab7369ffbebffae81",
+  "max_length": 162,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command_solstone_journal_mcp_activity",
+      "kind": "command",
+      "value": "solstone journal mcp activity"
+    }
+  ]
+}

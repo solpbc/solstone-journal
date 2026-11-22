@@ -1,0 +1,28 @@
+{
+  "description": "Journal host settings open.",
+  "context": "Journal host settings open.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3776ef1cc330c56f4adb35f8d59ba162a97f93d6faf34d0868885030da60d107",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "accepted-input",
+      "value": "solstone journal open"
+    },
+    {
+      "name": "space_6",
+      "kind": "whitespace",
+      "value": "      "
+    }
+  ]
+}

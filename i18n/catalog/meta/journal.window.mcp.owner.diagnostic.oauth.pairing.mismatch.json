@@ -1,0 +1,16 @@
+{
+  "description": "MCP owner diagnostic for oauth pairing mismatch.",
+  "context": "MCP owner diagnostic for oauth pairing mismatch.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5dcf54e9e47d849c0e3ef23733860522d41dd98475187fb32b04a26ebe3f3a5f",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

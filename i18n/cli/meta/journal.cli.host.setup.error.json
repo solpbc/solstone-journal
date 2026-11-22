@@ -1,0 +1,28 @@
+{
+  "description": "Terminal diagnostic for setup error.",
+  "context": "Terminal diagnostic for setup error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d5da0a0587262af011e5411795d9dd885f2021c9f4034634163a9de5f3e843e5",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal",
+      "value": "solstone journal setup",
+      "kind": "accepted-input"
+    }
+  ]
+}

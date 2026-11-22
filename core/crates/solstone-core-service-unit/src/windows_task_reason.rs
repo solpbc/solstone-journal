@@ -31,9 +31,15 @@ const NO_REASON: &str = "windows gave no reason";
 /// `stdout` and `stderr` are the worker's raw byte streams.
 #[must_use]
 pub fn windows_task_failure_reason(stdout: &[u8], stderr: &[u8]) -> String {
+    windows_task_supplied_reason(stdout, stderr).unwrap_or_else(|| NO_REASON.to_owned())
+}
+
+/// Return the worker's reason only when one of its output streams supplies it.
+#[must_use]
+pub fn windows_task_supplied_reason(stdout: &[u8], stderr: &[u8]) -> Option<String> {
     let stdout = String::from_utf8_lossy(stdout);
     if let Some(reason) = structured_reason(&stdout) {
-        return reason;
+        return Some(reason);
     }
     let stderr = String::from_utf8_lossy(stderr);
     if let Some(reason) = stderr
@@ -42,14 +48,10 @@ pub fn windows_task_failure_reason(stdout: &[u8], stderr: &[u8]) -> String {
         .map(str::trim)
         .find(|reason| !reason.is_empty())
     {
-        return reason.to_owned();
+        return Some(reason.to_owned());
     }
     let remainder = strip_clixml(&stderr);
-    if remainder.is_empty() {
-        NO_REASON.to_owned()
-    } else {
-        remainder
-    }
+    (!remainder.is_empty()).then_some(remainder)
 }
 
 /// Read the worker's JSON failure record without pulling a deserializer into

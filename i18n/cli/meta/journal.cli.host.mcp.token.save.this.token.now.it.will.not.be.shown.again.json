@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for mcp token save this token now it will not be shown again.",
+  "context": "Journal host output for mcp token save this token now it will not be shown again.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d6d85ccf7dabf2ed93ed93b01e1c6d4a7019b134b360bdeb59aca6bce1cc904a",
+  "max_length": 216,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

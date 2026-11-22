@@ -1,0 +1,25 @@
+{
+  "description": "MCP owner diagnostic for permission malformed.",
+  "context": "MCP owner diagnostic for permission malformed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0aa356ae9c852b6b2170a47270db9ef0f09c98776551aa8d87e3b2e3ff558070",
+  "max_length": 141,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

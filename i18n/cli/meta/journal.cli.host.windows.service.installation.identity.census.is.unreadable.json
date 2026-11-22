@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service installation identity census is unreadable.",
+  "context": "Journal host output for windows service installation identity census is unreadable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2c9866a0e84015c73d8cb42b0cfdf8d1c1f796dceed91efb8582e13ad02c1f26",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

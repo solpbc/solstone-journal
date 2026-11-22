@@ -1,0 +1,39 @@
+{
+  "description": "Owner terminal count for backfill facets applied.",
+  "context": "Owner terminal count for backfill facets applied.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "scanned",
+      "type": "string"
+    },
+    {
+      "name": "backfilled",
+      "type": "string"
+    },
+    {
+      "name": "scanned_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "backfilled_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "3bc6b782c6e4e48288802d46ed5a5387140d76a5ca7ced181da4b036f1499e12",
+  "max_length": 1431,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "scanned_quantity",
+    "type": "cardinal"
+  }
+}

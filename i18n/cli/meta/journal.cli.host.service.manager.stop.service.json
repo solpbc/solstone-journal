@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service manager stop service.",
+  "context": "Journal host service manager stop service.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "result",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "61f2bc751e1255f6fac2b692af2774662af2e4c6e9fbae0ad8028d4990758261",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

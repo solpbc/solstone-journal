@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service could not verify the saved installation.",
+  "context": "Journal host service could not verify the saved installation.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a673e280687e5ac13be2c58321f61c5e1fb072e40d096ae293f8a28d8c8e9df3",
+  "max_length": 153,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

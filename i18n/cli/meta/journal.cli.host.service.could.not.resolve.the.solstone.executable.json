@@ -1,0 +1,28 @@
+{
+  "description": "Journal host service could not resolve the solstone executable.",
+  "context": "Journal host service could not resolve the solstone executable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e6897b3296ae77944900d91c26cd559b29722e5798ef94b11ecdf7650260d812",
+  "max_length": 174,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone",
+      "kind": "accepted-input",
+      "value": "solstone"
+    }
+  ]
+}

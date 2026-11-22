@@ -1,0 +1,28 @@
+{
+  "description": "Terminal diagnostic for parser mcp probe expected argument after tool.",
+  "context": "Terminal diagnostic for parser mcp probe expected argument after tool.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1fcbfe23749005c3fb37927e3b3535cdc9430a91434f5e455ccd77b9fdde4e3b",
+  "max_length": 162,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "flag",
+      "value": "--tool",
+      "kind": "flag"
+    }
+  ]
+}
