@@ -1058,8 +1058,7 @@ function importOwns(target) {
 // Import draws by markup. A draw writes only what differs from what the page
 // already shows, so a poll or a stream whose answer changed nothing leaves the
 // page as it is: no node is replaced, and a screen reader doesn't read the
-// focused control again. The same three setters are in import_detail.js and
-// settings' audio_folder.js.
+// focused control again. The same three setters are in import_detail.js.
 function writeText(el, text) {
   if (!el) return;
   const next = String(text ?? '');

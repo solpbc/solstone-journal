@@ -927,12 +927,12 @@ fn ready_sleep_marker_path(argv: &[String]) -> Option<&str> {
 /// Bring `config/schedules.json` up to date with what the journal ships before
 /// the scheduler loads it: the built-in entries are registered when absent, and
 /// the maintenance entries are reconciled with the routine registry, retired
-/// names and routines this host cannot run pruned and missing routines added.
-/// Desktop audio-folder sync commands are pruned regardless of entry name.
-/// Other entries an operator added or edited survive untouched. A failure
-/// never blocks boot; the schedule sink still refuses retired audio sync work.
-/// Returns the schedule names added by this reconciliation, so the boot
-/// catch-up can leave them to start at their next mark.
+/// names, retired audio-folder sync commands, and routines this host cannot run
+/// pruned and missing routines added. Other entries an operator added or edited
+/// survive untouched. A failure never blocks boot; the schedule sink still
+/// refuses retired audio sync work. Returns the schedule names added by this
+/// reconciliation, so the boot catch-up can leave them to start at their next
+/// mark.
 fn reconcile_schedules(schedule_config_path: &Path) -> BTreeSet<String> {
     let mut fresh = BTreeSet::new();
     match register_default_entries(schedule_config_path) {
@@ -948,15 +948,9 @@ fn reconcile_schedules(schedule_config_path: &Path) -> BTreeSet<String> {
             "supervisor: built-in schedule registration skipped; scheduler runs the file as is: {error}"
         ),
     }
-    match solstone_core_maintenance::schedule_sync::sync_with_retirements(
+    match solstone_core_maintenance::schedule_sync::sync(
         schedule_config_path,
         solstone_core_maintenance::registry::routines(),
-        |entry| {
-            entry
-                .get("cmd")
-                .and_then(|cmd| serde_json::from_value::<Vec<String>>(cmd.clone()).ok())
-                .is_some_and(|cmd| super::bus::is_retired_audio_schedule(&cmd))
-        },
     ) {
         Ok(summary) if summary.removed.is_empty() && summary.added.is_empty() => {}
         Ok(summary) => {
@@ -2688,7 +2682,8 @@ mod tests {
             "windows-alias": {"cmd": ["JOURNAL.EXE", "importer", "--sync=audio"], "every": "daily"},
             "core": {"cmd": ["solstone-core", "importer", "--sync=audio"], "every": "daily"},
             "old": {"cmd": ["sol", "import", "--sync=audio"], "every": "daily"},
-            "sync:audio": {"cmd": ["journal", "importer", "--sync=audio", "--sync=plaud", "--save"], "every": "hourly", "extra": true},
+            "sync:audio": {"cmd": ["journal", "importer", "--sync=audio", "--save"], "every": "hourly"},
+            "last-wins": {"cmd": ["journal", "importer", "--sync=audio", "--sync=plaud", "--save"], "every": "hourly", "extra": true},
             "oura": {"cmd": ["journal", "importer", "--sync=oura", "--save"], "every": "daily", "enabled": false},
             "file": {"cmd": ["journal", "importer", "--setting", "--sync=audio", "memo.ogg"], "every": "daily"},
             "archive": {"cmd": ["journal", "importer", "--sync=audio", "--audio-archive", "archive.json"], "every": "daily"},
@@ -2701,6 +2696,7 @@ mod tests {
         let saved: Value = serde_json::from_slice(&bytes).unwrap();
         for name in [
             "owner:source:audio",
+            "sync:audio",
             "custom-preview",
             "native",
             "windows-native",

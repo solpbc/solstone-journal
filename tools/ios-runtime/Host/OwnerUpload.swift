@@ -164,8 +164,6 @@ final class OwnerUploadBridge: NSObject, WKScriptMessageHandlerWithReply, UIDocu
       replyHandler(["ok": true], nil)
     case "chooseFolder":
       chooseFolder(body, reply: replyHandler)
-    case "chooseSource":
-      chooseFolder(body, reply: replyHandler, sourceChange: true)
     case "cancelFolder":
       cancelFolder(body)
       replyHandler(["ok": true], nil)
@@ -387,18 +385,14 @@ final class OwnerUploadBridge: NSObject, WKScriptMessageHandlerWithReply, UIDocu
     let generation: UInt64
     let source: String
     let reference: String
-    let sourceAction: String?
-    let expectedIdentity: String?
     let cancelled = AtomicFlag(false)
     var selected = false
     var finishing = false
     var reply: ((Any?, String?) -> Void)?
     init(id: String, authority: UInt64, generation: UInt64, source: String,
-         reference: String, sourceAction: String? = nil, expectedIdentity: String? = nil,
-         reply: @escaping (Any?, String?) -> Void) {
+         reference: String, reply: @escaping (Any?, String?) -> Void) {
       self.id = id; self.authority = authority; self.generation = generation
       self.source = source; self.reference = reference; self.reply = reply
-      self.sourceAction = sourceAction; self.expectedIdentity = expectedIdentity
     }
   }
 
@@ -422,18 +416,12 @@ final class OwnerUploadBridge: NSObject, WKScriptMessageHandlerWithReply, UIDocu
     }
   }
 
-  private func chooseFolder(_ body: [String: Any], reply: @escaping (Any?, String?) -> Void, sourceChange: Bool = false) {
+  private func chooseFolder(_ body: [String: Any], reply: @escaping (Any?, String?) -> Void) {
     guard let requested = requestedAuthority(body), let id = body["id"] as? String,
           !id.isEmpty, id.utf8.count < 64, let source = body["source"] as? String,
-          (sourceChange ? ["audio"] : ["gemini", "document", "audio_archive"]).contains(source),
+          ["gemini", "document", "audio_archive"].contains(source),
           let reference = body["client_item_id"] as? String,
           !reference.isEmpty, reference.utf8.count < 128 else {
-      reply(["state": "refused", "error": OwnerUploadCopy.unreadable], nil); return
-    }
-    let action = sourceChange ? body["action"] as? String : nil
-    let expected = body["expected_identity"] as? String
-    if sourceChange && (!["begin", "reauthorize", "replace", "forget"].contains(action ?? "")
-        || (action != "begin" && (expected == nil || expected!.isEmpty))) {
       reply(["state": "refused", "error": OwnerUploadCopy.unreadable], nil); return
     }
     lock.lock()
@@ -442,12 +430,11 @@ final class OwnerUploadBridge: NSObject, WKScriptMessageHandlerWithReply, UIDocu
     }
     let request = FolderRequest(id: id, authority: requested,
       generation: journal_ios_processing_generation(), source: source, reference: reference,
-      sourceAction: action, expectedIdentity: expected, reply: reply)
+      reply: reply)
     presenting = true
     folderAuthority = requested
     folderRequest = request
     lock.unlock()
-    if action == "forget" { acknowledgePickedFolder(request, url: nil); return }
     guard let top = topController() else {
       finishFolder(request, ["state": "refused", "error": OwnerUploadCopy.unreadable]); return
     }
@@ -511,7 +498,7 @@ final class OwnerUploadBridge: NSObject, WKScriptMessageHandlerWithReply, UIDocu
     acknowledgePickedFolder(request, url: url)
   }
 
-  private func acknowledgePickedFolder(_ request: FolderRequest, url: URL?) {
+  private func acknowledgePickedFolder(_ request: FolderRequest, url: URL) {
     lock.lock()
     guard folderRequest === request, !request.selected, !request.cancelled.value,
           authorityIsLiveLocked(request.authority) else { lock.unlock(); return }
@@ -532,10 +519,7 @@ final class OwnerUploadBridge: NSObject, WKScriptMessageHandlerWithReply, UIDocu
         self.finishFolder(request, ["state": "refused", "error": OwnerUploadCopy.unreadable]); return
       }
       self.copies.addOperation { [weak self] in
-        let result: [String: Any]
-        if request.sourceAction != nil { result = Self.changePickedSource(url, request: request) }
-        else if let url { result = Self.copyPickedFolder(url, request: request) }
-        else { result = ["state": "refused", "error": OwnerUploadCopy.unreadable] }
+        let result = Self.copyPickedFolder(url, request: request)
         self?.finishFolder(request, result)
       }
     }
@@ -589,31 +573,6 @@ final class OwnerUploadBridge: NSObject, WKScriptMessageHandlerWithReply, UIDocu
     defer { journal_runtime_free(pointer) }
     guard let value = try? JSONSerialization.jsonObject(with: Data(String(cString: pointer).utf8)) as? [String: Any] else {
       return ["state": "outcome_unknown"]
-    }
-    return value
-  }
-
-  private static func changePickedSource(_ url: URL?, request: FolderRequest) -> [String: Any] {
-    guard let action = request.sourceAction else { return ["state": "refused"] }
-    let body: [String: Any] = ["source": request.source, "action": action,
-      "expected_identity": request.expectedIdentity as Any? ?? NSNull(),
-      "client_item_id": request.reference, "folder_name": url?.lastPathComponent ?? "",
-      "authority": NSNumber(value: request.authority), "admissionGeneration": NSNumber(value: request.generation)]
-    guard let data = try? JSONSerialization.data(withJSONObject: body) else { return ["state": "refused"] }
-    let context = url.map { OwnerSourceBookmark($0, continues: { !request.cancelled.value }) }
-    let pointer = data.withUnsafeBytes { bytes in
-      journal_ios_owner_source_change(bytes.bindMemory(to: UInt8.self).baseAddress, UInt(data.count),
-        context.map { Unmanaged.passUnretained($0).toOpaque() }, { opaque, output, capacity in
-          guard let opaque, let output, capacity <= UInt(Int.max) else { return -1 }
-          return Unmanaged<OwnerSourceBookmark>.fromOpaque(opaque).takeUnretainedValue()
-            .write(to: output, capacity: Int(capacity))
-        })
-    }
-    withExtendedLifetime(context) {}
-    guard let pointer else { return ["state": "outcome_unknown", "client_item_id": request.reference] }
-    defer { journal_runtime_free(pointer) }
-    guard let value = try? JSONSerialization.jsonObject(with: Data(String(cString: pointer).utf8)) as? [String: Any] else {
-      return ["state": "outcome_unknown", "client_item_id": request.reference]
     }
     return value
   }

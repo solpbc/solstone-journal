@@ -71,9 +71,8 @@ returns `503`.
 `GET /api/journal/recurrences` reads saved schedules. Use `PUT` or `DELETE` on
 `/api/journal/recurrences/think/{name}` for a named Think recurrence. A `PUT`
 accepts `args`, `every`, `enabled` and optional `max_runtime`. For the saved
-Plaud or audio connection, use
-`/api/journal/recurrences/source/{source}` with the same timing fields and no
-`args`. These routes create no default recurrence. Apple Health and Oura have
+Plaud connection, use `/api/journal/recurrences/source/{source}` with the same
+timing fields and no `args`. These routes create no default recurrence. Apple Health and Oura have
 no source recurrence.
 
 `POST /api/journal/maintenance/{routine}` submits one admitted maintenance ID,

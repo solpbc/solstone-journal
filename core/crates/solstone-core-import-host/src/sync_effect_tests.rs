@@ -115,62 +115,6 @@ fn assert_saved_audio(root: &Path, original: &[u8]) -> (PathBuf, u64) {
     (path.clone(), fs::metadata(path).unwrap().ino())
 }
 
-struct UnusedText;
-impl solstone_core_import::text::WireClient for UnusedText {
-    fn execute(
-        &self,
-        _: &solstone_core_generate::GenerateRequest,
-    ) -> Result<solstone_core_generate::GenerateResponse, solstone_core_generate::ClientError> {
-        panic!("saving auxiliary audio must not introduce another Generate executor")
-    }
-}
-
-#[test]
-fn audio_sync_save_uses_real_pipeline_and_reuses_its_import_checkpoint() {
-    let root = journal();
-    let _bus = Bus::start(root.path());
-    let source = tempfile::tempdir().unwrap();
-    let original = wave();
-    let path = source.path().join("meeting.wav");
-    fs::write(&path, &original).unwrap();
-    let args = vec![
-        "--sync".into(),
-        "audio".into(),
-        "--path".into(),
-        source.path().display().to_string(),
-        "--save".into(),
-    ];
-    let mut first = None;
-    for _ in 0..2 {
-        let seams = crate::call::ImportSeams {
-            text: Box::new(UnusedText),
-            image: Box::new(solstone_core_import_sources::NullWireClient),
-            model: Box::new(solstone_core_import_sources::NullDocumentModelClient),
-            pdf: Box::new(solstone_core_import_sources::NullPdfWorker),
-            reindex: Box::new(crate::registry::IndexScan {
-                journal: root.path().to_path_buf(),
-            }),
-        };
-        let handle = crate::call::start(
-            args.clone(),
-            root.path().to_path_buf(),
-            seams,
-            solstone_core_import::WorkStop::new(),
-        )
-        .unwrap();
-        let (run, _) = handle.join();
-        assert_eq!(run.exit_code, 0, "{}{}", run.stdout, run.stderr);
-        let saved = assert_saved_audio(root.path(), &original);
-        if let Some(first) = &first {
-            assert_eq!(&saved, first, "repeat keeps the same published file");
-        }
-        first = Some(saved);
-        assert_eq!(fs::read(&path).unwrap(), original);
-    }
-    let state = fs::read_to_string(root.path().join("imports/audio.json")).unwrap();
-    assert!(state.contains("\"imported\""), "{state}");
-}
-
 struct Remote {
     bytes: Arc<Vec<u8>>,
     downloads: usize,

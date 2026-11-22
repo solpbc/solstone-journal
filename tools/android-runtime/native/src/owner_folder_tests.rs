@@ -105,7 +105,7 @@ impl Fixture {
         .unwrap();
         let binding = Arc::new(jio::JournalRoot::open(&root).unwrap());
         let processing = Arc::new(AtomicBool::new(false));
-        let (factory, sources) = crate::saved_sources::factory(PathBuf::from(
+        let factory = journal_mobile_serving::import_route::packaged_import_factory(PathBuf::from(
             std::env::var("SOLSTONE_NATIVE_FOLDER_TEST_PDFIUM")
                 .expect("maintained host PDFium input required"),
         ));
@@ -136,7 +136,6 @@ impl Fixture {
             retirement: None,
             root: binding,
             host: Some(host),
-            sources,
         });
         let root_c = CString::new(root.to_str().unwrap()).unwrap();
         let page = unsafe { journal_owner_folder_page_issue(root_c.as_ptr(), generation) };

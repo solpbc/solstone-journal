@@ -498,48 +498,6 @@ fn queued_import_writes_real_notes_and_unresolved_sync_cannot_borrow_retained_pa
         &root.path().join("chronicle"),
         "fc3 explicit native source sentinel"
     ));
-
-    // A real sync of a named folder establishes a retained source. A later
-    // sync with no path must not fall through to it.
-    let audio_folder = tempfile::tempdir().unwrap();
-    let clip = audio_folder.path().join("clip.wav");
-    fs::write(&clip, b"already imported clip").unwrap();
-    fs::create_dir_all(root.path().join("imports")).unwrap();
-    fs::write(
-        root.path().join("imports/audio.json"),
-        serde_json::to_vec(&serde_json::json!({
-            "backend": "audio",
-            "files": {"clip.wav": {
-                "status": "imported",
-                "hash": solstone_core_import::hash_source(&clip).unwrap().into_inner(),
-            }},
-        }))
-        .unwrap(),
-    )
-    .unwrap();
-    submit(
-        &host,
-        "explicit-audio",
-        owned(&[
-            "solstone",
-            "journal",
-            "importer",
-            "--sync",
-            "audio",
-            "--save",
-            "--path",
-            audio_folder.path().to_str().unwrap(),
-        ]),
-    );
-    assert_eq!(finished(&host, "explicit-audio"), "ok");
-    let state_path = root.path().join("imports/audio.json");
-    let before = fs::read(&state_path).unwrap();
-    fs::write(audio_folder.path().join("later.wav"), "unread\n").unwrap();
-    assert_eq!(
-        host.execute_worker_command(&owned(&["importer", "--sync", "audio", "--save"])),
-        UNCOMPLETED_HOLD_EXIT
-    );
-    assert_eq!(fs::read(state_path).unwrap(), before);
     assert!(!admit(&owned(&["--connect", "oura"])));
     assert!(!admit(&owned(&["--sync", "oura", "--save"])));
     assert!(!admit(&owned(&["--sync", "oura", "--save", "--scheduled"])));
@@ -1236,7 +1194,7 @@ fn late_stop_after_native_commit_preserves_actual_success() {
 }
 
 #[test]
-fn foreground_start_removes_retired_notes_folder_schedules_in_any_form_and_keeps_the_rest() {
+fn foreground_start_removes_retired_notes_and_audio_folder_schedules_and_keeps_the_rest() {
     let _serial = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
     for (enabled_sync, enabled_owner) in [
         (serde_json::json!(true), serde_json::Value::Null),
@@ -1248,12 +1206,15 @@ fn foreground_start_removes_retired_notes_folder_schedules_in_any_form_and_keeps
             "daily_time": "00:15",
             "weekly_time": "03:15",
             "sync:plaud": {"cmd": ["solstone", "journal", "importer", "--sync", "plaud", "--save"], "every": "hourly", "enabled": false},
+            "sync:audio": {"cmd": ["solstone", "journal", "importer", "--sync=audio", "--save"], "every": "hourly", "enabled": enabled_sync},
             "owner:source:audio": {"cmd": ["journal", "importer", "--sync", "audio", "--save"], "every": "daily", "enabled": false},
+            "custom-audio": {"cmd": ["solstone", "journal", "importer", "--sync", "audio", "--save"], "every": "daily", "enabled": true},
             "sync:obsidian": {"cmd": ["solstone", "journal", "importer", "--sync=obsidian", "--save"], "every": "hourly", "enabled": enabled_sync},
             "owner:source:obsidian": {"cmd": ["journal", "importer", "--sync", "obsidian", "--save", "--path", "/retained/vault"], "every": "weekly"},
         });
         if !enabled_owner.is_null() {
-            entries["owner:source:obsidian"]["enabled"] = enabled_owner;
+            entries["owner:source:obsidian"]["enabled"] = enabled_owner.clone();
+            entries["owner:source:audio"]["enabled"] = enabled_owner;
         }
         fs::write(&path, serde_json::to_vec(&entries).unwrap()).unwrap();
         let payload = root.path().join("payload");
@@ -1269,7 +1230,9 @@ fn foreground_start_removes_retired_notes_folder_schedules_in_any_form_and_keeps
         let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         assert!(saved.get("sync:obsidian").is_none(), "{saved}");
         assert!(saved.get("owner:source:obsidian").is_none(), "{saved}");
+        assert!(saved.get("sync:audio").is_none(), "{saved}");
+        assert!(saved.get("owner:source:audio").is_none(), "{saved}");
+        assert!(saved.get("custom-audio").is_none(), "{saved}");
         assert_eq!(saved["sync:plaud"], entries["sync:plaud"]);
-        assert_eq!(saved["owner:source:audio"], entries["owner:source:audio"]);
     }
 }

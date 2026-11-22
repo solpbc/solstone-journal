@@ -209,15 +209,10 @@
     [
       "plaud",
       "solstone.think.importers.plaud"
-    ],
-    [
-      "audio",
-      "solstone.think.importers.audio"
     ]
   ],
   "syncable_backends_instantiated": [
-    "plaud",
-    "audio"
+    "plaud"
   ],
   "native_sync_backends": [
     "oura"

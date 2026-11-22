@@ -722,7 +722,6 @@ function makePage(env, address = '/app/import/', { answers, folders = false } = 
   };
   if (folders) {
     window.JournalOwnerFolders = { cancels: 0, cancel() { this.cancels += 1; }, choose: async () => ({ state: 'cancelled' }) };
-    window.JournalOwnerSources = { cancels: 0, cancel() { this.cancels += 1; }, change: async () => ({ state: 'cancelled' }) };
   }
   window.__SOL_ENTRY_TABLE__ = { views: {
     import: { contract: true, fragment: '/app/import/workspace', scripts: [], styles: [] },

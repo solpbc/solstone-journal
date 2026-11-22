@@ -25,14 +25,6 @@ pub struct SyncPreviewRequest;
 #[derive(Debug, Default)]
 pub struct SyncSaveRequest;
 
-/// The reference audio auto mode.
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub enum AudioAuto {
-    Enabled,
-    Disabled,
-    Value(String),
-}
-
 /// A selected sync backend request. Each variant owns only its accepted parameters.
 ///
 /// Python-side variants cannot receive the native window parameter:
@@ -53,13 +45,6 @@ pub enum SyncBackendRequest {
         journal_root: PathBuf,
         save: bool,
     },
-    Audio {
-        journal_root: PathBuf,
-        save: bool,
-        source_path: Option<PathBuf>,
-        force: bool,
-        auto: AudioAuto,
-    },
     Oura {
         journal_root: PathBuf,
         save: bool,
@@ -74,7 +59,6 @@ impl SyncBackendRequest {
     pub const fn backend(&self) -> BackendName {
         match self {
             Self::Plaud { .. } => BackendName::Plaud,
-            Self::Audio { .. } => BackendName::Audio,
             Self::Oura { .. } => BackendName::Oura,
         }
     }

@@ -24,10 +24,8 @@
 //! A native frame that is still running after cancel stays owned until it
 //! returns. This call cannot kill that frame.
 //!
-//! Call `classify_arguments` before preview. Its sync backend and `--path`
-//! say whether audio omitted a path; this example does not read
-//! saved source settings. A held Body entry stays on the desktop importer,
-//! and `connect_oura` is not available here.
+//! Call `classify_arguments` before preview. A held Body entry stays on the
+//! desktop importer, and `connect_oura` is not available here.
 //!
 //! This example calls `cancel` immediately after `start` so the sequence is
 //! visible. Delete that call to let the attempt finish.
@@ -71,8 +69,6 @@ fn main() {
         );
         std::process::exit(1);
     }
-    // `class.sync_source` and `class.explicit_path` are the saved-settings
-    // decision. This example does not load a journal config path.
     let stop = WorkStop::new();
     let seams = embedded_seams(&journal, PathBuf::from(library), stop.clone());
     let previewed = preview(&import_args, &journal, &seams);

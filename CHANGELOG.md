@@ -24,8 +24,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - adding a facet now includes an optional description field explaining how your journal uses it to tell facets apart. when you have more than one active facet, settings shows a note on any active facet missing a description.
 - on the transcripts page, each column under "detail" is headed by the device that added it. audio, screen, imports, pages and photos each keep one color under "day" and under "detail", and a key above them lists the kinds that day has. when you're viewing today, a line by the date says which device last added something to your journal and when, and anything new appears while the page is open. long messages and transcript lines now wrap at a comfortable reading width.
 - the sources page now links to the import page, for files and exports from other apps. the import page links to the sources page. the close button in dialogs is easier to hit, and on a phone so is a notification's. small text in notifications and the navigation labels is a little larger.
-- recordings from your Plaud sync, and files from a phone journal's audio folder, no longer appear in import history or in the import list an agent can read, so history shows what you chose to import. you can still delete them from transcripts. Oura's syncs still appear in import history for now.
-- on the android and iphone development journals, the audio folder's controls moved from the import page to settings, under sync. the import page's Plaud row and its sync now are gone too; Plaud syncs every hour once you turn it on in settings.
+- recordings from your Plaud sync, and earlier files from a phone journal's audio folder, no longer appear in import history or in the import list an agent can read, so history shows what you chose to import. you can still delete them from transcripts. Oura's syncs still appear in import history for now.
+- on the android and iphone development journals, the import page's Plaud row and its "sync now" button are gone; Plaud syncs every hour once you turn it on in settings.
 - an entity's all-facets page now shows its moments from every facet it's in that you haven't muted, newest first, each with the facet it came from. a moment's day and a connection's day now open that day in transcripts instead of the thinking page, and so does the day a face came from. either opens at its recording where there is one. you can sort the entities list by name, and the sort stays when you go back or reload. the detected entities table no longer has a type column, and the small buttons on entities pages are easier to press.
 
 ### Fixed
@@ -65,6 +65,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - on the settings page on an iphone, choosing any section but facets or support from the section menu now leaves focus on the menu. before, focus was dropped as the menu closed.
 - on an iphone, choosing from a menu now leaves focus on that menu in more places: in settings, the pronouns, transcription backend and parakeet.cpp device menus; the level menu in health's service logs; the source menu in import; the "call it" menu on a map place; and the type menu when you edit an entity. before, focus was dropped as the menu closed.
 - on an iphone, when a priority change on the settings page can't be saved, its menu no longer opens again by itself.
+
+### Removed
+
+- the journal's built-in audio folder sync is gone, including its controls and scheduled sync on the android and iphone development journals. leftover audio-folder schedules are removed on startup. recordings already in your journal stay, and you can still import an audio file or an audio archive.
 
 ## [2.0.87] - 2026-11-21
 

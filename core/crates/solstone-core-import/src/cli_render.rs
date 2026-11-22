@@ -3,8 +3,6 @@
 
 //! Pure owner-facing rendering for the journal importer.
 
-use std::path::Path;
-
 use serde::Serialize;
 
 use crate::{ImportPreview, ImportResult, RegistrySource};
@@ -97,7 +95,7 @@ pub const IMPORTERS: &[ImporterRow] = &[
     },
 ];
 
-const BACKENDS: &[&str] = &["plaud", "audio", "oura", "granola"];
+const BACKENDS: &[&str] = &["plaud", "oura", "granola"];
 
 /// What a retired notes-folder form tells the owner instead of importing.
 pub const NOTES_FOLDER_IMPORT_RETIRED: &str = "importing a folder of notes is gone; an Obsidian vault comes into your journal when you turn it on in the solstone app on the computer where the vault lives";
@@ -172,16 +170,13 @@ pub fn importers(json: bool) -> String {
     output
 }
 
-pub fn sync_backends(embedded: bool) -> impl Iterator<Item = &'static str> {
-    BACKENDS
-        .iter()
-        .copied()
-        .filter(move |backend| embedded || *backend != "audio")
+pub fn sync_backends() -> impl Iterator<Item = &'static str> {
+    BACKENDS.iter().copied()
 }
 
-pub fn backends(embedded: bool) -> String {
+pub fn backends() -> String {
     let mut output = String::from("Syncable backends:\n");
-    for backend in sync_backends(embedded) {
+    for backend in sync_backends() {
         output.push_str(&format!("  {backend}\n"));
     }
     output
@@ -219,13 +214,6 @@ pub fn generic_text_complete(segments: usize, untimed: bool) -> String {
         ));
     }
     output
-}
-
-pub fn audio_sync_preview(source: &Path, files: usize, errors: usize) -> String {
-    format!(
-        "Audio sync preview complete: source={} files={files} errors={errors}\n",
-        source.display()
-    )
 }
 
 /// The outcome of a sync that saved: how many items reached the journal, and how many failed.
