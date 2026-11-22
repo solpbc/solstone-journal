@@ -3625,8 +3625,11 @@ window.SolViews.register('thinking', { mount: (ctx) => {
   }
 
   function renderChatGptPending(chatgptText) {
+    const automaticReturn = state.chatgpt.attempt?.brokered === true
+      || window.solstoneOAuthBroker?.isSameMachineBrowser();
     setText('chatgptPendingHeading', chatgptText.pending_heading || '');
     setText('chatgptPendingSub', chatgptText.pending_sub || '');
+    setHidden('chatgptPendingSub', !automaticReturn);
     setText('chatgptPendingNotice', state.chatgpt.pendingNotice || '');
     setHidden('chatgptPendingNotice', !state.chatgpt.pendingNotice);
     const liveStatusKey = state.chatgpt.liveStatus || 'pending_status';
@@ -3634,6 +3637,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     setButtonText('chatgptReopen', chatgptText.reopen || '');
     setButtonText('chatgptCancel', chatgptText.cancel || '');
     setText('chatgptFallbackHeading', chatgptText.fallback_heading || '');
+    setHidden('chatgptFallbackHeading', !automaticReturn);
     setText('chatgptFallbackExplanation', chatgptText.fallback_explanation || '');
     setText('chatgptAddressLabel', chatgptText.address_label || '');
     setButtonText('chatgptFinish', chatgptText.finish || '');
@@ -5345,7 +5349,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
           if (!window.solstoneOutside.allowedUrl(rawUrl) || typeof expectedState !== 'string' || !expectedState) {
             throw new Error('chatgpt_sign_in_failed');
           }
-          const attempt = { id: response.attempt_id, authorizeUrl: rawUrl };
+          const attempt = { id: response.attempt_id, authorizeUrl: rawUrl, brokered: true };
           state.chatgpt.attempt = attempt;
           window.sessionStorage.setItem(CHATGPT_ATTEMPT_STORAGE_KEY, JSON.stringify(attempt));
           state.chatgpt.screen = 'pending';
