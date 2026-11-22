@@ -448,13 +448,6 @@ fn parse_vad_error(exit: Option<i32>, stderr: &[u8]) -> TranscribeError {
 }
 
 #[cfg(windows)]
-pub fn resolve_vad_binary() -> Result<PathBuf, TranscribeError> {
-    solstone_core_local::install::onnx_readiness::verified_windows_onnx_package()
-        .map(|package| package.vad_worker)
-        .map_err(|detail| TranscribeError::VadBinary { detail })
-}
-
-#[cfg(windows)]
 pub(crate) fn vad_binary_candidate_from_in<F>(
     current_executable: Result<PathBuf, io::Error>,
     _lookup_env: F,
