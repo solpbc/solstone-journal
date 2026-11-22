@@ -6,6 +6,7 @@
 //! scope relative to Python's `facet_summary()` / `facet_summaries()`.
 
 use std::cmp::Reverse;
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use serde_json::Value;
@@ -125,7 +126,7 @@ fn focused_summary(locale: &str, journal_root: &Path, facet: &str) -> Result<Str
     if !declaration.description.is_empty() {
         output.push_str(&format!("\n**Description:** {}\n", declaration.description));
     }
-    let entities = render_capped_entities(journal_root, facet, true, "");
+    let entities = render_focused_entities(journal_root, facet);
     if !entities.is_empty() {
         if !output.ends_with('\n') {
             output.push('\n');
@@ -153,13 +154,44 @@ fn all_summaries(locale: &str, journal_root: &Path) -> Result<String, String> {
         return Ok(String::new());
     }
 
+    // Load each enabled facet's live non-principal attachments once so cross-facet
+    // note totals can filter out entities that do not distinguish one facet from
+    // the rest. Principals stay out of the names-only roster: prompts name the
+    // owner directly and tell the model never to list them.
+    let mut per_facet = Vec::with_capacity(enabled.len());
+    let mut notes_by_entity: BTreeMap<String, BTreeMap<String, usize>> = BTreeMap::new();
+    for (facet, _) in &enabled {
+        let live = list_scoped_facet_entities_tolerant(journal_root, facet, false, false)
+            .unwrap_or_default();
+        let mut entries = Vec::new();
+        for entity in live {
+            if is_principal_identity(&entity.identity) {
+                continue;
+            }
+            let (count, observed_at) = observation_signal(journal_root, facet, &entity);
+            let facet_counts = notes_by_entity.entry(entity.entity_id.clone()).or_default();
+            let entry = facet_counts.entry(facet.clone()).or_insert(0);
+            *entry = entry.saturating_add(count);
+            entries.push((count, observed_at, entity));
+        }
+        per_facet.push(entries);
+    }
+
     let mut output = String::from("## Available Facets\n");
-    for (facet, declaration) in enabled {
+    for ((facet, declaration), entries) in enabled.into_iter().zip(per_facet) {
         output.push_str(&format!("\n- **{}** (`{facet}`)\n", declaration.title));
         if !declaration.description.is_empty() {
             output.push_str(&format!("  {}\n", declaration.description));
         }
-        let entities = render_capped_entities(journal_root, &facet, false, "  ");
+        let distinctive = entries
+            .into_iter()
+            .filter(|(_, _, entity)| {
+                notes_by_entity
+                    .get(&entity.entity_id)
+                    .is_none_or(|by_facet| is_facet_distinctive(&facet, by_facet))
+            })
+            .collect();
+        let entities = render_ranked_entities(None, distinctive, false, "  ");
         if !entities.is_empty() {
             output.push_str(&entities);
         }
@@ -167,12 +199,27 @@ fn all_summaries(locale: &str, journal_root: &Path) -> Result<String, String> {
     Ok(output.trim().to_owned())
 }
 
-fn render_capped_entities(
-    journal_root: &Path,
-    facet_dir: &str,
-    include_descriptions: bool,
-    indent: &str,
-) -> String {
+/// In the names-only roster that Sense reads to separate facets, an entity
+/// attached to more than one active facet belongs only under a facet that holds
+/// strictly more than half of its saved notes across active facets. Single-facet
+/// attachments always pass (even with zero notes); multi-facet ties or zero-note
+/// shared attachments stay out.
+fn is_facet_distinctive(facet: &str, by_facet: &BTreeMap<String, usize>) -> bool {
+    if by_facet.len() <= 1 {
+        return true;
+    }
+    let total = by_facet
+        .values()
+        .copied()
+        .fold(0usize, usize::saturating_add);
+    if total == 0 {
+        return false;
+    }
+    let count = by_facet.get(facet).copied().unwrap_or(0);
+    count.saturating_mul(2) > total
+}
+
+fn render_focused_entities(journal_root: &Path, facet_dir: &str) -> String {
     let live = list_scoped_facet_entities_tolerant(journal_root, facet_dir, false, false)
         .unwrap_or_default();
     let mut principals = Vec::new();
@@ -184,34 +231,38 @@ fn render_capped_entities(
             others.push(entity);
         }
     }
-    let mut leftover_principals = principals;
-    let role = if include_descriptions {
-        let mut role = None;
-        leftover_principals.retain(|entity| {
-            if role.is_none()
-                && let Some(line) = principal_role_line(journal_root, entity, indent)
-            {
-                role = Some(line);
-                return false;
-            }
-            true
-        });
-        role
-    } else {
-        None
-    };
-    // The names-only roster (every facet at once, as Sense reads it) leaves the
-    // owner out: prompts name the owner as `$preferred` and tell the model never
-    // to list them, so a roster slot for them only contradicts that. A focused
-    // render keeps a principal that formed no role line, so the owner is still
-    // described there.
-    if include_descriptions {
-        others.extend(leftover_principals);
-    }
-    let mut ranked = others
+    let mut role = None;
+    principals.retain(|entity| {
+        if role.is_none()
+            && let Some(line) = principal_role_line(journal_root, entity, "")
+        {
+            role = Some(line);
+            return false;
+        }
+        true
+    });
+    // A focused render keeps a principal that formed no role line, so the owner
+    // is still described there.
+    others.extend(principals);
+    let entries = others
         .into_iter()
         .map(|entity| {
             let (count, observed_at) = observation_signal(journal_root, facet_dir, &entity);
+            (count, observed_at, entity)
+        })
+        .collect();
+    render_ranked_entities(role, entries, true, "")
+}
+
+fn render_ranked_entities(
+    role: Option<String>,
+    entries: Vec<(usize, Option<i64>, ScopedFacetEntity)>,
+    include_descriptions: bool,
+    indent: &str,
+) -> String {
+    let mut ranked = entries
+        .into_iter()
+        .map(|(count, observed_at, entity)| {
             let name = identity_field(&entity.identity, "name").to_lowercase();
             (
                 Reverse(count),
@@ -1161,6 +1212,235 @@ mod tests {
             "uncapped estimate {} should exceed budget; production had {} entity lines",
             uncapped_chars.div_ceil(3),
             lines.len()
+        );
+    }
+
+    fn all_facets_block<'a>(rendered: &'a str, title: &str) -> &'a str {
+        let marker = format!("- **{title}**");
+        let (_, rest) = rendered.split_once(&marker).expect("facet block");
+        rest.split("\n\n- **").next().unwrap_or(rest)
+    }
+
+    #[test]
+    fn all_facets_keeps_cross_facet_entity_only_in_its_majority_facet() {
+        let root = tempfile::tempdir().expect("root");
+        declaration(root.path(), "work", r#"{"title":"Work"}"#);
+        declaration(root.path(), "past", r#"{"title":"Past"}"#);
+
+        // Dominant in work (3 vs 1): shown only in work.
+        for (facet, count) in [("work", 3), ("past", 1)] {
+            attach(
+                root.path(),
+                facet,
+                "journal_alice",
+                "link_alice",
+                r#"{"id":"alice","name":"Alice","type":"Person"}"#,
+                r#"{"entity_id":"alice","description":"colleague"}"#,
+            );
+            observations(
+                root.path(),
+                facet,
+                "link_alice",
+                &observation_lines(count, 1_000),
+            );
+        }
+
+        // Exact 50/50 tie (2 vs 2): omitted from both.
+        for facet in ["work", "past"] {
+            attach(
+                root.path(),
+                facet,
+                "journal_toolbox",
+                "link_toolbox",
+                r#"{"id":"toolbox","name":"ToolBox","type":"Tool"}"#,
+                r#"{"entity_id":"toolbox","description":"shared tool"}"#,
+            );
+            observations(
+                root.path(),
+                facet,
+                "link_toolbox",
+                &observation_lines(2, 1_000),
+            );
+        }
+
+        // Shared with zero notes in both facets: omitted from both.
+        for facet in ["work", "past"] {
+            attach(
+                root.path(),
+                facet,
+                "journal_laptop",
+                "link_laptop",
+                r#"{"id":"laptop","name":"Laptop","type":"Tool"}"#,
+                r#"{"entity_id":"laptop","description":"machine"}"#,
+            );
+        }
+
+        // Single-facet with zero notes: kept in past.
+        attach(
+            root.path(),
+            "past",
+            "journal_dana",
+            "link_dana",
+            r#"{"id":"dana","name":"Dana","type":"Person"}"#,
+            r#"{"entity_id":"dana","description":"former teammate"}"#,
+        );
+
+        let all = resolve_facets(root.path(), None).expect("all");
+        let work_block = all_facets_block(&all, "Work");
+        let past_block = all_facets_block(&all, "Past");
+
+        assert!(work_block.contains("  - Alice"), "{work_block}");
+        assert!(!work_block.contains("ToolBox"), "{work_block}");
+        assert!(!work_block.contains("Laptop"), "{work_block}");
+
+        assert!(past_block.contains("  - Dana"), "{past_block}");
+        assert!(!past_block.contains("Alice"), "{past_block}");
+        assert!(!past_block.contains("ToolBox"), "{past_block}");
+        assert!(!past_block.contains("Laptop"), "{past_block}");
+
+        // Focused single-facet render keeps every attached entity in that facet.
+        let focused = resolve_facets(root.path(), Some("past")).expect("focused");
+        for name in ["Alice", "ToolBox", "Laptop", "Dana"] {
+            assert!(
+                focused.contains(name),
+                "focused render dropped {name}: {focused}"
+            );
+        }
+    }
+
+    #[test]
+    fn all_facets_omits_spread_entities_and_ignores_muted_facets() {
+        let root = tempfile::tempdir().expect("root");
+        declaration(root.path(), "work", r#"{"title":"Work"}"#);
+        declaration(root.path(), "side", r#"{"title":"Side"}"#);
+        declaration(root.path(), "past", r#"{"title":"Past"}"#);
+        declaration(
+            root.path(),
+            "archive",
+            r#"{"title":"Archive","muted":true}"#,
+        );
+
+        // Spread across three active facets (4, 3, 2; max 4/9 < 50%): omitted from all.
+        for (facet, count) in [("work", 4), ("side", 3), ("past", 2)] {
+            attach(
+                root.path(),
+                facet,
+                "journal_agent",
+                "link_agent",
+                r#"{"id":"agent","name":"CodeAgent","type":"Tool"}"#,
+                r#"{"entity_id":"agent","description":"coding agent"}"#,
+            );
+            observations(
+                root.path(),
+                facet,
+                "link_agent",
+                &observation_lines(count, 1_000),
+            );
+        }
+
+        // Concentrated in work (5, 1, 1; 5/7 > 50%): shown only in work.
+        for (facet, count) in [("work", 5), ("side", 1), ("past", 1)] {
+            attach(
+                root.path(),
+                facet,
+                "journal_acme",
+                "link_acme",
+                r#"{"id":"acme","name":"Acme","type":"Company"}"#,
+                r#"{"entity_id":"acme","description":"client"}"#,
+            );
+            observations(
+                root.path(),
+                facet,
+                "link_acme",
+                &observation_lines(count, 1_000),
+            );
+        }
+
+        // Active work (1 note) + muted archive (10 notes): muted facet does not dilute work.
+        for (facet, count) in [("work", 1), ("archive", 10)] {
+            attach(
+                root.path(),
+                facet,
+                "journal_nora",
+                "link_nora",
+                r#"{"id":"nora","name":"Nora","type":"Person"}"#,
+                r#"{"entity_id":"nora","description":"advisor"}"#,
+            );
+            observations(
+                root.path(),
+                facet,
+                "link_nora",
+                &observation_lines(count, 1_000),
+            );
+        }
+
+        let all = resolve_facets(root.path(), None).expect("all");
+        let work_block = all_facets_block(&all, "Work");
+        let side_block = all_facets_block(&all, "Side");
+        let past_block = all_facets_block(&all, "Past");
+
+        assert!(!all.contains("CodeAgent"), "{all}");
+        assert!(work_block.contains("  - Acme"), "{work_block}");
+        assert!(work_block.contains("  - Nora"), "{work_block}");
+        assert!(!side_block.contains("Acme"), "{side_block}");
+        assert!(!past_block.contains("Acme"), "{past_block}");
+    }
+
+    #[test]
+    fn all_facets_filtered_shared_entities_free_top_20_slots_and_omitted_count() {
+        let root = tempfile::tempdir().expect("root");
+        declaration(root.path(), "work", r#"{"title":"Work"}"#);
+        declaration(root.path(), "past", r#"{"title":"Past"}"#);
+
+        // 20 shared tools that have higher counts in work (10) than past (5):
+        // previously they took all 20 slots in past and pushed past's own contact out.
+        for index in 0..MAX_ENTITIES_PER_FACET {
+            let id = format!("shared{index:02}");
+            let name = format!("Shared{index:02}");
+            for (facet, count) in [("work", 10), ("past", 5)] {
+                attach(
+                    root.path(),
+                    facet,
+                    &format!("journal_{id}"),
+                    &format!("link_{id}"),
+                    &format!(r#"{{"id":"{id}","name":"{name}","type":"Tool"}}"#),
+                    &format!(r#"{{"entity_id":"{id}","description":"shared"}}"#),
+                );
+                observations(
+                    root.path(),
+                    facet,
+                    &format!("link_{id}"),
+                    &observation_lines(count, 1_000),
+                );
+            }
+        }
+
+        // One contact that belongs only to past, with fewer notes (1) than the shared tools.
+        attach(
+            root.path(),
+            "past",
+            "journal_legacy",
+            "link_legacy",
+            r#"{"id":"legacy","name":"LegacyContact","type":"Person"}"#,
+            r#"{"entity_id":"legacy","description":"former boss"}"#,
+        );
+        observations(
+            root.path(),
+            "past",
+            "link_legacy",
+            &observation_lines(1, 1_000),
+        );
+
+        let all = resolve_facets(root.path(), None).expect("all");
+        let work_block = all_facets_block(&all, "Work");
+        let past_block = all_facets_block(&all, "Past");
+
+        assert!(work_block.contains("  - Shared00"), "{work_block}");
+        assert!(!past_block.contains("Shared00"), "{past_block}");
+        assert!(past_block.contains("  - LegacyContact"), "{past_block}");
+        assert!(
+            !past_block.contains("more entities"),
+            "filtered shared entities should not inflate omitted count: {past_block}"
         );
     }
 }

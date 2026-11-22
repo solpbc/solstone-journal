@@ -16,6 +16,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - Plaud sync now uses Plaud's official sign-in in settings or with `solstone journal importer --connect plaud`. if you used a web token before, sign in to keep syncing. disconnecting keeps the recordings already in your journal. the API keys tab is gone. the import page on android and iphone development journals no longer has a Plaud row. after signing in, use **check now** in settings → sync to look for new recordings, or turn on hourly sync.
+- shared tools and everyday names are less likely to pull activity toward the wrong facet or crowd the list of names your journal reads for each facet when telling facets apart. an entity attached to more than one active facet now appears in that list only under a facet that holds more than half of its saved notes across active facets. when thinking runs for one facet, it still reads up to 20 of that facet's attached entities, shared ones included. thanks @dvanduzer for the report (#429).
 
 ### Fixed
 
