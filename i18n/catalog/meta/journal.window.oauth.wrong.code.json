@@ -1,0 +1,16 @@
+{
+  "description": "Recovery after entering an incorrect pairing code.",
+  "context": "Browser authorization page for an agent connecting to the journal. Recovery after entering an incorrect pairing code.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6ff83434dd25ee534ce9c775d15cdf00e3dc8788a2b95ad610bf142bd0ae94c2",
+  "max_length": 336,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

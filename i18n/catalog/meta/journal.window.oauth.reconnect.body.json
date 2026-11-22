@@ -1,0 +1,21 @@
+{
+  "description": "Effect of reconnecting when no memories are present.",
+  "context": "Browser authorization page for an agent connecting to the journal. Effect of reconnecting when no memories are present.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e2609c31f41b22b1289547afed5bfd28ed5f70f5115125c14c77fb316487604b",
+  "max_length": 309,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

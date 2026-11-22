@@ -1,0 +1,16 @@
+{
+  "description": "Consequence of declining a renewed connection.",
+  "context": "Browser authorization page for an agent connecting to the journal. Consequence of declining a renewed connection.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fa7bb60986e8a1258afe8c66a2f9b58bb0ae5046b1ae437a8d679c1aaaffc417",
+  "max_length": 249,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Permission choice giving access to the complete journal.",
+  "context": "Browser authorization page for an agent connecting to the journal. Permission choice giving access to the complete journal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9517e99be5073bf20e598f927ca19334ab8e88827975c5f43f5cab0445a92d20",
+  "max_length": 128,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Reason shown in the owner’s record of an agent request.",
+  "context": "The Agents activity log shows this reason after the journal records the request outcome.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d52f7a68fbd1e02e34a8e061eef9ec5bede5c95189ae82af7e63f3872e47aa28",
+  "max_length": 171,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

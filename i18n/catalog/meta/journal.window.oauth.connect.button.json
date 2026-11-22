@@ -1,0 +1,21 @@
+{
+  "description": "Button granting the requested connection.",
+  "context": "Browser authorization page for an agent connecting to the journal. Button granting the requested connection.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "client_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "37282741f9dfd99a99e08cb0487b115e40f2210f05e708dd9f60c71c0255afe7",
+  "max_length": 128,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

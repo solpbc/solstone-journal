@@ -1,0 +1,21 @@
+{
+  "description": "Description of the requested access after pairing-code verification.",
+  "context": "Browser authorization page for an agent connecting to the journal. Description of the requested access after pairing-code verification.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "client_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f84be30db5715154e55c4639a8b3154695efdc51711fe1fcc164f9cbd4645364",
+  "max_length": 384,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

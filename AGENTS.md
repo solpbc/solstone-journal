@@ -486,7 +486,7 @@ Follow the [catalog compiler guide](tools/i18n/README.md) to refresh source
 revisions. Run
 `make journal-window-catalog` and commit the generated resources.
 
-Use the window catalog for stored backup diagnostics and for notices about backup, device access and updates. Render the English text when writing a backup record or broadcasting a notice on Callosum.
+Use the window catalog for stored backup diagnostics and for notices about backup, agent access, device access and updates. Render the English text when writing a backup record or broadcasting a notice on Callosum. Keep the English detail in saved agent service and activity records for older readers. On the OAuth authorization page, keep consent messages in English and render status messages in the language of the request.
 
 ### Journal command-line strings
 

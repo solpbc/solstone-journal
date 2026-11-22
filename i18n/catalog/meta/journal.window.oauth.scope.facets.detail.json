@@ -1,0 +1,16 @@
+{
+  "description": "Explanation of the selected-facets permission.",
+  "context": "Browser authorization page for an agent connecting to the journal. Explanation of the selected-facets permission.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7b90e9294685f996f2490d5fe4dfe04b3b4888c37b1349da695ee3f8cc23ad52",
+  "max_length": 267,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

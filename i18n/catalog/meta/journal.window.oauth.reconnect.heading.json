@@ -1,0 +1,21 @@
+{
+  "description": "Question confirming access for a previously connected agent.",
+  "context": "Browser authorization page for an agent connecting to the journal. Question confirming access for a previously connected agent.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8f84fafb47adef8a43c76a619c273930bb8741046601220ea824789ae8c97c9a",
+  "max_length": 128,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

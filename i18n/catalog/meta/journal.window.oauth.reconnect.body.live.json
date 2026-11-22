@@ -1,0 +1,21 @@
+{
+  "description": "Effect of replacing a live connection without saved memories.",
+  "context": "Browser authorization page for an agent connecting to the journal. Effect of replacing a live connection without saved memories.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "03320a2dc204b3ca1f090e2c4aa33037e3857ae2424a63984e890bb629416e3e",
+  "max_length": 420,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

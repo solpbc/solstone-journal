@@ -1,0 +1,21 @@
+{
+  "description": "Permissions for reconnecting an agent.",
+  "context": "Browser authorization page for an agent connecting to the journal. Permissions for reconnecting an agent.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "edec4cb957bfc146e5435d75374fcb276892d81707085d159dac78e80fb5a92a",
+  "max_length": 128,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

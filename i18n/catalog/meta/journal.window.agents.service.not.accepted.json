@@ -1,0 +1,23 @@
+{
+  "description": "Saved solstone.me service status shown in the journal’s Agents view. not accepted.",
+  "context": "Saved solstone.me service status shown in the journal’s Agents view. not accepted.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "acab3ac5d7880b405244c37fb753ad7709bd63723023108aae37a7898eef2d09",
+  "max_length": 567,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "url",
+      "value": "solstone.me"
+    }
+  ]
+}

@@ -298,6 +298,106 @@ m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e656e7472792e75736
 
 m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e656e7472792e757365642e776974682e6b6579 = { $agent_name }{ $agent_key } used { $tool_name }
 
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e61756469742e756e617661696c61626c65 = the audit record could not be written
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e637572736f722e756e617661696c61626c65 = memory cursor initialization is unavailable
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e646966666572656e742e6279746573 = operation identifier is bound to different bytes
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e656d7074792e696e646578 = the search index is empty
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e66696c652e756e7265616461626c65 = a journal file could not be read
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e696e6465782e616273656e74 = the search index does not exist
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e696e6465782e6c6f636b6564 = the search index was locked
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e696e6465782e756e7265616461626c65 = the search index could not be read
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e696e76616c69642e617267756d656e7473 = the request's arguments were not valid for this tool
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e6d697373696e672e61637469766974792e736f75726365 = this connection does not have the transcripts or messages or body category
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e6d697373696e672e656e746974696573 = this connection does not have the entities category
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e6d697373696e672e666163657473 = this connection does not have the facets category
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e6d697373696e672e736561726368 = this connection does not have the transcripts or messages or screen_text or body or facets or notes or documents or calendar or places or photos category
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e6d697373696e672e7365676d656e74 = this connection does not have the screenshots or transcripts or messages or body or notes or documents or calendar or photos category
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e6d697373696e672e73756767657374696f6e = this connection does not have the facets or entities or transcripts or body category
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e6d697373696e672e7472616e73637269707473 = this connection does not have the transcripts category
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e6d697373696e672e7765656b = this connection does not have the transcripts and facets category
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e6e6f2e72656164 = this connection has no read permission
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e6e6f742e696e6465786564 = the requested material is not indexed
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e6f7065726174696f6e2e636f6e666c696374 = an operation with this id was already processed with different arguments
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e6f726967696e616c2e656e636f64696e67 = memory original is not valid UTF-8
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e6f726967696e616c2e756e636f6e6669726d6564 = memory originals could not be reconfirmed before release
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e6f7574736964652e7065726d697373696f6e = the request was outside this connection's permission
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e6f7574736964652e73636f7065 = the request named a category or facet outside this connection's permission
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e706175736564 = it was paused, so nothing was read or saved.
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e7065726d697373696f6e2e6368616e676564 = this connection's permission changed while the response was being prepared
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e706572736f6e2e6f722e6163746976697479 = filtering by person or activity needs the facets permission
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e726561642e626f6479 = this connection does not have permission to read body
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e726561642e63616c656e646172 = this connection does not have permission to read calendar
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e726561642e646f63756d656e7473 = this connection does not have permission to read documents
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e726561642e656e746974696573 = this connection does not have permission to read entities
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e726561642e666163657473 = this connection does not have permission to read summaries
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e726561642e6d65737361676573 = this connection does not have permission to read messages
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e726561642e6e6f746573 = this connection does not have permission to read notes
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e726561642e70686f746f73 = this connection does not have permission to read photos
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e726561642e706c61636573 = this connection does not have permission to read places
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e726561642e70726f66696c652e70696373 = this connection does not have permission to read profile pics
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e726561642e73637265656e2e74657874 = this connection does not have permission to read screen text
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e726561642e73637265656e73686f7473 = this connection needs permission to include screenshots
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e726561642e7472616e73637269707473 = this connection does not have permission to read transcripts
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e726563656970742e756e636f6e6669726d6564 = memory receipt preparation could not be confirmed; retry the same operation
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e7265636f72642e72656164 = memory record could not be read
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e7265636f72642e76616c69646174696f6e = memory record validation failed
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e7265666572656e63652e6d697373696e67 = the reference did not resolve to anything this connection may read
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e7265736572766174696f6e2e7075626c69636174696f6e = memory reservation could not be published
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e726573706f6e73652e7072657061726174696f6e = memory response could not be prepared
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e726573706f6e73652e73657269616c697a6174696f6e = memory response could not be serialized
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e756e656e666f72636561626c65 = the stored permission for this connection could not be enforced by this build
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e7765656b2e77686f6c65 = this connection can read a week or date range only with access to the whole journal.
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e77686f6c652e706c616365 = filtering by place needs whole-journal access
+
 m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e73756d6d6172792e636f756e742e7061727469616c = { $i18nCategory ->
     [one] at least { $count }
    *[other] at least { $count }
@@ -502,6 +602,8 @@ m6a6f75726e616c2e77696e646f772e6167656e74732e636f6e6e656374696f6e2e646973636f6e6
 m6a6f75726e616c2e77696e646f772e6167656e74732e636f6e6e656374696f6e2e646f6d61696e = your domain
 
 m6a6f75726e616c2e77696e646f772e6167656e74732e636f6e6e656374696f6e2e666f726d65722e68656164696e67 = { $agent_name } was disconnected.
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e636f6e6e656374696f6e2e6c6162656c2e756e6e616d6564 = connected agent
 
 m6a6f75726e616c2e77696e646f772e6167656e74732e636f6e6e656374696f6e2e6d656d6f72792e616761696e2e696e737472756374696f6e73 = connect { $agent_name } again from here and it can recall these memories. choose what it may see when you connect.
 
@@ -725,6 +827,12 @@ m6a6f75726e616c2e77696e646f772e6167656e74732e6d6f76652e62796f2e72656c61792e61676
 
 m6a6f75726e616c2e77696e646f772e6167656e74732e6e6574776f726b2e63657274696669636174652e6167656e742e7661726961626c6573 = when starting Claude Code, set { $claude_variable } to that file. for Codex CLI, set { $codex_variable } to it. keep TLS verification on. use these settings only for the agent that needs this address: it will trust any certificate your journal's CA signs. these settings do not make your browser trust the CA. if this device's network address changes, use its new address; the same CA signs its new certificate.
 
+m6a6f75726e616c2e77696e646f772e6167656e74732e6e6f746963652e636f6e6e65637465642e626f6479 = if you connected it, there's nothing to do. if not, disconnect it in the agents app.
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e6e6f746963652e636f6e6e65637465642e6e616d65642e7469746c65 = "{ $agent_name }" can now reach your journal
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e6e6f746963652e636f6e6e65637465642e756e6e616d65642e7469746c65 = a new agent can now reach your journal
+
 m6a6f75726e616c2e77696e646f772e6167656e74732e6f6666657265642e62757379 = a request to turn on solstone.me is already open. finish it or wait for it to end, then try again.
 
 m6a6f75726e616c2e77696e646f772e6167656e74732e6f7065726174696f6e2e62757379 = operation already running
@@ -888,6 +996,32 @@ m6a6f75726e616c2e77696e646f772e6167656e74732e73656374696f6e2e68656164696e672e776
 m6a6f75726e616c2e77696e646f772e6167656e74732e73656374696f6e2e68656164696e672e776861742e7761732e72656c6561736564 = what was released
 
 m6a6f75726e616c2e77696e646f772e6167656e74732e73656374696f6e2e68656164696e672e796f75722e6167656e7473 = your agents
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e736572766963652e6163636f756e742e6368616e676564 = { "solstone.me" } ties your address to another copy of this journal, so the address stays off here. this happens when a journal is restored or set up again. bring it back here, and the other copy stops using it.
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e736572766963652e616464726573732e6e6f742e7265616479 = your { "solstone.me" } address isn't ready yet. your journal keeps trying on its own.
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e736572766963652e616464726573732e72656675736564 = { "solstone.me" } couldn't make sense of this journal's request. updating your journal may help. your journal keeps trying on its own.
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e736572766963652e626f6f7473747261702e6661696c6564 = your journal couldn't set up its { "solstone.me" } address from what it keeps on this computer. this usually needs a fix, not more time. your journal's log names the step that failed: run { "solstone journal health logs" }.
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e736572766963652e63657274696669636174652e77616974 = the certificate authority's current allowance is used up. your journal is in line and will try again on its own. no action needed; you'll see it here when it's ready.
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e736572766963652e6e6f742e6163636570746564 = { "solstone.me" } didn't accept this journal's request. if you haven't allowed { "solstone.me" } for this journal yet, turn { "solstone.me" } off and back on to do that. your journal keeps trying on its own.
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e736572766963652e6e6f742e61636365707465642e616464726573732e6b657074 = { "solstone.me" } didn't accept this journal's request. if you haven't allowed { "solstone.me" } for this journal yet, turn { "solstone.me" } off and back on to do that. your address is kept, and your journal keeps trying on its own.
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e736572766963652e6f66666c696e65 = your journal is offline right now. your agents will get through when it's back
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e736572766963652e7265747279696e67 = the journal keeps trying on its own
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e736572766963652e73657276696365732e756e617661696c61626c65 = this computer could not reach { "services.solstone.app" }; it will try again when the service restarts
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e736572766963652e737562736372697074696f6e = { "solstone.me" } isn't on yet. your journal keeps trying on its own. finish turning it on in the services portal.
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e736572766963652e737562736372697074696f6e2e616464726573732e6b657074 = { "solstone.me" } isn't on yet. your address is kept, and your journal keeps trying on its own. finish turning it on in the services portal.
+
+m6a6f75726e616c2e77696e646f772e6167656e74732e736572766963652e7570646174652e7265717569726564 = { "solstone.me" } needs a newer version of your journal. update your journal on the computer it runs on, and your address will turn on by itself.
 
 m6a6f75726e616c2e77696e646f772e6167656e74732e7374617475732e636f6d696e672e6c61746572 = coming later
 
@@ -12012,6 +12146,98 @@ m6a6f75726e616c2e77696e646f772e6e6f742e666f756e642e64657461696c = The requested 
 m6a6f75726e616c2e77696e646f772e6e6f742e666f756e642e68656164696e67 = Not Found
 
 m6a6f75726e616c2e77696e646f772e6e6f742e666f756e642e7469746c65 = 404 Not Found
+
+m6a6f75726e616c2e77696e646f772e6f617574682e63616e63656c2e61667465722e636f6465 = changed your mind? close this tab. nothing is connected, and this code won't work again.
+
+m6a6f75726e616c2e77696e646f772e6f617574682e63616e63656c2e6265666f72652e636f6465 = not you, or not expecting this? close this tab. nothing has been connected, and this code stays unused.
+
+m6a6f75726e616c2e77696e646f772e6f617574682e63616e63656c2e7265636f6e6e656374 = changed your mind? close this tab. nothing changes, and this code won't work again.
+
+m6a6f75726e616c2e77696e646f772e6f617574682e636c6f7365642e68656164696e67 = nothing is waiting to connect here.
+
+m6a6f75726e616c2e77696e646f772e6f617574682e636c6f7365642e696e737472756374696f6e73 = to connect an agent, open your journal, go to agents › connect an agent, and make a pairing code first. then connect from your agent again.
+
+m6a6f75726e616c2e77696e646f772e6f617574682e636f64652e6578706c616e6174696f6e = being at your journal to read the code is what proves it's you. no password, no sign-in.
+
+m6a6f75726e616c2e77696e646f772e6f617574682e636f64652e68656164696e67 = pairing code
+
+m6a6f75726e616c2e77696e646f772e6f617574682e636f64652e6c6162656c = enter the code shown in your journal, under agents › connect an agent
+
+m6a6f75726e616c2e77696e646f772e6f617574682e636f6e6e6563742e627574746f6e = connect { $client_name }
+
+m6a6f75726e616c2e77696e646f772e6f617574682e636f6e6e6563742e68656164696e67 = { $client_name } wants to connect to your journal.
+
+m6a6f75726e616c2e77696e646f772e6f617574682e636f6e6e6563742e72657475726e = when you're done, it returns to { $return_host }.
+
+m6a6f75726e616c2e77696e646f772e6f617574682e636f6e6e6563742e72657475726e2e616e642e73636f7065 = when you're done, it returns to { $return_host }. it can save and recall its own agent memories. other journal reads stay within what you choose.
+
+m6a6f75726e616c2e77696e646f772e6f617574682e6572726f722e6167656e742e636f6465 = this code no longer works for the agent it was made for. make a new one in the agents app, then connect from your agent again.
+
+m6a6f75726e616c2e77696e646f772e6f617574682e6572726f722e617474656d707473 = too many wrong codes for this request. connect from your agent again.
+
+m6a6f75726e616c2e77696e646f772e6f617574682e6572726f722e636f6465 = this pairing code no longer works. make a new one in the agents app, then connect from your agent again.
+
+m6a6f75726e616c2e77696e646f772e6f617574682e6572726f722e65787069726564 = this request has expired or is no longer valid. connect from your agent again, with a new code from the agents app if yours is no longer open.
+
+m6a6f75726e616c2e77696e646f772e6f617574682e6572726f722e666163657473 = the chosen facets could not be verified; return to your journal and try again
+
+m6a6f75726e616c2e77696e646f772e6f617574682e6572726f722e666f726d2e73697a65 = authorization request exceeds its size limit
+
+m6a6f75726e616c2e77696e646f772e6f617574682e6572726f722e6c6f636b6564 = too many wrong codes were entered. make a new code in the agents app, then connect from your agent again.
+
+m6a6f75726e616c2e77696e646f772e6f617574682e6572726f722e6e6f2e636f6465 = there's no open pairing code. make one in the agents app, then connect from your agent again.
+
+m6a6f75726e616c2e77696e646f772e6f617574682e6572726f722e7374617274 = authorization request could not be started
+
+m6a6f75726e616c2e77696e646f772e6f617574682e6572726f722e756e617661696c61626c65 = authorization is temporarily unavailable
+
+m6a6f75726e616c2e77696e646f772e6f617574682e6661636574732e656d707479 = your journal has no facets yet.
+
+m6a6f75726e616c2e77696e646f772e6f617574682e7265636f6e6e6563742e626f6479 = your code matched. you made it in your journal for this agent, so it connects as { $agent_name } again.
+
+m6a6f75726e616c2e77696e646f772e6f617574682e7265636f6e6e6563742e626f64792e6c697665 = your code matched. you made it in your journal for this agent, so it connects as { $agent_name } again. the one connected now stops working.
+
+m6a6f75726e616c2e77696e646f772e6f617574682e7265636f6e6e6563742e626f64792e6c6976652e6d656d6f72696573 = { $i18nCategory ->
+    [one] your code matched. you made it in your journal for this agent, so it connects as { $agent_name } again and can recall its { $memory_count } memory. the one connected now stops working.
+   *[other] your code matched. you made it in your journal for this agent, so it connects as { $agent_name } again and can recall its { $memory_count } memories. the one connected now stops working.
+}
+
+m6a6f75726e616c2e77696e646f772e6f617574682e7265636f6e6e6563742e626f64792e6d656d6f72696573 = { $i18nCategory ->
+    [one] your code matched. you made it in your journal for this agent, so it connects as { $agent_name } again and can recall its { $memory_count } memory.
+   *[other] your code matched. you made it in your journal for this agent, so it connects as { $agent_name } again and can recall its { $memory_count } memories.
+}
+
+m6a6f75726e616c2e77696e646f772e6f617574682e7265636f6e6e6563742e627574746f6e = connect { $agent_name } again
+
+m6a6f75726e616c2e77696e646f772e6f617574682e7265636f6e6e6563742e68656164696e67 = connect { $agent_name } again?
+
+m6a6f75726e616c2e77696e646f772e6f617574682e7265636f6e6e6563742e73636f7065 = choose what { $agent_name } may see.
+
+m6a6f75726e616c2e77696e646f772e6f617574682e7265636f6e6e6563742e73636f70652e6c697665 = here's what { $agent_name } may see now. change them here or later in the agents app.
+
+m6a6f75726e616c2e77696e646f772e6f617574682e73636f70652e63686f6f73652e64657461696c = your code matched. { $client_name } can save and recall its own agent memories. other journal reads stay within what you choose.
+
+m6a6f75726e616c2e77696e646f772e6f617574682e73636f70652e63686f6f73652e68656164696e67 = choose what { $client_name } may see.
+
+m6a6f75726e616c2e77696e646f772e6f617574682e73636f70652e666163657473 = only the facets you choose
+
+m6a6f75726e616c2e77696e646f772e6f617574682e73636f70652e6661636574732e61667465722e636f6465 = you'll choose them once your code matches. just the facets you pick, now and as they grow. facets you create later are not included.
+
+m6a6f75726e616c2e77696e646f772e6f617574682e73636f70652e6661636574732e64657461696c = just the facets you pick, now and as they grow. facets you create later are not included.
+
+m6a6f75726e616c2e77696e646f772e6f617574682e73636f70652e68656164696e67 = what { $client_name } may see
+
+m6a6f75726e616c2e77696e646f772e6f617574682e73636f70652e6b696e6473 = what kinds of material
+
+m6a6f75726e616c2e77696e646f772e6f617574682e73636f70652e72657175697265642e61667465722e636f6465 = choose your whole journal or at least one facet, and at least one kind of material.
+
+m6a6f75726e616c2e77696e646f772e6f617574682e73636f70652e72657175697265642e6265666f72652e636f6465 = pick your whole journal or only the facets you choose, and at least one kind of material. your code hasn't been used, so enter it again below.
+
+m6a6f75726e616c2e77696e646f772e6f617574682e73636f70652e77686f6c65 = your whole journal
+
+m6a6f75726e616c2e77696e646f772e6f617574682e73636f70652e77686f6c652e64657461696c = everything in your journal now, and anything added later, including facets you create later.
+
+m6a6f75726e616c2e77696e646f772e6f617574682e77726f6e672e636f6465 = that code didn't match. enter it again, or make a new one in the agents app, then connect from your agent again.
 
 m6a6f75726e616c2e77696e646f772e7365617263682e636f756e742e726573756c74732e6163726f73732e64617973 = { $i18nCategory ->
     [one] { $i18nCategory-day_quantity ->

@@ -6646,6 +6646,7 @@ dependencies = [
  "solstone-core-time",
  "solstone-core-transcripts",
  "solstone-core-transcripts-web",
+ "solstone-core-window-catalog",
  "spl-core",
  "spl-home",
  "subtle",

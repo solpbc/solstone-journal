@@ -1,0 +1,16 @@
+{
+  "description": "Permission choice limiting access to selected facets.",
+  "context": "Browser authorization page for an agent connecting to the journal. Permission choice limiting access to selected facets.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "700288b02c8e1f92abfcc2992fb8fcbdbec36617a3ee051a78ac38511d0a8bef",
+  "max_length": 128,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

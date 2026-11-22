@@ -1,0 +1,21 @@
+{
+  "description": "Heading for permissions the owner can grant.",
+  "context": "Browser authorization page for an agent connecting to the journal. Heading for permissions the owner can grant.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "client_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1228967fa5ec0b86d6eaa3fc0687023d093e3e4a18ac2ad447458842554954b0",
+  "max_length": 128,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

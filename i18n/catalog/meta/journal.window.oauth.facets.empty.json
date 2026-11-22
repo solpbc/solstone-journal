@@ -1,0 +1,16 @@
+{
+  "description": "Shown when the journal has no declared facets.",
+  "context": "Browser authorization page for an agent connecting to the journal. Shown when the journal has no declared facets.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7d66e14a7a95dcb77a375b8fa19486595210645d3a2c39feea7061bd2ebfa265",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Owner notice after a new agent has already connected. Points to the agents app for disconnection.",
+  "context": "Owner notice after a new agent has already connected. Points to the agents app for disconnection.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "65569694b4ccc919831c5fe6eb6d200094b37577f62eb8744d8cadc04d4d1ff7",
+  "max_length": 252,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

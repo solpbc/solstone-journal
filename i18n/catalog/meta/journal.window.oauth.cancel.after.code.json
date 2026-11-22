@@ -1,0 +1,16 @@
+{
+  "description": "Consequence of declining after the code matched.",
+  "context": "Browser authorization page for an agent connecting to the journal. Consequence of declining after the code matched.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "42af4ee70c0c6996a65f4246afb98ffba7743d0a10c08fa2b5e30c5a521ab043",
+  "max_length": 264,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

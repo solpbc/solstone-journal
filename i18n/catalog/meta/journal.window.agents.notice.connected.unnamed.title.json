@@ -1,0 +1,16 @@
+{
+  "description": "Owner notice title after the first access grant to an unnamed agent.",
+  "context": "Owner notice title after the first access grant to an unnamed agent.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3e0ee2d065bc19ad6bd33f59bc342b744fea0b73f61d63201ce2eae9164675d3",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Source-English label saved when a connected agent supplies no usable name.",
+  "context": "Source-English label saved when a connected agent supplies no usable name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bb326e79068d4c979f1999a1523c6f1ee76d0c2fd0bb495af5910dc497faad93",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

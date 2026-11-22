@@ -1,0 +1,21 @@
+{
+  "description": "Permissions for replacing a live connection.",
+  "context": "Browser authorization page for an agent connecting to the journal. Permissions for replacing a live connection.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "agent_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "96a4c4504097f01d5a3308ddb7985739914d0dfbca4646574ac6ffa2eb9aec41",
+  "max_length": 255,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

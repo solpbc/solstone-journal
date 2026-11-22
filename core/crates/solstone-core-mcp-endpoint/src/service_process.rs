@@ -186,9 +186,7 @@ async fn run_endpoint_topology(
             "failed",
             None,
             ("failed", "waiting", "waiting"),
-            Some(
-                "your journal couldn't set up its solstone.me address from what it keeps on this computer. this usually needs a fix, not more time. your journal's log names the step that failed: run solstone journal health logs.",
-            ),
+            Some(crate::owner_state::OwnerDetail::BootstrapFailed),
         );
         McpServiceError::Bootstrap
     })?
@@ -275,7 +273,7 @@ async fn run_endpoint_topology(
                         if active { "on" } else { "turning_on" },
                         Some(&state_address),
                         if active { ("done", "done", "done") } else { ("done", "in_progress", "waiting") },
-                        if active { None } else { Some("the journal keeps trying on its own") },
+                        if active { None } else { Some(crate::owner_state::OwnerDetail::Retrying) },
                     );
                 }
             }
@@ -336,7 +334,7 @@ async fn run_endpoint_topology(
             "offline",
             Some(&endpoint_address),
             ("done", "done", "waiting"),
-            Some("your journal is offline right now. your agents will get through when it's back"),
+            Some(crate::owner_state::OwnerDetail::Offline),
         );
     }
     shutdown_send.send_replace(true);
@@ -408,9 +406,7 @@ where
                         "offline",
                         None,
                         ("failed", "waiting", "waiting"),
-                        Some(
-                            "this computer could not reach services.solstone.app; it will try again when the service restarts",
-                        ),
+                        Some(crate::owner_state::OwnerDetail::ServicesUnavailable),
                     );
                     return Err(McpServiceError::Tunnel);
                 }

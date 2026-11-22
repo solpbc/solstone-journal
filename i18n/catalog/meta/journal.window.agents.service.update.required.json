@@ -1,0 +1,23 @@
+{
+  "description": "Saved solstone.me service status shown in the journal’s Agents view. update required.",
+  "context": "Saved solstone.me service status shown in the journal’s Agents view. update required.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "294a9cf06a48c21be516c5af1d21999f3a2835a0af6bf02c5fa2b9cafad938e7",
+  "max_length": 417,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "url",
+      "value": "solstone.me"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Saved solstone.me service status shown in the journal’s Agents view. offline.",
+  "context": "Saved solstone.me service status shown in the journal’s Agents view. offline.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c2f979b7932c73fddf431d31564d79f2231431266a47dfacc2342a9e6d17968b",
+  "max_length": 234,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

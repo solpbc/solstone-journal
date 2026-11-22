@@ -1,0 +1,28 @@
+{
+  "description": "Saved solstone.me service status shown in the journal’s Agents view. bootstrap failed.",
+  "context": "Saved solstone.me service status shown in the journal’s Agents view. bootstrap failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "46885541e6f3ee9c2e946e030b69ea251d325836a9d13fa638b99b2f21b9e731",
+  "max_length": 633,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "url",
+      "value": "solstone.me"
+    },
+    {
+      "name": "slot2",
+      "kind": "command",
+      "value": "solstone journal health logs"
+    }
+  ]
+}

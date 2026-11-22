@@ -1,0 +1,16 @@
+{
+  "description": "Status shown after an unsuccessful authorization request.",
+  "context": "Browser authorization page for an agent connecting to the journal. Status shown after an unsuccessful authorization request.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8d1d5cc883d6fb9ba667fb69466db2a45159057497cf2b3dc66f1bcdde353d3b",
+  "max_length": 312,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

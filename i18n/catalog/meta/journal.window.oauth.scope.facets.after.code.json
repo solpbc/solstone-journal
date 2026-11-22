@@ -1,0 +1,16 @@
+{
+  "description": "Explanation of the selected-facets permission before a pairing code has matched.",
+  "context": "Browser authorization page for an agent connecting to the journal. Explanation of the selected-facets permission before a pairing code has matched.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6d755551962ada9cbe0934ffda6561f01df2b093963ef07a3848cffa758a2a9f",
+  "max_length": 396,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -126,7 +126,10 @@ pub fn sanitize_label(label: &str) -> String {
         safe.push(character);
     }
     if safe.trim().is_empty() {
-        "connected agent".into()
+        solstone_core_window_catalog::text(
+            solstone_core_window_catalog::ENGLISH,
+            "journal.window.agents.connection.label.unnamed",
+        )
     } else {
         safe
     }
@@ -1840,7 +1843,7 @@ fn capture_label(
                     .map(|t| t.label)
             })
     };
-    let label = sanitize_label(raw_label.as_deref().unwrap_or("connected agent"));
+    let label = sanitize_label(raw_label.as_deref().unwrap_or_default());
     if let Ok(source) = crate::agent_state::memory_source(journal_root, authority_id) {
         let hex = source.component().to_owned();
         if !hex.is_empty() && settings.labels.get(&hex) != Some(&label) {

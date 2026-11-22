@@ -1,0 +1,16 @@
+{
+  "description": "Size-limit response to an oversized authorization form submitted in the browser.",
+  "context": "Browser authorization page for an agent connecting to the journal. Size-limit response to an oversized authorization form submitted in the browser.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d9c1bf93ab90c6a5826c5b87f8cd661b203b86b9d7ff4cefc986a12f1876ec2b",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -109,7 +109,7 @@ impl HttpResponse {
         }
     }
 
-    pub(crate) fn error(status: u16, reason: &'static str, message: &'static str) -> Self {
+    pub(crate) fn error(status: u16, reason: &'static str, message: &str) -> Self {
         Self {
             status,
             reason,

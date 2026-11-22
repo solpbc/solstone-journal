@@ -1,0 +1,16 @@
+{
+  "description": "Saved solstone.me service status shown in the journal’s Agents view. certificate rate limited.",
+  "context": "Saved solstone.me service status shown in the journal’s Agents view. certificate rate limited.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f4f5628adeab22fd69fcff32d4d48986245f7c9e12336d5b86e68e3dc1617352",
+  "max_length": 498,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
