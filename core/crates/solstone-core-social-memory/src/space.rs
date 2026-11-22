@@ -302,7 +302,7 @@ pub fn list_shared_activities(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::collections::VecDeque;
     use std::sync::Mutex;
 
@@ -313,13 +313,13 @@ mod tests {
     const ALICE: &str = "did:plc:aliceaaaaaaaaaaaaaaaaaaa";
     const BOB: &str = "did:plc:bobbbbbbbbbbbbbbbbbbbbbb";
 
-    struct Routes {
+    pub(crate) struct Routes {
         routes: Mutex<VecDeque<(String, u16, Value)>>,
-        requests: Mutex<Vec<HttpRequest>>,
+        pub(crate) requests: Mutex<Vec<HttpRequest>>,
     }
 
     impl Routes {
-        fn new(routes: Vec<(&str, u16, Value)>) -> Self {
+        pub(crate) fn new(routes: Vec<(&str, u16, Value)>) -> Self {
             Self {
                 routes: Mutex::new(
                     routes

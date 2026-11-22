@@ -217,7 +217,7 @@ fn segment_bounds(zone: &TimeZone, day: &str, key: &str) -> Option<(Timestamp, T
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     pub(crate) fn activity_journal() -> (tempfile::TempDir, ActivityRef) {

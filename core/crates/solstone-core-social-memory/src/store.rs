@@ -426,8 +426,12 @@ pub fn apply_receive(
 mod tests {
     use serde_json::json;
 
+    use solstone_core_oauth::atproto::DpopKeyPair;
+
     use super::*;
     use crate::ACTIVITY_COLLECTION;
+    use crate::record::tests::activity_journal;
+    use crate::space::tests::Routes;
 
     const ALICE: &str = "did:plc:aliceaaaaaaaaaaaaaaaaaaa";
 
@@ -515,6 +519,114 @@ mod tests {
         )
         .unwrap();
         assert_eq!(third, ReceiveReport::default());
+    }
+
+    #[test]
+    fn a_shared_activity_follows_edits_and_new_data_and_leaves_on_unshare() {
+        let (dir, activity) = activity_journal();
+        let journal = dir.path();
+        let space = format!("at://{ALICE}/space/app.solstone.memory.space/s1");
+        let put = "https://pds.alice.test/xrpc/com.atproto.space.putRecord";
+        let delete = "https://pds.alice.test/xrpc/com.atproto.space.deleteRecord";
+        let written = |cid: &str| json!({"uri": format!("at://{ALICE}/r/{cid}"), "cid": cid});
+        let http = Routes::new(vec![
+            (put, 200, written("c1")),
+            (put, 200, written("c2")),
+            (put, 200, written("c3")),
+            (delete, 200, json!({})),
+            (put, 200, written("c4")),
+            (delete, 200, json!({})),
+        ]);
+        let key = DpopKeyPair::generate().unwrap();
+        let session = Session {
+            http: &http,
+            did: ALICE,
+            pds: "https://pds.alice.test",
+            access_token: "t",
+            dpop_key: &key,
+            now_unix: 1,
+        };
+        let at = |time: &str| -> Timestamp { format!("2026-11-22T{time}:00Z").parse().unwrap() };
+        let sent = |index: usize| -> Value {
+            let requests = http.requests.lock().unwrap();
+            serde_json::from_slice(requests[index].body.as_ref().unwrap()).unwrap()
+        };
+        let request_count = || http.requests.lock().unwrap().len();
+
+        let share = share_activity(journal, &session, &activity, &space, at("10:00")).unwrap();
+        assert_eq!(share.cid, "c1");
+        assert_eq!(sent(0)["record"]["title"], "Sprint planning");
+        assert_eq!(
+            share_activity(journal, &session, &activity, &space, at("10:30")).unwrap(),
+            share,
+            "sharing the same activity again writes nothing"
+        );
+        let quiet = sync_shares(journal, &session, at("11:00")).unwrap();
+        assert_eq!(quiet.unchanged, 1);
+        assert_eq!(request_count(), 1, "an unchanged activity is not rewritten");
+
+        // The owner edits the activity.
+        let rows = journal.join("facets/work/activities/20261121.jsonl");
+        let original = fs::read_to_string(&rows).unwrap();
+        fs::write(
+            &rows,
+            original.replace("Sprint planning", "Sprint planning, round two"),
+        )
+        .unwrap();
+        let edited = sync_shares(journal, &session, at("12:00")).unwrap();
+        assert_eq!(edited.updated, 1);
+        assert_eq!(sent(1)["rkey"], share.rkey.as_str());
+        assert_eq!(sent(1)["record"]["title"], "Sprint planning, round two");
+        assert_eq!(
+            sent(1)["record"]["createdAt"],
+            sent(0)["record"]["createdAt"]
+        );
+
+        // The activity gains a segment.
+        let grown = fs::read_to_string(&rows)
+            .unwrap()
+            .replace(r#""091000_300"]"#, r#""091000_300","091500_300"]"#);
+        fs::write(&rows, grown).unwrap();
+        let talents = journal.join("chronicle/20261121/desk/091500_300/talents");
+        fs::create_dir_all(&talents).unwrap();
+        fs::write(
+            talents.join("sense.json"),
+            r#"{"activity_summary":"Wrote the tickets"}"#,
+        )
+        .unwrap();
+        let more = sync_shares(journal, &session, at("13:00")).unwrap();
+        assert_eq!(more.updated, 1);
+        assert_eq!(sent(2)["rkey"], share.rkey.as_str());
+        assert_eq!(sent(2)["record"]["segments"].as_array().unwrap().len(), 3);
+        assert_eq!(sent(2)["record"]["endedAt"], "2026-11-21T16:20:00Z");
+        assert_eq!(shares(journal).unwrap()[0].cid, "c3");
+
+        // Unsharing deletes the record and forgets the share.
+        unshare(journal, &session, &space, &share.rkey).unwrap();
+        assert_eq!(sent(3)["rkey"], share.rkey.as_str());
+        assert!(shares(journal).unwrap().is_empty());
+        assert!(matches!(
+            unshare(journal, &session, &space, &share.rkey),
+            Err(StoreError::UnknownShare)
+        ));
+
+        // Shared again, then the owner deletes every segment: the copy goes.
+        let again = share_activity(journal, &session, &activity, &space, at("14:00")).unwrap();
+        for key in ["090000_300", "090500_300", "091500_300"] {
+            fs::write(
+                journal
+                    .join("chronicle/20261121/desk")
+                    .join(key)
+                    .join("tombstone.json"),
+                "{}",
+            )
+            .unwrap();
+        }
+        let gone = sync_shares(journal, &session, at("15:00")).unwrap();
+        assert_eq!(gone.removed, 1);
+        assert_eq!(sent(5)["rkey"], again.rkey.as_str());
+        assert!(shares(journal).unwrap().is_empty());
+        assert_eq!(request_count(), 6);
     }
 
     #[test]
