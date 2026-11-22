@@ -298,6 +298,14 @@ fn calendar_segments_are_not_listed_as_transcripts_of_the_day() {
     grant(root, ReadScope::WholeJournal);
     calendar_file(root, "20261019", "094000_300", &[golden(0)]);
     capture(root, "20261019", "100000_300", "a working session");
+    fs::write(
+        root.join("chronicle/20261019/desk/100000_300/audio.jsonl"),
+        concat!(
+            "{\"source\":\"recording\"}\n",
+            "{\"start\":\"00:00:02\",\"text\":\"spoken words\"}\n",
+        ),
+    )
+    .unwrap();
     index(root);
     let listed = run_mcp_probe(
         root,
