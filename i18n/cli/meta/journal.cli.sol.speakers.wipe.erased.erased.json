@@ -1,0 +1,16 @@
+{
+  "description": "Text shown by the speakers wipe.erased command.",
+  "context": "Text shown by the speakers wipe.erased command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "67fff71bf9c6714ae4ec55667b495cf33bab41753b1ff444480fb4717372965b",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

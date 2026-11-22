@@ -1,0 +1,21 @@
+{
+  "description": "Native profile command output for profile detached. Keep literal arguments and command syntax intact.",
+  "context": "Native profile command output for profile detached. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detached_label",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "26910a1fcfe6a4e911f6e7a9ed5174735cdbad0953dea044ce4add09772aac4e",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

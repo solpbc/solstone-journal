@@ -1,0 +1,28 @@
+{
+  "description": "Native link command output for link pair rejected. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link pair rejected. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "status",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "49ecffd73384d5c32376ea50e2c4e9a3cbb08cd7dc4f540aedaad66dd5b116c1",
+  "max_length": 294,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "http",
+      "kind": "accepted-input",
+      "value": "HTTP"
+    }
+  ]
+}

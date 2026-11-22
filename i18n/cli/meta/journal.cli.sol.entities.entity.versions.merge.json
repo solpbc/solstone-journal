@@ -1,0 +1,32 @@
+{
+  "description": "Text shown by the entities entity versions command.",
+  "context": "Text shown by the entities entity versions command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "merge_id",
+      "type": "string"
+    },
+    {
+      "name": "description",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "80e435a24ca9f4f244407e9a4d9e2c4f551a08699787044ab8e3a0a3de6c7d6a",
+  "max_length": 156,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "spacing_2",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ]
+}

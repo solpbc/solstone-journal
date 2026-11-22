@@ -1,0 +1,21 @@
+{
+  "description": "Native link command output for link pair failed. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link pair failed. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "code",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "65d1be9bf59e61d402b912d32c8629338ecddc88f00bf5a1454ee3471cec66e7",
+  "max_length": 189,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

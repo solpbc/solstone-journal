@@ -1,0 +1,21 @@
+{
+  "description": "Text shown by the entities delete.failed.without.reason command.",
+  "context": "Text shown by the entities delete.failed.without.reason command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "entity_id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2a44ac6ec463abea976197daa9ed33b8113ac4f355dafa84d81dbdbb4ef0ac59",
+  "max_length": 174,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

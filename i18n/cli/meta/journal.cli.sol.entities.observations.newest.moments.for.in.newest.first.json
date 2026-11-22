@@ -1,0 +1,38 @@
+{
+  "description": "Complete counted entities summary for observations.newest.",
+  "context": "Complete counted entities summary for observations.newest.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "facet",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "2c8cf347d5766a0c1b958c96574a43e88a50c33b0fe508113a6afc8eb9bcf2b0",
+  "max_length": 519,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

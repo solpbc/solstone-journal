@@ -1,0 +1,23 @@
+{
+  "description": "Native link command output for link serve unavailable. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link serve unavailable. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d804f4435b181c5789e857979b555b69360e9cc6b49c5840ebe3c355bade6318",
+  "max_length": 138,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

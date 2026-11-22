@@ -1,0 +1,21 @@
+{
+  "description": "Text shown by the entities edge resolution error command.",
+  "context": "Text shown by the entities edge resolution error command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "query",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "741accee51745076890bc6778a0668378ab2e706ab964bf1e8d5f0e49271845c",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Native link command output for link sighting direct. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link sighting direct. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "addr",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "85ccca496dda12d8fcdd47fa6f1d5f22398a9020be2d8676816dd10980e70d4d",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

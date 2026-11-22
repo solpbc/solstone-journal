@@ -1,0 +1,25 @@
+{
+  "description": "Text shown by the speakers rebuild owner command.",
+  "context": "Text shown by the speakers rebuild owner command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "principal",
+      "type": "string"
+    },
+    {
+      "name": "cluster_size",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2e5b59e86e966d445c81cbcbb2f217c4477da0da5faa82010bf187a277536606",
+  "max_length": 249,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

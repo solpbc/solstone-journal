@@ -1,0 +1,16 @@
+{
+  "description": "Text shown by the entities edge.resolution.without.query.empty command.",
+  "context": "Text shown by the entities edge.resolution.without.query.empty command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7cd2b719f13f24a347511aa6e7fc41923f518a88c2c8cd724b16864b0c1dc623",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

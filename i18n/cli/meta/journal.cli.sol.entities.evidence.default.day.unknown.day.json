@@ -1,0 +1,16 @@
+{
+  "description": "Text shown by the entities evidence.default.day command.",
+  "context": "Text shown by the entities evidence.default.day command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1768930ab9dbd0ed73acbc58d71c90fdc7cd4f011472ed7291e5045101da6705",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

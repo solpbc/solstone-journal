@@ -2,11 +2,12 @@
 // Copyright (c) 2026 sol pbc
 
 use serde_json::Value;
+use solstone_core_cli_copy::{display_for, render_for};
 
-use crate::args::parse_args;
+use crate::args::parse_args_for;
 use crate::command::{CommandContext, CommandOutput};
 use crate::decode::decode_response;
-use crate::error::{ClientError, SERVICE_DOWN_MESSAGE};
+use crate::error::{ClientError, service_down_for};
 use crate::json_format::json_compact_ascii;
 use crate::pagination::paginate_collection;
 use crate::transport::{ApiRequest, HttpMethod, QueryParam, TimeoutPolicy};
@@ -15,12 +16,13 @@ const ENTITY_NOT_FOUND: &str = "entity_not_found";
 
 #[must_use]
 pub fn brief(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &[], &["--json"]) {
+    let locale = ctx.human_locale();
+    let parsed = match parse_args_for(locale, ctx.args, &[], &["--json"]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
     let Some(name) = parsed.positionals.first() else {
-        return missing_argument("call profile brief", "NAME");
+        return missing_argument(locale, "call profile brief", "NAME");
     };
     let profile = match request_json(
         ctx,
@@ -28,29 +30,50 @@ pub fn brief(ctx: CommandContext<'_>) -> CommandOutput {
         vec![],
     ) {
         Ok(profile) => profile,
-        Err(error) => return profile_error(error, name),
+        Err(error) => return profile_error(locale, error, name),
     };
     if parsed.has_flag("--json") {
         return crate::agent_output::literal_output(stdout_compact_json(&profile));
     }
     let profile = crate::agent_output::literal_body(profile);
     stdout(vec![
-        format!("entity_id: {}", field(&profile, "entity_id")),
-        format!("name: {}", field(&profile, "name")),
-        format!("type: {}", field(&profile, "type")),
-        format!("description: {}", field(&profile, "description")),
-        format!("last_seen: {}", field(&profile, "last_seen")),
+        display_for(
+            locale,
+            "journal.cli.sol.profile.entity.id",
+            [("value", &field(&profile, "entity_id"))],
+        ),
+        display_for(
+            locale,
+            "journal.cli.sol.profile.name",
+            [("value", &field(&profile, "name"))],
+        ),
+        display_for(
+            locale,
+            "journal.cli.sol.profile.type",
+            [("value", &field(&profile, "type"))],
+        ),
+        display_for(
+            locale,
+            "journal.cli.sol.profile.description",
+            [("value", &field(&profile, "description"))],
+        ),
+        display_for(
+            locale,
+            "journal.cli.sol.profile.last.seen",
+            [("value", &field(&profile, "last_seen"))],
+        ),
     ])
 }
 
 #[must_use]
 pub fn cadence(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &[], &["--include-mentions", "--json"]) {
+    let locale = ctx.human_locale();
+    let parsed = match parse_args_for(locale, ctx.args, &[], &["--include-mentions", "--json"]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
     let Some(name) = parsed.positionals.first() else {
-        return missing_argument("call profile cadence", "NAME");
+        return missing_argument(locale, "call profile cadence", "NAME");
     };
     let mut params = Vec::new();
     if parsed.has_flag("--include-mentions") {
@@ -62,33 +85,50 @@ pub fn cadence(ctx: CommandContext<'_>) -> CommandOutput {
         params,
     ) {
         Ok(cadence) => cadence,
-        Err(error) => return profile_error(error, name),
+        Err(error) => return profile_error(locale, error, name),
     };
     if parsed.has_flag("--json") {
         return stdout_compact_json(&cadence);
     }
     stdout(vec![
-        format!(
-            "recent_interactions_count_30d: {}",
-            field(&cadence, "recent_interactions_count_30d")
+        display_for(
+            locale,
+            "journal.cli.sol.profile.interactions",
+            [("value", &field(&cadence, "recent_interactions_count_30d"))],
         ),
-        format!("last_seen: {}", field(&cadence, "last_seen")),
-        format!(
-            "avg_interval_days: {}",
-            field(&cadence, "avg_interval_days")
+        display_for(
+            locale,
+            "journal.cli.sol.profile.last.seen",
+            [("value", &field(&cadence, "last_seen"))],
         ),
-        format!("gone_quiet_since: {}", field(&cadence, "gone_quiet_since")),
+        display_for(
+            locale,
+            "journal.cli.sol.profile.interval",
+            [("value", &field(&cadence, "avg_interval_days"))],
+        ),
+        display_for(
+            locale,
+            "journal.cli.sol.profile.quiet",
+            [("value", &field(&cadence, "gone_quiet_since"))],
+        ),
     ])
 }
 
 #[must_use]
 pub fn full(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &["--facets"], &["--include-mentions", "--json"]) {
+    let value_options = &["--facets"];
+    let locale = ctx.human_locale_with_options(value_options);
+    let parsed = match parse_args_for(
+        locale,
+        ctx.args,
+        value_options,
+        &["--include-mentions", "--json"],
+    ) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
     let Some(name) = parsed.positionals.first() else {
-        return missing_argument("call profile full", "NAME");
+        return missing_argument(locale, "call profile full", "NAME");
     };
     let mut params = Vec::new();
     if let Some(facets) = parsed.value("--facets") {
@@ -99,17 +139,21 @@ pub fn full(ctx: CommandContext<'_>) -> CommandOutput {
     }
     let profile = match request_json(ctx, &format!("/api/profile/{}", quote_path(name)), params) {
         Ok(profile) => profile,
-        Err(error) => return profile_error(error, name),
+        Err(error) => return profile_error(locale, error, name),
     };
     if parsed.has_flag("--json") {
         return crate::agent_output::literal_output(stdout_compact_json(&profile));
     }
-    stdout(render_full(&crate::agent_output::literal_body(profile)))
+    stdout(render_full(
+        locale,
+        &crate::agent_output::literal_body(profile),
+    ))
 }
 
 #[must_use]
 pub fn list_active(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &["--window-days"], &["--json"]) {
+    let locale = solstone_core_cli_copy::ENGLISH;
+    let parsed = match parse_args_for(locale, ctx.args, &["--window-days"], &["--json"]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
@@ -121,7 +165,7 @@ pub fn list_active(ctx: CommandContext<'_>) -> CommandOutput {
         None,
     ) {
         Ok(ids) => ids,
-        Err(error) => return profile_list_error(error),
+        Err(error) => return profile_list_error(locale, error),
     };
     if parsed.has_flag("--json") {
         return stdout_compact_json(&Value::Array(ids));
@@ -154,7 +198,7 @@ fn request_json(
     decode_response(&response)
 }
 
-fn render_full(profile: &Value) -> Vec<String> {
+fn render_full(locale: &str, profile: &Value) -> Vec<String> {
     let facets_label = profile
         .get("facets")
         .and_then(Value::as_array)
@@ -187,29 +231,49 @@ fn render_full(profile: &Value) -> Vec<String> {
         })
         .filter(|label| !label.is_empty());
     let mut lines = vec![
-        format!(
-            "{} \u{00b7} {} \u{00b7} facets={} \u{00b7} self={} \u{00b7} hidden={}",
-            field(profile, "name"),
-            field(profile, "type"),
-            facets_label,
-            field(profile, "is_self"),
-            field(profile, "blocked")
+        display_for(
+            locale,
+            "journal.cli.sol.profile.identity",
+            [
+                ("name", &field(profile, "name")),
+                ("kind", &field(profile, "type")),
+                ("facets", &facets_label),
+                ("self_value", &field(profile, "is_self")),
+                ("hidden", &field(profile, "blocked")),
+            ],
         ),
         String::new(),
-        "Cadence:".to_string(),
-        format!("  last_seen: {}", field(cadence, "last_seen")),
-        format!(
-            "  recent_interactions_count_30d: {}",
-            field(cadence, "recent_interactions_count_30d")
+        render_for(locale, "journal.cli.sol.profile.cadence", &[]),
+        display_for(
+            locale,
+            "journal.cli.sol.profile.full.last.seen",
+            [("value", &field(cadence, "last_seen"))],
         ),
-        format!(
-            "  avg_interval_days: {}",
-            field(cadence, "avg_interval_days")
+        display_for(
+            locale,
+            "journal.cli.sol.profile.full.interactions",
+            [("value", &field(cadence, "recent_interactions_count_30d"))],
         ),
-        format!("  gone_quiet_since: {}", field(cadence, "gone_quiet_since")),
+        display_for(
+            locale,
+            "journal.cli.sol.profile.full.interval",
+            [("value", &field(cadence, "avg_interval_days"))],
+        ),
+        display_for(
+            locale,
+            "journal.cli.sol.profile.full.quiet",
+            [("value", &field(cadence, "gone_quiet_since"))],
+        ),
     ];
     if let Some(detached_label) = detached_label {
-        lines.insert(1, format!("detached facets: {detached_label}"));
+        lines.insert(
+            1,
+            display_for(
+                locale,
+                "journal.cli.sol.profile.detached",
+                [("detached_label", &detached_label)],
+            ),
+        );
     }
     lines
 }
@@ -258,43 +322,41 @@ fn stderr(value: impl AsRef<str>) -> CommandOutput {
     CommandOutput::failure(format!("{}\n", value.as_ref()), 1)
 }
 
-fn stderr_with_exit(value: impl Into<String>, exit: i32) -> CommandOutput {
-    CommandOutput {
-        stdout: String::new(),
-        stderr: value.into(),
-        exit,
-    }
-}
-
-fn profile_error(error: ClientError, name: &str) -> CommandOutput {
+fn profile_error(locale: &str, error: ClientError, name: &str) -> CommandOutput {
     match error {
-        ClientError::Unreachable { .. } => stderr(SERVICE_DOWN_MESSAGE),
+        ClientError::Unreachable { .. } => stderr(service_down_for(locale)),
         other if other.reason_code() == Some(ENTITY_NOT_FOUND) || other.status() == Some(404) => {
-            stderr(format!("profile not found: {name}"))
+            stderr(display_for(
+                locale,
+                "journal.cli.sol.profile.not.found",
+                [("name", &name)],
+            ))
         }
-        other => stderr(other.detail().unwrap_or_else(|| other.message())),
-    }
-}
-
-fn profile_list_error(error: ClientError) -> CommandOutput {
-    match error {
-        ClientError::Unreachable { .. } => stderr(SERVICE_DOWN_MESSAGE),
-        other => stderr(other.detail().unwrap_or_else(|| other.message())),
-    }
-}
-
-fn missing_argument(command: &str, name: &str) -> CommandOutput {
-    let message = format!("Missing argument '{name}'.");
-    let spaces = " ".repeat(77_usize.saturating_sub(message.chars().count()));
-    stderr_with_exit(
-        format!(
-            "Usage: {command} [OPTIONS] {name}\n\
-Try '{command} --help' for help.\n\
-╭─ Error ──────────────────────────────────────────────────────────────────────╮\n\
-│ {message}{spaces}│\n\
-╰──────────────────────────────────────────────────────────────────────────────╯\n"
+        other => stderr(
+            other
+                .detail_for(locale)
+                .unwrap_or_else(|| other.message_for(locale)),
         ),
-        2,
+    }
+}
+
+fn profile_list_error(locale: &str, error: ClientError) -> CommandOutput {
+    match error {
+        ClientError::Unreachable { .. } => stderr(service_down_for(locale)),
+        other => stderr(
+            other
+                .detail_for(locale)
+                .unwrap_or_else(|| other.message_for(locale)),
+        ),
+    }
+}
+
+fn missing_argument(locale: &str, command: &str, name: &str) -> CommandOutput {
+    crate::args::typer_missing_for(
+        locale,
+        command,
+        &format!("{command} [OPTIONS] {name}"),
+        crate::args::Missing::Argument(name),
     )
 }
 
@@ -383,7 +445,7 @@ mod tests {
                 "gone_quiet_since": null
             }
         });
-        let lines = render_full(&profile);
+        let lines = render_full("en-US", &profile);
         assert_eq!(
             lines,
             vec![

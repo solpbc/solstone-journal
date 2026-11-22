@@ -1,0 +1,33 @@
+{
+  "description": "Native link command output for link transport enroll rejected. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link transport enroll rejected. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "status",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b6305cf4769d7376e262fb68fe0db0589ab3331b3d928f99ec7ddb2e5b197123",
+  "max_length": 372,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_link_join",
+      "kind": "accepted-input",
+      "value": "solstone link join"
+    },
+    {
+      "name": "http",
+      "kind": "accepted-input",
+      "value": "HTTP"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Text shown by the speakers correct.unassigned command.",
+  "context": "Text shown by the speakers correct.unassigned command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "90c9de14a6330aa5ed993d7a9ad6914d86d9e10cd74766a330fb7677148d618b",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

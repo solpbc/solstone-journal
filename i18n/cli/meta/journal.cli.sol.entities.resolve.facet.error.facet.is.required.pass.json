@@ -1,0 +1,23 @@
+{
+  "description": "Text shown by the entities resolve facet command.",
+  "context": "Text shown by the entities resolve facet command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2c6a043da6bf4ab7ad555f36de4852a820ab5eed069b6561fb21f0824b5c0511",
+  "max_length": 222,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_sol_facet",
+      "kind": "accepted-input",
+      "value": "SOL_FACET"
+    }
+  ]
+}

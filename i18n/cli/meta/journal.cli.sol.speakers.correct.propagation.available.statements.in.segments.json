@@ -1,0 +1,39 @@
+{
+  "description": "Complete counted speakers summary for correct.",
+  "context": "Complete counted speakers summary for correct.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "statements",
+      "type": "string"
+    },
+    {
+      "name": "segments",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "segments_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "148ddb1b45355086d268aef2fcf5b5bd2f611ae506faaa75b648c7bb7a2e460c",
+  "max_length": 1542,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

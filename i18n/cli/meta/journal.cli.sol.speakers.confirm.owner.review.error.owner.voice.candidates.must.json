@@ -1,0 +1,28 @@
+{
+  "description": "Text shown by the speakers confirm.owner.review command.",
+  "context": "Text shown by the speakers confirm.owner.review command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "review_entry",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "06b52d2f23306b14fdd712241fe1a55afd1b89b650fd753988afa68e6d6cfc82",
+  "max_length": 351,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

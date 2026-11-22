@@ -1,0 +1,33 @@
+{
+  "description": "Native import command output for import staged unreachable. Keep literal arguments and command syntax intact.",
+  "context": "Native import command output for import staged unreachable. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "staged_path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c2d2d7b24d036a90196627c889c259ee21751043353ea9de077bab95ef0bfcb6",
+  "max_length": 354,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_import",
+      "kind": "accepted-input",
+      "value": "solstone import"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

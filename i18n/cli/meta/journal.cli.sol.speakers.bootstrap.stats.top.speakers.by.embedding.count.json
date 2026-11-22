@@ -1,0 +1,16 @@
+{
+  "description": "Text shown by the speakers bootstrap stats command.",
+  "context": "Text shown by the speakers bootstrap stats command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0dbc787b822f019e753cc70471037b75d7f6018043863a45e5ac7763e769fe8a",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

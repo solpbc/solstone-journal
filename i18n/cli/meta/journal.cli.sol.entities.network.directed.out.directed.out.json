@@ -1,0 +1,21 @@
+{
+  "description": "Text shown by the entities network.directed.out command.",
+  "context": "Text shown by the entities network.directed.out command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "out_count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "188a8c1c08a9310fca2301544322ea9be9c315367a05f13446cf327c87cd6a57",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

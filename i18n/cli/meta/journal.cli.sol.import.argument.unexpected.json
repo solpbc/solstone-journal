@@ -1,0 +1,21 @@
+{
+  "description": "Native import command output for import argument unexpected. Keep literal arguments and command syntax intact.",
+  "context": "Native import command output for import argument unexpected. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "arguments",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "599914158b843e0765196f487826e3f3d0a82edd6b7f7d917477fcf5f295fcf7",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

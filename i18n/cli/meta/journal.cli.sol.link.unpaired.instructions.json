@@ -1,0 +1,38 @@
+{
+  "description": "Native link command output for link unpaired instructions. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link unpaired instructions. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "333417501756ee4e1a53d9c2227b01ed9a23ab9ebc3ab5c6da42ed759e45e654",
+  "max_length": 744,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_link_join_code_new_pa",
+      "kind": "accepted-input",
+      "value": "solstone link join --code <new pairing link>"
+    },
+    {
+      "name": "solstone_link_serve",
+      "kind": "accepted-input",
+      "value": "solstone link serve"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "description": "Native link command output for link status usage error. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link status usage error. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "73f80b92505cf534375115480f5f4d7c4bc7ee16b82da870624799f2a883d318",
+  "max_length": 348,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_link_status_h_label_l",
+      "kind": "accepted-input",
+      "value": "solstone link status [-h] [--label LABEL]"
+    },
+    {
+      "name": "solstone_link_status",
+      "kind": "accepted-input",
+      "value": "solstone link status"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

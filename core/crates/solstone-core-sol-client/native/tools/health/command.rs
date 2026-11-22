@@ -2,15 +2,18 @@
 // Copyright (c) 2026 sol pbc
 
 use serde_json::Value;
+use solstone_core_cli_copy::{Value as CopyValue, display_for, render_for};
 
 use crate::command::{CommandContext, CommandOutput, journal_today};
 use crate::decode::decode_response;
-use crate::error::{ClientError, SERVICE_DOWN_MESSAGE};
+use crate::error::{ClientError, service_down_for};
 use crate::transport::{ApiRequest, HttpMethod, QueryParam, TimeoutPolicy};
 
 #[must_use]
 pub fn summary(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &["--day"], &["--json"]) {
+    let value_options = &["--day"];
+    let locale = ctx.human_locale_with_options(value_options);
+    let parsed = match parse_args(locale, ctx.args, value_options, &["--json"]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
@@ -20,19 +23,21 @@ pub fn summary(ctx: CommandContext<'_>) -> CommandOutput {
     }
     let mut report = match request_json(ctx, "/api/health/summary", params) {
         Ok(report) => report,
-        Err(error) => return health_error(error),
+        Err(error) => return health_error(locale, error),
     };
     prune_retired_consumer_signals(&mut report);
     if parsed.has_flag("--json") {
         stdout_json(&report)
     } else {
-        stdout(render_summary(&report))
+        stdout(render_summary(locale, &report))
     }
 }
 
 #[must_use]
 pub fn full(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &["--day"], &["--json"]) {
+    let value_options = &["--day"];
+    let locale = ctx.human_locale_with_options(value_options);
+    let parsed = match parse_args(locale, ctx.args, value_options, &["--json"]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
@@ -42,19 +47,21 @@ pub fn full(ctx: CommandContext<'_>) -> CommandOutput {
     }
     let mut report = match request_json(ctx, "/api/health/full", params) {
         Ok(report) => report,
-        Err(error) => return health_error(error),
+        Err(error) => return health_error(locale, error),
     };
     prune_retired_consumer_signals(&mut report);
     if parsed.has_flag("--json") {
         stdout_json(&report)
     } else {
-        stdout(render_full(&report))
+        stdout(render_full(locale, &report))
     }
 }
 
 #[must_use]
 pub fn for_range(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &["--day-from", "--day-to"], &["--json"]) {
+    let value_options = &["--day-from", "--day-to"];
+    let locale = ctx.human_locale_with_options(value_options);
+    let parsed = match parse_args(locale, ctx.args, value_options, &["--json"]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
@@ -67,19 +74,20 @@ pub fn for_range(ctx: CommandContext<'_>) -> CommandOutput {
     }
     let mut report = match request_json(ctx, "/api/health/range", params) {
         Ok(report) => report,
-        Err(error) => return health_error(error),
+        Err(error) => return health_error(locale, error),
     };
     prune_retired_consumer_signals(&mut report);
     if parsed.has_flag("--json") {
         stdout_json(&report)
     } else {
-        stdout(render_full(&report))
+        stdout(render_full(locale, &report))
     }
 }
 
 #[must_use]
 pub fn pipeline(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &["--day"], &["--yesterday"]) {
+    let locale = solstone_core_cli_copy::ENGLISH;
+    let parsed = match parse_args(locale, ctx.args, &["--day"], &["--yesterday"]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
@@ -91,7 +99,7 @@ pub fn pipeline(ctx: CommandContext<'_>) -> CommandOutput {
     } else {
         let today = match journal_today(ctx) {
             Ok(today) => today,
-            Err(error) => return health_error(error),
+            Err(error) => return health_error(locale, error),
         };
         if parsed.has_flag("--yesterday") {
             yesterday(&today)
@@ -105,7 +113,7 @@ pub fn pipeline(ctx: CommandContext<'_>) -> CommandOutput {
         vec![QueryParam::single("day", target)],
     ) {
         Ok(summary) => summary,
-        Err(error) => return health_error(error),
+        Err(error) => return health_error(locale, error),
     };
     stdout_json(&summary)
 }
@@ -130,7 +138,12 @@ impl ParsedArgs {
     }
 }
 
-fn parse_args(args: &[String], options: &[&str], flags: &[&str]) -> Result<ParsedArgs, String> {
+fn parse_args(
+    locale: &str,
+    args: &[String],
+    options: &[&str],
+    flags: &[&str],
+) -> Result<ParsedArgs, String> {
     let mut parsed = ParsedArgs::default();
     let mut index = 0;
     while index < args.len() {
@@ -142,15 +155,27 @@ fn parse_args(args: &[String], options: &[&str], flags: &[&str]) -> Result<Parse
         } else if options.contains(&token.as_str()) {
             index += 1;
             let Some(value) = args.get(index) else {
-                return Err(format!("Error: option {token} requires an argument."));
+                return Err(display_for(
+                    locale,
+                    "journal.cli.client.option.value",
+                    [("option", &token)],
+                ));
             };
             parsed.values.push((token.clone(), value.clone()));
         } else if flags.contains(&token.as_str()) {
             parsed.flags.push(token.clone());
         } else if token.starts_with('-') {
-            return Err(format!("Error: unknown option {token}."));
+            return Err(display_for(
+                locale,
+                "journal.cli.client.option.unknown",
+                [("option", &token)],
+            ));
         } else {
-            return Err(format!("Error: unexpected argument {token}."));
+            return Err(display_for(
+                locale,
+                "journal.cli.sol.health.argument.unexpected",
+                [("token", &token)],
+            ));
         }
         index += 1;
     }
@@ -190,7 +215,7 @@ fn prune_retired_consumer_signals(report: &mut Value) {
     signals.remove("ledger_stale_items_count");
 }
 
-fn render_summary(report: &Value) -> Vec<String> {
+fn render_summary(locale: &str, report: &Value) -> Vec<String> {
     let capture = &report["capture_health"];
     let synthesis = &report["synthesis_health"];
     let consumer_signal = &report["consumer_signal"];
@@ -198,80 +223,112 @@ fn render_summary(report: &Value) -> Vec<String> {
     let range = report["range"]
         .as_array()
         .expect("health range is an array");
-    lines.push(format!(
-        "Range: {} -> {}",
-        display_value(&range[0]),
-        display_value(&range[1])
+    lines.push(display_for(
+        locale,
+        "journal.cli.sol.health.range",
+        [
+            ("start", &display_value(&range[0])),
+            ("end", &display_value(&range[1])),
+        ],
     ));
-    lines.push("Intake".to_string());
-    lines.push(format!(
-        "  hours_with_capture: {}",
-        display_value(&capture["hours_with_capture"])
+    lines.push(render_for(locale, "journal.cli.sol.health.intake", &[]));
+    lines.push(display_for(
+        locale,
+        "journal.cli.sol.health.hours.with.capture",
+        [("value", &display_value(&capture["hours_with_capture"]))],
     ));
-    lines.push(format!(
-        "  hours_total: {}",
-        display_value(&capture["hours_total"])
+    lines.push(display_for(
+        locale,
+        "journal.cli.sol.health.hours.total",
+        [("value", &display_value(&capture["hours_total"]))],
     ));
-    lines.push(format!(
-        "  coverage_ratio: {}",
-        dash(&capture["coverage_ratio"])
+    lines.push(display_for(
+        locale,
+        "journal.cli.sol.health.coverage.ratio",
+        [("value", &dash(&capture["coverage_ratio"]))],
     ));
-    lines.push(format!(
-        "  facets_with_recent_capture: {}",
-        join_values(&capture["facets_with_recent_capture"])
+    lines.push(display_for(
+        locale,
+        "journal.cli.sol.health.facets.with.recent.capture",
+        [(
+            "value",
+            &join_values(&capture["facets_with_recent_capture"]),
+        )],
     ));
-    lines.push(format!(
-        "  facets_silent_24h: {}",
-        join_values(&capture["facets_silent_24h"])
+    lines.push(display_for(
+        locale,
+        "journal.cli.sol.health.facets.silent.past.day",
+        [("value", &join_values(&capture["facets_silent_24h"]))],
     ));
-    lines.push(format!(
-        "  last_segment_at: {}",
-        dash(&capture["last_segment_at"])
+    lines.push(display_for(
+        locale,
+        "journal.cli.sol.health.last.segment.at",
+        [("value", &dash(&capture["last_segment_at"]))],
     ));
-    lines.push("Synthesis".to_string());
-    lines.push(format!(
-        "  activities_count: {}",
-        display_value(&synthesis["activities_count"])
+    lines.push(render_for(locale, "journal.cli.sol.health.synthesis", &[]));
+    lines.push(display_for(
+        locale,
+        "journal.cli.sol.health.activities.count",
+        [("value", &display_value(&synthesis["activities_count"]))],
     ));
-    lines.push(format!(
-        "  activities_with_participation: {}",
-        display_value(&synthesis["activities_with_participation"])
+    lines.push(display_for(
+        locale,
+        "journal.cli.sol.health.activities.with.participation",
+        [(
+            "value",
+            &display_value(&synthesis["activities_with_participation"]),
+        )],
     ));
-    lines.push(format!(
-        "  activities_with_story: {}",
-        display_value(&synthesis["activities_with_story"])
+    lines.push(display_for(
+        locale,
+        "journal.cli.sol.health.activities.with.story",
+        [("value", &display_value(&synthesis["activities_with_story"]))],
     ));
-    lines.push(format!(
-        "  activities_user_edited: {}",
-        display_value(&synthesis["activities_user_edited"])
+    lines.push(display_for(
+        locale,
+        "journal.cli.sol.health.activities.user.edited",
+        [(
+            "value",
+            &display_value(&synthesis["activities_user_edited"]),
+        )],
     ));
-    lines.push(format!(
-        "  talent_run_failures_24h: {}",
-        dash(&synthesis["talent_run_failures_24h"])
+    lines.push(display_for(
+        locale,
+        "journal.cli.sol.health.talent.run.failures.past.day",
+        [("value", &dash(&synthesis["talent_run_failures_24h"]))],
     ));
-    lines.push(format!(
-        "  talent_degraded_outputs_24h: {}",
-        dash(&synthesis["talent_degraded_outputs_24h"])
+    lines.push(display_for(
+        locale,
+        "journal.cli.sol.health.talent.degraded.outputs.past.day",
+        [("value", &dash(&synthesis["talent_degraded_outputs_24h"]))],
     ));
-    lines.push(format!(
-        "  index_activity_at: {}",
-        dash(&synthesis["index_activity_at"])
+    lines.push(display_for(
+        locale,
+        "journal.cli.sol.health.index.activity.at",
+        [("value", &dash(&synthesis["index_activity_at"]))],
     ));
     if let Some(index) = synthesis.get("search_index").and_then(Value::as_object) {
-        lines.push(format!(
-            "  search_index: {} (stale {}, missing {}, orphaned {}, failed {})",
-            display_value(&index["state"]),
-            display_value(&index["stale"]),
-            display_value(&index["missing"]),
-            display_value(&index["orphaned"]),
-            display_value(&index["failed"])
+        lines.push(display_for(
+            locale,
+            "journal.cli.sol.health.index",
+            [
+                ("state", &display_value(&index["state"])),
+                ("stale", &display_value(&index["stale"])),
+                ("missing", &display_value(&index["missing"])),
+                ("orphaned", &display_value(&index["orphaned"])),
+                ("failed", &display_value(&index["failed"])),
+            ],
         ));
     }
-    render_backlog(&mut lines, &report["segment_backlog"]);
-    lines.push("Consumer Signals".to_string());
-    lines.push(format!(
-        "  profile_entities_total: {}",
-        display_value(&consumer_signal["profile_entities_total"])
+    render_backlog(locale, &mut lines, &report["segment_backlog"]);
+    lines.push(render_for(locale, "journal.cli.sol.health.consumer", &[]));
+    lines.push(display_for(
+        locale,
+        "journal.cli.sol.health.profile.entities.total",
+        [(
+            "value",
+            &display_value(&consumer_signal["profile_entities_total"]),
+        )],
     ));
     if let Some(brain) = report.get("brain_health").and_then(Value::as_object)
         && let Some(lines_value) = brain.get("lines").and_then(Value::as_array)
@@ -281,12 +338,12 @@ fn render_summary(report: &Value) -> Vec<String> {
             lines.push(display_value(line));
         }
     }
-    lines.push("Notes".to_string());
+    lines.push(render_for(locale, "journal.cli.sol.health.notes", &[]));
     let notes = report["notes"]
         .as_array()
         .expect("health notes is an array");
     if notes.is_empty() {
-        lines.push("  none".to_string());
+        lines.push(render_for(locale, "journal.cli.sol.health.none", &[]));
     } else {
         for note in notes {
             lines.push(format!(
@@ -300,15 +357,15 @@ fn render_summary(report: &Value) -> Vec<String> {
     lines
 }
 
-fn render_full(report: &Value) -> Vec<String> {
-    let mut lines = render_summary(report);
+fn render_full(locale: &str, report: &Value) -> Vec<String> {
+    let mut lines = render_summary(locale, report);
     let silent = report["capture_health"]["facets_silent_24h"]
         .as_array()
         .expect("silent facets is an array");
     if silent.is_empty() {
         return lines;
     }
-    lines.push("Silent Facet Detail".to_string());
+    lines.push(render_for(locale, "journal.cli.sol.health.silent", &[]));
     let notes = report["notes"]
         .as_array()
         .expect("health notes is an array");
@@ -329,61 +386,91 @@ fn render_full(report: &Value) -> Vec<String> {
     lines
 }
 
-pub const BACKLOG_AWAITING_THINKING: &str = "awaiting thinking";
-pub const BACKLOG_WAITING_MEDIA: &str = "waiting for media processing";
-pub const BACKLOG_INCOMPLETE_HEDGE: &str = "status incomplete";
-pub const BACKLOG_AT_LEAST: &str = "at least";
-pub const BACKLOG_STATUS_UNAVAILABLE: &str = "Segment analysis status unavailable";
-
-fn render_backlog(lines: &mut Vec<String>, backlog: &Value) {
+fn render_backlog(locale: &str, lines: &mut Vec<String>, backlog: &Value) {
     let not_thought = backlog["not_thought"].as_i64().unwrap_or(0);
     let not_sensed = backlog["not_sensed"].as_i64().unwrap_or(0);
     let m = backlog["days_with_backlog"].as_i64().unwrap_or(0);
-    let day_word = if m == 1 { "day" } else { "days" };
     let errors = truthy(&backlog["errors"]);
-
     if not_thought == 0 && not_sensed == 0 {
         if errors {
-            lines.push(format!("  {BACKLOG_STATUS_UNAVAILABLE}"));
+            lines.push(render_for(
+                locale,
+                "journal.cli.sol.health.backlog.unavailable",
+                &[],
+            ));
         }
         return;
     }
-
-    // A failed per-day read makes every count a floor, so the bound has to reach
-    // each number. Binding it to the first one alone reads as though the second
-    // is exact.
-    let bound = if errors {
-        format!("{BACKLOG_AT_LEAST} ")
-    } else {
-        String::new()
-    };
-    let segment_word = |count: i64| if count == 1 { "segment" } else { "segments" };
-
-    let mut parts = Vec::new();
-    if not_thought > 0 {
-        let word = segment_word(not_thought);
-        parts.push(format!(
-            "{bound}{not_thought} {word} {BACKLOG_AWAITING_THINKING}"
-        ));
-    }
-    if not_sensed > 0 {
-        let word = segment_word(not_sensed);
-        parts.push(format!(
-            "{bound}{not_sensed} {word} {BACKLOG_WAITING_MEDIA}"
-        ));
-    }
-
-    // `across N days` keeps one position in every branch; moving it made the same
-    // fact read two different ways depending on which counts were non-zero.
-    let hedge = if errors {
-        format!(" ({BACKLOG_INCOMPLETE_HEDGE})")
-    } else {
-        String::new()
-    };
-    lines.push(format!(
-        "  {} across {m} {day_word}{hedge}",
-        parts.join(", ")
-    ));
+    let (id, quantities): (&str, &[(&str, &str, i64)]) =
+        match (not_thought > 0, not_sensed > 0, errors) {
+            (true, false, false) => (
+                "journal.cli.sol.health.backlog.thinking.days",
+                &[
+                    ("thinking", "thinking_quantity", not_thought),
+                    ("days", "days_quantity", m),
+                ],
+            ),
+            (true, false, true) => (
+                "journal.cli.sol.health.backlog.thinking.days.incomplete",
+                &[
+                    ("thinking", "thinking_quantity", not_thought),
+                    ("days", "days_quantity", m),
+                ],
+            ),
+            (false, true, false) => (
+                "journal.cli.sol.health.backlog.media.days",
+                &[
+                    ("media", "media_quantity", not_sensed),
+                    ("days", "days_quantity", m),
+                ],
+            ),
+            (false, true, true) => (
+                "journal.cli.sol.health.backlog.media.days.incomplete",
+                &[
+                    ("media", "media_quantity", not_sensed),
+                    ("days", "days_quantity", m),
+                ],
+            ),
+            (true, true, false) => (
+                "journal.cli.sol.health.backlog.thinking.media.days",
+                &[
+                    ("thinking", "thinking_quantity", not_thought),
+                    ("media", "media_quantity", not_sensed),
+                    ("days", "days_quantity", m),
+                ],
+            ),
+            (true, true, true) => (
+                "journal.cli.sol.health.backlog.thinking.media.days.incomplete",
+                &[
+                    ("thinking", "thinking_quantity", not_thought),
+                    ("media", "media_quantity", not_sensed),
+                    ("days", "days_quantity", m),
+                ],
+            ),
+            (false, false, false) => (
+                "journal.cli.sol.health.backlog.days",
+                &[("days", "days_quantity", m)],
+            ),
+            (false, false, true) => (
+                "journal.cli.sol.health.backlog.days.incomplete",
+                &[("days", "days_quantity", m)],
+            ),
+        };
+    let values: Vec<_> = quantities.iter().map(|(_, _, n)| n.to_string()).collect();
+    let args: Vec<_> = quantities
+        .iter()
+        .zip(&values)
+        .flat_map(|((name, selector, count), text)| {
+            [
+                (*name, CopyValue::String(text)),
+                (
+                    *selector,
+                    crate::command::count_selector(u64::try_from(*count).unwrap_or(0)),
+                ),
+            ]
+        })
+        .collect();
+    lines.push(render_for(locale, id, &args));
 }
 
 fn truthy(value: &Value) -> bool {
@@ -458,10 +545,14 @@ fn stderr(value: impl AsRef<str>) -> CommandOutput {
     CommandOutput::failure(format!("{}\n", value.as_ref()), 1)
 }
 
-fn health_error(error: ClientError) -> CommandOutput {
+fn health_error(locale: &str, error: ClientError) -> CommandOutput {
     match error {
-        ClientError::Unreachable { .. } => stderr(SERVICE_DOWN_MESSAGE),
-        _ => stderr(error.detail().unwrap_or_else(|| error.message())),
+        ClientError::Unreachable { .. } => stderr(service_down_for(locale)),
+        _ => stderr(
+            error
+                .detail_for(locale)
+                .unwrap_or_else(|| error.message_for(locale)),
+        ),
     }
 }
 
@@ -557,7 +648,7 @@ mod tests {
     #[test]
     fn health_error_renderer_preserves_variant_details() {
         assert_eq!(
-            health_error(ClientError::unreachable(Some("io: x".to_string()))),
+            health_error("en-US", ClientError::unreachable(Some("io: x".to_string()))),
             CommandOutput {
                 stdout: String::new(),
                 stderr: "journal isn't running. start it with 'solstone journal up' and retry.\n"
@@ -566,7 +657,7 @@ mod tests {
             }
         );
         assert_eq!(
-            health_error(ClientError::timeout(Some("D".to_string()))),
+            health_error("en-US", ClientError::timeout(Some("D".to_string()))),
             CommandOutput {
                 stdout: String::new(),
                 stderr: "D\n".to_string(),
@@ -574,13 +665,16 @@ mod tests {
             }
         );
         assert_eq!(
-            health_error(ClientError::ReasonRejected {
-                status: 400,
-                error: "invalid request".to_string(),
-                reason_code: Some("invalid_request_value".to_string()),
-                detail: Some("day must be YYYYMMDD".to_string()),
-                payload: Box::new(serde_json::Value::Null),
-            }),
+            health_error(
+                "en-US",
+                ClientError::ReasonRejected {
+                    status: 400,
+                    error: "invalid request".to_string(),
+                    reason_code: Some("invalid_request_value".to_string()),
+                    detail: Some("day must be YYYYMMDD".to_string()),
+                    payload: Box::new(serde_json::Value::Null),
+                }
+            ),
             CommandOutput {
                 stdout: String::new(),
                 stderr: "day must be YYYYMMDD\n".to_string(),
@@ -588,7 +682,7 @@ mod tests {
             }
         );
         assert_eq!(
-            health_error(ClientError::MalformedSuccess { status: Some(200) }),
+            health_error("en-US", ClientError::MalformedSuccess { status: Some(200) }),
             CommandOutput {
                 stdout: String::new(),
                 stderr: "the journal response couldn't be read.\n".to_string(),
@@ -596,7 +690,10 @@ mod tests {
             }
         );
         assert_eq!(
-            health_error(ClientError::UnreadableServerError { status: Some(500) }),
+            health_error(
+                "en-US",
+                ClientError::UnreadableServerError { status: Some(500) }
+            ),
             CommandOutput {
                 stdout: String::new(),
                 stderr: "The journal returned an unreadable error.\n".to_string(),
@@ -666,7 +763,7 @@ mod tests {
             "days_with_backlog": 1,
             "errors": []
         });
-        render_backlog(&mut lines, &backlog);
+        render_backlog("en-US", &mut lines, &backlog);
         assert_eq!(lines, vec!["  2 segments awaiting thinking across 1 day"]);
 
         lines.clear();
@@ -676,7 +773,7 @@ mod tests {
             "days_with_backlog": 2,
             "errors": []
         });
-        render_backlog(&mut lines, &backlog);
+        render_backlog("en-US", &mut lines, &backlog);
         assert_eq!(
             lines,
             vec!["  3 segments waiting for media processing across 2 days"]
@@ -689,7 +786,7 @@ mod tests {
             "days_with_backlog": 2,
             "errors": []
         });
-        render_backlog(&mut lines, &backlog);
+        render_backlog("en-US", &mut lines, &backlog);
         assert_eq!(
             lines,
             vec![
@@ -707,7 +804,7 @@ mod tests {
             "days_with_backlog": 2,
             "errors": []
         });
-        render_backlog(&mut lines, &backlog);
+        render_backlog("en-US", &mut lines, &backlog);
         assert_eq!(
             lines,
             vec!["  5 segments waiting for media processing across 2 days"]
@@ -723,7 +820,7 @@ mod tests {
             "days_with_backlog": 1,
             "errors": ["some error"]
         });
-        render_backlog(&mut lines, &backlog);
+        render_backlog("en-US", &mut lines, &backlog);
         // Exact, not `contains`: a containment assertion cannot tell which of the
         // two counts the bound actually reaches, which is the defect this covers.
         assert_eq!(

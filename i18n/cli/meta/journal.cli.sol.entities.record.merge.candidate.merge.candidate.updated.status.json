@@ -1,0 +1,29 @@
+{
+  "description": "Text shown by the entities record merge candidate command.",
+  "context": "Text shown by the entities record merge candidate command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    },
+    {
+      "name": "target",
+      "type": "string"
+    },
+    {
+      "name": "status",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a810b46bf54bc9beb9abe0b3404df4e15c0111bdc546fd4978c6d2f73f4ae4c2",
+  "max_length": 219,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

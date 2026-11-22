@@ -1,0 +1,23 @@
+{
+  "description": "Native link command output for link response instance. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link response instance. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9b4acc8392ef6772177344d4837587f00d469e031701bbc09ea1486e53840b42",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "instance_id",
+      "kind": "accepted-input",
+      "value": "instance_id"
+    }
+  ]
+}

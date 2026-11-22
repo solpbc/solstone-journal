@@ -1,0 +1,21 @@
+{
+  "description": "Text shown by the speakers correct command.",
+  "context": "Text shown by the speakers correct command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "outcome",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "40ac1646ff6b091bc1bc378501af174e2f70789767352d563a05f63eb760437b",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

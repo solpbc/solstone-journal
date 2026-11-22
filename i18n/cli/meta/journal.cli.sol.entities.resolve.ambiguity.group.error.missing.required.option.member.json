@@ -1,0 +1,23 @@
+{
+  "description": "Text shown by the entities resolve ambiguity group command.",
+  "context": "Text shown by the entities resolve ambiguity group command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1ee981a666ac7da56277c5a3ae926f17a2d54ba0e03c53ae36dbe35e4c53e956",
+  "max_length": 156,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "option_member_id",
+      "kind": "command",
+      "value": "--member-id"
+    }
+  ]
+}

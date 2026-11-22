@@ -1,0 +1,28 @@
+{
+  "description": "Native solstone call thinking command output. Preserve supplied values and the command syntax.",
+  "context": "Native solstone call thinking command output. Preserve supplied values and the command syntax.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ef51b3862a8791dce4c12cfe9938207fdd2a013f0ae4d5099440a2e63703aba4",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "field_key",
+      "kind": "accepted-input",
+      "value": "attestation_state"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Native health command output for health argument unexpected. Keep literal arguments and command syntax intact.",
+  "context": "Native health command output for health argument unexpected. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "token",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2538510558b0fff1c36122aaa1f76278f8f88efdbf26dd9c9012a41fb2397713",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

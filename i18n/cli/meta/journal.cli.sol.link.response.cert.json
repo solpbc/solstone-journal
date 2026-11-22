@@ -1,0 +1,23 @@
+{
+  "description": "Native link command output for link response cert. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link response cert. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "000f53d56b3e83717d2224ad0ff01c77f0acd6cb50444101428ac88e5abae893",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "client_cert",
+      "kind": "accepted-input",
+      "value": "client_cert"
+    }
+  ]
+}

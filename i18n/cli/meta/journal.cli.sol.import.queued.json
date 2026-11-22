@@ -1,0 +1,23 @@
+{
+  "description": "Native import command output for import queued. Keep literal arguments and command syntax intact.",
+  "context": "Native import command output for import queued. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0795d70b0d763da8c7c5f7e56caec6a19181d97dbbf94f313c1ea6f142849b29",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

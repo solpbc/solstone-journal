@@ -1,0 +1,33 @@
+{
+  "description": "Text shown by the speakers follow backfill command.",
+  "context": "Text shown by the speakers follow backfill command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "status_kind",
+      "type": "string"
+    },
+    {
+      "name": "completed",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "pending",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "edf4247c34260cf586d17f574eb40b6e04e82cc11eb3eb5e72f13e342981dab3",
+  "max_length": 312,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

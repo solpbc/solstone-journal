@@ -8,14 +8,14 @@ use jiff::civil::DateTime;
 use jiff::tz::Offset;
 use serde_json::{Value, json};
 
-use crate::args::parse_args;
+use crate::args::parse_args_for;
 use crate::command::{CommandContext, CommandOutput};
 use crate::decode::decode_response;
-use crate::error::{ClientError, SERVICE_DOWN_MESSAGE};
+use crate::error::{ClientError, service_down_for};
 use crate::transport::{ApiRequest, HttpMethod, QueryParam, TimeoutPolicy};
+use solstone_core_cli_copy::{MessageDetail, Value as CopyValue, display_for, render_for};
 
 const VALID_ROLES: &[&str] = &["", "phone", "observer"];
-const LINKED_SYSTEMS_HEADING: &str = "Linked systems:";
 // `subscribing` ends the command, not the turn-on: the journal keeps waiting
 // for the purchase on its own.
 const PRIVATE_LINK_TERMINAL_PHASES: &[&str] = &[
@@ -25,69 +25,37 @@ const PRIVATE_LINK_TERMINAL_PHASES: &[&str] = &[
     "subscribing",
     "needs_subscription",
 ];
-const PRIVATE_LINK_SETTING_UP: &str = "setting up your private network...";
-const PRIVATE_LINK_SETUP_SUCCESS: &str =
-    "your private network is on. your devices can reach your journal from anywhere.";
-const PRIVATE_LINK_SETUP_FAILED: &str = "couldn't finish setting up your private network.";
-const PRIVATE_LINK_PORTAL_CTA: &str = "continue to approve →";
-const PRIVATE_LINK_NEEDS_SUBSCRIPTION: &str = "your private network isn't on yet. your consent is saved. \
-finish turning it on in the services portal, then turn it on here again:";
-const PRIVATE_LINK_SUBSCRIBING: &str = "your private network isn't on yet. your consent is saved. \
-finish turning it on in the services portal within the hour, and your journal picks it up on its own:";
-const PRIVATE_LINK_DISABLE_SUCCESS: &str =
-    "your private network is off. devices connect directly again.";
-const PRIVATE_LINK_DISABLE_SUCCESS_CLOSED: &str = "your private network is off. your journal \
-is closed to devices on your network, so your other devices can't reach it.";
-const PRIVATE_LINK_DISABLE_FAILED: &str =
-    "couldn't turn off your private network. it's still on. try again.";
-const PRIVATE_LINK_NEEDS_REPAIR: &str = "your private network needs setting up again.";
-const CLI_PAIR_LINK_LABEL: &str = "pair-link";
-const CLI_PAIR_JOIN_HINT: &str = "link this device with:";
-const CLI_PAIR_CA_FINGERPRINT_LABEL: &str = "CA fingerprint";
-const CLI_PAIR_NO_LAN_ADDRESS: &str = "can't start pairing. your journal isn't reachable on a network address \
-yet. turn on your private network to pair from anywhere, or connect this \
-device to your home network.";
 
-const CLI_PAIR_LOCAL_NETWORK_CLOSED: &str = "can't start pairing. your journal is closed to \
-devices on your network. run `solstone call link local-network open` to pair another device \
-over your network, or turn on your private network to pair through the relay.";
 const LOCAL_NETWORK_ROUTE: &str = "/app/network/api/local-network";
 const LOCAL_NETWORK_OPEN_ROUTE: &str = "/app/network/local-network/open";
 const LOCAL_NETWORK_CLOSE_ROUTE: &str = "/app/network/local-network/close";
-const LOCAL_NETWORK_THIS_PC: &str = "your journal is closed to devices on your network. the \
-solstone app on this computer still pairs, and so do devices through the relay, once your \
-private network is on.";
-const LOCAL_NETWORK_OPEN: &str = "your journal is open to devices on your network. devices on \
-the same network can pair with it directly.";
-const LOCAL_NETWORK_NOT_LISTENING: &str = "devices can't reach your journal right now.";
-const LOCAL_NETWORK_WINDOWS_ASKS: &str = "windows may ask whether journal can use your \
-network. on a standard account, an administrator has to allow it. if windows didn't ask and \
-a device still can't reach your journal, an earlier choice in windows may be blocking journal. \
-an administrator can allow it in Windows Security, under Firewall & network protection › \
-Allow an app through firewall.";
-const LOCAL_NETWORK_AGENTS_ON_NETWORK: &str = "your journal stays open to devices on your \
-network while \"agents on your network\" is on. it closes to them when you turn that off in agents.";
-const LOCAL_NETWORK_FAILED: &str =
-    "couldn't change whether your journal is open to devices on your network. try again.";
 
 #[must_use]
 pub fn authorized_clients(ctx: CommandContext<'_>) -> CommandOutput {
+    let locale = ctx.human_locale();
     let devices = match devices(ctx) {
         Ok(devices) => devices,
-        Err(error) => return link_error(error),
+        Err(error) => return link_error(locale, error),
     };
     if devices.is_empty() {
-        return stdout_line("No authorized clients.");
+        return stdout_line(render_for(
+            locale,
+            "journal.cli.client.network.clients.empty",
+            &[],
+        ));
     }
     let lines = devices
         .iter()
         .map(|device| {
             let label = display_label(device);
-            format!(
-                "{}  {}  last seen {}",
-                string_field(device, "fingerprint"),
-                label,
-                relative_time_field(ctx, device, "last_seen_at")
+            display_for(
+                locale,
+                "journal.cli.client.network.clients.seen",
+                [
+                    ("fingerprint", &string_field(device, "fingerprint")),
+                    ("label", &label),
+                    ("when", &relative_time_field(ctx, device, "last_seen_at")),
+                ],
             )
         })
         .collect::<Vec<_>>();
@@ -96,30 +64,47 @@ pub fn authorized_clients(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn list(ctx: CommandContext<'_>) -> CommandOutput {
+    let locale = ctx.human_locale();
     let devices = match devices(ctx) {
         Ok(devices) => devices,
-        Err(error) => return link_error(error),
+        Err(error) => return link_error(locale, error),
     };
     if devices.is_empty() {
-        return stdout_line("No devices linked yet.");
+        return stdout_line(render_for(
+            locale,
+            "journal.cli.client.network.devices.empty",
+            &[],
+        ));
     }
     let mut lines = Vec::new();
-    append_device_section(ctx, &mut lines, LINKED_SYSTEMS_HEADING, &devices);
+    append_device_section(
+        ctx,
+        &mut lines,
+        &render_for(
+            locale,
+            "journal.cli.client.network.linked.systems.heading",
+            &[],
+        ),
+        &devices,
+    );
     stdout(lines)
 }
 
 #[must_use]
-pub fn observer_pause(_ctx: CommandContext<'_>) -> CommandOutput {
-    stdout_line("observer-pause is not yet available.")
+pub fn observer_pause(ctx: CommandContext<'_>) -> CommandOutput {
+    let locale = ctx.human_locale();
+    stdout_line(render_for(
+        locale,
+        "journal.cli.client.network.observer.pause",
+        &[],
+    ))
 }
 
 #[must_use]
 pub fn pair(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(
-        ctx.args,
-        &["--device-label", "--as", "--timeout"],
-        &["--no-wait"],
-    ) {
+    let options: &[&str] = &["--device-label", "--as", "--timeout"];
+    let locale = ctx.human_locale_with_options(options);
+    let parsed = match parse_args_for(locale, ctx.args, options, &["--no-wait"]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error, 1),
     };
@@ -128,12 +113,20 @@ pub fn pair(ctx: CommandContext<'_>) -> CommandOutput {
     if let Some(role) = role
         && !VALID_ROLES.contains(&role)
     {
-        return stderr("invalid role; expected one of: phone, observer", 2);
+        return stderr(
+            render_for(locale, "journal.cli.client.network.role.invalid", &[]),
+            2,
+        );
     }
     let timeout_seconds = match parsed.value("--timeout") {
         Some(value) => match value.parse::<i64>() {
             Ok(value) => value,
-            Err(_error) => return stderr("Error: option --timeout requires an integer.", 1),
+            Err(_error) => {
+                return stderr(
+                    render_for(locale, "journal.cli.client.network.timeout.integer", &[]),
+                    1,
+                );
+            }
         },
         None => 300,
     };
@@ -155,20 +148,44 @@ pub fn pair(ctx: CommandContext<'_>) -> CommandOutput {
         Ok(response) => response,
         Err(error) => {
             if error.reason_code() == Some("pairing_request_invalid") {
-                return stderr(CLI_PAIR_NO_LAN_ADDRESS, 1);
+                return stderr(
+                    render_for(
+                        locale,
+                        "journal.cli.client.network.cli.pair.no.lan.address",
+                        &[],
+                    ),
+                    1,
+                );
             }
             if error.reason_code() == Some("local_network_closed") {
-                return stderr(CLI_PAIR_LOCAL_NETWORK_CLOSED, 1);
+                return stderr(
+                    render_for(
+                        locale,
+                        "journal.cli.client.network.cli.pair.local.network.closed",
+                        &[],
+                    ),
+                    1,
+                );
             }
-            return link_error(error);
+            return link_error(locale, error);
         }
     };
     let nonce = string_field_value(&response, "nonce");
     let pair_link = string_field_value(&response, "pair_link");
     let ca_fp = string_field_value(&response, "ca_fingerprint");
     let mut out = String::new();
-    push_line(&mut out, format!("{CLI_PAIR_LINK_LABEL}: {pair_link}"));
-    push_line(&mut out, CLI_PAIR_JOIN_HINT);
+    push_line(
+        &mut out,
+        display_for(
+            locale,
+            "journal.cli.client.network.pair.link",
+            [("link", &pair_link)],
+        ),
+    );
+    push_line(
+        &mut out,
+        render_for(locale, "journal.cli.client.network.cli.pair.join.hint", &[]),
+    );
     let mut join_cmd = vec![
         "solstone".to_string(),
         "link".to_string(),
@@ -183,16 +200,30 @@ pub fn pair(ctx: CommandContext<'_>) -> CommandOutput {
     push_line(&mut out, format!("  {}", shlex_join(&join_cmd)));
     push_line(
         &mut out,
-        format!("{CLI_PAIR_CA_FINGERPRINT_LABEL}: sha256:{ca_fp}"),
+        display_for(
+            locale,
+            "journal.cli.client.network.pair.fingerprint",
+            [("fingerprint", &ca_fp)],
+        ),
     );
     if !device_label.is_empty() {
-        push_line(&mut out, format!("Device: {device_label}"));
+        push_line(
+            &mut out,
+            display_for(
+                locale,
+                "journal.cli.client.network.pair.device",
+                [("device", &device_label)],
+            ),
+        );
     }
     if parsed.has_flag("--no-wait") {
         return CommandOutput::success(out);
     }
     push_line(&mut out, "");
-    push_line(&mut out, "Waiting for linked system…");
+    push_line(
+        &mut out,
+        render_for(locale, "journal.cli.client.network.pair.wait", &[]),
+    );
 
     let before_response = match request_json(
         ctx,
@@ -202,7 +233,7 @@ pub fn pair(ctx: CommandContext<'_>) -> CommandOutput {
         None,
     ) {
         Ok(response) => response,
-        Err(error) => return link_error_preserving_stdout(out, error, 1),
+        Err(error) => return link_error_preserving_stdout(locale, out, error, 1),
     };
     let before = devices_from_body(&before_response)
         .iter()
@@ -219,7 +250,7 @@ pub fn pair(ctx: CommandContext<'_>) -> CommandOutput {
             None,
         ) {
             Ok(response) => response,
-            Err(error) => return link_error_preserving_stdout(out, error, 1),
+            Err(error) => return link_error_preserving_stdout(locale, out, error, 1),
         };
         let current = devices_from_body(&devices_response);
         let new_entries = current
@@ -228,14 +259,29 @@ pub fn pair(ctx: CommandContext<'_>) -> CommandOutput {
             .collect::<Vec<_>>();
         if let Some(entry) = new_entries.last() {
             let label = display_label(entry);
-            push_line(&mut out, format!("Paired: {label}"));
             push_line(
                 &mut out,
-                format!("  fingerprint: {}", string_field(entry, "fingerprint")),
+                display_for(
+                    locale,
+                    "journal.cli.client.network.pair.paired",
+                    [("label", &label)],
+                ),
             );
             push_line(
                 &mut out,
-                format!("  paired_at:   {}", string_field(entry, "paired_at")),
+                display_for(
+                    locale,
+                    "journal.cli.client.network.pair.result.fingerprint",
+                    [("fingerprint", &string_field(entry, "fingerprint"))],
+                ),
+            );
+            push_line(
+                &mut out,
+                display_for(
+                    locale,
+                    "journal.cli.client.network.pair.result.date",
+                    [("date", &string_field(entry, "paired_at"))],
+                ),
             );
             return CommandOutput::success(out);
         }
@@ -247,7 +293,7 @@ pub fn pair(ctx: CommandContext<'_>) -> CommandOutput {
             None,
         ) {
             Ok(response) => response,
-            Err(error) => return link_error_preserving_stdout(out, error, 1),
+            Err(error) => return link_error_preserving_stdout(locale, out, error, 1),
         };
         if nonce_status
             .get("used")
@@ -256,12 +302,15 @@ pub fn pair(ctx: CommandContext<'_>) -> CommandOutput {
         {
             push_line(
                 &mut out,
-                "Pair request completed; device should appear in `solstone call link list`.",
+                render_for(locale, "journal.cli.client.network.pair.complete", &[]),
             );
             return CommandOutput::success(out);
         }
     }
-    push_line(&mut out, "Timed out. Pair code expired.");
+    push_line(
+        &mut out,
+        render_for(locale, "journal.cli.client.network.pair.expired", &[]),
+    );
     CommandOutput {
         stdout: out,
         stderr: String::new(),
@@ -271,46 +320,67 @@ pub fn pair(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn private_link_setup(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &["--wait-seconds", "--poll-interval"], &[]) {
+    let options: &[&str] = &["--wait-seconds", "--poll-interval"];
+    let locale = ctx.human_locale_with_options(options);
+    let parsed = match parse_args_for(locale, ctx.args, options, &[]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error, 1),
     };
-    let wait_seconds = match parse_float_option(parsed.value("--wait-seconds"), 900.0) {
+    let wait_seconds = match parse_float_option(locale, parsed.value("--wait-seconds"), 900.0) {
         Ok(value) => value,
         Err(error) => return stderr(error, 1),
     };
-    let poll_interval = match parse_float_option(parsed.value("--poll-interval"), 1.0) {
+    let poll_interval = match parse_float_option(locale, parsed.value("--poll-interval"), 1.0) {
         Ok(value) => value,
         Err(error) => return stderr(error, 1),
     };
     let mut out = String::new();
-    push_line(&mut out, PRIVATE_LINK_SETTING_UP);
-    let response = match post_private_link(ctx, "/app/network/private-link/enable") {
+    push_line(
+        &mut out,
+        render_for(
+            locale,
+            "journal.cli.client.network.private.link.setting.up",
+            &[],
+        ),
+    );
+    let response = match post_private_link(locale, ctx, "/app/network/private-link/enable") {
         Ok(response) => response,
-        Err(error) => return link_error(error),
+        Err(error) => return link_error(locale, error),
     };
     if let Some(operation) = response.get("operation").and_then(Value::as_object)
         && let Some(portal_url) = operation.get("portal_url").and_then(Value::as_str)
     {
-        push_line(&mut out, format!("{PRIVATE_LINK_PORTAL_CTA} {portal_url}"));
+        push_line(
+            &mut out,
+            display_for(
+                locale,
+                "!journal.cli.client.network.portal.approve",
+                [("url", &portal_url)],
+            ),
+        );
     }
-    match poll_private_link_until_terminal(ctx, wait_seconds, poll_interval) {
+    match poll_private_link_until_terminal(locale, ctx, wait_seconds, poll_interval) {
         Ok((status, phase, guidance)) => {
-            private_link_terminal_output(out, &status, phase, guidance)
+            private_link_terminal_output(locale, out, &status, phase, guidance)
         }
-        Err(error) => link_error_preserving_stdout(out, error, 1),
+        Err(error) => link_error_preserving_stdout(locale, out, error, 1),
     }
 }
 
 #[must_use]
 pub fn private_link_disable(ctx: CommandContext<'_>) -> CommandOutput {
-    let response = match post_private_link(ctx, "/app/network/private-link/disable") {
+    let locale = ctx.human_locale();
+    let response = match post_private_link(locale, ctx, "/app/network/private-link/disable") {
         Ok(response) => response,
         Err(error) => {
             if error.reason_code() == Some("service_operation_failed") {
-                return stderr(PRIVATE_LINK_DISABLE_FAILED, 1);
+                return stderr(
+                    MessageDetail::window("journal.window.network.private.link.disable.failed", [])
+                        .render(locale),
+                    1,
+                );
             }
-            return link_error(error);
+            return link_error(locale, error);
         }
     };
     let state = response
@@ -330,16 +400,26 @@ pub fn private_link_disable(ctx: CommandContext<'_>) -> CommandOutput {
             })
             .is_some_and(|listening| listening == "this_pc");
         return stdout_line(if closed {
-            PRIVATE_LINK_DISABLE_SUCCESS_CLOSED
+            MessageDetail::window(
+                "journal.window.network.private.link.disable.success.closed",
+                [],
+            )
+            .render(locale)
         } else {
-            PRIVATE_LINK_DISABLE_SUCCESS
+            MessageDetail::window("journal.window.network.private.link.disable.success", [])
+                .render(locale)
         });
     }
-    stderr(PRIVATE_LINK_NEEDS_REPAIR, 1)
+    stderr(
+        MessageDetail::window("journal.window.network.private.link.needs.repair", [])
+            .render(locale),
+        1,
+    )
 }
 
 #[must_use]
 pub fn private_link_status(ctx: CommandContext<'_>) -> CommandOutput {
+    let locale = ctx.human_locale();
     let status = match request_json(
         ctx,
         HttpMethod::Get,
@@ -348,20 +428,21 @@ pub fn private_link_status(ctx: CommandContext<'_>) -> CommandOutput {
         None,
     ) {
         Ok(status) => status,
-        Err(error) => return link_error(error),
+        Err(error) => return link_error(locale, error),
     };
-    stdout(render_private_link_status(&status))
+    stdout(render_private_link_status(locale, &status))
 }
 
 #[must_use]
 pub fn local_network_status(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &[], &["--json"]) {
+    let locale = ctx.human_locale();
+    let parsed = match parse_args_for(locale, ctx.args, &[], &["--json"]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error, 2),
     };
     match request_json(ctx, HttpMethod::Get, LOCAL_NETWORK_ROUTE, vec![], None) {
-        Ok(body) => local_network_output(&body, parsed.has_flag("--json"), false),
-        Err(error) => link_error(error),
+        Ok(body) => local_network_output(locale, &body, parsed.has_flag("--json"), false),
+        Err(error) => link_error(locale, error),
     }
 }
 
@@ -376,21 +457,32 @@ pub fn local_network_close(ctx: CommandContext<'_>) -> CommandOutput {
 }
 
 fn local_network_set(ctx: CommandContext<'_>, route: &str, opening: bool) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &[], &["--json"]) {
+    let locale = ctx.human_locale();
+    let parsed = match parse_args_for(locale, ctx.args, &[], &["--json"]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error, 2),
     };
     match request_json(ctx, HttpMethod::Post, route, vec![], Some(json!({}))) {
-        Ok(body) => local_network_output(&body, parsed.has_flag("--json"), opening),
-        Err(ClientError::Unreachable { .. }) => stderr(SERVICE_DOWN_MESSAGE, 1),
-        Err(error) if error.reason_code() == Some("agents_on_network") => {
-            stderr(LOCAL_NETWORK_AGENTS_ON_NETWORK, 1)
-        }
-        Err(_) => stderr(LOCAL_NETWORK_FAILED, 1),
+        Ok(body) => local_network_output(locale, &body, parsed.has_flag("--json"), opening),
+        Err(ClientError::Unreachable { .. }) => stderr(service_down_for(locale), 1),
+        Err(error) if error.reason_code() == Some("agents_on_network") => stderr(
+            MessageDetail::window("journal.window.network.local.network.agents.on", [])
+                .render(locale),
+            1,
+        ),
+        Err(_) => stderr(
+            MessageDetail::window("journal.window.network.local.network.failed", []).render(locale),
+            1,
+        ),
     }
 }
 
-fn local_network_output(body: &Value, json_output: bool, opening: bool) -> CommandOutput {
+fn local_network_output(
+    locale: &str,
+    body: &Value,
+    json_output: bool,
+    opening: bool,
+) -> CommandOutput {
     if json_output {
         return stdout_line(body.to_string());
     }
@@ -399,24 +491,36 @@ fn local_network_output(body: &Value, json_output: bool, opening: bool) -> Comma
     if body.get("listening_on").and_then(Value::as_str) == Some("local_network")
         && body.get("source").and_then(Value::as_str) == Some("agents_on_network")
     {
-        return stdout(vec![LOCAL_NETWORK_AGENTS_ON_NETWORK.to_string()]);
+        return stdout(vec![
+            MessageDetail::window("journal.window.network.local.network.agents.on", [])
+                .render(locale),
+        ]);
     }
-    let mut lines = vec![
-        match body.get("listening_on").and_then(Value::as_str) {
-            Some("local_network") => LOCAL_NETWORK_OPEN,
-            Some("this_pc") => LOCAL_NETWORK_THIS_PC,
-            _ => LOCAL_NETWORK_NOT_LISTENING,
+    let mut lines = vec![match body.get("listening_on").and_then(Value::as_str) {
+        Some("local_network") => {
+            render_for(locale, "journal.cli.client.network.local.network.open", &[])
         }
-        .to_string(),
-    ];
+        Some("this_pc") => render_for(
+            locale,
+            "journal.cli.client.network.local.network.this.pc",
+            &[],
+        ),
+        _ => MessageDetail::window("journal.window.network.local.network.not.reachable", [])
+            .render(locale),
+    }];
     if opening && truthy(body.get("windows_asks")) {
-        lines.push(LOCAL_NETWORK_WINDOWS_ASKS.to_string());
+        lines.push(render_for(
+            locale,
+            "journal.cli.client.network.local.network.windows.asks",
+            &[],
+        ));
     }
     stdout(lines)
 }
 
 #[must_use]
 pub fn status(ctx: CommandContext<'_>) -> CommandOutput {
+    let locale = ctx.human_locale();
     let state = match request_json(
         ctx,
         HttpMethod::Get,
@@ -425,7 +529,7 @@ pub fn status(ctx: CommandContext<'_>) -> CommandOutput {
         None,
     ) {
         Ok(state) => state,
-        Err(error) => return link_error(error),
+        Err(error) => return link_error(locale, error),
     };
     let private_link = match request_json(
         ctx,
@@ -435,11 +539,11 @@ pub fn status(ctx: CommandContext<'_>) -> CommandOutput {
         None,
     ) {
         Ok(private_link) => private_link,
-        Err(error) => return link_error(error),
+        Err(error) => return link_error(locale, error),
     };
     let devices = match devices(ctx) {
         Ok(devices) => devices,
-        Err(error) => return link_error(error),
+        Err(error) => return link_error(locale, error),
     };
     let mut lines = Vec::new();
     if let Some(instance_id) = state
@@ -449,46 +553,103 @@ pub fn status(ctx: CommandContext<'_>) -> CommandOutput {
     {
         let mark = match crate::mark_text::mark_from_jid(instance_id) {
             Ok(mark) => mark,
-            Err(_) => return stderr(crate::mark_text::MARK_UNAVAILABLE_LINE, 1),
+            Err(_) => {
+                return stderr(
+                    render_for(locale, "journal.cli.client.network.mark.unavailable", &[]),
+                    1,
+                );
+            }
         };
         let spec = mark.to_render_spec();
         let spoken = crate::mark_text::spoken_mark(&spec);
         lines.push(spoken);
-        lines.push(format!("journal id:     {instance_id}"));
+        lines.push(display_for(
+            locale,
+            "journal.cli.client.network.journal.id",
+            [("id", &instance_id)],
+        ));
     } else {
-        lines.push(absent_instance_id_line(ctx).to_string());
+        lines.push(absent_instance_id_line(ctx));
     }
-    lines.push(format!(
-        "Relay URL:     {}",
-        display_value(state.get("relay_url"))
-    ));
-    lines.push(format!(
-        "Enrolled:      {}",
-        if truthy(state.get("enrolled")) {
-            "yes"
-        } else {
-            "no"
+    lines.push(match state.get("relay_url") {
+        None | Some(Value::Null) => render_for(
+            locale,
+            "journal.cli.client.network.status.relay.absent",
+            &[],
+        ),
+        Some(value) => {
+            let url = value
+                .as_str()
+                .map(str::to_owned)
+                .unwrap_or_else(|| value.to_string());
+            display_for(
+                locale,
+                "journal.cli.client.network.status.relay",
+                [("url", &url)],
+            )
         }
-    ));
-    let posture = if private_link.get("posture").and_then(Value::as_str) == Some("spl") {
-        "private network"
+    });
+    lines.push(if truthy(state.get("enrolled")) {
+        render_for(locale, "journal.cli.client.network.status.enrolled", &[])
     } else {
-        "direct"
+        render_for(locale, "journal.cli.client.network.status.unenrolled", &[])
+    });
+    let posture = if private_link.get("posture").and_then(Value::as_str) == Some("spl") {
+        render_for(locale, "journal.cli.client.network.reach.private", &[])
+    } else {
+        render_for(locale, "journal.cli.client.network.reach.direct", &[])
     };
-    lines.push(format!("Reach posture: {posture}"));
-    lines.push(format!(
-        "Private network: {}",
-        private_link_state_label(private_link.get("state"))
+    lines.push(posture);
+    lines.push(
+        match private_link
+            .get("state")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+        {
+            "enabled" => render_for(
+                locale,
+                "journal.cli.client.network.status.network.enabled",
+                &[],
+            ),
+            "not_enabled" => render_for(
+                locale,
+                "journal.cli.client.network.status.network.not.enabled",
+                &[],
+            ),
+            "inconsistent" => render_for(
+                locale,
+                "journal.cli.client.network.status.network.inconsistent",
+                &[],
+            ),
+            "" => render_for(
+                locale,
+                "journal.cli.client.network.status.network.unknown",
+                &[],
+            ),
+            other => display_for(
+                locale,
+                "journal.cli.client.network.status.network.other",
+                [("state", &other)],
+            ),
+        },
+    );
+    lines.push(display_for(
+        locale,
+        "journal.cli.client.network.devices.total",
+        [("total", &devices.len())],
     ));
-    lines.push(format!("Paired devices: {}", devices.len()));
-    lines
-        .push("Listen-WS state: (query convey /app/network/api/status for live state)".to_string());
+    lines.push(render_for(
+        locale,
+        "journal.cli.client.network.listen.state",
+        &[],
+    ));
     stdout(lines)
 }
 
 /// The status route gives no instance id both before a mark is locked in and
 /// when the link state can't be read. The identity route tells the two apart.
-fn absent_instance_id_line(ctx: CommandContext<'_>) -> &'static str {
+fn absent_instance_id_line(ctx: CommandContext<'_>) -> String {
+    let locale = ctx.human_locale();
     let identity = request_json(
         ctx,
         HttpMethod::Get,
@@ -499,20 +660,28 @@ fn absent_instance_id_line(ctx: CommandContext<'_>) -> &'static str {
     let no_identity_yet =
         identity.is_ok_and(|body| body.get("availability").and_then(Value::as_str) == Some("none"));
     if no_identity_yet {
-        crate::mark_text::NO_IDENTITY_YET_LINE
+        render_for(locale, "journal.cli.client.network.mark.none", &[])
     } else {
-        crate::mark_text::MARK_UNAVAILABLE_LINE
+        render_for(locale, "journal.cli.client.network.mark.unavailable", &[])
     }
 }
 
 #[must_use]
 pub fn unpair(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &[], &[]) {
+    let locale = ctx.human_locale();
+    let parsed = match parse_args_for(locale, ctx.args, &[], &[]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error, 1),
     };
     let Some(target) = parsed.positionals.first() else {
-        return stderr("Error: missing argument TARGET", 1);
+        return stderr(
+            display_for(
+                locale,
+                "journal.cli.client.missing.argument",
+                [("argument", &"TARGET")],
+            ),
+            1,
+        );
     };
     let payload = if target.starts_with("sha256:") {
         json!({"fingerprint": target})
@@ -526,13 +695,25 @@ pub fn unpair(ctx: CommandContext<'_>) -> CommandOutput {
         vec![],
         Some(payload),
     ) {
-        Ok(_) => stdout_line("Unpaired."),
+        Ok(_) => stdout_line(render_for(
+            locale,
+            "journal.cli.client.network.unpaired",
+            &[],
+        )),
         Err(error) => {
             if error.reason_code() == Some("paired_device_not_found") {
                 let message = if target.starts_with("sha256:") {
-                    format!("No paired device with fingerprint {target}")
+                    display_for(
+                        locale,
+                        "journal.cli.client.network.device.fingerprint.absent",
+                        [("fingerprint", &target)],
+                    )
                 } else {
-                    format!("No paired device with label {}", python_repr(target))
+                    display_for(
+                        locale,
+                        "journal.cli.client.network.device.label.absent",
+                        [("label", &python_repr(target))],
+                    )
                 };
                 return CommandOutput {
                     stdout: format!("{message}\n"),
@@ -541,26 +722,38 @@ pub fn unpair(ctx: CommandContext<'_>) -> CommandOutput {
                 };
             }
             if let Some(promoted) = promote_invalid_state_detail(&error) {
-                return link_error(promoted);
+                return link_error(locale, promoted);
             }
-            link_error(error)
+            link_error(locale, error)
         }
     }
 }
 
 #[must_use]
 pub fn set_label(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &["--label"], &["--clear"]) {
+    let options: &[&str] = &["--label"];
+    let locale = ctx.human_locale_with_options(options);
+    let parsed = match parse_args_for(locale, ctx.args, options, &["--clear"]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error, 1),
     };
     let Some(cid) = parsed.positionals.first() else {
-        return stderr("Error: missing argument CID", 1);
+        return stderr(
+            display_for(
+                locale,
+                "journal.cli.client.missing.argument",
+                [("argument", &"CID")],
+            ),
+            1,
+        );
     };
     let has_label = parsed.value("--label").is_some();
     let has_clear = parsed.has_flag("--clear");
     if has_label == has_clear {
-        return stderr("Error: specify either --label <LABEL> or --clear", 1);
+        return stderr(
+            render_for(locale, "journal.cli.client.network.label.options", &[]),
+            1,
+        );
     }
     let label_value = if has_clear {
         Value::Null
@@ -573,14 +766,19 @@ pub fn set_label(ctx: CommandContext<'_>) -> CommandOutput {
     let payload = json!({"label": label_value});
     let route = format!("/app/network/api/clients/{cid}/label");
     match request_json(ctx, HttpMethod::Patch, &route, vec![], Some(payload)) {
-        Ok(response) => {
-            let label_disp = response
-                .get("owner_label")
-                .and_then(Value::as_str)
-                .unwrap_or("(cleared)");
-            stdout_line(format!("Device label set to: {label_disp}"))
-        }
-        Err(error) => link_error(error),
+        Ok(response) => stdout_line(match response.get("owner_label").and_then(Value::as_str) {
+            Some(label) => display_for(
+                locale,
+                "journal.cli.client.network.device.label.set",
+                [("label", &label)],
+            ),
+            None => render_for(
+                locale,
+                "journal.cli.client.network.device.label.cleared",
+                &[],
+            ),
+        }),
+        Err(error) => link_error(locale, error),
     }
 }
 
@@ -608,6 +806,7 @@ fn append_device_section(
     heading: &str,
     devices: &[Value],
 ) {
+    let locale = ctx.human_locale();
     if devices.is_empty() {
         return;
     }
@@ -617,17 +816,24 @@ fn append_device_section(
     lines.push(heading.to_string());
     for device in devices {
         let label = display_label(device);
-        lines.push(format!(
-            "- {} · added {} · last seen {} [{}]",
-            label,
-            relative_time_field(ctx, device, "paired_at"),
-            relative_time_field(ctx, device, "last_seen_at"),
-            string_field(device, "fingerprint_short"),
+        lines.push(display_for(
+            locale,
+            "journal.cli.client.network.devices.seen",
+            [
+                ("label", &label),
+                ("added", &relative_time_field(ctx, device, "paired_at")),
+                ("seen", &relative_time_field(ctx, device, "last_seen_at")),
+                ("fingerprint", &string_field(device, "fingerprint_short")),
+            ],
         ));
     }
 }
 
-fn post_private_link(ctx: CommandContext<'_>, path: &str) -> Result<Value, ClientError> {
+fn post_private_link(
+    locale: &str,
+    ctx: CommandContext<'_>,
+    path: &str,
+) -> Result<Value, ClientError> {
     match request_json(ctx, HttpMethod::Post, path, vec![], None) {
         Ok(response) => Ok(response),
         Err(error) => {
@@ -637,10 +843,13 @@ fn post_private_link(ctx: CommandContext<'_>, path: &str) -> Result<Value, Clien
             if error.reason_code() == Some("service_busy") {
                 return Err(ClientError::ReasonRejected {
                     status: error.status().unwrap_or(503),
-                    error: error
-                        .detail()
-                        .unwrap_or("operation already running")
-                        .to_string(),
+                    error: error.detail().map_or_else(
+                        || {
+                            MessageDetail::window("journal.window.network.operation.busy", [])
+                                .render(locale)
+                        },
+                        str::to_owned,
+                    ),
                     reason_code: error.reason_code().map(str::to_string),
                     detail: error.detail().map(str::to_string),
                     payload: Box::new(Value::Null),
@@ -665,6 +874,7 @@ fn promote_invalid_state_detail(error: &ClientError) -> Option<ClientError> {
 }
 
 fn poll_private_link_until_terminal(
+    locale: &str,
     ctx: CommandContext<'_>,
     wait_seconds: f64,
     poll_interval: f64,
@@ -699,7 +909,7 @@ fn poll_private_link_until_terminal(
             return Ok((
                 status,
                 Some("timeout".to_string()),
-                Some("timed out waiting for your private network.".to_string()),
+                Some(MessageDetail::window("journal.window.network.window.explanation.timed.out.waiting.for.your.private", []).render(locale)),
             ));
         }
         if interval > 0.0 {
@@ -709,6 +919,7 @@ fn poll_private_link_until_terminal(
 }
 
 fn private_link_terminal_output(
+    locale: &str,
     mut out: String,
     status: &Value,
     phase: Option<String>,
@@ -716,16 +927,28 @@ fn private_link_terminal_output(
 ) -> CommandOutput {
     match phase.as_deref() {
         Some("enabled") => {
-            push_line(&mut out, PRIVATE_LINK_SETUP_SUCCESS);
+            push_line(
+                &mut out,
+                MessageDetail::window("journal.window.network.private.link.setup.success", [])
+                    .render(locale),
+            );
             CommandOutput::success(out)
         }
         Some(phase @ ("subscribing" | "needs_subscription")) => {
             push_line(
                 &mut out,
                 if phase == "subscribing" {
-                    PRIVATE_LINK_SUBSCRIBING
+                    render_for(
+                        locale,
+                        "!journal.cli.client.network.private.link.subscribing",
+                        &[],
+                    )
                 } else {
-                    PRIVATE_LINK_NEEDS_SUBSCRIPTION
+                    render_for(
+                        locale,
+                        "!journal.cli.client.network.private.link.needs.subscription",
+                        &[],
+                    )
                 },
             );
             if let Some(url) = status
@@ -740,7 +963,11 @@ fn private_link_terminal_output(
         }
         Some("revoked" | "error" | "timeout") => {
             let mut stderr_value = String::new();
-            push_line(&mut stderr_value, PRIVATE_LINK_SETUP_FAILED);
+            push_line(
+                &mut stderr_value,
+                MessageDetail::window("journal.window.network.private.link.setup.failed", [])
+                    .render(locale),
+            );
             if let Some(guidance) = guidance {
                 push_line(&mut stderr_value, guidance);
             }
@@ -751,7 +978,7 @@ fn private_link_terminal_output(
             }
         }
         _ => {
-            for line in render_private_link_status(status) {
+            for line in render_private_link_status(locale, status) {
                 push_line(&mut out, line);
             }
             CommandOutput::success(out)
@@ -759,34 +986,65 @@ fn private_link_terminal_output(
     }
 }
 
-fn render_private_link_status(status: &Value) -> Vec<String> {
+fn render_private_link_status(locale: &str, status: &Value) -> Vec<String> {
     let posture = if status.get("posture").and_then(Value::as_str) == Some("spl") {
-        "private network"
+        render_for(locale, "journal.cli.client.network.posture.private", &[])
     } else {
-        "direct"
+        render_for(locale, "journal.cli.client.network.posture.direct", &[])
     };
     let mut lines = vec![
-        format!("posture: {posture}"),
-        format!("state: {}", private_link_state_label(status.get("state"))),
-        format!(
-            "enrolled: {}",
-            if truthy(status.get("enrolled")) {
-                "yes"
-            } else {
-                "no"
-            }
-        ),
+        posture,
+        match status.get("state").and_then(Value::as_str).unwrap_or("") {
+            "enabled" => render_for(
+                locale,
+                "journal.cli.client.network.private.state.enabled",
+                &[],
+            ),
+            "not_enabled" => render_for(
+                locale,
+                "journal.cli.client.network.private.state.not.enabled",
+                &[],
+            ),
+            "inconsistent" => render_for(
+                locale,
+                "journal.cli.client.network.private.state.inconsistent",
+                &[],
+            ),
+            "" => render_for(
+                locale,
+                "journal.cli.client.network.private.state.unknown",
+                &[],
+            ),
+            other => display_for(
+                locale,
+                "journal.cli.client.network.private.state.other",
+                [("state", &other)],
+            ),
+        },
+        if truthy(status.get("enrolled")) {
+            render_for(locale, "journal.cli.client.network.private.enrolled", &[])
+        } else {
+            render_for(locale, "journal.cli.client.network.private.unenrolled", &[])
+        },
     ];
     if status.get("state").and_then(Value::as_str) == Some("enabled")
         && let Some(relay_url) = status.get("relay_url").and_then(Value::as_str)
     {
-        lines.push(format!("relay URL: {relay_url}"));
+        lines.push(display_for(
+            locale,
+            "journal.cli.client.network.relay.url",
+            [("url", &relay_url)],
+        ));
     }
     if let Some(operation) = status.get("operation").and_then(Value::as_object) {
         if let Some(phase) = operation.get("phase").and_then(Value::as_str)
             && !phase.is_empty()
         {
-            lines.push(format!("operation: {phase}"));
+            lines.push(display_for(
+                locale,
+                "journal.cli.client.network.operation",
+                [("phase", &phase)],
+            ));
         }
         if let Some(guidance) = operation.get("guidance").and_then(Value::as_str)
             && !guidance.is_empty()
@@ -815,11 +1073,11 @@ fn request_json(
     decode_response(&response)
 }
 
-fn parse_float_option(value: Option<&str>, default: f64) -> Result<f64, String> {
+fn parse_float_option(locale: &str, value: Option<&str>, default: f64) -> Result<f64, String> {
     match value {
         Some(value) => value
             .parse::<f64>()
-            .map_err(|_error| "Error: option requires a floating-point value.".to_string()),
+            .map_err(|_error| render_for(locale, "journal.cli.client.network.option.float", &[])),
         None => Ok(default),
     }
 }
@@ -836,17 +1094,22 @@ fn stderr(value: impl AsRef<str>, exit: i32) -> CommandOutput {
     CommandOutput::failure(format!("{}\n", value.as_ref()), exit)
 }
 
-fn link_error(error: ClientError) -> CommandOutput {
+fn link_error(locale: &str, error: ClientError) -> CommandOutput {
     match error {
-        ClientError::Unreachable { .. } => stderr(SERVICE_DOWN_MESSAGE, 1),
-        _ => stderr(error.message(), 1),
+        ClientError::Unreachable { .. } => stderr(service_down_for(locale), 1),
+        _ => stderr(error.message_for(locale), 1),
     }
 }
 
-fn link_error_preserving_stdout(stdout: String, error: ClientError, exit: i32) -> CommandOutput {
+fn link_error_preserving_stdout(
+    locale: &str,
+    stdout: String,
+    error: ClientError,
+    exit: i32,
+) -> CommandOutput {
     let stderr = match error {
-        ClientError::Unreachable { .. } => format!("{SERVICE_DOWN_MESSAGE}\n"),
-        _ => format!("{}\n", error.message()),
+        ClientError::Unreachable { .. } => format!("{}\n", service_down_for(locale)),
+        _ => format!("{}\n", error.message_for(locale)),
     };
     CommandOutput {
         stdout,
@@ -885,14 +1148,6 @@ fn display_label(device: &Value) -> String {
     }
 }
 
-fn display_value(value: Option<&Value>) -> String {
-    match value {
-        Some(Value::String(value)) => value.clone(),
-        Some(Value::Null) | None => "None".to_string(),
-        Some(value) => value.to_string(),
-    }
-}
-
 fn truthy(value: Option<&Value>) -> bool {
     match value {
         Some(Value::Bool(value)) => *value,
@@ -904,22 +1159,14 @@ fn truthy(value: Option<&Value>) -> bool {
     }
 }
 
-fn private_link_state_label(value: Option<&Value>) -> String {
-    match value.and_then(Value::as_str).unwrap_or("") {
-        "enabled" => "enabled".to_string(),
-        "not_enabled" => "not enabled".to_string(),
-        "inconsistent" => "needs repair".to_string(),
-        "" => "unknown".to_string(),
-        other => other.to_string(),
-    }
-}
-
 fn relative_time_field(ctx: CommandContext<'_>, object: &Value, key: &str) -> String {
     let Some(value) = object.get(key).and_then(Value::as_str) else {
-        return "never".to_string();
+        return MessageDetail::window("journal.window.network.delivery.checkin.never", [])
+            .render(ctx.human_locale());
     };
     if value.is_empty() {
-        return "never".to_string();
+        return MessageDetail::window("journal.window.network.delivery.checkin.never", [])
+            .render(ctx.human_locale());
     }
     let Some(then) = DateTime::strptime("%Y-%m-%dT%H:%M:%SZ", value)
         .ok()
@@ -929,40 +1176,25 @@ fn relative_time_field(ctx: CommandContext<'_>, object: &Value, key: &str) -> St
     };
     let now = Timestamp::try_from(clock_now(ctx)).expect("the clock is within the supported range");
     let seconds = (now.as_second() - then.as_second()).max(0);
-    format!("{} ago", relative_time(seconds))
-}
-
-fn relative_time(seconds: i64) -> String {
-    if seconds < 60 {
-        return plural(seconds, "second");
-    }
-    let minutes = seconds / 60;
-    if minutes < 60 {
-        return plural(minutes, "minute");
-    }
-    let hours = minutes / 60;
-    if hours < 24 {
-        return plural(hours, "hour");
-    }
-    let days = hours / 24;
-    if days < 7 {
-        return plural(days, "day");
-    }
-    if days < 28 {
-        return plural(days / 7, "week");
-    }
-    if days < 60 {
-        return "1 month".to_string();
-    }
-    plural(days / 30, "month")
-}
-
-fn plural(value: i64, unit: &str) -> String {
-    if value == 1 {
-        format!("1 {unit}")
+    let days = seconds / 86400;
+    let (id, count) = if seconds < 60 {
+        ("journal.cli.client.network.time.second", seconds)
+    } else if seconds < 3600 {
+        ("journal.cli.client.network.time.minute", seconds / 60)
+    } else if seconds < 86400 {
+        ("journal.cli.client.network.time.hour", seconds / 3600)
+    } else if days < 7 {
+        ("journal.cli.client.network.time.day", days)
+    } else if days < 28 {
+        ("journal.cli.client.network.time.week", days / 7)
     } else {
-        format!("{value} {unit}s")
-    }
+        ("journal.cli.client.network.time.month", (days / 30).max(1))
+    };
+    render_for(
+        ctx.human_locale(),
+        id,
+        &[("quantity", CopyValue::Cardinal(count))],
+    )
 }
 
 fn clock_now(ctx: CommandContext<'_>) -> SystemTime {

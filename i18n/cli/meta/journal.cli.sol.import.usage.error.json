@@ -1,0 +1,38 @@
+{
+  "description": "Native import command output for import usage error. Keep literal arguments and command syntax intact.",
+  "context": "Native import command output for import usage error. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a882db0a18e1dcba066054e363d6bdd51066d6cfd8909b6d44d9dacf5afa6e52",
+  "max_length": 519,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_import_h_timestamp_ti",
+      "kind": "accepted-input",
+      "value": "solstone import [-h] [--timestamp TIMESTAMP] [--setting SETTING] [--source SOURCE] [--force] [--auto [AUTO]] [--dry-run] [--backends] [--sync BACKEND] [--save] [--list-importers] [--json] [-v] [media]"
+    },
+    {
+      "name": "solstone_import",
+      "kind": "accepted-input",
+      "value": "solstone import"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

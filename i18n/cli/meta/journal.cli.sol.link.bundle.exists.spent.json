@@ -1,0 +1,21 @@
+{
+  "description": "Native link command output for link bundle exists spent. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link bundle exists spent. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "583775c97fdbf40a1eb390a176ade62fc3852eac2c699d0c08a746b329f92638",
+  "max_length": 366,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Native link command output for link bundle home missing. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link bundle home missing. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "30d3edd04f4c2ceac19cf928004a32f2883740ce3de5822c5438c4f4290d83f9",
+  "max_length": 213,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

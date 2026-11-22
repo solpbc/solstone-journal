@@ -1,0 +1,33 @@
+{
+  "description": "Native link command output for link mark terminal required. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link mark terminal required. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c0757be22afdf4a5d1e775557fbf229290042a2523103d27c25c9cf21017c6ec",
+  "max_length": 483,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "mark_word_word",
+      "kind": "accepted-input",
+      "value": "--mark \"word word\""
+    },
+    {
+      "name": "solstone_link_join",
+      "kind": "accepted-input",
+      "value": "solstone link join"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

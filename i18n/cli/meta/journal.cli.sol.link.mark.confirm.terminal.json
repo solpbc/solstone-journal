@@ -1,0 +1,33 @@
+{
+  "description": "Native link command output for link mark confirm terminal. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link mark confirm terminal. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d8e7baab23f2c397a047007349c08d6c02b4a4b342a6ce6cc138d1e6625d8675",
+  "max_length": 492,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_link_confirm",
+      "kind": "accepted-input",
+      "value": "solstone link confirm"
+    },
+    {
+      "name": "mark_word_word",
+      "kind": "accepted-input",
+      "value": "--mark \"word word\""
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Text shown by the speakers follow repair start command.",
+  "context": "Text shown by the speakers follow repair start command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "operation_id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2b184df8c2c520233b5914096ffeefd1b62e8080a9f57ff7017790b84e325e8e",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Text shown by the entities move entity command.",
+  "context": "Text shown by the entities move entity command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "from_facet",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "eedecfe10ddebe5965d32d7deea36494d7a1df8f67992577e1fd93f0dd32eb10",
+  "max_length": 195,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "option_from",
+      "kind": "command",
+      "value": "--from"
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "description": "Native import command output for import duplicate entries. Keep literal arguments and command syntax intact.",
+  "context": "Native import command output for import duplicate entries. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "entries",
+      "type": "string"
+    },
+    {
+      "name": "entries_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "date",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "7165f9e259693c25552ddaece4568397b4933f27af51f04f7aede4bebe494987",
+  "max_length": 654,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_import",
+      "kind": "accepted-input",
+      "value": "solstone import"
+    }
+  ],
+  "selector": {
+    "name": "entries_quantity",
+    "type": "cardinal"
+  }
+}

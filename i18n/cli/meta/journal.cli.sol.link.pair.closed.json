@@ -1,0 +1,16 @@
+{
+  "description": "Native link command output for link pair closed. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link pair closed. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fd13c53e08ee6fbe1164b28bcacccba3e8c1ff992d43a41381fbf142831e5c13",
+  "max_length": 276,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

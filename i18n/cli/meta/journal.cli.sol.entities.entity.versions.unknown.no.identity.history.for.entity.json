@@ -1,0 +1,16 @@
+{
+  "description": "Text shown by the entities entity.versions.unknown command.",
+  "context": "Text shown by the entities entity.versions.unknown command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4d0e2691345c2693be96a5f5ef567cd7287e391ce5a89b5fcf169468308555b8",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

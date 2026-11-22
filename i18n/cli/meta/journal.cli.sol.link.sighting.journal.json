@@ -1,0 +1,28 @@
+{
+  "description": "Native link command output for link sighting journal. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link sighting journal. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "spoken",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f0953821bf409a17d22e22714771a70a86a8f9ec9d3fa5082eaa751e9b52e62b",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "space_3",
+      "kind": "whitespace",
+      "value": "   "
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "description": "Native health command output for health last segment at. Keep literal arguments and command syntax intact.",
+  "context": "Native health command output for health last segment at. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3ab07a25b7fdb363a7211774347b98c7760d4df91d6d4bd051d471b7670132fb",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "last_segment_at",
+      "kind": "accepted-input",
+      "value": "last_segment_at"
+    },
+    {
+      "name": "space_2",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ]
+}

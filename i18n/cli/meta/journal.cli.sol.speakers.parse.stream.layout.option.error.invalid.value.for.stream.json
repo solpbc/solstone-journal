@@ -1,0 +1,23 @@
+{
+  "description": "Text shown by the speakers parse stream layout option command.",
+  "context": "Text shown by the speakers parse stream layout option command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "30dd4579db603c391ae95117c0777d52fb0547f5e10afab28ba3faaca231f6a4",
+  "max_length": 150,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "option_stream_layout",
+      "kind": "command",
+      "value": "--stream-layout"
+    }
+  ]
+}

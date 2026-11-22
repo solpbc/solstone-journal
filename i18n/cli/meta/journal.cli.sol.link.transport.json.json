@@ -1,0 +1,28 @@
+{
+  "description": "Native link command output for link transport json. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link transport json. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7b36f85f159a0b3f02b78557b1739ebd3f968010463194d22978d19804067938",
+  "max_length": 246,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "json",
+      "kind": "accepted-input",
+      "value": "JSON"
+    },
+    {
+      "name": "url",
+      "kind": "accepted-input",
+      "value": "URL"
+    }
+  ]
+}

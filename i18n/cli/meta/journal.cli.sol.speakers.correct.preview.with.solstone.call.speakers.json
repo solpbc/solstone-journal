@@ -1,0 +1,32 @@
+{
+  "description": "Text shown by the speakers correct command.",
+  "context": "Text shown by the speakers correct command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "old_speaker",
+      "type": "string"
+    },
+    {
+      "name": "new_speaker",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c505502211973d192db3eabf838114bc298fc0c19d1e43ad970e85537c7fb67b",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone call speakers propagate-correction"
+    }
+  ]
+}

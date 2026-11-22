@@ -1,0 +1,30 @@
+{
+  "description": "Complete counted entities summary for search output.",
+  "context": "Complete counted entities summary for search output.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "0a412b7cd22ec3c93c9aec963ee21e27cfbb941dcc9f477119f9fa0823caf787",
+  "max_length": 246,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "description": "Native health command output for health backlog thinking days. Keep literal arguments and command syntax intact.",
+  "context": "Native health command output for health backlog thinking days. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "thinking",
+      "type": "string"
+    },
+    {
+      "name": "thinking_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "days",
+      "type": "string"
+    },
+    {
+      "name": "days_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "ec4ac42a28d04528ee9daa8793bbecd8f523e106c6c4a0b134f60c39fb96a77f",
+  "max_length": 1329,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "space_2",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ],
+  "selector": {
+    "name": "thinking_quantity",
+    "type": "cardinal"
+  }
+}

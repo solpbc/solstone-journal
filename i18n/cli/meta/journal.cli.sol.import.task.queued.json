@@ -1,0 +1,28 @@
+{
+  "description": "Native import command output for import task queued. Keep literal arguments and command syntax intact.",
+  "context": "Native import command output for import task queued. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "task_id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fb207d521a2b8160ec82d68d24a3da820ae010ffd372732c6707ced56882dad4",
+  "max_length": 150,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Native health command output for health range. Keep literal arguments and command syntax intact.",
+  "context": "Native health command output for health range. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "start",
+      "type": "string"
+    },
+    {
+      "name": "end",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8df8acd65ab61d0c4e75af0cba933d4246ec43cc9ab332d24434791db0daea0b",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

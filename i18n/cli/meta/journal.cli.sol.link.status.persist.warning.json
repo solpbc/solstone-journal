@@ -1,0 +1,23 @@
+{
+  "description": "Native link command output for link status persist warning. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link status persist warning. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e62f6373cc3ac2c6755c868af22ef9fa06abb6f48fe5ad9859d4b9403cc2503f",
+  "max_length": 393,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

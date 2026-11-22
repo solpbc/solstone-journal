@@ -1,0 +1,16 @@
+{
+  "description": "Native health command output for health synthesis. Keep literal arguments and command syntax intact.",
+  "context": "Native health command output for health synthesis. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d38d4a7a5bde7081c0482d4a39a85502d0bd7776d4e6dbcefa61ec46ebe4ac04",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

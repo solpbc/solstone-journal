@@ -1,0 +1,16 @@
+{
+  "description": "Native link command output for link transport http. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link transport http. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1a1d3783cbcfdf750e68ca9b86fe25e6d6fae0f2250112215bb1baf7092b3532",
+  "max_length": 249,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Complete counted speakers summary for render presence.",
+  "context": "Complete counted speakers summary for render presence.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "gaps",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "7e94e27fd7949ffc54733f6e6635f7a93e739cb5d743ef71122acf02b07a6a63",
+  "max_length": 279,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

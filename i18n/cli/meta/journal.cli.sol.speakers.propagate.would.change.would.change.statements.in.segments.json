@@ -1,0 +1,39 @@
+{
+  "description": "Complete counted speakers summary for propagate.would.change.",
+  "context": "Complete counted speakers summary for propagate.would.change.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "statement_count",
+      "type": "string"
+    },
+    {
+      "name": "segment_count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "segment_count_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "739ae5e8302d355af2676cfb2cf2dd4d76f0d10c688f6320123a41fb3eb40887",
+  "max_length": 1428,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

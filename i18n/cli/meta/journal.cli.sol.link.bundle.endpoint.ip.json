@@ -1,0 +1,23 @@
+{
+  "description": "Native link command output for link bundle endpoint ip. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link bundle endpoint ip. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "46295435b3a5cd32710caf99c1086116d4401622b5e49aaf3938e0dc9d6e769f",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "lan",
+      "kind": "accepted-input",
+      "value": "LAN"
+    }
+  ]
+}

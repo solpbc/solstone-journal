@@ -1,0 +1,23 @@
+{
+  "description": "Text shown by the entities resolve day command.",
+  "context": "Text shown by the entities resolve day command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "abd2ac9e12a477cef1b5db08eb341fe28331907064fce5b01b2909e1cba76645",
+  "max_length": 210,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_sol_day",
+      "kind": "accepted-input",
+      "value": "SOL_DAY"
+    }
+  ]
+}

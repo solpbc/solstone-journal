@@ -1,0 +1,33 @@
+{
+  "description": "Native link command output for link serve forward either unnamed. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link serve forward either unnamed. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "port",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a23217ae12f3e406f695443d520b4e5e27d51bd5166ae169def2bff6bd13161d",
+  "max_length": 273,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "value_127_0_0_1",
+      "kind": "accepted-input",
+      "value": "127.0.0.1:"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

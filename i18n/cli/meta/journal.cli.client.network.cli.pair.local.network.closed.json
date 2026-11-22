@@ -1,0 +1,23 @@
+{
+  "description": "The network command reports pairing, private network or device status to the person running it.",
+  "context": "The network command reports pairing, private network or device status to the person running it.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f1ec46762c4f1518012f41d50ddc08da975a200d00569076d6e74e022cfa60ed",
+  "max_length": 579,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "call_open",
+      "kind": "command",
+      "value": "solstone call link local-network open"
+    }
+  ]
+}

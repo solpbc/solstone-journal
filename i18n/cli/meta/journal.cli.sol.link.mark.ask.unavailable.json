@@ -1,0 +1,28 @@
+{
+  "description": "Native link command output for link mark ask unavailable. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link mark ask unavailable. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0ff63c5d6651ad0dfdbefd87ab89b7b232393e1adcd51a30ce623bd61146951a",
+  "max_length": 174,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "continue",
+      "kind": "accepted-input",
+      "value": "continue"
+    },
+    {
+      "name": "cancel",
+      "kind": "accepted-input",
+      "value": "cancel"
+    }
+  ]
+}

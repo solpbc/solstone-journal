@@ -1,0 +1,48 @@
+{
+  "description": "Text shown by the speakers backfill command.",
+  "context": "Text shown by the speakers backfill command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8ca873d51d1be5182db2c228fc0b804a21221ddc08297f49106862de0bc6cfd3",
+  "max_length": 648,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone call speakers backfill"
+    },
+    {
+      "name": "option_operation_id",
+      "kind": "command",
+      "value": "--operation-id"
+    },
+    {
+      "name": "option_commit",
+      "kind": "command",
+      "value": "--commit"
+    },
+    {
+      "name": "spacing_2",
+      "kind": "whitespace",
+      "value": "  "
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

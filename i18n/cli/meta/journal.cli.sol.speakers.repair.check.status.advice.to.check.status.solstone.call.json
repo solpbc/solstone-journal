@@ -1,0 +1,38 @@
+{
+  "description": "Text shown by the speakers repair check status advice command.",
+  "context": "Text shown by the speakers repair check status advice command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "operation_id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5e178a0ed9715846164df7301132dff7404911c985d5adbb2182651dcd46e65f",
+  "max_length": 315,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone call speakers repair-status"
+    },
+    {
+      "name": "spacing_2",
+      "kind": "whitespace",
+      "value": "  "
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

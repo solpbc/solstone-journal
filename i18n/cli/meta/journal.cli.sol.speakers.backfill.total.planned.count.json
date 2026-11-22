@@ -1,0 +1,28 @@
+{
+  "description": "Text shown by the speakers backfill command.",
+  "context": "Text shown by the speakers backfill command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8e6f0a88c41c087c1aad4638faae042480a993441e88447ec0d955a9b2349f6a",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "spacing_7",
+      "kind": "whitespace",
+      "value": "       "
+    }
+  ]
+}

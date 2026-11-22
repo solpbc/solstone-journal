@@ -1,0 +1,36 @@
+{
+  "description": "Text shown by the entities observations.partial.oldest command.",
+  "context": "Text shown by the entities observations.partial.oldest command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "shown",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5c248da397ecf9e53a358fef484a5d99bb56cd4ced6d0779931c98bc2a51d76a",
+  "max_length": 318,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "option_all",
+      "kind": "command",
+      "value": "--all"
+    }
+  ]
+}

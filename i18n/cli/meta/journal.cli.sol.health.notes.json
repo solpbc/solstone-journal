@@ -1,0 +1,16 @@
+{
+  "description": "Native health command output for health notes. Keep literal arguments and command syntax intact.",
+  "context": "Native health command output for health notes. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "926167f1ad1bbfa4626b9145260f562ff8315e905d168709ee5d739fdf7cff82",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

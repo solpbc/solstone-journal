@@ -1,0 +1,33 @@
+{
+  "description": "Native health command output for health index activity at. Keep literal arguments and command syntax intact.",
+  "context": "Native health command output for health index activity at. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f4cc83cdecc977d5b7fc082ffd29ee0a0cce088ed8ae1a6782b30ed26b31a83c",
+  "max_length": 138,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "index_activity_at",
+      "kind": "accepted-input",
+      "value": "index_activity_at"
+    },
+    {
+      "name": "space_2",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ]
+}

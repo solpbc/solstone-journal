@@ -1,0 +1,41 @@
+{
+  "description": "Text shown by the speakers propagate command.",
+  "context": "Text shown by the speakers propagate command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "operation",
+      "type": "string"
+    },
+    {
+      "name": "old_speaker",
+      "type": "string"
+    },
+    {
+      "name": "new_speaker",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "76e4814970168266bc8ecf271b7bb6a722581863fef9069777a0f363a9bbc541",
+  "max_length": 282,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone call"
+    },
+    {
+      "name": "option_commit",
+      "kind": "command",
+      "value": "--commit"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Text shown by the speakers seed from imports command.",
+  "context": "Text shown by the speakers seed from imports command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2981a81b1dad13ec08417b3c97117e3c4104cd1e750c7f6f74338c61cf56f6c1",
+  "max_length": 141,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

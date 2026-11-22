@@ -1,0 +1,28 @@
+{
+  "description": "Native link command output for link serve warning. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link serve warning. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c435f2275ebdbdec7e5ede0dc3c2f02ed1b60ef6f3600d5bc7db7817a635b7a4",
+  "max_length": 678,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "api",
+      "kind": "accepted-input",
+      "value": "API"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

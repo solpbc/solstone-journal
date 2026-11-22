@@ -1,0 +1,28 @@
+{
+  "description": "Native link command output for link serve bind failed. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link serve bind failed. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "port",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d77378549a6366fe386fdb8d413768a05ae52ccef35e3acd9cd07e58bbe81b44",
+  "max_length": 162,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "value_127_0_0_1",
+      "kind": "accepted-input",
+      "value": "127.0.0.1:"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Native link command output for link transport framing. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link transport framing. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9b744a1ee622619ab27f22b09761e49c7685a0a7db69c244a53d8108d9683862",
+  "max_length": 231,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "spl",
+      "kind": "accepted-input",
+      "value": "SPL"
+    }
+  ]
+}

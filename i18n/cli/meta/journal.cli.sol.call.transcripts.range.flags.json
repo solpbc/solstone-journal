@@ -1,0 +1,38 @@
+{
+  "description": "Native solstone call transcripts command output. Preserve supplied values and the command syntax.",
+  "context": "Native solstone call transcripts command output. Preserve supplied values and the command syntax.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3c0fbf798e954d701d7398b9e86ce5d5763523e3b42586b356a1c97e9818739c",
+  "max_length": 186,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_1",
+      "kind": "accepted-input",
+      "value": "--segment"
+    },
+    {
+      "name": "literal_2",
+      "kind": "accepted-input",
+      "value": "--segments"
+    },
+    {
+      "name": "literal_3",
+      "kind": "accepted-input",
+      "value": "--start"
+    },
+    {
+      "name": "literal_4",
+      "kind": "accepted-input",
+      "value": "--length"
+    }
+  ]
+}

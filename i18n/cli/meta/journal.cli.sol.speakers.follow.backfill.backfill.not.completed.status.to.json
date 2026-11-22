@@ -1,0 +1,47 @@
+{
+  "description": "Text shown by the speakers follow backfill command.",
+  "context": "Text shown by the speakers follow backfill command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "status_kind",
+      "type": "string"
+    },
+    {
+      "name": "operation_id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ad4d23f9b1b0b075edd268735e93327ce85c49adffe6e06c43c2c9cbc009f8cd",
+  "max_length": 768,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone call speakers backfill-resume"
+    },
+    {
+      "name": "command_1",
+      "kind": "command",
+      "value": "solstone call speakers backfill-status"
+    },
+    {
+      "name": "spacing_2",
+      "kind": "whitespace",
+      "value": "  "
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Text shown by the speakers const command.",
+  "context": "Text shown by the speakers const command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b125283ed463308eefcaf82ed74b0a29532528da437198bd80b782b283914014",
+  "max_length": 192,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "option_commit",
+      "kind": "command",
+      "value": "--commit"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

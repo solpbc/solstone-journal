@@ -1,0 +1,23 @@
+{
+  "description": "Native solstone call activities command output. Preserve supplied values and the command syntax.",
+  "context": "Native solstone call activities command output. Preserve supplied values and the command syntax.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3ffca826a3fc582b7f117b280529c71cde30ecf39d8ec5c87a1fa95445da58cf",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_1",
+      "kind": "accepted-input",
+      "value": "SPAN_ID"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Native import command output for import response malformed. Keep literal arguments and command syntax intact.",
+  "context": "Native import command output for import response malformed. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "10ebf5de8030a9b15855b62711e39d6a3c07f501751f4ac52939358397d347a2",
+  "max_length": 201,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_import",
+      "kind": "accepted-input",
+      "value": "solstone import"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

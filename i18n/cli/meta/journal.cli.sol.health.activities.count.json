@@ -1,0 +1,33 @@
+{
+  "description": "Native health command output for health activities count. Keep literal arguments and command syntax intact.",
+  "context": "Native health command output for health activities count. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b790dd20df6b226e87a5df561aecc1b8c525cc960cd70bf0cf63c8acca78a969",
+  "max_length": 135,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "activities_count",
+      "kind": "accepted-input",
+      "value": "activities_count"
+    },
+    {
+      "name": "space_2",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ]
+}

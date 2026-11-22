@@ -1,0 +1,21 @@
+{
+  "description": "Native import command output for import notice failed. Keep literal arguments and command syntax intact.",
+  "context": "Native import command output for import notice failed. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e0993a3c2b7d7fbb79c1cabee5c686ee1e95a5057ec9be5d07e623029352acbe",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

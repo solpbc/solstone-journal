@@ -1,0 +1,43 @@
+{
+  "description": "Native link command output for link serve usage error. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link serve usage error. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bfd8db3c912d4a4e0631da916dee6cff87a71c826e47cb8e30b95bf6838d2228",
+  "max_length": 495,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "relay_url_relay_url_direct_rel",
+      "kind": "accepted-input",
+      "value": "                      [--relay-url RELAY_URL] [--direct | --relay-only]"
+    },
+    {
+      "name": "solstone_link_serve_h_label_la",
+      "kind": "accepted-input",
+      "value": "solstone link serve [-h] [--label LABEL] [--port PORT]"
+    },
+    {
+      "name": "solstone_link_serve",
+      "kind": "accepted-input",
+      "value": "solstone link serve"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Text shown by the entities error.without.name.hidden command.",
+  "context": "Text shown by the entities error.without.name.hidden command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5b507e2e083895c8f9ab5cf196cf833ca9422557cdaa33478a2700587077df63",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Native link command output for link serve policy conflict. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link serve policy conflict. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3751aaa7fdecb98d9edbe68ebcc2433c343a79ff7f07e130c4583982a7be1d46",
+  "max_length": 189,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "relay_only",
+      "kind": "accepted-input",
+      "value": "--relay-only"
+    },
+    {
+      "name": "direct",
+      "kind": "accepted-input",
+      "value": "--direct"
+    }
+  ]
+}

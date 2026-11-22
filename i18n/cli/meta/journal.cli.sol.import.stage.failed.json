@@ -1,0 +1,33 @@
+{
+  "description": "Native import command output for import stage failed. Keep literal arguments and command syntax intact.",
+  "context": "Native import command output for import stage failed. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "941f6aa87bea298f7e2cc14139a965de2adcc30045fbf3ccfbd45429045957bb",
+  "max_length": 213,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_import",
+      "kind": "accepted-input",
+      "value": "solstone import"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

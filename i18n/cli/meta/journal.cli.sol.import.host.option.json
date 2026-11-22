@@ -1,0 +1,28 @@
+{
+  "description": "Native import command output for import host option. Keep literal arguments and command syntax intact.",
+  "context": "Native import command output for import host option. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "option",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a92998f4b2e452b3b484c12e935a4bd56f10ea190d2656403f3a313ed405ceda",
+  "max_length": 324,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_journal_importer",
+      "kind": "accepted-input",
+      "value": "solstone journal importer"
+    }
+  ]
+}

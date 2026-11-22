@@ -1,0 +1,23 @@
+{
+  "description": "Text shown by the speakers identify error command.",
+  "context": "Text shown by the speakers identify error command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bceafe31dc29773b5193416f3acd616829fb4b19639b727c1bc104c0544c22ba",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone call speakers identify-operations"
+    }
+  ]
+}

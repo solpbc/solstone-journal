@@ -1,0 +1,28 @@
+{
+  "description": "Native link command output for link mark ask identified. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link mark ask identified. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "21b807ac0ce8bfaea25ed1e8216419c71493589dd83cdd4a5347e7c76fe9f55e",
+  "max_length": 165,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "yes",
+      "kind": "accepted-input",
+      "value": "yes"
+    },
+    {
+      "name": "no",
+      "kind": "accepted-input",
+      "value": "no"
+    }
+  ]
+}

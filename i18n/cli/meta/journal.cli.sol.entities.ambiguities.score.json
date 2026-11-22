@@ -1,0 +1,32 @@
+{
+  "description": "Text shown by the entities ambiguities command.",
+  "context": "Text shown by the entities ambiguities command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "candidate",
+      "type": "string"
+    },
+    {
+      "name": "score",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "856bf6ff009f42bd8021dc9ecd30c04bd4a92b0b7a928fca44ef73b8cadf4a6a",
+  "max_length": 141,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "spacing_2",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ]
+}

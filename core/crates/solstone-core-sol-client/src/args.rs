@@ -22,7 +22,32 @@ impl ParsedArgs {
     }
 }
 
+pub(crate) fn option_argument_for(locale: &str, token: &str) -> String {
+    solstone_core_cli_copy::display_for(
+        locale,
+        "journal.cli.client.option.value",
+        [("option", &token)],
+    )
+}
+
+pub(crate) fn unknown_option_for(locale: &str, token: &str) -> String {
+    solstone_core_cli_copy::display_for(
+        locale,
+        "journal.cli.client.option.unknown",
+        [("option", &token)],
+    )
+}
+
 pub(crate) fn parse_args(
+    args: &[String],
+    options: &[&str],
+    flags: &[&str],
+) -> Result<ParsedArgs, String> {
+    parse_args_for(solstone_core_cli_copy::ENGLISH, args, options, flags)
+}
+
+pub(crate) fn parse_args_for(
+    locale: &str,
     args: &[String],
     options: &[&str],
     flags: &[&str],
@@ -38,19 +63,65 @@ pub(crate) fn parse_args(
         } else if options.contains(&token.as_str()) {
             index += 1;
             let Some(value) = args.get(index) else {
-                return Err(format!("Error: option {token} requires an argument."));
+                return Err(option_argument_for(locale, token));
             };
             parsed.values.push((token.clone(), value.clone()));
         } else if flags.contains(&token.as_str()) {
             parsed.flags.push(token.clone());
         } else if token.starts_with('-') {
-            return Err(format!("Error: unknown option {token}."));
+            return Err(unknown_option_for(locale, token));
         } else {
             parsed.positionals.push(token.clone());
         }
         index += 1;
     }
     Ok(parsed)
+}
+
+pub(crate) enum Missing<'a> {
+    Argument(&'a str),
+    Option(&'a str),
+}
+
+/// Render the original 80-column, plain-text argument error with literal command syntax.
+pub(crate) fn typer_missing_for(
+    locale: &str,
+    command: &str,
+    syntax: &str,
+    missing: Missing<'_>,
+) -> crate::command::CommandOutput {
+    use solstone_core_cli_copy::{display_for, render_for};
+
+    let usage = display_for(
+        locale,
+        "journal.cli.sol.help.command.usage",
+        [("syntax", &syntax)],
+    );
+    let hint = display_for(
+        locale,
+        "journal.cli.sol.call.typer.try",
+        [("command", &command)],
+    );
+    let title = render_for(locale, "journal.cli.sol.call.typer.error", &[]);
+    let message = match missing {
+        Missing::Argument(name) => display_for(
+            locale,
+            "journal.cli.sol.call.typer.missing.argument",
+            [("name", &name)],
+        ),
+        Missing::Option(option) => display_for(
+            locale,
+            "journal.cli.sol.call.typer.missing.option",
+            [("option", &option)],
+        ),
+    };
+    let rule = "─".repeat(75_usize.saturating_sub(title.chars().count()));
+    let padding = " ".repeat(77_usize.saturating_sub(message.chars().count()));
+    let bottom = "─".repeat(78);
+    crate::command::CommandOutput::failure(
+        format!("{usage}\n{hint}\n╭─ {title} {rule}╮\n│ {message}{padding}│\n╰{bottom}╯\n"),
+        2,
+    )
 }
 
 #[cfg(test)]

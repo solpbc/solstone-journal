@@ -1,0 +1,40 @@
+{
+  "description": "Text shown by the speakers presence.candidate.meeting.voiced command.",
+  "context": "Text shown by the speakers presence.candidate.meeting.voiced command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "entity",
+      "type": "string"
+    },
+    {
+      "name": "first_count",
+      "type": "string"
+    },
+    {
+      "name": "second_count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ef209ec58f937a1d223d7949f2193970e17bd2580674af218cbafad6402fe5d6",
+  "max_length": 315,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "spacing_2",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ]
+}

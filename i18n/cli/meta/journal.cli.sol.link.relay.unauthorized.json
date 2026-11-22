@@ -1,0 +1,23 @@
+{
+  "description": "Native link command output for link relay unauthorized. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link relay unauthorized. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ba2f815f98d01fbc1000d20a59a73412839e86c9243f4f274cad5c2ee182f6dc",
+  "max_length": 255,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_link_join",
+      "kind": "accepted-input",
+      "value": "solstone link join"
+    }
+  ]
+}

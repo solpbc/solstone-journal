@@ -1,0 +1,39 @@
+{
+  "description": "Native import command output for import size total. Keep literal arguments and command syntax intact.",
+  "context": "Native import command output for import size total. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "recordings",
+      "type": "string"
+    },
+    {
+      "name": "recordings_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "days",
+      "type": "string"
+    },
+    {
+      "name": "days_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "0e4fb2e6e759ad14d60089e6dba9a0c4ed8ceccf9773d9de05daba664af47105",
+  "max_length": 822,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "recordings_quantity",
+    "type": "cardinal"
+  }
+}

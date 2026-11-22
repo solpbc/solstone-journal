@@ -1,0 +1,25 @@
+{
+  "description": "Text shown by the speakers repair status command.",
+  "context": "Text shown by the speakers repair status command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "stage",
+      "type": "string"
+    },
+    {
+      "name": "code",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5cecadfc17869d7b740c28bdb62bed5e43f642737edc3057146304771113c1e8",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

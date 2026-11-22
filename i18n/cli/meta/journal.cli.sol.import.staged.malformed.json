@@ -1,0 +1,33 @@
+{
+  "description": "Native import command output for import staged malformed. Keep literal arguments and command syntax intact.",
+  "context": "Native import command output for import staged malformed. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "staged_path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3b1d1c112c542070f865f9ae15b786efdd7e6da7cb8769eaf3afdb20bcdafb7d",
+  "max_length": 366,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_import",
+      "kind": "accepted-input",
+      "value": "solstone import"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

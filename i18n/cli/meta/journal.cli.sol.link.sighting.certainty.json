@@ -1,0 +1,23 @@
+{
+  "description": "Native link command output for link sighting certainty. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link sighting certainty. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "eec98be13ed20a7d22eb8e7d589b574ab0fe285bb97cbd1881a8c330ee08a386",
+  "max_length": 228,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

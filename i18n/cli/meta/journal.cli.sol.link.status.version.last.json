@@ -1,0 +1,28 @@
+{
+  "description": "Native link command output for link status version last. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link status version last. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "version",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8340876d279821dc514496177a836c03af1ffef65d4352f9f5cc8515ea973e34",
+  "max_length": 171,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

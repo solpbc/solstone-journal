@@ -1,0 +1,33 @@
+{
+  "description": "Native link command output for link transport no endpoint. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link transport no endpoint. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6afd0316ebf860907c99a50746db1255c77050318cf4d94ef25b338fa50c95f2",
+  "max_length": 381,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_link_join",
+      "kind": "accepted-input",
+      "value": "solstone link join"
+    },
+    {
+      "name": "relay_url",
+      "kind": "accepted-input",
+      "value": "--relay-url"
+    },
+    {
+      "name": "direct",
+      "kind": "accepted-input",
+      "value": "--direct"
+    }
+  ]
+}

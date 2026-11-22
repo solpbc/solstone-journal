@@ -1,0 +1,41 @@
+{
+  "description": "Complete counted speakers summary for render repair dry run.",
+  "context": "Complete counted speakers summary for render repair dry run.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "id",
+      "type": "string"
+    },
+    {
+      "name": "rows",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "cb27654ff68b6b892d71da2c8c8b1cc52495751a77ab14b076d00f4cbe714ef1",
+  "max_length": 369,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "spacing_2",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

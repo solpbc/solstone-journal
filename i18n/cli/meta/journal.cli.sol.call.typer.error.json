@@ -1,0 +1,16 @@
+{
+  "description": "Native solstone call typer command output. Preserve supplied values and the command syntax.",
+  "context": "Native solstone call typer command output. Preserve supplied values and the command syntax.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1c5488604b66942f06040ebf195d910b98a95d654492db38bfabc2129c2a3993",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Native link command output for link mark join cancel. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link mark join cancel. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2f3fa8ef5efeacebd7c8680f6e2891fe75f6a4a32858d5ee0c7a118e3d4c3379",
+  "max_length": 612,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_link_join",
+      "kind": "accepted-input",
+      "value": "solstone link join"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

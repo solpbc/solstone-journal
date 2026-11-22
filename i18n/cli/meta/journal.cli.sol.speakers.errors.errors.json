@@ -1,0 +1,28 @@
+{
+  "description": "Text shown by the speakers errors command.",
+  "context": "Text shown by the speakers errors command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b6bb46b2ea8e6acc085deab6f13263c6c6a4068facea30af4ca77dda5d73e76d",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

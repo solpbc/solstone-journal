@@ -1,0 +1,21 @@
+{
+  "description": "Text shown by the entities neighbor command.",
+  "context": "Text shown by the entities neighbor command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "kinds",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ac5662ab544510f3be3eee1dc365749a86028c164a4df8ea1d3cd9b43650c3f7",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

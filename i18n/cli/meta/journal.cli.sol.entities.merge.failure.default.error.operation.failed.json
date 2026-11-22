@@ -1,0 +1,16 @@
+{
+  "description": "Text shown by the entities merge.failure.default command.",
+  "context": "Text shown by the entities merge.failure.default command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "168eabd5b477165a9705b126e40e539674be653e120ac1ddeff510c98ffa36ab",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

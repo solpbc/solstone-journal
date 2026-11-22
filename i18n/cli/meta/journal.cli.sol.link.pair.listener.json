@@ -1,0 +1,16 @@
+{
+  "description": "Native link command output for link pair listener. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link pair listener. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "48e6912a5008db843800f3baf078dbded4088480fdf2d34ba81cee8bd16462cc",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

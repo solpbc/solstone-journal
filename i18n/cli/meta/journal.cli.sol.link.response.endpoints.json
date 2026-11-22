@@ -1,0 +1,23 @@
+{
+  "description": "Native link command output for link response endpoints. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link response endpoints. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f2b1f58495a0935d5d14fd41224ffdc485227536b3fcd8baa4e2e6efd3767273",
+  "max_length": 156,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "local_endpoints",
+      "kind": "accepted-input",
+      "value": "local_endpoints"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Native profile command output for profile not found. Keep literal arguments and command syntax intact.",
+  "context": "Native profile command output for profile not found. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ec64aa27e4a734a9a49a137cb6b8c003ffa03808f8dbe90e42825717c55474d9",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

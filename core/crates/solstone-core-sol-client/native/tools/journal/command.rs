@@ -6,7 +6,7 @@ use serde_json::{Map, Value, json};
 use crate::args::{ParsedArgs, parse_args};
 use crate::command::{CommandContext, CommandOutput};
 use crate::decode::decode_response;
-use crate::error::{ClientError, SERVICE_DOWN_MESSAGE};
+use crate::error::ClientError;
 use crate::json_format::json_pretty_ascii;
 use crate::transport::{ApiRequest, HttpMethod, QueryParam, TimeoutPolicy};
 
@@ -58,17 +58,27 @@ pub fn facet_create(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn facet_delete(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &[], &["--yes", "--consent"]) {
+    let locale = ctx.human_locale();
+    let parsed = match crate::args::parse_args_for(locale, ctx.args, &[], &["--yes", "--consent"]) {
         Ok(value) => value,
         Err(error) => return stderr(error),
     };
     let Some(name) = parsed.positionals.first() else {
-        return stderr("Error: missing argument NAME");
+        return stderr(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.client.missing.argument",
+            [("argument", &"NAME")],
+        ));
     };
     if !parsed.has_flag("--yes") {
-        return stderr("Error: --yes is required to delete a facet.");
+        return stderr(solstone_core_cli_copy::render_for(
+            locale,
+            "!journal.cli.sol.journal.facet.delete.yes",
+            &[],
+        ));
     }
-    let answer = match send_request(
+    let answer = match send_request_for(
+        locale,
         &ctx,
         HttpMethod::Delete,
         &format!("/app/settings/api/facet/{name}"),
@@ -78,10 +88,11 @@ pub fn facet_delete(ctx: CommandContext<'_>) -> CommandOutput {
         Ok(answer) => answer,
         Err(output) => return output,
     };
-    let line = crate::command::moved_to_trash_line(
+    let line = crate::command::moved_to_trash_line_for(
+        locale,
         name,
-        "",
-        crate::command::erase_day_of(ctx, &answer).as_deref(),
+        false,
+        crate::command::erase_day_of_for(locale, ctx, &answer).as_deref(),
     );
     CommandOutput::success(format!("{line}\n"))
 }
@@ -541,6 +552,23 @@ fn send_request(
     params: Vec<QueryParam>,
     json: Option<Value>,
 ) -> Result<Value, CommandOutput> {
+    send_request_for(
+        solstone_core_cli_copy::ENGLISH,
+        ctx,
+        method,
+        path,
+        params,
+        json,
+    )
+}
+fn send_request_for(
+    locale: &str,
+    ctx: &CommandContext<'_>,
+    method: HttpMethod,
+    path: &str,
+    params: Vec<QueryParam>,
+    json: Option<Value>,
+) -> Result<Value, CommandOutput> {
     match ctx
         .transport
         .request(ApiRequest {
@@ -554,8 +582,12 @@ fn send_request(
         .and_then(|response| decode_response(&response))
     {
         Ok(value) => Ok(value),
-        Err(ClientError::Unreachable { .. }) => Err(stderr(SERVICE_DOWN_MESSAGE)),
-        Err(error) => Err(stderr(error.detail().unwrap_or_else(|| error.message()))),
+        Err(ClientError::Unreachable { .. }) => Err(stderr(crate::error::service_down_for(locale))),
+        Err(error) => Err(stderr(
+            error
+                .detail_for(locale)
+                .unwrap_or_else(|| error.message_for(locale)),
+        )),
     }
 }
 fn stderr(value: impl AsRef<str>) -> CommandOutput {
@@ -568,6 +600,7 @@ mod tests {
 
     use super::*;
     use crate::command::{CommandContext, CommandOutput};
+    use crate::error::SERVICE_DOWN_MESSAGE;
     use crate::seam::{ExpectedHttpCall, ScriptedHttpTransport};
     use crate::transport::{ApiRequest, HttpMethod, HttpResponse, QueryParam, TimeoutPolicy};
 

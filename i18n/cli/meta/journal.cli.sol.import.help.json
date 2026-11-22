@@ -1,0 +1,28 @@
+{
+  "description": "Native import command output for import help. Keep literal arguments and command syntax intact.",
+  "context": "Native import command output for import help. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c9360bba164caba81dbdacc4a4435b0072a0147dc30abacb1edf2492c8b1ab8e",
+  "max_length": 357,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_import_h_timestamp_ti",
+      "kind": "accepted-input",
+      "value": "solstone import [-h] [--timestamp TIMESTAMP] [--setting SETTING] [--source SOURCE] [--force] [--auto [AUTO]] [--dry-run] [--backends] [--sync BACKEND] [--save] [--list-importers] [--json] [-v] [media]"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

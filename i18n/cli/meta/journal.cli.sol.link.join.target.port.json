@@ -1,0 +1,16 @@
+{
+  "description": "Native link command output for link join target port. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link join target port. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bb589065927bccef83da27bbac4fcc12733765751e7ca2b02bfcb08c9e46c45c",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

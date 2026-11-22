@@ -1,0 +1,33 @@
+{
+  "description": "Native health command output for health coverage ratio. Keep literal arguments and command syntax intact.",
+  "context": "Native health command output for health coverage ratio. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0f320a9a6b5ff693abb70125b5937155be5f8cd3134acac10a47365060f0ba92",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "coverage_ratio",
+      "kind": "accepted-input",
+      "value": "coverage_ratio"
+    },
+    {
+      "name": "space_2",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Text shown by the entities const command.",
+  "context": "Text shown by the entities const command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "93acef7556884b7ad3d3db66a31423c245950affa2e4177036035cbede35513e",
+  "max_length": 444,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "option_commit",
+      "kind": "command",
+      "value": "--commit"
+    },
+    {
+      "name": "option_yes",
+      "kind": "command",
+      "value": "--yes"
+    }
+  ]
+}

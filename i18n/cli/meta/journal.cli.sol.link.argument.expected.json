@@ -1,0 +1,21 @@
+{
+  "description": "Native link command output for link argument expected. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link argument expected. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "option",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a1223e62dcb0f1fa75bec27b6bc42245782dfab6cbeefe9a1b5c60a3eaf306ed",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

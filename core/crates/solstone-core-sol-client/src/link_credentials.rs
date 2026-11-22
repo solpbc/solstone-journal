@@ -109,6 +109,19 @@ pub enum StoreMutationError {
     PersistUncertain(String),
 }
 
+impl StoreMutationError {
+    pub fn message_for(&self, locale: &str) -> String {
+        match self {
+            Self::LockFailed(error) => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.client.lock.acquire",
+                [("error", &error)],
+            ),
+            _ => self.to_string(),
+        }
+    }
+}
+
 impl std::fmt::Display for StoreMutationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -201,7 +214,7 @@ impl LinkCredentialStore {
         &self.label
     }
 
-    fn open_lock_file(&self) -> Result<File, StoreMutationError> {
+    fn open_lock_file(&self, locale: &str) -> Result<File, StoreMutationError> {
         let parent = self.lock_path.parent().unwrap_or_else(|| Path::new("."));
         let _ = fs::create_dir_all(parent);
         let mut options = OpenOptions::new();
@@ -211,13 +224,21 @@ impl LinkCredentialStore {
             use std::os::unix::fs::OpenOptionsExt;
             options.mode(0o600);
         }
-        options
-            .open(&self.lock_path)
-            .map_err(|err| StoreMutationError::LockFailed(format!("cannot open lock file: {err}")))
+        options.open(&self.lock_path).map_err(|err| {
+            StoreMutationError::LockFailed(solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.client.lock.open",
+                [("error", &err)],
+            ))
+        })
     }
 
     pub fn acquire_lock(&self) -> Result<SidecarLockGuard, StoreMutationError> {
-        let file = self.open_lock_file()?;
+        self.acquire_lock_for(solstone_core_cli_copy::ENGLISH)
+    }
+
+    pub fn acquire_lock_for(&self, locale: &str) -> Result<SidecarLockGuard, StoreMutationError> {
+        let file = self.open_lock_file(locale)?;
         file.lock()
             .map_err(|err| StoreMutationError::LockFailed(err.to_string()))?;
         Ok(SidecarLockGuard { _file: file })
@@ -230,7 +251,7 @@ impl LinkCredentialStore {
         if !may_publish() {
             return Err(StoreMutationError::Retired);
         }
-        let file = self.open_lock_file()?;
+        let file = self.open_lock_file(solstone_core_cli_copy::ENGLISH)?;
         loop {
             if !may_publish() {
                 return Err(StoreMutationError::Retired);
@@ -1059,7 +1080,9 @@ mod tests {
 
         let guard1 = store1.acquire_lock().expect("store1 acquires lock");
         assert!(store1.lock_path().exists());
-        let contender = store2.open_lock_file().unwrap();
+        let contender = store2
+            .open_lock_file(solstone_core_cli_copy::ENGLISH)
+            .unwrap();
         assert!(matches!(
             contender.try_lock(),
             Err(std::fs::TryLockError::WouldBlock)

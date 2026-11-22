@@ -1,0 +1,28 @@
+{
+  "description": "Text shown by the entities merge preview command.",
+  "context": "Text shown by the entities merge preview command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "errors",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d8299c594a92941e7ebb4ceba501704a613df4426edfced4897db7d22a878032",
+  "max_length": 144,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "spacing_2",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ]
+}

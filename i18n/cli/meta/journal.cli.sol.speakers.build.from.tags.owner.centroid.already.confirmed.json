@@ -1,0 +1,16 @@
+{
+  "description": "Text shown by the speakers build from tags command.",
+  "context": "Text shown by the speakers build from tags command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d85bb99cfc8c0014175d85f4378a0f97536faf71997f788e7d816796a07f9f27",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

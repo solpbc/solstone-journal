@@ -1,0 +1,21 @@
+{
+  "description": "Text shown by the entities accept merge candidate command.",
+  "context": "Text shown by the entities accept merge candidate command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "merge_id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ca7db323394a5fa48b28f44aa7bd9d778530f6e9628dba38ae09ef0c266b69ef",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "description": "The native command line formats an erase date or reports an option error.",
+  "context": "The native command line formats an erase date or reports an option error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "weekday",
+      "type": "string"
+    },
+    {
+      "name": "month",
+      "type": "string"
+    },
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "year",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c59a6a23a4bbd5286a32d882b7a5853a01d051377c8ec5922a7fef9694ca19ca",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

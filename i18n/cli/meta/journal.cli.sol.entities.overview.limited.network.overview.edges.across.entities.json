@@ -1,0 +1,43 @@
+{
+  "description": "Complete counted entities summary for overview.limited.",
+  "context": "Complete counted entities summary for overview.limited.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "edges",
+      "type": "string"
+    },
+    {
+      "name": "entities",
+      "type": "string"
+    },
+    {
+      "name": "shown",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "entities_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "e34547327df868c82b952f73025f3f34ec58c43c56c1542622fcdfbb163441a1",
+  "max_length": 1512,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

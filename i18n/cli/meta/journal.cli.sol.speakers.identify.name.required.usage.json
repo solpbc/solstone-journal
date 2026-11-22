@@ -1,0 +1,68 @@
+{
+  "description": "Fixed-width command usage shown when speaker identification lacks a name or entity ID.",
+  "context": "Fixed-width command usage shown when speaker identification lacks a name or entity ID.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "06e7ba775c9bc078242c2fa79545f300bf0d45558f02e865d00a430961e8565d",
+  "max_length": 846,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "call speakers identify"
+    },
+    {
+      "name": "syntax",
+      "kind": "accepted-input",
+      "value": "[OPTIONS] CLUSTER_ID [NAME]"
+    },
+    {
+      "name": "help_command",
+      "kind": "command",
+      "value": "call speakers identify --help"
+    },
+    {
+      "name": "entity_option",
+      "kind": "flag",
+      "value": "--entity-id"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    },
+    {
+      "name": "box_left",
+      "kind": "accepted-input",
+      "value": "╭─"
+    },
+    {
+      "name": "box_top",
+      "kind": "accepted-input",
+      "value": "──────────────────────────────────────────────────────────────────────╮"
+    },
+    {
+      "name": "box_edge",
+      "kind": "accepted-input",
+      "value": "│"
+    },
+    {
+      "name": "box_bottom",
+      "kind": "accepted-input",
+      "value": "╰──────────────────────────────────────────────────────────────────────────────╯"
+    },
+    {
+      "name": "box_padding",
+      "kind": "whitespace",
+      "value": "                               "
+    }
+  ]
+}

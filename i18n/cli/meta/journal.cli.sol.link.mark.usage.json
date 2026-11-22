@@ -1,0 +1,28 @@
+{
+  "description": "Native link command output for link mark usage. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link mark usage. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4b0c73e50a5b379488d54f1afb0ea20b44aa85f99c9c8687787e7223b0cfa8ce",
+  "max_length": 264,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "mark_bramble_quokka",
+      "kind": "accepted-input",
+      "value": "--mark \"bramble quokka\""
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

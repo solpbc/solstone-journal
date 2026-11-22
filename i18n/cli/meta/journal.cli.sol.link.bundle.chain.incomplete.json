@@ -1,0 +1,23 @@
+{
+  "description": "Native link command output for link bundle chain incomplete. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link bundle chain incomplete. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bfc46d70f0fc743fd9f16a2f9b363cfb6387e1faaef57c103aea45b7b025b24d",
+  "max_length": 147,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "chain_pem",
+      "kind": "accepted-input",
+      "value": "chain.pem"
+    }
+  ]
+}

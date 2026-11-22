@@ -1,0 +1,28 @@
+{
+  "description": "Native import command output for import duplicate staged unknown. Keep literal arguments and command syntax intact.",
+  "context": "Native import command output for import duplicate staged unknown. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b4e5eddde7b9b3be30284cd3fd26e96edb9e9ded1ad3559a5e3a012b44346ad5",
+  "max_length": 216,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_import",
+      "kind": "accepted-input",
+      "value": "solstone import"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

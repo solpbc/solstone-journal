@@ -1,0 +1,28 @@
+{
+  "description": "Native profile command output for profile full quiet. Keep literal arguments and command syntax intact.",
+  "context": "Native profile command output for profile full quiet. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1a2ea6725aba11acce4359aa5ae973cddc4b0579b4101c3d79a21b2242d863b4",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "space_2",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ]
+}

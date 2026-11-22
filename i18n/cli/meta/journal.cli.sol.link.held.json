@@ -1,0 +1,38 @@
+{
+  "description": "Native link command output for link held. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link held. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "label",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "502e5708caf1a81bb6da53f34037fc7f03d2eef2cd2b1ccb84de55ee500bf588",
+  "max_length": 612,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_link_confirm",
+      "kind": "accepted-input",
+      "value": "solstone link confirm"
+    },
+    {
+      "name": "label_1",
+      "kind": "accepted-input",
+      "value": "--label"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "description": "Text shown by the entities dismiss merge candidate command.",
+  "context": "Text shown by the entities dismiss merge candidate command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "source_slug",
+      "type": "string"
+    },
+    {
+      "name": "target_slug",
+      "type": "string"
+    },
+    {
+      "name": "status",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ccf2096d88c755723d8965fc246621a534e9376e734842c88def072ca108c03e",
+  "max_length": 204,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

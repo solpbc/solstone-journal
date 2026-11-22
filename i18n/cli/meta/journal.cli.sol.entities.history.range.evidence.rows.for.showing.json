@@ -1,0 +1,46 @@
+{
+  "description": "Complete counted entities summary for history.range.",
+  "context": "Complete counted entities summary for history.range.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "entity_id",
+      "type": "string"
+    },
+    {
+      "name": "peer",
+      "type": "string"
+    },
+    {
+      "name": "first",
+      "type": "string"
+    },
+    {
+      "name": "last",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "e3d56134e29aaa3e214cb4789bd0e037c422269578a6acfd4921ad7f8237e36c",
+  "max_length": 663,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

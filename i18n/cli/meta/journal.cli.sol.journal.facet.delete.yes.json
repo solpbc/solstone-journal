@@ -1,0 +1,23 @@
+{
+  "description": "Native journal command output for journal facet delete yes. Keep literal arguments and command syntax intact.",
+  "context": "Native journal command output for journal facet delete yes. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f99f617f4dadb40bfdd09e40ec413c2b11bc1af0208bdb725d165a9b210e59a7",
+  "max_length": 138,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "yes",
+      "kind": "accepted-input",
+      "value": "--yes"
+    }
+  ]
+}

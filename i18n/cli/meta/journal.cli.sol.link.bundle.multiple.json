@@ -1,0 +1,28 @@
+{
+  "description": "Native link command output for link bundle multiple. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link bundle multiple. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "labels",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "464f10155b77648368f26c9fa72369dbd278d885ec0b69d482881e9124cb2fd4",
+  "max_length": 216,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "label",
+      "kind": "accepted-input",
+      "value": "--label"
+    }
+  ]
+}

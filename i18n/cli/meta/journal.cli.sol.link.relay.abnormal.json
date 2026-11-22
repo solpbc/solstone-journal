@@ -1,0 +1,28 @@
+{
+  "description": "Native link command output for link relay abnormal. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link relay abnormal. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "650c01999f31a9f776a5e75915d4a6d5ae8560ffd8fe001ab949106cc8eaa065",
+  "max_length": 243,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "direct",
+      "kind": "accepted-input",
+      "value": "--direct"
+    },
+    {
+      "name": "lan_vpn",
+      "kind": "accepted-input",
+      "value": "LAN/VPN"
+    }
+  ]
+}

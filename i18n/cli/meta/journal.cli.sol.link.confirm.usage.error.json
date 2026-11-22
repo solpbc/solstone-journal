@@ -1,0 +1,38 @@
+{
+  "description": "Native link command output for link confirm usage error. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link confirm usage error. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fd9bda1eac8231da38a37dcee6cb9f44880d00b4a3ed04cf3d21dfe4413a2522",
+  "max_length": 351,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_link_confirm_h_label_",
+      "kind": "accepted-input",
+      "value": "solstone link confirm [-h] [--label LABEL] [--mark MARK]"
+    },
+    {
+      "name": "solstone_link_confirm",
+      "kind": "accepted-input",
+      "value": "solstone link confirm"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Text shown by the entities const command.",
+  "context": "Text shown by the entities const command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2ebd37253ba9e8c2a25f25246dc90254ab5842a8911b56d3b00e9fc16d790a7a",
+  "max_length": 306,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal doctor"
+    }
+  ]
+}

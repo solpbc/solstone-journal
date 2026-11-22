@@ -1,0 +1,28 @@
+{
+  "description": "Native link command output for link sighting claimed. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link sighting claimed. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "spoken",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "34538de022224866267bc1d10356270138f196586b50ca00ac30e0316dc600c1",
+  "max_length": 183,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "space_2",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ]
+}

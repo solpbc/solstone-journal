@@ -1,0 +1,25 @@
+{
+  "description": "Text shown by the entities observation error command.",
+  "context": "Text shown by the entities observation error command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "line_str",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "61a77656b28642b7bbf99e7b54245b7c89fe8bc7d90ae575645d3d159a39848f",
+  "max_length": 339,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "description": "Native link command output for link pair enrollment. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link pair enrollment. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "endpoint",
+      "type": "string"
+    },
+    {
+      "name": "status",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "27c1818a5f872120a23eb31b5dafadbb3c108fc3ee83fe0aa5dd2a99b4a90b41",
+  "max_length": 213,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "http",
+      "kind": "accepted-input",
+      "value": "HTTP"
+    }
+  ]
+}

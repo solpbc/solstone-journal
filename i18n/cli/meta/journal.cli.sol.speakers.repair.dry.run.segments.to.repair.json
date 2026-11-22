@@ -1,0 +1,28 @@
+{
+  "description": "Text shown by the speakers repair dry run command.",
+  "context": "Text shown by the speakers repair dry run command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "segments",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2c39d13cfc18c686e389d6a1721c447f6433d0de5153f9884a13039fe9bc07db",
+  "max_length": 144,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

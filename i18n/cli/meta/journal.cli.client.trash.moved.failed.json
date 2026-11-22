@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line output for a native client invocation.",
+  "context": "Journal command-line output for a native client invocation.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "22a4831dc1a14320445a338ea3eaf06bca7d05b9d1bd76da1faaa37b20b4ca5c",
+  "max_length": 174,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

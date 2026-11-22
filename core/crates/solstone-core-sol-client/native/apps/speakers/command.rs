@@ -8,12 +8,11 @@ use serde_json::{Map, Value, json};
 
 use crate::command::{CommandContext, CommandOutput};
 use crate::decode::decode_response;
-use crate::error::{ClientError, SERVICE_DOWN_MESSAGE};
+use crate::error::ClientError;
 use crate::json_format::{json_pretty_ascii, json_pretty_utf8};
 use crate::transport::{ApiRequest, HttpMethod, QueryParam, TimeoutPolicy};
+use solstone_core_cli_copy::{Value as CopyValue, display_for, render_for};
 
-const REPORT_ONLY: &str = "REPORT ONLY — pass --commit to persist.\n";
-const IDENTIFY_NAME_REQUIRED_ERROR: &str = "Usage: call speakers identify [OPTIONS] CLUSTER_ID [NAME]\nTry 'call speakers identify --help' for help.\n╭─ Error ──────────────────────────────────────────────────────────────────────╮\n│ Invalid value: name or --entity-id is required                               │\n╰──────────────────────────────────────────────────────────────────────────────╯\n";
 const IDENTIFY_FAILURE_CODES: &[&str] = &[
     "speaker_identify_recoverable",
     "speaker_identify_repair_required",
@@ -23,7 +22,8 @@ const IDENTIFY_FAILURE_CODES: &[&str] = &[
 
 #[must_use]
 pub fn status(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &[], &[]) {
+    let locale = solstone_core_cli_copy::ENGLISH;
+    let parsed = match parse_args(locale, ctx.args, &[], &[]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
@@ -35,7 +35,7 @@ pub fn status(ctx: CommandContext<'_>) -> CommandOutput {
         None,
     ) {
         Ok(body) => body,
-        Err(error) => return speaker_error(error),
+        Err(error) => return speaker_error(locale, error),
     };
     let valid = [
         "embeddings",
@@ -61,7 +61,8 @@ pub fn status(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn bootstrap(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = parse_json_commit(ctx.args);
+    let locale = ctx.human_locale();
+    let parsed = parse_json_commit(locale, ctx.args);
     let parsed = match parsed {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
@@ -70,12 +71,19 @@ pub fn bootstrap(ctx: CommandContext<'_>) -> CommandOutput {
     let json_output = parsed.flag("--json");
     let mut out = String::new();
     if !commit && !json_output {
-        emit(&mut out, REPORT_ONLY);
+        emit(
+            &mut out,
+            render_for(locale, "journal.cli.sol.speakers.report.only", &[]),
+        );
     }
     if !json_output {
         emit(
             &mut out,
-            "Bootstrapping voiceprints from single-speaker segments...",
+            render_for(
+                locale,
+                "journal.cli.sol.speakers.bootstrap.bootstrapping.voiceprints.from.single.speaker",
+                &[],
+            ),
         );
     }
     let stats = match request_json(
@@ -89,23 +97,37 @@ pub fn bootstrap(ctx: CommandContext<'_>) -> CommandOutput {
         Err(error) if error.reason_code() == Some("speaker_owner_centroid_required") => {
             return CommandOutput {
                 stdout: out,
-                stderr: format!("Error: {}\n", error.detail().unwrap_or(error.message())),
+                stderr: format!(
+                    "{}\n",
+                    display_for(
+                        locale,
+                        "journal.cli.client.error.detail",
+                        [(
+                            "detail",
+                            &(&error
+                                .detail_for(locale)
+                                .unwrap_or_else(|| error.message_for(locale)))
+                        )]
+                    )
+                ),
                 exit: 1,
             };
         }
-        Err(error) => return speaker_error_preserving_stdout(out, error),
+        Err(error) => return speaker_error_preserving_stdout(locale, out, error),
     };
     if json_output {
         return crate::agent_output::literal_output(stdout_json(&stats));
     }
     let stats = crate::agent_output::literal_body(stats);
-    render_bootstrap_stats(&mut out, &stats);
+    render_bootstrap_stats(locale, &mut out, &stats);
     CommandOutput::success(out)
 }
 
 #[must_use]
 pub fn resolve_names(ctx: CommandContext<'_>) -> CommandOutput {
+    let locale = ctx.human_locale();
     let parsed = match parse_args(
+        locale,
         ctx.args,
         &[],
         &[
@@ -121,16 +143,28 @@ pub fn resolve_names(ctx: CommandContext<'_>) -> CommandOutput {
     let json_output = parsed.flag("--json");
     // Resolving name variants with --commit merges entities, and merges are permanent.
     if commit && !parsed.flag("--yes") {
-        return stderr(
-            "Merging name variants can't be undone. Review the report without --commit, then, once the owner approves, run it again with --commit --yes.",
-        );
+        return stderr(render_for(
+            locale,
+            "!journal.cli.sol.speakers.resolve.names.merging.name.variants.can.t",
+            &[],
+        ));
     }
     let mut out = String::new();
     if !commit && !json_output {
-        emit(&mut out, REPORT_ONLY);
+        emit(
+            &mut out,
+            render_for(locale, "journal.cli.sol.speakers.report.only", &[]),
+        );
     }
     if !json_output {
-        emit(&mut out, "Resolving speaker name variants...");
+        emit(
+            &mut out,
+            render_for(
+                locale,
+                "journal.cli.sol.speakers.resolve.names.resolving.speaker.name.variants",
+                &[],
+            ),
+        );
     }
     let stats = match request_json(
         ctx,
@@ -140,21 +174,24 @@ pub fn resolve_names(ctx: CommandContext<'_>) -> CommandOutput {
         Some(json!({"commit": commit})),
     ) {
         Ok(stats) => stats,
-        Err(error) => return speaker_error_preserving_stdout(out, error),
+        Err(error) => return speaker_error_preserving_stdout(locale, out, error),
     };
     if json_output {
         return crate::agent_output::literal_output(stdout_json(&stats));
     }
     let stats = crate::agent_output::literal_body(stats);
-    render_resolve_names(&mut out, &stats);
+    render_resolve_names(locale, &mut out, &stats);
     CommandOutput::success(out)
 }
 
 #[must_use]
 pub fn attribute_segment(ctx: CommandContext<'_>) -> CommandOutput {
+    let value_options = &[("--stream-layout", None)];
+    let locale = locale_for_options(ctx, value_options);
     let parsed = match parse_args(
+        locale,
         ctx.args,
-        &[("--stream-layout", None)],
+        value_options,
         &[
             FlagSpec::true_flag("--commit"),
             FlagSpec::paired("--save", "--no-save", true),
@@ -166,18 +203,30 @@ pub fn attribute_segment(ctx: CommandContext<'_>) -> CommandOutput {
         Err(error) => return stderr(error),
     };
     let Some(day) = parsed.positionals.first() else {
-        return stderr("Error: missing argument DAY");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.missing.argument",
+            [("argument", &("DAY"))],
+        ));
     };
     let Some(stream) = parsed.positionals.get(1) else {
-        return stderr("Error: missing argument STREAM");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.missing.argument",
+            [("argument", &("STREAM"))],
+        ));
     };
     let Some(segment) = parsed.positionals.get(2) else {
-        return stderr("Error: missing argument SEGMENT");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.missing.argument",
+            [("argument", &("SEGMENT"))],
+        ));
     };
     let commit = parsed.flag("--commit");
     let save = parsed.bool_value("--save").unwrap_or(true);
     let accumulate = parsed.bool_value("--accumulate").unwrap_or(true);
-    let stream_layout = match parse_stream_layout_option(&parsed) {
+    let stream_layout = match parse_stream_layout_option(locale, &parsed) {
         Ok(layout) => layout,
         Err(err) => return err,
     };
@@ -201,61 +250,106 @@ pub fn attribute_segment(ctx: CommandContext<'_>) -> CommandOutput {
         Err(error) if error.reason_code() == Some("speaker_owner_centroid_required") => {
             let mut out = String::new();
             if !commit && !json_output {
-                emit(&mut out, REPORT_ONLY);
+                emit(
+                    &mut out,
+                    render_for(locale, "journal.cli.sol.speakers.report.only", &[]),
+                );
             }
             return CommandOutput {
                 stdout: out,
-                stderr: format!("Error: {}\n", error.detail().unwrap_or(error.message())),
+                stderr: format!(
+                    "{}\n",
+                    display_for(
+                        locale,
+                        "journal.cli.client.error.detail",
+                        [(
+                            "detail",
+                            &(&error
+                                .detail_for(locale)
+                                .unwrap_or_else(|| error.message_for(locale)))
+                        )]
+                    )
+                ),
                 exit: 1,
             };
         }
-        Err(error) => return speaker_error(error),
+        Err(error) => return speaker_error(locale, error),
     };
     let mut out = String::new();
     if !commit && !json_output {
-        emit(&mut out, REPORT_ONLY);
+        emit(
+            &mut out,
+            render_for(locale, "journal.cli.sol.speakers.report.only", &[]),
+        );
     }
     let result = wrap.get("result").cloned().unwrap_or(Value::Null);
     if json_output {
         return crate::agent_output::literal_output(stdout_json(&result));
     }
-    render_attribute_segment(&mut out, &wrap, &result, commit, save, accumulate);
+    render_attribute_segment(locale, &mut out, &wrap, &result, commit, save, accumulate);
     CommandOutput::success(out)
 }
 
 #[must_use]
 pub fn correct(ctx: CommandContext<'_>) -> CommandOutput {
+    let value_options = &[("--stream-layout", None)];
+    let locale = locale_for_options(ctx, value_options);
     let parsed = match parse_args(
+        locale,
         ctx.args,
-        &[("--stream-layout", None)],
+        value_options,
         &[FlagSpec::true_flag("--json")],
     ) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
     let Some(day) = parsed.positionals.first() else {
-        return stderr("Error: missing argument DAY");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.missing.argument",
+            [("argument", &("DAY"))],
+        ));
     };
     let Some(stream) = parsed.positionals.get(1) else {
-        return stderr("Error: missing argument STREAM");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.missing.argument",
+            [("argument", &("STREAM"))],
+        ));
     };
     let Some(segment) = parsed.positionals.get(2) else {
-        return stderr("Error: missing argument SEGMENT");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.missing.argument",
+            [("argument", &("SEGMENT"))],
+        ));
     };
     let Some(source) = parsed.positionals.get(3) else {
-        return stderr("Error: missing argument SOURCE");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.missing.argument",
+            [("argument", &("SOURCE"))],
+        ));
     };
     let Some(sentence_id) = parsed
         .positionals
         .get(4)
         .and_then(|value| value.parse::<i64>().ok())
     else {
-        return stderr("Error: missing argument SENTENCE_ID");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.missing.argument",
+            [("argument", &("SENTENCE_ID"))],
+        ));
     };
     let Some(new_speaker) = parsed.positionals.get(5) else {
-        return stderr("Error: missing argument NEW_SPEAKER");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.missing.argument",
+            [("argument", &("NEW_SPEAKER"))],
+        ));
     };
-    let stream_layout = match parse_stream_layout_option(&parsed) {
+    let stream_layout = match parse_stream_layout_option(locale, &parsed) {
         Ok(layout) => layout,
         Err(err) => return err,
     };
@@ -275,7 +369,7 @@ pub fn correct(ctx: CommandContext<'_>) -> CommandOutput {
         })),
     ) {
         Ok(result) => result,
-        Err(error) => return speaker_error(error),
+        Err(error) => return speaker_error(locale, error),
     };
     if parsed.flag("--json") {
         return stdout_json(&result);
@@ -284,24 +378,53 @@ pub fn correct(ctx: CommandContext<'_>) -> CommandOutput {
     if string_field(&result, "status").as_deref() == Some("already_correct") {
         emit(
             &mut out,
-            format!("Already correct: {day}/{stream_layout}/{stream}/{segment} #{sentence_id}"),
+            display_for(
+                locale,
+                "journal.cli.sol.speakers.correct.already.correct",
+                [
+                    ("day", &(day)),
+                    ("stream_layout", &(stream_layout)),
+                    ("stream", &(stream)),
+                    ("segment", &(segment)),
+                    ("sentence_id", &(sentence_id)),
+                ],
+            ),
         );
         return CommandOutput::success(out);
     }
-    let old = string_field(&result, "old_speaker").unwrap_or_else(|| "unassigned".to_string());
+    let old = string_field(&result, "old_speaker").unwrap_or_else(|| {
+        render_for(
+            locale,
+            "journal.cli.sol.speakers.correct.unassigned.unassigned",
+            &[],
+        )
+    });
     emit(
         &mut out,
-        format!(
-            "Corrected {day}/{stream_layout}/{stream}/{segment} #{sentence_id}: {old} -> {}",
-            value_to_string(result.get("new_speaker"))
+        display_for(
+            locale,
+            "journal.cli.sol.speakers.correct.corrected",
+            [
+                ("day", &(day)),
+                ("stream_layout", &(stream_layout)),
+                ("stream", &(stream)),
+                ("segment", &(segment)),
+                ("sentence_id", &(sentence_id)),
+                ("old", &(old)),
+                ("new_speaker", &(value_to_string(result.get("new_speaker")))),
+            ],
         ),
     );
     let removal = result.get("voiceprint_removal").and_then(Value::as_object);
     emit(
         &mut out,
-        format!(
-            "Voiceprint removal: {}",
-            value_to_string(removal.and_then(|item| item.get("outcome")))
+        display_for(
+            locale,
+            "journal.cli.sol.speakers.correct.voiceprint.removal",
+            [(
+                "outcome",
+                &(value_to_string(removal.and_then(|item| item.get("outcome")))),
+            )],
         ),
     );
     let offer = result.get("propagation_offer").and_then(Value::as_object);
@@ -310,45 +433,81 @@ pub fn correct(ctx: CommandContext<'_>) -> CommandOutput {
         .and_then(Value::as_bool)
         == Some(true)
     {
+        emit(&mut out, {
+            let display_statements =
+                (value_or_zero(offer.and_then(|item| item.get("statement_count")))).to_string();
+            let display_segments =
+                (value_or_zero(offer.and_then(|item| item.get("segment_count")))).to_string();
+            render_for(
+                locale,
+                "journal.cli.sol.speakers.correct.propagation.available.statements.in.segments",
+                &[
+                    ("statements", CopyValue::String(&display_statements)),
+                    ("segments", CopyValue::String(&display_segments)),
+                    (
+                        "quantity",
+                        crate::command::count_selector(display_statements.parse().unwrap_or(0)),
+                    ),
+                    (
+                        "segments_quantity",
+                        crate::command::count_selector(display_segments.parse().unwrap_or(0)),
+                    ),
+                ],
+            )
+        });
         emit(
             &mut out,
-            format!(
-                "Propagation available: {} statements in {} segments would change",
-                value_or_zero(offer.and_then(|item| item.get("statement_count"))),
-                value_or_zero(offer.and_then(|item| item.get("segment_count"))),
-            ),
-        );
-        emit(
-            &mut out,
-            format!(
-                "Preview with: solstone call speakers propagate-correction {} {}",
-                value_to_string(result.get("old_speaker")),
-                value_to_string(result.get("new_speaker")),
+            display_for(
+                locale,
+                "journal.cli.sol.speakers.correct.preview.with.solstone.call.speakers",
+                [
+                    ("old_speaker", &(value_to_string(result.get("old_speaker")))),
+                    ("new_speaker", &(value_to_string(result.get("new_speaker")))),
+                ],
             ),
         );
     } else {
-        emit(&mut out, "Propagation: nothing else would change");
+        emit(
+            &mut out,
+            render_for(
+                locale,
+                "journal.cli.sol.speakers.correct.propagation.nothing.else.would.change",
+                &[],
+            ),
+        );
     }
     CommandOutput::success(out)
 }
 
 #[must_use]
 pub fn propagate_correction(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_json_commit(ctx.args) {
+    let locale = ctx.human_locale();
+    let parsed = match parse_json_commit(locale, ctx.args) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
     let Some(old_speaker) = parsed.positionals.first() else {
-        return stderr("Error: missing argument OLD_SPEAKER");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.missing.argument",
+            [("argument", &("OLD_SPEAKER"))],
+        ));
     };
     let Some(new_speaker) = parsed.positionals.get(1) else {
-        return stderr("Error: missing argument NEW_SPEAKER");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.missing.argument",
+            [("argument", &("NEW_SPEAKER"))],
+        ));
     };
     let commit = parsed.flag("--commit");
     let json_output = parsed.flag("--json");
     let mut out = String::new();
     if !commit && !json_output {
-        emit(&mut out, REPORT_ONLY);
+        emit(
+            &mut out,
+            render_for(locale, "journal.cli.sol.speakers.report.only", &[]),
+        );
     }
     let result = match request_json(
         ctx,
@@ -358,20 +517,23 @@ pub fn propagate_correction(ctx: CommandContext<'_>) -> CommandOutput {
         Some(json!({"old_speaker": old_speaker, "new_speaker": new_speaker, "commit": commit})),
     ) {
         Ok(result) => result,
-        Err(error) => return speaker_error_preserving_stdout(out, error),
+        Err(error) => return speaker_error_preserving_stdout(locale, out, error),
     };
     if json_output {
         return stdout_json(&result);
     }
-    render_propagate(&mut out, &result, commit);
+    render_propagate(locale, &mut out, &result, commit);
     CommandOutput::success(out)
 }
 
 #[must_use]
 pub fn backfill(ctx: CommandContext<'_>) -> CommandOutput {
+    let value_options = &[("--operation-id", None)];
+    let locale = locale_for_options(ctx, value_options);
     let parsed = match parse_args(
+        locale,
         ctx.args,
-        &[("--operation-id", None)],
+        value_options,
         &[
             FlagSpec::true_flag("--commit"),
             FlagSpec::true_flag("--reattribute"),
@@ -389,10 +551,20 @@ pub fn backfill(ctx: CommandContext<'_>) -> CommandOutput {
     let json_output = parsed.flag("--json");
     let mut out = String::new();
     if !commit && !json_output {
-        emit(&mut out, REPORT_ONLY);
+        emit(
+            &mut out,
+            render_for(locale, "journal.cli.sol.speakers.report.only", &[]),
+        );
     }
     if !json_output {
-        emit(&mut out, "Starting speaker attribution backfill...");
+        emit(
+            &mut out,
+            render_for(
+                locale,
+                "journal.cli.sol.speakers.backfill.starting.speaker.attribution.backfill",
+                &[],
+            ),
+        );
     }
     let start = monotonic_seconds(ctx);
     let mut body = json!({
@@ -415,8 +587,11 @@ pub fn backfill(ctx: CommandContext<'_>) -> CommandOutput {
             if let Some(id) = &operation_id {
                 let err_msg = error.to_string();
                 if err_msg.contains("flags mismatch") || err_msg.contains("conflict") {
-                    let extra = format!(
-                        "Note: backfill operation {id} has immutable flags.\nTo resume with compatible settings, try:\n  solstone call speakers backfill --operation-id {id} --commit\n"
+                    let err_msg = error.message_for(locale);
+                    let extra = display_for(
+                        locale,
+                        "journal.cli.sol.speakers.backfill.note.backfill.operation.has.immutable",
+                        [("id", &(id))],
                     );
                     return CommandOutput {
                         stdout: out,
@@ -425,7 +600,7 @@ pub fn backfill(ctx: CommandContext<'_>) -> CommandOutput {
                     };
                 }
             }
-            return speaker_error_preserving_stdout(out, error);
+            return speaker_error_preserving_stdout(locale, out, error);
         }
     };
     let op_id = string_field(&stats, "operation_id").unwrap_or_default();
@@ -434,12 +609,17 @@ pub fn backfill(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn backfill_status(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &[], &[FlagSpec::true_flag("--json")]) {
+    let locale = ctx.human_locale();
+    let parsed = match parse_args(locale, ctx.args, &[], &[FlagSpec::true_flag("--json")]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
     let Some(operation_id) = parsed.positionals.first() else {
-        return stderr("Error: missing argument OPERATION_ID");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.missing.argument",
+            [("argument", &("OPERATION_ID"))],
+        ));
     };
     let json_output = parsed.flag("--json");
     let stats = match request_json(
@@ -450,24 +630,29 @@ pub fn backfill_status(ctx: CommandContext<'_>) -> CommandOutput {
         None,
     ) {
         Ok(stats) => stats,
-        Err(error) => return speaker_error(error),
+        Err(error) => return speaker_error(locale, error),
     };
     if json_output {
         return stdout_json(&stats);
     }
     let mut out = String::new();
-    render_backfill(&mut out, &stats, 0.0);
+    render_backfill(locale, &mut out, &stats, 0.0);
     CommandOutput::success(out)
 }
 
 #[must_use]
 pub fn backfill_resume(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &[], &[FlagSpec::true_flag("--json")]) {
+    let locale = ctx.human_locale();
+    let parsed = match parse_args(locale, ctx.args, &[], &[FlagSpec::true_flag("--json")]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
     let Some(operation_id) = parsed.positionals.first() else {
-        return stderr("Error: missing argument OPERATION_ID");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.missing.argument",
+            [("argument", &("OPERATION_ID"))],
+        ));
     };
     let json_output = parsed.flag("--json");
     let out = String::new();
@@ -480,7 +665,7 @@ pub fn backfill_resume(ctx: CommandContext<'_>) -> CommandOutput {
         None,
     ) {
         Ok(stats) => stats,
-        Err(error) => return speaker_error_preserving_stdout(out, error),
+        Err(error) => return speaker_error_preserving_stdout(locale, out, error),
     };
     follow_backfill(ctx, operation_id, out, json_output, start)
 }
@@ -502,6 +687,7 @@ fn follow_backfill(
     json_output: bool,
     start: f64,
 ) -> CommandOutput {
+    let locale = ctx.human_locale();
     loop {
         let stats = match request_json(
             ctx,
@@ -519,7 +705,7 @@ fn follow_backfill(
                         exit: 1,
                     };
                 }
-                return speaker_error_preserving_stdout(out, error);
+                return speaker_error_preserving_stdout(locale, out, error);
             }
         };
 
@@ -533,14 +719,19 @@ fn follow_backfill(
             if json_output {
                 return stdout_json(&stats);
             }
-            render_backfill(&mut out, &stats, elapsed);
+            render_backfill(locale, &mut out, &stats, elapsed);
             return CommandOutput::success(out);
         }
 
         if !is_active {
             let elapsed = monotonic_seconds(ctx) - start;
-            let advice = format!(
-                "\nBackfill not completed (status: {status_kind}).\nTo check status:\n  solstone call speakers backfill-status {operation_id}\nTo resume:\n  solstone call speakers backfill-resume {operation_id}\n"
+            let advice = display_for(
+                locale,
+                "journal.cli.sol.speakers.follow.backfill.backfill.not.completed.status.to",
+                [
+                    ("status_kind", &(status_kind)),
+                    ("operation_id", &(operation_id)),
+                ],
             );
             if json_output {
                 return CommandOutput {
@@ -549,7 +740,7 @@ fn follow_backfill(
                     exit: 1,
                 };
             }
-            render_backfill(&mut out, &stats, elapsed);
+            render_backfill(locale, &mut out, &stats, elapsed);
             emit(&mut out, advice);
             return CommandOutput {
                 stdout: out,
@@ -564,8 +755,15 @@ fn follow_backfill(
             let pending = value_to_string(stats.get("pending_count"));
             emit(
                 &mut out,
-                format!(
-                    "Backfill in progress: status={status_kind}, completed={completed}/{total}, pending={pending}"
+                display_for(
+                    locale,
+                    "journal.cli.sol.speakers.follow.backfill.backfill.in.progress.status.completed",
+                    [
+                        ("status_kind", &(status_kind)),
+                        ("completed", &(completed)),
+                        ("total", &(total)),
+                        ("pending", &(pending)),
+                    ],
                 ),
             );
         }
@@ -576,9 +774,12 @@ fn follow_backfill(
 
 #[must_use]
 pub fn repair(ctx: CommandContext<'_>) -> CommandOutput {
+    let value_options = &[("--operation-id", None)];
+    let locale = locale_for_options(ctx, value_options);
     let parsed = match parse_args(
+        locale,
         ctx.args,
-        &[("--operation-id", None)],
+        value_options,
         &[
             FlagSpec::true_flag("--commit"),
             FlagSpec::true_flag("--json"),
@@ -598,10 +799,20 @@ pub fn repair(ctx: CommandContext<'_>) -> CommandOutput {
     let json_output = parsed.flag("--json");
     let mut out = String::new();
     if !commit && !json_output {
-        emit(&mut out, REPORT_ONLY);
+        emit(
+            &mut out,
+            render_for(locale, "journal.cli.sol.speakers.report.only", &[]),
+        );
     }
     if !json_output {
-        emit(&mut out, "Starting speaker contamination repair...");
+        emit(
+            &mut out,
+            render_for(
+                locale,
+                "journal.cli.sol.speakers.repair.starting.speaker.contamination.repair",
+                &[],
+            ),
+        );
     }
     let mut body = json!({
         "commit": commit,
@@ -619,15 +830,17 @@ pub fn repair(ctx: CommandContext<'_>) -> CommandOutput {
         Ok(stats) => stats,
         Err(error) => {
             let timed_out = matches!(error, ClientError::Timeout { .. });
-            let mut output = speaker_error_preserving_stdout(out, error);
+            let mut output = speaker_error_preserving_stdout(locale, out, error);
             if let Some(id) = operation_id.as_deref().filter(|_| commit && timed_out) {
-                output.stderr.push_str(&repair_still_running_advice(id));
+                output
+                    .stderr
+                    .push_str(&repair_still_running_advice(locale, id));
             }
             return output;
         }
     };
     if commit {
-        return follow_repair_start(ctx, &stats, out, json_output);
+        return follow_repair_start(locale, ctx, &stats, out, json_output);
     }
     let complete = stats
         .get("complete")
@@ -641,7 +854,7 @@ pub fn repair(ctx: CommandContext<'_>) -> CommandOutput {
         }
         return json_res;
     }
-    render_repair_dry_run(&mut out, &stats);
+    render_repair_dry_run(locale, &mut out, &stats);
     if !complete {
         return CommandOutput::failure(out, 1);
     }
@@ -650,12 +863,17 @@ pub fn repair(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn repair_status(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &[], &[FlagSpec::true_flag("--json")]) {
+    let locale = ctx.human_locale();
+    let parsed = match parse_args(locale, ctx.args, &[], &[FlagSpec::true_flag("--json")]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
     let Some(operation_id) = parsed.positionals.first() else {
-        return stderr("Error: missing argument OPERATION_ID");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.missing.argument",
+            [("argument", &("OPERATION_ID"))],
+        ));
     };
     let json_output = parsed.flag("--json");
     let stats = match request_json(
@@ -666,30 +884,35 @@ pub fn repair_status(ctx: CommandContext<'_>) -> CommandOutput {
         None,
     ) {
         Ok(stats) => stats,
-        Err(error) => return speaker_error(error),
+        Err(error) => return speaker_error(locale, error),
     };
     if json_output {
         return stdout_json(&stats);
     }
     let mut out = String::new();
-    render_repair_status(&mut out, &stats);
+    render_repair_status(locale, &mut out, &stats);
     if matches!(
         string_field(&stats, "status").as_deref(),
         Some("failed" | "interrupted")
     ) {
-        out.push_str(&repair_stopped_advice(operation_id, &stats));
+        out.push_str(&repair_stopped_advice(locale, operation_id, &stats));
     }
     CommandOutput::success(out)
 }
 
 #[must_use]
 pub fn repair_resume(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &[], &[FlagSpec::true_flag("--json")]) {
+    let locale = ctx.human_locale();
+    let parsed = match parse_args(locale, ctx.args, &[], &[FlagSpec::true_flag("--json")]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
     let Some(operation_id) = parsed.positionals.first() else {
-        return stderr("Error: missing argument OPERATION_ID");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.missing.argument",
+            [("argument", &("OPERATION_ID"))],
+        ));
     };
     let json_output = parsed.flag("--json");
     let out = String::new();
@@ -703,16 +926,16 @@ pub fn repair_resume(ctx: CommandContext<'_>) -> CommandOutput {
         Ok(stats) => stats,
         Err(error) => {
             let timed_out = matches!(error, ClientError::Timeout { .. });
-            let mut output = speaker_error_preserving_stdout(out, error);
+            let mut output = speaker_error_preserving_stdout(locale, out, error);
             if timed_out {
                 output
                     .stderr
-                    .push_str(&repair_still_running_advice(operation_id));
+                    .push_str(&repair_still_running_advice(locale, operation_id));
             }
             return output;
         }
     };
-    follow_repair_start(ctx, &stats, out, json_output)
+    follow_repair_start(locale, ctx, &stats, out, json_output)
 }
 
 const REPAIR_POLL_INTERVAL: Duration = Duration::from_secs(30);
@@ -726,27 +949,36 @@ fn mint_repair_operation_id(ctx: CommandContext<'_>) -> String {
     format!("repair_{millis}")
 }
 
-fn repair_check_status_advice(operation_id: &str) -> String {
-    format!("\nTo check status:\n  solstone call speakers repair-status {operation_id}\n")
+fn repair_check_status_advice(locale: &str, operation_id: &str) -> String {
+    display_for(
+        locale,
+        "journal.cli.sol.speakers.repair.check.status.advice.to.check.status.solstone.call",
+        [("operation_id", &(operation_id))],
+    )
 }
 
 /// For a repair whose request timed out: it may have started, and may still be going.
-fn repair_still_running_advice(operation_id: &str) -> String {
-    format!(
-        "\nThe repair may still be running in the journal. Don't start another one.{}",
-        repair_check_status_advice(operation_id)
+fn repair_still_running_advice(locale: &str, operation_id: &str) -> String {
+    display_for(
+        locale,
+        "journal.cli.sol.speakers.repair.in.progress.status.advice",
+        [("operation_id", &(operation_id))],
     )
 }
 
 /// For a repair that has stopped: resuming is offered only when its last failure allows it.
-fn repair_stopped_advice(operation_id: &str, status: &Value) -> String {
+fn repair_stopped_advice(locale: &str, operation_id: &str, status: &Value) -> String {
     let resumable = status
         .get("latest_failure")
         .and_then(|failure| failure.get("retryable"))
         .and_then(Value::as_bool)
         .unwrap_or(true);
     if resumable {
-        format!("\nTo resume:\n  solstone call speakers repair-resume {operation_id}\n")
+        display_for(
+            locale,
+            "journal.cli.sol.speakers.repair.stopped.advice.to.resume.solstone.call.speakers",
+            [("operation_id", &(operation_id))],
+        )
     } else {
         String::new()
     }
@@ -754,6 +986,7 @@ fn repair_stopped_advice(operation_id: &str, status: &Value) -> String {
 
 /// A committed or resumed repair answers once its attempt starts; follow it to the end.
 fn follow_repair_start(
+    locale: &str,
     ctx: CommandContext<'_>,
     started: &Value,
     mut out: String,
@@ -764,11 +997,18 @@ fn follow_repair_start(
         if json_output {
             return stdout_json(started);
         }
-        render_repair_status(&mut out, started);
+        render_repair_status(locale, &mut out, started);
         return CommandOutput::success(out);
     }
     if !json_output {
-        emit(&mut out, format!("Repair running: {operation_id}"));
+        emit(
+            &mut out,
+            display_for(
+                locale,
+                "journal.cli.sol.speakers.follow.repair.start.repair.running",
+                [("operation_id", &(operation_id))],
+            ),
+        );
     }
     loop {
         sleep(ctx, REPAIR_POLL_INTERVAL);
@@ -782,12 +1022,12 @@ fn follow_repair_start(
             Ok(status) => status,
             Err(error) => {
                 let advice = if matches!(error, ClientError::Timeout { .. }) {
-                    repair_still_running_advice(&operation_id)
+                    repair_still_running_advice(locale, &operation_id)
                 } else {
-                    repair_check_status_advice(&operation_id)
+                    repair_check_status_advice(locale, &operation_id)
                 };
                 let stdout = if json_output { String::new() } else { out };
-                let mut output = speaker_error_preserving_stdout(stdout, error);
+                let mut output = speaker_error_preserving_stdout(locale, stdout, error);
                 output.stderr.push_str(&advice);
                 return output;
             }
@@ -797,22 +1037,26 @@ fn follow_repair_start(
                 if json_output {
                     return stdout_json(&status);
                 }
-                render_repair_status(&mut out, &status);
+                render_repair_status(locale, &mut out, &status);
                 return CommandOutput::success(out);
             }
             Some("running") => {
                 if !json_output {
                     emit(
                         &mut out,
-                        format!(
-                            "Repair in progress, segments repaired so far: {}",
-                            value_to_string(status.get("checkpointed_count"))
+                        display_for(
+                            locale,
+                            "journal.cli.sol.speakers.follow.repair.start.repair.in.progress.segments.repaired",
+                            [(
+                                "count",
+                                &(value_to_string(status.get("checkpointed_count"))),
+                            )],
                         ),
                     );
                 }
             }
             _ => {
-                let advice = repair_stopped_advice(&operation_id, &status);
+                let advice = repair_stopped_advice(locale, &operation_id, &status);
                 if json_output {
                     return CommandOutput {
                         stdout: format!("{}\n", json_pretty_ascii(&status)),
@@ -820,7 +1064,7 @@ fn follow_repair_start(
                         exit: 1,
                     };
                 }
-                render_repair_status(&mut out, &status);
+                render_repair_status(locale, &mut out, &status);
                 emit(&mut out, advice);
                 return CommandOutput {
                     stdout: out,
@@ -832,61 +1076,117 @@ fn follow_repair_start(
     }
 }
 
-fn render_repair_status(out: &mut String, status: &Value) {
+fn render_repair_status(locale: &str, out: &mut String, status: &Value) {
     emit(
         out,
-        format!(
-            "Operation: {}",
-            string_field(status, "operation_id").unwrap_or_default()
+        display_for(
+            locale,
+            "journal.cli.sol.help.operation",
+            [(
+                "operation",
+                &(string_field(status, "operation_id").unwrap_or_default()),
+            )],
         ),
     );
     emit(
         out,
-        format!(
-            "Status:    {}",
-            string_field(status, "status").unwrap_or_default()
+        display_for(
+            locale,
+            "journal.cli.sol.speakers.repair.status.status",
+            [(
+                "status",
+                &(string_field(status, "status").unwrap_or_default()),
+            )],
         ),
     );
     if let Some(count) = status.get("checkpointed_count").filter(|v| !v.is_null()) {
-        emit(out, format!("Segments repaired: {count}"));
+        emit(
+            out,
+            display_for(
+                locale,
+                "journal.cli.sol.speakers.repair.status.segments.repaired",
+                [("count", &(count))],
+            ),
+        );
     }
     if let Some(clean) = status
         .get("summary")
         .and_then(|summary| summary.get("clean"))
         .and_then(Value::as_bool)
     {
-        emit(out, format!("Clean:     {clean}"));
+        emit(
+            out,
+            display_for(
+                locale,
+                "journal.cli.sol.speakers.repair.status.clean",
+                [("clean", &(clean))],
+            ),
+        );
     }
     if let Some(failure) = status.get("latest_failure").filter(|v| !v.is_null()) {
         emit(
             out,
-            format!(
-                "Last failure: {} ({})",
-                string_field(failure, "stage").unwrap_or_default(),
-                string_field(failure, "detail").unwrap_or_default()
+            display_for(
+                locale,
+                "journal.cli.sol.speakers.repair.status.last.failure",
+                [
+                    (
+                        "stage",
+                        &(string_field(failure, "stage").unwrap_or_default()),
+                    ),
+                    (
+                        "code",
+                        &(string_field(failure, "detail").unwrap_or_default()),
+                    ),
+                ],
             ),
         );
     }
 }
 
 /// Render the dry-run inventory; a committed repair is followed by operation.
-fn render_repair_dry_run(out: &mut String, stats: &Value) {
+fn render_repair_dry_run(locale: &str, out: &mut String, stats: &Value) {
     let complete = stats
         .get("complete")
         .and_then(Value::as_bool)
         .unwrap_or(false);
     let clean = stats.get("clean").and_then(Value::as_bool).unwrap_or(false);
 
-    emit(out, "Mode:      dry-run");
-    emit(out, format!("Complete:  {complete}"));
-    emit(out, format!("Clean:     {clean}"));
+    emit(
+        out,
+        render_for(
+            locale,
+            "journal.cli.sol.speakers.repair.dry.run.mode.dry.run",
+            &[],
+        ),
+    );
+    emit(
+        out,
+        display_for(
+            locale,
+            "journal.cli.sol.speakers.repair.dry.run.complete",
+            [("complete", &(complete))],
+        ),
+    );
+    emit(
+        out,
+        display_for(
+            locale,
+            "journal.cli.sol.speakers.repair.status.clean",
+            [("clean", &(clean))],
+        ),
+    );
 
     if let Some(removals) = stats.get("planned_removals").and_then(Value::as_array)
         && !removals.is_empty()
     {
         emit(
             out,
-            format!("\nEntities with voiceprints to remove: {}", removals.len()),
+            display_for(
+                locale,
+                "journal.cli.sol.speakers.repair.dry.run.entities.with.voiceprints.to.remove",
+                [("entities", &(removals.len()))],
+            ),
         );
         for removal in removals {
             if let Some(id) = removal.get("entity_id").and_then(Value::as_str) {
@@ -894,19 +1194,48 @@ fn render_repair_dry_run(out: &mut String, stats: &Value) {
                     .get("voiceprint_count")
                     .and_then(Value::as_u64)
                     .unwrap_or(0);
-                emit(out, format!("  - {id} ({rows} rows)"));
+                emit(out, {
+                    let display_id = (id).to_string();
+                    let display_rows = (rows).to_string();
+                    render_for(
+                        locale,
+                        "journal.cli.sol.speakers.repair.dry.run.rows",
+                        &[
+                            ("id", CopyValue::String(&display_id)),
+                            ("rows", CopyValue::String(&display_rows)),
+                            (
+                                "quantity",
+                                crate::command::count_selector(display_rows.parse().unwrap_or(0)),
+                            ),
+                        ],
+                    )
+                });
             }
         }
     }
     if let Some(segments) = stats.get("planned_segments").and_then(Value::as_array)
         && !segments.is_empty()
     {
-        emit(out, format!("\nSegments to repair: {}", segments.len()));
+        emit(
+            out,
+            display_for(
+                locale,
+                "journal.cli.sol.speakers.repair.dry.run.segments.to.repair",
+                [("segments", &(segments.len()))],
+            ),
+        );
     }
     if let Some(gaps) = stats.get("gaps").and_then(Value::as_array)
         && !gaps.is_empty()
     {
-        emit(out, format!("\nGaps detected ({}):", gaps.len()));
+        emit(
+            out,
+            display_for(
+                locale,
+                "journal.cli.sol.speakers.repair.dry.run.gaps.detected",
+                [("gaps", &(gaps.len()))],
+            ),
+        );
         for g in gaps {
             if let Some(reason) = g.get("reason").and_then(Value::as_str) {
                 emit(out, format!("  - {reason}"));
@@ -917,7 +1246,8 @@ fn render_repair_dry_run(out: &mut String, stats: &Value) {
 
 #[must_use]
 pub fn backfill_last_seen(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_json_commit(ctx.args) {
+    let locale = ctx.human_locale();
+    let parsed = match parse_json_commit(locale, ctx.args) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
@@ -925,7 +1255,10 @@ pub fn backfill_last_seen(ctx: CommandContext<'_>) -> CommandOutput {
     let json_output = parsed.flag("--json");
     let mut out = String::new();
     if !commit && !json_output {
-        emit(&mut out, REPORT_ONLY);
+        emit(
+            &mut out,
+            render_for(locale, "journal.cli.sol.speakers.report.only", &[]),
+        );
     }
     let stats = match request_json(
         ctx,
@@ -935,18 +1268,20 @@ pub fn backfill_last_seen(ctx: CommandContext<'_>) -> CommandOutput {
         Some(json!({"commit": commit})),
     ) {
         Ok(stats) => stats,
-        Err(error) => return speaker_error_preserving_stdout(out, error),
+        Err(error) => return speaker_error_preserving_stdout(locale, out, error),
     };
     if json_output {
         return stdout_json(&stats);
     }
-    render_backfill_last_seen(&mut out, &stats);
+    render_backfill_last_seen(locale, &mut out, &stats);
     CommandOutput::success(out)
 }
 
 #[must_use]
 pub fn wipe(ctx: CommandContext<'_>) -> CommandOutput {
+    let locale = ctx.human_locale();
     let parsed = match parse_args(
+        locale,
         ctx.args,
         &[],
         &[
@@ -963,10 +1298,15 @@ pub fn wipe(ctx: CommandContext<'_>) -> CommandOutput {
     let commit = parsed.flag("--commit");
     let erase = parsed.flag("--erase");
     if erase && !commit {
-        return stderr("--erase needs --commit");
+        return stderr(render_for(
+            locale,
+            "journal.cli.sol.speakers.wipe.erase.needs.commit",
+            &[],
+        ));
     }
     let backups = if erase {
-        match crate::command::backups_choice(
+        match crate::command::backups_choice_for(
+            locale,
             ctx,
             parsed.flag("--from-backups"),
             parsed.flag("--not-from-backups"),
@@ -980,7 +1320,10 @@ pub fn wipe(ctx: CommandContext<'_>) -> CommandOutput {
     let json_output = parsed.flag("--json");
     let mut out = String::new();
     if !commit && !json_output {
-        emit(&mut out, REPORT_ONLY);
+        emit(
+            &mut out,
+            render_for(locale, "journal.cli.sol.speakers.report.only", &[]),
+        );
     }
     let report = match request_json(
         ctx,
@@ -994,15 +1337,15 @@ pub fn wipe(ctx: CommandContext<'_>) -> CommandOutput {
         }),
     ) {
         Ok(report) => report,
-        Err(error) => return speaker_error_preserving_stdout(out, error),
+        Err(error) => return speaker_error_preserving_stdout(locale, out, error),
     };
     if json_output {
         return stdout_json(&report);
     }
-    let erase_day = crate::command::erase_day_of(ctx, &report);
-    render_wipe(&mut out, &report, erase_day.as_deref());
+    let erase_day = crate::command::erase_day_of_for(locale, ctx, &report);
+    render_wipe(locale, &mut out, &report, erase_day.as_deref());
     if report.get("erased").and_then(Value::as_bool) == Some(true)
-        && let Some(next) = crate::command::backups_next_line(backups)
+        && let Some(next) = crate::command::backups_next_line_for(locale, backups)
     {
         emit(&mut out, next);
     }
@@ -1011,7 +1354,8 @@ pub fn wipe(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn discover(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &[], &[FlagSpec::true_flag("--json")]) {
+    let locale = ctx.human_locale();
+    let parsed = match parse_args(locale, ctx.args, &[], &[FlagSpec::true_flag("--json")]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
@@ -1024,7 +1368,7 @@ pub fn discover(ctx: CommandContext<'_>) -> CommandOutput {
         None,
     ) {
         Ok(result) => result,
-        Err(error) => return discovery_error(error, json_output),
+        Err(error) => return discovery_error(locale, error, json_output),
     };
     if json_output {
         return crate::agent_output::literal_output(stdout_json(&result));
@@ -1033,52 +1377,90 @@ pub fn discover(ctx: CommandContext<'_>) -> CommandOutput {
     let clusters = array_field(&result, "clusters");
     let mut out = String::new();
     if clusters.is_empty() {
-        emit(&mut out, "No recurring unknown speakers found.");
-    } else {
         emit(
             &mut out,
-            format!("Found {} unknown speaker cluster(s):\n", clusters.len()),
+            render_for(
+                locale,
+                "journal.cli.sol.speakers.discover.no.recurring.unknown.speakers.found",
+                &[],
+            ),
         );
+    } else {
+        emit(&mut out, {
+            let display_clusters = (clusters.len()).to_string();
+            render_for(
+                locale,
+                "journal.cli.sol.speakers.discover.found.unknown.speaker.cluster.s",
+                &[
+                    ("clusters", CopyValue::String(&display_clusters)),
+                    (
+                        "quantity",
+                        crate::command::count_selector(display_clusters.parse().unwrap_or(0)),
+                    ),
+                ],
+            )
+        });
         for cluster in clusters {
-            emit(
-                &mut out,
-                format!(
-                    "  Cluster {}: {} samples across {} segments",
-                    value_to_string(cluster.get("cluster_id")),
-                    value_to_string(cluster.get("size")),
-                    value_to_string(cluster.get("segment_count")),
-                ),
-            );
+            emit(&mut out, {
+                let display_cluster = (value_to_string(cluster.get("cluster_id"))).to_string();
+                let display_samples = (value_to_string(cluster.get("size"))).to_string();
+                let display_segments = (value_to_string(cluster.get("segment_count"))).to_string();
+                render_for(
+                    locale,
+                    "journal.cli.sol.speakers.discover.cluster.samples.across.segments",
+                    &[
+                        ("cluster", CopyValue::String(&display_cluster)),
+                        ("samples", CopyValue::String(&display_samples)),
+                        ("segments", CopyValue::String(&display_segments)),
+                        (
+                            "quantity",
+                            crate::command::count_selector(display_samples.parse().unwrap_or(0)),
+                        ),
+                        (
+                            "segments_quantity",
+                            crate::command::count_selector(display_segments.parse().unwrap_or(0)),
+                        ),
+                    ],
+                )
+            });
             for sample in array_field(cluster, "samples") {
                 let text = string_field(sample, "text").unwrap_or_default();
                 let preview = text.chars().take(60).collect::<String>();
                 emit(
                     &mut out,
-                    format!(
-                        "    - {}/{}/{} sid={}: {}",
-                        value_to_string(sample.get("day")),
-                        value_to_string(sample.get("stream")),
-                        value_to_string(sample.get("segment_key")),
-                        value_to_string(sample.get("sentence_id")),
-                        preview,
+                    display_for(
+                        locale,
+                        "journal.cli.sol.speakers.discover.sid",
+                        [
+                            ("day", &(value_to_string(sample.get("day")))),
+                            ("stream", &(value_to_string(sample.get("stream")))),
+                            ("segment", &(value_to_string(sample.get("segment_key")))),
+                            ("sentence_id", &(value_to_string(sample.get("sentence_id")))),
+                            ("text", &(preview)),
+                        ],
                     ),
                 );
             }
             emit(&mut out, "");
         }
     }
-    render_discovery_warnings(&mut out, &result);
+    render_discovery_warnings(locale, &mut out, &result);
     CommandOutput::success(out)
 }
 
 #[must_use]
 pub fn presence(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &[], &[FlagSpec::true_flag("--json")]) {
+    let locale = ctx.human_locale();
+    let parsed = match parse_args(locale, ctx.args, &[], &[FlagSpec::true_flag("--json")]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
     let Some(cluster_id) = parsed.positionals.first() else {
-        return stderr("Error: missing argument CLUSTER_ID");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.missing.argument",
+            [("argument", &("CLUSTER_ID"))],
+        ));
     };
     let result = match request_json(
         ctx,
@@ -1090,26 +1472,30 @@ pub fn presence(ctx: CommandContext<'_>) -> CommandOutput {
         Ok(result) => result,
         Err(error) if error.reason_code() == Some("speaker_review_unavailable") => {
             return CommandOutput::failure(
-                format!(
-                    "Cluster {cluster_id} was not found.\nRun 'solstone call speakers discover' to produce valid cluster ids.\n"
+                display_for(
+                    locale,
+                    "journal.cli.sol.speakers.presence.cluster.was.not.found.run",
+                    [("cluster_id", &(cluster_id))],
                 ),
                 1,
             );
         }
-        Err(error) => return speaker_error(error),
+        Err(error) => return speaker_error(locale, error),
     };
     if parsed.flag("--json") {
         return crate::agent_output::literal_output(stdout_json(&result));
     }
     let result = crate::agent_output::literal_body(result);
     let mut out = String::new();
-    render_presence(&mut out, &result);
+    render_presence(locale, &mut out, &result);
     CommandOutput::success(out)
 }
 
 #[must_use]
 pub fn identify(ctx: CommandContext<'_>) -> CommandOutput {
+    let locale = solstone_core_cli_copy::ENGLISH;
     let parsed = match parse_args(
+        locale,
         ctx.args,
         &[
             ("--entity-id", None),
@@ -1130,12 +1516,23 @@ pub fn identify(ctx: CommandContext<'_>) -> CommandOutput {
         .first()
         .and_then(|value| value.parse::<i64>().ok())
     else {
-        return stderr("Error: missing argument CLUSTER_ID");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.missing.argument",
+            [("argument", &("CLUSTER_ID"))],
+        ));
     };
     let name = parsed.positionals.get(1).cloned();
     let entity_id = parsed.value("--entity-id");
     if name.is_none() && entity_id.is_none() {
-        return CommandOutput::failure(IDENTIFY_NAME_REQUIRED_ERROR, 2);
+        return CommandOutput::failure(
+            render_for(
+                locale,
+                "journal.cli.sol.speakers.identify.name.required.usage",
+                &[],
+            ),
+            2,
+        );
     }
     let request_id = parsed.value("--request-id").map(str::to_string);
     let reviewed_ids = parsed.values("--reviewed-near-match-entity-id");
@@ -1162,24 +1559,29 @@ pub fn identify(ctx: CommandContext<'_>) -> CommandOutput {
     ) {
         Ok(result) => result,
         Err(error) if is_identify_failure(&error) => {
-            return identify_error(error, request_id.as_deref());
+            return identify_error(locale, error, request_id.as_deref());
         }
         Err(error) if error.reason_code() == Some("speaker_command_failed") => {
-            return detail_error(error);
+            return detail_error(locale, error);
         }
-        Err(error) => return speaker_error(error),
+        Err(error) => return speaker_error(locale, error),
     };
     crate::agent_output::literal_output(stdout_json(&result))
 }
 
 #[must_use]
 pub fn identify_undo(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &[], &[]) {
+    let locale = solstone_core_cli_copy::ENGLISH;
+    let parsed = match parse_args(locale, ctx.args, &[], &[]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
     let Some(operation_id) = parsed.positionals.first() else {
-        return stderr("Error: missing argument OPERATION_ID");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.missing.argument",
+            [("argument", &("OPERATION_ID"))],
+        ));
     };
     match request_json(
         ctx,
@@ -1189,9 +1591,11 @@ pub fn identify_undo(ctx: CommandContext<'_>) -> CommandOutput {
         Some(json!({"operation_id": operation_id})),
     ) {
         Ok(result) => stdout_json(&result),
-        Err(error) if is_identify_failure(&error) => identify_error(error, None),
-        Err(error) if error.reason_code() == Some("speaker_command_failed") => detail_error(error),
-        Err(error) => speaker_error(error),
+        Err(error) if is_identify_failure(&error) => identify_error(locale, error, None),
+        Err(error) if error.reason_code() == Some("speaker_command_failed") => {
+            detail_error(locale, error)
+        }
+        Err(error) => speaker_error(locale, error),
     }
 }
 
@@ -1202,12 +1606,17 @@ pub fn identify_operations(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn identify_operation(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &[], &[]) {
+    let locale = solstone_core_cli_copy::ENGLISH;
+    let parsed = match parse_args(locale, ctx.args, &[], &[]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
     let Some(operation_id) = parsed.positionals.first() else {
-        return stderr("Error: missing argument OPERATION_ID");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.missing.argument",
+            [("argument", &("OPERATION_ID"))],
+        ));
     };
     match request_json(
         ctx,
@@ -1217,14 +1626,15 @@ pub fn identify_operation(ctx: CommandContext<'_>) -> CommandOutput {
         None,
     ) {
         Ok(result) => crate::agent_output::literal_output(stdout_json(&result)),
-        Err(error) if is_identify_failure(&error) => identify_error(error, None),
-        Err(error) => speaker_error(error),
+        Err(error) if is_identify_failure(&error) => identify_error(locale, error, None),
+        Err(error) => speaker_error(locale, error),
     }
 }
 
 #[must_use]
 pub fn dismiss_cluster(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &[("--disposition", None)], &[]) {
+    let locale = solstone_core_cli_copy::ENGLISH;
+    let parsed = match parse_args(locale, ctx.args, &[("--disposition", None)], &[]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
@@ -1233,10 +1643,18 @@ pub fn dismiss_cluster(ctx: CommandContext<'_>) -> CommandOutput {
         .first()
         .and_then(|value| value.parse::<i64>().ok())
     else {
-        return stderr("Error: missing argument CLUSTER_ID");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.missing.argument",
+            [("argument", &("CLUSTER_ID"))],
+        ));
     };
     let Some(disposition) = parsed.value("--disposition") else {
-        return stderr("Error: option --disposition is required.");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.option.required",
+            [("option", &("--disposition"))],
+        ));
     };
     match request_json(
         ctx,
@@ -1246,8 +1664,10 @@ pub fn dismiss_cluster(ctx: CommandContext<'_>) -> CommandOutput {
         Some(json!({"cluster_id": cluster_id, "disposition": disposition})),
     ) {
         Ok(result) => stdout_json(&result),
-        Err(error) if error.reason_code() == Some("speaker_command_failed") => detail_error(error),
-        Err(error) => speaker_error(error),
+        Err(error) if error.reason_code() == Some("speaker_command_failed") => {
+            detail_error(locale, error)
+        }
+        Err(error) => speaker_error(locale, error),
     }
 }
 
@@ -1263,15 +1683,24 @@ pub fn keep_separate_list(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn merge_names(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &[], &[FlagSpec::true_flag("--yes")]) {
+    let locale = solstone_core_cli_copy::ENGLISH;
+    let parsed = match parse_args(locale, ctx.args, &[], &[FlagSpec::true_flag("--yes")]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
     let Some(alias) = parsed.positionals.first() else {
-        return stderr("Error: missing argument ALIAS");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.missing.argument",
+            [("argument", &("ALIAS"))],
+        ));
     };
     let Some(canonical) = parsed.positionals.get(1) else {
-        return stderr("Error: missing argument CANONICAL");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.missing.argument",
+            [("argument", &("CANONICAL"))],
+        ));
     };
     match request_json(
         ctx,
@@ -1281,22 +1710,33 @@ pub fn merge_names(ctx: CommandContext<'_>) -> CommandOutput {
         Some(json!({"alias": alias, "canonical": canonical, "commit": parsed.flag("--yes")})),
     ) {
         Ok(result) => crate::agent_output::literal_output(stdout_json(&result)),
-        Err(error) if error.reason_code() == Some("speaker_command_failed") => detail_error(error),
-        Err(error) => speaker_error(error),
+        Err(error) if error.reason_code() == Some("speaker_command_failed") => {
+            detail_error(locale, error)
+        }
+        Err(error) => speaker_error(locale, error),
     }
 }
 
 #[must_use]
 pub fn link_import(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &[("--entity-id", None)], &[]) {
+    let locale = solstone_core_cli_copy::ENGLISH;
+    let parsed = match parse_args(locale, ctx.args, &[("--entity-id", None)], &[]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
     let Some(name) = parsed.positionals.first() else {
-        return stderr("Error: missing argument NAME");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.missing.argument",
+            [("argument", &("NAME"))],
+        ));
     };
     let Some(entity_id) = parsed.value("--entity-id") else {
-        return stderr("Error: option --entity-id is required.");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.option.required",
+            [("option", &("--entity-id"))],
+        ));
     };
     match request_json(
         ctx,
@@ -1306,14 +1746,17 @@ pub fn link_import(ctx: CommandContext<'_>) -> CommandOutput {
         Some(json!({"name": name, "entity_id": entity_id})),
     ) {
         Ok(result) => stdout_json(&result),
-        Err(error) if error.reason_code() == Some("speaker_command_failed") => detail_error(error),
-        Err(error) => speaker_error(error),
+        Err(error) if error.reason_code() == Some("speaker_command_failed") => {
+            detail_error(locale, error)
+        }
+        Err(error) => speaker_error(locale, error),
     }
 }
 
 #[must_use]
 pub fn seed_from_imports(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_json_commit(ctx.args) {
+    let locale = ctx.human_locale();
+    let parsed = match parse_json_commit(locale, ctx.args) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
@@ -1321,10 +1764,20 @@ pub fn seed_from_imports(ctx: CommandContext<'_>) -> CommandOutput {
     let json_output = parsed.flag("--json");
     let mut out = String::new();
     if !commit && !json_output {
-        emit(&mut out, REPORT_ONLY);
+        emit(
+            &mut out,
+            render_for(locale, "journal.cli.sol.speakers.report.only", &[]),
+        );
     }
     if !json_output {
-        emit(&mut out, "Seeding voiceprints from import segments...");
+        emit(
+            &mut out,
+            render_for(
+                locale,
+                "journal.cli.sol.speakers.seed.from.imports.seeding.voiceprints.from.import.segments",
+                &[],
+            ),
+        );
     }
     let stats = match request_json(
         ctx,
@@ -1337,17 +1790,29 @@ pub fn seed_from_imports(ctx: CommandContext<'_>) -> CommandOutput {
         Err(error) if error.reason_code() == Some("speaker_owner_centroid_required") => {
             return CommandOutput {
                 stdout: out,
-                stderr: format!("Error: {}\n", error.detail().unwrap_or(error.message())),
+                stderr: format!(
+                    "{}\n",
+                    display_for(
+                        locale,
+                        "journal.cli.client.error.detail",
+                        [(
+                            "detail",
+                            &(&error
+                                .detail_for(locale)
+                                .unwrap_or_else(|| error.message_for(locale)))
+                        )]
+                    )
+                ),
                 exit: 1,
             };
         }
-        Err(error) => return speaker_error_preserving_stdout(out, error),
+        Err(error) => return speaker_error_preserving_stdout(locale, out, error),
     };
     if json_output {
         return crate::agent_output::literal_output(stdout_json(&stats));
     }
     let stats = crate::agent_output::literal_body(stats);
-    render_seed_from_imports(&mut out, &stats);
+    render_seed_from_imports(locale, &mut out, &stats);
     CommandOutput::success(out)
 }
 
@@ -1357,9 +1822,12 @@ pub fn suggest(ctx: CommandContext<'_>) -> CommandOutput {
 }
 
 fn suggest_output(ctx: CommandContext<'_>) -> CommandOutput {
+    let value_options = &[("--limit", Some("-n"))];
+    let locale = locale_for_options(ctx, value_options);
     let parsed = match parse_args(
+        locale,
         ctx.args,
-        &[("--limit", Some("-n"))],
+        value_options,
         &[FlagSpec::true_flag("--json")],
     ) {
         Ok(parsed) => parsed,
@@ -1374,7 +1842,7 @@ fn suggest_output(ctx: CommandContext<'_>) -> CommandOutput {
         None,
     ) {
         Ok(body) => body,
-        Err(error) => return speaker_error(error),
+        Err(error) => return speaker_error(locale, error),
     };
     if parsed.flag("--json") {
         return stdout_json(&body);
@@ -1384,7 +1852,8 @@ fn suggest_output(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn detect(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &[], &[FlagSpec::true_flag("--force")]) {
+    let locale = solstone_core_cli_copy::ENGLISH;
+    let parsed = match parse_args(locale, ctx.args, &[], &[FlagSpec::true_flag("--force")]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
@@ -1397,7 +1866,8 @@ pub fn detect(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn build_from_tags(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &[], &[FlagSpec::true_flag("--json")]) {
+    let locale = ctx.human_locale();
+    let parsed = match parse_args(locale, ctx.args, &[], &[FlagSpec::true_flag("--json")]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
@@ -1409,19 +1879,21 @@ pub fn build_from_tags(ctx: CommandContext<'_>) -> CommandOutput {
         None,
     ) {
         Ok(result) => result,
-        Err(error) => return speaker_error(error),
+        Err(error) => return speaker_error(locale, error),
     };
     if parsed.flag("--json") {
         return stdout_json(&result);
     }
     let mut out = String::new();
-    render_build_from_tags(&mut out, &result);
+    render_build_from_tags(locale, &mut out, &result);
     CommandOutput::success(out)
 }
 
 #[must_use]
 pub fn rebuild_owner(ctx: CommandContext<'_>) -> CommandOutput {
+    let locale = ctx.human_locale();
     let parsed = match parse_args(
+        locale,
         ctx.args,
         &[],
         &[
@@ -1440,46 +1912,69 @@ pub fn rebuild_owner(ctx: CommandContext<'_>) -> CommandOutput {
         Some(json!({"override": parsed.flag("--override")})),
     ) {
         Ok(result) => result,
-        Err(error) => return speaker_error(error),
+        Err(error) => return speaker_error(locale, error),
     };
     if parsed.flag("--json") {
         return stdout_json(&result);
     }
     let mut out = String::new();
-    render_rebuild_owner(&mut out, &result);
+    render_rebuild_owner(locale, &mut out, &result);
     CommandOutput::success(out)
 }
 
 #[must_use]
 pub fn tag_owner(ctx: CommandContext<'_>) -> CommandOutput {
+    let value_options = &[("--stream-layout", None)];
+    let locale = locale_for_options(ctx, value_options);
     let parsed = match parse_args(
+        locale,
         ctx.args,
-        &[("--stream-layout", None)],
+        value_options,
         &[FlagSpec::true_flag("--json")],
     ) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
     let Some(day) = parsed.positionals.first() else {
-        return stderr("Error: missing argument DAY");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.missing.argument",
+            [("argument", &("DAY"))],
+        ));
     };
     let Some(stream) = parsed.positionals.get(1) else {
-        return stderr("Error: missing argument STREAM");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.missing.argument",
+            [("argument", &("STREAM"))],
+        ));
     };
     let Some(segment) = parsed.positionals.get(2) else {
-        return stderr("Error: missing argument SEGMENT");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.missing.argument",
+            [("argument", &("SEGMENT"))],
+        ));
     };
     let Some(source) = parsed.positionals.get(3) else {
-        return stderr("Error: missing argument SOURCE");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.missing.argument",
+            [("argument", &("SOURCE"))],
+        ));
     };
     let Some(sentence_id) = parsed
         .positionals
         .get(4)
         .and_then(|value| value.parse::<i64>().ok())
     else {
-        return stderr("Error: missing argument SENTENCE_ID");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.missing.argument",
+            [("argument", &("SENTENCE_ID"))],
+        ));
     };
-    let stream_layout = match parse_stream_layout_option(&parsed) {
+    let stream_layout = match parse_stream_layout_option(locale, &parsed) {
         Ok(layout) => layout,
         Err(err) => return err,
     };
@@ -1505,41 +2000,74 @@ pub fn tag_owner(ctx: CommandContext<'_>) -> CommandOutput {
                 )
             ) =>
         {
-            return detail_error(error);
+            return detail_error(locale, error);
         }
-        Err(error) => return speaker_error(error),
+        Err(error) => return speaker_error(locale, error),
     };
     if parsed.flag("--json") {
         return stdout_json(&result);
     }
     if string_field(&result, "status").as_deref() == Some("already_assigned") {
-        stdout_line(format!(
-            "Owner sentence already tagged: {day}/{stream_layout}/{stream}/{segment} #{sentence_id}"
+        stdout_line(display_for(
+            locale,
+            "journal.cli.sol.speakers.tag.owner.owner.sentence.already.tagged",
+            [
+                ("day", &(day)),
+                ("stream_layout", &(stream_layout)),
+                ("stream", &(stream)),
+                ("segment", &(segment)),
+                ("sentence_id", &(sentence_id)),
+            ],
         ))
     } else {
-        stdout_line(format!(
-            "Tagged owner sentence: {day}/{stream_layout}/{stream}/{segment} #{sentence_id}"
+        stdout_line(display_for(
+            locale,
+            "journal.cli.sol.speakers.tag.owner.tagged.owner.sentence",
+            [
+                ("day", &(day)),
+                ("stream_layout", &(stream_layout)),
+                ("stream", &(stream)),
+                ("segment", &(segment)),
+                ("sentence_id", &(sentence_id)),
+            ],
         ))
     }
 }
 
 #[must_use]
 pub fn sentences(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &[], &[FlagSpec::true_flag("--json")]) {
+    let locale = ctx.human_locale();
+    let parsed = match parse_args(locale, ctx.args, &[], &[FlagSpec::true_flag("--json")]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
     let Some(day) = parsed.positionals.first() else {
-        return stderr("Error: missing argument DAY");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.missing.argument",
+            [("argument", &("DAY"))],
+        ));
     };
     let Some(stream) = parsed.positionals.get(1) else {
-        return stderr("Error: missing argument STREAM");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.missing.argument",
+            [("argument", &("STREAM"))],
+        ));
     };
     let Some(segment) = parsed.positionals.get(2) else {
-        return stderr("Error: missing argument SEGMENT");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.missing.argument",
+            [("argument", &("SEGMENT"))],
+        ));
     };
     let Some(source) = parsed.positionals.get(3) else {
-        return stderr("Error: missing argument SOURCE");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.missing.argument",
+            [("argument", &("SOURCE"))],
+        ));
     };
     let body = match request_json(
         ctx,
@@ -1549,7 +2077,7 @@ pub fn sentences(ctx: CommandContext<'_>) -> CommandOutput {
         None,
     ) {
         Ok(body) => body,
-        Err(error) => return speaker_error(error),
+        Err(error) => return speaker_error(locale, error),
     };
     if parsed.flag("--json") {
         return crate::agent_output::literal_output(stdout_json(&body));
@@ -1558,7 +2086,16 @@ pub fn sentences(ctx: CommandContext<'_>) -> CommandOutput {
     let mut out = String::new();
     emit(
         &mut out,
-        format!("Sentences for {day}/{stream}/{segment}/{source}:"),
+        display_for(
+            locale,
+            "journal.cli.sol.speakers.sentences.sentences.for",
+            [
+                ("day", &(day)),
+                ("stream", &(stream)),
+                ("segment", &(segment)),
+                ("source", &(source)),
+            ],
+        ),
     );
     for sentence in array_field(&body, "sentences") {
         let marker = if sentence
@@ -1584,16 +2121,23 @@ pub fn sentences(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn day_segments(ctx: CommandContext<'_>) -> CommandOutput {
+    let value_options = &[("--limit", Some("-n"))];
+    let locale = locale_for_options(ctx, value_options);
     let parsed = match parse_args(
+        locale,
         ctx.args,
-        &[("--limit", Some("-n"))],
+        value_options,
         &[FlagSpec::true_flag("--json")],
     ) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
     let Some(day) = parsed.positionals.first() else {
-        return stderr("Error: missing argument DAY");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.missing.argument",
+            [("argument", &("DAY"))],
+        ));
     };
     let limit = parsed.value("--limit").unwrap_or("20");
     let body = match request_json(
@@ -1604,21 +2148,30 @@ pub fn day_segments(ctx: CommandContext<'_>) -> CommandOutput {
         None,
     ) {
         Ok(body) => body,
-        Err(error) => return speaker_error(error),
+        Err(error) => return speaker_error(locale, error),
     };
     if parsed.flag("--json") {
         return stdout_json(&body);
     }
     let mut out = String::new();
-    emit(
-        &mut out,
-        format!(
-            "Showing {} of {} segments (limit {})",
-            value_to_string(body.get("returned")),
-            value_to_string(body.get("total")),
-            value_to_string(body.get("limit")),
-        ),
-    );
+    emit(&mut out, {
+        let display_shown = (value_to_string(body.get("returned"))).to_string();
+        let display_total = (value_to_string(body.get("total"))).to_string();
+        let display_limit = (value_to_string(body.get("limit"))).to_string();
+        render_for(
+            locale,
+            "journal.cli.sol.speakers.day.segments.showing.of.segments.limit",
+            &[
+                ("shown", CopyValue::String(&display_shown)),
+                ("total", CopyValue::String(&display_total)),
+                ("limit", CopyValue::String(&display_limit)),
+                (
+                    "quantity",
+                    crate::command::count_selector(display_total.parse().unwrap_or(0)),
+                ),
+            ],
+        )
+    });
     for segment in array_field(&body, "segments") {
         emit(
             &mut out,
@@ -1635,7 +2188,9 @@ pub fn day_segments(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn confirm_owner(ctx: CommandContext<'_>) -> CommandOutput {
+    let locale = ctx.human_locale();
     let parsed = match parse_args(
+        locale,
         ctx.args,
         &[],
         &[
@@ -1649,31 +2204,33 @@ pub fn confirm_owner(ctx: CommandContext<'_>) -> CommandOutput {
     let json_output = parsed.flag("--json");
     // The speakers overview holds the owner review, so the link needs no day.
     let review_entry = "/app/speakers/";
-    let message = format!(
-        "Owner voice candidates must be confirmed in the browser.\nReview and confirm at {review_entry}"
-    );
     if json_output {
+        let detail = "Owner voice candidates must be confirmed in the browser.";
         CommandOutput::failure(
             format!(
                 "{}\n",
                 json!({
-                    "reason_code": "review_required",
-                    "error": "review_required",
-                    "detail": "Owner voice candidates must be confirmed in the browser.",
-                    "message": message,
+                    "reason_code": "review_required", "error": "review_required",
+                    "detail": detail, "message": format!("{detail}\nReview and confirm at {review_entry}"),
                     "review_entry": review_entry,
                 })
             ),
             1,
         )
     } else {
-        stderr(format!("error: {message}"))
+        stderr(display_for(
+            locale,
+            "journal.cli.sol.speakers.confirm.owner.review.error.owner.voice.candidates.must",
+            [("review_entry", &(review_entry))],
+        ))
     }
 }
 
 #[must_use]
 pub fn reject_owner(ctx: CommandContext<'_>) -> CommandOutput {
+    let locale = solstone_core_cli_copy::ENGLISH;
     let parsed = match parse_args(
+        locale,
         ctx.args,
         &[("--version", None)],
         &[FlagSpec::true_flag("--json")],
@@ -1682,7 +2239,11 @@ pub fn reject_owner(ctx: CommandContext<'_>) -> CommandOutput {
         Err(error) => return stderr(error),
     };
     let Some(version) = parsed.value("--version") else {
-        return stderr("Error: --version is required.");
+        return stderr(render_for(
+            locale,
+            "journal.cli.sol.speakers.reject.owner.error.version.is.required",
+            &[],
+        ));
     };
     post_json(
         ctx,
@@ -1696,8 +2257,9 @@ pub fn owner_ready(ctx: CommandContext<'_>) -> CommandOutput {
     post_json(ctx, "/app/speakers/api/owner/ready", Value::Null)
 }
 
-fn parse_json_commit(args: &[String]) -> Result<ParsedArgs, String> {
+fn parse_json_commit(locale: &str, args: &[String]) -> Result<ParsedArgs, String> {
     parse_args(
+        locale,
         args,
         &[],
         &[
@@ -1772,7 +2334,16 @@ impl FlagSpec {
     }
 }
 
+fn locale_for_options(ctx: CommandContext<'_>, options: &[(&str, Option<&str>)]) -> &'static str {
+    ctx.human_locale_matching(|token| {
+        options
+            .iter()
+            .any(|&(name, alias)| name == token || alias == Some(token))
+    })
+}
+
 fn parse_args(
+    locale: &str,
     args: &[String],
     value_options: &[(&str, Option<&str>)],
     flags: &[FlagSpec],
@@ -1797,13 +2368,21 @@ fn parse_args(
         } else if let Some(canonical) = canonical_value_option(token, value_options) {
             index += 1;
             let Some(value) = args.get(index) else {
-                return Err(format!("Error: option {token} requires an argument."));
+                return Err(display_for(
+                    locale,
+                    "journal.cli.client.option.value",
+                    [("option", &(token))],
+                ));
             };
             parsed.values.push((canonical.to_string(), value.clone()));
         } else if let Some((canonical, value)) = canonical_flag(token, flags) {
             parsed.bools.push((canonical.to_string(), value));
         } else if token.starts_with('-') {
-            return Err(format!("Error: unknown option {token}."));
+            return Err(display_for(
+                locale,
+                "journal.cli.client.option.unknown",
+                [("option", &(token))],
+            ));
         } else {
             parsed.positionals.push(token.clone());
         }
@@ -1838,17 +2417,19 @@ fn canonical_flag<'a>(token: &str, flags: &'a [FlagSpec]) -> Option<(&'a str, bo
 }
 
 fn request_pretty_get(ctx: CommandContext<'_>, path: &str) -> CommandOutput {
+    let locale = solstone_core_cli_copy::ENGLISH;
     match request_json(ctx, HttpMethod::Get, path, vec![], None) {
         Ok(value) => crate::agent_output::literal_output(stdout_json(&value)),
-        Err(error) => speaker_error(error),
+        Err(error) => speaker_error(locale, error),
     }
 }
 
 fn post_json(ctx: CommandContext<'_>, path: &str, body: Value) -> CommandOutput {
+    let locale = solstone_core_cli_copy::ENGLISH;
     let json = if body.is_null() { None } else { Some(body) };
     match request_json(ctx, HttpMethod::Post, path, vec![], json) {
         Ok(value) => crate::agent_output::literal_output(stdout_json(&value)),
-        Err(error) => speaker_error(error),
+        Err(error) => speaker_error(locale, error),
     }
 }
 
@@ -1870,14 +2451,14 @@ fn request_json(
     decode_response(&response)
 }
 
-fn speaker_error(error: ClientError) -> CommandOutput {
+fn speaker_error(locale: &str, error: ClientError) -> CommandOutput {
     match error {
-        ClientError::Unreachable { .. } => stderr(SERVICE_DOWN_MESSAGE),
-        other => stderr(other.message()),
+        ClientError::Unreachable { .. } => stderr(crate::error::service_down_for(locale)),
+        other => stderr(other.message_for(locale)),
     }
 }
 
-fn discovery_error(error: ClientError, json_output: bool) -> CommandOutput {
+fn discovery_error(locale: &str, error: ClientError, json_output: bool) -> CommandOutput {
     if let ClientError::ReasonRejected { payload, .. } = &error
         && !payload.is_null()
     {
@@ -1889,21 +2470,32 @@ fn discovery_error(error: ClientError, json_output: bool) -> CommandOutput {
             };
         }
         let mut err = String::new();
-        emit(&mut err, error.message());
-        emit(&mut err, "try again");
+        emit(&mut err, error.message_for(locale));
+        emit(
+            &mut err,
+            render_for(
+                locale,
+                "journal.cli.sol.speakers.discovery.error.try.again",
+                &[],
+            ),
+        );
         return CommandOutput {
             stdout: String::new(),
             stderr: err,
             exit: 1,
         };
     }
-    speaker_error(error)
+    speaker_error(locale, error)
 }
 
-fn speaker_error_preserving_stdout(stdout: String, error: ClientError) -> CommandOutput {
+fn speaker_error_preserving_stdout(
+    locale: &str,
+    stdout: String,
+    error: ClientError,
+) -> CommandOutput {
     let stderr = match error {
-        ClientError::Unreachable { .. } => format!("{SERVICE_DOWN_MESSAGE}\n"),
-        other => format!("{}\n", other.message()),
+        ClientError::Unreachable { .. } => format!("{}\n", crate::error::service_down_for(locale)),
+        other => format!("{}\n", other.message_for(locale)),
     };
     CommandOutput {
         stdout,
@@ -1912,14 +2504,16 @@ fn speaker_error_preserving_stdout(stdout: String, error: ClientError) -> Comman
     }
 }
 
-fn detail_error(error: ClientError) -> CommandOutput {
+fn detail_error(locale: &str, error: ClientError) -> CommandOutput {
     // A server detail can name a speaker.
     stderr(crate::agent_output::literal_links(
-        error.detail().unwrap_or(error.message()),
+        &error
+            .detail_for(locale)
+            .unwrap_or_else(|| error.message_for(locale)),
     ))
 }
 
-fn identify_error(error: ClientError, request_id: Option<&str>) -> CommandOutput {
+fn identify_error(locale: &str, error: ClientError, request_id: Option<&str>) -> CommandOutput {
     let payload = match &error {
         ClientError::ReasonRejected { payload, .. } => payload.as_ref(),
         _ => &Value::Null,
@@ -1931,23 +2525,37 @@ fn identify_error(error: ClientError, request_id: Option<&str>) -> CommandOutput
     let mut err = String::new();
     emit(
         &mut err,
-        crate::agent_output::literal_links(error.detail().unwrap_or(error.message())),
+        crate::agent_output::literal_links(
+            &error
+                .detail_for(locale)
+                .unwrap_or_else(|| error.message_for(locale)),
+        ),
     );
     if let Some(request_id) = retry_request_id {
         emit(
             &mut err,
-            format!("Retry with the same --request-id {request_id}."),
+            display_for(
+                locale,
+                "journal.cli.sol.speakers.identify.error.retry.with.the.same.request",
+                [("request_id", &(request_id))],
+            ),
         );
     }
     emit(
         &mut err,
-        "Inspect operations with: solstone call speakers identify-operations",
+        render_for(
+            locale,
+            "journal.cli.sol.speakers.identify.error.inspect.operations.with.solstone.call",
+            &[],
+        ),
     );
     if let Some(operation_id) = operation_id {
         emit(
             &mut err,
-            format!(
-                "Inspect this operation with: solstone call speakers identify-operation {operation_id}"
+            display_for(
+                locale,
+                "journal.cli.sol.speakers.identify.error.inspect.this.operation.with.solstone",
+                [("operation_id", &(operation_id))],
             ),
         );
     }
@@ -1972,12 +2580,19 @@ fn stdout_line(value: impl AsRef<str>) -> CommandOutput {
     CommandOutput::success(format!("{}\n", value.as_ref()))
 }
 
-fn parse_stream_layout_option(parsed: &ParsedArgs) -> Result<&'static str, CommandOutput> {
+fn parse_stream_layout_option(
+    locale: &str,
+    parsed: &ParsedArgs,
+) -> Result<&'static str, CommandOutput> {
     match parsed.value("--stream-layout") {
         None => Ok("named"),
         Some("direct") => Ok("direct"),
         Some("named") => Ok("named"),
-        Some(_) => Err(stderr("Error: invalid value for --stream-layout")),
+        Some(_) => Err(stderr(render_for(
+            locale,
+            "journal.cli.sol.speakers.parse.stream.layout.option.error.invalid.value.for.stream",
+            &[],
+        ))),
     }
 }
 
@@ -1990,102 +2605,143 @@ fn emit(out: &mut String, line: impl AsRef<str>) {
     out.push('\n');
 }
 
-fn render_discovery_warnings(out: &mut String, result: &Value) {
+fn render_discovery_warnings(locale: &str, out: &mut String, result: &Value) {
     for issue in array_field(result, "issues") {
         let reason_code = string_field(issue, "reason_code").unwrap_or_default();
         let message = string_field(issue, "message").unwrap_or_default();
         let count = issue.get("count").and_then(Value::as_i64).unwrap_or(0);
         if count == 0 {
-            emit(out, format!("Warning: {reason_code}: {message}"));
+            emit(
+                out,
+                display_for(
+                    locale,
+                    "journal.cli.sol.speakers.discovery.warnings.warning",
+                    [("reason_code", &(reason_code)), ("message", &(message))],
+                ),
+            );
         } else {
             emit(
                 out,
-                format!("Warning: {reason_code}: {message} count={count}"),
+                display_for(
+                    locale,
+                    "journal.cli.sol.speakers.discovery.warnings.warning.count",
+                    [
+                        ("reason_code", &(reason_code)),
+                        ("message", &(message)),
+                        ("count", &(count)),
+                    ],
+                ),
             );
         }
     }
 }
 
-fn render_bootstrap_stats(out: &mut String, stats: &Value) {
+fn render_bootstrap_stats(locale: &str, out: &mut String, stats: &Value) {
     emit(out, "");
     emit(
         out,
-        format!(
-            "Segments scanned: {}",
-            value_to_string(stats.get("segments_scanned"))
+        display_for(
+            locale,
+            "journal.cli.sol.speakers.bootstrap.stats.segments.scanned",
+            [("count", &(value_to_string(stats.get("segments_scanned"))))],
         ),
     );
     emit(
         out,
-        format!(
-            "Single-speaker segments: {}",
-            value_to_string(stats.get("single_speaker_segments"))
+        display_for(
+            locale,
+            "journal.cli.sol.speakers.bootstrap.stats.single.speaker.segments",
+            [(
+                "count",
+                &(value_to_string(stats.get("single_speaker_segments"))),
+            )],
         ),
     );
     emit(
         out,
-        format!(
-            "Unique speakers: {}",
-            object_len(stats.get("speakers_found"))
+        display_for(
+            locale,
+            "journal.cli.sol.speakers.bootstrap.stats.unique.speakers",
+            [("count", &(object_len(stats.get("speakers_found"))))],
         ),
     );
     emit(
         out,
-        format!(
-            "Entities created: {}",
-            value_to_string(stats.get("entities_created"))
+        display_for(
+            locale,
+            "journal.cli.sol.speakers.bootstrap.stats.entities.created",
+            [("count", &(value_to_string(stats.get("entities_created"))))],
         ),
     );
     emit(
         out,
-        format!(
-            "Embeddings saved: {}",
-            value_to_string(stats.get("embeddings_saved"))
+        display_for(
+            locale,
+            "journal.cli.sol.speakers.bootstrap.stats.embeddings.saved",
+            [("count", &(value_to_string(stats.get("embeddings_saved"))))],
         ),
     );
     emit(
         out,
-        format!(
-            "Embeddings skipped (owner): {}",
-            value_to_string(stats.get("embeddings_skipped_owner"))
+        display_for(
+            locale,
+            "journal.cli.sol.speakers.bootstrap.stats.embeddings.skipped.owner",
+            [(
+                "count",
+                &(value_to_string(stats.get("embeddings_skipped_owner"))),
+            )],
         ),
     );
     emit(
         out,
-        format!(
-            "Embeddings skipped (duplicate): {}",
-            value_to_string(stats.get("embeddings_skipped_duplicate"))
+        display_for(
+            locale,
+            "journal.cli.sol.speakers.bootstrap.stats.embeddings.skipped.duplicate",
+            [(
+                "count",
+                &(value_to_string(stats.get("embeddings_skipped_duplicate"))),
+            )],
         ),
     );
     render_speaker_counts(
         out,
         stats.get("speakers_found"),
-        "Top speakers by embedding count:",
+        render_for(
+            locale,
+            "journal.cli.sol.speakers.bootstrap.stats.top.speakers.by.embedding.count",
+            &[],
+        ),
     );
-    render_errors(out, stats.get("errors"));
+    render_errors(locale, out, stats.get("errors"));
 }
 
-fn render_resolve_names(out: &mut String, stats: &Value) {
+fn render_resolve_names(locale: &str, out: &mut String, stats: &Value) {
     emit(out, "");
     emit(
         out,
-        format!(
-            "Entities with voiceprints: {}",
-            value_to_string(stats.get("entities_with_voiceprints"))
+        display_for(
+            locale,
+            "journal.cli.sol.speakers.resolve.names.entities.with.voiceprints",
+            [(
+                "count",
+                &(value_to_string(stats.get("entities_with_voiceprints"))),
+            )],
         ),
     );
     emit(
         out,
-        format!(
-            "Pairs compared: {}",
-            value_to_string(stats.get("pairs_compared"))
+        display_for(
+            locale,
+            "journal.cli.sol.speakers.resolve.names.pairs.compared",
+            [("count", &(value_to_string(stats.get("pairs_compared"))))],
         ),
     );
     emit(
         out,
-        format!(
-            "High-similarity pairs: {}",
-            array_field(stats, "matches_found").len()
+        display_for(
+            locale,
+            "journal.cli.sol.speakers.resolve.names.high.similarity.pairs",
+            [("count", &(array_field(stats, "matches_found").len()))],
         ),
     );
     for item in array_field(stats, "auto_merged") {
@@ -2095,7 +2751,14 @@ fn render_resolve_names(out: &mut String, stats: &Value) {
     }
     let auto = array_field(stats, "auto_merged");
     if !auto.is_empty() {
-        emit(out, format!("\nAuto-merged ({}):", auto.len()));
+        emit(
+            out,
+            display_for(
+                locale,
+                "journal.cli.sol.speakers.resolve.names.auto.merged",
+                [("count", &(auto.len()))],
+            ),
+        );
         for item in auto {
             emit(
                 out,
@@ -2110,7 +2773,14 @@ fn render_resolve_names(out: &mut String, stats: &Value) {
     }
     let ambiguous = array_field(stats, "ambiguous");
     if !ambiguous.is_empty() {
-        emit(out, format!("\nAmbiguous ({}):", ambiguous.len()));
+        emit(
+            out,
+            display_for(
+                locale,
+                "journal.cli.sol.speakers.resolve.names.ambiguous",
+                [("count", &(ambiguous.len()))],
+            ),
+        );
         for item in ambiguous {
             let candidates = array_field(item, "candidates")
                 .iter()
@@ -2129,10 +2799,11 @@ fn render_resolve_names(out: &mut String, stats: &Value) {
             );
         }
     }
-    render_errors(out, stats.get("errors"));
+    render_errors(locale, out, stats.get("errors"));
 }
 
 fn render_attribute_segment(
+    locale: &str,
     out: &mut String,
     wrap: &Value,
     result: &Value,
@@ -2146,16 +2817,44 @@ fn render_attribute_segment(
         .iter()
         .filter(|label| !label.get("speaker").unwrap_or(&Value::Null).is_null())
         .count();
-    emit(out, format!("Sentences: {}", labels.len()));
-    emit(out, format!("Resolved:  {resolved}"));
-    emit(out, format!("Unmatched: {}", unmatched.len()));
+    emit(
+        out,
+        display_for(
+            locale,
+            "journal.cli.sol.speakers.attribute.segment.sentences",
+            [("count", &(labels.len()))],
+        ),
+    );
+    emit(
+        out,
+        display_for(
+            locale,
+            "journal.cli.sol.speakers.attribute.segment.resolved",
+            [("resolved", &(resolved))],
+        ),
+    );
+    emit(
+        out,
+        display_for(
+            locale,
+            "journal.cli.sol.speakers.attribute.segment.unmatched",
+            [("count", &(unmatched.len()))],
+        ),
+    );
     let mut methods: Map<String, Value> = Map::new();
     for label in labels {
         let method = string_field(label, "method").unwrap_or_else(|| "unmatched".to_string());
         let count = methods.get(&method).and_then(Value::as_i64).unwrap_or(0) + 1;
         methods.insert(method, Value::Number(count.into()));
     }
-    emit(out, "\nBy method:");
+    emit(
+        out,
+        render_for(
+            locale,
+            "journal.cli.sol.speakers.attribute.segment.by.method",
+            &[],
+        ),
+    );
     let mut names = methods.keys().cloned().collect::<Vec<_>>();
     names.sort();
     for method in names {
@@ -2167,7 +2866,11 @@ fn render_attribute_segment(
     if commit && save {
         emit(
             out,
-            format!("\nWrote: {}", value_to_string(wrap.get("written_path"))),
+            display_for(
+                locale,
+                "journal.cli.sol.speakers.attribute.segment.wrote",
+                [("path", &(value_to_string(wrap.get("written_path"))))],
+            ),
         );
     }
     if commit
@@ -2176,17 +2879,36 @@ fn render_attribute_segment(
         && let Some(saved) = wrap.get("accumulated").and_then(Value::as_object)
         && !saved.is_empty()
     {
-        emit(out, "\nAccumulated voiceprints:");
+        emit(
+            out,
+            render_for(
+                locale,
+                "journal.cli.sol.speakers.attribute.segment.accumulated.voiceprints",
+                &[],
+            ),
+        );
         for (entity_id, count) in saved {
-            emit(
-                out,
-                format!("  {entity_id}: {} embeddings", value_to_string(Some(count))),
-            );
+            emit(out, {
+                let display_entity_id = (entity_id).to_string();
+                let display_embeddings = (value_to_string(Some(count))).to_string();
+                render_for(
+                    locale,
+                    "journal.cli.sol.speakers.attribute.segment.embeddings",
+                    &[
+                        ("entity_id", CopyValue::String(&display_entity_id)),
+                        ("embeddings", CopyValue::String(&display_embeddings)),
+                        (
+                            "quantity",
+                            crate::command::count_selector(display_embeddings.parse().unwrap_or(0)),
+                        ),
+                    ],
+                )
+            });
         }
     }
 }
 
-fn render_propagate(out: &mut String, result: &Value, commit: bool) {
+fn render_propagate(locale: &str, out: &mut String, result: &Value, commit: bool) {
     let statement_count = result
         .get("statement_count")
         .and_then(Value::as_i64)
@@ -2195,18 +2917,83 @@ fn render_propagate(out: &mut String, result: &Value, commit: bool) {
         .get("segment_count")
         .and_then(Value::as_i64)
         .unwrap_or(0);
-    let action = if commit { "Applied" } else { "Would change" };
     if statement_count == 0 {
-        emit(out, "Nothing else would change.");
+        emit(
+            out,
+            render_for(
+                locale,
+                "journal.cli.sol.speakers.propagate.nothing.else.would.change",
+                &[],
+            ),
+        );
     } else {
         emit(
             out,
-            format!("{action}: {statement_count} statements in {segment_count} segments"),
+            if commit {
+                {
+                    let display_statement_count = (statement_count).to_string();
+                    let display_segment_count = (segment_count).to_string();
+                    render_for(
+                        locale,
+                        "journal.cli.sol.speakers.propagate.applied.applied.statements.in.segments",
+                        &[
+                            (
+                                "statement_count",
+                                CopyValue::String(&display_statement_count),
+                            ),
+                            ("segment_count", CopyValue::String(&display_segment_count)),
+                            (
+                                "quantity",
+                                crate::command::count_selector(
+                                    display_statement_count.parse().unwrap_or(0),
+                                ),
+                            ),
+                            (
+                                "segment_count_quantity",
+                                crate::command::count_selector(
+                                    display_segment_count.parse().unwrap_or(0),
+                                ),
+                            ),
+                        ],
+                    )
+                }
+            } else {
+                {
+                    let display_statement_count = (statement_count).to_string();
+                    let display_segment_count = (segment_count).to_string();
+                    render_for(
+                        locale,
+                        "journal.cli.sol.speakers.propagate.would.change.would.change.statements.in.segments",
+                        &[
+                            (
+                                "statement_count",
+                                CopyValue::String(&display_statement_count),
+                            ),
+                            ("segment_count", CopyValue::String(&display_segment_count)),
+                            (
+                                "quantity",
+                                crate::command::count_selector(
+                                    display_statement_count.parse().unwrap_or(0),
+                                ),
+                            ),
+                            (
+                                "segment_count_quantity",
+                                crate::command::count_selector(
+                                    display_segment_count.parse().unwrap_or(0),
+                                ),
+                            ),
+                        ],
+                    )
+                }
+            },
         );
     }
     let errors = array_field(result, "errors");
     if !errors.is_empty() {
-        emit(out, "\nErrors:");
+        emit(
+            out,
+            render_for(locale, "journal.cli.sol.speakers.propagate.errors", &[]),
+        );
         for error in errors {
             emit(out, format!("  {}", value_to_string(Some(error))));
         }
@@ -2217,125 +3004,188 @@ fn render_propagate(out: &mut String, result: &Value, commit: bool) {
     {
         emit(
             out,
-            format!(
-                "Reverse with: solstone call {} {} {} --commit",
-                value_to_string(reversal.get("verb")),
-                value_to_string(reversal.get("old_speaker")),
-                value_to_string(reversal.get("new_speaker")),
+            display_for(
+                locale,
+                "journal.cli.sol.speakers.propagate.reverse.with.solstone.call.commit",
+                [
+                    ("operation", &(value_to_string(reversal.get("verb")))),
+                    (
+                        "old_speaker",
+                        &(value_to_string(reversal.get("old_speaker"))),
+                    ),
+                    (
+                        "new_speaker",
+                        &(value_to_string(reversal.get("new_speaker"))),
+                    ),
+                ],
             ),
         );
     }
 }
 
-fn render_backfill(out: &mut String, stats: &Value, elapsed: f64) {
+fn render_backfill(locale: &str, out: &mut String, stats: &Value, elapsed: f64) {
     emit(out, "\n");
     if let Some(op_id) = string_field(stats, "operation_id") {
-        emit(out, format!("Operation ID:              {op_id}"));
+        emit(
+            out,
+            display_for(
+                locale,
+                "journal.cli.sol.speakers.backfill.operation.id",
+                [("op_id", &(op_id))],
+            ),
+        );
     }
     if let Some(status) = string_field(stats, "status") {
-        emit(out, format!("Status:                    {status}"));
+        emit(
+            out,
+            display_for(
+                locale,
+                "journal.cli.sol.speakers.backfill.status",
+                [("status", &(status))],
+            ),
+        );
     }
     emit(
         out,
-        format!(
-            "Total segments scanned:    {}",
-            value_to_string(stats.get("total_scanned"))
+        display_for(
+            locale,
+            "journal.cli.sol.speakers.backfill.total.segments.scanned",
+            [("count", &(value_to_string(stats.get("total_scanned"))))],
         ),
     );
     emit(
         out,
-        format!(
-            "Selected for backfill:     {}",
-            value_to_string(stats.get("selected_count"))
+        display_for(
+            locale,
+            "journal.cli.sol.speakers.backfill.selected.for.backfill",
+            [("count", &(value_to_string(stats.get("selected_count"))))],
         ),
     );
     emit(
         out,
-        format!(
-            "Protected (skipped):       {}",
-            value_to_string(stats.get("protected_skipped"))
+        display_for(
+            locale,
+            "journal.cli.sol.speakers.backfill.protected.skipped",
+            [("count", &(value_to_string(stats.get("protected_skipped"))))],
         ),
     );
     emit(
         out,
-        format!(
-            "Total planned count:       {}",
-            value_to_string(stats.get("total_count"))
+        display_for(
+            locale,
+            "journal.cli.sol.speakers.backfill.total.planned.count",
+            [("count", &(value_to_string(stats.get("total_count"))))],
         ),
     );
     emit(
         out,
-        format!(
-            "Completed count:           {}",
-            value_to_string(stats.get("completed_count"))
+        display_for(
+            locale,
+            "journal.cli.sol.speakers.backfill.completed.count",
+            [("count", &(value_to_string(stats.get("completed_count"))))],
         ),
     );
     emit(
         out,
-        format!(
-            "Pending count:             {}",
-            value_to_string(stats.get("pending_count"))
+        display_for(
+            locale,
+            "journal.cli.sol.speakers.backfill.pending.count",
+            [("count", &(value_to_string(stats.get("pending_count"))))],
         ),
     );
     emit(
         out,
-        format!(
-            "Error count:               {}",
-            value_to_string(stats.get("error_count"))
+        display_for(
+            locale,
+            "journal.cli.sol.speakers.backfill.error.count",
+            [("count", &(value_to_string(stats.get("error_count"))))],
         ),
     );
     if elapsed > 0.0 {
-        emit(out, format!("Elapsed:                   {elapsed:.1}s"));
+        emit(
+            out,
+            display_for(
+                locale,
+                "journal.cli.sol.speakers.backfill.elapsed.s",
+                [("elapsed", &(format!("{:.1}", elapsed)))],
+            ),
+        );
     }
     if let Some(stage) = string_field(stats, "failure_stage") {
-        emit(out, format!("Failure stage:             {stage}"));
+        emit(
+            out,
+            display_for(
+                locale,
+                "journal.cli.sol.speakers.backfill.failure.stage",
+                [("stage", &(stage))],
+            ),
+        );
     }
     if let Some(detail) = string_field(stats, "failure_detail") {
-        emit(out, format!("Failure detail:            {detail}"));
+        emit(
+            out,
+            display_for(
+                locale,
+                "journal.cli.sol.speakers.backfill.failure.detail",
+                [("detail", &(detail))],
+            ),
+        );
     }
-    render_backfill_errors(out, stats.get("error_segments"), 10);
+    render_backfill_errors(locale, out, stats.get("error_segments"), 10);
 }
 
-fn render_backfill_last_seen(out: &mut String, stats: &Value) {
+fn render_backfill_last_seen(locale: &str, out: &mut String, stats: &Value) {
     emit(
         out,
-        format!(
-            "Speaker label files read: {}",
-            value_to_string(stats.get("labels_read"))
+        display_for(
+            locale,
+            "journal.cli.sol.speakers.backfill.last.seen.speaker.label.files.read",
+            [("count", &(value_to_string(stats.get("labels_read"))))],
         ),
     );
     emit(
         out,
-        format!(
-            "Entities seen:            {}",
-            value_to_string(stats.get("entities_seen"))
+        display_for(
+            locale,
+            "journal.cli.sol.speakers.backfill.last.seen.entities.seen",
+            [("count", &(value_to_string(stats.get("entities_seen"))))],
         ),
     );
     emit(
         out,
-        format!(
-            "Voiceprint rows scanned:  {}",
-            value_to_string(stats.get("rows_scanned"))
+        display_for(
+            locale,
+            "journal.cli.sol.speakers.backfill.last.seen.voiceprint.rows.scanned",
+            [("count", &(value_to_string(stats.get("rows_scanned"))))],
         ),
     );
     emit(
         out,
-        format!(
-            "Rows pending:             {}",
-            value_to_string(stats.get("rows_pending"))
+        display_for(
+            locale,
+            "journal.cli.sol.speakers.backfill.last.seen.rows.pending",
+            [("count", &(value_to_string(stats.get("rows_pending"))))],
         ),
     );
     emit(
         out,
-        format!(
-            "Rows written:             {}",
-            value_to_string(stats.get("rows_written"))
+        display_for(
+            locale,
+            "journal.cli.sol.speakers.backfill.last.seen.rows.written",
+            [("count", &(value_to_string(stats.get("rows_written"))))],
         ),
     );
     if let Some(pending) = stats.get("pending").and_then(Value::as_object)
         && !pending.is_empty()
     {
-        emit(out, "\nPending by entity:");
+        emit(
+            out,
+            render_for(
+                locale,
+                "journal.cli.sol.speakers.backfill.last.seen.pending.by.entity",
+                &[],
+            ),
+        );
         for (entity_id, item) in pending {
             emit(
                 out,
@@ -2343,12 +3193,12 @@ fn render_backfill_last_seen(out: &mut String, stats: &Value) {
             );
         }
     }
-    render_errors(out, stats.get("errors"));
+    render_errors(locale, out, stats.get("errors"));
 }
 
 /// `erase_day` is the day the trash erases what the wipe took, as the owner
 /// reads it.
-fn render_wipe(out: &mut String, report: &Value, erase_day: Option<&str>) {
+fn render_wipe(locale: &str, out: &mut String, report: &Value, erase_day: Option<&str>) {
     for (key, label) in [
         ("segment_embeddings", "segment_embeddings "),
         ("speaker_labels", "speaker_labels     "),
@@ -2359,58 +3209,133 @@ fn render_wipe(out: &mut String, report: &Value, erase_day: Option<&str>) {
         ("speaker_candidates", "speaker_candidates "),
     ] {
         let item = report.get(key).and_then(Value::as_object);
+        emit(out, {
+            let display_label = (label).to_string();
+            let display_files =
+                (value_to_string(item.and_then(|value| value.get("count")))).to_string();
+            let display_bytes =
+                (value_to_string(item.and_then(|value| value.get("bytes")))).to_string();
+            render_for(
+                locale,
+                "journal.cli.sol.speakers.wipe.files.b",
+                &[
+                    ("label", CopyValue::String(&display_label)),
+                    ("files", CopyValue::String(&display_files)),
+                    ("bytes", CopyValue::String(&display_bytes)),
+                    (
+                        "quantity",
+                        crate::command::count_selector(display_files.parse().unwrap_or(0)),
+                    ),
+                ],
+            )
+        });
+    }
+    emit(out, {
+        let display_files = (value_to_string(report.get("total_files"))).to_string();
+        let display_bytes = (value_to_string(report.get("total_bytes"))).to_string();
+        render_for(
+            locale,
+            "journal.cli.sol.speakers.wipe.total.files.b",
+            &[
+                ("files", CopyValue::String(&display_files)),
+                ("bytes", CopyValue::String(&display_bytes)),
+                (
+                    "quantity",
+                    crate::command::count_selector(display_files.parse().unwrap_or(0)),
+                ),
+            ],
+        )
+    });
+    if report.get("erased").and_then(Value::as_bool) == Some(true) {
         emit(
             out,
-            format!(
-                "{label}: {} files ({} B)",
-                value_to_string(item.and_then(|value| value.get("count"))),
-                value_to_string(item.and_then(|value| value.get("bytes"))),
-            ),
+            render_for(locale, "journal.cli.sol.speakers.wipe.erased.erased", &[]),
         );
-    }
-    emit(
-        out,
-        format!(
-            "total              : {} files ({} B)",
-            value_to_string(report.get("total_files")),
-            value_to_string(report.get("total_bytes")),
-        ),
-    );
-    if report.get("erased").and_then(Value::as_bool) == Some(true) {
-        emit(out, "erased");
     } else if report.get("trash").is_some_and(Value::is_object) {
         if report.get("erase_failed").and_then(Value::as_bool) == Some(true) {
-            emit(out, "couldn't erase now; it waits in the trash");
+            emit(
+                out,
+                render_for(
+                    locale,
+                    "journal.cli.sol.speakers.wipe.couldn.t.erase.now.it",
+                    &[],
+                ),
+            );
         }
         match erase_day {
-            Some(day) => emit(out, format!("in the trash; erases {day}")),
-            None => emit(out, "in the trash"),
+            Some(day) => emit(
+                out,
+                display_for(
+                    locale,
+                    "journal.cli.sol.speakers.wipe.in.the.trash.erases",
+                    [("day", &(day))],
+                ),
+            ),
+            None => emit(
+                out,
+                render_for(locale, "journal.cli.sol.speakers.wipe.in.the.trash", &[]),
+            ),
         }
     }
 }
 
-fn render_presence(out: &mut String, result: &Value) {
+fn render_presence(locale: &str, out: &mut String, result: &Value) {
     let facts = result.get("facts").and_then(Value::as_object);
-    emit(
-        out,
-        format!(
-            "Cluster {}: {} statements, {} segments, {} conversations",
-            value_to_string(result.get("cluster_id")),
-            value_or_zero(facts.and_then(|item| item.get("statement_count"))),
-            value_or_zero(facts.and_then(|item| item.get("segment_count"))),
-            value_or_zero(facts.and_then(|item| item.get("conversation_count"))),
-        ),
-    );
+    emit(out, {
+        let display_cluster = (value_to_string(result.get("cluster_id"))).to_string();
+        let display_statements =
+            (value_or_zero(facts.and_then(|item| item.get("statement_count")))).to_string();
+        let display_segments =
+            (value_or_zero(facts.and_then(|item| item.get("segment_count")))).to_string();
+        let display_conversations =
+            (value_or_zero(facts.and_then(|item| item.get("conversation_count")))).to_string();
+        render_for(
+            locale,
+            "journal.cli.sol.speakers.presence.cluster.statements.segments.conversations",
+            &[
+                ("cluster", CopyValue::String(&display_cluster)),
+                ("statements", CopyValue::String(&display_statements)),
+                ("segments", CopyValue::String(&display_segments)),
+                ("conversations", CopyValue::String(&display_conversations)),
+                (
+                    "quantity",
+                    crate::command::count_selector(display_statements.parse().unwrap_or(0)),
+                ),
+                (
+                    "segments_quantity",
+                    crate::command::count_selector(display_segments.parse().unwrap_or(0)),
+                ),
+                (
+                    "conversations_quantity",
+                    crate::command::count_selector(display_conversations.parse().unwrap_or(0)),
+                ),
+            ],
+        )
+    });
     if result.get("evidence_complete").and_then(Value::as_bool) == Some(true) {
-        emit(out, "Evidence: complete");
-    } else {
         emit(
             out,
-            format!(
-                "Evidence: {} gap(s)",
-                array_field(result, "evidence_gaps").len()
+            render_for(
+                locale,
+                "journal.cli.sol.speakers.presence.evidence.complete",
+                &[],
             ),
         );
+    } else {
+        emit(out, {
+            let display_gaps = (array_field(result, "evidence_gaps").len()).to_string();
+            render_for(
+                locale,
+                "journal.cli.sol.speakers.presence.evidence.gap.s",
+                &[
+                    ("gaps", CopyValue::String(&display_gaps)),
+                    (
+                        "quantity",
+                        crate::command::count_selector(display_gaps.parse().unwrap_or(0)),
+                    ),
+                ],
+            )
+        });
     }
     let candidates = result.get("candidates").and_then(Value::as_object);
     let co_presence = candidates
@@ -2424,268 +3349,427 @@ fn render_presence(out: &mut String, result: &Value) {
         .cloned()
         .unwrap_or_default();
     if co_presence.is_empty() && mention.is_empty() {
-        emit(out, "No candidate entities found.");
+        emit(
+            out,
+            render_for(
+                locale,
+                "journal.cli.sol.speakers.presence.no.candidate.entities.found",
+                &[],
+            ),
+        );
         return;
     }
     if !co_presence.is_empty() {
-        emit(out, "\nCo-presence:");
+        emit(
+            out,
+            render_for(locale, "journal.cli.sol.speakers.presence.co.presence", &[]),
+        );
         for candidate in &co_presence {
             emit(
                 out,
-                candidate_line(candidate, "screen_conversations", "meeting_days"),
+                candidate_line(locale, candidate, "screen_conversations", "meeting_days"),
             );
         }
     }
     if !mention.is_empty() {
-        emit(out, "\nMentions:");
+        emit(
+            out,
+            render_for(locale, "journal.cli.sol.speakers.presence.mentions", &[]),
+        );
         for candidate in &mention {
             emit(
                 out,
-                candidate_line(candidate, "setting_conversations", "speaker_conversations"),
+                candidate_line(
+                    locale,
+                    candidate,
+                    "setting_conversations",
+                    "speaker_conversations",
+                ),
             );
         }
     }
 }
 
-fn candidate_line(candidate: &Value, first: &str, second: &str) -> String {
-    format!(
-        "  {} ({}): {}={}, {}={}, voice={}",
-        value_to_string(candidate.get("name")),
-        value_to_string(candidate.get("entity_id")),
-        if first == "screen_conversations" {
-            "screen"
-        } else {
-            "setting"
-        },
-        value_to_string(candidate.get(first)),
-        if second == "meeting_days" {
-            "meeting_days"
-        } else {
-            "speakers"
-        },
-        value_to_string(candidate.get(second)),
-        if candidate
-            .get("has_voice")
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
-        {
-            "yes"
-        } else {
-            "no"
-        },
+fn candidate_line(locale: &str, candidate: &Value, first: &str, second: &str) -> String {
+    let voice = candidate
+        .get("has_voice")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let message = match (first == "screen_conversations", voice) {
+        (true, true) => {
+            "journal.cli.sol.speakers.presence.candidate.meeting.voiced.screen.meeting.days.voice.yes"
+        }
+        (true, false) => {
+            "journal.cli.sol.speakers.presence.candidate.meeting.unvoiced.screen.meeting.days.voice.no"
+        }
+        (false, true) => {
+            "journal.cli.sol.speakers.presence.candidate.mention.voiced.setting.speakers.voice.yes"
+        }
+        (false, false) => {
+            "journal.cli.sol.speakers.presence.candidate.mention.unvoiced.setting.speakers.voice.no"
+        }
+    };
+    display_for(
+        locale,
+        message,
+        [
+            ("name", &(value_to_string(candidate.get("name")))),
+            ("entity", &(value_to_string(candidate.get("entity_id")))),
+            ("first_count", &(value_to_string(candidate.get(first)))),
+            ("second_count", &(value_to_string(candidate.get(second)))),
+        ],
     )
 }
 
-fn render_seed_from_imports(out: &mut String, stats: &Value) {
+fn render_seed_from_imports(locale: &str, out: &mut String, stats: &Value) {
     emit(out, "");
     emit(
         out,
-        format!(
-            "Segments scanned: {}",
-            value_to_string(stats.get("segments_scanned"))
+        display_for(
+            locale,
+            "journal.cli.sol.speakers.bootstrap.stats.segments.scanned",
+            [("count", &(value_to_string(stats.get("segments_scanned"))))],
         ),
     );
     emit(
         out,
-        format!(
-            "Segments with speakers: {}",
-            value_to_string(stats.get("segments_with_speakers"))
+        display_for(
+            locale,
+            "journal.cli.sol.speakers.seed.from.imports.segments.with.speakers",
+            [(
+                "count",
+                &(value_to_string(stats.get("segments_with_speakers"))),
+            )],
         ),
     );
     emit(
         out,
-        format!(
-            "Unique speakers: {}",
-            object_len(stats.get("speakers_found"))
+        display_for(
+            locale,
+            "journal.cli.sol.speakers.bootstrap.stats.unique.speakers",
+            [("count", &(object_len(stats.get("speakers_found"))))],
         ),
     );
     emit(
         out,
-        format!(
-            "Embeddings saved: {}",
-            value_to_string(stats.get("embeddings_saved"))
+        display_for(
+            locale,
+            "journal.cli.sol.speakers.bootstrap.stats.embeddings.saved",
+            [("count", &(value_to_string(stats.get("embeddings_saved"))))],
         ),
     );
     emit(
         out,
-        format!(
-            "Embeddings skipped (owner): {}",
-            value_to_string(stats.get("embeddings_skipped_owner"))
+        display_for(
+            locale,
+            "journal.cli.sol.speakers.bootstrap.stats.embeddings.skipped.owner",
+            [(
+                "count",
+                &(value_to_string(stats.get("embeddings_skipped_owner"))),
+            )],
         ),
     );
     emit(
         out,
-        format!(
-            "Embeddings skipped (duplicate): {}",
-            value_to_string(stats.get("embeddings_skipped_duplicate"))
+        display_for(
+            locale,
+            "journal.cli.sol.speakers.bootstrap.stats.embeddings.skipped.duplicate",
+            [(
+                "count",
+                &(value_to_string(stats.get("embeddings_skipped_duplicate"))),
+            )],
         ),
     );
     render_speaker_counts(
         out,
         stats.get("speakers_found"),
-        "Speakers by embedding count:",
+        render_for(
+            locale,
+            "journal.cli.sol.speakers.seed.from.imports.speakers.by.embedding.count",
+            &[],
+        ),
     );
     let unmatched = array_field(stats, "speakers_unmatched");
     if !unmatched.is_empty() {
-        emit(out, format!("\nUnmatched speakers ({}):", unmatched.len()));
+        emit(
+            out,
+            display_for(
+                locale,
+                "journal.cli.sol.speakers.seed.from.imports.unmatched.speakers",
+                [("count", &(unmatched.len()))],
+            ),
+        );
         for name in unmatched {
             emit(out, format!("  {}", value_to_string(Some(name))));
         }
     }
-    render_errors(out, stats.get("errors"));
+    render_errors(locale, out, stats.get("errors"));
 }
 
-fn render_build_from_tags(out: &mut String, result: &Value) {
+fn render_build_from_tags(locale: &str, out: &mut String, result: &Value) {
     match string_field(result, "status").as_deref() {
         Some("confirmed")
             if string_field(result, "next_step").as_deref() == Some("rebuild_owner") =>
         {
-            emit(out, "Owner centroid already confirmed.");
             emit(
                 out,
-                format!("Next step: {}", value_to_string(result.get("next_step"))),
+                render_for(
+                    locale,
+                    "journal.cli.sol.speakers.build.from.tags.owner.centroid.already.confirmed",
+                    &[],
+                ),
             );
             emit(
                 out,
-                format!("Guidance: {}", value_to_string(result.get("guidance"))),
+                display_for(
+                    locale,
+                    "journal.cli.sol.speakers.build.from.tags.next.step",
+                    [("step", &(value_to_string(result.get("next_step"))))],
+                ),
+            );
+            emit(
+                out,
+                display_for(
+                    locale,
+                    "journal.cli.sol.speakers.build.from.tags.guidance",
+                    [("guidance", &(value_to_string(result.get("guidance"))))],
+                ),
             );
         }
         Some("confirmed") => emit(
             out,
-            format!(
-                "Owner centroid confirmed from manual tags (principal: {}, cluster_size: {})",
-                value_to_string(result.get("principal_id")),
-                value_to_string(result.get("cluster_size")),
+            display_for(
+                locale,
+                "journal.cli.sol.speakers.build.from.tags.owner.centroid.confirmed.from.manual",
+                [
+                    ("principal", &(value_to_string(result.get("principal_id")))),
+                    (
+                        "cluster_size",
+                        &(value_to_string(result.get("cluster_size"))),
+                    ),
+                ],
             ),
         ),
         Some("low_quality") => {
-            emit(out, "Owner manual tags are not ready.");
             emit(
                 out,
-                format!(
-                    "Reason: {}",
-                    value_to_string(result.get("low_quality_reason"))
+                render_for(
+                    locale,
+                    "journal.cli.sol.speakers.build.from.tags.owner.manual.tags.are.not",
+                    &[],
                 ),
             );
             emit(
                 out,
-                format!(
-                    "Observed: {}",
-                    value_to_string(result.get("observed_value"))
+                display_for(
+                    locale,
+                    "journal.cli.sol.speakers.build.from.tags.reason",
+                    [(
+                        "reason",
+                        &(value_to_string(result.get("low_quality_reason"))),
+                    )],
                 ),
             );
             emit(
                 out,
-                format!(
-                    "Threshold: {}",
-                    value_to_string(result.get("threshold_value"))
+                display_for(
+                    locale,
+                    "journal.cli.sol.speakers.build.from.tags.observed",
+                    [("observed", &(value_to_string(result.get("observed_value"))))],
                 ),
             );
             emit(
                 out,
-                format!(
-                    "Manual tags: {}",
-                    value_to_string(result.get("manual_tags_count"))
+                display_for(
+                    locale,
+                    "journal.cli.sol.speakers.build.from.tags.threshold",
+                    [(
+                        "threshold",
+                        &(value_to_string(result.get("threshold_value"))),
+                    )],
                 ),
             );
             emit(
                 out,
-                format!(
-                    "Can build from tags: {}",
-                    value_to_string(result.get("can_build_from_tags"))
+                display_for(
+                    locale,
+                    "journal.cli.sol.speakers.build.from.tags.manual.tags",
+                    [("tags", &(value_to_string(result.get("manual_tags_count"))))],
                 ),
             );
             emit(
                 out,
-                format!("Next step: {}", value_to_string(result.get("next_step"))),
+                display_for(
+                    locale,
+                    "journal.cli.sol.speakers.build.from.tags.can.build.from.tags",
+                    [(
+                        "available",
+                        &(value_to_string(result.get("can_build_from_tags"))),
+                    )],
+                ),
             );
             emit(
                 out,
-                format!("Guidance: {}", value_to_string(result.get("guidance"))),
+                display_for(
+                    locale,
+                    "journal.cli.sol.speakers.build.from.tags.next.step",
+                    [("step", &(value_to_string(result.get("next_step"))))],
+                ),
+            );
+            emit(
+                out,
+                display_for(
+                    locale,
+                    "journal.cli.sol.speakers.build.from.tags.guidance",
+                    [("guidance", &(value_to_string(result.get("guidance"))))],
+                ),
             );
         }
         _ => emit(out, json_pretty_ascii(result)),
     }
 }
 
-fn render_rebuild_owner(out: &mut String, result: &Value) {
+fn render_rebuild_owner(locale: &str, out: &mut String, result: &Value) {
     match string_field(result, "status").as_deref() {
         Some("rebuilt") => {
             emit(
                 out,
-                format!(
-                    "Owner centroid rebuilt (principal: {}, cluster_size: {})",
-                    value_to_string(result.get("principal_id")),
-                    value_to_string(result.get("cluster_size")),
+                display_for(
+                    locale,
+                    "journal.cli.sol.speakers.rebuild.owner.owner.centroid.rebuilt.principal.cluster",
+                    [
+                        ("principal", &(value_to_string(result.get("principal_id")))),
+                        (
+                            "cluster_size",
+                            &(value_to_string(result.get("cluster_size"))),
+                        ),
+                    ],
                 ),
             );
             if result.get("override_applied").and_then(Value::as_bool) == Some(true) {
-                emit(out, "Override applied: true");
+                emit(
+                    out,
+                    render_for(
+                        locale,
+                        "journal.cli.sol.speakers.rebuild.owner.override.applied.true",
+                        &[],
+                    ),
+                );
             }
             if string_field(result, "next_step").as_deref() != Some("none") {
                 emit(
                     out,
-                    format!("Next step: {}", value_to_string(result.get("next_step"))),
+                    display_for(
+                        locale,
+                        "journal.cli.sol.speakers.build.from.tags.next.step",
+                        [("step", &(value_to_string(result.get("next_step"))))],
+                    ),
                 );
                 emit(
                     out,
-                    format!("Guidance: {}", value_to_string(result.get("guidance"))),
+                    display_for(
+                        locale,
+                        "journal.cli.sol.speakers.build.from.tags.guidance",
+                        [("guidance", &(value_to_string(result.get("guidance"))))],
+                    ),
                 );
             }
         }
         Some("unchanged") => {
-            emit(out, "Owner centroid unchanged; evidence already matches.");
+            emit(
+                out,
+                render_for(
+                    locale,
+                    "journal.cli.sol.speakers.rebuild.owner.owner.centroid.unchanged.evidence.already",
+                    &[],
+                ),
+            );
             if string_field(result, "next_step").as_deref() != Some("none") {
                 emit(
                     out,
-                    format!("Next step: {}", value_to_string(result.get("next_step"))),
+                    display_for(
+                        locale,
+                        "journal.cli.sol.speakers.rebuild.owner.next.step",
+                        [("next_step", &(value_to_string(result.get("next_step"))))],
+                    ),
                 );
                 emit(
                     out,
-                    format!("Guidance: {}", value_to_string(result.get("guidance"))),
+                    display_for(
+                        locale,
+                        "journal.cli.sol.speakers.rebuild.owner.guidance",
+                        [("step", &(value_to_string(result.get("guidance"))))],
+                    ),
                 );
             }
         }
         Some("low_quality" | "refused" | "rejected_regression") => {
-            emit(out, "Owner centroid rebuild did not write.");
+            emit(
+                out,
+                render_for(
+                    locale,
+                    "journal.cli.sol.speakers.rebuild.owner.owner.centroid.rebuild.did.not",
+                    &[],
+                ),
+            );
             if let Some(reason) = result
                 .get("reason")
                 .or_else(|| result.get("low_quality_reason"))
             {
-                emit(out, format!("Reason: {}", value_to_string(Some(reason))));
+                emit(
+                    out,
+                    display_for(
+                        locale,
+                        "journal.cli.sol.speakers.build.from.tags.reason",
+                        [("reason", &(value_to_string(Some(reason))))],
+                    ),
+                );
             }
             if result.get("observed_value").is_some() {
                 emit(
                     out,
-                    format!(
-                        "Observed: {}",
-                        value_to_string(result.get("observed_value"))
+                    display_for(
+                        locale,
+                        "journal.cli.sol.speakers.build.from.tags.observed",
+                        [("observed", &(value_to_string(result.get("observed_value"))))],
                     ),
                 );
             }
             if result.get("threshold_value").is_some() {
                 emit(
                     out,
-                    format!(
-                        "Threshold: {}",
-                        value_to_string(result.get("threshold_value"))
+                    display_for(
+                        locale,
+                        "journal.cli.sol.speakers.build.from.tags.threshold",
+                        [(
+                            "threshold",
+                            &(value_to_string(result.get("threshold_value"))),
+                        )],
                     ),
                 );
             }
             emit(
                 out,
-                format!("Next step: {}", value_to_string(result.get("next_step"))),
+                display_for(
+                    locale,
+                    "journal.cli.sol.speakers.build.from.tags.next.step",
+                    [("step", &(value_to_string(result.get("next_step"))))],
+                ),
             );
             emit(
                 out,
-                format!("Guidance: {}", value_to_string(result.get("guidance"))),
+                display_for(
+                    locale,
+                    "journal.cli.sol.speakers.build.from.tags.guidance",
+                    [("guidance", &(value_to_string(result.get("guidance"))))],
+                ),
             );
         }
         _ => emit(out, json_pretty_ascii(result)),
     }
 }
 
-fn render_speaker_counts(out: &mut String, value: Option<&Value>, title: &str) {
+fn render_speaker_counts(out: &mut String, value: Option<&Value>, title: String) {
     if let Some(items) = value.and_then(Value::as_object)
         && !items.is_empty()
     {
@@ -2700,20 +3784,34 @@ fn render_speaker_counts(out: &mut String, value: Option<&Value>, title: &str) {
     }
 }
 
-fn render_errors(out: &mut String, value: Option<&Value>) {
+fn render_errors(locale: &str, out: &mut String, value: Option<&Value>) {
     let errors = value.and_then(Value::as_array).cloned().unwrap_or_default();
     if !errors.is_empty() {
-        emit(out, format!("\nErrors ({}):", errors.len()));
+        emit(
+            out,
+            display_for(
+                locale,
+                "journal.cli.sol.speakers.errors.errors",
+                [("count", &(errors.len()))],
+            ),
+        );
         for error in &errors {
             emit(out, format!("  {}", value_to_string(Some(error))));
         }
     }
 }
 
-fn render_backfill_errors(out: &mut String, value: Option<&Value>, limit: usize) {
+fn render_backfill_errors(locale: &str, out: &mut String, value: Option<&Value>, limit: usize) {
     let errors = value.and_then(Value::as_array).cloned().unwrap_or_default();
     if !errors.is_empty() {
-        emit(out, format!("\nErrors ({}):", errors.len()));
+        emit(
+            out,
+            display_for(
+                locale,
+                "journal.cli.sol.speakers.errors.errors",
+                [("count", &(errors.len()))],
+            ),
+        );
         for error in errors.iter().take(limit) {
             let seg = error.get("segment").unwrap_or(error);
             emit(
@@ -2728,7 +3826,14 @@ fn render_backfill_errors(out: &mut String, value: Option<&Value>, limit: usize)
             );
         }
         if errors.len() > limit {
-            emit(out, format!("  ... and {} more", errors.len() - limit));
+            emit(
+                out,
+                display_for(
+                    locale,
+                    "journal.cli.sol.speakers.backfill.errors.and.more",
+                    [("count", &(errors.len() - limit))],
+                ),
+            );
         }
     }
 }
@@ -2803,7 +3908,7 @@ mod tests {
         let report = json!({"trash": {"id": "t1", "erase_at": "2026-11-17T06:00:00.000Z", "erase_day": "20261116"}});
         let day = crate::command::format_erase_day("20261116", Some("20261111")).unwrap();
         let mut out = String::new();
-        render_wipe(&mut out, &report, Some(&day));
+        render_wipe("en-US", &mut out, &report, Some(&day));
         assert!(out.contains(&day), "{out}");
         assert!(!out.contains("2026-11-17"), "{out}");
     }
@@ -2812,6 +3917,7 @@ mod tests {
     fn repair_dry_run_reports_the_planned_removals_the_server_sends() {
         let mut out = String::new();
         render_repair_dry_run(
+            "en-US",
             &mut out,
             &json!({
                 "mode": "dry_run",
@@ -2831,29 +3937,32 @@ mod tests {
     #[test]
     fn parse_stream_layout_option_accepts_omitted_named_and_direct() {
         let args = ParsedArgs::default();
-        assert_eq!(parse_stream_layout_option(&args).unwrap(), "named");
+        assert_eq!(parse_stream_layout_option("en-US", &args).unwrap(), "named");
 
         let mut args = ParsedArgs::default();
         args.values
             .push(("--stream-layout".to_string(), "direct".to_string()));
-        assert_eq!(parse_stream_layout_option(&args).unwrap(), "direct");
+        assert_eq!(
+            parse_stream_layout_option("en-US", &args).unwrap(),
+            "direct"
+        );
 
         let mut args = ParsedArgs::default();
         args.values
             .push(("--stream-layout".to_string(), "named".to_string()));
-        assert_eq!(parse_stream_layout_option(&args).unwrap(), "named");
+        assert_eq!(parse_stream_layout_option("en-US", &args).unwrap(), "named");
 
         let mut args = ParsedArgs::default();
         args.values
             .push(("--stream-layout".to_string(), "Direct".to_string()));
-        let err = parse_stream_layout_option(&args).unwrap_err();
+        let err = parse_stream_layout_option("en-US", &args).unwrap_err();
         assert_eq!(err.exit, 1);
         assert_eq!(err.stderr, "Error: invalid value for --stream-layout\n");
 
         let mut args = ParsedArgs::default();
         args.values
             .push(("--stream-layout".to_string(), "other".to_string()));
-        let err = parse_stream_layout_option(&args).unwrap_err();
+        let err = parse_stream_layout_option("en-US", &args).unwrap_err();
         assert_eq!(err.exit, 1);
         assert_eq!(err.stderr, "Error: invalid value for --stream-layout\n");
     }

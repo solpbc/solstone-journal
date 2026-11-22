@@ -1,0 +1,63 @@
+{
+  "description": "Native link command output for link confirm help. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link confirm help. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d676ca2d9349de280dc03934891557e0e217016a70e1625080ed4ba0c605b9f3",
+  "max_length": 1545,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_link_confirm_h_label_",
+      "kind": "accepted-input",
+      "value": "solstone link confirm [-h] [--label LABEL] [--mark MARK]"
+    },
+    {
+      "name": "space_17",
+      "kind": "whitespace",
+      "value": "                 "
+    },
+    {
+      "name": "label_label",
+      "kind": "accepted-input",
+      "value": "  --label LABEL"
+    },
+    {
+      "name": "mark_mark",
+      "kind": "accepted-input",
+      "value": "  --mark MARK"
+    },
+    {
+      "name": "h_help",
+      "kind": "accepted-input",
+      "value": "  -h, --help"
+    },
+    {
+      "name": "space_5",
+      "kind": "whitespace",
+      "value": "     "
+    },
+    {
+      "name": "space_4",
+      "kind": "whitespace",
+      "value": "    "
+    },
+    {
+      "name": "space_2",
+      "kind": "whitespace",
+      "value": "  "
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

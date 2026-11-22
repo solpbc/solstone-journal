@@ -506,6 +506,8 @@ shows the same copy. Keep machine output stable, including JSON keys, codes
 and values. Run `make journal-cli-catalog` after changing the CLI catalog.
 
 For command help, keep command names, flags, argument syntax, authority paths and operation IDs intact. Render descriptions and option labels for the terminal from the CLI catalog.
+
+For native Sol commands, render terminal messages in the caller's language. Keep JSON responses and request bodies in their original form, including commands that return JSON by default. Preserve device labels, journal marks and server-provided details as received.
 It also updates the messages the Unix launcher prints when it cannot start the native command.
 
 Keep the English Markdown that Think and Describe write readable on its own. Store the message identities and argument ranges in the matching `.md.display` file. When reading it, check that it still matches the Markdown before translating only the marked messages.

@@ -1,0 +1,44 @@
+{
+  "description": "Text shown by the speakers discover command.",
+  "context": "Text shown by the speakers discover command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "stream",
+      "type": "string"
+    },
+    {
+      "name": "segment",
+      "type": "string"
+    },
+    {
+      "name": "sentence_id",
+      "type": "string"
+    },
+    {
+      "name": "text",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "865cb870349e28b3d2d8f627f994d6aa2943a86c05932662f9b3d685e25e9f80",
+  "max_length": 243,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "spacing_4",
+      "kind": "whitespace",
+      "value": "    "
+    }
+  ]
+}

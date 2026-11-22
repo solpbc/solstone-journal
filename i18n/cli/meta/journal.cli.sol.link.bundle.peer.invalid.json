@@ -1,0 +1,32 @@
+{
+  "description": "Native link command output for link bundle peer invalid. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link bundle peer invalid. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "945ead95b7eb01a340992ad2c36bd2518af0c79b8b60d3b9d0ac8e219eda9c1f",
+  "max_length": 141,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "peer_json",
+      "kind": "accepted-input",
+      "value": "peer.json"
+    }
+  ]
+}

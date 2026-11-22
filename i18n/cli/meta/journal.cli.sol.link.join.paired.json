@@ -1,0 +1,28 @@
+{
+  "description": "Native link command output for link join paired. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link join paired. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8fb442c9a38eb61a5c4645198eeb00f25253301d7271d761aebf26c5c1d5f4ba",
+  "max_length": 177,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

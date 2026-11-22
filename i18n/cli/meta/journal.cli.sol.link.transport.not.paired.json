@@ -1,0 +1,28 @@
+{
+  "description": "Native link command output for link transport not paired. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link transport not paired. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ffdf7119162e34fbe6561eee5bdc2efca6fb11c455850045096300fce3a3c8f7",
+  "max_length": 270,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_link_serve",
+      "kind": "accepted-input",
+      "value": "solstone link serve"
+    },
+    {
+      "name": "solstone_link_join",
+      "kind": "accepted-input",
+      "value": "solstone link join"
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "description": "Native solstone call activities command output. Preserve supplied values and the command syntax.",
+  "context": "Native solstone call activities command output. Preserve supplied values and the command syntax.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "index",
+      "type": "string"
+    },
+    {
+      "name": "role",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e15833147f5aa6803a9c9bddd5f231234381e76366417ca48d7ba896bdd68da1",
+  "max_length": 372,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_1",
+      "kind": "accepted-input",
+      "value": "participation"
+    },
+    {
+      "name": "literal_2",
+      "kind": "accepted-input",
+      "value": "attendee"
+    },
+    {
+      "name": "literal_3",
+      "kind": "accepted-input",
+      "value": "mentioned"
+    },
+    {
+      "name": "literal_4",
+      "kind": "accepted-input",
+      "value": "visible"
+    },
+    {
+      "name": "literal_5",
+      "kind": "accepted-input",
+      "value": "heard"
+    }
+  ]
+}

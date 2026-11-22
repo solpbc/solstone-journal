@@ -1,0 +1,41 @@
+{
+  "description": "Complete counted speakers summary for render wipe.",
+  "context": "Complete counted speakers summary for render wipe.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "files",
+      "type": "string"
+    },
+    {
+      "name": "bytes",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "ad48656105e055b83d4c163e9fa1f8794636d51b35a10a474cde979acd774cae",
+  "max_length": 447,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "spacing_14",
+      "kind": "whitespace",
+      "value": "              "
+    }
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

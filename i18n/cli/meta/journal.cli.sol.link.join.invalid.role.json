@@ -1,0 +1,33 @@
+{
+  "description": "Native link command output for link join invalid role. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link join invalid role. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e19624fef2ff8333e644a3303a475ccc3be0e7be4a787182d959df10ca5924b1",
+  "max_length": 213,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "observer",
+      "kind": "accepted-input",
+      "value": "observer"
+    },
+    {
+      "name": "phone",
+      "kind": "accepted-input",
+      "value": "phone"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

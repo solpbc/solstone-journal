@@ -1,0 +1,28 @@
+{
+  "description": "Native link command output for link bundle files missing. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link bundle files missing. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "paths",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4d1ff7aa846a3dabb9077f8d663de67346b06b3e539748e00cce7f8df10302d9",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "pl",
+      "kind": "accepted-input",
+      "value": "PL"
+    }
+  ]
+}

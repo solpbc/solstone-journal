@@ -1,0 +1,23 @@
+{
+  "description": "Native link command output for link label separator. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link label separator. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1f5267351bc804bcab63864c1b701f657a804e4b88c1945c391e0fc24474ab7b",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "label",
+      "kind": "accepted-input",
+      "value": "--label"
+    }
+  ]
+}

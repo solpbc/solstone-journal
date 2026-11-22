@@ -1,0 +1,37 @@
+{
+  "description": "Text shown by the speakers tag owner command.",
+  "context": "Text shown by the speakers tag owner command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "stream_layout",
+      "type": "string"
+    },
+    {
+      "name": "stream",
+      "type": "string"
+    },
+    {
+      "name": "segment",
+      "type": "string"
+    },
+    {
+      "name": "sentence_id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "733237fc927dbfeaea0a011bfe468129929f064ad7610ede06a1354a8a23cabe",
+  "max_length": 303,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

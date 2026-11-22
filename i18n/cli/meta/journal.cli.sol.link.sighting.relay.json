@@ -1,0 +1,16 @@
+{
+  "description": "Native link command output for link sighting relay. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link sighting relay. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b241f5a545009cf303cb2a5d14b168f854c9af6c9024ecae32d53bfb7172cca5",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

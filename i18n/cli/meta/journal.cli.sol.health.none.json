@@ -1,0 +1,23 @@
+{
+  "description": "Native health command output for health none. Keep literal arguments and command syntax intact.",
+  "context": "Native health command output for health none. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bfae21362497e8d4fd8d84dc9a716a8f2edf3d296d82ec924659086f51508b81",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "space_2",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ]
+}

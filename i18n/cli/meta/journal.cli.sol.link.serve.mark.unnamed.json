@@ -1,0 +1,28 @@
+{
+  "description": "Native link command output for link serve mark unnamed. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link serve mark unnamed. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fdbf6a9d4081b172e7f072486a51c209f89117177dc3e092ba4a386d4d22b406",
+  "max_length": 312,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_link_join",
+      "kind": "accepted-input",
+      "value": "solstone link join"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

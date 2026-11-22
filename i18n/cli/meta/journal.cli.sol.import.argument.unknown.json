@@ -1,0 +1,21 @@
+{
+  "description": "Native import command output for import argument unknown. Keep literal arguments and command syntax intact.",
+  "context": "Native import command output for import argument unknown. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "token",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6d7737cbf7b864c0e9452be4f0af62d9cd6e2b084135076a3a92034c42b819b4",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

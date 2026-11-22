@@ -1,0 +1,21 @@
+{
+  "description": "Text shown by the speakers wipe command.",
+  "context": "Text shown by the speakers wipe command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7ce18d7c00d8c85e90ad4ae7dc5dd5043449ab9a0b578318ba2db856e8d473b6",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

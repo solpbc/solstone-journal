@@ -1,0 +1,37 @@
+{
+  "description": "Native profile command output for profile identity. Keep literal arguments and command syntax intact.",
+  "context": "Native profile command output for profile identity. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "kind",
+      "type": "string"
+    },
+    {
+      "name": "facets",
+      "type": "string"
+    },
+    {
+      "name": "self_value",
+      "type": "string"
+    },
+    {
+      "name": "hidden",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2bf6377ddd499ae39f8aa27972895e543ca3a4be937c3b6e8878a77fc5744a31",
+  "max_length": 258,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

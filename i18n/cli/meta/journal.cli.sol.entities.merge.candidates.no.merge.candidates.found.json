@@ -1,0 +1,16 @@
+{
+  "description": "Text shown by the entities merge candidates command.",
+  "context": "Text shown by the entities merge candidates command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "42c5a1733d00f99247a194a6c786783e725575c722b772c4f199021d804fa05c",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

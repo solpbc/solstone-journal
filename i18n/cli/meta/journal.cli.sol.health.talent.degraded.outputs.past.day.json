@@ -1,0 +1,33 @@
+{
+  "description": "Native health command output for health talent degraded outputs past day. Keep literal arguments and command syntax intact.",
+  "context": "Native health command output for health talent degraded outputs past day. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ebf297fb08095abab0a6a49bce3cc8660bed3c94f55ecd013f7e37c9d7cba66d",
+  "max_length": 168,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "talent_degraded_outputs_24h",
+      "kind": "accepted-input",
+      "value": "talent_degraded_outputs_24h"
+    },
+    {
+      "name": "space_2",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ]
+}

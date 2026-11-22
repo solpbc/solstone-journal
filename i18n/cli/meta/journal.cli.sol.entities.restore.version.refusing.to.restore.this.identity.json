@@ -1,0 +1,23 @@
+{
+  "description": "Text shown by the entities restore version command.",
+  "context": "Text shown by the entities restore version command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "590a9d8bb282aeb87a7391a6cf6dde1e2f807a6e4b82721cff36880a82d2ad86",
+  "max_length": 198,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "option_yes",
+      "kind": "command",
+      "value": "--yes"
+    }
+  ]
+}

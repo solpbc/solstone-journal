@@ -1,0 +1,21 @@
+{
+  "description": "Text shown by the speakers resolve names command.",
+  "context": "Text shown by the speakers resolve names command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0b37e14081e7797de5776a4d747d1a6388ab2a9226c2c6e0d0ae325a3b0ffd80",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

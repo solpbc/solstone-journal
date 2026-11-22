@@ -1,0 +1,36 @@
+{
+  "description": "Native link command output for link bundle invalid. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link bundle invalid. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "label",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3881e1b8f2af189652a7ad560b3998760a7199efb6fe92803bbba991be2117a7",
+  "max_length": 357,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_link_join",
+      "kind": "accepted-input",
+      "value": "solstone link join"
+    }
+  ]
+}

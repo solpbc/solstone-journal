@@ -1,0 +1,25 @@
+{
+  "description": "Native solstone call facets command output. Preserve supplied values and the command syntax.",
+  "context": "Native solstone call facets command output. Preserve supplied values and the command syntax.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name_key",
+      "type": "string"
+    },
+    {
+      "name": "facet",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a487c80e375bcfe5e1146a9e35f830d23e88c9586abbf75b52b9b6ea2d293b2a",
+  "max_length": 171,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

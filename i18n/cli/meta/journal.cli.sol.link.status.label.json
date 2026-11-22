@@ -1,0 +1,28 @@
+{
+  "description": "Native link command output for link status label. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link status label. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "label",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1c013edf324e855ef9f6ebf10fd62379ccf295e40ad86fad91ee27b4bf7fc6c8",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

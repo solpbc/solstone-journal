@@ -1,0 +1,28 @@
+{
+  "description": "Text shown by the entities search command.",
+  "context": "Text shown by the entities search command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "facets",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ab296928bcc64d62e134f610057122609396dfb824eb718cda99af505daad4a3",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "spacing_4",
+      "kind": "whitespace",
+      "value": "    "
+    }
+  ]
+}

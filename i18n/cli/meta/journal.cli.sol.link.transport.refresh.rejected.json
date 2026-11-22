@@ -1,0 +1,33 @@
+{
+  "description": "Native link command output for link transport refresh rejected. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link transport refresh rejected. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "status",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2f93770bc4e08039f2c2ea16c4d48e7d88685f0532c62f44446a824c27454687",
+  "max_length": 324,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_link_join",
+      "kind": "accepted-input",
+      "value": "solstone link join"
+    },
+    {
+      "name": "http",
+      "kind": "accepted-input",
+      "value": "HTTP"
+    }
+  ]
+}

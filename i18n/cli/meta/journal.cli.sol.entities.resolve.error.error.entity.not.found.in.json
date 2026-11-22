@@ -1,0 +1,25 @@
+{
+  "description": "Text shown by the entities resolve error command.",
+  "context": "Text shown by the entities resolve error command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "entity",
+      "type": "string"
+    },
+    {
+      "name": "facet",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5bebfa8e99bc0d04b956c8a04dbbff8b7123407ff3a64987f2d7e7accfafbe79",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

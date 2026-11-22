@@ -1,0 +1,23 @@
+{
+  "description": "Native link command output for link relay upgrade. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link relay upgrade. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "692eece52553a2ba30e82b3c2bbb19e4fc1043a493150430b7b296fefb7ad7da",
+  "max_length": 219,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "relay_url",
+      "kind": "accepted-input",
+      "value": "--relay-url"
+    }
+  ]
+}

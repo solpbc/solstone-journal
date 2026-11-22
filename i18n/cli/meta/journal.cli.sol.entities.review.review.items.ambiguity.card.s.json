@@ -1,0 +1,48 @@
+{
+  "description": "Complete counted entities summary for review output.",
+  "context": "Complete counted entities summary for review output.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "cards",
+      "type": "string"
+    },
+    {
+      "name": "ambiguities",
+      "type": "string"
+    },
+    {
+      "name": "candidates",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "ambiguities_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "candidates_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "da5223c9d8c34c099086a3bdde1378eed1a9eb95739d8fe55aca565866483801",
+  "max_length": 4452,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

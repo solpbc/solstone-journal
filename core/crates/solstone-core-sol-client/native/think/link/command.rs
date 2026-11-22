@@ -12,6 +12,7 @@ use std::time::SystemTime;
 
 use jiff::Timestamp;
 use serde_json::{Map, Value};
+use solstone_core_cli_copy::{display_for, render_for};
 use spl_core::pairlink::{PairLinkError, ParsedPairLink};
 
 use crate::command::{CommandContext, CommandOutput};
@@ -25,43 +26,9 @@ use crate::seam::{
     LinkServeRequest, LinkServeRuntimeRecord, LinkServeStatusSnapshot, LinkServeTransportErrorKind,
 };
 
-const HELP: &str = "usage: solstone link join [-h] [--home HOME] --code CODE [--as AS_ROLE]\n                     [--label LABEL] [--mark MARK]\n\noptions:\n  -h, --help     show this help message and exit\n  --home HOME    Receiver base URL\n  --code CODE    pair-link URL\n  --as AS_ROLE   Optional tag to join as\n  --label LABEL  Local credentials label (defaults to this machine's hostname)\n  --mark MARK    the two words of the mark your journal's network app shows.\n                 needed when there's no terminal to ask you on.\n";
-const USAGE: &str = "usage: solstone link join [-h] [--home HOME] --code CODE [--as AS_ROLE]\n                     [--label LABEL] [--mark MARK]\n";
-const SERVE_HELP: &str = "usage: solstone link serve [-h] [--label LABEL] [--port PORT]\n                      [--relay-url RELAY_URL] [--direct | --relay-only]\n\noptions:\n  -h, --help            show this help message and exit\n  --label LABEL         Link bundle label\n  --port PORT           Loopback port to serve on (default: 5015)\n  --relay-url RELAY_URL\n                        Override the relay URL\n  --direct              Direct only: reach the journal through a direct\n                        connection, never the relay. use when your journal is\n                        reachable directly (same network/vpn) to avoid relay\n                        dependency.\n  --relay-only          Relay only: reach the journal through the relay,\n                        never a direct connection. use when direct connections\n                        must not be attempted, even if your journal is reachable\n                        locally.\n";
-const SERVE_USAGE: &str = "usage: solstone link serve [-h] [--label LABEL] [--port PORT]\n                      [--relay-url RELAY_URL] [--direct | --relay-only]\n";
-const STATUS_HELP: &str = "usage: solstone link status [-h] [--label LABEL]\n\nShow link status and observed remote journal version.\n\noptions:\n  -h, --help     show this help message and exit\n  --label LABEL  Link bundle label (defaults to the only paired link)\n";
-const STATUS_USAGE: &str = "usage: solstone link status [-h] [--label LABEL]\n";
-const MARK_STEP: &str = "one more step: check your journal's mark.";
-const MARK_PREFIX: &str = "  your journal's mark: ";
-const MARK_UNAVAILABLE: &str = "  your journal's mark: unavailable right now";
-const MARK_SUBTEXT: &str =
-    "your journal shows this same mark in its network app. it should match, exactly.";
-const ASK_IDENTIFIED: &str = "does this match your journal? type yes or no:";
-const COULDNT_VERIFY: &str = "couldn't verify.";
-const BODY_UNAVAILABLE: &str = "this computer couldn't work out your journal's mark, so there's nothing to compare. continue only if you're sure the link came from your journal.";
-const ASK_UNAVAILABLE: &str = "type continue to pair anyway, or cancel to stop:";
-const PAIRED: &str = "paired.";
-const NOT_PAIRED: &str = "not paired.";
-const MISMATCH_BODY: &str = "you said this mark doesn't match the one your journal shows, so this computer isn't paired, and nothing it has kept went to that journal through this link. you may have pasted the wrong link, or something isn't right. get a fresh pairing link from your journal and run solstone link join again, or email support@solstone.app and we'll help.";
-const CANCEL: &str = "pairing cancelled. nothing this computer has kept went to that journal through this link. get a fresh pairing link from your journal and run solstone link join again when you're ready.";
 // `link confirm` can end a link that was already sending, so these say nothing about
 // what reached that journal.
-const CONFIRM_MISMATCH_BODY: &str = "you said this mark doesn't match the one your journal shows, so this computer isn't paired. you may have pasted the wrong link, or something isn't right. get a fresh pairing link from your journal and run solstone link join again, or email support@solstone.app and we'll help.";
-const CONFIRM_CANCEL: &str = "pairing cancelled. get a fresh pairing link from your journal and run solstone link join again when you're ready.";
-const CONFIRM_MARK_MISMATCH: &str = "the mark words you gave don't match the journal's mark, so this computer isn't paired. check the words, get a fresh pairing link from your journal and run solstone link join again.";
-const JOIN_NO_TERMINAL: &str = "solstone link join can't ask you about your journal's mark here. run it in a terminal, or give the mark's two words with --mark \"word word\".";
-const MARK_USAGE: &str =
-    "give the two words of your journal's mark, like --mark \"bramble quokka\".";
-const MARK_MISMATCH: &str = "the mark words you gave don't match the journal's mark, so this computer isn't paired, and nothing it has kept went to that journal through this link. check the words, get a fresh pairing link from your journal and run solstone link join again.";
-const MARK_UNVERIFIABLE: &str = "this computer couldn't work out the journal's mark, so the words you gave can't be matched. this computer isn't paired, and nothing it has kept went to that journal through this link. get a fresh pairing link from your journal and run solstone link join in a terminal to decide for yourself.";
-const HELD: &str = "waiting for you to confirm your journal's mark. nothing waiting goes into your journal until you do.";
 const UNVERIFIED_KEY: &str = "unverified_ca_accepted";
-const MARK_UNVERIFIABLE_CONFIRM: &str = "this computer couldn't work out the journal's mark, so the words you gave can't be matched. waiting for you to confirm your journal's mark. nothing waiting goes into your journal until you do. run solstone link confirm in a terminal to decide for yourself.";
-const CONFIRM_RUN_LINE: &str = "when you're ready, run: solstone link confirm";
-const CONFIRM_DONE: &str = "your journal's mark is already confirmed. nothing to do.";
-const CONFIRM_NO_TERMINAL: &str = "solstone link confirm can't ask you about your journal's mark here. run it in a terminal, or give the mark's two words with --mark \"word word\".";
-const CONFIRM_HELP: &str = "usage: solstone link confirm [-h] [--label LABEL] [--mark MARK]\n\nConfirm the journal's mark for a link waiting on it.\n\noptions:\n  -h, --help     show this help message and exit\n  --label LABEL  Link bundle label (defaults to the only paired link)\n  --mark MARK    the two words of the mark your journal's network app shows.\n                 needed when there's no terminal to ask you on.\n";
-const CONFIRM_USAGE: &str = "usage: solstone link confirm [-h] [--label LABEL] [--mark MARK]\n";
 const DEFAULT_CLIENT_LABEL: &str = "linked-system";
 const DEFAULT_SERVE_PORT: u16 = 5015;
 const PAIR_LINK_PREFIX: &str = "https://go.solstone.app/p#";
@@ -77,28 +44,42 @@ const BUNDLE_FILES: &[&str] = &[
 
 #[must_use]
 pub fn link_join(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args) {
+    let locale = ctx.human_locale_with_options(&["--home", "--code", "--as", "--label", "--mark"]);
+    let parsed = match parse_args(locale, ctx.args) {
         Ok(parsed) => parsed,
-        Err(error) => return argparse_error(error),
+        Err(error) => return argparse_error(locale, error),
     };
     if parsed.help {
-        return CommandOutput::success(HELP);
+        return CommandOutput::success(render_for(locale, "journal.cli.sol.link.join.help", &[]));
     }
     if parsed.code.is_none() {
-        return argparse_error("the following arguments are required: --code".to_string());
+        return argparse_error(
+            locale,
+            render_for(locale, "journal.cli.sol.link.join.required.code", &[]),
+        );
     }
     if let Some(unknown) = parsed.unknown {
-        return argparse_error(format!("unrecognized arguments: {unknown}"));
+        return argparse_error(
+            locale,
+            display_for(
+                locale,
+                "journal.cli.sol.link.argument.unrecognized",
+                [("unknown", &unknown)],
+            ),
+        );
     }
 
     let as_role = parsed.as_role.unwrap_or_default();
     if !matches!(as_role.as_str(), "" | "phone" | "observer") {
-        return CommandOutput::failure("invalid role; expected one of: phone, observer\n", 2);
+        return CommandOutput::failure(
+            render_for(locale, "journal.cli.sol.link.join.invalid.role", &[]),
+            2,
+        );
     }
 
     let label = match parsed.label {
         Some(label) => {
-            if let Some(error) = label_error(&label) {
+            if let Some(error) = label_error(locale, &label) {
                 return CommandOutput::failure(format!("{error}\n"), 2);
             }
             label
@@ -107,19 +88,29 @@ pub fn link_join(ctx: CommandContext<'_>) -> CommandOutput {
     };
 
     let Some(seam) = ctx.link_pairing else {
-        return CommandOutput::failure("Link pairing seam is unavailable.\n", 1);
+        return CommandOutput::failure(
+            render_for(locale, "journal.cli.sol.link.join.pairing.unavailable", &[]),
+            1,
+        );
     };
 
     if parsed.mark_repeated {
-        return CommandOutput::failure(format!("{MARK_USAGE}\n"), 2);
+        return CommandOutput::failure(
+            render_for(locale, "journal.cli.sol.link.mark.usage", &[]),
+            2,
+        );
     }
     if let Some(mark) = &parsed.mark
         && mark_words(mark).len() != 2
     {
-        return CommandOutput::failure(format!("{MARK_USAGE}\n"), 2);
+        return CommandOutput::failure(
+            render_for(locale, "journal.cli.sol.link.mark.usage", &[]),
+            2,
+        );
     }
 
     let pair_request = match parse_pair_request(
+        locale,
         parsed
             .code
             .as_deref()
@@ -132,11 +123,11 @@ pub fn link_join(ctx: CommandContext<'_>) -> CommandOutput {
     };
 
     let additional_fields = Map::new();
-    let bundle_dir = match observer_bundle_dir(&label, ctx.env) {
+    let bundle_dir = match observer_bundle_dir(locale, &label, ctx.env) {
         Ok(bundle_dir) => {
             if path_lexists(&bundle_dir) {
                 return CommandOutput::failure(
-                    format!("{}\n", existing_path_message(&bundle_dir)),
+                    format!("{}\n", existing_path_message(locale, &bundle_dir)),
                     1,
                 );
             }
@@ -150,7 +141,10 @@ pub fn link_join(ctx: CommandContext<'_>) -> CommandOutput {
         None
     } else {
         let Some(terminal) = seam.open_terminal() else {
-            return CommandOutput::failure(format!("{JOIN_NO_TERMINAL}\n"), 1);
+            return CommandOutput::failure(
+                render_for(locale, "journal.cli.sol.link.mark.terminal.required", &[]),
+                1,
+            );
         };
         Some(terminal)
     };
@@ -179,35 +173,42 @@ pub fn link_join(ctx: CommandContext<'_>) -> CommandOutput {
     };
     let credential = match credential {
         Ok(credential) => credential,
-        Err(error) => return CommandOutput::failure(format!("{}\n", pairing_error_text(error)), 1),
+        Err(error) => {
+            return CommandOutput::failure(format!("{}\n", pairing_error_text(locale, error)), 1);
+        }
     };
 
-    if let Err(error) = validate_credential(&credential) {
+    if let Err(error) = validate_credential(locale, &credential) {
         return CommandOutput::failure(format!("{error}\n"), 1);
     }
-    let local_endpoints = match normalized_local_endpoints(&credential.local_endpoints) {
+    let local_endpoints = match normalized_local_endpoints(locale, &credential.local_endpoints) {
         Ok(value) => value,
         Err(error) => return CommandOutput::failure(format!("{error}\n"), 1),
     };
     if json_compact_ascii(&local_endpoints).len() > LOCAL_ENDPOINTS_MAX_BYTES {
-        return CommandOutput::failure("Pair response local_endpoints is too large.\n", 1);
+        return CommandOutput::failure(
+            render_for(locale, "journal.cli.sol.link.join.response.large", &[]),
+            1,
+        );
     }
 
     // Nothing is written until the owner has confirmed the journal's mark.
     let confirmed = match terminal {
         Some(mut terminal) => {
-            match answer_at_terminal(terminal.as_mut(), &credential.instance_id) {
+            match answer_at_terminal(locale, terminal.as_mut(), &credential.instance_id) {
                 MarkAnswer::Yes => Ok(()),
                 MarkAnswer::No => Err(CommandOutput::failure(
-                    format!("{NOT_PAIRED}\n{MISMATCH_BODY}\n"),
+                    render_for(locale, "!journal.cli.sol.link.mark.join.mismatch", &[]),
                     1,
                 )),
-                MarkAnswer::Cancelled | MarkAnswer::WalkedAway => {
-                    Err(CommandOutput::failure(format!("{CANCEL}\n"), 1))
-                }
+                MarkAnswer::Cancelled | MarkAnswer::WalkedAway => Err(CommandOutput::failure(
+                    render_for(locale, "!journal.cli.sol.link.mark.join.cancel", &[]),
+                    1,
+                )),
             }
         }
         None => answer_from_words(
+            locale,
             parsed.mark.as_deref().expect("mark or terminal present"),
             &credential.instance_id,
         ),
@@ -239,15 +240,22 @@ pub fn link_join(ctx: CommandContext<'_>) -> CommandOutput {
             .to_vec(),
     );
     let store = crate::link_credentials::LinkCredentialStore::new(bundle_dir.clone(), &label);
-    let _lock = match store.acquire_lock() {
+    let _lock = match store.acquire_lock_for(locale) {
         Ok(guard) => guard,
         Err(err) => {
-            return CommandOutput::failure(format!("solstone link join: error: {err}\n"), 1);
+            return CommandOutput::failure(
+                display_for(
+                    locale,
+                    "journal.cli.sol.link.join.lock.error",
+                    [("err", &err.message_for(locale))],
+                ),
+                1,
+            );
         }
     };
     if path_lexists(&bundle_dir) {
         return CommandOutput::failure(
-            format!("{}\n", spent_existing_path_message(&bundle_dir)),
+            format!("{}\n", spent_existing_path_message(locale, &bundle_dir)),
             1,
         );
     }
@@ -278,9 +286,9 @@ pub fn link_join(ctx: CommandContext<'_>) -> CommandOutput {
     }
     files.insert("peer.json".to_string(), peer_json.into_bytes());
 
-    if let Err(error) = publish_bundle_atomic(&bundle_dir, &files) {
+    if let Err(error) = publish_bundle_atomic(locale, &bundle_dir, &files) {
         let message = if error.kind() == io::ErrorKind::AlreadyExists {
-            spent_existing_path_message(&bundle_dir)
+            spent_existing_path_message(locale, &bundle_dir)
         } else {
             error.to_string()
         };
@@ -289,7 +297,11 @@ pub fn link_join(ctx: CommandContext<'_>) -> CommandOutput {
     let _ = fs::remove_file(bundle_dir.join("journal_metadata.json"));
     let _ = fs::remove_file(bundle_dir.join("serve_runtime.json"));
 
-    CommandOutput::success(format!("{PAIRED}\ncredentials: {}\n", bundle_dir.display()))
+    CommandOutput::success(display_for(
+        locale,
+        "journal.cli.sol.link.join.paired",
+        [("path", &bundle_dir.display())],
+    ))
 }
 
 enum MarkAnswer {
@@ -302,21 +314,25 @@ enum MarkAnswer {
 }
 
 /// Ask on the owner's terminal.
-fn answer_at_terminal(terminal: &mut dyn LinkJoinTerminal, jid: &str) -> MarkAnswer {
+fn answer_at_terminal(locale: &str, terminal: &mut dyn LinkJoinTerminal, jid: &str) -> MarkAnswer {
     let spec = crate::mark_text::mark_from_jid(jid)
         .ok()
         .map(|mark| mark.to_render_spec());
     let ask = if let Some(spec) = &spec {
         let spoken = format_spoken_mark(spec);
-        terminal.write_text(&format!(
-            "{MARK_STEP}\n\n{MARK_PREFIX}{spoken}\n\n{MARK_SUBTEXT}\n{ASK_IDENTIFIED}\n"
+        terminal.write_text(&display_for(
+            locale,
+            "!journal.cli.sol.link.mark.prompt.identified",
+            [("spoken", &spoken)],
         ));
-        ASK_IDENTIFIED
+        render_for(locale, "!journal.cli.sol.link.mark.ask.identified", &[])
     } else {
-        terminal.write_text(&format!(
-            "{MARK_STEP}\n\n{MARK_UNAVAILABLE}\n\n{COULDNT_VERIFY}\n{BODY_UNAVAILABLE}\n{ASK_UNAVAILABLE}\n"
+        terminal.write_text(&render_for(
+            locale,
+            "!journal.cli.sol.link.mark.prompt.unavailable",
+            &[],
         ));
-        ASK_UNAVAILABLE
+        render_for(locale, "!journal.cli.sol.link.mark.ask.unavailable", &[])
     };
     let (go_ahead, stop): (&[&str], &[&str]) = if spec.is_some() {
         (&["yes", "y"], &["no", "n"])
@@ -343,10 +359,10 @@ fn answer_at_terminal(terminal: &mut dyn LinkJoinTerminal, jid: &str) -> MarkAns
 }
 
 /// Compare the scripted `--mark` words, already checked to be two, to the mark.
-fn answer_from_words(words: &str, jid: &str) -> Result<(), CommandOutput> {
+fn answer_from_words(locale: &str, words: &str, jid: &str) -> Result<(), CommandOutput> {
     let Ok(mark) = crate::mark_text::mark_from_jid(jid) else {
         return Err(CommandOutput::failure(
-            format!("{COULDNT_VERIFY}\n{MARK_UNVERIFIABLE}\n"),
+            render_for(locale, "!journal.cli.sol.link.mark.join.unverifiable", &[]),
             1,
         ));
     };
@@ -359,7 +375,7 @@ fn answer_from_words(words: &str, jid: &str) -> Result<(), CommandOutput> {
         return Ok(());
     }
     Err(CommandOutput::failure(
-        format!("{NOT_PAIRED}\n{MARK_MISMATCH}\n"),
+        render_for(locale, "!journal.cli.sol.link.mark.join.wrong", &[]),
         1,
     ))
 }
@@ -387,21 +403,33 @@ fn unverified_link_accepted(bundle_dir: &Path) -> bool {
         .is_some_and(|peer| peer.get(UNVERIFIED_KEY) == Some(&Value::Bool(true)))
 }
 
-fn held_lines(label: &str) -> String {
-    format!("{HELD}\n{CONFIRM_RUN_LINE} --label {label}\n")
+fn held_lines(locale: &str, label: &str) -> String {
+    display_for(locale, "!journal.cli.sol.link.held", [("label", &label)])
 }
 
 #[must_use]
 pub fn link_confirm(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_confirm_args(ctx.args) {
+    let locale = ctx.human_locale_with_options(&["--label", "--mark"]);
+    let parsed = match parse_confirm_args(locale, ctx.args) {
         Ok(parsed) => parsed,
-        Err(error) => return confirm_usage_error(&error),
+        Err(error) => return confirm_usage_error(locale, &error),
     };
     if parsed.help {
-        return CommandOutput::success(CONFIRM_HELP);
+        return CommandOutput::success(render_for(
+            locale,
+            "journal.cli.sol.link.confirm.help",
+            &[],
+        ));
     }
     if let Some(unknown) = parsed.unknown {
-        return confirm_usage_error(&format!("unrecognized arguments: {unknown}"));
+        return confirm_usage_error(
+            locale,
+            &display_for(
+                locale,
+                "journal.cli.sol.link.argument.unrecognized",
+                [("unknown", &unknown)],
+            ),
+        );
     }
     if parsed.mark_repeated
         || parsed
@@ -409,49 +437,86 @@ pub fn link_confirm(ctx: CommandContext<'_>) -> CommandOutput {
             .as_deref()
             .is_some_and(|mark| mark_words(mark).len() != 2)
     {
-        return CommandOutput::failure(format!("{MARK_USAGE}\n"), 2);
+        return CommandOutput::failure(
+            render_for(locale, "journal.cli.sol.link.mark.usage", &[]),
+            2,
+        );
     }
     let Some(seam) = ctx.link_pairing else {
-        return CommandOutput::failure("Link pairing seam is unavailable.\n", 1);
+        return CommandOutput::failure(
+            render_for(locale, "journal.cli.sol.link.join.pairing.unavailable", &[]),
+            1,
+        );
     };
-    let selection = match resolve_serve_bundle(parsed.label.as_deref(), ctx.env) {
+    let selection = match resolve_serve_bundle(locale, parsed.label.as_deref(), ctx.env) {
         Ok(selection) => selection,
         Err(error) => {
-            return CommandOutput::failure(format!("solstone link confirm: error: {error}\n"), 1);
+            return CommandOutput::failure(
+                display_for(
+                    locale,
+                    "journal.cli.sol.link.confirm.error",
+                    [("error", &error)],
+                ),
+                1,
+            );
         }
     };
     let ca_jid = seam.pinned_ca_jid(&selection.bundle.ca_chain_pem);
     if !bundle_is_held(&selection, ca_jid.as_deref()) {
-        return CommandOutput::success(format!("{CONFIRM_DONE}\n"));
+        return CommandOutput::success(render_for(
+            locale,
+            "journal.cli.sol.link.confirm.done",
+            &[],
+        ));
     }
 
     let answer = if let Some(mark) = parsed.mark.as_deref() {
         let Some(jid) = ca_jid.as_deref() else {
-            return CommandOutput::failure(format!("{MARK_UNVERIFIABLE_CONFIRM}\n"), 5);
+            return CommandOutput::failure(
+                render_for(
+                    locale,
+                    "!journal.cli.sol.link.mark.confirm.unavailable",
+                    &[],
+                ),
+                5,
+            );
         };
-        answer_from_words(mark, jid).map_err(|_| {
+        answer_from_words(locale, mark, jid).map_err(|_| {
             retire_bundle(seam, &selection);
-            CommandOutput::failure(format!("{NOT_PAIRED}\n{CONFIRM_MARK_MISMATCH}\n"), 1)
+            CommandOutput::failure(
+                render_for(locale, "!journal.cli.sol.link.mark.confirm.wrong", &[]),
+                1,
+            )
         })
     } else {
         let Some(mut terminal) = seam.open_terminal() else {
-            return CommandOutput::failure(format!("{CONFIRM_NO_TERMINAL}\n"), 1);
+            return CommandOutput::failure(
+                render_for(locale, "journal.cli.sol.link.mark.confirm.terminal", &[]),
+                1,
+            );
         };
-        match answer_at_terminal(terminal.as_mut(), ca_jid.as_deref().unwrap_or_default()) {
+        match answer_at_terminal(
+            locale,
+            terminal.as_mut(),
+            ca_jid.as_deref().unwrap_or_default(),
+        ) {
             MarkAnswer::Yes => Ok(()),
             MarkAnswer::No => {
                 retire_bundle(seam, &selection);
                 Err(CommandOutput::failure(
-                    format!("{NOT_PAIRED}\n{CONFIRM_MISMATCH_BODY}\n"),
+                    render_for(locale, "!journal.cli.sol.link.mark.confirm.mismatch", &[]),
                     1,
                 ))
             }
             MarkAnswer::Cancelled => {
                 retire_bundle(seam, &selection);
-                Err(CommandOutput::failure(format!("{CONFIRM_CANCEL}\n"), 1))
+                Err(CommandOutput::failure(
+                    render_for(locale, "!journal.cli.sol.link.mark.confirm.cancel", &[]),
+                    1,
+                ))
             }
             MarkAnswer::WalkedAway => {
-                return CommandOutput::failure(held_lines(&selection.label), 5);
+                return CommandOutput::failure(held_lines(locale, &selection.label), 5);
             }
         }
     };
@@ -462,7 +527,11 @@ pub fn link_confirm(ctx: CommandContext<'_>) -> CommandOutput {
         };
     }
     match store_link_answer(&selection.bundle_dir, ca_jid.as_deref()) {
-        Ok(()) => CommandOutput::success(format!("{PAIRED}\n")),
+        Ok(()) => CommandOutput::success(render_for(
+            locale,
+            "journal.cli.sol.link.confirm.success",
+            &[],
+        )),
         Err(error) => CommandOutput::failure(format!("{error}\n"), 1),
     }
 }
@@ -538,34 +607,48 @@ fn rewrite_bundle_json(
 }
 
 pub fn link_serve(ctx: CommandContext<'_>) -> Result<ResidentCommand<'_>, CommandOutput> {
-    let parsed = match parse_serve_args(ctx.args) {
+    let locale = ctx.human_locale_with_options(&["--label", "--port", "--relay-url"]);
+    let parsed = match parse_serve_args(locale, ctx.args) {
         Ok(parsed) => parsed,
-        Err(error) => return Err(argparse_serve_error(error)),
+        Err(error) => return Err(argparse_serve_error(locale, error)),
     };
     if parsed.help {
-        return Err(CommandOutput::success(SERVE_HELP));
+        return Err(CommandOutput::success(render_for(
+            locale,
+            "journal.cli.sol.link.serve.help",
+            &[],
+        )));
     }
     if let Some(unknown) = parsed.unknown {
-        return Err(argparse_serve_error(format!(
-            "unrecognized arguments: {unknown}"
-        )));
+        return Err(argparse_serve_error(
+            locale,
+            display_for(
+                locale,
+                "journal.cli.sol.link.argument.unrecognized",
+                [("unknown", &unknown)],
+            ),
+        ));
     }
     if parsed.direct && parsed.relay_only {
         return Err(argparse_serve_error(
-            "argument --direct: not allowed with argument --relay-only".to_string(),
+            locale,
+            render_for(locale, "journal.cli.sol.link.serve.policy.conflict", &[]),
         ));
     }
     let port = match parsed.port {
         Some(port) => port,
         None => DEFAULT_SERVE_PORT,
     };
-    let selection = match resolve_serve_bundle(parsed.label.as_deref(), ctx.env) {
+    let selection = match resolve_serve_bundle(locale, parsed.label.as_deref(), ctx.env) {
         Ok(selection) => selection,
         Err(error) => return Err(CommandOutput::failure(format!("{error}\n"), 1)),
     };
     let ca_jid = pinned_ca_jid(&ctx, &selection.bundle.ca_chain_pem);
     if bundle_is_held(&selection, ca_jid.as_deref()) {
-        return Err(CommandOutput::failure(held_lines(&selection.label), 5));
+        return Err(CommandOutput::failure(
+            held_lines(locale, &selection.label),
+            5,
+        ));
     }
     let policy = if parsed.direct {
         LinkServeCarrierPolicy::Direct
@@ -594,20 +677,20 @@ pub fn link_serve(ctx: CommandContext<'_>) -> Result<ResidentCommand<'_>, Comman
     };
     let Some(runner) = ctx.link_serve else {
         return Err(CommandOutput::failure(
-            "Link serve seam is unavailable.\n",
+            render_for(locale, "journal.cli.sol.link.serve.unavailable", &[]),
             1,
         ));
     };
     // The mark comes from the CA this link pins. With none to read, it names none.
     let words = match ca_jid.as_deref().map(mark_words_from_jid) {
-        Some(Ok(words)) if !words.is_empty() => words,
+        Some(Ok(words)) if !words.is_empty() => Some(words),
         Some(_) => {
             return Err(CommandOutput::failure(
-                "this link bundle has no journal id, so it can't be named. re-run solstone link join.\n",
+                render_for(locale, "journal.cli.sol.link.serve.mark.unnamed", &[]),
                 1,
             ));
         }
-        None => "your journal".to_string(),
+        None => None,
     };
     let request = LinkServeRequest {
         label: selection.label.clone(),
@@ -621,57 +704,88 @@ pub fn link_serve(ctx: CommandContext<'_>) -> Result<ResidentCommand<'_>, Comman
         Ok(session) => session,
         Err(error) => {
             return Err(CommandOutput::failure(
-                format!("{}\n", serve_error_text(error)),
+                format!("{}\n", serve_error_text(locale, error)),
                 1,
             ));
         }
     };
-    let startup = match policy {
-        LinkServeCarrierPolicy::Direct => format!(
-            "forwarding 127.0.0.1:{} -> {} via direct connection\n",
-            session.bound_port(),
-            words
+    let startup = match (policy, words.as_deref()) {
+        (LinkServeCarrierPolicy::Direct, Some(mark)) => display_for(
+            locale,
+            "journal.cli.sol.link.serve.forward.direct",
+            [("port", &session.bound_port()), ("mark", &mark)],
         ),
-        LinkServeCarrierPolicy::RelayPermitted => format!(
-            "forwarding 127.0.0.1:{} -> {} via direct or relay\n",
-            session.bound_port(),
-            words
+        (LinkServeCarrierPolicy::Direct, None) => display_for(
+            locale,
+            "journal.cli.sol.link.serve.forward.direct.unnamed",
+            [("port", &session.bound_port())],
         ),
-        LinkServeCarrierPolicy::RelayOnly => format!(
-            "forwarding 127.0.0.1:{} -> {} via relay only\n",
-            session.bound_port(),
-            words
+        (LinkServeCarrierPolicy::RelayPermitted, Some(mark)) => display_for(
+            locale,
+            "journal.cli.sol.link.serve.forward.either",
+            [("port", &session.bound_port()), ("mark", &mark)],
+        ),
+        (LinkServeCarrierPolicy::RelayPermitted, None) => display_for(
+            locale,
+            "journal.cli.sol.link.serve.forward.either.unnamed",
+            [("port", &session.bound_port())],
+        ),
+        (LinkServeCarrierPolicy::RelayOnly, Some(mark)) => display_for(
+            locale,
+            "journal.cli.sol.link.serve.forward.relay",
+            [("port", &session.bound_port()), ("mark", &mark)],
+        ),
+        (LinkServeCarrierPolicy::RelayOnly, None) => display_for(
+            locale,
+            "journal.cli.sol.link.serve.forward.relay.unnamed",
+            [("port", &session.bound_port())],
         ),
     };
     Ok(ResidentCommand::new(startup, move |shutdown| {
         eprintln!(
-            "warning: development use on trusted systems only.\n\
-                 this bridge gives local callers the paired owner's full journal API authority.\n\
-                 run it only where you trust all software running on this system."
+            "{}",
+            render_for(locale, "!journal.cli.sol.link.serve.warning", &[])
         );
         match session.serve(shutdown) {
             Ok(()) => CommandOutput::success(""),
-            Err(error) => CommandOutput::failure(format!("{}\n", serve_error_text(error)), 1),
+            Err(error) => {
+                CommandOutput::failure(format!("{}\n", serve_error_text(locale, error)), 1)
+            }
         }
     }))
 }
 
 pub fn link_status(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_status_args(ctx.args) {
+    let locale = ctx.human_locale_with_options(&["--label"]);
+    let parsed = match parse_status_args(locale, ctx.args) {
         Ok(parsed) => parsed,
-        Err(error) => return argparse_status_error(error),
+        Err(error) => return argparse_status_error(locale, error),
     };
     if parsed.help {
-        return CommandOutput::success(STATUS_HELP);
+        return CommandOutput::success(render_for(locale, "journal.cli.sol.link.status.help", &[]));
     }
     if let Some(unknown) = parsed.unknown {
-        return argparse_status_error(format!("unrecognized arguments: {unknown}"));
+        return argparse_status_error(
+            locale,
+            display_for(
+                locale,
+                "journal.cli.sol.link.argument.unrecognized",
+                [("unknown", &unknown)],
+            ),
+        );
     }
 
-    let selection = match resolve_serve_bundle(parsed.label.as_deref(), ctx.env) {
+    let selection = match resolve_serve_bundle(locale, parsed.label.as_deref(), ctx.env) {
         Ok(selection) => selection,
         Err(error) => {
-            return CommandOutput::failure(format!("solstone link status: error: {error}\n"), 1);
+            return CommandOutput::failure(
+                display_for(
+                    locale,
+                    "journal.cli.sol.link.status.error",
+                    [("error", &error)],
+                ),
+                1,
+            );
         }
     };
 
@@ -696,44 +810,67 @@ pub fn link_status(ctx: CommandContext<'_>) -> CommandOutput {
             });
     }
 
-    let (state_str, version_str, persist_note) = if let Some(ref snap) = live_status {
-        let ver = if let Some(raw_ver) = &snap.journal_version {
-            let clean_ver = sanitize_display_version(raw_ver);
-            if snap.journal_version_fresh {
-                clean_ver
-            } else {
-                format!("{clean_ver} (last known)")
-            }
-        } else {
-            read_cached_version_fallback(&selection, expected_ca_fp_prefix.as_deref())
-        };
-        let note = if snap.persist_uncertain {
-            "Warning: connection changes may not have been saved. keep your credentials; the previous state may still be on disk.\n"
-        } else {
-            ""
-        };
-        (snap.state.clone(), ver, note)
-    } else {
-        let ver = read_cached_version_fallback(&selection, expected_ca_fp_prefix.as_deref());
-        ("stopped".to_string(), ver, "")
-    };
-
-    let unpaired_note = if state_str == "unpaired" {
-        unpaired_note(&selection.bundle_dir)
-    } else {
-        String::new()
-    };
-    let mut output = format!(
-        "Label: {}\nStatus: {}\nJournal version: {}\n{persist_note}{unpaired_note}",
-        selection.label, state_str, version_str
+    let mut output = display_for(
+        locale,
+        "journal.cli.sol.link.status.label",
+        [("label", &selection.label)],
     );
+    match &live_status {
+        Some(snap) => output.push_str(&display_for(
+            locale,
+            "journal.cli.sol.link.status.live",
+            [("state", &snap.state)],
+        )),
+        None => output.push_str(&render_for(
+            locale,
+            "journal.cli.sol.link.status.stopped",
+            &[],
+        )),
+    }
+    let version = live_status
+        .as_ref()
+        .and_then(|snap| {
+            snap.journal_version
+                .as_ref()
+                .map(|raw| (sanitize_display_version(raw), snap.journal_version_fresh))
+        })
+        .or_else(|| {
+            read_cached_version_fallback(&selection, expected_ca_fp_prefix.as_deref())
+                .map(|version| (version, false))
+        });
+    output.push_str(&match version {
+        Some((version, true)) => display_for(
+            locale,
+            "journal.cli.sol.link.status.version.fresh",
+            [("version", &version)],
+        ),
+        Some((version, false)) => display_for(
+            locale,
+            "journal.cli.sol.link.status.version.last",
+            [("version", &version)],
+        ),
+        None => render_for(locale, "journal.cli.sol.link.status.version.unknown", &[]),
+    });
+    if let Some(snap) = &live_status {
+        if snap.persist_uncertain {
+            output.push_str(&render_for(
+                locale,
+                "journal.cli.sol.link.status.persist.warning",
+                &[],
+            ));
+        }
+        if snap.state == "unpaired" {
+            output.push_str(&unpaired_note(locale, &selection.bundle_dir));
+        }
+    }
     let ca_jid = pinned_ca_jid(&ctx, &selection.bundle.ca_chain_pem);
     if bundle_is_held(&selection, ca_jid.as_deref()) {
-        output.push_str(&held_lines(&selection.label));
+        output.push_str(&held_lines(locale, &selection.label));
     }
     if let Some(snap) = &live_status {
         for sighting in &snap.unknown_journals {
             output.push_str(&format_sighting_block(
+                locale,
                 sighting,
                 ca_jid.as_deref().unwrap_or_default(),
             ));
@@ -758,47 +895,57 @@ fn format_spoken_mark(spec: &spl_core::mark::MarkRenderSpec) -> String {
     crate::mark_text::spoken_mark(spec)
 }
 
-const SIGHTING_RESET_FOOTER: &str = "if you recently reset your journal, pair this device again.";
-const SIGHTING_RELAY_FOOTER: &str = "this is less certain than a direct connection.";
-
 fn format_sighting_block(
+    locale: &str,
     sighting: &crate::seam::UnknownJournalSighting,
     local_instance_id: &str,
 ) -> String {
     let header = match &sighting.address {
-        Some(addr) => format!("unknown journal seen at {addr}:"),
-        None => "unknown journal seen through the relay:".to_string(),
+        Some(addr) => display_for(
+            locale,
+            "journal.cli.sol.link.sighting.direct",
+            [("addr", &addr)],
+        ),
+        None => render_for(locale, "journal.cli.sol.link.sighting.relay", &[]),
     };
     let what_answered = match &sighting.jid {
         Some(jid) => match crate::mark_text::mark_from_jid(jid) {
             Ok(mark) => {
                 let spoken = format_spoken_mark(&mark.to_render_spec());
-                format!("what answered:  {spoken} (claimed, not verified)")
+                display_for(
+                    locale,
+                    "journal.cli.sol.link.sighting.claimed",
+                    [("spoken", &spoken)],
+                )
             }
-            Err(_) => "what answered:  claimed identity could not be shown (claimed, not verified)"
-                .to_string(),
+            Err(_) => render_for(locale, "journal.cli.sol.link.sighting.claim.unshown", &[]),
         },
-        None => "what answered:  no identity presented".to_string(),
+        None => render_for(locale, "journal.cli.sol.link.sighting.no.identity", &[]),
     };
     let your_journal = match crate::mark_text::mark_from_jid(local_instance_id) {
         Ok(mark) => {
             let spoken = format_spoken_mark(&mark.to_render_spec());
-            format!("your journal:   {spoken}")
+            display_for(
+                locale,
+                "journal.cli.sol.link.sighting.journal",
+                [("spoken", &spoken)],
+            )
         }
-        Err(_) => crate::mark_text::MARK_UNAVAILABLE_LINE.to_string(),
+        Err(_) => render_for(locale, "journal.cli.client.network.mark.unavailable", &[]),
     };
     let footer = match (&sighting.jid, &sighting.address) {
         (None, _) => String::new(),
-        (Some(_), Some(_)) => format!("\n\n{SIGHTING_RESET_FOOTER}"),
-        (Some(_), None) => format!("\n\n{SIGHTING_RELAY_FOOTER}"),
+        (Some(_), Some(_)) => render_for(locale, "journal.cli.sol.link.sighting.reset", &[]),
+        (Some(_), None) => render_for(locale, "journal.cli.sol.link.sighting.certainty", &[]),
     };
     format!("\n{header}\n\n{what_answered}\n{your_journal}{footer}\n")
 }
 
-fn unpaired_note(bundle_dir: &Path) -> String {
-    format!(
-        "This device can't connect to your journal with its saved pairing. To pair it again, stop 'solstone link serve', remove the folder {}, run 'solstone link join --code <new pairing link>', then start 'solstone link serve' again.\n",
-        bundle_dir.display()
+fn unpaired_note(locale: &str, bundle_dir: &Path) -> String {
+    display_for(
+        locale,
+        "journal.cli.sol.link.unpaired.instructions",
+        [("path", &bundle_dir.display())],
     )
 }
 
@@ -838,7 +985,7 @@ struct ParsedStatusArgs {
     unknown: Option<String>,
 }
 
-fn parse_status_args(args: &[String]) -> Result<ParsedStatusArgs, String> {
+fn parse_status_args(locale: &str, args: &[String]) -> Result<ParsedStatusArgs, String> {
     let mut parsed = ParsedStatusArgs::default();
     let mut index = 0;
     while index < args.len() {
@@ -850,7 +997,7 @@ fn parse_status_args(args: &[String]) -> Result<ParsedStatusArgs, String> {
             parsed.label = Some(value.to_string());
         } else if token == "--label" {
             index += 1;
-            parsed.label = Some(take_value(args, index, "--label")?.to_string());
+            parsed.label = Some(take_value(locale, args, index, "--label")?.to_string());
         } else if parsed.unknown.is_none() {
             parsed.unknown = Some(token.clone());
         }
@@ -859,9 +1006,13 @@ fn parse_status_args(args: &[String]) -> Result<ParsedStatusArgs, String> {
     Ok(parsed)
 }
 
-fn argparse_status_error(error: String) -> CommandOutput {
+fn argparse_status_error(locale: &str, error: String) -> CommandOutput {
     CommandOutput::failure(
-        format!("{STATUS_USAGE}solstone link status: error: {error}\n"),
+        display_for(
+            locale,
+            "journal.cli.sol.link.status.usage.error",
+            [("error", &error)],
+        ),
         2,
     )
 }
@@ -875,9 +1026,9 @@ fn sanitize_display_version(raw: &str) -> String {
 fn read_cached_version_fallback(
     selection: &ServeBundleSelection,
     expected_ca_fp_prefix: Option<&str>,
-) -> String {
+) -> Option<String> {
     let meta_path = selection.bundle_dir.join("journal_metadata.json");
-    let cached = fs::read_to_string(&meta_path)
+    fs::read_to_string(&meta_path)
         .ok()
         .and_then(|content| serde_json::from_str::<LinkJournalMetadata>(&content).ok())
         .filter(|meta| {
@@ -886,11 +1037,7 @@ fn read_cached_version_fallback(
                 && expected_ca_fp_prefix.is_some_and(|ca| meta.ca_fp_prefix == ca)
                 && !meta.journal_version.is_empty()
         })
-        .map(|meta| {
-            let clean = sanitize_display_version(&meta.journal_version);
-            format!("{clean} (last known)")
-        });
-    cached.unwrap_or_else(|| "unknown".to_string())
+        .map(|meta| sanitize_display_version(&meta.journal_version))
 }
 
 /// Computes the same CA-fingerprint prefix pinned at pairing time (see
@@ -903,7 +1050,7 @@ fn ca_fp_prefix_hex(ca_chain_pem: &[String]) -> Option<String> {
     Some(spl_core::ca::sha256_hex(&der)[..32].to_string())
 }
 
-fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
+fn parse_args(locale: &str, args: &[String]) -> Result<ParsedArgs, String> {
     let mut parsed = ParsedArgs::default();
     let mut index = 0;
     while index < args.len() {
@@ -914,22 +1061,22 @@ fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
             parsed.home = Some(value.to_string());
         } else if token == "--home" {
             index += 1;
-            parsed.home = Some(take_value(args, index, "--home")?.to_string());
+            parsed.home = Some(take_value(locale, args, index, "--home")?.to_string());
         } else if let Some(value) = token.strip_prefix("--code=") {
             parsed.code = Some(value.to_string());
         } else if token == "--code" {
             index += 1;
-            parsed.code = Some(take_value(args, index, "--code")?.to_string());
+            parsed.code = Some(take_value(locale, args, index, "--code")?.to_string());
         } else if let Some(value) = token.strip_prefix("--as=") {
             parsed.as_role = Some(value.to_string());
         } else if token == "--as" {
             index += 1;
-            parsed.as_role = Some(take_value(args, index, "--as")?.to_string());
+            parsed.as_role = Some(take_value(locale, args, index, "--as")?.to_string());
         } else if let Some(value) = token.strip_prefix("--label=") {
             parsed.label = Some(value.to_string());
         } else if token == "--label" {
             index += 1;
-            parsed.label = Some(take_value(args, index, "--label")?.to_string());
+            parsed.label = Some(take_value(locale, args, index, "--label")?.to_string());
         } else if let Some(value) = token.strip_prefix("--mark=") {
             parsed.mark_repeated |= parsed.mark.is_some();
             parsed.mark = Some(value.to_string());
@@ -951,7 +1098,7 @@ fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
     Ok(parsed)
 }
 
-fn parse_confirm_args(args: &[String]) -> Result<ParsedArgs, String> {
+fn parse_confirm_args(locale: &str, args: &[String]) -> Result<ParsedArgs, String> {
     let mut parsed = ParsedArgs::default();
     let mut index = 0;
     while index < args.len() {
@@ -962,7 +1109,7 @@ fn parse_confirm_args(args: &[String]) -> Result<ParsedArgs, String> {
             parsed.label = Some(value.to_string());
         } else if token == "--label" {
             index += 1;
-            parsed.label = Some(take_value(args, index, "--label")?.to_string());
+            parsed.label = Some(take_value(locale, args, index, "--label")?.to_string());
         } else if let Some(value) = token.strip_prefix("--mark=") {
             parsed.mark_repeated |= parsed.mark.is_some();
             parsed.mark = Some(value.to_string());
@@ -983,14 +1130,18 @@ fn parse_confirm_args(args: &[String]) -> Result<ParsedArgs, String> {
     Ok(parsed)
 }
 
-fn confirm_usage_error(error: &str) -> CommandOutput {
+fn confirm_usage_error(locale: &str, error: &str) -> CommandOutput {
     CommandOutput::failure(
-        format!("{CONFIRM_USAGE}solstone link confirm: error: {error}\n"),
+        display_for(
+            locale,
+            "journal.cli.sol.link.confirm.usage.error",
+            [("error", &error)],
+        ),
         2,
     )
 }
 
-fn parse_serve_args(args: &[String]) -> Result<ParsedServeArgs, String> {
+fn parse_serve_args(locale: &str, args: &[String]) -> Result<ParsedServeArgs, String> {
     let mut parsed = ParsedServeArgs::default();
     let mut index = 0;
     while index < args.len() {
@@ -1001,17 +1152,20 @@ fn parse_serve_args(args: &[String]) -> Result<ParsedServeArgs, String> {
             parsed.label = Some(value.to_string());
         } else if token == "--label" {
             index += 1;
-            parsed.label = Some(take_value(args, index, "--label")?.to_string());
+            parsed.label = Some(take_value(locale, args, index, "--label")?.to_string());
         } else if let Some(value) = token.strip_prefix("--port=") {
-            parsed.port = Some(parse_serve_port(value)?);
+            parsed.port = Some(parse_serve_port(locale, value)?);
         } else if token == "--port" {
             index += 1;
-            parsed.port = Some(parse_serve_port(take_raw_value(args, index, "--port")?)?);
+            parsed.port = Some(parse_serve_port(
+                locale,
+                take_raw_value(locale, args, index, "--port")?,
+            )?);
         } else if let Some(value) = token.strip_prefix("--relay-url=") {
             parsed.relay_url = Some(value.to_string());
         } else if token == "--relay-url" {
             index += 1;
-            parsed.relay_url = Some(take_value(args, index, "--relay-url")?.to_string());
+            parsed.relay_url = Some(take_value(locale, args, index, "--relay-url")?.to_string());
         } else if token == "--direct" {
             parsed.direct = true;
         } else if token == "--relay-only" {
@@ -1024,53 +1178,92 @@ fn parse_serve_args(args: &[String]) -> Result<ParsedServeArgs, String> {
     Ok(parsed)
 }
 
-fn parse_serve_port(value: &str) -> Result<u16, String> {
-    let parsed = value
-        .parse::<i64>()
-        .map_err(|_| format!("argument --port: invalid int value: '{value}'"))?;
+fn parse_serve_port(locale: &str, value: &str) -> Result<u16, String> {
+    let parsed = value.parse::<i64>().map_err(|_| {
+        display_for(
+            locale,
+            "journal.cli.sol.link.serve.port.invalid",
+            [("value", &value)],
+        )
+    })?;
     match parsed {
         0 => Ok(0),
-        1..=65535 => {
-            u16::try_from(parsed).map_err(|_| "--port must be between 1 and 65535".to_string())
-        }
-        _ => Err("--port must be between 1 and 65535".to_string()),
+        1..=65535 => u16::try_from(parsed)
+            .map_err(|_| render_for(locale, "journal.cli.sol.link.serve.port.range", &[])),
+        _ => Err(render_for(
+            locale,
+            "journal.cli.sol.link.serve.port.range",
+            &[],
+        )),
     }
 }
 
-fn take_value<'a>(args: &'a [String], index: usize, option: &str) -> Result<&'a str, String> {
+fn take_value<'a>(
+    locale: &str,
+    args: &'a [String],
+    index: usize,
+    option: &str,
+) -> Result<&'a str, String> {
     let Some(value) = args.get(index).map(String::as_str) else {
-        return Err(format!("argument {option}: expected one argument"));
+        return Err(display_for(
+            locale,
+            "journal.cli.sol.link.argument.expected",
+            [("option", &option)],
+        ));
     };
     if value.starts_with('-') {
-        return Err(format!("argument {option}: expected one argument"));
+        return Err(display_for(
+            locale,
+            "journal.cli.sol.link.argument.expected",
+            [("option", &option)],
+        ));
     }
     Ok(value)
 }
 
-fn take_raw_value<'a>(args: &'a [String], index: usize, option: &str) -> Result<&'a str, String> {
+fn take_raw_value<'a>(
+    locale: &str,
+    args: &'a [String],
+    index: usize,
+    option: &str,
+) -> Result<&'a str, String> {
     let Some(value) = args.get(index).map(String::as_str) else {
-        return Err(format!("argument {option}: expected one argument"));
+        return Err(display_for(
+            locale,
+            "journal.cli.sol.link.argument.expected",
+            [("option", &option)],
+        ));
     };
     Ok(value)
 }
 
-fn argparse_serve_error(error: String) -> CommandOutput {
+fn argparse_serve_error(locale: &str, error: String) -> CommandOutput {
     CommandOutput::failure(
-        format!("{SERVE_USAGE}solstone link serve: error: {error}\n"),
+        display_for(
+            locale,
+            "journal.cli.sol.link.serve.usage.error",
+            [("error", &error)],
+        ),
         2,
     )
 }
 
 fn resolve_serve_bundle(
+    locale: &str,
     label: Option<&str>,
     env: &BTreeMap<String, String>,
 ) -> Result<ServeBundleSelection, String> {
     if let Some(label) = label {
-        let bundle_dir = observer_bundle_dir(label, env)?;
-        let bundle = load_serve_bundle(&bundle_dir).map_err(|error| {
-            format!(
-                "invalid link bundle for label '{label}' at {}: {error}. Run `solstone link join` to pair this device.",
-                bundle_dir.display()
+        let bundle_dir = observer_bundle_dir(locale, label, env)?;
+        let bundle = load_serve_bundle(locale, &bundle_dir).map_err(|error| {
+            display_for(
+                locale,
+                "journal.cli.sol.link.bundle.invalid",
+                [
+                    ("label", &label),
+                    ("path", &bundle_dir.display()),
+                    ("error", &error),
+                ],
             )
         })?;
         return Ok(ServeBundleSelection {
@@ -1080,7 +1273,7 @@ fn resolve_serve_bundle(
         });
     }
 
-    let root = observer_spl_root(env)?;
+    let root = observer_spl_root(locale, env)?;
     let mut bundles = BTreeMap::new();
     if root.is_dir() {
         for entry in fs::read_dir(&root).map_err(|error| error.to_string())? {
@@ -1090,21 +1283,24 @@ fn resolve_serve_bundle(
                 continue;
             }
             let label = entry.file_name().to_string_lossy().to_string();
-            if let Ok(bundle) = load_serve_bundle(&path) {
+            if let Ok(bundle) = load_serve_bundle(locale, &path) {
                 bundles.insert(label, (bundle, path));
             }
         }
     }
     if bundles.is_empty() {
-        return Err(format!(
-            "no link bundles found under {}. run `solstone link join` to pair this device.",
-            root.display()
+        return Err(display_for(
+            locale,
+            "journal.cli.sol.link.bundle.none",
+            [("path", &root.display())],
         ));
     }
     if bundles.len() > 1 {
         let labels = bundles.keys().cloned().collect::<Vec<_>>().join(", ");
-        return Err(format!(
-            "multiple link bundles found: {labels}. pass --label to choose one."
+        return Err(display_for(
+            locale,
+            "journal.cli.sol.link.bundle.multiple",
+            [("labels", &labels)],
         ));
     }
     let (label, (bundle, bundle_dir)) = bundles.into_iter().next().expect("bundle count checked");
@@ -1115,7 +1311,7 @@ fn resolve_serve_bundle(
     })
 }
 
-fn observer_spl_root(env: &BTreeMap<String, String>) -> Result<PathBuf, String> {
+fn observer_spl_root(locale: &str, env: &BTreeMap<String, String>) -> Result<PathBuf, String> {
     let base = env
         .get("XDG_CONFIG_HOME")
         .filter(|value| !value.is_empty())
@@ -1133,16 +1329,22 @@ fn observer_spl_root(env: &BTreeMap<String, String>) -> Result<PathBuf, String> 
             |xdg| Some(PathBuf::from(xdg)),
         );
     let Some(base) = base else {
-        return Err(
-            "could not resolve home directory for this device's pairing credentials.".to_string(),
-        );
+        return Err(render_for(
+            locale,
+            "journal.cli.sol.link.bundle.home.missing",
+            &[],
+        ));
     };
     Ok(base.join("solstone-observer").join("spl"))
 }
 
-fn load_serve_bundle(bundle_dir: &Path) -> Result<LinkServeBundle, String> {
+fn load_serve_bundle(locale: &str, bundle_dir: &Path) -> Result<LinkServeBundle, String> {
     if !bundle_dir.is_dir() {
-        return Err(format!("PL bundle not found: {}", bundle_dir.display()));
+        return Err(display_for(
+            locale,
+            "journal.cli.sol.link.bundle.path.missing",
+            [("path", &bundle_dir.display())],
+        ));
     }
     let missing = BUNDLE_FILES
         .iter()
@@ -1150,25 +1352,40 @@ fn load_serve_bundle(bundle_dir: &Path) -> Result<LinkServeBundle, String> {
         .map(|name| bundle_dir.join(name).display().to_string())
         .collect::<Vec<_>>();
     if !missing.is_empty() {
-        return Err(format!("missing PL bundle file: {}", missing.join(", ")));
+        return Err(display_for(
+            locale,
+            "journal.cli.sol.link.bundle.files.missing",
+            [("paths", &missing.join(", "))],
+        ));
     }
     let private_key_pem = read_bundle_text(bundle_dir, "private.pem")?;
     let client_cert_pem = read_bundle_text(bundle_dir, "cert.pem")?;
     let chain_pem = read_bundle_text(bundle_dir, "chain.pem")?;
-    let ca_chain_pem = split_pem_certificates(&chain_pem)?;
+    let ca_chain_pem = split_pem_certificates(locale, &chain_pem)?;
     let home_attestation = read_bundle_text(bundle_dir, "home_attestation.jwt")?;
     let peer_text = read_bundle_text(bundle_dir, "peer.json")?;
-    let peer: Value = serde_json::from_str(&peer_text)
-        .map_err(|error| format!("invalid peer.json in {}: {error}", bundle_dir.display()))?;
+    let peer: Value = serde_json::from_str(&peer_text).map_err(|error| {
+        display_for(
+            locale,
+            "journal.cli.sol.link.bundle.peer.invalid",
+            [("path", &bundle_dir.display()), ("error", &error)],
+        )
+    })?;
     let local_endpoints = match peer.get("local_endpoints") {
         Some(Value::Null) | None => Value::Array(Vec::new()),
         Some(Value::Array(_)) => peer
             .get("local_endpoints")
             .cloned()
             .expect("local_endpoints presence checked"),
-        Some(_) => return Err("peer.json local_endpoints must be a list".to_string()),
+        Some(_) => {
+            return Err(render_for(
+                locale,
+                "journal.cli.sol.link.bundle.endpoints.list",
+                &[],
+            ));
+        }
     };
-    let endpoints = serve_endpoints_from_value(&local_endpoints)?;
+    let endpoints = serve_endpoints_from_value(locale, &local_endpoints)?;
     let label = bundle_dir
         .file_name()
         .and_then(|n| n.to_str())
@@ -1205,7 +1422,7 @@ fn read_bundle_text(bundle_dir: &Path, name: &str) -> Result<String, String> {
     fs::read_to_string(bundle_dir.join(name)).map_err(|error| error.to_string())
 }
 
-fn split_pem_certificates(chain_pem: &str) -> Result<Vec<String>, String> {
+fn split_pem_certificates(locale: &str, chain_pem: &str) -> Result<Vec<String>, String> {
     const BEGIN: &str = "-----BEGIN CERTIFICATE-----";
     const END: &str = "-----END CERTIFICATE-----";
     let mut certs = Vec::new();
@@ -1213,7 +1430,11 @@ fn split_pem_certificates(chain_pem: &str) -> Result<Vec<String>, String> {
     while let Some(begin) = rest.find(BEGIN) {
         let after_begin = &rest[begin..];
         let Some(end) = after_begin.find(END) else {
-            return Err("chain.pem contains an incomplete certificate".to_string());
+            return Err(render_for(
+                locale,
+                "journal.cli.sol.link.bundle.chain.incomplete",
+                &[],
+            ));
         };
         let end_index = end + END.len();
         let mut cert = after_begin[..end_index].to_string();
@@ -1222,19 +1443,34 @@ fn split_pem_certificates(chain_pem: &str) -> Result<Vec<String>, String> {
         rest = &after_begin[end_index..];
     }
     if certs.is_empty() {
-        return Err("chain.pem contains no certificates".to_string());
+        return Err(render_for(
+            locale,
+            "journal.cli.sol.link.bundle.chain.empty",
+            &[],
+        ));
     }
     Ok(certs)
 }
 
-fn serve_endpoints_from_value(value: &Value) -> Result<Vec<LinkServeEndpoint>, String> {
+fn serve_endpoints_from_value(
+    locale: &str,
+    value: &Value,
+) -> Result<Vec<LinkServeEndpoint>, String> {
     let Value::Array(items) = value else {
-        return Err("peer.json local_endpoints must be a list".to_string());
+        return Err(render_for(
+            locale,
+            "journal.cli.sol.link.bundle.endpoints.list",
+            &[],
+        ));
     };
     let mut endpoints = Vec::new();
     for item in items {
         let Value::Object(map) = item else {
-            return Err("peer.json local_endpoints entries must be objects".to_string());
+            return Err(render_for(
+                locale,
+                "journal.cli.sol.link.bundle.endpoints.objects",
+                &[],
+            ));
         };
         let host = map
             .get("ip")
@@ -1244,26 +1480,45 @@ fn serve_endpoints_from_value(value: &Value) -> Result<Vec<LinkServeEndpoint>, S
             .trim()
             .to_string();
         if host.is_empty() {
-            return Err("LAN endpoint missing ip".to_string());
+            return Err(render_for(
+                locale,
+                "journal.cli.sol.link.bundle.endpoint.ip",
+                &[],
+            ));
         }
         let port = match map.get("port") {
             None | Some(Value::Null) => 7657,
             Some(Value::Number(number)) => number
                 .as_u64()
                 .and_then(|value| u16::try_from(value).ok())
-                .ok_or_else(|| "LAN endpoint has invalid port".to_string())?,
-            Some(Value::String(value)) => value
-                .parse::<u16>()
-                .map_err(|_| "LAN endpoint has invalid port".to_string())?,
-            Some(_) => return Err("LAN endpoint has invalid port".to_string()),
+                .ok_or_else(|| {
+                    render_for(locale, "journal.cli.sol.link.bundle.endpoint.port", &[])
+                })?,
+            Some(Value::String(value)) => value.parse::<u16>().map_err(|_| {
+                render_for(locale, "journal.cli.sol.link.bundle.endpoint.port", &[])
+            })?,
+            Some(_) => {
+                return Err(render_for(
+                    locale,
+                    "journal.cli.sol.link.bundle.endpoint.port",
+                    &[],
+                ));
+            }
         };
         endpoints.push(LinkServeEndpoint { host, port });
     }
     Ok(endpoints)
 }
 
-fn argparse_error(error: String) -> CommandOutput {
-    CommandOutput::failure(format!("{USAGE}solstone link join: error: {error}\n"), 2)
+fn argparse_error(locale: &str, error: String) -> CommandOutput {
+    CommandOutput::failure(
+        display_for(
+            locale,
+            "journal.cli.sol.link.join.usage.error",
+            [("error", &error)],
+        ),
+        2,
+    )
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1286,16 +1541,18 @@ struct RelayPairRequest {
     ca_fp_spki: Vec<u8>,
 }
 
-fn parse_pair_request(code: &str, home: Option<&str>) -> Result<PairRequest, String> {
+fn parse_pair_request(locale: &str, code: &str, home: Option<&str>) -> Result<PairRequest, String> {
     if !code.starts_with(PAIR_LINK_PREFIX) {
-        return Err(format!(
-            "Pair code did not match an accepted form. Use a pair-link like {PAIR_LINK_PREFIX}... from 'solstone call link pair'."
+        return Err(render_for(
+            locale,
+            "journal.cli.sol.link.join.code.invalid",
+            &[],
         ));
     }
     match spl_core::pairlink::parse(code) {
         Ok(ParsedPairLink::Direct(link)) => {
             let targets = if let Some(home) = home {
-                vec![parse_home_target(home)?]
+                vec![parse_home_target(locale, home)?]
             } else {
                 link.candidates
                     .into_iter()
@@ -1316,10 +1573,11 @@ fn parse_pair_request(code: &str, home: Option<&str>) -> Result<PairRequest, Str
             secret: link.s.to_vec(),
             ca_fp_spki: link.ca_fp_spki,
         })),
-        Err(PairLinkError::DisallowedDirectIpv4 { address: _ }) => Err(
-            "Pair-link points at an address outside the local network this joiner will dial."
-                .to_string(),
-        ),
+        Err(PairLinkError::DisallowedDirectIpv4 { address: _ }) => Err(render_for(
+            locale,
+            "journal.cli.sol.link.join.code.nonlocal",
+            &[],
+        )),
         Err(
             PairLinkError::MissingFragment
             | PairLinkError::Crockford(_)
@@ -1330,19 +1588,21 @@ fn parse_pair_request(code: &str, home: Option<&str>) -> Result<PairRequest, Str
             | PairLinkError::Truncated { .. }
             | PairLinkError::LengthMismatch { .. }
             | PairLinkError::InvalidCandidateCount { .. },
-        ) => Err(malformed_pair_link_message()),
+        ) => Err(malformed_pair_link_message(locale)),
     }
 }
 
-fn malformed_pair_link_message() -> String {
-    format!(
-        "Malformed pair-link. Use the full {PAIR_LINK_PREFIX}... value from the pairing output."
-    )
+fn malformed_pair_link_message(locale: &str) -> String {
+    render_for(locale, "journal.cli.sol.link.join.code.malformed", &[])
 }
 
-fn parse_home_target(home: &str) -> Result<LinkJoinPairTarget, String> {
+fn parse_home_target(locale: &str, home: &str) -> Result<LinkJoinPairTarget, String> {
     let Some((_, rest)) = home.split_once("://") else {
-        return Err("Pair-link target missing host.".to_string());
+        return Err(render_for(
+            locale,
+            "journal.cli.sol.link.join.target.host",
+            &[],
+        ));
     };
     let authority = rest
         .split(['/', '?', '#'])
@@ -1352,7 +1612,11 @@ fn parse_home_target(home: &str) -> Result<LinkJoinPairTarget, String> {
         .next()
         .unwrap_or_default();
     if authority.is_empty() {
-        return Err("Pair-link target missing host.".to_string());
+        return Err(render_for(
+            locale,
+            "journal.cli.sol.link.join.target.host",
+            &[],
+        ));
     }
     if let Some(after_bracket) = authority
         .strip_prefix('[')
@@ -1360,58 +1624,82 @@ fn parse_home_target(home: &str) -> Result<LinkJoinPairTarget, String> {
     {
         let host = after_bracket.0;
         if host.is_empty() {
-            return Err("Pair-link target missing host.".to_string());
+            return Err(render_for(
+                locale,
+                "journal.cli.sol.link.join.target.host",
+                &[],
+            ));
         }
         let port_text = after_bracket
             .1
             .strip_prefix(':')
-            .ok_or_else(|| "Pair-link target missing explicit port.".to_string())?;
-        let port = parse_explicit_port(port_text)?;
+            .ok_or_else(|| render_for(locale, "journal.cli.sol.link.join.target.port", &[]))?;
+        let port = parse_explicit_port(locale, port_text)?;
         return Ok(LinkJoinPairTarget {
             host: host.to_string(),
             port,
         });
     }
     let Some((host, port_text)) = authority.rsplit_once(':') else {
-        return Err("Pair-link target missing explicit port.".to_string());
+        return Err(render_for(
+            locale,
+            "journal.cli.sol.link.join.target.port",
+            &[],
+        ));
     };
     if host.is_empty() {
-        return Err("Pair-link target missing host.".to_string());
+        return Err(render_for(
+            locale,
+            "journal.cli.sol.link.join.target.host",
+            &[],
+        ));
     }
-    let port = parse_explicit_port(port_text)?;
+    let port = parse_explicit_port(locale, port_text)?;
     Ok(LinkJoinPairTarget {
         host: host.to_string(),
         port,
     })
 }
 
-fn parse_explicit_port(value: &str) -> Result<u16, String> {
+fn parse_explicit_port(locale: &str, value: &str) -> Result<u16, String> {
     value
         .parse::<u16>()
-        .map_err(|_| "Pair-link target missing explicit port.".to_string())
+        .map_err(|_| render_for(locale, "journal.cli.sol.link.join.target.port", &[]))
 }
 
-fn label_error(label: &str) -> Option<&'static str> {
+fn label_error(locale: &str, label: &str) -> Option<String> {
     if label.is_empty() {
-        return Some("--label must not be empty");
+        return Some(render_for(locale, "journal.cli.sol.link.label.empty", &[]));
     }
     if label.chars().count() > 80 {
-        return Some("--label must be 80 characters or fewer");
+        return Some(render_for(locale, "journal.cli.sol.link.label.length", &[]));
     }
     if label.contains('/') || label.contains('\\') {
-        return Some("--label must not contain path separators");
+        return Some(render_for(
+            locale,
+            "journal.cli.sol.link.label.separator",
+            &[],
+        ));
     }
     if label.contains("..") {
-        return Some("--label must not contain '..'");
+        return Some(render_for(
+            locale,
+            "journal.cli.sol.link.label.traversal",
+            &[],
+        ));
     }
     if label.starts_with('.') {
-        return Some("--label must not start with '.'");
+        return Some(render_for(locale, "journal.cli.sol.link.label.start", &[]));
     }
     if !label
         .chars()
         .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '.' | '-'))
     {
-        return Some("--label may contain only letters, numbers, '-', '_', and '.'");
+        return Some(render_for(
+            locale,
+            "journal.cli.sol.link.label.character",
+            &[],
+        ));
     }
     None
 }
@@ -1449,7 +1737,7 @@ fn sanitize_client_label(raw: &str) -> String {
         .chars()
         .take(80)
         .collect::<String>();
-    if trimmed.is_empty() || label_error(&trimmed).is_some() {
+    if trimmed.is_empty() || label_error("en-US", &trimmed).is_some() {
         String::new()
     } else {
         trimmed
@@ -1477,22 +1765,38 @@ impl IfEmpty for String {
     }
 }
 
-fn observer_bundle_dir(label: &str, env: &BTreeMap<String, String>) -> Result<PathBuf, String> {
-    Ok(observer_spl_root(env)?.join(label))
+fn observer_bundle_dir(
+    locale: &str,
+    label: &str,
+    env: &BTreeMap<String, String>,
+) -> Result<PathBuf, String> {
+    Ok(observer_spl_root(locale, env)?.join(label))
 }
 
-fn validate_credential(credential: &LinkJoinCredential) -> Result<(), &'static str> {
+fn validate_credential(locale: &str, credential: &LinkJoinCredential) -> Result<(), String> {
     if credential.client_key_pem.is_empty() {
-        return Err("Pair response missing generated client key");
+        return Err(render_for(locale, "journal.cli.sol.link.response.key", &[]));
     }
     if credential.client_cert_pem.is_empty() {
-        return Err("Pair response missing client_cert");
+        return Err(render_for(
+            locale,
+            "journal.cli.sol.link.response.cert",
+            &[],
+        ));
     }
     if credential.ca_chain_pem.is_empty() || credential.ca_chain_pem.iter().any(String::is_empty) {
-        return Err("Pair response missing ca_chain");
+        return Err(render_for(
+            locale,
+            "journal.cli.sol.link.response.chain",
+            &[],
+        ));
     }
     if credential.instance_id.is_empty() {
-        return Err("Pair response missing instance_id");
+        return Err(render_for(
+            locale,
+            "journal.cli.sol.link.response.instance",
+            &[],
+        ));
     }
     if credential
         .home_attestation
@@ -1500,18 +1804,24 @@ fn validate_credential(credential: &LinkJoinCredential) -> Result<(), &'static s
         .unwrap_or_default()
         .is_empty()
     {
-        return Err("Pair response missing home_attestation");
+        return Err(render_for(
+            locale,
+            "journal.cli.sol.link.response.attestation",
+            &[],
+        ));
     }
     Ok(())
 }
 
-fn normalized_local_endpoints(value: &Value) -> Result<Value, &'static str> {
+fn normalized_local_endpoints(locale: &str, value: &Value) -> Result<Value, String> {
     match value {
         Value::Null => Ok(Value::Array(Vec::new())),
         Value::Array(_) => Ok(value.clone()),
-        Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Object(_) => {
-            Err("Pair response local_endpoints must be an array.")
-        }
+        Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Object(_) => Err(render_for(
+            locale,
+            "journal.cli.sol.link.response.endpoints",
+            &[],
+        )),
     }
 }
 
@@ -1560,28 +1870,31 @@ fn now_utc(clock: Option<&dyn crate::seam::Clock>) -> String {
     datetime.strftime("%Y-%m-%dT%H:%M:%SZ").to_string()
 }
 
-fn pairing_error_text(error: LinkJoinPairingError) -> String {
+fn pairing_error_text(locale: &str, error: LinkJoinPairingError) -> String {
     let kind = error.kind;
     match kind {
-        LinkJoinPairingErrorKind::Rejected { status } => format!(
-            "Pairing failed (HTTP {status}): the pairing window is closed or the code was already used."
+        LinkJoinPairingErrorKind::Rejected { status } => display_for(
+            locale,
+            "journal.cli.sol.link.pair.rejected",
+            [("status", &status)],
         ),
         LinkJoinPairingErrorKind::Relay(LinkJoinRelayErrorKind::PairWindowClosed) => {
-            "Pairing failed: the pairing window is closed or expired. Generate a new pair code and retry."
-                .to_string()
+            render_for(locale, "journal.cli.sol.link.pair.closed", &[])
         }
         LinkJoinPairingErrorKind::PairResponseMissingHomeAttestation => {
-            "Pair response missing home_attestation".to_string()
+            render_for(locale, "journal.cli.sol.link.response.attestation", &[])
         }
         LinkJoinPairingErrorKind::NoEndpoint => {
-            "Could not connect to the pairing listener.".to_string()
+            render_for(locale, "journal.cli.sol.link.pair.listener", &[])
         }
-        LinkJoinPairingErrorKind::RelayControlRejected { endpoint, status } => {
-            format!(
-                "Relay rejected device enrollment ({} HTTP {status}).",
-                relay_control_endpoint_code(endpoint)
-            )
-        }
+        LinkJoinPairingErrorKind::RelayControlRejected { endpoint, status } => display_for(
+            locale,
+            "journal.cli.sol.link.pair.enrollment",
+            [
+                ("endpoint", &relay_control_endpoint_code(endpoint)),
+                ("status", &status),
+            ],
+        ),
         kind @ (LinkJoinPairingErrorKind::Io
         | LinkJoinPairingErrorKind::Tls
         | LinkJoinPairingErrorKind::TlsAccessDenied
@@ -1604,118 +1917,134 @@ fn pairing_error_text(error: LinkJoinPairingError) -> String {
         )
         | LinkJoinPairingErrorKind::NotPaired
         | LinkJoinPairingErrorKind::LocalOffset
-        | LinkJoinPairingErrorKind::RuntimeUnavailable) => format!(
-            "Pairing failed ({}). Generate a new pair code and retry.",
-            transport_error_code(kind)
+        | LinkJoinPairingErrorKind::RuntimeUnavailable) => display_for(
+            locale,
+            "journal.cli.sol.link.pair.failed",
+            [("code", &transport_error_code(kind))],
         ),
     }
 }
 
-fn serve_error_text(error: LinkServeError) -> String {
+fn serve_error_text(locale: &str, error: LinkServeError) -> String {
     match error.kind {
-        LinkServeErrorKind::InvalidBundle => {
-            "Link credentials are invalid. Run solstone link join before solstone link serve.".to_string()
-        }
+        LinkServeErrorKind::InvalidBundle => render_for(
+            locale,
+            "journal.cli.sol.link.serve.credentials.invalid",
+            &[],
+        ),
         LinkServeErrorKind::Bind { port, addr_in_use } => {
             if addr_in_use {
-                format!(
-                    "cannot bind 127.0.0.1:{port}: address already in use. Another `solstone link serve` or Convey may already be using that port."
+                display_for(
+                    locale,
+                    "journal.cli.sol.link.serve.bind.in.use",
+                    [("port", &port)],
                 )
             } else {
-                format!("cannot bind 127.0.0.1:{port}: bind failed")
+                display_for(
+                    locale,
+                    "journal.cli.sol.link.serve.bind.failed",
+                    [("port", &port)],
+                )
             }
         }
-        LinkServeErrorKind::RuntimeUnavailable => {
-            "Native link runtime is unavailable. Reinstall solstone-core and retry.".to_string()
-        }
+        LinkServeErrorKind::RuntimeUnavailable => render_for(
+            locale,
+            "journal.cli.sol.link.serve.runtime.unavailable",
+            &[],
+        ),
         LinkServeErrorKind::BridgeCapability => {
-            "Native link bridge setup failed before serving. Retry after reinstalling solstone-core."
-                .to_string()
+            render_for(locale, "journal.cli.sol.link.serve.bridge.failed", &[])
         }
-        LinkServeErrorKind::Transport(kind) => serve_transport_error_text(kind),
+        LinkServeErrorKind::Transport(kind) => serve_transport_error_text(locale, kind),
     }
 }
 
-fn serve_transport_error_text(kind: LinkServeTransportErrorKind) -> String {
+fn serve_transport_error_text(locale: &str, kind: LinkServeTransportErrorKind) -> String {
     match kind {
         LinkServeTransportErrorKind::Io => {
-            "Link transport I/O failed while serving. Check that the journal is reachable on LAN/VPN or relay, then retry.".to_string()
+            render_for(locale, "journal.cli.sol.link.transport.io", &[])
         }
-        LinkServeTransportErrorKind::Tls | LinkServeTransportErrorKind::TlsAccessDenied | LinkServeTransportErrorKind::TlsCertificateUnknown => {
-            "Secure link handshake failed. Re-run solstone link join if the journal certificate or pairing changed.".to_string()
+        LinkServeTransportErrorKind::Tls
+        | LinkServeTransportErrorKind::TlsAccessDenied
+        | LinkServeTransportErrorKind::TlsCertificateUnknown => {
+            render_for(locale, "journal.cli.sol.link.transport.tls", &[])
         }
         LinkServeTransportErrorKind::Crypto => {
-            "link credential material is invalid. re-run solstone link join for this device.".to_string()
+            render_for(locale, "journal.cli.sol.link.transport.credential", &[])
         }
         LinkServeTransportErrorKind::Mux => {
-            "SPL stream framing failed while serving. Retry; re-pair if it continues.".to_string()
+            render_for(locale, "journal.cli.sol.link.transport.framing", &[])
         }
         LinkServeTransportErrorKind::Http => {
-            "The journal response over the link could not be parsed. Update both peers or retry.".to_string()
+            render_for(locale, "journal.cli.sol.link.transport.http", &[])
         }
         LinkServeTransportErrorKind::Json => {
-            "Relay or bridge JSON could not be parsed. Check the relay URL and retry.".to_string()
+            render_for(locale, "journal.cli.sol.link.transport.json", &[])
         }
         LinkServeTransportErrorKind::PairLink => {
-            "stored pairing data is invalid. re-run solstone link join for this device.".to_string()
+            render_for(locale, "journal.cli.sol.link.transport.pair.data", &[])
         }
         LinkServeTransportErrorKind::Pairing => {
-            "Link credential or relay enrollment failed. Re-run solstone link join if retrying does not fix it.".to_string()
+            render_for(locale, "journal.cli.sol.link.transport.enrollment", &[])
         }
-        LinkServeTransportErrorKind::Rejected { status } => {
-            format!("The paired journal rejected the link request with HTTP {status}.")
-        }
-        LinkServeTransportErrorKind::Relay(error) => serve_relay_error_text(error).to_string(),
-        LinkServeTransportErrorKind::RelayControlRejected { endpoint, status } => {
-            match endpoint {
-                crate::seam::LinkServeRelayControlEndpoint::EnrollDevice => format!(
-                    "Relay enrollment was rejected with HTTP {status}. Re-run solstone link join if the bundle attestation is stale."
-                ),
-                crate::seam::LinkServeRelayControlEndpoint::TokenRefresh => format!(
-                    "relay token refresh was rejected with HTTP {status}. re-run solstone link join for this device."
-                ),
-            }
-        }
+        LinkServeTransportErrorKind::Rejected { status } => display_for(
+            locale,
+            "journal.cli.sol.link.transport.rejected",
+            [("status", &status)],
+        ),
+        LinkServeTransportErrorKind::Relay(error) => serve_relay_error_text(locale, error),
+        LinkServeTransportErrorKind::RelayControlRejected { endpoint, status } => match endpoint {
+            crate::seam::LinkServeRelayControlEndpoint::EnrollDevice => display_for(
+                locale,
+                "journal.cli.sol.link.transport.enroll.rejected",
+                [("status", &status)],
+            ),
+            crate::seam::LinkServeRelayControlEndpoint::TokenRefresh => display_for(
+                locale,
+                "journal.cli.sol.link.transport.refresh.rejected",
+                [("status", &status)],
+            ),
+        },
         LinkServeTransportErrorKind::NoEndpoint => {
-            "No journal endpoint is available. Re-run solstone link join or pass --relay-url unless using --direct intentionally.".to_string()
+            render_for(locale, "journal.cli.sol.link.transport.no.endpoint", &[])
         }
         LinkServeTransportErrorKind::NotPaired => {
-            "Link credentials are missing. Run solstone link join before solstone link serve.".to_string()
+            render_for(locale, "journal.cli.sol.link.transport.not.paired", &[])
         }
         LinkServeTransportErrorKind::LocalOffset => {
-            "Local offset lookup failed. Check the system clock and retry.".to_string()
+            render_for(locale, "journal.cli.sol.link.transport.offset", &[])
         }
     }
 }
 
-fn serve_relay_error_text(error: crate::seam::LinkServeRelayErrorKind) -> &'static str {
+fn serve_relay_error_text(locale: &str, error: crate::seam::LinkServeRelayErrorKind) -> String {
     match error {
         crate::seam::LinkServeRelayErrorKind::HomeOffline => {
-            "the relay reports your journal is offline. start the journal or use --direct on lan/vpn."
+            render_for(locale, "journal.cli.sol.link.relay.offline", &[])
         }
         crate::seam::LinkServeRelayErrorKind::Unauthorized => {
-            "the relay rejected this device token. re-run solstone link join for this device."
+            render_for(locale, "journal.cli.sol.link.relay.unauthorized", &[])
         }
         crate::seam::LinkServeRelayErrorKind::Unpaid => {
-            "The relay account is not available. Check relay service/account status or use --direct."
+            render_for(locale, "!journal.cli.sol.link.relay.unpaid", &[])
         }
         crate::seam::LinkServeRelayErrorKind::UnknownInstance => {
-            "the relay does not know this journal. re-run solstone link join."
+            render_for(locale, "journal.cli.sol.link.relay.unknown", &[])
         }
         crate::seam::LinkServeRelayErrorKind::PairWindowClosed => {
-            "The relay pairing window is closed. Re-run solstone link join from a fresh code."
+            render_for(locale, "journal.cli.sol.link.relay.closed", &[])
         }
         crate::seam::LinkServeRelayErrorKind::Overflow => {
-            "The relay is temporarily overloaded. Retry or use --direct on LAN/VPN."
+            render_for(locale, "journal.cli.sol.link.relay.overflow", &[])
         }
         crate::seam::LinkServeRelayErrorKind::Abnormal => {
-            "The relay connection closed abnormally. Retry or use --direct on LAN/VPN."
+            render_for(locale, "journal.cli.sol.link.relay.abnormal", &[])
         }
         crate::seam::LinkServeRelayErrorKind::UpgradeRejected => {
-            "The relay rejected the WebSocket upgrade. Check --relay-url and retry."
+            render_for(locale, "journal.cli.sol.link.relay.upgrade", &[])
         }
         crate::seam::LinkServeRelayErrorKind::Stalled => {
-            "The relay connection stalled. Retry or use --direct on LAN/VPN."
+            render_for(locale, "journal.cli.sol.link.relay.stalled", &[])
         }
     }
 }
@@ -1777,25 +2106,32 @@ fn path_lexists(path: &Path) -> bool {
     fs::symlink_metadata(path).is_ok()
 }
 
-fn existing_path_message(path: &Path) -> String {
-    format!(
-        "Credentials path already exists: {}. Remove it and rerun if re-pairing.",
-        path.display()
+fn existing_path_message(locale: &str, path: &Path) -> String {
+    display_for(
+        locale,
+        "journal.cli.sol.link.bundle.exists",
+        [("path", &path.display())],
     )
 }
 
-fn spent_existing_path_message(path: &Path) -> String {
-    format!(
-        "Credentials path already exists: {}. The pairing code is now spent; generate a new one and rerun after removing it.",
-        path.display()
+fn spent_existing_path_message(locale: &str, path: &Path) -> String {
+    display_for(
+        locale,
+        "journal.cli.sol.link.bundle.exists.spent",
+        [("path", &path.display())],
     )
 }
 
-fn publish_bundle_atomic(bundle_dir: &Path, files: &BTreeMap<String, Vec<u8>>) -> io::Result<()> {
-    publish_bundle_atomic_with_writer(bundle_dir, files, write_private_file)
+fn publish_bundle_atomic(
+    locale: &str,
+    bundle_dir: &Path,
+    files: &BTreeMap<String, Vec<u8>>,
+) -> io::Result<()> {
+    publish_bundle_atomic_with_writer(locale, bundle_dir, files, write_private_file)
 }
 
 fn publish_bundle_atomic_with_writer<W>(
+    locale: &str,
     bundle_dir: &Path,
     files: &BTreeMap<String, Vec<u8>>,
     write_file: W,
@@ -1804,14 +2140,18 @@ where
     W: Fn(&Path, &[u8]) -> io::Result<()>,
 {
     if BUNDLE_FILES.iter().any(|name| !files.contains_key(*name)) {
-        return Err(io::Error::other("credential bundle file set is incomplete"));
+        return Err(io::Error::other(render_for(
+            locale,
+            "journal.cli.sol.link.bundle.files.incomplete",
+            &[],
+        )));
     }
     let parent = bundle_dir.parent().unwrap_or_else(|| Path::new("."));
     fs::create_dir_all(parent)?;
     if path_lexists(bundle_dir) {
         return Err(io::Error::new(
             io::ErrorKind::AlreadyExists,
-            existing_path_message(bundle_dir),
+            existing_path_message(locale, bundle_dir),
         ));
     }
 
@@ -1820,7 +2160,7 @@ where
         write_file(&staging.path.join(name), content)?;
     }
     crate::link_credentials::sync_directory(&staging.path)?;
-    publish_staging_dir(&staging.path, bundle_dir)?;
+    publish_staging_dir(locale, &staging.path, bundle_dir)?;
     staging.disarm();
     if let Ok(directory) = File::open(parent) {
         let _ = directory.sync_all();
@@ -1829,7 +2169,7 @@ where
 }
 
 #[cfg(any(target_vendor = "apple", target_os = "linux"))]
-fn publish_staging_dir(staging: &Path, destination: &Path) -> io::Result<()> {
+fn publish_staging_dir(_locale: &str, staging: &Path, destination: &Path) -> io::Result<()> {
     rustix::fs::renameat_with(
         rustix::fs::CWD,
         staging,
@@ -1841,11 +2181,11 @@ fn publish_staging_dir(staging: &Path, destination: &Path) -> io::Result<()> {
 }
 
 #[cfg(not(any(target_vendor = "apple", target_os = "linux")))]
-fn publish_staging_dir(staging: &Path, destination: &Path) -> io::Result<()> {
+fn publish_staging_dir(locale: &str, staging: &Path, destination: &Path) -> io::Result<()> {
     if path_lexists(destination) {
         return Err(io::Error::new(
             io::ErrorKind::AlreadyExists,
-            existing_path_message(destination),
+            existing_path_message(locale, destination),
         ));
     }
     fs::rename(staging, destination)
@@ -1912,6 +2252,28 @@ impl Drop for PrivateStagingDir {
 
 #[cfg(test)]
 mod tests {
+    const SIGHTING_RELAY_FOOTER: &str = "this is less certain than a direct connection.";
+    const SIGHTING_RESET_FOOTER: &str =
+        "if you recently reset your journal, pair this device again.";
+    const MARK_UNVERIFIABLE: &str = "this computer couldn't work out the journal's mark, so the words you gave can't be matched. this computer isn't paired, and nothing it has kept went to that journal through this link. get a fresh pairing link from your journal and run solstone link join in a terminal to decide for yourself.";
+    const MARK_MISMATCH: &str = "the mark words you gave don't match the journal's mark, so this computer isn't paired, and nothing it has kept went to that journal through this link. check the words, get a fresh pairing link from your journal and run solstone link join again.";
+    const MARK_USAGE: &str =
+        "give the two words of your journal's mark, like --mark \"bramble quokka\".";
+    const JOIN_NO_TERMINAL: &str = "solstone link join can't ask you about your journal's mark here. run it in a terminal, or give the mark's two words with --mark \"word word\".";
+    const CANCEL: &str = "pairing cancelled. nothing this computer has kept went to that journal through this link. get a fresh pairing link from your journal and run solstone link join again when you're ready.";
+    const MISMATCH_BODY: &str = "you said this mark doesn't match the one your journal shows, so this computer isn't paired, and nothing it has kept went to that journal through this link. you may have pasted the wrong link, or something isn't right. get a fresh pairing link from your journal and run solstone link join again, or email support@solstone.app and we'll help.";
+    const NOT_PAIRED: &str = "not paired.";
+    const PAIRED: &str = "paired.";
+    const ASK_UNAVAILABLE: &str = "type continue to pair anyway, or cancel to stop:";
+    const COULDNT_VERIFY: &str = "couldn't verify.";
+    const ASK_IDENTIFIED: &str = "does this match your journal? type yes or no:";
+    const MARK_UNAVAILABLE: &str = "  your journal's mark: unavailable right now";
+    const STATUS_USAGE: &str = "usage: solstone link status [-h] [--label LABEL]\n";
+    const STATUS_HELP: &str = "usage: solstone link status [-h] [--label LABEL]\n\nShow link status and observed remote journal version.\n\noptions:\n  -h, --help     show this help message and exit\n  --label LABEL  Link bundle label (defaults to the only paired link)\n";
+    const SERVE_USAGE: &str = "usage: solstone link serve [-h] [--label LABEL] [--port PORT]\n                      [--relay-url RELAY_URL] [--direct | --relay-only]\n";
+    const SERVE_HELP: &str = "usage: solstone link serve [-h] [--label LABEL] [--port PORT]\n                      [--relay-url RELAY_URL] [--direct | --relay-only]\n\noptions:\n  -h, --help            show this help message and exit\n  --label LABEL         Link bundle label\n  --port PORT           Loopback port to serve on (default: 5015)\n  --relay-url RELAY_URL\n                        Override the relay URL\n  --direct              Direct only: reach the journal through a direct\n                        connection, never the relay. use when your journal is\n                        reachable directly (same network/vpn) to avoid relay\n                        dependency.\n  --relay-only          Relay only: reach the journal through the relay,\n                        never a direct connection. use when direct connections\n                        must not be attempted, even if your journal is reachable\n                        locally.\n";
+    const USAGE: &str = "usage: solstone link join [-h] [--home HOME] --code CODE [--as AS_ROLE]\n                     [--label LABEL] [--mark MARK]\n";
+    const HELP: &str = "usage: solstone link join [-h] [--home HOME] --code CODE [--as AS_ROLE]\n                     [--label LABEL] [--mark MARK]\n\noptions:\n  -h, --help     show this help message and exit\n  --home HOME    Receiver base URL\n  --code CODE    pair-link URL\n  --as AS_ROLE   Optional tag to join as\n  --label LABEL  Local credentials label (defaults to this machine's hostname)\n  --mark MARK    the two words of the mark your journal's network app shows.\n                 needed when there's no terminal to ask you on.\n";
     use std::cell::Cell;
     use std::collections::BTreeMap;
     use std::fs;
@@ -2125,7 +2487,8 @@ mod tests {
             instance_id: "32eb4572-27d1-8392-baa2-6e4ea0b1c953".to_string(),
             home_label: "Home".to_string(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
-            endpoints: serve_endpoints_from_value(&local_endpoints).expect("serve endpoints"),
+            endpoints: serve_endpoints_from_value("en-US", &local_endpoints)
+                .expect("serve endpoints"),
             local_endpoints,
             relay_access: Some(crate::link_credentials::StoreLoadOutcome::Absent),
         }
@@ -2163,7 +2526,8 @@ mod tests {
             instance_id: instance_id.to_string(),
             home_label: "Home".to_string(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
-            endpoints: serve_endpoints_from_value(&local_endpoints).expect("serve endpoints"),
+            endpoints: serve_endpoints_from_value("en-US", &local_endpoints)
+                .expect("serve endpoints"),
             local_endpoints,
             relay_access: Some(crate::link_credentials::StoreLoadOutcome::Absent),
         }
@@ -2249,7 +2613,7 @@ mod tests {
     fn assert_bundle_permissions_under_current_umask() {
         let temp = temp_dir("permissions");
         let bundle = temp.join("bundle");
-        publish_bundle_atomic(&bundle, &bundle_files()).expect("publish bundle");
+        publish_bundle_atomic("en-US", &bundle, &bundle_files()).expect("publish bundle");
 
         assert_eq!(mode(&bundle), 0o700);
         for name in BUNDLE_FILES {
@@ -2736,7 +3100,7 @@ mod tests {
             LinkServeTransportErrorKind::LocalOffset,
         ];
         for kind in kinds {
-            let text = serve_transport_error_text(kind);
+            let text = serve_transport_error_text("en-US", kind);
             assert_no_secret_substrings(&text);
         }
     }
@@ -2809,7 +3173,7 @@ mod tests {
 
         assert_eq!(
             output.stderr,
-            format!("{}\n", existing_path_message(&existing))
+            format!("{}\n", existing_path_message("en-US", &existing))
         );
         assert_eq!(output.exit, 1);
         seam.assert_done();
@@ -2836,7 +3200,7 @@ mod tests {
 
         assert_eq!(
             output.stderr,
-            format!("{}\n", existing_path_message(&existing))
+            format!("{}\n", existing_path_message("en-US", &existing))
         );
         assert_eq!(output.exit, 1);
         seam.assert_done();
@@ -3070,14 +3434,18 @@ mod tests {
         let parent = bundle.parent().expect("bundle parent");
         let writes = Cell::new(0usize);
 
-        let result =
-            publish_bundle_atomic_with_writer(&bundle, &bundle_files(), |path, content| {
+        let result = publish_bundle_atomic_with_writer(
+            "en-US",
+            &bundle,
+            &bundle_files(),
+            |path, content| {
                 if writes.get() == 1 {
                     return Err(io::Error::other("injected mid-write failure"));
                 }
                 writes.set(writes.get() + 1);
                 write_private_file(path, content)
-            });
+            },
+        );
 
         assert_eq!(writes.get(), 1);
         assert!(result.is_err());
@@ -3092,13 +3460,17 @@ mod tests {
         let parent = bundle.parent().expect("bundle parent");
         let created = Cell::new(false);
 
-        let result =
-            publish_bundle_atomic_with_writer(&bundle, &bundle_files(), |path, content| {
+        let result = publish_bundle_atomic_with_writer(
+            "en-US",
+            &bundle,
+            &bundle_files(),
+            |path, content| {
                 if !created.replace(true) {
                     fs::create_dir(&bundle)?;
                 }
                 write_private_file(path, content)
-            });
+            },
+        );
 
         assert_eq!(
             result.expect_err("racing destination must win").kind(),
@@ -3342,7 +3714,7 @@ mod tests {
         );
 
         for kind in kinds {
-            let text = pairing_error_text(LinkJoinPairingError::new(kind.clone()));
+            let text = pairing_error_text("en-US", LinkJoinPairingError::new(kind.clone()));
             assert!(!text.trim().is_empty(), "{kind:?}");
             assert_no_secret_substrings(&text);
             let code = transport_error_code(kind);
@@ -3354,15 +3726,16 @@ mod tests {
     #[test]
     fn home_override_requires_host_and_explicit_port() {
         assert_eq!(
-            parse_home_target("https://").expect_err("missing host"),
+            parse_home_target("en-US", "https://").expect_err("missing host"),
             "Pair-link target missing host."
         );
         assert_eq!(
-            parse_home_target("https://home.local").expect_err("missing port"),
+            parse_home_target("en-US", "https://home.local").expect_err("missing port"),
             "Pair-link target missing explicit port."
         );
         assert_eq!(
-            parse_home_target("https://home.local:7657/path?ignored=true").expect("target"),
+            parse_home_target("en-US", "https://home.local:7657/path?ignored=true")
+                .expect("target"),
             LinkJoinPairTarget {
                 host: "home.local".to_string(),
                 port: 7657,
@@ -3433,7 +3806,7 @@ mod tests {
             link_status_probe: None,
         });
         assert_eq!(output.exit, 0);
-        assert!(output.stdout.contains(&held_lines("alpha")));
+        assert!(output.stdout.contains(&held_lines("en-US", "alpha")));
     }
 
     #[test]
@@ -3722,7 +4095,9 @@ mod tests {
             output.stdout
         );
         assert!(
-            output.stdout.ends_with(&unpaired_note(&bundle_dir)),
+            output
+                .stdout
+                .ends_with(&unpaired_note("en-US", &bundle_dir)),
             "{}",
             output.stdout
         );
@@ -4199,7 +4574,7 @@ mod tests {
         assert_eq!(output.exit, 0);
         assert!(bundle.join("relay_access.json").is_file());
 
-        let loaded = load_serve_bundle(&bundle).expect("load serve bundle");
+        let loaded = load_serve_bundle("en-US", &bundle).expect("load serve bundle");
         match loaded.relay_access {
             Some(crate::link_credentials::StoreLoadOutcome::Ready(record)) => {
                 assert_eq!(
@@ -4227,7 +4602,7 @@ mod tests {
         // Ensure relay_access.json does not exist
         let _ = fs::remove_file(bundle_dir.join("relay_access.json"));
 
-        let loaded = load_serve_bundle(&bundle_dir).expect("load old bundle");
+        let loaded = load_serve_bundle("en-US", &bundle_dir).expect("load old bundle");
         assert_eq!(
             loaded.relay_access,
             Some(crate::link_credentials::StoreLoadOutcome::Absent)
@@ -4708,7 +5083,7 @@ mod tests {
             assert_eq!(output.exit, 0);
             assert!(output.stdout.contains("Status: unpaired\n"));
             assert!(output.stdout.contains(&expected_sighting));
-            assert!(output.stdout.contains(&unpaired_note(&bundle_dir)));
+            assert!(output.stdout.contains(&unpaired_note("en-US", &bundle_dir)));
         }
     }
 }

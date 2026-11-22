@@ -1,0 +1,34 @@
+{
+  "description": "Complete counted entities summary for resolve ambiguity group output.",
+  "context": "Complete counted entities summary for resolve ambiguity group output.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "entity_id",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "58fa0812526e6b6656ac6a12c87147ffe5385edc7cdf4afadd6fc9ceec00aa20",
+  "max_length": 426,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

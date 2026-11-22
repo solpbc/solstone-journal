@@ -1,0 +1,34 @@
+{
+  "description": "Text shown by the entities list.detected command.",
+  "context": "Text shown by the entities list.detected command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "975c3c0d428f1d12c164ff910d537e788add21fb34fdbbf5a4e55e28616db49a",
+  "max_length": 378,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

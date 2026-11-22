@@ -1,0 +1,23 @@
+{
+  "description": "Native link command output for link label empty. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link label empty. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "18150275f5fd390b7557e6689cd981fad6327d7951f4b15ee23f0ec996a8abec",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "label",
+      "kind": "accepted-input",
+      "value": "--label"
+    }
+  ]
+}

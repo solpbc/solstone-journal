@@ -1,0 +1,28 @@
+{
+  "description": "Native link command output for link join code invalid. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link join code invalid. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "17085f29ddb250620d33060ec359726bf019d7ca49e2239187785452c668522a",
+  "max_length": 393,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "https_go_solstone_app_p",
+      "kind": "accepted-input",
+      "value": "https://go.solstone.app/p#"
+    },
+    {
+      "name": "solstone_call_link_pair",
+      "kind": "accepted-input",
+      "value": "solstone call link pair"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Native link command output for link mark confirm unavailable. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link mark confirm unavailable. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3530843eb1cd316dcc4c55156079adde2481c01ca711cd370445349d71ceff17",
+  "max_length": 828,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_link_confirm",
+      "kind": "accepted-input",
+      "value": "solstone link confirm"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

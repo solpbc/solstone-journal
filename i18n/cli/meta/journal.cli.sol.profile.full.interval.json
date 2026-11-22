@@ -1,0 +1,28 @@
+{
+  "description": "Native profile command output for profile full interval. Keep literal arguments and command syntax intact.",
+  "context": "Native profile command output for profile full interval. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c7672b2aa93d5a377ce8ad882d70c6f1e5744ce8fc5701f1ad79553448383424",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "space_2",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Text shown by the entities update command.",
+  "context": "Text shown by the entities update command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "entity",
+      "type": "string"
+    },
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "69c762fa07de80de965dd9e203443a4b25d08379aa411f9a81af12ccbd708f61",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

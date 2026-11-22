@@ -1,0 +1,28 @@
+{
+  "description": "Native link command output for link join response large. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link join response large. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "704f4cddc4e4cf8d8830136a9cb5fb170209895c816104dd3153d8a0be201191",
+  "max_length": 189,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "local_endpoints",
+      "kind": "accepted-input",
+      "value": "local_endpoints"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Native link command output for link relay offline. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link relay offline. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "03b8589fb9dfa586324823c73a49684805d8c475d371a4cfd961b5a6260077e7",
+  "max_length": 273,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "direct",
+      "kind": "accepted-input",
+      "value": "--direct"
+    }
+  ]
+}

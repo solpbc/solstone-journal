@@ -1,0 +1,37 @@
+{
+  "description": "Text shown by the speakers correct command.",
+  "context": "Text shown by the speakers correct command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "stream_layout",
+      "type": "string"
+    },
+    {
+      "name": "stream",
+      "type": "string"
+    },
+    {
+      "name": "segment",
+      "type": "string"
+    },
+    {
+      "name": "sentence_id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e2211547d23357aca9e831d5a52720354f77cbe6dd60ed431fb1393eb2f54a12",
+  "max_length": 261,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

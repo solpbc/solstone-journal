@@ -1,0 +1,16 @@
+{
+  "description": "Native link command output for link join code nonlocal. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link join code nonlocal. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4c96b282714f047c15a71659d3a08b0a39f1106cf4e49790215d67aef6fe76ff",
+  "max_length": 237,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

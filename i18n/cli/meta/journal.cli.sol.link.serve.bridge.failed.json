@@ -1,0 +1,23 @@
+{
+  "description": "Native link command output for link serve bridge failed. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link serve bridge failed. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c9a17b7f5fdc92e76d3cbfde2e283d1d98e62ff6239a1ecaa72c8e0abe653e7d",
+  "max_length": 276,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_core",
+      "kind": "accepted-input",
+      "value": "solstone-core"
+    }
+  ]
+}

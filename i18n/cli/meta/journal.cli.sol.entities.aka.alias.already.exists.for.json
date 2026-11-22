@@ -1,0 +1,25 @@
+{
+  "description": "Text shown by the entities aka command.",
+  "context": "Text shown by the entities aka command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "aka_value",
+      "type": "string"
+    },
+    {
+      "name": "resolved_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a003e4faff689a6e3d0cf8d1ed1015b9399a9fd1c55551fe4dcf2c1dd3d05e2a",
+  "max_length": 189,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

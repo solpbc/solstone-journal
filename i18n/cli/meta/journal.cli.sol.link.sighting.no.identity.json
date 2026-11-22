@@ -1,0 +1,23 @@
+{
+  "description": "Native link command output for link sighting no identity. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link sighting no identity. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "81ad72fdd1f220241d62700c7938471876e3478d81af7e68a10ec8581cbccd11",
+  "max_length": 141,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "space_2",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ]
+}

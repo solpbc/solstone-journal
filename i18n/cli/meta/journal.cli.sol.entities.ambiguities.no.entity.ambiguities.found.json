@@ -1,0 +1,16 @@
+{
+  "description": "Text shown by the entities ambiguities command.",
+  "context": "Text shown by the entities ambiguities command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2f2fcd05e869046a1c38972243845b81c3646ad15d13b320e482e5e155d30397",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

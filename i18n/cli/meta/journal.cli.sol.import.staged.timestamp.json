@@ -1,0 +1,28 @@
+{
+  "description": "Native import command output for import staged timestamp. Keep literal arguments and command syntax intact.",
+  "context": "Native import command output for import staged timestamp. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "timestamp",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f5bd9afd84d706db1eaa5229c4ff994ce2baac324010fc08b1535a65e5b609d3",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

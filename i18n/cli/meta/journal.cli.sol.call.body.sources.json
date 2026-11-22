@@ -1,0 +1,21 @@
+{
+  "description": "Native solstone call body command output. Preserve supplied values and the command syntax.",
+  "context": "Native solstone call body command output. Preserve supplied values and the command syntax.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "sources",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fd47ed83b97791b944daf9ecb131c9d68c4c20d1ace8bfc9bf89b4f1be13fbb6",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

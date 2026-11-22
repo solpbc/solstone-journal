@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value, json};
+use solstone_core_cli_copy::{Value as CopyValue, display_for, render_for};
 
 use crate::command::{CommandContext, CommandOutput};
 use crate::decode::decode_response;
@@ -15,8 +16,6 @@ use crate::transport::{
 };
 
 const IMPORT_API: &str = "/app/import/api";
-const JOURNAL_HOST_HINT: &str = "Run this on the journal host with `solstone journal importer`.";
-const HELP: &str = "usage: solstone import [-h] [--timestamp TIMESTAMP] [--setting SETTING] [--source SOURCE] [--force] [--auto [AUTO]] [--dry-run] [--backends] [--sync BACKEND] [--save] [--list-importers] [--json] [-v] [media]\n\nImport media through the journal\n";
 
 #[must_use]
 pub fn import_top_level(ctx: CommandContext<'_>) -> CommandOutput {
@@ -38,26 +37,40 @@ fn import_with_preview(
     ctx: CommandContext<'_>,
     announce: &mut dyn FnMut(&str, bool) -> std::io::Result<()>,
 ) -> CommandOutput {
-    let parsed = match parse_args(ctx.args) {
+    let locale = ctx.human_locale_before_separator(&[
+        "--timestamp",
+        "--setting",
+        "--source",
+        "--sync",
+        "--path",
+    ]);
+    let parsed = match parse_args(locale, ctx.args) {
         Ok(parsed) => parsed,
-        Err(error) => return argparse_error(error),
+        Err(error) => return argparse_error(locale, error),
     };
     if parsed.help {
-        return CommandOutput::success(HELP);
+        return CommandOutput::success(render_for(locale, "journal.cli.sol.import.help", &[]));
     }
-    if let Some(output) = reject_unsupported_modes(&parsed) {
+    if let Some(output) = reject_unsupported_modes(locale, &parsed) {
         return output;
     }
     if !parsed.extra.is_empty() {
-        return argparse_error(format!(
-            "unexpected argument(s): {}",
-            parsed.extra.join(" ")
-        ));
+        return argparse_error(
+            locale,
+            display_for(
+                locale,
+                "journal.cli.sol.import.argument.unexpected",
+                [("arguments", &parsed.extra.join(" "))],
+            ),
+        );
     }
     if parsed.media.is_none() {
-        return argparse_error("the following arguments are required: media".to_string());
+        return argparse_error(
+            locale,
+            render_for(locale, "journal.cli.sol.import.argument.media", &[]),
+        );
     }
-    run_import(ctx, &parsed, announce)
+    run_import(locale, ctx, &parsed, announce)
 }
 
 #[derive(Debug, Clone, Default)]
@@ -87,7 +100,7 @@ enum AutoArg {
     Guidance,
 }
 
-fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
+fn parse_args(locale: &str, args: &[String]) -> Result<ParsedArgs, String> {
     let mut parsed = ParsedArgs::default();
     let mut index = 0;
     while index < args.len() {
@@ -116,23 +129,23 @@ fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
         } else if let Some(value) = token.strip_prefix("--timestamp=") {
             parsed.timestamp = Some(value.to_string());
         } else if token == "--timestamp" {
-            parsed.timestamp = Some(take_value(args, &mut index, "--timestamp")?);
+            parsed.timestamp = Some(take_value(locale, args, &mut index, "--timestamp")?);
         } else if let Some(value) = token.strip_prefix("--setting=") {
             parsed.setting = Some(value.to_string());
         } else if token == "--setting" {
-            parsed.setting = Some(take_value(args, &mut index, "--setting")?);
+            parsed.setting = Some(take_value(locale, args, &mut index, "--setting")?);
         } else if let Some(value) = token.strip_prefix("--source=") {
             parsed.source = Some(value.to_string());
         } else if token == "--source" {
-            parsed.source = Some(take_value(args, &mut index, "--source")?);
+            parsed.source = Some(take_value(locale, args, &mut index, "--source")?);
         } else if let Some(value) = token.strip_prefix("--sync=") {
             parsed.sync = Some(value.to_string());
         } else if token == "--sync" {
-            parsed.sync = Some(take_value(args, &mut index, "--sync")?);
+            parsed.sync = Some(take_value(locale, args, &mut index, "--sync")?);
         } else if let Some(value) = token.strip_prefix("--path=") {
             parsed.path = Some(value.to_string());
         } else if token == "--path" {
-            parsed.path = Some(take_value(args, &mut index, "--path")?);
+            parsed.path = Some(take_value(locale, args, &mut index, "--path")?);
         } else if let Some(value) = token.strip_prefix("--auto=") {
             let _ = value;
             parsed.auto = AutoArg::Guidance;
@@ -147,7 +160,11 @@ fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
                 parsed.auto = AutoArg::Bare;
             }
         } else if token.starts_with('-') {
-            return Err(format!("unrecognized arguments: {token}"));
+            return Err(display_for(
+                locale,
+                "journal.cli.sol.import.argument.unknown",
+                [("token", &token)],
+            ));
         } else {
             push_positional(&mut parsed, token.clone());
         }
@@ -156,11 +173,20 @@ fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
     Ok(parsed)
 }
 
-fn take_value(args: &[String], index: &mut usize, option: &str) -> Result<String, String> {
+fn take_value(
+    locale: &str,
+    args: &[String],
+    index: &mut usize,
+    option: &str,
+) -> Result<String, String> {
     *index += 1;
-    args.get(*index)
-        .cloned()
-        .ok_or_else(|| format!("argument {option}: expected one argument"))
+    args.get(*index).cloned().ok_or_else(|| {
+        display_for(
+            locale,
+            "journal.cli.sol.link.argument.expected",
+            [("option", &option)],
+        )
+    })
 }
 
 fn push_positional(parsed: &mut ParsedArgs, value: String) {
@@ -171,25 +197,33 @@ fn push_positional(parsed: &mut ParsedArgs, value: String) {
     }
 }
 
-fn reject_unsupported_modes(parsed: &ParsedArgs) -> Option<CommandOutput> {
+fn reject_unsupported_modes(locale: &str, parsed: &ParsedArgs) -> Option<CommandOutput> {
     if parsed.backends {
-        return Some(rejected(format!(
-            "`--backends` requires the journal host. {JOURNAL_HOST_HINT}"
+        return Some(rejected(display_for(
+            locale,
+            "journal.cli.sol.import.host.option",
+            [("option", &"--backends")],
         )));
     }
     if parsed.list_importers {
-        return Some(rejected(format!(
-            "`--list-importers` requires the journal host. {JOURNAL_HOST_HINT}"
+        return Some(rejected(display_for(
+            locale,
+            "journal.cli.sol.import.host.option",
+            [("option", &"--list-importers")],
         )));
     }
     if parsed.sync.is_some() {
-        return Some(rejected(format!(
-            "`--sync` requires the journal host. {JOURNAL_HOST_HINT}"
+        return Some(rejected(display_for(
+            locale,
+            "journal.cli.sol.import.host.option",
+            [("option", &"--sync")],
         )));
     }
     if parsed.save {
-        return Some(rejected(format!(
-            "`--save` requires the journal host. {JOURNAL_HOST_HINT}"
+        return Some(rejected(display_for(
+            locale,
+            "journal.cli.sol.import.host.option",
+            [("option", &"--save")],
         )));
     }
     if parsed
@@ -197,14 +231,18 @@ fn reject_unsupported_modes(parsed: &ParsedArgs) -> Option<CommandOutput> {
         .as_deref()
         .is_some_and(|value| !value.is_empty())
     {
-        return Some(rejected(format!(
-            "`--path` requires the journal host. {JOURNAL_HOST_HINT}"
+        return Some(rejected(display_for(
+            locale,
+            "journal.cli.sol.import.host.option",
+            [("option", &"--path")],
         )));
     }
     if matches!(parsed.auto, AutoArg::Guidance) {
-        return Some(rejected(
-            "`--auto <guidance>` requires the journal host. Use `--timestamp` here or run `solstone journal importer`.",
-        ));
+        return Some(rejected(render_for(
+            locale,
+            "journal.cli.sol.import.host.guidance",
+            &[],
+        )));
     }
     None
 }
@@ -213,11 +251,19 @@ fn rejected(message: impl AsRef<str>) -> CommandOutput {
     CommandOutput::failure(format!("solstone import: {}\n", message.as_ref()), 2)
 }
 
-fn argparse_error(error: String) -> CommandOutput {
-    CommandOutput::failure(format!("{HELP}solstone import: error: {error}\n"), 2)
+fn argparse_error(locale: &str, error: String) -> CommandOutput {
+    CommandOutput::failure(
+        display_for(
+            locale,
+            "journal.cli.sol.import.usage.error",
+            [("error", &error)],
+        ),
+        2,
+    )
 }
 
 fn run_import(
+    locale: &str,
     ctx: CommandContext<'_>,
     parsed: &ParsedArgs,
     announce: &mut dyn FnMut(&str, bool) -> std::io::Result<()>,
@@ -226,15 +272,15 @@ fn run_import(
         .client_item_ids
         .map(|provider| provider.client_item_id())
         .unwrap_or_else(|| "00000000000000000000000000000000".to_string());
-    let save_response = match save_media(ctx, parsed, &client_item_id) {
+    let save_response = match save_media(locale, ctx, parsed, &client_item_id) {
         Ok(response) => response,
         Err(ImportError::Unreachable) => {
             return CommandOutput::failure(
-                "solstone import: couldn't reach the journal. Start it with 'solstone journal up' and retry.\n",
+                render_for(locale, "journal.cli.sol.import.journal.unreachable", &[]),
                 1,
             );
         }
-        Err(error) => return print_client_error("stage import", error),
+        Err(error) => return print_client_error(locale, error),
     };
     if save_response.get("status").and_then(Value::as_str) == Some("duplicate")
         || save_response
@@ -242,24 +288,26 @@ fn run_import(
             .and_then(Value::as_str)
             == Some("do_not_start")
     {
-        return print_duplicate(&save_response, parsed.json);
+        return print_duplicate(locale, &save_response, parsed.json);
     }
     let staged_path = save_response
         .get("path")
         .and_then(Value::as_str)
         .unwrap_or_else(|| parsed.media.as_deref().unwrap_or_default())
         .to_string();
-    let start_response = match start_import(ctx, parsed, &save_response, announce) {
+    let start_response = match start_import(locale, ctx, parsed, &save_response, announce) {
         Ok(response) => response,
         Err(ImportError::Unreachable) => {
             return CommandOutput::failure(
-                format!(
-                    "solstone import: staged {staged_path} but processing was not queued: couldn't reach the journal\n"
+                display_for(
+                    locale,
+                    "journal.cli.sol.import.staged.unreachable",
+                    [("staged_path", &staged_path)],
                 ),
                 1,
             );
         }
-        Err(error) => return print_partial_error(&staged_path, error),
+        Err(error) => return print_partial_error(locale, &staged_path, error),
     };
     if parsed.dry_run {
         return CommandOutput::success(if parsed.json {
@@ -268,10 +316,10 @@ fn run_import(
                 sorted_json_compact_ascii(&Value::Object(start_response.clone()))
             )
         } else {
-            format_size(&start_response)
+            format_size(locale, &start_response)
         });
     }
-    print_success(&save_response, &start_response, parsed.json)
+    print_success(locale, &save_response, &start_response, parsed.json)
 }
 
 #[derive(Debug, Clone)]
@@ -285,6 +333,7 @@ enum ImportError {
 }
 
 fn save_media(
+    locale: &str,
     ctx: CommandContext<'_>,
     parsed: &ParsedArgs,
     client_item_id: &str,
@@ -322,7 +371,7 @@ fn save_media(
                 boundary: None,
                 policy: TimeoutPolicy::Upload,
             })
-            .map_err(map_transport_error)?
+            .map_err(|e| map_transport_error(locale, e))?
     } else {
         let mut payload = Map::new();
         for (key, value) in data.drain(..) {
@@ -338,9 +387,9 @@ fn save_media(
                 headers: vec![],
                 policy: TimeoutPolicy::Api,
             })
-            .map_err(map_transport_error)?
+            .map_err(|e| map_transport_error(locale, e))?
     };
-    decode_object(response)
+    decode_object(locale, response)
 }
 
 fn save_data(parsed: &ParsedArgs, client_item_id: &str) -> Vec<(String, String)> {
@@ -360,6 +409,7 @@ fn push_payload_value(data: &mut Vec<(String, String)>, key: &str, value: Option
 }
 
 fn start_import(
+    locale: &str,
     ctx: CommandContext<'_>,
     parsed: &ParsedArgs,
     save_response: &Map<String, Value>,
@@ -388,6 +438,7 @@ fn start_import(
     let mut payload = json!({ "path": path, "timestamp": timestamp, "import_id": import_id, "force": parsed.force,
         "timestamp_override": parsed.timestamp.is_some(), "resolved_timestamp": save_response.get("resolved_timestamp") });
     let preview = decode_object(
+        locale,
         ctx.transport
             .request(ApiRequest {
                 method: HttpMethod::Post,
@@ -397,7 +448,7 @@ fn start_import(
                 headers: vec![],
                 policy: TimeoutPolicy::Upload,
             })
-            .map_err(map_transport_error)?,
+            .map_err(|e| map_transport_error(locale, e))?,
     )?;
     let token = preview
         .get("preview_token")
@@ -412,12 +463,20 @@ fn start_import(
     }
     if let Some(notice) = preview.get("force_notice").and_then(Value::as_str) {
         announce(notice, parsed.json).map_err(|error| ImportError::Client {
-            error: format!("could not show import day notice: {error}"),
+            error: display_for(
+                locale,
+                "journal.cli.sol.import.notice.failed",
+                [("error", &error)],
+            ),
             detail: None,
         })?;
     }
-    announce(&format_size(&preview), parsed.json).map_err(|error| ImportError::Client {
-        error: format!("could not show import size: {error}"),
+    announce(&format_size(locale, &preview), parsed.json).map_err(|error| ImportError::Client {
+        error: display_for(
+            locale,
+            "journal.cli.sol.import.size.failed",
+            [("error", &error)],
+        ),
         detail: None,
     })?;
     payload["preview_token"] = json!(token);
@@ -431,8 +490,8 @@ fn start_import(
             headers: vec![],
             policy: TimeoutPolicy::Upload,
         })
-        .map_err(map_transport_error)?;
-    let mut object = decode_object(response)?;
+        .map_err(|e| map_transport_error(locale, e))?;
+    let mut object = decode_object(locale, response)?;
     object.insert(
         "size".to_owned(),
         preview.get("size").cloned().ok_or(ImportError::Malformed)?,
@@ -448,53 +507,35 @@ fn start_import(
 }
 
 fn decode_object(
+    locale: &str,
     response: crate::transport::HttpResponse,
 ) -> Result<Map<String, Value>, ImportError> {
-    let value = decode_response(&response).map_err(map_transport_error)?;
+    let value = decode_response(&response).map_err(|e| map_transport_error(locale, e))?;
     value.as_object().cloned().ok_or(ImportError::Malformed)
 }
 
-fn map_transport_error(error: ClientError) -> ImportError {
+fn map_transport_error(locale: &str, error: ClientError) -> ImportError {
     match error {
         ClientError::Unreachable { .. } => ImportError::Unreachable,
         ClientError::MalformedSuccess { .. } => ImportError::Malformed,
         other => ImportError::Client {
-            error: other.message().to_string(),
-            detail: other.detail().map(str::to_string),
+            error: other.message_for(locale),
+            detail: other.detail_for(locale),
         },
     }
 }
 
-fn print_client_error(operation: &str, error: ImportError) -> CommandOutput {
-    match error {
-        ImportError::Malformed => {
-            CommandOutput::failure("solstone import: couldn't read journal response\n", 1)
-        }
-        ImportError::Client { error, detail } => {
-            let mut stderr = format!("solstone import: failed to {operation}: {error}\n");
-            if let Some(detail) = detail {
-                stderr.push_str(&format!("solstone import: {detail}\n"));
-            }
-            CommandOutput::failure(stderr, 1)
-        }
-        ImportError::Unreachable => CommandOutput::failure(
-            "solstone import: couldn't reach the journal. Start it with 'solstone journal up' and retry.\n",
-            1,
-        ),
-    }
-}
-
-fn print_partial_error(staged_path: &str, error: ImportError) -> CommandOutput {
+fn print_client_error(locale: &str, error: ImportError) -> CommandOutput {
     match error {
         ImportError::Malformed => CommandOutput::failure(
-            format!(
-                "solstone import: staged {staged_path} but processing was not queued: couldn't read journal response\n"
-            ),
+            render_for(locale, "journal.cli.sol.import.response.malformed", &[]),
             1,
         ),
         ImportError::Client { error, detail } => {
-            let mut stderr = format!(
-                "solstone import: staged {staged_path} but processing was not queued: {error}\n"
+            let mut stderr = display_for(
+                locale,
+                "journal.cli.sol.import.stage.failed",
+                [("error", &error)],
             );
             if let Some(detail) = detail {
                 stderr.push_str(&format!("solstone import: {detail}\n"));
@@ -502,31 +543,62 @@ fn print_partial_error(staged_path: &str, error: ImportError) -> CommandOutput {
             CommandOutput::failure(stderr, 1)
         }
         ImportError::Unreachable => CommandOutput::failure(
-            format!(
-                "solstone import: staged {staged_path} but processing was not queued: couldn't reach the journal\n"
+            render_for(locale, "journal.cli.sol.import.journal.unreachable", &[]),
+            1,
+        ),
+    }
+}
+
+fn print_partial_error(locale: &str, staged_path: &str, error: ImportError) -> CommandOutput {
+    match error {
+        ImportError::Malformed => CommandOutput::failure(
+            display_for(
+                locale,
+                "journal.cli.sol.import.staged.malformed",
+                [("staged_path", &staged_path)],
+            ),
+            1,
+        ),
+        ImportError::Client { error, detail } => {
+            let mut stderr = display_for(
+                locale,
+                "journal.cli.sol.import.staged.failed",
+                [("staged_path", &staged_path), ("error", &error)],
+            );
+            if let Some(detail) = detail {
+                stderr.push_str(&format!("solstone import: {detail}\n"));
+            }
+            CommandOutput::failure(stderr, 1)
+        }
+        ImportError::Unreachable => CommandOutput::failure(
+            display_for(
+                locale,
+                "journal.cli.sol.import.staged.unreachable",
+                [("staged_path", &staged_path)],
             ),
             1,
         ),
     }
 }
 
-fn format_size(response: &Map<String, Value>) -> String {
+fn format_size(locale: &str, response: &Map<String, Value>) -> String {
     let size = response.get("size").unwrap_or(&Value::Null);
-    let mut output = format!(
-        "{} {} across {} {}\n",
-        size["recordings"].as_u64().unwrap_or(0),
-        if size["recordings"].as_u64() == Some(1) {
-            "recording"
-        } else {
-            "recordings"
-        },
-        size["days"].as_u64().unwrap_or(0),
-        if size["days"].as_u64() == Some(1) {
-            "day"
-        } else {
-            "days"
-        }
+    let recordings = size["recordings"].as_u64().unwrap_or(0);
+    let days = size["days"].as_u64().unwrap_or(0);
+    let mut output = render_for(
+        locale,
+        "journal.cli.sol.import.size.total",
+        &[
+            ("recordings", CopyValue::String(&recordings.to_string())),
+            (
+                "recordings_quantity",
+                crate::command::count_selector(recordings),
+            ),
+            ("days", CopyValue::String(&days.to_string())),
+            ("days_quantity", crate::command::count_selector(days)),
+        ],
     );
+    output.push('\n');
     if let (Some(unit), Some(count)) = (
         size["other_units"][0].as_str(),
         size["other_units"][1].as_u64(),
@@ -534,12 +606,17 @@ fn format_size(response: &Map<String, Value>) -> String {
         output.push_str(&format!("{count} {unit}\n"));
     }
     if let Some(skipped) = size["skipped"].as_u64().filter(|count| *count > 0) {
-        output.push_str(&format!("{skipped} skipped\n"));
+        output.push_str(&display_for(
+            locale,
+            "journal.cli.sol.import.size.skipped",
+            [("skipped", &skipped)],
+        ));
     }
     output
 }
 
 fn print_success(
+    locale: &str,
     save_response: &Map<String, Value>,
     start_response: &Map<String, Value>,
     json_out: bool,
@@ -566,9 +643,17 @@ fn print_success(
         )));
     }
     let mut stdout = String::new();
-    stdout.push_str(&format!("staged {}\n", display_value(&path)));
+    stdout.push_str(&display_for(
+        locale,
+        "journal.cli.sol.import.staged.path",
+        [("path", &display_value(&path))],
+    ));
     if let Some(timestamp) = timestamp.as_str().filter(|value| !value.is_empty()) {
-        stdout.push_str(&format!("timestamp {timestamp}\n"));
+        stdout.push_str(&display_for(
+            locale,
+            "journal.cli.sol.import.staged.timestamp",
+            [("timestamp", &timestamp)],
+        ));
     }
     if is_replay {
         if let Some(task_id) = start_response
@@ -576,19 +661,35 @@ fn print_success(
             .and_then(Value::as_str)
             .filter(|value| !value.is_empty())
         {
-            stdout.push_str(&format!("already started as task {task_id}\n"));
+            stdout.push_str(&display_for(
+                locale,
+                "journal.cli.sol.import.task.started",
+                [("task_id", &task_id)],
+            ));
         } else {
-            stdout.push_str("already started\n");
+            stdout.push_str(&render_for(
+                locale,
+                "journal.cli.sol.import.already.started",
+                &[],
+            ));
         }
     } else if let Some(task_id) = start_response.get("task_id").and_then(Value::as_str) {
-        stdout.push_str(&format!("queued processing task {task_id}\n"));
+        stdout.push_str(&display_for(
+            locale,
+            "journal.cli.sol.import.task.queued",
+            [("task_id", &task_id)],
+        ));
     } else {
-        stdout.push_str("queued processing\n");
+        stdout.push_str(&render_for(locale, "journal.cli.sol.import.queued", &[]));
     }
     CommandOutput::success(stdout)
 }
 
-fn print_duplicate(save_response: &Map<String, Value>, json_out: bool) -> CommandOutput {
+fn print_duplicate(
+    locale: &str,
+    save_response: &Map<String, Value>,
+    json_out: bool,
+) -> CommandOutput {
     if json_out {
         return crate::agent_output::literal_output(CommandOutput::success(format!(
             "{}\n",
@@ -597,33 +698,87 @@ fn print_duplicate(save_response: &Map<String, Value>, json_out: bool) -> Comman
     }
     let duplicate = save_response.get("duplicate").and_then(Value::as_object);
     let Some(duplicate) = duplicate else {
-        return CommandOutput::success("solstone import: duplicate import; skipping\n");
+        return CommandOutput::success(render_for(
+            locale,
+            "journal.cli.sol.import.duplicate.skipping",
+            &[],
+        ));
     };
     match duplicate.get("state").and_then(Value::as_str) {
         Some("imported") => {
-            let imported_at = duplicate
-                .get("imported_at")
-                .and_then(Value::as_str)
-                .unwrap_or("unknown date");
+            let date = duplicate.get("imported_at").and_then(Value::as_str);
             let entries = duplicate
                 .get("entry_count")
-                .filter(|value| !value.is_null())
-                .map(|count| format!(" ({} entries)", display_value(count)))
-                .unwrap_or_default();
-            CommandOutput::success(format!(
-                "solstone import: already imported on {imported_at}{entries}; skipping\n"
-            ))
+                .filter(|value| !value.is_null());
+            let message = match (date, entries) {
+                (Some(date), Some(value)) if value.as_u64().is_some() => {
+                    let count = value.as_u64().expect("numeric entry count");
+                    let line = render_for(
+                        locale,
+                        "journal.cli.sol.import.duplicate.entries",
+                        &[
+                            ("date", CopyValue::String(date)),
+                            ("entries", CopyValue::String(&count.to_string())),
+                            ("entries_quantity", crate::command::count_selector(count)),
+                        ],
+                    );
+                    format!("{line}\n")
+                }
+                (Some(date), Some(value)) => display_for(
+                    locale,
+                    "journal.cli.sol.import.duplicate.entries.literal",
+                    [("date", &date), ("entries", &display_value(value))],
+                ),
+                (Some(date), None) => display_for(
+                    locale,
+                    "journal.cli.sol.import.duplicate.imported",
+                    [("date", &date)],
+                ),
+                (None, Some(value)) if value.as_u64().is_some() => {
+                    let count = value.as_u64().expect("numeric entry count");
+                    let line = render_for(
+                        locale,
+                        "journal.cli.sol.import.duplicate.entries.unknown",
+                        &[
+                            ("entries", CopyValue::String(&count.to_string())),
+                            ("entries_quantity", crate::command::count_selector(count)),
+                        ],
+                    );
+                    format!("{line}\n")
+                }
+                (None, Some(value)) => display_for(
+                    locale,
+                    "journal.cli.sol.import.duplicate.entries.literal.unknown",
+                    [("entries", &display_value(value))],
+                ),
+                (None, None) => render_for(
+                    locale,
+                    "journal.cli.sol.import.duplicate.imported.unknown",
+                    &[],
+                ),
+            };
+            CommandOutput::success(message)
         }
         Some("staged") => {
-            let import_id = duplicate
-                .get("import_id")
-                .and_then(Value::as_str)
-                .unwrap_or("unknown");
-            CommandOutput::success(format!(
-                "solstone import: already staged as {import_id}; skipping\n"
-            ))
+            let message = match duplicate.get("import_id").and_then(Value::as_str) {
+                Some(import_id) => display_for(
+                    locale,
+                    "journal.cli.sol.import.duplicate.staged",
+                    [("import_id", &import_id)],
+                ),
+                None => render_for(
+                    locale,
+                    "journal.cli.sol.import.duplicate.staged.unknown",
+                    &[],
+                ),
+            };
+            CommandOutput::success(message)
         }
-        _ => CommandOutput::success("solstone import: duplicate import; skipping\n"),
+        _ => CommandOutput::success(render_for(
+            locale,
+            "journal.cli.sol.import.duplicate.skipping",
+            &[],
+        )),
     }
 }
 
@@ -719,7 +874,7 @@ mod tests {
             } else {
                 string_args(&["notes.txt"])
             };
-            let parsed = parse_args(&args).unwrap();
+            let parsed = parse_args("en-US", &args).unwrap();
             let env = BTreeMap::new();
             let size = json!({"recordings":0,"days":0,"other_units":["other archive files",3],"skipped":2});
             let transport = ScriptedHttpTransport::new(vec![ExpectedHttpCall::Request {
@@ -755,6 +910,7 @@ mod tests {
             let saved = json!({"path":"/staged/notes.txt","timestamp":"20261011_120000"});
             let mut announced = false;
             let result = start_import(
+                solstone_core_cli_copy::ENGLISH,
                 context,
                 &parsed,
                 saved.as_object().unwrap(),
@@ -775,10 +931,10 @@ mod tests {
 
     #[test]
     fn facet_is_rejected_while_setting_remains_a_supported_option() {
-        let parsed = parse_args(&string_args(&["media.txt", "--setting", "office"]))
+        let parsed = parse_args("en-US", &string_args(&["media.txt", "--setting", "office"]))
             .expect("setting parses");
         assert_eq!(parsed.setting.as_deref(), Some("office"));
-        assert!(parse_args(&string_args(&["media.txt", "--facet", "work"])).is_err());
+        assert!(parse_args("en-US", &string_args(&["media.txt", "--facet", "work"])).is_err());
     }
 
     #[test]
@@ -1019,7 +1175,7 @@ mod tests {
             "replay": true
         }))
         .unwrap();
-        let output = print_success(&save_resp, &start_resp, true);
+        let output = print_success("en-US", &save_resp, &start_resp, true);
         assert_eq!(output.exit, 0);
         let parsed: Value = serde_json::from_str(&output.stdout).unwrap();
         assert_eq!(parsed["status"], "replay");

@@ -5,8 +5,10 @@ use std::time::Duration;
 
 use jiff::ZonedDateTime;
 use serde_json::{Value, json};
+use solstone_core_cli_copy::{ENGLISH, display_for, render_for};
 
 use crate::args::parse_args;
+use crate::args::parse_args_for;
 use crate::command::{CommandContext, CommandOutput};
 use crate::decode::decode_response;
 use crate::error::{ClientError, SERVICE_DOWN_MESSAGE};
@@ -55,15 +57,17 @@ pub fn confidential_status(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn confidential_enable(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &["--wait-seconds", "--poll-interval"], &[]) {
+    let options = ["--wait-seconds", "--poll-interval"];
+    let locale = ctx.human_locale_with_options(&options);
+    let parsed = match parse_args_for(locale, ctx.args, &options, &[]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error, 1),
     };
-    let wait_seconds = match parse_float_option(parsed.value("--wait-seconds"), 4560.0) {
+    let wait_seconds = match parse_float_option(locale, parsed.value("--wait-seconds"), 4560.0) {
         Ok(value) => value,
         Err(error) => return stderr(error, 1),
     };
-    let poll_interval = match parse_float_option(parsed.value("--poll-interval"), 1.0) {
+    let poll_interval = match parse_float_option(locale, parsed.value("--poll-interval"), 1.0) {
         Ok(value) => value,
         Err(error) => return stderr(error, 1),
     };
@@ -74,49 +78,41 @@ pub fn confidential_enable(ctx: CommandContext<'_>) -> CommandOutput {
             if error.reason_code() == Some("service_busy") {
                 let mut out = String::new();
                 if let Ok(state) = get_confidential_state(ctx) {
-                    maybe_echo_portal(
-                        &mut out,
-                        state.get("confidential_operation"),
-                        "continue in browser \u{2192}",
-                    );
+                    maybe_echo_portal(locale, &mut out, state.get("confidential_operation"));
                 }
                 if !out.is_empty() {
-                    return thinking_error_preserving_stdout(out, error);
+                    return thinking_error_preserving_stdout(locale, out, error);
                 }
             }
-            return thinking_error(error);
+            return thinking_error_preserving_stdout(locale, String::new(), error);
         }
     };
     let mut out = String::new();
-    maybe_echo_portal(
-        &mut out,
-        response.get("operation"),
-        "continue in browser \u{2192}",
-    );
+    maybe_echo_portal(locale, &mut out, response.get("operation"));
     let (state, phase, outcome) =
         match poll_confidential_until_terminal(ctx, wait_seconds, poll_interval) {
             Ok(result) => result,
-            Err(error) => return thinking_error_preserving_stdout(out, error),
+            Err(error) => return thinking_error_preserving_stdout(locale, out, error),
         };
-    render_confidential_terminal(&mut out, &state, phase.as_deref());
+    render_confidential_terminal(locale, &mut out, &state, phase.as_deref());
     if (outcome == "terminal" && phase.as_deref() == Some("not_verified"))
         || outcome == "swept_configured"
     {
         push_line(
             &mut out,
-            "next: solstone call thinking confidential recheck",
+            render_for(locale, "journal.cli.sol.call.thinking.next", &[]),
         );
         return CommandOutput::success(out);
     }
     if outcome == "timeout" {
         push_line(
             &mut out,
-            "operation continues server-side; solstone call thinking confidential status shows its progress.",
+            render_for(locale, "journal.cli.sol.call.thinking.continuing", &[]),
         );
     } else if outcome == "swept_unconfigured" {
         push_line(
             &mut out,
-            "operation ended without enabling confidential processing; check solstone call thinking confidential status.",
+            render_for(locale, "journal.cli.sol.call.thinking.ended", &[]),
         );
     }
     CommandOutput {
@@ -301,16 +297,21 @@ pub fn keys_validate(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn providers_show(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &[], &["--human"]) {
+    let locale = if ctx.args.iter().any(|arg| arg == "--human") {
+        ctx.human_locale()
+    } else {
+        ENGLISH
+    };
+    let parsed = match parse_args_for(locale, ctx.args, &[], &["--human"]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error, 1),
     };
     let response = match get_providers(ctx) {
         Ok(response) => response,
-        Err(error) => return thinking_error(error),
+        Err(error) => return thinking_error_preserving_stdout(locale, String::new(), error),
     };
     if parsed.has_flag("--human") {
-        return render_providers_human(&response);
+        return render_providers_human(locale, &response);
     }
     stdout_json_value(&json!({
         "providers": response.get("providers").cloned().unwrap_or_else(|| json!([])),
@@ -657,50 +658,64 @@ fn poll_confidential_until_terminal(
     }
 }
 
-fn render_confidential_terminal(out: &mut String, state: &Value, phase: Option<&str>) {
+fn render_confidential_terminal(
+    locale: &str,
+    out: &mut String,
+    state: &Value,
+    phase: Option<&str>,
+) {
     let empty = json!({});
     let operation = state.get("confidential_operation").unwrap_or(&empty);
     let attestation = state.get("confidential_attestation").unwrap_or(&empty);
     push_line(
         out,
-        format!(
-            "confidential_enabled: {}",
-            display_value(state.get("confidential_enabled"))
+        display_for(
+            locale,
+            "journal.cli.sol.call.thinking.enabled",
+            [("value", &display_value(state.get("confidential_enabled")))],
         ),
     );
     push_line(
         out,
-        format!(
-            "confidential_provenance_configured: {}",
-            display_value(state.get("confidential_provenance_configured"))
+        display_for(
+            locale,
+            "journal.cli.sol.call.thinking.provenance",
+            [(
+                "value",
+                &display_value(state.get("confidential_provenance_configured")),
+            )],
         ),
     );
     push_line(
         out,
-        format!(
-            "attestation_state: {}",
-            display_value(attestation.get("state"))
+        display_for(
+            locale,
+            "journal.cli.sol.call.thinking.attestation.state",
+            [("value", &display_value(attestation.get("state")))],
         ),
     );
     push_line(
         out,
-        format!(
-            "attestation_reason: {}",
-            display_value(attestation.get("reason"))
+        display_for(
+            locale,
+            "journal.cli.sol.call.thinking.attestation.reason",
+            [("value", &display_value(attestation.get("reason")))],
         ),
     );
     push_line(
         out,
-        format!(
-            "attestation_observed_at: {}",
-            display_value(attestation.get("observed_at"))
+        display_for(
+            locale,
+            "journal.cli.sol.call.thinking.attestation.observed",
+            [("value", &display_value(attestation.get("observed_at")))],
         ),
     );
     push_line(
         out,
-        format!(
-            "attestation_expires_at: {}",
-            display_value(attestation.get("expires_at"))
+        display_for(
+            locale,
+            "journal.cli.sol.call.thinking.attestation.expires",
+            [("value", &display_value(attestation.get("expires_at")))],
         ),
     );
     let operation_phase = phase
@@ -713,21 +728,36 @@ fn render_confidential_terminal(out: &mut String, state: &Value, phase: Option<&
         })
         .unwrap_or_default();
     if !operation_phase.is_empty() {
-        push_line(out, format!("operation: {operation_phase}"));
+        push_line(
+            out,
+            display_for(
+                locale,
+                "journal.cli.sol.call.thinking.operation",
+                [("operation_phase", &operation_phase)],
+            ),
+        );
     }
     if let Some(guidance) = operation.get("guidance").and_then(Value::as_str) {
         push_line(out, guidance);
     }
     if let Some(subscribe_url) = operation.get("subscribe_url").and_then(Value::as_str) {
-        push_line(out, format!("subscribe_url: {subscribe_url}"));
+        push_line(
+            out,
+            display_for(
+                locale,
+                "!journal.cli.sol.call.thinking.subscribe",
+                [("url", &subscribe_url)],
+            ),
+        );
     }
 }
 
-fn render_providers_human(response: &Value) -> CommandOutput {
+fn render_providers_human(locale: &str, response: &Value) -> CommandOutput {
     let active = response.get("active_lane").unwrap_or(&Value::Null);
-    let mut lines = vec![format!(
-        "active lane: {}",
-        display_value(active.get("lane"))
+    let mut lines = vec![display_for(
+        locale,
+        "journal.cli.sol.call.thinking.lane",
+        [("lane", &display_value(active.get("lane")))],
     )];
     if let Some(statuses) = response.get("provider_status").and_then(Value::as_object) {
         let mut keys = statuses.keys().collect::<Vec<_>>();
@@ -738,9 +768,9 @@ fn render_providers_human(response: &Value) -> CommandOutput {
             let status_text = if let Some(first) = issues.and_then(|items| items.first()) {
                 display_value(Some(first))
             } else if truthy(status.get("generate_ready")) {
-                "ready".to_string()
+                render_for(locale, "journal.cli.sol.call.thinking.ready", &[])
             } else {
-                "not ready".to_string()
+                render_for(locale, "journal.cli.sol.call.thinking.not.ready", &[])
             };
             lines.push(format!("{key}: {status_text}"));
         }
@@ -748,13 +778,20 @@ fn render_providers_human(response: &Value) -> CommandOutput {
     stdout(lines)
 }
 
-fn maybe_echo_portal(out: &mut String, operation: Option<&Value>, cta: &str) {
+fn maybe_echo_portal(locale: &str, out: &mut String, operation: Option<&Value>) {
     if let Some(portal_url) = operation
         .and_then(Value::as_object)
         .and_then(|operation| operation.get("portal_url"))
         .and_then(Value::as_str)
     {
-        push_line(out, format!("{cta} {portal_url}"));
+        push_line(
+            out,
+            display_for(
+                locale,
+                "!journal.cli.sol.call.thinking.portal",
+                [("url", &portal_url)],
+            ),
+        );
     }
 }
 
@@ -776,11 +813,11 @@ fn request_json(
     decode_response(&response)
 }
 
-fn parse_float_option(value: Option<&str>, default: f64) -> Result<f64, String> {
+fn parse_float_option(locale: &str, value: Option<&str>, default: f64) -> Result<f64, String> {
     match value {
         Some(value) => value
             .parse::<f64>()
-            .map_err(|_error| "Error: option requires a floating-point value.".to_string()),
+            .map_err(|_error| render_for(locale, "journal.cli.client.network.option.float", &[])),
         None => Ok(default),
     }
 }
@@ -820,10 +857,14 @@ fn thinking_error_with_guidance(error: ClientError, guidance: &str) -> CommandOu
     output
 }
 
-fn thinking_error_preserving_stdout(stdout: String, error: ClientError) -> CommandOutput {
+fn thinking_error_preserving_stdout(
+    locale: &str,
+    stdout: String,
+    error: ClientError,
+) -> CommandOutput {
     let stderr = match error {
-        ClientError::Unreachable { .. } => format!("{SERVICE_DOWN_MESSAGE}\n"),
-        _ => format!("{}\n", error.message()),
+        ClientError::Unreachable { .. } => format!("{}\n", crate::error::service_down_for(locale)),
+        _ => format!("{}\n", error.message_for(locale)),
     };
     CommandOutput {
         stdout,

@@ -1,0 +1,28 @@
+{
+  "description": "Native import command output for import size skipped. Keep literal arguments and command syntax intact.",
+  "context": "Native import command output for import size skipped. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "skipped",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "62c3dce613473b307b33964aa9467afdaa23dc76b2ce806972127f3126e1c199",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

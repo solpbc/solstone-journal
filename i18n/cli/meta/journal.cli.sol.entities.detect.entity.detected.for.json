@@ -1,0 +1,25 @@
+{
+  "description": "Text shown by the entities detect command.",
+  "context": "Text shown by the entities detect command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "entity_name",
+      "type": "string"
+    },
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6005fd1aec522d53006d241b86626f0bb33cfb82e9006edd262f6f15a453d17b",
+  "max_length": 144,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

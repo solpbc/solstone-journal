@@ -22,7 +22,12 @@ pub fn convey_status(ctx: CommandContext<'_>) -> CommandOutput {
         None,
     ) {
         Ok(value) => stdout_line(string_value(value.get("status_text"))),
-        Err(error) => settings_error(error),
+        Err(error) => match error {
+            ClientError::Unreachable { .. } => {
+                stderr(crate::error::service_down_for(ctx.human_locale()))
+            }
+            other => stderr(other.message_for(ctx.human_locale())),
+        },
     }
 }
 

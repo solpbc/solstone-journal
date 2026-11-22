@@ -1,0 +1,23 @@
+{
+  "description": "Native link command output for link confirm done. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link confirm done. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "06cf59accabe541e7b71c3d19590ca118513a0fb8633c362f72441fd9621c8af",
+  "max_length": 213,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

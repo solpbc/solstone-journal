@@ -1,0 +1,28 @@
+{
+  "description": "Native link command output for link mark confirm wrong. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link mark confirm wrong. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "22ae419631bb180a471838533a8f3d5b0660930c86cf09b0f32a2a6a91793037",
+  "max_length": 678,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_link_join",
+      "kind": "accepted-input",
+      "value": "solstone link join"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

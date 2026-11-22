@@ -1,0 +1,16 @@
+{
+  "description": "Text shown by the speakers repair command.",
+  "context": "Text shown by the speakers repair command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ae6391e2f5db4e958c54d1276e45662da64ca8e216d710ca592fb90018035432",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

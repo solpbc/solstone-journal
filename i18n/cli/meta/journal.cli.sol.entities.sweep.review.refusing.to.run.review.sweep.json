@@ -1,0 +1,23 @@
+{
+  "description": "Text shown by the entities sweep review command.",
+  "context": "Text shown by the entities sweep review command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3f9b389ee1005667771dc39efb71867aeddab8d9ff0596f206ac16b4298f252e",
+  "max_length": 159,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "option_yes",
+      "kind": "command",
+      "value": "--yes"
+    }
+  ]
+}

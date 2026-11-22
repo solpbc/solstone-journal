@@ -1,0 +1,23 @@
+{
+  "description": "Text shown by the speakers propagate command.",
+  "context": "Text shown by the speakers propagate command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4cc83e8df399fc83daf6d4643db5857c941895c1db86ba3d2795f3834d7800b1",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

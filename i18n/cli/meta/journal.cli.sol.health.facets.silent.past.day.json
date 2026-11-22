@@ -1,0 +1,33 @@
+{
+  "description": "Native health command output for health facets silent past day. Keep literal arguments and command syntax intact.",
+  "context": "Native health command output for health facets silent past day. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "562a85165cd220e872a92a868d413ff275f0a0104dbc39a0c230c85effb3f316",
+  "max_length": 138,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "facets_silent_24h",
+      "kind": "accepted-input",
+      "value": "facets_silent_24h"
+    },
+    {
+      "name": "space_2",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ]
+}

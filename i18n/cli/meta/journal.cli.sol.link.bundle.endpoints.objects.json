@@ -1,0 +1,28 @@
+{
+  "description": "Native link command output for link bundle endpoints objects. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link bundle endpoints objects. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3aa4f41a089a582f4aac76bcf68dae4a9b17fa75d558e04f83579e992bb71d01",
+  "max_length": 177,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "local_endpoints",
+      "kind": "accepted-input",
+      "value": "local_endpoints"
+    },
+    {
+      "name": "peer_json",
+      "kind": "accepted-input",
+      "value": "peer.json"
+    }
+  ]
+}

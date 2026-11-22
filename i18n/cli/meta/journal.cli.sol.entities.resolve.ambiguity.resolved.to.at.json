@@ -1,0 +1,29 @@
+{
+  "description": "Text shown by the entities resolve ambiguity command.",
+  "context": "Text shown by the entities resolve ambiguity command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "ambiguity_id",
+      "type": "string"
+    },
+    {
+      "name": "entity_id",
+      "type": "string"
+    },
+    {
+      "name": "resolved_at",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6229731df4106e461340d5a5f1bd21881c5f62d7135dd2c6ad86338247984d63",
+  "max_length": 195,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

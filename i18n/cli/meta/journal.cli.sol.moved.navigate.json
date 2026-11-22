@@ -1,0 +1,28 @@
+{
+  "description": "Native moved command output for moved navigate. Keep literal arguments and command syntax intact.",
+  "context": "Native moved command output for moved navigate. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "882e4be4fd00ba1f6306e3968c8b2ec08e2e7dd07a9005f5ac073328ec698794",
+  "max_length": 228,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_journal_navigate",
+      "kind": "accepted-input",
+      "value": "solstone journal navigate"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

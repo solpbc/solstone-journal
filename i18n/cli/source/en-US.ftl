@@ -8110,3 +8110,1554 @@ journal.cli.install.windows.platform = unsupported Windows platform: { $key }
 journal.cli.install.windows.target.different = signed payload target differs from { $key }
 
 journal.cli.install.windows.target.unsupported = signed payload target is unsupported
+
+journal.cli.client.date.short = { $weekday } { $month } { $day }
+
+journal.cli.client.date.short.year = { $weekday } { $month } { $day } '{ $year }
+
+journal.cli.client.erase.backups.conflict = Error: choose { $from_backups } or { $skip_backups }, not both.
+
+journal.cli.client.erase.backups.missing = Error: backup isn't set up, so there are no backups to remove it from.
+
+journal.cli.client.erase.backups.next = Removing it from your backups next.
+
+journal.cli.client.erase.backups.resume = Removing it from your backups once you resume backup.
+
+journal.cli.client.erase.backups.unavailable = Error: this journal can't remove things from your backups yet.
+
+journal.cli.client.erase.backups.unchecked = Error: your journal couldn't check your backups just now. Try again, or pass { $skip_backups } to erase without removing it from your backups.
+
+journal.cli.client.error.detail = Error: { $detail }
+
+journal.cli.client.lock.acquire = failed to acquire sidecar lock: { $error }
+
+journal.cli.client.lock.open = cannot open lock file: { $error }
+
+journal.cli.client.missing.argument = Error: missing argument { $argument }
+
+journal.cli.client.network.cli.pair.join.hint = link this device with:
+
+journal.cli.client.network.cli.pair.local.network.closed = can't start pairing. your journal is closed to devices on your network. run `{ $call_open }` to pair another device over your network, or turn on your private network to pair through the relay.
+
+journal.cli.client.network.cli.pair.no.lan.address = can't start pairing. your journal isn't reachable on a network address yet. turn on your private network to pair from anywhere, or connect this device to your home network.
+
+journal.cli.client.network.clients.empty = No authorized clients.
+
+journal.cli.client.network.clients.seen = { $fingerprint }  { $label }  last seen { $when }
+
+journal.cli.client.network.device.fingerprint.absent = No paired device with fingerprint { $fingerprint }
+
+journal.cli.client.network.device.label.absent = No paired device with label { $label }
+
+journal.cli.client.network.device.label.cleared = Device label set to: (cleared)
+
+journal.cli.client.network.device.label.set = Device label set to: { $label }
+
+journal.cli.client.network.devices.empty = No devices linked yet.
+
+journal.cli.client.network.devices.seen = - { $label } · added { $added } · last seen { $seen } [{ $fingerprint }]
+
+journal.cli.client.network.devices.total = Paired devices: { $total }
+
+journal.cli.client.network.journal.id = journal id:     { $id }
+
+journal.cli.client.network.label.options = Error: specify either { $label } or { $clear }
+
+journal.cli.client.network.linked.systems.heading = Linked systems:
+
+journal.cli.client.network.listen.state = { $protocol } state: (query { $convey } { $path } for live state)
+
+journal.cli.client.network.local.network.open = your journal is open to devices on your network. devices on the same network can pair with it directly.
+
+journal.cli.client.network.local.network.this.pc = your journal is closed to devices on your network. the { $brand } app on this computer still pairs, and so do devices through the relay, once your private network is on.
+
+journal.cli.client.network.local.network.windows.asks = windows may ask whether journal can use your network. on a standard account, an administrator has to allow it. if windows didn't ask and a device still can't reach your journal, an earlier choice in windows may be blocking journal. an administrator can allow it in { $security }, under { $firewall }.
+
+journal.cli.client.network.mark.none = your journal's identity is created when its mark is locked in during setup.
+
+journal.cli.client.network.mark.unavailable = your journal's mark: unavailable right now
+
+journal.cli.client.network.observer.pause = { $verb } is not yet available.
+
+journal.cli.client.network.operation = operation: { $phase }
+
+journal.cli.client.network.option.float = Error: option requires a floating-point value.
+
+journal.cli.client.network.pair.complete = Pair request completed; device should appear in `{ $command }`.
+
+journal.cli.client.network.pair.device = Device: { $device }
+
+journal.cli.client.network.pair.expired = Timed out. Pair code expired.
+
+journal.cli.client.network.pair.fingerprint = { $ca } fingerprint: { $algorithm }{ $fingerprint }
+
+journal.cli.client.network.pair.link = { $token }: { $link }
+
+journal.cli.client.network.pair.paired = Paired: { $label }
+
+journal.cli.client.network.pair.result.date = { $indent }paired_at:{ $indent } { $date }
+
+journal.cli.client.network.pair.result.fingerprint = { $indent }fingerprint: { $fingerprint }
+
+journal.cli.client.network.pair.wait = Waiting for linked system…
+
+journal.cli.client.network.portal.approve = continue to approve → { $url }
+
+journal.cli.client.network.posture.direct = posture: direct
+
+journal.cli.client.network.posture.private = posture: private network
+
+journal.cli.client.network.private.enrolled = enrolled: yes
+
+journal.cli.client.network.private.link.needs.subscription = your private network isn't on yet. your consent is saved. finish turning it on in the services portal, then turn it on here again:
+
+journal.cli.client.network.private.link.setting.up = setting up your private network...
+
+journal.cli.client.network.private.link.subscribing = your private network isn't on yet. your consent is saved. finish turning it on in the services portal within the hour, and your journal picks it up on its own:
+
+journal.cli.client.network.private.state.enabled = state: enabled
+
+journal.cli.client.network.private.state.inconsistent = state: needs repair
+
+journal.cli.client.network.private.state.not.enabled = state: not enabled
+
+journal.cli.client.network.private.state.other = state: { $state }
+
+journal.cli.client.network.private.state.unknown = state: unknown
+
+journal.cli.client.network.private.unenrolled = enrolled: no
+
+journal.cli.client.network.reach.direct = Reach posture: direct
+
+journal.cli.client.network.reach.private = Reach posture: private network
+
+journal.cli.client.network.relay.url = relay URL: { $url }
+
+journal.cli.client.network.role.invalid = invalid role; expected one of: { $phone }, { $observer }
+
+journal.cli.client.network.status.enrolled = Enrolled:      yes
+
+journal.cli.client.network.status.network.enabled = Private network: enabled
+
+journal.cli.client.network.status.network.inconsistent = Private network: needs repair
+
+journal.cli.client.network.status.network.not.enabled = Private network: not enabled
+
+journal.cli.client.network.status.network.other = Private network: { $state }
+
+journal.cli.client.network.status.network.unknown = Private network: unknown
+
+journal.cli.client.network.status.relay = Relay URL:     { $url }
+
+journal.cli.client.network.status.relay.absent = Relay URL:     None
+
+journal.cli.client.network.status.unenrolled = Enrolled:      no
+
+journal.cli.client.network.time.day = { $quantity ->
+    [one] { $quantity } day ago
+   *[other] { $quantity } days ago
+    }
+
+journal.cli.client.network.time.hour = { $quantity ->
+    [one] { $quantity } hour ago
+   *[other] { $quantity } hours ago
+    }
+
+journal.cli.client.network.time.minute = { $quantity ->
+    [one] { $quantity } minute ago
+   *[other] { $quantity } minutes ago
+    }
+
+journal.cli.client.network.time.month = { $quantity ->
+    [one] { $quantity } month ago
+   *[other] { $quantity } months ago
+    }
+
+journal.cli.client.network.time.second = { $quantity ->
+    [one] { $quantity } second ago
+   *[other] { $quantity } seconds ago
+    }
+
+journal.cli.client.network.time.week = { $quantity ->
+    [one] { $quantity } week ago
+   *[other] { $quantity } weeks ago
+    }
+
+journal.cli.client.network.timeout.integer = Error: option { $flag } requires an integer.
+
+journal.cli.client.network.unpaired = Unpaired.
+
+journal.cli.client.option.required = Error: option { $option } is required.
+
+journal.cli.client.option.unknown = Error: unknown option { $option }.
+
+journal.cli.client.option.value = Error: option { $option } requires an argument.
+
+journal.cli.client.stdin.read = native { $brand } { $input } read failed: { $error }
+
+journal.cli.client.transport.timeout = { $method } { $path } exceeded local { $service } timeout (connect={ $connect }s, read={ $read }s, total={ $total }s)
+
+journal.cli.client.transport.timeout.open = { $method } { $path } exceeded local { $service } timeout (connect={ $connect }s, read=none, total=none)
+
+journal.cli.client.trash.moved = Moved '{ $name }' to the trash.
+
+journal.cli.client.trash.moved.day = Moved '{ $name }' to the trash. It's erased { $day } unless it's recovered.
+
+journal.cli.client.trash.moved.failed = Moved '{ $name }' to the trash. It couldn't be erased now.
+
+journal.cli.client.trash.moved.failed.day = Moved '{ $name }' to the trash. It couldn't be erased now. It's erased { $day } unless it's recovered.
+
+journal.cli.sol.call.activities.day.invalid = Error: invalid day '{ $value }'
+
+journal.cli.sol.call.activities.day.missing = Error: day is required (pass as argument or set { $literal_1 }).
+
+journal.cli.sol.call.activities.empty = No activities found.
+
+journal.cli.sol.call.activities.exists = Error: activity already exists: { $detail }
+
+journal.cli.sol.call.activities.facet.missing = Error: facet is required (pass as argument or set { $literal_1 }).
+
+journal.cli.sol.call.activities.facet.unknown = Error: unknown activity for facet '{ $facet }': { $activity_type }
+
+journal.cli.sol.call.activities.kind.option = Error: { $literal_1 } is required.
+
+journal.cli.sol.call.activities.kind.required = Error: activity is required.
+
+journal.cli.sol.call.activities.participation.array = Error: { $literal_1 } must be an array
+
+journal.cli.sol.call.activities.participation.confidence = Error: { $literal_1 }[{ $index }] '{ $literal_2 }' must be a number
+
+journal.cli.sol.call.activities.participation.context = Error: { $literal_1 }[{ $index }] '{ $literal_2 }' must be a string
+
+journal.cli.sol.call.activities.participation.name = Error: { $literal_1 }[{ $index }] requires a non-empty string '{ $literal_2 }'
+
+journal.cli.sol.call.activities.participation.object = Error: { $literal_1 }[{ $index }] must be an object
+
+journal.cli.sol.call.activities.participation.role = Error: { $literal_1 }[{ $index }] has invalid role '{ $role }' (must be one of ['{ $literal_2 }', '{ $literal_3 }', '{ $literal_4 }', '{ $literal_5 }'])
+
+journal.cli.sol.call.activities.participation.source = Error: { $literal_1 }[{ $index }] has invalid source '{ $source }' (must be one of ['{ $literal_2 }', '{ $literal_3 }', '{ $literal_4 }', '{ $literal_5 }', '{ $literal_6 }'])
+
+journal.cli.sol.call.activities.patch.disallowed = Error: disallowed update fields: { $fields }
+
+journal.cli.sol.call.activities.patch.empty = Error: update payload must include at least one mutable field.
+
+journal.cli.sol.call.activities.range.options = Error: { $literal_1 } is incompatible with { $literal_2 }/{ $literal_3 }.
+
+journal.cli.sol.call.activities.range.reversed = Error: { $literal_1 } ({ $end_day }) must not be before { $literal_2 } ({ $start_day })
+
+journal.cli.sol.call.activities.segment.invalid = Error: invalid { $literal_1 } '{ $segment }' (expected { $literal_2 })
+
+journal.cli.sol.call.activities.source.create = Error: { $literal_1 } must be '{ $literal_2 }'.
+
+journal.cli.sol.call.activities.source.list = Error: { $literal_1 } must be '{ $literal_2 }' or '{ $literal_3 }'.
+
+journal.cli.sol.call.activities.span.absent = activity not found: { $span_id }
+
+journal.cli.sol.call.activities.span.missing = Error: missing argument '{ $literal_1 }'.
+
+journal.cli.sol.call.activities.stdin.json = Error: invalid { $literal_1 } on stdin: { $error }
+
+journal.cli.sol.call.activities.stdin.object = Error: expected { $literal_1 } object on stdin.
+
+journal.cli.sol.call.activities.title.option = Error: { $literal_1 } is required.
+
+journal.cli.sol.call.activities.title.required = Error: title is required.
+
+journal.cli.sol.call.body.coverage = coverage: { $start } to { $end }
+
+journal.cli.sol.call.body.day = day: { $day }
+
+journal.cli.sol.call.body.days = days: { $days }
+
+journal.cli.sol.call.body.entries = entries: { $count }
+
+journal.cli.sol.call.body.imports = imports: { $imported }
+
+journal.cli.sol.call.body.range = window: { $start } to { $end }
+
+journal.cli.sol.call.body.sources = sources: { $sources }
+
+journal.cli.sol.call.body.unreadable = the response from the body app couldn't be read.
+
+journal.cli.sol.call.facets.accepted = Accepted facet candidate '{ $name_key }' as '{ $facet }'.
+
+journal.cli.sol.call.facets.action = { $action } result for '{ $name_key }': { $result }
+
+journal.cli.sol.call.facets.already.accepted = Facet candidate '{ $name_key }' already accepted.
+
+journal.cli.sol.call.facets.already.dismissed = Facet candidate '{ $name_key }' already dismissed.
+
+journal.cli.sol.call.facets.candidate = { $name }  [{ $status }]  count={ $count }  last={ $day }
+
+journal.cli.sol.call.facets.dismissed = Dismissed facet candidate '{ $name_key }'.
+
+journal.cli.sol.call.facets.empty = No facet candidates found.
+
+journal.cli.sol.call.thinking.attestation.expires = { $field_key }: { $value }
+
+journal.cli.sol.call.thinking.attestation.observed = { $field_key }: { $value }
+
+journal.cli.sol.call.thinking.attestation.reason = { $field_key }: { $value }
+
+journal.cli.sol.call.thinking.attestation.state = { $field_key }: { $value }
+
+journal.cli.sol.call.thinking.continuing = operation continues server-side; { $literal_1 } shows its progress.
+
+journal.cli.sol.call.thinking.enabled = { $field_key }: { $value }
+
+journal.cli.sol.call.thinking.ended = operation ended without enabling confidential processing; check { $literal_1 }.
+
+journal.cli.sol.call.thinking.lane = active lane: { $lane }
+
+journal.cli.sol.call.thinking.next = next: { $literal_1 }
+
+journal.cli.sol.call.thinking.not.ready = not ready
+
+journal.cli.sol.call.thinking.operation = operation: { $operation_phase }
+
+journal.cli.sol.call.thinking.portal = continue in browser { $arrow } { $url }
+
+journal.cli.sol.call.thinking.provenance = { $field_key }: { $value }
+
+journal.cli.sol.call.thinking.ready = ready
+
+journal.cli.sol.call.thinking.subscribe = { $field_key }: { $url }
+
+journal.cli.sol.call.transcripts.actionable = { $marker } actionable: { $literal_1 }
+
+journal.cli.sol.call.transcripts.day.totals = { $day }  transcripts:{ $n_transcripts } percepts:{ $n_percepts }
+
+journal.cli.sol.call.transcripts.full.raw = Error: Cannot use { $literal_1 } and { $literal_2 } together.
+
+journal.cli.sol.call.transcripts.heading.percepts = Percepts:
+
+journal.cli.sol.call.transcripts.heading.transcripts = Transcripts:
+
+journal.cli.sol.call.transcripts.length.integer = Error: option { $literal_1 } requires an integer.
+
+journal.cli.sol.call.transcripts.max.integer = Error: option { $literal_1 } requires an integer.
+
+journal.cli.sol.call.transcripts.month.empty = No data for { $month }.
+
+journal.cli.sol.call.transcripts.none = (none)
+
+journal.cli.sol.call.transcripts.pending = { $count ->
+    [one] { $indent }{ $start } - { $end } ({ $display_count } segment pending at { $starts })
+   *[other] { $indent }{ $start } - { $end } ({ $display_count } segments pending at { $starts })
+    }
+
+journal.cli.sol.call.transcripts.range.flags = Error: Cannot mix { $literal_1 }, { $literal_2 }, and { $literal_3 }/{ $literal_4 }.
+
+journal.cli.sol.call.transcripts.segments.empty = No segments.
+
+journal.cli.sol.call.transcripts.source.flags = Error: Cannot mix { $literal_1 }/{ $literal_2 } with individual source flags.
+
+journal.cli.sol.call.transcripts.speakers.heading = Speakers for { $day }/{ $stream }/{ $segment }:
+
+journal.cli.sol.call.transcripts.start.invalid = Error: start time must be { $literal_1 }.
+
+journal.cli.sol.call.transcripts.tag.owner = { $marker } not actionable: { $literal_1 }
+
+journal.cli.sol.call.transcripts.total.days = { $count ->
+    [one] Total: { $display_count } day with data
+   *[other] Total: { $display_count } days with data
+    }
+
+journal.cli.sol.call.transcripts.truncated = [truncated: { $total } bytes total, { $literal_1 } { $maximum }]
+
+journal.cli.sol.call.transcripts.unknown.voice = unknown voice
+
+journal.cli.sol.call.typer.error = Error
+
+journal.cli.sol.call.typer.missing.argument = Missing argument '{ $name }'.
+
+journal.cli.sol.call.typer.missing.option = Missing option '{ $option }'.
+
+journal.cli.sol.call.typer.try = Try '{ $command } { $literal_1 }' for help.
+
+journal.cli.sol.entities.accept.merge.candidate.accept.result.for = accept result for { $source_slug } -> { $target_slug }: { $status }
+
+journal.cli.sol.entities.accept.merge.candidate.accepted.merge.candidate = Accepted merge candidate: { $source_slug } -> { $target_slug }
+
+journal.cli.sol.entities.accept.merge.candidate.merge.candidate.already.accepted = Merge candidate already accepted: { $source_slug } -> { $target_slug }
+
+journal.cli.sol.entities.accept.merge.candidate.merge.is.permanent = Merge { $merge_id } is permanent.
+
+journal.cli.sol.entities.aka.added.alias.to = Added alias '{ $aka_value }' to '{ $resolved_name }'.
+
+journal.cli.sol.entities.aka.alias.already.exists.for = Alias '{ $aka_value }' already exists for '{ $resolved_name }'.
+
+journal.cli.sol.entities.aka.alias.is.the.first.word = Alias '{ $aka_value }' is the first word of '{ $resolved_name }' (skipped).
+
+journal.cli.sol.entities.ambiguities.error.status.must.be.open = Error: { $option_status } must be open or resolved.
+
+journal.cli.sol.entities.ambiguities.from = { $spacing_2 }from: { $sources }
+
+journal.cli.sol.entities.ambiguities.no.entity.ambiguities.found = No entity ambiguities found.
+
+journal.cli.sol.entities.ambiguities.scope.tier = { $ambiguity_id }{ $spacing_2 }{ $name }{ $spacing_2 }[{ $status }]{ $spacing_2 }scope={ $scope }{ $spacing_2 }tier={ $tier }
+
+journal.cli.sol.entities.ambiguities.score = { $spacing_2 }- { $candidate } score={ $score }
+
+journal.cli.sol.entities.attach.entity.already.attached = Entity '{ $entity }' already attached.
+
+journal.cli.sol.entities.attach.entity.attached = Entity '{ $entity }' attached.
+
+journal.cli.sol.entities.busy = that entity couldn't be updated right now because it was busy. try again in a moment.
+
+journal.cli.sol.entities.delete.approval = Deleting moves the entity and its facet links to the trash; { $option_erase } erases it for good. Once the owner approves, run it again with { $option_yes }.
+
+journal.cli.sol.entities.delete.entity.erased = Erased '{ $entity_id }'.
+
+journal.cli.sol.entities.delete.entity.error.wasn.t.deleted = Error: '{ $entity_id }' wasn't deleted: { $reason }.
+
+journal.cli.sol.entities.delete.failed.without.reason.error.wasn.t.deleted.it = Error: '{ $entity_id }' wasn't deleted: it wasn't deleted.
+
+journal.cli.sol.entities.detect.entity.detected.for = Entity '{ $entity_name }' detected for { $day }.
+
+journal.cli.sol.entities.dismiss.merge.candidate.dismiss.result.for = dismiss result for { $source_slug } -> { $target_slug }: { $status }
+
+journal.cli.sol.entities.dismiss.merge.candidate.dismissed.merge.candidate = Dismissed merge candidate: { $source_slug } -> { $target_slug }
+
+journal.cli.sol.entities.dismiss.merge.candidate.merge.candidate.already.dismissed = Merge candidate already dismissed: { $source_slug } -> { $target_slug }
+
+journal.cli.sol.entities.edge.resolution.error.error.entity.not.found = Error: Entity '{ $query }' not found.
+
+journal.cli.sol.entities.edge.resolution.error.error.entity.not.found.did = Error: Entity '{ $query }' not found. Did you mean: { $labels }
+
+journal.cli.sol.entities.edge.resolution.without.query.empty.error.entity.entity.not.found = Error: Entity 'entity' not found.
+
+journal.cli.sol.entities.edge.resolution.without.query.suggestions.error.entity.entity.not.found = Error: Entity 'entity' not found. Did you mean: { $labels }
+
+journal.cli.sol.entities.edges.unavailable = Connections aren't available right now.
+
+journal.cli.sol.entities.entity.error.error.entity.is.hidden = Error: Entity '{ $name }' is hidden.
+
+journal.cli.sol.entities.entity.error.error.entity.not.found = Error: Entity '{ $name }' not found.
+
+journal.cli.sol.entities.entity.error.error.invalid.entity.type = Error: Invalid entity type '{ $entity_type }'.
+
+journal.cli.sol.entities.entity.versions.merge = { $spacing_2 }merge={ $merge_id } ({ $description })
+
+journal.cli.sol.entities.entity.versions.no.identity.history.for = No identity history for { $entity }.
+
+journal.cli.sol.entities.entity.versions.unknown.no.identity.history.for.entity = No identity history for entity.
+
+journal.cli.sol.entities.error.without.name.hidden.error.entity.entity.is.hidden = Error: Entity 'entity' is hidden.
+
+journal.cli.sol.entities.evidence.default.day.unknown.day = unknown-day
+
+journal.cli.sol.entities.evidence.kind.missing.unknown = unknown
+
+journal.cli.sol.entities.history.all.evidence.rows.for = { $quantity ->
+    [one] { $total } evidence row for { $entity_id } <-> { $peer }:
+   *[other] { $total } evidence rows for { $entity_id } <-> { $peer }:
+    }
+
+journal.cli.sol.entities.history.no.recorded.connection.history.between = No recorded connection history between { $entity_id } and { $peer }.
+
+journal.cli.sol.entities.history.no.visible.rows = { $quantity ->
+    [one] { $total } evidence row for { $entity_id } <-> { $peer } (showing 0):
+   *[other] { $total } evidence rows for { $entity_id } <-> { $peer } (showing 0):
+    }
+
+journal.cli.sol.entities.history.range.evidence.rows.for.showing = { $quantity ->
+    [one] { $total } evidence row for { $entity_id } <-> { $peer } (showing { $first }-{ $last }):
+   *[other] { $total } evidence rows for { $entity_id } <-> { $peer } (showing { $first }-{ $last }):
+    }
+
+journal.cli.sol.entities.list.attached.attached.entities = { $quantity ->
+    [one] { $count } attached entity:
+   *[other] { $count } attached entities:
+    }
+
+journal.cli.sol.entities.list.detected.detected.for.entities = { $quantity ->
+    [one] { $count } entity detected for { $day }:
+   *[other] { $count } detected for { $day } entities:
+    }
+
+journal.cli.sol.entities.list.hidden.hidden = { $spacing_2 }- { $name } hidden ({ $entity_type }): { $description }
+
+journal.cli.sol.entities.list.no.entities.found = No entities found.
+
+journal.cli.sol.entities.list.visible.row = { $spacing_2 }- { $name } ({ $entity_type }): { $description }
+
+journal.cli.sol.entities.merge.approval = A merge can't be undone. Preview it without { $option_commit }, then, once the owner approves, run it again with { $option_commit } { $option_yes }.
+
+journal.cli.sol.entities.merge.candidates.facet.detections.needs.last = { $source } -> { $target }{ $spacing_2 }[{ $status }]{ $spacing_2 }facet={ $facet }{ $spacing_2 }detections={ $detections }{ $spacing_2 }needs={ $needs }{ $spacing_2 }last={ $last }
+
+journal.cli.sol.entities.merge.candidates.no.merge.candidates.found = No merge candidates found.
+
+journal.cli.sol.entities.merge.failure.default.error.operation.failed = Error: operation failed
+
+journal.cli.sol.entities.merge.preview.aliases.added = { $spacing_2 }aliases added: { $aliases }
+
+journal.cli.sol.entities.merge.preview.emails.added = { $spacing_2 }emails added: { $emails }
+
+journal.cli.sol.entities.merge.preview.facet.links.moved.merged = { $spacing_2 }facet links: { $moved } moved, { $merged } merged
+
+journal.cli.sol.entities.merge.preview.merge.preview = Merge preview:
+
+journal.cli.sol.entities.merge.preview.observations.moved = { $spacing_2 }observations moved: { $observations }
+
+journal.cli.sol.entities.merge.preview.segment.update.errors = { $spacing_2 }segment update errors: { $errors }
+
+journal.cli.sol.entities.merge.preview.speaker.labels.updated.labels.corrections = { $quantity ->
+    [one] { $corrections_quantity ->
+        [one] { $spacing_2 }speaker labels updated: { $labels } label, { $corrections } correction
+       *[other] { $spacing_2 }speaker labels updated: { $labels } label, { $corrections } corrections
+    }
+   *[other] { $corrections_quantity ->
+        [one] { $spacing_2 }speaker labels updated: { $labels } labels, { $corrections } correction
+       *[other] { $spacing_2 }speaker labels updated: { $labels } labels, { $corrections } corrections
+    }
+    }
+
+journal.cli.sol.entities.merge.preview.this.preview.covers.alias.and = { $spacing_2 }This preview covers alias and email additions; the merge may also change facet links, notes, speaker labels, and voice samples.
+
+journal.cli.sol.entities.merge.preview.voice.samples.moved.added.total = { $spacing_2 }voice samples moved: { $added } added, { $total } total
+
+journal.cli.sol.entities.move.entity.error.facet.from.does.not = Error: Facet '{ $from_facet }' ({ $option_from }) does not exist.
+
+journal.cli.sol.entities.move.entity.error.facet.to.does.not = Error: Facet '{ $to_facet }' ({ $option_to }) does not exist.
+
+journal.cli.sol.entities.move.entity.moved.entity.from.to = Moved entity '{ $entity_name }' from '{ $from_facet }' to '{ $to_facet }'.
+
+journal.cli.sol.entities.neighbor.count = count={ $count }
+
+journal.cli.sol.entities.neighbor.kinds = kinds={ $kinds }
+
+journal.cli.sol.entities.neighbor.score = score={ $score }
+
+journal.cli.sol.entities.network.all.recorded.connections.for = { $quantity ->
+    [one] { $total } recorded connection for { $entity_id }:
+   *[other] { $total } recorded connections for { $entity_id }:
+    }
+
+journal.cli.sol.entities.network.directed.both.directed.out.in = directed=out:{ $out_count }, in:{ $in_count }
+
+journal.cli.sol.entities.network.directed.in.directed.in = directed=in:{ $in_count }
+
+journal.cli.sol.entities.network.directed.out.directed.out = directed=out:{ $out_count }
+
+journal.cli.sol.entities.network.limited.recorded.connections.for.showing = { $quantity ->
+    [one] { $total } recorded connection for { $entity_id } (showing { $shown }):
+   *[other] { $total } recorded connections for { $entity_id } (showing { $shown }):
+    }
+
+journal.cli.sol.entities.network.no.recorded.connections.for = No recorded connections for { $entity_id }.
+
+journal.cli.sol.entities.network.seen.range.seen = seen={ $first }..{ $last }
+
+journal.cli.sol.entities.network.seen.seen = seen={ $day }
+
+journal.cli.sol.entities.observation.error.couldn.t.read.the.moments = couldn't read the moments saved for '{ $name }': line { $line_str } of the file isn't valid. nothing was changed.
+
+journal.cli.sol.entities.observations.newest.moments.for.in.newest.first = { $quantity ->
+    [one] { $total } moment for '{ $name }' in '{ $facet }', newest first:
+   *[other] { $total } moments for '{ $name }' in '{ $facet }', newest first:
+    }
+
+journal.cli.sol.entities.observations.nothing.with.yet = nothing with { $resolved_name } yet.
+
+journal.cli.sol.entities.observations.oldest.moments.for.in.oldest.first = { $quantity ->
+    [one] { $total } moment for '{ $name }' in '{ $facet }', oldest first:
+   *[other] { $total } moments for '{ $name }' in '{ $facet }', oldest first:
+    }
+
+journal.cli.sol.entities.observations.partial.most.recent.showing.the.most.recent.of = showing the { $shown } most recent of { $total } moments for '{ $name }'. add { $option_all } to see every one.
+
+journal.cli.sol.entities.observations.partial.oldest.showing.the.oldest.of.moments = showing the { $shown } oldest of { $total } moments for '{ $name }'. add { $option_all } to see every one.
+
+journal.cli.sol.entities.observe.added.added.moments.for.in = { $quantity ->
+    [one] added. { $count } moment for '{ $name }' in '{ $facet }'.
+   *[other] added. { $count } moments for '{ $name }' in '{ $facet }'.
+    }
+
+journal.cli.sol.entities.observe.your.journal.already.holds.that = your journal already holds that moment for '{ $resolved_name }'. nothing was added.
+
+journal.cli.sol.entities.overview.all.network.overview.edges.across.entities = { $quantity ->
+    [one] { $entities_quantity ->
+        [one] Network overview: { $edges } edge across { $entities } entity:
+       *[other] Network overview: { $edges } edge across { $entities } entities:
+    }
+   *[other] { $entities_quantity ->
+        [one] Network overview: { $edges } edges across { $entities } entity:
+       *[other] Network overview: { $edges } edges across { $entities } entities:
+    }
+    }
+
+journal.cli.sol.entities.overview.kinds = Kinds: { $kinds }
+
+journal.cli.sol.entities.overview.limited.network.overview.edges.across.entities = { $quantity ->
+    [one] { $entities_quantity ->
+        [one] Network overview: { $edges } edge across { $entities } entity (showing { $shown }):
+       *[other] Network overview: { $edges } edge across { $entities } entities (showing { $shown }):
+    }
+   *[other] { $entities_quantity ->
+        [one] Network overview: { $edges } edges across { $entities } entity (showing { $shown }):
+       *[other] Network overview: { $edges } edges across { $entities } entities (showing { $shown }):
+    }
+    }
+
+journal.cli.sol.entities.overview.no.recorded.connections.in.the = No recorded connections in the edge index.
+
+journal.cli.sol.entities.overview.type = type={ $entity_type }
+
+journal.cli.sol.entities.record.merge.candidate.merge.candidate.recorded = merge candidate recorded: { $source } -> { $target }
+
+journal.cli.sol.entities.record.merge.candidate.merge.candidate.updated.status = merge candidate updated: { $source } -> { $target } (status: { $status })
+
+journal.cli.sol.entities.resolve.ambiguity.group.error.missing.required.option.member = Error: missing required option { $option_member_id }
+
+journal.cli.sol.entities.resolve.ambiguity.group.error.missing.required.option.revision = Error: missing required option { $option_revision }
+
+journal.cli.sol.entities.resolve.ambiguity.group.refusing.to.resolve.this.ambiguity = Refusing to resolve this ambiguity group without { $option_yes }.
+
+journal.cli.sol.entities.resolve.ambiguity.group.resolved.ambiguities.to = { $quantity ->
+    [one] Resolved { $count } ambiguity to { $entity_id }.
+   *[other] Resolved { $count } ambiguities to { $entity_id }.
+    }
+
+journal.cli.sol.entities.resolve.ambiguity.refusing.to.resolve.this.ambiguity = Refusing to resolve this ambiguity without { $option_yes }.
+
+journal.cli.sol.entities.resolve.ambiguity.resolved.to.at = Resolved { $ambiguity_id } to { $entity_id } at { $resolved_at }.
+
+journal.cli.sol.entities.resolve.day.error.day.is.required.pass = Error: day is required (pass as argument or set { $literal_sol_day }).
+
+journal.cli.sol.entities.resolve.error.error.entity.is.hidden = Error: Entity '{ $blocked_name }' is hidden.
+
+journal.cli.sol.entities.resolve.error.error.entity.not.found.did = Error: Entity '{ $entity }' not found. Did you mean: { $names }
+
+journal.cli.sol.entities.resolve.error.error.entity.not.found.in = Error: Entity '{ $entity }' not found in facet '{ $facet }'.
+
+journal.cli.sol.entities.resolve.facet.error.facet.is.required.pass = Error: facet is required (pass as argument or set { $literal_sol_facet }).
+
+journal.cli.sol.entities.restore.review.error.missing.required.option.ambiguity = Error: missing required option { $option_ambiguity_id }
+
+journal.cli.sol.entities.restore.review.error.missing.required.option.facet = Error: missing required option { $option_facet }
+
+journal.cli.sol.entities.restore.review.error.missing.required.option.source = Error: missing required option { $option_source_slug }
+
+journal.cli.sol.entities.restore.review.error.missing.required.option.target = Error: missing required option { $option_target_slug }
+
+journal.cli.sol.entities.restore.review.error.target.must.be.ambiguity = Error: { $literal_target } must be ambiguity or merge_candidate
+
+journal.cli.sol.entities.restore.review.refusing.to.restore.review.item = Refusing to restore review item without { $option_yes }.
+
+journal.cli.sol.entities.restore.review.restored.review.item = Restored review item { $target }.
+
+journal.cli.sol.entities.restore.version.refusing.to.restore.this.identity = Refusing to restore this identity version without { $option_yes }.
+
+journal.cli.sol.entities.restore.version.restored.from.new.history.version = Restored { $entity_id } from { $version_id }; new history version { $version }.
+
+journal.cli.sol.entities.review.review.items.ambiguity.card.s = { $quantity ->
+    [one] { $ambiguities_quantity ->
+        [one] { $candidates_quantity ->
+            [one] Review items: { $cards } ambiguity card, { $ambiguities } set-aside ambiguity, { $candidates } set-aside merge candidate.
+           *[other] Review items: { $cards } ambiguity card, { $ambiguities } set-aside ambiguity, { $candidates } set-aside merge candidate(s).
+        }
+       *[other] { $candidates_quantity ->
+            [one] Review items: { $cards } ambiguity card, { $ambiguities } set-aside ambiguity(ies), { $candidates } set-aside merge candidate.
+           *[other] Review items: { $cards } ambiguity card, { $ambiguities } set-aside ambiguity(ies), { $candidates } set-aside merge candidate(s).
+        }
+    }
+   *[other] { $ambiguities_quantity ->
+        [one] { $candidates_quantity ->
+            [one] Review items: { $cards } ambiguity card(s), { $ambiguities } set-aside ambiguity, { $candidates } set-aside merge candidate.
+           *[other] Review items: { $cards } ambiguity card(s), { $ambiguities } set-aside ambiguity, { $candidates } set-aside merge candidate(s).
+        }
+       *[other] { $candidates_quantity ->
+            [one] Review items: { $cards } ambiguity card(s), { $ambiguities } set-aside ambiguity(ies), { $candidates } set-aside merge candidate.
+           *[other] Review items: { $cards } ambiguity card(s), { $ambiguities } set-aside ambiguity(ies), { $candidates } set-aside merge candidate(s).
+        }
+    }
+    }
+
+journal.cli.sol.entities.search.activity.unreadable = Detected entity activity is unreadable. Run `{ $command }`, repair the reported record, and try again.
+
+journal.cli.sol.entities.search.entities = { $quantity ->
+    [one] { $count } entity:
+   *[other] { $count } entities:
+    }
+
+journal.cli.sol.entities.search.facets = { $spacing_4 }facets: { $facets }
+
+journal.cli.sol.entities.search.index.busy = Entity search is unavailable while indexing is in progress. Try again when it finishes.
+
+journal.cli.sol.entities.search.index.stale = The entity search index is stale. Run `{ $command }` and try again.
+
+journal.cli.sol.entities.search.index.unavailable = The entity search index is unavailable. Run `{ $command }` and try again.
+
+journal.cli.sol.entities.sweep.review.completed.entity.review.sweep = Completed entity review sweep.
+
+journal.cli.sol.entities.sweep.review.refusing.to.run.review.sweep = Refusing to run review sweep without { $option_yes }.
+
+journal.cli.sol.entities.update.entity.updated = Entity '{ $resolved_name }' updated.
+
+journal.cli.sol.entities.update.entity.updated.for = Entity '{ $entity }' updated for { $day }.
+
+journal.cli.sol.health.activities.count = { $space_2 }{ $activities_count }: { $value }
+
+journal.cli.sol.health.activities.user.edited = { $space_2 }{ $activities_user_edited }: { $value }
+
+journal.cli.sol.health.activities.with.participation = { $space_2 }{ $activities_with_participation }: { $value }
+
+journal.cli.sol.health.activities.with.story = { $space_2 }{ $activities_with_story }: { $value }
+
+journal.cli.sol.health.argument.unexpected = Error: unexpected argument { $token }.
+
+journal.cli.sol.health.backlog.days = { $days_quantity ->
+    [one] { $space_3 }across { $days } day
+   *[other] { $space_3 }across { $days } days
+    }
+
+journal.cli.sol.health.backlog.days.incomplete = { $days_quantity ->
+    [one] { $space_3 }across { $days } day (status incomplete)
+   *[other] { $space_3 }across { $days } days (status incomplete)
+    }
+
+journal.cli.sol.health.backlog.media.days = { $media_quantity ->
+    [one] { $days_quantity ->
+    [one] { $space_2 }{ $media } segment waiting for media processing across { $days } day
+   *[other] { $space_2 }{ $media } segment waiting for media processing across { $days } days
+    }
+   *[other] { $days_quantity ->
+    [one] { $space_2 }{ $media } segments waiting for media processing across { $days } day
+   *[other] { $space_2 }{ $media } segments waiting for media processing across { $days } days
+    }
+    }
+
+journal.cli.sol.health.backlog.media.days.incomplete = { $media_quantity ->
+    [one] { $days_quantity ->
+    [one] { $space_2 }at least { $media } segment waiting for media processing across { $days } day (status incomplete)
+   *[other] { $space_2 }at least { $media } segment waiting for media processing across { $days } days (status incomplete)
+    }
+   *[other] { $days_quantity ->
+    [one] { $space_2 }at least { $media } segments waiting for media processing across { $days } day (status incomplete)
+   *[other] { $space_2 }at least { $media } segments waiting for media processing across { $days } days (status incomplete)
+    }
+    }
+
+journal.cli.sol.health.backlog.thinking.days = { $thinking_quantity ->
+    [one] { $days_quantity ->
+    [one] { $space_2 }{ $thinking } segment awaiting thinking across { $days } day
+   *[other] { $space_2 }{ $thinking } segment awaiting thinking across { $days } days
+    }
+   *[other] { $days_quantity ->
+    [one] { $space_2 }{ $thinking } segments awaiting thinking across { $days } day
+   *[other] { $space_2 }{ $thinking } segments awaiting thinking across { $days } days
+    }
+    }
+
+journal.cli.sol.health.backlog.thinking.days.incomplete = { $thinking_quantity ->
+    [one] { $days_quantity ->
+    [one] { $space_2 }at least { $thinking } segment awaiting thinking across { $days } day (status incomplete)
+   *[other] { $space_2 }at least { $thinking } segment awaiting thinking across { $days } days (status incomplete)
+    }
+   *[other] { $days_quantity ->
+    [one] { $space_2 }at least { $thinking } segments awaiting thinking across { $days } day (status incomplete)
+   *[other] { $space_2 }at least { $thinking } segments awaiting thinking across { $days } days (status incomplete)
+    }
+    }
+
+journal.cli.sol.health.backlog.thinking.media.days = { $thinking_quantity ->
+    [one] { $media_quantity ->
+    [one] { $days_quantity ->
+    [one] { $space_2 }{ $thinking } segment awaiting thinking, { $media } segment waiting for media processing across { $days } day
+   *[other] { $space_2 }{ $thinking } segment awaiting thinking, { $media } segment waiting for media processing across { $days } days
+    }
+   *[other] { $days_quantity ->
+    [one] { $space_2 }{ $thinking } segment awaiting thinking, { $media } segments waiting for media processing across { $days } day
+   *[other] { $space_2 }{ $thinking } segment awaiting thinking, { $media } segments waiting for media processing across { $days } days
+    }
+    }
+   *[other] { $media_quantity ->
+    [one] { $days_quantity ->
+    [one] { $space_2 }{ $thinking } segments awaiting thinking, { $media } segment waiting for media processing across { $days } day
+   *[other] { $space_2 }{ $thinking } segments awaiting thinking, { $media } segment waiting for media processing across { $days } days
+    }
+   *[other] { $days_quantity ->
+    [one] { $space_2 }{ $thinking } segments awaiting thinking, { $media } segments waiting for media processing across { $days } day
+   *[other] { $space_2 }{ $thinking } segments awaiting thinking, { $media } segments waiting for media processing across { $days } days
+    }
+    }
+    }
+
+journal.cli.sol.health.backlog.thinking.media.days.incomplete = { $thinking_quantity ->
+    [one] { $media_quantity ->
+    [one] { $days_quantity ->
+    [one] { $space_2 }at least { $thinking } segment awaiting thinking, at least { $media } segment waiting for media processing across { $days } day (status incomplete)
+   *[other] { $space_2 }at least { $thinking } segment awaiting thinking, at least { $media } segment waiting for media processing across { $days } days (status incomplete)
+    }
+   *[other] { $days_quantity ->
+    [one] { $space_2 }at least { $thinking } segment awaiting thinking, at least { $media } segments waiting for media processing across { $days } day (status incomplete)
+   *[other] { $space_2 }at least { $thinking } segment awaiting thinking, at least { $media } segments waiting for media processing across { $days } days (status incomplete)
+    }
+    }
+   *[other] { $media_quantity ->
+    [one] { $days_quantity ->
+    [one] { $space_2 }at least { $thinking } segments awaiting thinking, at least { $media } segment waiting for media processing across { $days } day (status incomplete)
+   *[other] { $space_2 }at least { $thinking } segments awaiting thinking, at least { $media } segment waiting for media processing across { $days } days (status incomplete)
+    }
+   *[other] { $days_quantity ->
+    [one] { $space_2 }at least { $thinking } segments awaiting thinking, at least { $media } segments waiting for media processing across { $days } day (status incomplete)
+   *[other] { $space_2 }at least { $thinking } segments awaiting thinking, at least { $media } segments waiting for media processing across { $days } days (status incomplete)
+    }
+    }
+    }
+
+journal.cli.sol.health.backlog.unavailable = { $space_2 }Segment analysis status unavailable
+
+journal.cli.sol.health.consumer = Consumer Signals
+
+journal.cli.sol.health.coverage.ratio = { $space_2 }{ $coverage_ratio }: { $value }
+
+journal.cli.sol.health.facets.silent.past.day = { $space_2 }{ $facets_silent_24h }: { $value }
+
+journal.cli.sol.health.facets.with.recent.capture = { $space_2 }{ $facets_with_recent_capture }: { $value }
+
+journal.cli.sol.health.hours.total = { $space_2 }{ $hours_total }: { $value }
+
+journal.cli.sol.health.hours.with.capture = { $space_2 }{ $hours_with_capture }: { $value }
+
+journal.cli.sol.health.index = { $space_2 }search_index: { $state } (stale { $stale }, missing { $missing }, orphaned { $orphaned }, failed { $failed })
+
+journal.cli.sol.health.index.activity.at = { $space_2 }{ $index_activity_at }: { $value }
+
+journal.cli.sol.health.intake = Intake
+
+journal.cli.sol.health.last.segment.at = { $space_2 }{ $last_segment_at }: { $value }
+
+journal.cli.sol.health.none = { $space_2 }none
+
+journal.cli.sol.health.notes = Notes
+
+journal.cli.sol.health.profile.entities.total = { $space_2 }{ $profile_entities_total }: { $value }
+
+journal.cli.sol.health.range = Range: { $start } -> { $end }
+
+journal.cli.sol.health.silent = Silent Facet Detail
+
+journal.cli.sol.health.synthesis = Synthesis
+
+journal.cli.sol.health.talent.degraded.outputs.past.day = { $space_2 }{ $talent_degraded_outputs_24h }: { $value }
+
+journal.cli.sol.health.talent.run.failures.past.day = { $space_2 }{ $talent_run_failures_24h }: { $value }
+
+journal.cli.sol.import.already.started = already started{ $line_break }
+
+journal.cli.sol.import.argument.media = the following arguments are required: media
+
+journal.cli.sol.import.argument.unexpected = unexpected argument(s): { $arguments }
+
+journal.cli.sol.import.argument.unknown = unrecognized arguments: { $token }
+
+journal.cli.sol.import.duplicate.entries = { $entries_quantity ->
+    [one] { $solstone_import }: already imported on { $date } ({ $entries } entry); skipping
+   *[other] { $solstone_import }: already imported on { $date } ({ $entries } entries); skipping
+    }
+
+journal.cli.sol.import.duplicate.entries.literal = { $solstone_import }: already imported on { $date } ({ $entries } entries); skipping{ $line_break }
+
+journal.cli.sol.import.duplicate.entries.literal.unknown = { $solstone_import }: already imported on unknown date ({ $entries } entries); skipping{ $line_break }
+
+journal.cli.sol.import.duplicate.entries.unknown = { $entries_quantity ->
+    [one] { $solstone_import }: already imported on unknown date ({ $entries } entry); skipping
+   *[other] { $solstone_import }: already imported on unknown date ({ $entries } entries); skipping
+    }
+
+journal.cli.sol.import.duplicate.imported = { $solstone_import }: already imported on { $date }; skipping{ $line_break }
+
+journal.cli.sol.import.duplicate.imported.unknown = { $solstone_import }: already imported on unknown date; skipping{ $line_break }
+
+journal.cli.sol.import.duplicate.skipping = { $solstone_import }: duplicate import; skipping{ $line_break }
+
+journal.cli.sol.import.duplicate.staged = { $solstone_import }: already staged as { $import_id }; skipping{ $line_break }
+
+journal.cli.sol.import.duplicate.staged.unknown = { $solstone_import }: already staged as unknown; skipping{ $line_break }
+
+journal.cli.sol.import.help = usage: { $solstone_import_h_timestamp_ti }{ $line_break }{ $line_break }Import media through the journal{ $line_break }
+
+journal.cli.sol.import.host.guidance = `{ $auto } { $guidance }` requires the journal host. Use `{ $timestamp }` here or run `{ $solstone_journal_importer }`.
+
+journal.cli.sol.import.host.option = `{ $option }` requires the journal host. Run this on the journal host with `{ $solstone_journal_importer }`.
+
+journal.cli.sol.import.journal.unreachable = { $solstone_import }: couldn't reach the journal. Start it with '{ $solstone_journal_up }' and retry.{ $line_break }
+
+journal.cli.sol.import.notice.failed = could not show import day notice: { $error }
+
+journal.cli.sol.import.queued = queued processing{ $line_break }
+
+journal.cli.sol.import.response.malformed = { $solstone_import }: couldn't read journal response{ $line_break }
+
+journal.cli.sol.import.size.failed = could not show import size: { $error }
+
+journal.cli.sol.import.size.skipped = { $skipped } skipped{ $line_break }
+
+journal.cli.sol.import.size.total = { $recordings_quantity ->
+    [one] { $recordings } recording across { $days_quantity ->
+    [one] { $days } day
+   *[other] { $days } days
+    }
+   *[other] { $recordings } recordings across { $days_quantity ->
+    [one] { $days } day
+   *[other] { $days } days
+    }
+    }
+
+journal.cli.sol.import.stage.failed = { $solstone_import }: failed to stage import: { $error }{ $line_break }
+
+journal.cli.sol.import.staged.failed = { $solstone_import }: staged { $staged_path } but processing was not queued: { $error }{ $line_break }
+
+journal.cli.sol.import.staged.malformed = { $solstone_import }: staged { $staged_path } but processing was not queued: couldn't read journal response{ $line_break }
+
+journal.cli.sol.import.staged.path = staged { $path }{ $line_break }
+
+journal.cli.sol.import.staged.timestamp = timestamp { $timestamp }{ $line_break }
+
+journal.cli.sol.import.staged.unreachable = { $solstone_import }: staged { $staged_path } but processing was not queued: couldn't reach the journal{ $line_break }
+
+journal.cli.sol.import.task.queued = queued processing task { $task_id }{ $line_break }
+
+journal.cli.sol.import.task.started = already started as task { $task_id }{ $line_break }
+
+journal.cli.sol.import.usage.error = usage: { $solstone_import_h_timestamp_ti }{ $line_break }{ $line_break }Import media through the journal{ $line_break }{ $solstone_import }: error: { $error }{ $line_break }
+
+journal.cli.sol.journal.facet.delete.yes = Error: { $yes } is required to delete a facet.
+
+journal.cli.sol.link.argument.expected = argument { $option }: expected one argument
+
+journal.cli.sol.link.argument.unrecognized = unrecognized arguments: { $unknown }
+
+journal.cli.sol.link.bundle.chain.empty = { $chain_pem } contains no certificates
+
+journal.cli.sol.link.bundle.chain.incomplete = { $chain_pem } contains an incomplete certificate
+
+journal.cli.sol.link.bundle.endpoint.ip = { $lan } endpoint missing ip
+
+journal.cli.sol.link.bundle.endpoint.port = { $lan } endpoint has invalid port
+
+journal.cli.sol.link.bundle.endpoints.list = { $peer_json } { $local_endpoints } must be a list
+
+journal.cli.sol.link.bundle.endpoints.objects = { $peer_json } { $local_endpoints } entries must be objects
+
+journal.cli.sol.link.bundle.exists = Credentials path already exists: { $path }. Remove it and rerun if re-pairing.
+
+journal.cli.sol.link.bundle.exists.spent = Credentials path already exists: { $path }. The pairing code is now spent; generate a new one and rerun after removing it.
+
+journal.cli.sol.link.bundle.files.incomplete = credential bundle file set is incomplete
+
+journal.cli.sol.link.bundle.files.missing = missing { $pl } bundle file: { $paths }
+
+journal.cli.sol.link.bundle.home.missing = could not resolve home directory for this device's pairing credentials.
+
+journal.cli.sol.link.bundle.invalid = invalid link bundle for label '{ $label }' at { $path }: { $error }. Run `{ $solstone_link_join }` to pair this device.
+
+journal.cli.sol.link.bundle.multiple = multiple link bundles found: { $labels }. pass { $label } to choose one.
+
+journal.cli.sol.link.bundle.none = no link bundles found under { $path }. run `{ $solstone_link_join }` to pair this device.
+
+journal.cli.sol.link.bundle.path.missing = { $pl } bundle not found: { $path }
+
+journal.cli.sol.link.bundle.peer.invalid = invalid { $peer_json } in { $path }: { $error }
+
+journal.cli.sol.link.confirm.done = your journal's mark is already confirmed. nothing to do.{ $line_break }
+
+journal.cli.sol.link.confirm.error = { $solstone_link_confirm }: error: { $error }{ $line_break }
+
+journal.cli.sol.link.confirm.help = usage: { $solstone_link_confirm_h_label_ }{ $line_break }{ $line_break }Confirm the journal's mark for a link waiting on it.{ $line_break }{ $line_break }options:{ $line_break }{ $h_help }{ $space_5 }show this help message and exit{ $line_break }{ $label_label }{ $space_2 }Link bundle label (defaults to the only paired link){ $line_break }{ $mark_mark }{ $space_4 }the two words of the mark your journal's network app shows.{ $line_break }{ $space_17 }needed when there's no terminal to ask you on.{ $line_break }
+
+journal.cli.sol.link.confirm.success = paired.{ $line_break }
+
+journal.cli.sol.link.confirm.usage.error = usage: { $solstone_link_confirm_h_label_ }{ $line_break }{ $solstone_link_confirm }: error: { $error }{ $line_break }
+
+journal.cli.sol.link.held = waiting for you to confirm your journal's mark. nothing waiting goes into your journal until you do.{ $line_break }when you're ready, run: { $solstone_link_confirm } { $label_1 } { $label }{ $line_break }
+
+journal.cli.sol.link.join.code.invalid = Pair code did not match an accepted form. Use a pair-link like { $https_go_solstone_app_p }... from '{ $solstone_call_link_pair }'.
+
+journal.cli.sol.link.join.code.malformed = Malformed pair-link. Use the full { $https_go_solstone_app_p }... value from the pairing output.
+
+journal.cli.sol.link.join.code.nonlocal = Pair-link points at an address outside the local network this joiner will dial.
+
+journal.cli.sol.link.join.help = usage: { $solstone_link_join_h_home_home }{ $line_break }{ $label_label_mark_mark }{ $line_break }{ $line_break }options:{ $line_break }{ $h_help }{ $space_5 }show this help message and exit{ $line_break }{ $home_home }{ $space_4 }Receiver base { $url }{ $line_break }{ $code_code }{ $space_4 }pair-link { $url }{ $line_break }{ $as_as_role }{ $space_3 }Optional tag to join as{ $line_break }{ $label_label }{ $space_2 }Local credentials label (defaults to this machine's hostname){ $line_break }{ $mark_mark }{ $space_4 }the two words of the mark your journal's network app shows.{ $line_break }{ $space_17 }needed when there's no terminal to ask you on.{ $line_break }
+
+journal.cli.sol.link.join.invalid.role = invalid role; expected one of: { $phone }, { $observer }{ $line_break }
+
+journal.cli.sol.link.join.lock.error = { $solstone_link_join }: error: { $err }{ $line_break }
+
+journal.cli.sol.link.join.paired = paired.{ $line_break }credentials: { $path }{ $line_break }
+
+journal.cli.sol.link.join.pairing.unavailable = Link pairing seam is unavailable.{ $line_break }
+
+journal.cli.sol.link.join.required.code = the following arguments are required: { $code }
+
+journal.cli.sol.link.join.response.large = Pair response { $local_endpoints } is too large.{ $line_break }
+
+journal.cli.sol.link.join.target.host = Pair-link target missing host.
+
+journal.cli.sol.link.join.target.port = Pair-link target missing explicit port.
+
+journal.cli.sol.link.join.usage.error = usage: { $solstone_link_join_h_home_home }{ $line_break }{ $label_label_mark_mark }{ $line_break }{ $solstone_link_join }: error: { $error }{ $line_break }
+
+journal.cli.sol.link.label.character = { $label } may contain only letters, numbers, '-', '_', and '.'
+
+journal.cli.sol.link.label.empty = { $label } must not be empty
+
+journal.cli.sol.link.label.length = { $label } must be 80 characters or fewer
+
+journal.cli.sol.link.label.separator = { $label } must not contain path separators
+
+journal.cli.sol.link.label.start = { $label } must not start with '.'
+
+journal.cli.sol.link.label.traversal = { $label } must not contain '..'
+
+journal.cli.sol.link.mark.ask.identified = does this match your journal? type { $yes } or { $no }:
+
+journal.cli.sol.link.mark.ask.unavailable = type { $continue } to pair anyway, or { $cancel } to stop:
+
+journal.cli.sol.link.mark.confirm.cancel = pairing cancelled. get a fresh pairing link from your journal and run { $solstone_link_join } again when you're ready.{ $line_break }
+
+journal.cli.sol.link.mark.confirm.mismatch = not paired.{ $line_break }you said this mark doesn't match the one your journal shows, so this computer isn't paired. you may have pasted the wrong link, or something isn't right. get a fresh pairing link from your journal and run { $solstone_link_join } again, or email { $support_solstone_app } and we'll help.{ $line_break }
+
+journal.cli.sol.link.mark.confirm.terminal = { $solstone_link_confirm } can't ask you about your journal's mark here. run it in a terminal, or give the mark's two words with { $mark_word_word }.{ $line_break }
+
+journal.cli.sol.link.mark.confirm.unavailable = this computer couldn't work out the journal's mark, so the words you gave can't be matched. waiting for you to confirm your journal's mark. nothing waiting goes into your journal until you do. run { $solstone_link_confirm } in a terminal to decide for yourself.{ $line_break }
+
+journal.cli.sol.link.mark.confirm.wrong = not paired.{ $line_break }the mark words you gave don't match the journal's mark, so this computer isn't paired. check the words, get a fresh pairing link from your journal and run { $solstone_link_join } again.{ $line_break }
+
+journal.cli.sol.link.mark.join.cancel = pairing cancelled. nothing this computer has kept went to that journal through this link. get a fresh pairing link from your journal and run { $solstone_link_join } again when you're ready.{ $line_break }
+
+journal.cli.sol.link.mark.join.mismatch = not paired.{ $line_break }you said this mark doesn't match the one your journal shows, so this computer isn't paired, and nothing it has kept went to that journal through this link. you may have pasted the wrong link, or something isn't right. get a fresh pairing link from your journal and run { $solstone_link_join } again, or email { $support_solstone_app } and we'll help.{ $line_break }
+
+journal.cli.sol.link.mark.join.unverifiable = couldn't verify.{ $line_break }this computer couldn't work out the journal's mark, so the words you gave can't be matched. this computer isn't paired, and nothing it has kept went to that journal through this link. get a fresh pairing link from your journal and run { $solstone_link_join } in a terminal to decide for yourself.{ $line_break }
+
+journal.cli.sol.link.mark.join.wrong = not paired.{ $line_break }the mark words you gave don't match the journal's mark, so this computer isn't paired, and nothing it has kept went to that journal through this link. check the words, get a fresh pairing link from your journal and run { $solstone_link_join } again.{ $line_break }
+
+journal.cli.sol.link.mark.prompt.identified = one more step: check your journal's mark.{ $line_break }{ $line_break }{ $space_2 }your journal's mark: { $spoken }{ $line_break }{ $line_break }your journal shows this same mark in its network app. it should match, exactly.{ $line_break }does this match your journal? type { $yes } or { $no }:{ $line_break }
+
+journal.cli.sol.link.mark.prompt.unavailable = one more step: check your journal's mark.{ $line_break }{ $line_break }{ $space_2 }your journal's mark: unavailable right now{ $line_break }{ $line_break }couldn't verify.{ $line_break }this computer couldn't work out your journal's mark, so there's nothing to compare. { $continue } only if you're sure the link came from your journal.{ $line_break }type { $continue } to pair anyway, or { $cancel } to stop:{ $line_break }
+
+journal.cli.sol.link.mark.terminal.required = { $solstone_link_join } can't ask you about your journal's mark here. run it in a terminal, or give the mark's two words with { $mark_word_word }.{ $line_break }
+
+journal.cli.sol.link.mark.usage = give the two words of your journal's mark, like { $mark_bramble_quokka }.{ $line_break }
+
+journal.cli.sol.link.pair.closed = Pairing failed: the pairing window is closed or expired. Generate a new pair code and retry.
+
+journal.cli.sol.link.pair.enrollment = Relay rejected device enrollment ({ $endpoint } { $http } { $status }).
+
+journal.cli.sol.link.pair.failed = Pairing failed ({ $code }). Generate a new pair code and retry.
+
+journal.cli.sol.link.pair.listener = Could not connect to the pairing listener.
+
+journal.cli.sol.link.pair.rejected = Pairing failed ({ $http } { $status }): the pairing window is closed or the code was already used.
+
+journal.cli.sol.link.relay.abnormal = The relay connection closed abnormally. Retry or use { $direct } on { $lan_vpn }.
+
+journal.cli.sol.link.relay.closed = The relay pairing window is closed. Re-run { $solstone_link_join } from a fresh code.
+
+journal.cli.sol.link.relay.offline = the relay reports your journal is offline. start the journal or use { $direct } on lan/vpn.
+
+journal.cli.sol.link.relay.overflow = The relay is temporarily overloaded. Retry or use { $direct } on { $lan_vpn }.
+
+journal.cli.sol.link.relay.stalled = The relay connection stalled. Retry or use { $direct } on { $lan_vpn }.
+
+journal.cli.sol.link.relay.unauthorized = the relay rejected this device token. re-run { $solstone_link_join } for this device.
+
+journal.cli.sol.link.relay.unknown = the relay does not know this journal. re-run { $solstone_link_join }.
+
+journal.cli.sol.link.relay.unpaid = The relay account is not available. Check relay service/account status or use { $direct }.
+
+journal.cli.sol.link.relay.upgrade = The relay rejected the WebSocket upgrade. Check { $relay_url } and retry.
+
+journal.cli.sol.link.response.attestation = Pair response missing { $home_attestation }
+
+journal.cli.sol.link.response.cert = Pair response missing { $client_cert }
+
+journal.cli.sol.link.response.chain = Pair response missing { $ca_chain }
+
+journal.cli.sol.link.response.endpoints = Pair response { $local_endpoints } must be an array.
+
+journal.cli.sol.link.response.instance = Pair response missing { $instance_id }
+
+journal.cli.sol.link.response.key = Pair response missing generated client key
+
+journal.cli.sol.link.serve.bind.failed = cannot bind { $value_127_0_0_1 }{ $port }: bind failed
+
+journal.cli.sol.link.serve.bind.in.use = cannot bind { $value_127_0_0_1 }{ $port }: address already in use. Another `{ $solstone_link_serve }` or Convey may already be using that port.
+
+journal.cli.sol.link.serve.bridge.failed = Native link bridge setup failed before serving. Retry after reinstalling { $solstone_core }.
+
+journal.cli.sol.link.serve.credentials.invalid = Link credentials are invalid. Run { $solstone_link_join } before { $solstone_link_serve }.
+
+journal.cli.sol.link.serve.forward.direct = forwarding { $value_127_0_0_1 }{ $port } -> { $mark } via direct connection{ $line_break }
+
+journal.cli.sol.link.serve.forward.direct.unnamed = forwarding { $value_127_0_0_1 }{ $port } -> your journal via direct connection{ $line_break }
+
+journal.cli.sol.link.serve.forward.either = forwarding { $value_127_0_0_1 }{ $port } -> { $mark } via direct or relay{ $line_break }
+
+journal.cli.sol.link.serve.forward.either.unnamed = forwarding { $value_127_0_0_1 }{ $port } -> your journal via direct or relay{ $line_break }
+
+journal.cli.sol.link.serve.forward.relay = forwarding { $value_127_0_0_1 }{ $port } -> { $mark } via relay only{ $line_break }
+
+journal.cli.sol.link.serve.forward.relay.unnamed = forwarding { $value_127_0_0_1 }{ $port } -> your journal via relay only{ $line_break }
+
+journal.cli.sol.link.serve.help = usage: { $solstone_link_serve_h_label_la }{ $line_break }{ $relay_url_relay_url_direct_rel }{ $line_break }{ $line_break }options:{ $line_break }{ $h_help }{ $space_12 }show this help message and exit{ $line_break }{ $label_label }{ $space_9 }Link bundle label{ $line_break }{ $port_port }{ $space_11 }Loopback port to serve on (default: 5015){ $line_break }{ $relay_url_relay_url }{ $line_break }{ $space_24 }Override the relay { $url }{ $line_break }{ $direct }{ $space_14 }Direct only: reach the journal through a direct{ $line_break }{ $space_24 }connection, never the relay. use when your journal is{ $line_break }{ $space_24 }reachable directly (same network/vpn) to avoid relay{ $line_break }{ $space_24 }dependency.{ $line_break }{ $relay_only }{ $space_10 }Relay only: reach the journal through the relay,{ $line_break }{ $space_24 }never a direct connection. use when direct connections{ $line_break }{ $space_24 }must not be attempted, even if your journal is reachable{ $line_break }{ $space_24 }locally.{ $line_break }
+
+journal.cli.sol.link.serve.mark.unnamed = this link bundle has no journal id, so it can't be named. re-run { $solstone_link_join }.{ $line_break }
+
+journal.cli.sol.link.serve.policy.conflict = argument { $direct }: not allowed with argument { $relay_only }
+
+journal.cli.sol.link.serve.port.invalid = argument { $port }: invalid int value: '{ $value }'
+
+journal.cli.sol.link.serve.port.range = { $port } must be between 1 and 65535
+
+journal.cli.sol.link.serve.runtime.unavailable = Native link runtime is unavailable. Reinstall { $solstone_core } and retry.
+
+journal.cli.sol.link.serve.unavailable = Link serve seam is unavailable.{ $line_break }
+
+journal.cli.sol.link.serve.usage.error = usage: { $solstone_link_serve_h_label_la }{ $line_break }{ $relay_url_relay_url_direct_rel }{ $line_break }{ $solstone_link_serve }: error: { $error }{ $line_break }
+
+journal.cli.sol.link.serve.warning = warning: development use on trusted systems only.{ $line_break }this bridge gives local callers the paired owner's full journal { $api } authority.{ $line_break }run it only where you trust all software running on this system.
+
+journal.cli.sol.link.sighting.certainty = { $line_break }{ $line_break }this is less certain than a direct connection.
+
+journal.cli.sol.link.sighting.claim.unshown = what answered:{ $space_2 }claimed identity could not be shown (claimed, not verified)
+
+journal.cli.sol.link.sighting.claimed = what answered:{ $space_2 }{ $spoken } (claimed, not verified)
+
+journal.cli.sol.link.sighting.direct = unknown journal seen at { $addr }:
+
+journal.cli.sol.link.sighting.journal = your journal:{ $space_3 }{ $spoken }
+
+journal.cli.sol.link.sighting.no.identity = what answered:{ $space_2 }no identity presented
+
+journal.cli.sol.link.sighting.relay = unknown journal seen through the relay:
+
+journal.cli.sol.link.sighting.reset = { $line_break }{ $line_break }if you recently reset your journal, pair this device again.
+
+journal.cli.sol.link.status.error = { $solstone_link_status }: error: { $error }{ $line_break }
+
+journal.cli.sol.link.status.help = usage: { $solstone_link_status_h_label_l }{ $line_break }{ $line_break }Show link status and observed remote journal version.{ $line_break }{ $line_break }options:{ $line_break }{ $h_help }{ $space_5 }show this help message and exit{ $line_break }{ $label_label }{ $space_2 }Link bundle label (defaults to the only paired link){ $line_break }
+
+journal.cli.sol.link.status.label = Label: { $label }{ $line_break }
+
+journal.cli.sol.link.status.live = Status: { $state }{ $line_break }
+
+journal.cli.sol.link.status.persist.warning = Warning: connection changes may not have been saved. keep your credentials; the previous state may still be on disk.{ $line_break }
+
+journal.cli.sol.link.status.stopped = Status: stopped{ $line_break }
+
+journal.cli.sol.link.status.usage.error = usage: { $solstone_link_status_h_label_l }{ $line_break }{ $solstone_link_status }: error: { $error }{ $line_break }
+
+journal.cli.sol.link.status.version.fresh = Journal version: { $version }{ $line_break }
+
+journal.cli.sol.link.status.version.last = Journal version: { $version } (last known){ $line_break }
+
+journal.cli.sol.link.status.version.unknown = Journal version: unknown{ $line_break }
+
+journal.cli.sol.link.transport.credential = link credential material is invalid. re-run { $solstone_link_join } for this device.
+
+journal.cli.sol.link.transport.enroll.rejected = Relay enrollment was rejected with { $http } { $status }. Re-run { $solstone_link_join } if the bundle attestation is stale.
+
+journal.cli.sol.link.transport.enrollment = Link credential or relay enrollment failed. Re-run { $solstone_link_join } if retrying does not fix it.
+
+journal.cli.sol.link.transport.framing = { $spl } stream framing failed while serving. Retry; re-pair if it continues.
+
+journal.cli.sol.link.transport.http = The journal response over the link could not be parsed. Update both peers or retry.
+
+journal.cli.sol.link.transport.io = Link transport I/O failed while serving. Check that the journal is reachable on { $lan_vpn } or relay, then retry.
+
+journal.cli.sol.link.transport.json = Relay or bridge { $json } could not be parsed. Check the relay { $url } and retry.
+
+journal.cli.sol.link.transport.no.endpoint = No journal endpoint is available. Re-run { $solstone_link_join } or pass { $relay_url } unless using { $direct } intentionally.
+
+journal.cli.sol.link.transport.not.paired = Link credentials are missing. Run { $solstone_link_join } before { $solstone_link_serve }.
+
+journal.cli.sol.link.transport.offset = Local offset lookup failed. Check the system clock and retry.
+
+journal.cli.sol.link.transport.pair.data = stored pairing data is invalid. re-run { $solstone_link_join } for this device.
+
+journal.cli.sol.link.transport.refresh.rejected = relay token refresh was rejected with { $http } { $status }. re-run { $solstone_link_join } for this device.
+
+journal.cli.sol.link.transport.rejected = The paired journal rejected the link request with { $http } { $status }.
+
+journal.cli.sol.link.transport.tls = Secure link handshake failed. Re-run { $solstone_link_join } if the journal certificate or pairing changed.
+
+journal.cli.sol.link.unpaired.instructions = This device can't connect to your journal with its saved pairing. To pair it again, stop '{ $solstone_link_serve }', remove the folder { $path }, run '{ $solstone_link_join_code_new_pa }', then start '{ $solstone_link_serve }' again.{ $line_break }
+
+journal.cli.sol.moved.navigate = Moved to `{ $solstone_journal_navigate }` — run that instead.{ $line_break }
+
+journal.cli.sol.profile.cadence = Cadence:
+
+journal.cli.sol.profile.description = description: { $value }
+
+journal.cli.sol.profile.detached = detached facets: { $detached_label }
+
+journal.cli.sol.profile.entity.id = entity_id: { $value }
+
+journal.cli.sol.profile.full.interactions = { $space_2 }recent_interactions_count_30d: { $value }
+
+journal.cli.sol.profile.full.interval = { $space_2 }avg_interval_days: { $value }
+
+journal.cli.sol.profile.full.last.seen = { $space_2 }last_seen: { $value }
+
+journal.cli.sol.profile.full.quiet = { $space_2 }gone_quiet_since: { $value }
+
+journal.cli.sol.profile.identity = { $name } · { $kind } · facets={ $facets } · self={ $self_value } · hidden={ $hidden }
+
+journal.cli.sol.profile.interactions = recent_interactions_count_30d: { $value }
+
+journal.cli.sol.profile.interval = avg_interval_days: { $value }
+
+journal.cli.sol.profile.last.seen = last_seen: { $value }
+
+journal.cli.sol.profile.name = name: { $value }
+
+journal.cli.sol.profile.not.found = profile not found: { $name }
+
+journal.cli.sol.profile.quiet = gone_quiet_since: { $value }
+
+journal.cli.sol.profile.type = type: { $value }
+
+journal.cli.sol.speakers.attribute.segment.accumulated.voiceprints = { $line_break }Accumulated voiceprints:
+
+journal.cli.sol.speakers.attribute.segment.by.method = { $line_break }By method:
+
+journal.cli.sol.speakers.attribute.segment.embeddings = { $quantity ->
+    [one] { $spacing_2 }{ $entity_id }: { $embeddings } embedding
+   *[other] { $spacing_2 }{ $entity_id }: { $embeddings } embeddings
+    }
+
+journal.cli.sol.speakers.attribute.segment.resolved = Resolved:{ $spacing_2 }{ $resolved }
+
+journal.cli.sol.speakers.attribute.segment.sentences = Sentences: { $count }
+
+journal.cli.sol.speakers.attribute.segment.unmatched = Unmatched: { $count }
+
+journal.cli.sol.speakers.attribute.segment.wrote = { $line_break }Wrote: { $path }
+
+journal.cli.sol.speakers.backfill.completed.count = Completed count:{ $spacing_11 }{ $count }
+
+journal.cli.sol.speakers.backfill.elapsed.s = Elapsed:{ $spacing_19 }{ $elapsed }s
+
+journal.cli.sol.speakers.backfill.error.count = Error count:{ $spacing_15 }{ $count }
+
+journal.cli.sol.speakers.backfill.errors.and.more = { $spacing_2 }... and { $count } more
+
+journal.cli.sol.speakers.backfill.failure.detail = Failure detail:{ $spacing_12 }{ $detail }
+
+journal.cli.sol.speakers.backfill.failure.stage = Failure stage:{ $spacing_13 }{ $stage }
+
+journal.cli.sol.speakers.backfill.last.seen.entities.seen = Entities seen:{ $spacing_12 }{ $count }
+
+journal.cli.sol.speakers.backfill.last.seen.pending.by.entity = { $line_break }Pending by entity:
+
+journal.cli.sol.speakers.backfill.last.seen.rows.pending = Rows pending:{ $spacing_13 }{ $count }
+
+journal.cli.sol.speakers.backfill.last.seen.rows.written = Rows written:{ $spacing_13 }{ $count }
+
+journal.cli.sol.speakers.backfill.last.seen.speaker.label.files.read = Speaker label files read: { $count }
+
+journal.cli.sol.speakers.backfill.last.seen.voiceprint.rows.scanned = Voiceprint rows scanned:{ $spacing_2 }{ $count }
+
+journal.cli.sol.speakers.backfill.note.backfill.operation.has.immutable = Note: backfill operation { $id } has immutable flags.{ $line_break }To resume with compatible settings, try:{ $line_break }{ $spacing_2 }{ $command } { $option_operation_id } { $id } { $option_commit }{ $line_break }
+
+journal.cli.sol.speakers.backfill.operation.id = Operation ID:{ $spacing_14 }{ $op_id }
+
+journal.cli.sol.speakers.backfill.pending.count = Pending count:{ $spacing_13 }{ $count }
+
+journal.cli.sol.speakers.backfill.protected.skipped = Protected (skipped):{ $spacing_7 }{ $count }
+
+journal.cli.sol.speakers.backfill.selected.for.backfill = Selected for backfill:{ $spacing_5 }{ $count }
+
+journal.cli.sol.speakers.backfill.starting.speaker.attribution.backfill = Starting speaker attribution backfill...
+
+journal.cli.sol.speakers.backfill.status = Status:{ $spacing_20 }{ $status }
+
+journal.cli.sol.speakers.backfill.total.planned.count = Total planned count:{ $spacing_7 }{ $count }
+
+journal.cli.sol.speakers.backfill.total.segments.scanned = Total segments scanned:{ $spacing_4 }{ $count }
+
+journal.cli.sol.speakers.bootstrap.bootstrapping.voiceprints.from.single.speaker = Bootstrapping voiceprints from single-speaker segments...
+
+journal.cli.sol.speakers.bootstrap.stats.embeddings.saved = Embeddings saved: { $count }
+
+journal.cli.sol.speakers.bootstrap.stats.embeddings.skipped.duplicate = Embeddings skipped (duplicate): { $count }
+
+journal.cli.sol.speakers.bootstrap.stats.embeddings.skipped.owner = Embeddings skipped (owner): { $count }
+
+journal.cli.sol.speakers.bootstrap.stats.entities.created = Entities created: { $count }
+
+journal.cli.sol.speakers.bootstrap.stats.segments.scanned = Segments scanned: { $count }
+
+journal.cli.sol.speakers.bootstrap.stats.single.speaker.segments = Single-speaker segments: { $count }
+
+journal.cli.sol.speakers.bootstrap.stats.top.speakers.by.embedding.count = Top speakers by embedding count:
+
+journal.cli.sol.speakers.bootstrap.stats.unique.speakers = Unique speakers: { $count }
+
+journal.cli.sol.speakers.build.from.tags.can.build.from.tags = Can build from tags: { $available }
+
+journal.cli.sol.speakers.build.from.tags.guidance = Guidance: { $guidance }
+
+journal.cli.sol.speakers.build.from.tags.manual.tags = Manual tags: { $tags }
+
+journal.cli.sol.speakers.build.from.tags.next.step = Next step: { $step }
+
+journal.cli.sol.speakers.build.from.tags.observed = Observed: { $observed }
+
+journal.cli.sol.speakers.build.from.tags.owner.centroid.already.confirmed = Owner centroid already confirmed.
+
+journal.cli.sol.speakers.build.from.tags.owner.centroid.confirmed.from.manual = Owner centroid confirmed from manual tags (principal: { $principal }, cluster_size: { $cluster_size })
+
+journal.cli.sol.speakers.build.from.tags.owner.manual.tags.are.not = Owner manual tags are not ready.
+
+journal.cli.sol.speakers.build.from.tags.reason = Reason: { $reason }
+
+journal.cli.sol.speakers.build.from.tags.threshold = Threshold: { $threshold }
+
+journal.cli.sol.speakers.confirm.owner.review.error.owner.voice.candidates.must = error: Owner voice candidates must be confirmed in the browser.{ $line_break }Review and confirm at { $review_entry }
+
+journal.cli.sol.speakers.correct.already.correct = Already correct: { $day }/{ $stream_layout }/{ $stream }/{ $segment } #{ $sentence_id }
+
+journal.cli.sol.speakers.correct.corrected = Corrected { $day }/{ $stream_layout }/{ $stream }/{ $segment } #{ $sentence_id }: { $old } -> { $new_speaker }
+
+journal.cli.sol.speakers.correct.preview.with.solstone.call.speakers = Preview with: { $command } { $old_speaker } { $new_speaker }
+
+journal.cli.sol.speakers.correct.propagation.available.statements.in.segments = { $quantity ->
+    [one] { $segments_quantity ->
+        [one] Propagation available: { $statements } statement in { $segments } segment would change
+       *[other] Propagation available: { $statements } statement in { $segments } segments would change
+    }
+   *[other] { $segments_quantity ->
+        [one] Propagation available: { $statements } statements in { $segments } segment would change
+       *[other] Propagation available: { $statements } statements in { $segments } segments would change
+    }
+    }
+
+journal.cli.sol.speakers.correct.propagation.nothing.else.would.change = Propagation: nothing else would change
+
+journal.cli.sol.speakers.correct.unassigned.unassigned = unassigned
+
+journal.cli.sol.speakers.correct.voiceprint.removal = Voiceprint removal: { $outcome }
+
+journal.cli.sol.speakers.day.segments.showing.of.segments.limit = { $quantity ->
+    [one] Showing { $shown } of { $total } segment (limit { $limit })
+   *[other] Showing { $shown } of { $total } segments (limit { $limit })
+    }
+
+journal.cli.sol.speakers.discover.cluster.samples.across.segments = { $quantity ->
+    [one] { $segments_quantity ->
+        [one] { $spacing_2 }Cluster { $cluster }: { $samples } sample across { $segments } segment
+       *[other] { $spacing_2 }Cluster { $cluster }: { $samples } sample across { $segments } segments
+    }
+   *[other] { $segments_quantity ->
+        [one] { $spacing_2 }Cluster { $cluster }: { $samples } samples across { $segments } segment
+       *[other] { $spacing_2 }Cluster { $cluster }: { $samples } samples across { $segments } segments
+    }
+    }
+
+journal.cli.sol.speakers.discover.found.unknown.speaker.cluster.s = { $quantity ->
+    [one] Found { $clusters } unknown speaker cluster:{ $line_break }
+   *[other] Found { $clusters } unknown speaker cluster(s):{ $line_break }
+    }
+
+journal.cli.sol.speakers.discover.no.recurring.unknown.speakers.found = No recurring unknown speakers found.
+
+journal.cli.sol.speakers.discover.sid = { $spacing_4 }- { $day }/{ $stream }/{ $segment } sid={ $sentence_id }: { $text }
+
+journal.cli.sol.speakers.discovery.error.try.again = try again
+
+journal.cli.sol.speakers.discovery.warnings.warning = Warning: { $reason_code }: { $message }
+
+journal.cli.sol.speakers.discovery.warnings.warning.count = Warning: { $reason_code }: { $message } count={ $count }
+
+journal.cli.sol.speakers.errors.errors = { $line_break }Errors ({ $count }):
+
+journal.cli.sol.speakers.follow.backfill.backfill.in.progress.status.completed = Backfill in progress: status={ $status_kind }, completed={ $completed }/{ $total }, pending={ $pending }
+
+journal.cli.sol.speakers.follow.backfill.backfill.not.completed.status.to = { $line_break }Backfill not completed (status: { $status_kind }).{ $line_break }To check status:{ $line_break }{ $spacing_2 }{ $command_1 } { $operation_id }{ $line_break }To resume:{ $line_break }{ $spacing_2 }{ $command } { $operation_id }{ $line_break }
+
+journal.cli.sol.speakers.follow.repair.start.repair.in.progress.segments.repaired = Repair in progress, segments repaired so far: { $count }
+
+journal.cli.sol.speakers.follow.repair.start.repair.running = Repair running: { $operation_id }
+
+journal.cli.sol.speakers.identify.error.inspect.operations.with.solstone.call = Inspect operations with: { $command }
+
+journal.cli.sol.speakers.identify.error.inspect.this.operation.with.solstone = Inspect this operation with: { $command } { $operation_id }
+
+journal.cli.sol.speakers.identify.error.retry.with.the.same.request = Retry with the same { $option_request_id } { $request_id }.
+
+journal.cli.sol.speakers.identify.name.required.usage = Usage: { $command } { $syntax }{ $line_break }Try '{ $help_command }' for help.{ $line_break }{ $box_left } Error { $box_top }{ $line_break }{ $box_edge } Invalid value: name or { $entity_option } is required{ $box_padding }{ $box_edge }{ $line_break }{ $box_bottom }{ $line_break }
+
+journal.cli.sol.speakers.parse.stream.layout.option.error.invalid.value.for.stream = Error: invalid value for { $option_stream_layout }
+
+journal.cli.sol.speakers.presence.candidate.meeting.unvoiced.screen.meeting.days.voice.no = { $spacing_2 }{ $name } ({ $entity }): screen={ $first_count }, meeting_days={ $second_count }, voice=no
+
+journal.cli.sol.speakers.presence.candidate.meeting.voiced.screen.meeting.days.voice.yes = { $spacing_2 }{ $name } ({ $entity }): screen={ $first_count }, meeting_days={ $second_count }, voice=yes
+
+journal.cli.sol.speakers.presence.candidate.mention.unvoiced.setting.speakers.voice.no = { $spacing_2 }{ $name } ({ $entity }): setting={ $first_count }, speakers={ $second_count }, voice=no
+
+journal.cli.sol.speakers.presence.candidate.mention.voiced.setting.speakers.voice.yes = { $spacing_2 }{ $name } ({ $entity }): setting={ $first_count }, speakers={ $second_count }, voice=yes
+
+journal.cli.sol.speakers.presence.cluster.statements.segments.conversations = { $quantity ->
+    [one] { $segments_quantity ->
+        [one] { $conversations_quantity ->
+            [one] Cluster { $cluster }: { $statements } statement, { $segments } segment, { $conversations } conversation
+           *[other] Cluster { $cluster }: { $statements } statement, { $segments } segment, { $conversations } conversations
+        }
+       *[other] { $conversations_quantity ->
+            [one] Cluster { $cluster }: { $statements } statement, { $segments } segments, { $conversations } conversation
+           *[other] Cluster { $cluster }: { $statements } statement, { $segments } segments, { $conversations } conversations
+        }
+    }
+   *[other] { $segments_quantity ->
+        [one] { $conversations_quantity ->
+            [one] Cluster { $cluster }: { $statements } statements, { $segments } segment, { $conversations } conversation
+           *[other] Cluster { $cluster }: { $statements } statements, { $segments } segment, { $conversations } conversations
+        }
+       *[other] { $conversations_quantity ->
+            [one] Cluster { $cluster }: { $statements } statements, { $segments } segments, { $conversations } conversation
+           *[other] Cluster { $cluster }: { $statements } statements, { $segments } segments, { $conversations } conversations
+        }
+    }
+    }
+
+journal.cli.sol.speakers.presence.cluster.was.not.found.run = Cluster { $cluster_id } was not found.{ $line_break }Run '{ $command }' to produce valid cluster ids.{ $line_break }
+
+journal.cli.sol.speakers.presence.co.presence = { $line_break }Co-presence:
+
+journal.cli.sol.speakers.presence.evidence.complete = Evidence: complete
+
+journal.cli.sol.speakers.presence.evidence.gap.s = { $quantity ->
+    [one] Evidence: { $gaps } gap
+   *[other] Evidence: { $gaps } gap(s)
+    }
+
+journal.cli.sol.speakers.presence.mentions = { $line_break }Mentions:
+
+journal.cli.sol.speakers.presence.no.candidate.entities.found = No candidate entities found.
+
+journal.cli.sol.speakers.propagate.applied.applied.statements.in.segments = { $quantity ->
+    [one] { $segment_count_quantity ->
+        [one] Applied: { $statement_count } statement in { $segment_count } segment
+       *[other] Applied: { $statement_count } statement in { $segment_count } segments
+    }
+   *[other] { $segment_count_quantity ->
+        [one] Applied: { $statement_count } statements in { $segment_count } segment
+       *[other] Applied: { $statement_count } statements in { $segment_count } segments
+    }
+    }
+
+journal.cli.sol.speakers.propagate.errors = { $line_break }Errors:
+
+journal.cli.sol.speakers.propagate.nothing.else.would.change = Nothing else would change.
+
+journal.cli.sol.speakers.propagate.reverse.with.solstone.call.commit = Reverse with: { $command } { $operation } { $old_speaker } { $new_speaker } { $option_commit }
+
+journal.cli.sol.speakers.propagate.would.change.would.change.statements.in.segments = { $quantity ->
+    [one] { $segment_count_quantity ->
+        [one] Would change: { $statement_count } statement in { $segment_count } segment
+       *[other] Would change: { $statement_count } statement in { $segment_count } segments
+    }
+   *[other] { $segment_count_quantity ->
+        [one] Would change: { $statement_count } statements in { $segment_count } segment
+       *[other] Would change: { $statement_count } statements in { $segment_count } segments
+    }
+    }
+
+journal.cli.sol.speakers.rebuild.owner.guidance = Guidance: { $step }
+
+journal.cli.sol.speakers.rebuild.owner.next.step = Next step: { $next_step }
+
+journal.cli.sol.speakers.rebuild.owner.override.applied.true = Override applied: true
+
+journal.cli.sol.speakers.rebuild.owner.owner.centroid.rebuild.did.not = Owner centroid rebuild did not write.
+
+journal.cli.sol.speakers.rebuild.owner.owner.centroid.rebuilt.principal.cluster = Owner centroid rebuilt (principal: { $principal }, cluster_size: { $cluster_size })
+
+journal.cli.sol.speakers.rebuild.owner.owner.centroid.unchanged.evidence.already = Owner centroid unchanged; evidence already matches.
+
+journal.cli.sol.speakers.reject.owner.error.version.is.required = Error: { $option_version } is required.
+
+journal.cli.sol.speakers.repair.check.status.advice.to.check.status.solstone.call = { $line_break }To check status:{ $line_break }{ $spacing_2 }{ $command } { $operation_id }{ $line_break }
+
+journal.cli.sol.speakers.repair.dry.run.complete = Complete:{ $spacing_2 }{ $complete }
+
+journal.cli.sol.speakers.repair.dry.run.entities.with.voiceprints.to.remove = { $line_break }Entities with voiceprints to remove: { $entities }
+
+journal.cli.sol.speakers.repair.dry.run.gaps.detected = { $line_break }Gaps detected ({ $gaps }):
+
+journal.cli.sol.speakers.repair.dry.run.mode.dry.run = Mode:{ $spacing_6 }dry-run
+
+journal.cli.sol.speakers.repair.dry.run.rows = { $quantity ->
+    [one] { $spacing_2 }- { $id } ({ $rows } row)
+   *[other] { $spacing_2 }- { $id } ({ $rows } rows)
+    }
+
+journal.cli.sol.speakers.repair.dry.run.segments.to.repair = { $line_break }Segments to repair: { $segments }
+
+journal.cli.sol.speakers.repair.in.progress.status.advice = { $line_break }The repair may still be running in the journal. Don't start another one.{ $line_break }To check status:{ $line_break }{ $spacing_2 }{ $command } { $operation_id }{ $line_break }
+
+journal.cli.sol.speakers.repair.starting.speaker.contamination.repair = Starting speaker contamination repair...
+
+journal.cli.sol.speakers.repair.status.clean = Clean:{ $spacing_5 }{ $clean }
+
+journal.cli.sol.speakers.repair.status.last.failure = Last failure: { $stage } ({ $code })
+
+journal.cli.sol.speakers.repair.status.segments.repaired = Segments repaired: { $count }
+
+journal.cli.sol.speakers.repair.status.status = Status:{ $spacing_4 }{ $status }
+
+journal.cli.sol.speakers.repair.stopped.advice.to.resume.solstone.call.speakers = { $line_break }To resume:{ $line_break }{ $spacing_2 }{ $command } { $operation_id }{ $line_break }
+
+journal.cli.sol.speakers.report.only = REPORT ONLY — pass { $option_commit } to persist.{ $line_break }
+
+journal.cli.sol.speakers.resolve.names.ambiguous = { $line_break }Ambiguous ({ $count }):
+
+journal.cli.sol.speakers.resolve.names.auto.merged = { $line_break }Auto-merged ({ $count }):
+
+journal.cli.sol.speakers.resolve.names.entities.with.voiceprints = Entities with voiceprints: { $count }
+
+journal.cli.sol.speakers.resolve.names.high.similarity.pairs = High-similarity pairs: { $count }
+
+journal.cli.sol.speakers.resolve.names.merging.name.variants.can.t = Merging name variants can't be undone. Review the report without { $option_commit }, then, once the owner approves, run it again with { $option_commit } { $option_yes }.
+
+journal.cli.sol.speakers.resolve.names.pairs.compared = Pairs compared: { $count }
+
+journal.cli.sol.speakers.resolve.names.resolving.speaker.name.variants = Resolving speaker name variants...
+
+journal.cli.sol.speakers.seed.from.imports.seeding.voiceprints.from.import.segments = Seeding voiceprints from import segments...
+
+journal.cli.sol.speakers.seed.from.imports.segments.with.speakers = Segments with speakers: { $count }
+
+journal.cli.sol.speakers.seed.from.imports.speakers.by.embedding.count = Speakers by embedding count:
+
+journal.cli.sol.speakers.seed.from.imports.unmatched.speakers = { $line_break }Unmatched speakers ({ $count }):
+
+journal.cli.sol.speakers.sentences.sentences.for = Sentences for { $day }/{ $stream }/{ $segment }/{ $source }:
+
+journal.cli.sol.speakers.tag.owner.owner.sentence.already.tagged = Owner sentence already tagged: { $day }/{ $stream_layout }/{ $stream }/{ $segment } #{ $sentence_id }
+
+journal.cli.sol.speakers.tag.owner.tagged.owner.sentence = Tagged owner sentence: { $day }/{ $stream_layout }/{ $stream }/{ $segment } #{ $sentence_id }
+
+journal.cli.sol.speakers.wipe.couldn.t.erase.now.it = couldn't erase now; it waits in the trash
+
+journal.cli.sol.speakers.wipe.erase.needs.commit = { $option_erase } needs { $option_commit }
+
+journal.cli.sol.speakers.wipe.erased.erased = erased
+
+journal.cli.sol.speakers.wipe.files.b = { $quantity ->
+    [one] { $label }: { $files } file ({ $bytes } B)
+   *[other] { $label }: { $files } files ({ $bytes } B)
+    }
+
+journal.cli.sol.speakers.wipe.in.the.trash = in the trash
+
+journal.cli.sol.speakers.wipe.in.the.trash.erases = in the trash; erases { $day }
+
+journal.cli.sol.speakers.wipe.total.files.b = { $quantity ->
+    [one] total{ $spacing_14 }: { $files } file ({ $bytes } B)
+   *[other] total{ $spacing_14 }: { $files } files ({ $bytes } B)
+    }

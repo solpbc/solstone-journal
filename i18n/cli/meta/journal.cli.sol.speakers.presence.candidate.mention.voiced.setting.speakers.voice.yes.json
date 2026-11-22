@@ -1,0 +1,40 @@
+{
+  "description": "Text shown by the speakers presence.candidate.mention.voiced command.",
+  "context": "Text shown by the speakers presence.candidate.mention.voiced command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "entity",
+      "type": "string"
+    },
+    {
+      "name": "first_count",
+      "type": "string"
+    },
+    {
+      "name": "second_count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0e1ec03d1b127a33cdfd2d5fe41afb0406ddeab069e7ade14126ab2f9e7e783f",
+  "max_length": 306,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "spacing_2",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ]
+}

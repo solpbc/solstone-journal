@@ -1,0 +1,33 @@
+{
+  "description": "Native health command output for health hours with capture. Keep literal arguments and command syntax intact.",
+  "context": "Native health command output for health hours with capture. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a4dcc4d9e107c2c85f23d2689d945555288c2d3210e5387c54f2d049e7e81cb4",
+  "max_length": 141,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "hours_with_capture",
+      "kind": "accepted-input",
+      "value": "hours_with_capture"
+    },
+    {
+      "name": "space_2",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ]
+}

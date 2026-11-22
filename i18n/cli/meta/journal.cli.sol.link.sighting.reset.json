@@ -1,0 +1,23 @@
+{
+  "description": "Native link command output for link sighting reset. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link sighting reset. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "499773299736f8bbb4f52b16acbdce62ff03dd781e66da444758f51734fe475e",
+  "max_length": 267,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

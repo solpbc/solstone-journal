@@ -1,0 +1,33 @@
+{
+  "description": "Native link command output for link serve bind in use. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link serve bind in use. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "port",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "179b7be1f1801e28589593381c2957b6adf08fef9c0f3b549d0e86727f92ab28",
+  "max_length": 429,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_link_serve",
+      "kind": "accepted-input",
+      "value": "solstone link serve"
+    },
+    {
+      "name": "value_127_0_0_1",
+      "kind": "accepted-input",
+      "value": "127.0.0.1:"
+    }
+  ]
+}

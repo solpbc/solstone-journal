@@ -1,0 +1,28 @@
+{
+  "description": "The network command reports pairing, private network or device status to the person running it.",
+  "context": "The network command reports pairing, private network or device status to the person running it.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "date",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bae78acf78c019428d1b42513813dcae4f62202911a8e7f9c1ac5c2b223bd449",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "indent",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ]
+}

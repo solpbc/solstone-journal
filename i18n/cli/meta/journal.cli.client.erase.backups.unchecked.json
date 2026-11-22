@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line output for a native client invocation.",
+  "context": "Journal command-line output for a native client invocation.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e9bc372a515b9b6677b4c53517b4bdfb9df2ae0333aea6b1ee698761a89f10e5",
+  "max_length": 429,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "skip_backups",
+      "kind": "flag",
+      "value": "--not-from-backups"
+    }
+  ]
+}

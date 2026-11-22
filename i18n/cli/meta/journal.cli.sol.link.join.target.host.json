@@ -1,0 +1,16 @@
+{
+  "description": "Native link command output for link join target host. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link join target host. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5161b2c9e07132f8c633ca465672d05513b22692bc9490fdc9ce484b7e9ad736",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

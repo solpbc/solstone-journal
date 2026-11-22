@@ -4,13 +4,10 @@
 use crate::command::{CommandContext, CommandOutput};
 
 #[must_use]
-pub fn navigate(_ctx: CommandContext<'_>) -> CommandOutput {
-    moved("navigate")
-}
-
-fn moved(name: &str) -> CommandOutput {
+pub fn navigate(ctx: CommandContext<'_>) -> CommandOutput {
+    let locale = ctx.human_locale();
     CommandOutput::failure(
-        format!("Moved to `solstone journal {name}` — run that instead.\n"),
+        solstone_core_cli_copy::render_for(locale, "journal.cli.sol.moved.navigate", &[]),
         2,
     )
 }

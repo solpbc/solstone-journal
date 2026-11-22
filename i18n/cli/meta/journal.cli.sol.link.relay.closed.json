@@ -1,0 +1,23 @@
+{
+  "description": "Native link command output for link relay closed. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link relay closed. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9c69d8e1c5c2291f14adb926ab430d1144e4f1c0f2a1cce41ce40d17d6f4b05f",
+  "max_length": 255,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_link_join",
+      "kind": "accepted-input",
+      "value": "solstone link join"
+    }
+  ]
+}

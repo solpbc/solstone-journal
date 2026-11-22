@@ -1,0 +1,21 @@
+{
+  "description": "Text shown by the entities network.seen command.",
+  "context": "Text shown by the entities network.seen command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "13e2c38728a47140a56143c1eed5c7a5ae6fa8b8073d620dce0b14e1913633df",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

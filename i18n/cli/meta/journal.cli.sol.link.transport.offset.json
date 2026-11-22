@@ -1,0 +1,16 @@
+{
+  "description": "Native link command output for link transport offset. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link transport offset. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "06b569ca6b18870120f5c34dbaf84d1c95d4937af43499f6ee14b8d7c5e52927",
+  "max_length": 183,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

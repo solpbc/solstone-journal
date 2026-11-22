@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use serde_json::{Value, json};
+use solstone_core_cli_copy::ENGLISH;
 
 use crate::command::{CommandContext, CommandOutput};
 use crate::decode::decode_response;
@@ -104,7 +105,12 @@ pub fn log(ctx: CommandContext<'_>) -> CommandOutput {
         Err(error) => return stderr(error),
     };
     let Some(kind) = parsed.positionals.first() else {
-        return missing_argument("call awareness log", "KIND");
+        return crate::args::typer_missing_for(
+            ENGLISH,
+            "call awareness log",
+            "call awareness log [OPTIONS] KIND [MESSAGE]",
+            crate::args::Missing::Argument("KIND"),
+        );
     };
     let message = parsed.positionals.get(1).cloned();
     let data = if let Some(data) = parsed.value("--data") {
@@ -288,34 +294,11 @@ fn stderr(value: impl AsRef<str>) -> CommandOutput {
     CommandOutput::failure(format!("{}\n", value.as_ref()), 1)
 }
 
-fn stderr_with_exit(value: impl Into<String>, exit: i32) -> CommandOutput {
-    CommandOutput {
-        stdout: String::new(),
-        stderr: value.into(),
-        exit,
-    }
-}
-
 fn awareness_error(error: ClientError) -> CommandOutput {
     match error {
         ClientError::Unreachable { .. } => stderr(SERVICE_DOWN_MESSAGE),
         other => stderr(other.message()),
     }
-}
-
-fn missing_argument(command: &str, name: &str) -> CommandOutput {
-    let message = format!("Missing argument '{name}'.");
-    let spaces = " ".repeat(77_usize.saturating_sub(message.chars().count()));
-    stderr_with_exit(
-        format!(
-            "Usage: {command} [OPTIONS] {name} [MESSAGE]\n\
-Try '{command} --help' for help.\n\
-╭─ Error ──────────────────────────────────────────────────────────────────────╮\n\
-│ {message}{spaces}│\n\
-╰──────────────────────────────────────────────────────────────────────────────╯\n"
-        ),
-        2,
-    )
 }
 
 fn truthy(value: &Value) -> bool {

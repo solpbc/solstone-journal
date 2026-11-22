@@ -1,0 +1,52 @@
+{
+  "description": "Text shown by the entities merge candidates command.",
+  "context": "Text shown by the entities merge candidates command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    },
+    {
+      "name": "target",
+      "type": "string"
+    },
+    {
+      "name": "status",
+      "type": "string"
+    },
+    {
+      "name": "facet",
+      "type": "string"
+    },
+    {
+      "name": "detections",
+      "type": "string"
+    },
+    {
+      "name": "needs",
+      "type": "string"
+    },
+    {
+      "name": "last",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "922529594cd7d28e60c1f23d40fa230de3c5ee52742e70391a209f71f0c26005",
+  "max_length": 543,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "spacing_2",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ]
+}

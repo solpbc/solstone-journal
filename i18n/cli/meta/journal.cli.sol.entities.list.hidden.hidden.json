@@ -1,0 +1,36 @@
+{
+  "description": "Text shown by the entities list.hidden command.",
+  "context": "Text shown by the entities list.hidden command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "entity_type",
+      "type": "string"
+    },
+    {
+      "name": "description",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2002b2f1dcfd68df598a428977fc8fdb9639cfae31980859f8f3b2fb3aa321e9",
+  "max_length": 207,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "spacing_2",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ]
+}

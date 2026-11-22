@@ -522,7 +522,7 @@ fn map_read_error(
     path: &str,
 ) -> ClientError {
     if error.kind() == std::io::ErrorKind::TimedOut {
-        ClientError::timeout(Some(timeout_detail(policy, method, path)))
+        request_timeout(policy, method, path)
     } else {
         ClientError::unreachable(Some(error.to_string()))
     }
@@ -535,29 +535,41 @@ fn map_ureq_error(
     path: &str,
 ) -> ClientError {
     match error {
-        ureq::Error::Timeout(_) => ClientError::timeout(Some(timeout_detail(policy, method, path))),
+        ureq::Error::Timeout(_) => request_timeout(policy, method, path),
         ureq::Error::Io(error) if error.kind() == std::io::ErrorKind::TimedOut => {
-            ClientError::timeout(Some(timeout_detail(policy, method, path)))
+            request_timeout(policy, method, path)
         }
         other => ClientError::unreachable(Some(other.to_string())),
     }
 }
 
-fn timeout_detail(policy: TimeoutPolicy, method: HttpMethod, path: &str) -> String {
+fn request_timeout(policy: TimeoutPolicy, method: HttpMethod, path: &str) -> ClientError {
     let spec = policy.spec();
-    format!(
-        "{} {path} exceeded local convey timeout (connect={}s, read={}, total={})",
-        method.as_str(),
-        spec.connect.as_secs(),
-        format_duration(spec.read),
-        format_duration(spec.total)
-    )
-}
-
-fn format_duration(duration: Option<Duration>) -> String {
-    duration
-        .map(|duration| format!("{}s", duration.as_secs()))
-        .unwrap_or_else(|| "none".to_string())
+    let connect = spec.connect.as_secs();
+    let message = match (spec.read, spec.total) {
+        (Some(read), Some(total)) => solstone_core_cli_copy::Diagnostic::new(
+            "journal.cli.client.transport.timeout",
+            [
+                ("method", &method.as_str()),
+                ("path", &path),
+                ("connect", &connect),
+                ("read", &read.as_secs()),
+                ("total", &total.as_secs()),
+            ],
+        ),
+        _ => solstone_core_cli_copy::Diagnostic::new(
+            "journal.cli.client.transport.timeout.open",
+            [
+                ("method", &method.as_str()),
+                ("path", &path),
+                ("connect", &connect),
+            ],
+        ),
+    };
+    ClientError::Timeout {
+        detail: Some(message.render(solstone_core_cli_copy::ENGLISH)),
+        presentation: Some(message),
+    }
 }
 
 #[must_use]
@@ -803,7 +815,9 @@ mod tests {
     #[test]
     fn api_timeout_detail_includes_method_path_and_limits() {
         assert_eq!(
-            timeout_detail(TimeoutPolicy::Api, HttpMethod::Get, "/example/resource"),
+            request_timeout(TimeoutPolicy::Api, HttpMethod::Get, "/example/resource")
+                .detail()
+                .unwrap(),
             "GET /example/resource exceeded local convey timeout (connect=2s, read=20s, total=30s)"
         );
     }
@@ -811,7 +825,9 @@ mod tests {
     #[test]
     fn upload_timeout_detail_includes_method_path_and_limits() {
         assert_eq!(
-            timeout_detail(TimeoutPolicy::Upload, HttpMethod::Post, "/example/upload"),
+            request_timeout(TimeoutPolicy::Upload, HttpMethod::Post, "/example/upload")
+                .detail()
+                .unwrap(),
             "POST /example/upload exceeded local convey timeout (connect=2s, read=120s, total=180s)"
         );
     }
@@ -824,11 +840,27 @@ mod tests {
                 TimeoutPolicy::Api,
                 HttpMethod::Get,
                 "/example/resource",
-            ),
-            ClientError::timeout(Some(
+            )
+            .detail(),
+            Some(
                 "GET /example/resource exceeded local convey timeout (connect=2s, read=20s, total=30s)"
-                    .to_string(),
-            ))
+            )
+        );
+    }
+
+    #[test]
+    fn only_a_local_timeout_has_a_translatable_detail() {
+        let local = request_timeout(TimeoutPolicy::SseOpen, HttpMethod::Get, "/fixture/Δ");
+        let source = local.detail().unwrap();
+        assert!(source.ends_with("read=none, total=none)"));
+        let supplied = ClientError::timeout(Some(source.to_owned()));
+        assert_eq!(supplied.detail_for("en-XA").as_deref(), Some(source));
+        let requested = solstone_core_cli_copy::packaged_locale(Some("en-XA"));
+        let display = local.detail_for(requested).unwrap();
+        assert!(display.contains("/fixture/Δ"));
+        assert_eq!(
+            display == source,
+            requested == solstone_core_cli_copy::ENGLISH
         );
     }
 

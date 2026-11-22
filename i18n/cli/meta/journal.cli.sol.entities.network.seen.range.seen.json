@@ -1,0 +1,25 @@
+{
+  "description": "Text shown by the entities network.seen.range command.",
+  "context": "Text shown by the entities network.seen.range command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "first",
+      "type": "string"
+    },
+    {
+      "name": "last",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e7326d3c086d93290581ff2daaacc0b9f3f42274b4681e68a4572679f1fa79c0",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

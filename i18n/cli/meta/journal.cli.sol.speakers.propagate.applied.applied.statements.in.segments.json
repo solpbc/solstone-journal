@@ -1,0 +1,39 @@
+{
+  "description": "Complete counted speakers summary for propagate.applied.",
+  "context": "Complete counted speakers summary for propagate.applied.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "statement_count",
+      "type": "string"
+    },
+    {
+      "name": "segment_count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "segment_count_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "26dff5b197f0c1971337e635a6b90bf421d193903091b7696a4c684b85cb4c72",
+  "max_length": 1368,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

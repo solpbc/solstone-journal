@@ -1,0 +1,23 @@
+{
+  "description": "Native link command output for link transport io. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link transport io. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d5acffd6aad058ae23cbe600b202ab316999503613a49e7f1aa1746d8eb82d9a",
+  "max_length": 342,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "lan_vpn",
+      "kind": "accepted-input",
+      "value": "LAN/VPN"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Text shown by the speakers presence command.",
+  "context": "Text shown by the speakers presence command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cb84396fca77a130fd177b1f43c2d045da55676819609b3eded895494d732277",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

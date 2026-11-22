@@ -1,0 +1,23 @@
+{
+  "description": "Native link command output for link label traversal. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link label traversal. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e3a4ec2c768f59eb13a95fe326df9f2cf7f0199daf20dc481c183d33ce860358",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "label",
+      "kind": "accepted-input",
+      "value": "--label"
+    }
+  ]
+}

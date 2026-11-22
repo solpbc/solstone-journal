@@ -1,0 +1,23 @@
+{
+  "description": "Text shown by the entities const command.",
+  "context": "Text shown by the entities const command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a225146920609e86f61a13106973fa2d028364e493b223390837e2170482b459",
+  "max_length": 219,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone journal indexer --reset --rescan-full"
+    }
+  ]
+}

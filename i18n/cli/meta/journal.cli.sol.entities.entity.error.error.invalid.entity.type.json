@@ -1,0 +1,21 @@
+{
+  "description": "Text shown by the entities entity error command.",
+  "context": "Text shown by the entities entity error command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "entity_type",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "55f31455504233445b4a74673a7176645c076e7ab865bb3f3e3031286a2aa720",
+  "max_length": 138,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

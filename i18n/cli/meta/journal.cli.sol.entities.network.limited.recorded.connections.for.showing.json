@@ -1,0 +1,38 @@
+{
+  "description": "Complete counted entities summary for network.limited.",
+  "context": "Complete counted entities summary for network.limited.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "entity_id",
+      "type": "string"
+    },
+    {
+      "name": "shown",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "bee8d5e72df1a654ede078359d4f46bdd8e7e109bfd22c812d63289b649970d7",
+  "max_length": 561,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

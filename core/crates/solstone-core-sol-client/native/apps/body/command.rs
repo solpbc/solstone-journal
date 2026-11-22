@@ -2,31 +2,35 @@
 // Copyright (c) 2026 sol pbc
 
 use serde_json::Value;
+use solstone_core_cli_copy::{display_for, render_for};
 
-use crate::args::parse_args;
+use crate::args::parse_args_for;
 use crate::command::{CommandContext, CommandOutput};
 use crate::decode::decode_response;
-use crate::error::{ClientError, SERVICE_DOWN_MESSAGE};
+use crate::error::ClientError;
 use crate::json_format::sorted_json_pretty_ascii;
 use crate::transport::{ApiRequest, HttpMethod, QueryParam, TimeoutPolicy};
 
-const BODY_RESPONSE_ERROR: &str = "the response from the body app couldn't be read.";
-
 #[must_use]
 pub fn status(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &[], &["--json"]) {
+    let locale = ctx.human_locale();
+    let parsed = match parse_args_for(locale, ctx.args, &[], &["--json"]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
     let payload = match request_json(ctx, "/app/body/api/status", vec![]) {
         Ok(payload) => payload,
-        Err(error) => return body_error(error),
+        Err(error) => return body_error(locale, error),
     };
     if parsed.has_flag("--json") {
         return crate::agent_output::literal_output(stdout_json(&payload));
     }
     let Some(object) = payload.as_object() else {
-        return stderr(BODY_RESPONSE_ERROR);
+        return stderr(render_for(
+            locale,
+            "journal.cli.sol.call.body.unreadable",
+            &[],
+        ));
     };
     let imports = object.get("imports").and_then(Value::as_object);
     let imported = ["new", "old"]
@@ -36,34 +40,55 @@ pub fn status(ctx: CommandContext<'_>) -> CommandOutput {
         .map(Vec::len)
         .sum::<usize>();
     let days = object.get("days").and_then(Value::as_i64).unwrap_or(0);
-    let mut lines = vec![format!("imports: {imported}"), format!("days: {days}")];
+    let mut lines = vec![
+        display_for(
+            locale,
+            "journal.cli.sol.call.body.imports",
+            [("imported", &imported)],
+        ),
+        display_for(locale, "journal.cli.sol.call.body.days", [("days", &days)]),
+    ];
     if let Some(coverage) = object.get("coverage").and_then(Value::as_object)
         && let Some(start) = coverage.get("start").and_then(Value::as_str)
     {
         let end = coverage.get("end").and_then(Value::as_str).unwrap_or("");
-        lines.push(format!("coverage: {start} to {end}"));
+        lines.push(display_for(
+            locale,
+            "journal.cli.sol.call.body.coverage",
+            [("start", &start), ("end", &end)],
+        ));
     }
     stdout(lines)
 }
 
 #[must_use]
 pub fn day(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &[], &["--json"]) {
+    let locale = ctx.human_locale();
+    let parsed = match parse_args_for(locale, ctx.args, &[], &["--json"]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
     let Some(day_value) = parsed.positionals.first() else {
-        return typer_missing_day_value();
+        return crate::args::typer_missing_for(
+            locale,
+            "call body day",
+            "call body day [OPTIONS] DAY_VALUE",
+            crate::args::Missing::Argument("DAY_VALUE"),
+        );
     };
     let payload = match request_json(ctx, &format!("/app/body/api/day/{day_value}"), vec![]) {
         Ok(payload) => payload,
-        Err(error) => return body_error(error),
+        Err(error) => return body_error(locale, error),
     };
     if parsed.has_flag("--json") {
         return crate::agent_output::literal_output(stdout_json(&payload));
     }
     let Some(object) = payload.as_object() else {
-        return stderr(BODY_RESPONSE_ERROR);
+        return stderr(render_for(
+            locale,
+            "journal.cli.sol.call.body.unreadable",
+            &[],
+        ));
     };
     let sources = object
         .get("sources")
@@ -77,26 +102,50 @@ pub fn day(ctx: CommandContext<'_>) -> CommandOutput {
         })
         .unwrap_or_default();
     let mut lines = vec![
-        format!("day: {}", string_field(object.get("day"), day_value)),
-        format!("entries: {}", display_or_zero(object.get("entry_total"))),
+        display_for(
+            locale,
+            "journal.cli.sol.call.body.day",
+            [("day", &string_field(object.get("day"), day_value))],
+        ),
+        display_for(
+            locale,
+            "journal.cli.sol.call.body.entries",
+            [("count", &display_or_zero(object.get("entry_total")))],
+        ),
     ];
     if !sources.is_empty() {
-        lines.push(format!("sources: {sources}"));
+        lines.push(display_for(
+            locale,
+            "journal.cli.sol.call.body.sources",
+            [("sources", &sources)],
+        ));
     }
     stdout(lines)
 }
 
 #[must_use]
 pub fn window(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &["--from", "--to"], &["--json"]) {
+    let options = ["--from", "--to"];
+    let locale = ctx.human_locale_with_options(&options);
+    let parsed = match parse_args_for(locale, ctx.args, &options, &["--json"]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
     let Some(from_value) = parsed.value("--from") else {
-        return typer_missing_window_option("--from");
+        return crate::args::typer_missing_for(
+            locale,
+            "call body window",
+            "call body window [OPTIONS]",
+            crate::args::Missing::Option("--from"),
+        );
     };
     let Some(to_value) = parsed.value("--to") else {
-        return typer_missing_window_option("--to");
+        return crate::args::typer_missing_for(
+            locale,
+            "call body window",
+            "call body window [OPTIONS]",
+            crate::args::Missing::Option("--to"),
+        );
     };
     let payload = match request_json(
         ctx,
@@ -107,21 +156,32 @@ pub fn window(ctx: CommandContext<'_>) -> CommandOutput {
         ],
     ) {
         Ok(payload) => payload,
-        Err(error) => return body_error(error),
+        Err(error) => return body_error(locale, error),
     };
     if parsed.has_flag("--json") {
         return crate::agent_output::literal_output(stdout_json(&payload));
     }
     let Some(object) = payload.as_object() else {
-        return stderr(BODY_RESPONSE_ERROR);
+        return stderr(render_for(
+            locale,
+            "journal.cli.sol.call.body.unreadable",
+            &[],
+        ));
     };
     let mut lines = vec![
-        format!(
-            "window: {} to {}",
-            display_value(object.get("from")),
-            display_value(object.get("to"))
+        display_for(
+            locale,
+            "journal.cli.sol.call.body.range",
+            [
+                ("start", &display_value(object.get("from"))),
+                ("end", &display_value(object.get("to"))),
+            ],
         ),
-        format!("entries: {}", display_or_zero(object.get("entry_total"))),
+        display_for(
+            locale,
+            "journal.cli.sol.call.body.entries",
+            [("count", &display_or_zero(object.get("entry_total")))],
+        ),
     ];
     if let Some(signals) = object.get("signals").and_then(Value::as_array) {
         for signal in signals {
@@ -163,51 +223,10 @@ fn stderr(value: impl AsRef<str>) -> CommandOutput {
     CommandOutput::failure(format!("{}\n", value.as_ref()), 1)
 }
 
-fn stderr_with_exit(value: impl Into<String>, exit: i32) -> CommandOutput {
-    CommandOutput {
-        stdout: String::new(),
-        stderr: value.into(),
-        exit,
-    }
-}
-
-fn typer_missing_day_value() -> CommandOutput {
-    stderr_with_exit(
-        "Usage: call body day [OPTIONS] DAY_VALUE\n\
-Try 'call body day --help' for help.\n\
-╭─ Error ──────────────────────────────────────────────────────────────────────╮\n\
-│ Missing argument 'DAY_VALUE'.                                                │\n\
-╰──────────────────────────────────────────────────────────────────────────────╯\n",
-        2,
-    )
-}
-
-fn typer_missing_window_option(option: &str) -> CommandOutput {
-    let message = match option {
-        "--from" => {
-            "│ Missing option '--from'.                                                     │"
-        }
-        "--to" => {
-            "│ Missing option '--to'.                                                       │"
-        }
-        _ => unreachable!("unsupported body window option"),
-    };
-    stderr_with_exit(
-        format!(
-            "Usage: call body window [OPTIONS]\n\
-Try 'call body window --help' for help.\n\
-╭─ Error ──────────────────────────────────────────────────────────────────────╮\n\
-{message}\n\
-╰──────────────────────────────────────────────────────────────────────────────╯\n"
-        ),
-        2,
-    )
-}
-
-fn body_error(error: ClientError) -> CommandOutput {
+fn body_error(locale: &str, error: ClientError) -> CommandOutput {
     match error {
-        ClientError::Unreachable { .. } => stderr(SERVICE_DOWN_MESSAGE),
-        _ => stderr(error.message()),
+        ClientError::Unreachable { .. } => stderr(crate::error::service_down_for(locale)),
+        _ => stderr(error.message_for(locale)),
     }
 }
 

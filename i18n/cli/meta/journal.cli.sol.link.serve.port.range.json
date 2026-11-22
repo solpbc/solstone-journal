@@ -1,0 +1,23 @@
+{
+  "description": "Native link command output for link serve port range. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link serve port range. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cee641d9ba22c48e1ac66eacb3acac9eb0be45c53124c9d99b078125c9f683cb",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "port",
+      "kind": "accepted-input",
+      "value": "--port"
+    }
+  ]
+}

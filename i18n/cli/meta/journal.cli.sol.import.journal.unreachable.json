@@ -1,0 +1,33 @@
+{
+  "description": "Native import command output for import journal unreachable. Keep literal arguments and command syntax intact.",
+  "context": "Native import command output for import journal unreachable. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5498896d78bfd478a6ad680b268474fee5f43edbd0de8b2484f0444169ea8898",
+  "max_length": 348,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_journal_up",
+      "kind": "accepted-input",
+      "value": "solstone journal up"
+    },
+    {
+      "name": "solstone_import",
+      "kind": "accepted-input",
+      "value": "solstone import"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Native link command output for link transport tls. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link transport tls. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "681a8baac6315c8eba87a70c8a0b6f5b0f47ed48de1bd549e3e7bd4570467897",
+  "max_length": 321,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_link_join",
+      "kind": "accepted-input",
+      "value": "solstone link join"
+    }
+  ]
+}

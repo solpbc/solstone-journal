@@ -1,0 +1,21 @@
+{
+  "description": "Text shown by the entities network command.",
+  "context": "Text shown by the entities network command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "entity_id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6ec6fb68c367453000c0342e3b8b2a8ca1ed7fab2a4f75a5fab39f7d11b74e02",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "description": "Native health command output for health facets with recent capture. Keep literal arguments and command syntax intact.",
+  "context": "Native health command output for health facets with recent capture. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "643f30268d1ed85b5e81556990a03c36fc52b8db7a66383b937cfb324b320ff9",
+  "max_length": 165,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "facets_with_recent_capture",
+      "kind": "accepted-input",
+      "value": "facets_with_recent_capture"
+    },
+    {
+      "name": "space_2",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ]
+}

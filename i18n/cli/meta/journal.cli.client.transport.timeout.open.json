@@ -1,0 +1,36 @@
+{
+  "description": "Native link or transport diagnostics. The supplied endpoint or operating-system cause retains its original spelling.",
+  "context": "Native link or transport diagnostics. The supplied endpoint or operating-system cause retains its original spelling.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "method",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "connect",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9c399538774cf697afb17e0de783dad187ac4cc82b53331ff5d71a6798c92efd",
+  "max_length": 294,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "service",
+      "kind": "accepted-input",
+      "value": "convey"
+    }
+  ]
+}

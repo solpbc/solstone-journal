@@ -5,10 +5,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use jiff::civil::Date;
 use serde_json::{Map, Value};
+use solstone_core_cli_copy::{display_for, render_for};
 
 use crate::command::{CommandContext, CommandOutput, journal_today};
 use crate::decode::decode_response;
-use crate::error::{ClientError, SERVICE_DOWN_MESSAGE};
+use crate::error::ClientError;
 use crate::transport::{ApiRequest, HttpMethod, QueryParam, TimeoutPolicy};
 
 const ACTIVITY_NOT_FOUND: &str = "activity_not_found";
@@ -24,8 +25,8 @@ pub fn list(ctx: CommandContext<'_>) -> CommandOutput {
 }
 
 fn list_output(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(
-        ctx.args,
+    let (parsed, locale) = match parse_args(
+        ctx,
         &[
             ("--day", Some("-d")),
             ("--from", None),
@@ -44,16 +45,24 @@ fn list_output(ctx: CommandContext<'_>) -> CommandOutput {
     let from_day = parsed.value("--from");
     let to_day = parsed.value("--to");
     if day.is_some() && (from_day.is_some() || to_day.is_some()) {
-        return stderr("Error: --day is incompatible with --from/--to.");
+        return stderr(render_for(
+            locale,
+            "journal.cli.sol.call.activities.range.options",
+            &[],
+        ));
     }
     let source = parsed.value("--source");
     if let Some(source) = source
         && !VALID_LIST_SOURCES.contains(&source)
     {
-        return stderr("Error: --source must be 'cogitate' or 'user'.");
+        return stderr(render_for(
+            locale,
+            "journal.cli.sol.call.activities.source.list",
+            &[],
+        ));
     }
     let resolved_days = if let Some(day) = day {
-        match resolve_day(Some(day), ctx) {
+        match resolve_day(locale, Some(day), ctx) {
             Ok(day) => vec![day],
             Err(output) => return output,
         }
@@ -62,18 +71,18 @@ fn list_output(ctx: CommandContext<'_>) -> CommandOutput {
             Some(day) => day.to_string(),
             None => match resolve_day_or_today(None, ctx) {
                 Ok(day) => day,
-                Err(error) => return transport_error(error),
+                Err(error) => return transport_error(locale, error),
             },
         };
         let end_day = to_day.map_or_else(|| start_day.clone(), str::to_string);
-        match iter_days(&start_day, &end_day) {
+        match iter_days(locale, &start_day, &end_day) {
             Ok(days) => days,
             Err(output) => return output,
         }
     } else {
         match resolve_day_or_today(None, ctx) {
             Ok(day) => vec![day],
-            Err(error) => return transport_error(error),
+            Err(error) => return transport_error(locale, error),
         }
     };
 
@@ -98,7 +107,7 @@ fn list_output(ctx: CommandContext<'_>) -> CommandOutput {
             None,
         ) {
             Ok(body) => body,
-            Err(error) => return transport_error(error),
+            Err(error) => return transport_error(locale, error),
         };
         if let Some(body_items) = body.get("items").and_then(Value::as_array) {
             items.extend(body_items.iter().cloned());
@@ -117,7 +126,11 @@ fn list_output(ctx: CommandContext<'_>) -> CommandOutput {
             .collect::<Vec<_>>();
         stdout_json(&Value::Array(records))
     } else if items.is_empty() {
-        stdout_line("No activities found.")
+        stdout_line(render_for(
+            locale,
+            "journal.cli.sol.call.activities.empty",
+            &[],
+        ))
     } else {
         let markdown = items
             .iter()
@@ -130,8 +143,8 @@ fn list_output(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn get(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(
-        ctx.args,
+    let (parsed, locale) = match parse_args(
+        ctx,
         &[("--facet", Some("-f")), ("--day", Some("-d"))],
         &["--json"],
     ) {
@@ -139,13 +152,17 @@ pub fn get(ctx: CommandContext<'_>) -> CommandOutput {
         Err(error) => return stderr(error),
     };
     let Some(span_id) = parsed.positionals.first() else {
-        return stderr("Error: missing argument 'SPAN_ID'.");
+        return stderr(render_for(
+            locale,
+            "journal.cli.sol.call.activities.span.missing",
+            &[],
+        ));
     };
-    let facet = match resolve_facet(parsed.value("--facet"), ctx) {
+    let facet = match resolve_facet(locale, parsed.value("--facet"), ctx) {
         Ok(value) => value,
         Err(output) => return output,
     };
-    let day = match resolve_day(parsed.value("--day"), ctx) {
+    let day = match resolve_day(locale, parsed.value("--day"), ctx) {
         Ok(value) => value,
         Err(output) => return output,
     };
@@ -158,17 +175,21 @@ pub fn get(ctx: CommandContext<'_>) -> CommandOutput {
     ) {
         Ok(body) => body,
         Err(error) if is_reason(&error, ACTIVITY_NOT_FOUND) => {
-            return stderr(format!("activity not found: {span_id}"));
+            return stderr(display_for(
+                locale,
+                "journal.cli.sol.call.activities.span.absent",
+                [("span_id", &span_id)],
+            ));
         }
-        Err(error) => return transport_error(error),
+        Err(error) => return transport_error(locale, error),
     };
     render_record_body(&body, parsed.has_flag("--json"))
 }
 
 #[must_use]
 pub fn create(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(
-        ctx.args,
+    let (parsed, locale) = match parse_args(
+        ctx,
         &[
             ("--facet", Some("-f")),
             ("--day", Some("-d")),
@@ -186,13 +207,17 @@ pub fn create(ctx: CommandContext<'_>) -> CommandOutput {
     };
     let source = parsed.value("--source").unwrap_or("user");
     if !VALID_CREATE_SOURCES.contains(&source) {
-        return stderr("Error: --source must be 'user'.");
+        return stderr(render_for(
+            locale,
+            "journal.cli.sol.call.activities.source.create",
+            &[],
+        ));
     }
-    let facet = match resolve_facet(parsed.value("--facet"), ctx) {
+    let facet = match resolve_facet(locale, parsed.value("--facet"), ctx) {
         Ok(value) => value,
         Err(output) => return output,
     };
-    let day = match resolve_day(parsed.value("--day"), ctx) {
+    let day = match resolve_day(locale, parsed.value("--day"), ctx) {
         Ok(value) => value,
         Err(output) => return output,
     };
@@ -200,8 +225,10 @@ pub fn create(ctx: CommandContext<'_>) -> CommandOutput {
     if let Some(segment) = since_segment
         && !valid_segment_key(segment)
     {
-        return stderr(format!(
-            "Error: invalid --since-segment '{segment}' (expected HHMMSS_LEN)"
+        return stderr(display_for(
+            locale,
+            "journal.cli.sol.call.activities.segment.invalid",
+            [("segment", &segment)],
         ));
     }
 
@@ -210,10 +237,18 @@ pub fn create(ctx: CommandContext<'_>) -> CommandOutput {
         .any(|name| parsed.value(name).is_some());
     let (mut body, activity_type) = if payload_flags_supplied {
         let Some(title) = parsed.value("--title") else {
-            return stderr("Error: --title is required.");
+            return stderr(render_for(
+                locale,
+                "journal.cli.sol.call.activities.title.option",
+                &[],
+            ));
         };
         let Some(activity) = parsed.value("--activity") else {
-            return stderr("Error: --activity is required.");
+            return stderr(render_for(
+                locale,
+                "journal.cli.sol.call.activities.kind.option",
+                &[],
+            ));
         };
         let mut body = Map::new();
         body.insert("title".to_string(), Value::String(title.to_string()));
@@ -223,11 +258,11 @@ pub fn create(ctx: CommandContext<'_>) -> CommandOutput {
         insert_optional_string(&mut body, "details", parsed.value("--details"));
         (body, activity.to_string())
     } else {
-        let raw = match ctx.stdin.read() {
+        let raw = match ctx.stdin.read_for(locale) {
             Ok(raw) => raw,
             Err(output) => return output,
         };
-        match stdin_create_payload(&raw, source) {
+        match stdin_create_payload(locale, &raw, source) {
             Ok(result) => result,
             Err(output) => return output,
         }
@@ -248,28 +283,35 @@ pub fn create(ctx: CommandContext<'_>) -> CommandOutput {
     ) {
         Ok(body) => body,
         Err(error) if is_reason(&error, ACTIVITY_NOT_FOUND) => {
-            return stderr(format!(
-                "Error: unknown activity for facet '{facet}': {activity_type}"
+            return stderr(display_for(
+                locale,
+                "journal.cli.sol.call.activities.facet.unknown",
+                [("facet", &facet), ("activity_type", &activity_type)],
             ));
         }
         Err(error) if is_reason(&error, ACTIVITY_ALREADY_EXISTS) => {
-            return stderr(format!(
-                "Error: activity already exists: {}",
-                error.detail().unwrap_or("")
+            return stderr(display_for(
+                locale,
+                "journal.cli.sol.call.activities.exists",
+                [("detail", &error.detail_for(locale).unwrap_or_default())],
             ));
         }
         Err(error) if is_reason(&error, ACTIVITY_INVALID) => {
-            return stderr(format!("Error: {}", error.detail().unwrap_or("")));
+            return stderr(display_for(
+                locale,
+                "journal.cli.client.error.detail",
+                [("detail", &error.detail_for(locale).unwrap_or_default())],
+            ));
         }
-        Err(error) => return transport_error(error),
+        Err(error) => return transport_error(locale, error),
     };
     render_record_body(&response, parsed.has_flag("--json"))
 }
 
 #[must_use]
 pub fn update(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(
-        ctx.args,
+    let (parsed, locale) = match parse_args(
+        ctx,
         &[
             ("--facet", Some("-f")),
             ("--day", Some("-d")),
@@ -284,13 +326,17 @@ pub fn update(ctx: CommandContext<'_>) -> CommandOutput {
         Err(error) => return stderr(error),
     };
     let Some(span_id) = parsed.positionals.first() else {
-        return stderr("Error: missing argument 'SPAN_ID'.");
+        return stderr(render_for(
+            locale,
+            "journal.cli.sol.call.activities.span.missing",
+            &[],
+        ));
     };
-    let facet = match resolve_facet(parsed.value("--facet"), ctx) {
+    let facet = match resolve_facet(locale, parsed.value("--facet"), ctx) {
         Ok(value) => value,
         Err(output) => return output,
     };
-    let day = match resolve_day(parsed.value("--day"), ctx) {
+    let day = match resolve_day(locale, parsed.value("--day"), ctx) {
         Ok(value) => value,
         Err(output) => return output,
     };
@@ -305,17 +351,21 @@ pub fn update(ctx: CommandContext<'_>) -> CommandOutput {
         insert_optional_string(&mut patch, "details", parsed.value("--details"));
         patch
     } else {
-        let raw = match ctx.stdin.read() {
+        let raw = match ctx.stdin.read_for(locale) {
             Ok(raw) => raw,
             Err(output) => return output,
         };
-        match stdin_update_patch(&raw) {
+        match stdin_update_patch(locale, &raw) {
             Ok(patch) => patch,
             Err(output) => return output,
         }
     };
     if patch.is_empty() {
-        return stderr("Error: update payload must include at least one mutable field.");
+        return stderr(render_for(
+            locale,
+            "journal.cli.sol.call.activities.patch.empty",
+            &[],
+        ));
     }
     let note = parsed
         .value("--note")
@@ -338,9 +388,13 @@ pub fn update(ctx: CommandContext<'_>) -> CommandOutput {
     ) {
         Ok(body) => body,
         Err(error) if is_reason(&error, ACTIVITY_NOT_FOUND) => {
-            return stderr(format!("activity not found: {span_id}"));
+            return stderr(display_for(
+                locale,
+                "journal.cli.sol.call.activities.span.absent",
+                [("span_id", &span_id)],
+            ));
         }
-        Err(error) => return transport_error(error),
+        Err(error) => return transport_error(locale, error),
     };
     render_record_body(&response, parsed.has_flag("--json"))
 }
@@ -356,8 +410,8 @@ pub fn unmute(ctx: CommandContext<'_>) -> CommandOutput {
 }
 
 fn set_mute_state(ctx: CommandContext<'_>, verb: &str) -> CommandOutput {
-    let parsed = match parse_args(
-        ctx.args,
+    let (parsed, locale) = match parse_args(
+        ctx,
         &[
             ("--facet", Some("-f")),
             ("--day", Some("-d")),
@@ -369,13 +423,17 @@ fn set_mute_state(ctx: CommandContext<'_>, verb: &str) -> CommandOutput {
         Err(error) => return stderr(error),
     };
     let Some(span_id) = parsed.positionals.first() else {
-        return stderr("Error: missing argument 'SPAN_ID'.");
+        return stderr(render_for(
+            locale,
+            "journal.cli.sol.call.activities.span.missing",
+            &[],
+        ));
     };
-    let facet = match resolve_facet(parsed.value("--facet"), ctx) {
+    let facet = match resolve_facet(locale, parsed.value("--facet"), ctx) {
         Ok(value) => value,
         Err(output) => return output,
     };
-    let day = match resolve_day(parsed.value("--day"), ctx) {
+    let day = match resolve_day(locale, parsed.value("--day"), ctx) {
         Ok(value) => value,
         Err(output) => return output,
     };
@@ -396,9 +454,13 @@ fn set_mute_state(ctx: CommandContext<'_>, verb: &str) -> CommandOutput {
     ) {
         Ok(body) => body,
         Err(error) if is_reason(&error, ACTIVITY_NOT_FOUND) => {
-            return stderr(format!("activity not found: {span_id}"));
+            return stderr(display_for(
+                locale,
+                "journal.cli.sol.call.activities.span.absent",
+                [("span_id", &span_id)],
+            ));
         }
-        Err(error) => return transport_error(error),
+        Err(error) => return transport_error(locale, error),
     };
     render_record_body(&response, parsed.has_flag("--json"))
 }
@@ -421,10 +483,11 @@ impl ParsedArgs {
 }
 
 fn parse_args(
-    args: &[String],
+    ctx: CommandContext<'_>,
     options: &[(&str, Option<&str>)],
     flags: &[&str],
-) -> Result<ParsedArgs, String> {
+) -> Result<(ParsedArgs, &'static str), String> {
+    let args = ctx.args;
     let mut aliases = BTreeMap::new();
     for (long, short) in options {
         aliases.insert((*long).to_string(), (*long).to_string());
@@ -432,6 +495,7 @@ fn parse_args(
             aliases.insert((*short).to_string(), (*long).to_string());
         }
     }
+    let locale = ctx.human_locale_matching(|option| aliases.contains_key(option));
     let flag_set = flags.iter().copied().collect::<BTreeSet<_>>();
     let mut parsed = ParsedArgs::default();
     let mut index = 0;
@@ -445,19 +509,19 @@ fn parse_args(
         } else if let Some(canonical) = aliases.get(token) {
             index += 1;
             let Some(value) = args.get(index) else {
-                return Err(format!("Error: option {token} requires an argument."));
+                return Err(crate::args::option_argument_for(locale, token));
             };
             parsed.values.insert(canonical.clone(), value.clone());
         } else if flag_set.contains(token.as_str()) {
             parsed.flags.insert(token.clone());
         } else if token.starts_with('-') {
-            return Err(format!("Error: unknown option {token}."));
+            return Err(crate::args::unknown_option_for(locale, token));
         } else {
             parsed.positionals.push(token.clone());
         }
         index += 1;
     }
-    Ok(parsed)
+    Ok((parsed, locale))
 }
 
 fn env_value(ctx: CommandContext<'_>, name: &str) -> Option<String> {
@@ -467,16 +531,22 @@ fn env_value(ctx: CommandContext<'_>, name: &str) -> Option<String> {
         .map(String::to_string)
 }
 
-fn resolve_day(arg: Option<&str>, ctx: CommandContext<'_>) -> Result<String, CommandOutput> {
+fn resolve_day(
+    locale: &str,
+    arg: Option<&str>,
+    ctx: CommandContext<'_>,
+) -> Result<String, CommandOutput> {
     if let Some(arg) = arg {
         return Ok(arg.to_string());
     }
     if let Some(value) = env_value(ctx, "SOL_DAY") {
         return Ok(value);
     }
-    Err(stderr(
-        "Error: day is required (pass as argument or set SOL_DAY).",
-    ))
+    Err(stderr(render_for(
+        locale,
+        "journal.cli.sol.call.activities.day.missing",
+        &[],
+    )))
 }
 
 fn resolve_day_or_today(arg: Option<&str>, ctx: CommandContext<'_>) -> Result<String, ClientError> {
@@ -489,29 +559,42 @@ fn resolve_day_or_today(arg: Option<&str>, ctx: CommandContext<'_>) -> Result<St
     }
 }
 
-fn resolve_facet(arg: Option<&str>, ctx: CommandContext<'_>) -> Result<String, CommandOutput> {
+fn resolve_facet(
+    locale: &str,
+    arg: Option<&str>,
+    ctx: CommandContext<'_>,
+) -> Result<String, CommandOutput> {
     if let Some(arg) = arg {
         return Ok(arg.to_string());
     }
     if let Some(value) = env_value(ctx, "SOL_FACET") {
         return Ok(value);
     }
-    Err(stderr(
-        "Error: facet is required (pass as argument or set SOL_FACET).",
-    ))
+    Err(stderr(render_for(
+        locale,
+        "journal.cli.sol.call.activities.facet.missing",
+        &[],
+    )))
 }
 
-fn parse_day(value: &str, label: &str) -> Result<Date, CommandOutput> {
-    solstone_core_time::parse_day(value)
-        .ok_or_else(|| stderr(format!("Error: invalid {label} '{value}'")))
+fn parse_day(locale: &str, value: &str) -> Result<Date, CommandOutput> {
+    solstone_core_time::parse_day(value).ok_or_else(|| {
+        stderr(display_for(
+            locale,
+            "journal.cli.sol.call.activities.day.invalid",
+            [("value", &value)],
+        ))
+    })
 }
 
-fn iter_days(start_day: &str, end_day: &str) -> Result<Vec<String>, CommandOutput> {
-    let start = parse_day(start_day, "day")?;
-    let end = parse_day(end_day, "day")?;
+fn iter_days(locale: &str, start_day: &str, end_day: &str) -> Result<Vec<String>, CommandOutput> {
+    let start = parse_day(locale, start_day)?;
+    let end = parse_day(locale, end_day)?;
     if end < start {
-        return Err(stderr(format!(
-            "Error: --to ({end_day}) must not be before --from ({start_day})"
+        return Err(stderr(display_for(
+            locale,
+            "journal.cli.sol.call.activities.range.reversed",
+            [("end_day", &end_day), ("start_day", &start_day)],
         )));
     }
     let mut days = Vec::new();
@@ -544,10 +627,11 @@ fn valid_segment_key(segment: &str) -> bool {
 }
 
 fn stdin_create_payload(
+    locale: &str,
     raw: &str,
     source: &str,
 ) -> Result<(Map<String, Value>, String), CommandOutput> {
-    let payload = read_stdin_json(raw, false)?;
+    let payload = read_stdin_json(locale, raw, false)?;
     let title = payload
         .get("title")
         .and_then(Value::as_str)
@@ -555,7 +639,11 @@ fn stdin_create_payload(
         .trim()
         .to_string();
     if title.is_empty() {
-        return Err(stderr("Error: title is required."));
+        return Err(stderr(render_for(
+            locale,
+            "journal.cli.sol.call.activities.title.required",
+            &[],
+        )));
     }
     let activity = payload
         .get("activity")
@@ -564,7 +652,11 @@ fn stdin_create_payload(
         .trim()
         .to_string();
     if activity.is_empty() {
-        return Err(stderr("Error: activity is required."));
+        return Err(stderr(render_for(
+            locale,
+            "journal.cli.sol.call.activities.kind.required",
+            &[],
+        )));
     }
     let mut body = Map::new();
     body.insert("title".to_string(), Value::String(title));
@@ -579,14 +671,14 @@ fn stdin_create_payload(
     if let Some(value) = payload.get("participation") {
         body.insert(
             "participation".to_string(),
-            Value::Array(validate_participation(value)?),
+            Value::Array(validate_participation(locale, value)?),
         );
     }
     Ok((body, activity))
 }
 
-fn stdin_update_patch(raw: &str) -> Result<Map<String, Value>, CommandOutput> {
-    let payload = read_stdin_json(raw, true)?;
+fn stdin_update_patch(locale: &str, raw: &str) -> Result<Map<String, Value>, CommandOutput> {
+    let payload = read_stdin_json(locale, raw, true)?;
     let mut patch = Map::new();
     let mut extra = Vec::new();
     for (key, value) in payload {
@@ -598,39 +690,63 @@ fn stdin_update_patch(raw: &str) -> Result<Map<String, Value>, CommandOutput> {
     }
     if !extra.is_empty() {
         extra.sort();
-        return Err(stderr(format!(
-            "Error: disallowed update fields: {}",
-            extra.join(", ")
+        return Err(stderr(display_for(
+            locale,
+            "journal.cli.sol.call.activities.patch.disallowed",
+            [("fields", &extra.join(", "))],
         )));
     }
     Ok(patch)
 }
 
-fn read_stdin_json(raw: &str, allow_empty: bool) -> Result<Map<String, Value>, CommandOutput> {
+fn read_stdin_json(
+    locale: &str,
+    raw: &str,
+    allow_empty: bool,
+) -> Result<Map<String, Value>, CommandOutput> {
     let raw = raw.trim();
     if raw.is_empty() {
         if allow_empty {
             return Ok(Map::new());
         }
-        return Err(stderr("Error: expected JSON object on stdin."));
+        return Err(stderr(render_for(
+            locale,
+            "journal.cli.sol.call.activities.stdin.object",
+            &[],
+        )));
     }
-    let payload = serde_json::from_str::<Value>(raw)
-        .map_err(|error| stderr(format!("Error: invalid JSON on stdin: {error}")))?;
+    let payload = serde_json::from_str::<Value>(raw).map_err(|error| {
+        stderr(display_for(
+            locale,
+            "journal.cli.sol.call.activities.stdin.json",
+            [("error", &error)],
+        ))
+    })?;
     match payload {
         Value::Object(object) => Ok(object),
-        _ => Err(stderr("Error: expected JSON object on stdin.")),
+        _ => Err(stderr(render_for(
+            locale,
+            "journal.cli.sol.call.activities.stdin.object",
+            &[],
+        ))),
     }
 }
 
-fn validate_participation(value: &Value) -> Result<Vec<Value>, CommandOutput> {
+fn validate_participation(locale: &str, value: &Value) -> Result<Vec<Value>, CommandOutput> {
     let Some(entries) = value.as_array() else {
-        return Err(stderr("Error: participation must be an array"));
+        return Err(stderr(render_for(
+            locale,
+            "journal.cli.sol.call.activities.participation.array",
+            &[],
+        )));
     };
     let mut cleaned = Vec::new();
     for (index, entry) in entries.iter().enumerate() {
         let Some(object) = entry.as_object() else {
-            return Err(stderr(format!(
-                "Error: participation[{index}] must be an object"
+            return Err(stderr(display_for(
+                locale,
+                "journal.cli.sol.call.activities.participation.object",
+                [("index", &index)],
             )));
         };
         let name = object
@@ -640,17 +756,26 @@ fn validate_participation(value: &Value) -> Result<Vec<Value>, CommandOutput> {
             .trim()
             .to_string();
         if name.is_empty() {
-            return Err(stderr(format!(
-                "Error: participation[{index}] requires a non-empty string 'name'"
+            return Err(stderr(display_for(
+                locale,
+                "journal.cli.sol.call.activities.participation.name",
+                [("index", &index)],
             )));
         }
         let role = object.get("role").and_then(Value::as_str);
         if !matches!(role, Some("attendee" | "mentioned" | "visible" | "heard")) {
-            return Err(stderr(format!(
-                "Error: participation[{index}] has invalid role '{}' (must be one of ['attendee', 'mentioned', 'visible', 'heard'])",
-                object
-                    .get("role")
-                    .map_or("null".to_string(), json_value_to_python_string)
+            return Err(stderr(display_for(
+                locale,
+                "journal.cli.sol.call.activities.participation.role",
+                [
+                    ("index", &index),
+                    (
+                        "role",
+                        &object
+                            .get("role")
+                            .map_or("null".to_string(), json_value_to_python_string),
+                    ),
+                ],
             )));
         }
         let source = object.get("source").and_then(Value::as_str);
@@ -658,24 +783,35 @@ fn validate_participation(value: &Value) -> Result<Vec<Value>, CommandOutput> {
             source,
             Some("voice" | "speaker_label" | "transcript" | "screen" | "other")
         ) {
-            return Err(stderr(format!(
-                "Error: participation[{index}] has invalid source '{}' (must be one of ['other', 'screen', 'speaker_label', 'transcript', 'voice'])",
-                object
-                    .get("source")
-                    .map_or("null".to_string(), json_value_to_python_string)
+            return Err(stderr(display_for(
+                locale,
+                "journal.cli.sol.call.activities.participation.source",
+                [
+                    ("index", &index),
+                    (
+                        "source",
+                        &object
+                            .get("source")
+                            .map_or("null".to_string(), json_value_to_python_string),
+                    ),
+                ],
             )));
         }
         match object.get("confidence") {
             Some(Value::Number(_)) => {}
             _ => {
-                return Err(stderr(format!(
-                    "Error: participation[{index}] 'confidence' must be a number"
+                return Err(stderr(display_for(
+                    locale,
+                    "journal.cli.sol.call.activities.participation.confidence",
+                    [("index", &index)],
                 )));
             }
         }
         if !matches!(object.get("context"), Some(Value::String(_))) {
-            return Err(stderr(format!(
-                "Error: participation[{index}] 'context' must be a string"
+            return Err(stderr(display_for(
+                locale,
+                "journal.cli.sol.call.activities.participation.context",
+                [("index", &index)],
             )));
         }
         let mut cleaned_entry = Map::new();
@@ -813,10 +949,10 @@ fn stderr(value: impl AsRef<str>) -> CommandOutput {
     CommandOutput::failure(format!("{}\n", value.as_ref()), 1)
 }
 
-fn transport_error(error: ClientError) -> CommandOutput {
+fn transport_error(locale: &str, error: ClientError) -> CommandOutput {
     match error {
-        ClientError::Unreachable { .. } => stderr(SERVICE_DOWN_MESSAGE),
-        _ => stderr(error.message()),
+        ClientError::Unreachable { .. } => stderr(crate::error::service_down_for(locale)),
+        _ => stderr(error.message_for(locale)),
     }
 }
 
@@ -879,7 +1015,10 @@ mod tests {
     #[test]
     fn transport_error_renderer_preserves_timeout_message() {
         assert_eq!(
-            transport_error(ClientError::unreachable(Some("io: x".to_string()))),
+            transport_error(
+                solstone_core_cli_copy::ENGLISH,
+                ClientError::unreachable(Some("io: x".to_string()))
+            ),
             CommandOutput {
                 stdout: String::new(),
                 stderr: "journal isn't running. start it with 'solstone journal up' and retry.\n"
@@ -888,7 +1027,10 @@ mod tests {
             }
         );
         assert_eq!(
-            transport_error(ClientError::timeout(Some("x".to_string()))),
+            transport_error(
+                solstone_core_cli_copy::ENGLISH,
+                ClientError::timeout(Some("x".to_string()))
+            ),
             CommandOutput {
                 stdout: String::new(),
                 stderr: "The journal didn't answer in time.\n".to_string(),
@@ -906,7 +1048,7 @@ mod tests {
             "confidence": 0.9,
             "context": "Spoke during conversation",
         }]);
-        let res = validate_participation(&valid_entry);
+        let res = validate_participation(solstone_core_cli_copy::ENGLISH, &valid_entry);
         assert!(res.is_ok());
 
         let invalid_entry = serde_json::json!([{
@@ -916,7 +1058,8 @@ mod tests {
             "confidence": 0.9,
             "context": "Test",
         }]);
-        let err = validate_participation(&invalid_entry).unwrap_err();
+        let err =
+            validate_participation(solstone_core_cli_copy::ENGLISH, &invalid_entry).unwrap_err();
         let stderr_str = err.stderr;
         assert!(stderr_str.contains("attendee"));
         assert!(stderr_str.contains("mentioned"));

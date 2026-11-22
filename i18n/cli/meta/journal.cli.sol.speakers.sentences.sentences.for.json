@@ -1,0 +1,33 @@
+{
+  "description": "Text shown by the speakers sentences command.",
+  "context": "Text shown by the speakers sentences command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "stream",
+      "type": "string"
+    },
+    {
+      "name": "segment",
+      "type": "string"
+    },
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "83fce492cfd0a8608277869197b16cdfb561783f5a9bbd55734ee9de87a0ebab",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Text shown by the speakers attribute segment command.",
+  "context": "Text shown by the speakers attribute segment command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "043e117b37cee2f54b96546805a1812a6fbd8b022dbcafe9829f5ae32a2b6b74",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

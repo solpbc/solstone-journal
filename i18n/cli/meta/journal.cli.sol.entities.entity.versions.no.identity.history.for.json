@@ -1,0 +1,21 @@
+{
+  "description": "Text shown by the entities entity versions command.",
+  "context": "Text shown by the entities entity versions command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "entity",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d16b1af8a5f343ad28788a815a32ff90f87e1090bd44325fdae2fe356d52320c",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

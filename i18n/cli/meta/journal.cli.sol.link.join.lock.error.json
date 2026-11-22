@@ -1,0 +1,33 @@
+{
+  "description": "Native link command output for link join lock error. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link join lock error. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "err",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "62e2667fdb1403ea00909dbfc77ebbab551bacb958ff0a025df3790a3c01a74d",
+  "max_length": 165,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_link_join",
+      "kind": "accepted-input",
+      "value": "solstone link join"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

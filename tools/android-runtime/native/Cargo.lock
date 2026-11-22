@@ -7052,6 +7052,7 @@ dependencies = [
  "rustix",
  "serde",
  "serde_json",
+ "solstone-core-cli-copy",
  "solstone-core-format",
  "solstone-core-journal-io",
  "solstone-core-local-endpoint",

@@ -1,0 +1,21 @@
+{
+  "description": "Text shown by the entities observations command.",
+  "context": "Text shown by the entities observations command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "resolved_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d30acd85a05596ba32c9b80d73d896bc6527b3d4c7272ad391d4d1f821226d2c",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

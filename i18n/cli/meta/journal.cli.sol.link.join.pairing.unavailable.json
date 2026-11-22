@@ -1,0 +1,23 @@
+{
+  "description": "Native link command output for link join pairing unavailable. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link join pairing unavailable. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "82860203c09f32021c23d0b9a3947cc7bca7108a694849902e8c2d8373afcfa0",
+  "max_length": 144,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "description": "Complete counted speakers summary for discover.",
+  "context": "Complete counted speakers summary for discover.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "clusters",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "161d7584d387f33f796eeb3ecc3882f1d005168a567c3e72769017740a06579d",
+  "max_length": 495,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

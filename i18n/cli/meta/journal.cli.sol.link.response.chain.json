@@ -1,0 +1,23 @@
+{
+  "description": "Native link command output for link response chain. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link response chain. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d477ee1da8fdc8415f57aa8ffdf64f721f33533e3a30afae780f35cb4463f8cf",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "ca_chain",
+      "kind": "accepted-input",
+      "value": "ca_chain"
+    }
+  ]
+}

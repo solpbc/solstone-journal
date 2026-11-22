@@ -1,0 +1,16 @@
+{
+  "description": "Native link command output for link bundle files incomplete. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link bundle files incomplete. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9e55c91f1d43e2913e1d57ac2634ced764d2df25bb569e212d8f23650917217d",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Text shown by the entities history command.",
+  "context": "Text shown by the entities history command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "entity_id",
+      "type": "string"
+    },
+    {
+      "name": "peer",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "dc0cfe7bffd3f6a1363fdd3a036e71ccff85033d35aad236050d601636f4616d",
+  "max_length": 204,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

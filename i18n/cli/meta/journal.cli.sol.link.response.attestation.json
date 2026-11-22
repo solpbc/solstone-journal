@@ -1,0 +1,23 @@
+{
+  "description": "Native link command output for link response attestation. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link response attestation. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "082ebae25e20cd468f6e8680e50aa115fcddc5bb42076757da54d56234372cdf",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "home_attestation",
+      "kind": "accepted-input",
+      "value": "home_attestation"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Native import command output for import argument media. Keep literal arguments and command syntax intact.",
+  "context": "Native import command output for import argument media. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e93b721fe424ece35077ef653ee6551ee9419aad3fdcf5ce658df10ecc366286",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

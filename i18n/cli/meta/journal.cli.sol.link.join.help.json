@@ -1,0 +1,93 @@
+{
+  "description": "Native link command output for link join help. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link join help. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ea0cac37d9a62b4d25a4b6cbde8f19d5b83175aec10fd9e200cf0929e7240b57",
+  "max_length": 2010,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_link_join_h_home_home",
+      "kind": "accepted-input",
+      "value": "solstone link join [-h] [--home HOME] --code CODE [--as AS_ROLE]"
+    },
+    {
+      "name": "label_label_mark_mark",
+      "kind": "accepted-input",
+      "value": "                     [--label LABEL] [--mark MARK]"
+    },
+    {
+      "name": "space_17",
+      "kind": "whitespace",
+      "value": "                 "
+    },
+    {
+      "name": "label_label",
+      "kind": "accepted-input",
+      "value": "  --label LABEL"
+    },
+    {
+      "name": "as_as_role",
+      "kind": "accepted-input",
+      "value": "  --as AS_ROLE"
+    },
+    {
+      "name": "code_code",
+      "kind": "accepted-input",
+      "value": "  --code CODE"
+    },
+    {
+      "name": "home_home",
+      "kind": "accepted-input",
+      "value": "  --home HOME"
+    },
+    {
+      "name": "mark_mark",
+      "kind": "accepted-input",
+      "value": "  --mark MARK"
+    },
+    {
+      "name": "h_help",
+      "kind": "accepted-input",
+      "value": "  -h, --help"
+    },
+    {
+      "name": "space_5",
+      "kind": "whitespace",
+      "value": "     "
+    },
+    {
+      "name": "space_4",
+      "kind": "whitespace",
+      "value": "    "
+    },
+    {
+      "name": "space_3",
+      "kind": "whitespace",
+      "value": "   "
+    },
+    {
+      "name": "url",
+      "kind": "accepted-input",
+      "value": "URL"
+    },
+    {
+      "name": "space_2",
+      "kind": "whitespace",
+      "value": "  "
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

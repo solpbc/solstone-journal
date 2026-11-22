@@ -1,0 +1,29 @@
+{
+  "description": "Text shown by the speakers discovery warnings command.",
+  "context": "Text shown by the speakers discovery warnings command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason_code",
+      "type": "string"
+    },
+    {
+      "name": "message",
+      "type": "string"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fb47937bcb2b45fd315b180db531fa3d6d35619f74c1c050b9030aaef20e2196",
+  "max_length": 168,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

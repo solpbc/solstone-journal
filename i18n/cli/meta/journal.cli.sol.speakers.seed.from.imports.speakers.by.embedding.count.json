@@ -1,0 +1,16 @@
+{
+  "description": "Text shown by the speakers seed from imports command.",
+  "context": "Text shown by the speakers seed from imports command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d9b611324292a494f84bb4a9de1ca29faa7311c4b79e89fd5e5f690ae15178e6",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

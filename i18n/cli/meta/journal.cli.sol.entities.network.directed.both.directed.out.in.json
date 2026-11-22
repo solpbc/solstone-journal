@@ -1,0 +1,25 @@
+{
+  "description": "Text shown by the entities network.directed.both command.",
+  "context": "Text shown by the entities network.directed.both command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "out_count",
+      "type": "string"
+    },
+    {
+      "name": "in_count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "07872fd8a56508c9dedd1d821a00af5f45b6cecafc9e02e5cd4e28244b9753b2",
+  "max_length": 135,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

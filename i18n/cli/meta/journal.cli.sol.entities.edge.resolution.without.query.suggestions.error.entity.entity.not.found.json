@@ -1,0 +1,21 @@
+{
+  "description": "Text shown by the entities edge.resolution.without.query.suggestions command.",
+  "context": "Text shown by the entities edge.resolution.without.query.suggestions command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "labels",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3ba8c907b26c7998e210faa5bf9eb5032bfdab8f8c9e54688578a12605d1d54f",
+  "max_length": 177,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

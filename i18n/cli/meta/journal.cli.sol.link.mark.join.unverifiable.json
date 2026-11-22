@@ -1,0 +1,28 @@
+{
+  "description": "Native link command output for link mark join unverifiable. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link mark join unverifiable. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "130d7c6e961339da230cb6975b55c08669ca2654bb377e767139a0bd2381bacd",
+  "max_length": 1026,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_link_join",
+      "kind": "accepted-input",
+      "value": "solstone link join"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

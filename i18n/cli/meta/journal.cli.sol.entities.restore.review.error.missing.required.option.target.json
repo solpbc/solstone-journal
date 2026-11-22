@@ -1,0 +1,23 @@
+{
+  "description": "Text shown by the entities restore review command.",
+  "context": "Text shown by the entities restore review command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e9923231701d678a97b9e5e4a9fe40259e19b81b13562ffd65aea4c107184d9e",
+  "max_length": 162,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "option_target_slug",
+      "kind": "command",
+      "value": "--target-slug"
+    }
+  ]
+}

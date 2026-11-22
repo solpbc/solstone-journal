@@ -2,11 +2,12 @@
 // Copyright (c) 2026 sol pbc
 
 use serde_json::{Map, Value};
+use solstone_core_cli_copy::{display_for, render_for};
 
-use crate::args::parse_args;
+use crate::args::parse_args_for;
 use crate::command::{CommandContext, CommandOutput};
 use crate::decode::decode_response;
-use crate::error::{ClientError, SERVICE_DOWN_MESSAGE};
+use crate::error::ClientError;
 use crate::json_format::json_pretty_ascii;
 use crate::transport::{ApiRequest, HttpMethod, QueryParam, TimeoutPolicy};
 
@@ -23,16 +24,19 @@ pub fn read(ctx: CommandContext<'_>) -> CommandOutput {
 }
 
 fn read_output(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(
+    let options = [
+        "--start",
+        "--length",
+        "--segment",
+        "--segments",
+        "--stream",
+        "--max",
+    ];
+    let locale = ctx.human_locale_with_options(&options);
+    let parsed = match parse_args_for(
+        locale,
         ctx.args,
-        &[
-            "--start",
-            "--length",
-            "--segment",
-            "--segments",
-            "--stream",
-            "--max",
-        ],
+        &options,
         &[
             "--full",
             "--raw",
@@ -46,7 +50,7 @@ fn read_output(ctx: CommandContext<'_>) -> CommandOutput {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
-    let day = match resolve_day(parsed.positionals.first().map(String::as_str), ctx) {
+    let day = match resolve_day(locale, parsed.positionals.first().map(String::as_str), ctx) {
         Ok(day) => day,
         Err(output) => return output,
     };
@@ -61,13 +65,23 @@ fn read_output(ctx: CommandContext<'_>) -> CommandOutput {
     let max_bytes = match parsed.value("--max") {
         Some(value) => match value.parse::<usize>() {
             Ok(value) => value,
-            Err(_error) => return stderr("Error: option --max requires an integer."),
+            Err(_error) => {
+                return stderr(render_for(
+                    locale,
+                    "journal.cli.sol.call.transcripts.max.integer",
+                    &[],
+                ));
+            }
         },
         None => DEFAULT_MAX_BYTES,
     };
 
     if parsed.has_flag("--full") && parsed.has_flag("--raw") {
-        return stderr("Error: Cannot use --full and --raw together.");
+        return stderr(render_for(
+            locale,
+            "journal.cli.sol.call.transcripts.full.raw",
+            &[],
+        ));
     }
 
     let transcript_flag = parsed.has_flag("--transcripts") || parsed.has_flag("--audio");
@@ -76,7 +90,11 @@ fn read_output(ctx: CommandContext<'_>) -> CommandOutput {
     if (parsed.has_flag("--full") || parsed.has_flag("--raw"))
         && (transcript_flag || percept_flag || agent_flag)
     {
-        return stderr("Error: Cannot mix --full/--raw with individual source flags.");
+        return stderr(render_for(
+            locale,
+            "journal.cli.sol.call.transcripts.source.flags",
+            &[],
+        ));
     }
 
     let (include_transcripts, include_percepts, include_agents) = if parsed.has_flag("--full") {
@@ -94,7 +112,11 @@ fn read_output(ctx: CommandContext<'_>) -> CommandOutput {
         + usize::from(parsed.value("--segments").is_some())
         + usize::from(range_selected);
     if mode_count > 1 {
-        return stderr("Error: Cannot mix --segment, --segments, and --start/--length.");
+        return stderr(render_for(
+            locale,
+            "journal.cli.sol.call.transcripts.range.flags",
+            &[],
+        ));
     }
 
     let mut params = vec![
@@ -105,7 +127,7 @@ fn read_output(ctx: CommandContext<'_>) -> CommandOutput {
     if range_selected {
         let start = parsed.value("--start").unwrap_or("000000");
         let end = if let Some(length) = parsed.value("--length") {
-            match add_minutes_hhmmss(start, length) {
+            match add_minutes_hhmmss(locale, start, length) {
                 Ok(end) => end,
                 Err(error) => return stderr(error),
             }
@@ -137,21 +159,22 @@ fn read_output(ctx: CommandContext<'_>) -> CommandOutput {
         None,
     ) {
         Ok(body) => body,
-        Err(error) => return transcripts_error(error),
+        Err(error) => return transcripts_error(locale, error),
     };
     let Some(markdown) = body.get("markdown").and_then(Value::as_str) else {
-        return stderr(crate::error::MALFORMED_RESPONSE_MESSAGE);
+        return stderr(ClientError::MalformedSuccess { status: None }.message_for(locale));
     };
-    truncated_output(markdown, max_bytes)
+    truncated_output(locale, markdown, max_bytes)
 }
 
 #[must_use]
 pub fn scan(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &[], &[]) {
+    let locale = ctx.human_locale();
+    let parsed = match parse_args_for(locale, ctx.args, &[], &[]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
-    let day = match resolve_day(parsed.positionals.first().map(String::as_str), ctx) {
+    let day = match resolve_day(locale, parsed.positionals.first().map(String::as_str), ctx) {
         Ok(day) => day,
         Err(output) => return output,
     };
@@ -163,7 +186,7 @@ pub fn scan(ctx: CommandContext<'_>) -> CommandOutput {
         None,
     ) {
         Ok(data) => data,
-        Err(error) => return transcripts_error(error),
+        Err(error) => return transcripts_error(locale, error),
     };
     let audio = array_field(&data, "audio");
     let screen = array_field(&data, "screen");
@@ -197,9 +220,16 @@ pub fn scan(ctx: CommandContext<'_>) -> CommandOutput {
         starts.sort();
     }
 
-    let mut lines = vec!["Transcripts:".to_string()];
+    let mut lines = vec![render_for(
+        locale,
+        "journal.cli.sol.call.transcripts.heading.transcripts",
+        &[],
+    )];
     if audio.is_empty() {
-        lines.push("  (none)".to_string());
+        lines.push(format!(
+            "  {}",
+            render_for(locale, "journal.cli.sol.call.transcripts.none", &[])
+        ));
     } else {
         for range in audio {
             let start = field(&range, "start");
@@ -212,16 +242,24 @@ pub fn scan(ctx: CommandContext<'_>) -> CommandOutput {
                 .flat_map(|(_slot_start, _slot_end, starts)| starts.iter().cloned())
                 .collect::<Vec<_>>();
             starts.sort();
-            let mut line = format!("  {start} - {end}");
-            if !starts.is_empty() {
-                line.push_str(&format!(" ({})", format_pending_scan_note(&starts)));
-            }
+            let line = if starts.is_empty() {
+                format!("  {start} - {end}")
+            } else {
+                format_pending_scan_range(locale, &start, &end, &starts)
+            };
             lines.push(line);
         }
     }
-    lines.push("Percepts:".to_string());
+    lines.push(render_for(
+        locale,
+        "journal.cli.sol.call.transcripts.heading.percepts",
+        &[],
+    ));
     if screen.is_empty() {
-        lines.push("  (none)".to_string());
+        lines.push(format!(
+            "  {}",
+            render_for(locale, "journal.cli.sol.call.transcripts.none", &[])
+        ));
     } else {
         for range in screen {
             lines.push(format!(
@@ -236,11 +274,12 @@ pub fn scan(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn segments(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &[], &[]) {
+    let locale = ctx.human_locale();
+    let parsed = match parse_args_for(locale, ctx.args, &[], &[]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
-    let day = match resolve_day(parsed.positionals.first().map(String::as_str), ctx) {
+    let day = match resolve_day(locale, parsed.positionals.first().map(String::as_str), ctx) {
         Ok(day) => day,
         Err(output) => return output,
     };
@@ -252,11 +291,15 @@ pub fn segments(ctx: CommandContext<'_>) -> CommandOutput {
         None,
     ) {
         Ok(data) => data,
-        Err(error) => return transcripts_error(error),
+        Err(error) => return transcripts_error(locale, error),
     };
     let segments = array_field(&data, "segments");
     if segments.is_empty() {
-        return stdout_line("No segments.");
+        return stdout_line(render_for(
+            locale,
+            "journal.cli.sol.call.transcripts.segments.empty",
+            &[],
+        ));
     }
     stdout(
         segments
@@ -287,18 +330,31 @@ pub fn segments(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn speakers(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &[], &["--json"]) {
+    let locale = ctx.human_locale();
+    let parsed = match parse_args_for(locale, ctx.args, &[], &["--json"]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
     let Some(day) = parsed.positionals.first() else {
-        return stderr("Error: missing argument DAY");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.missing.argument",
+            [("argument", &"DAY")],
+        ));
     };
     let Some(stream) = parsed.positionals.get(1) else {
-        return stderr("Error: missing argument STREAM");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.missing.argument",
+            [("argument", &"STREAM")],
+        ));
     };
     let Some(segment) = parsed.positionals.get(2) else {
-        return stderr("Error: missing argument SEGMENT");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.missing.argument",
+            [("argument", &"SEGMENT")],
+        ));
     };
     let payload = match request_json(
         ctx,
@@ -308,7 +364,7 @@ pub fn speakers(ctx: CommandContext<'_>) -> CommandOutput {
         None,
     ) {
         Ok(payload) => payload,
-        Err(error) => return transcripts_error(error),
+        Err(error) => return transcripts_error(locale, error),
     };
     let rows = speaker_rows(&payload);
     let result = speaker_result(day, stream, segment, &payload, &rows);
@@ -316,9 +372,16 @@ pub fn speakers(ctx: CommandContext<'_>) -> CommandOutput {
         return crate::agent_output::literal_output(stdout_line(json_pretty_ascii(&result)));
     }
 
-    let mut lines = vec![format!("Speakers for {day}/{stream}/{segment}:")];
+    let mut lines = vec![display_for(
+        locale,
+        "journal.cli.sol.call.transcripts.speakers.heading",
+        [("day", &day), ("stream", &stream), ("segment", &segment)],
+    )];
     if rows.is_empty() {
-        lines.push("  (none)".to_string());
+        lines.push(format!(
+            "  {}",
+            render_for(locale, "journal.cli.sol.call.transcripts.none", &[])
+        ));
     } else {
         for row in &rows {
             let marker = if row.get("actionable").and_then(Value::as_bool) == Some(true) {
@@ -326,7 +389,7 @@ pub fn speakers(ctx: CommandContext<'_>) -> CommandOutput {
             } else {
                 "-"
             };
-            let (speaker_name, confidence) = row_speaker_text(row);
+            let (speaker_name, confidence) = row_speaker_text(locale, row);
             lines.push(format!(
                 "  {marker} #{} {} {} {} [{}] {}",
                 display_value(row.get("sentence_id")),
@@ -339,25 +402,32 @@ pub fn speakers(ctx: CommandContext<'_>) -> CommandOutput {
         }
     }
     lines.push(String::new());
-    lines.push(
-        "* actionable: solstone call speakers correct <day> <stream> <segment> <source> <sentence-id> <new-speaker>"
-            .to_string(),
-    );
-    lines.push(
-        "- not actionable: solstone call speakers tag-owner <day> <stream> <segment> <source> <sentence-id>"
-            .to_string(),
-    );
+    lines.push(display_for(
+        locale,
+        "journal.cli.sol.call.transcripts.actionable",
+        [("marker", &"*")],
+    ));
+    lines.push(display_for(
+        locale,
+        "journal.cli.sol.call.transcripts.tag.owner",
+        [("marker", &"-")],
+    ));
     stdout(lines)
 }
 
 #[must_use]
 pub fn stats(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &[], &[]) {
+    let locale = ctx.human_locale();
+    let parsed = match parse_args_for(locale, ctx.args, &[], &[]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
     let Some(month) = parsed.positionals.first() else {
-        return stderr("Error: missing argument MONTH");
+        return stderr(display_for(
+            locale,
+            "journal.cli.client.missing.argument",
+            [("argument", &"MONTH")],
+        ));
     };
     let day_totals = match request_json(
         ctx,
@@ -367,7 +437,7 @@ pub fn stats(ctx: CommandContext<'_>) -> CommandOutput {
         None,
     ) {
         Ok(day_totals) => day_totals,
-        Err(error) => return transcripts_error(error),
+        Err(error) => return transcripts_error(locale, error),
     };
     let mut days = day_totals
         .as_object()
@@ -385,20 +455,43 @@ pub fn stats(ctx: CommandContext<'_>) -> CommandOutput {
             None,
         ) {
             Ok(ranges) => ranges,
-            Err(error) => return transcripts_error_preserving_stdout(error, &output),
+            Err(error) => return transcripts_error_preserving_stdout(locale, error, &output),
         };
         let n_transcripts = array_field(&ranges, "audio").len();
         let n_percepts = array_field(&ranges, "screen").len();
         days_with_data += 1;
-        output.push(format!(
-            "{day}  transcripts:{n_transcripts} percepts:{n_percepts}"
+        output.push(display_for(
+            locale,
+            "journal.cli.sol.call.transcripts.day.totals",
+            [
+                ("day", &day),
+                ("n_transcripts", &n_transcripts),
+                ("n_percepts", &n_percepts),
+            ],
         ));
     }
     if days_with_data == 0 {
-        return stdout_line(format!("No data for {month}."));
+        return stdout_line(display_for(
+            locale,
+            "journal.cli.sol.call.transcripts.month.empty",
+            [("month", &month)],
+        ));
     }
     output.push(String::new());
-    output.push(format!("Total: {days_with_data} days with data"));
+    output.push(render_for(
+        locale,
+        "journal.cli.sol.call.transcripts.total.days",
+        &[
+            (
+                "count",
+                crate::command::count_selector(days_with_data as u64),
+            ),
+            (
+                "display_count",
+                solstone_core_cli_copy::Value::String(&days_with_data.to_string()),
+            ),
+        ],
+    ));
     stdout(output)
 }
 
@@ -420,38 +513,64 @@ fn request_json(
     decode_response(&response)
 }
 
-fn resolve_day(arg: Option<&str>, ctx: CommandContext<'_>) -> Result<String, CommandOutput> {
+fn resolve_day(
+    locale: &str,
+    arg: Option<&str>,
+    ctx: CommandContext<'_>,
+) -> Result<String, CommandOutput> {
     if let Some(day) = arg.filter(|day| !day.is_empty()) {
         return Ok(day.to_string());
     }
     if let Some(day) = env_value(ctx, "SOL_DAY").filter(|day| !day.is_empty()) {
         return Ok(day);
     }
-    Err(stderr(
-        "Error: day is required (pass as argument or set SOL_DAY).",
-    ))
+    Err(stderr(render_for(
+        locale,
+        "journal.cli.sol.call.activities.day.missing",
+        &[],
+    )))
 }
 
 fn env_value(ctx: CommandContext<'_>, key: &str) -> Option<String> {
     ctx.env.get(key).cloned()
 }
 
-fn add_minutes_hhmmss(start: &str, length: &str) -> Result<String, String> {
-    let minutes = length
-        .parse::<i64>()
-        .map_err(|_error| "Error: option --length requires an integer.".to_string())?;
+fn add_minutes_hhmmss(locale: &str, start: &str, length: &str) -> Result<String, String> {
+    let minutes = length.parse::<i64>().map_err(|_error| {
+        render_for(
+            locale,
+            "journal.cli.sol.call.transcripts.length.integer",
+            &[],
+        )
+    })?;
     if start.len() != 6 {
-        return Err("Error: start time must be HHMMSS.".to_string());
+        return Err(render_for(
+            locale,
+            "journal.cli.sol.call.transcripts.start.invalid",
+            &[],
+        ));
     }
-    let hour = start[0..2]
-        .parse::<i64>()
-        .map_err(|_error| "Error: start time must be HHMMSS.".to_string())?;
-    let minute = start[2..4]
-        .parse::<i64>()
-        .map_err(|_error| "Error: start time must be HHMMSS.".to_string())?;
-    let second = start[4..6]
-        .parse::<i64>()
-        .map_err(|_error| "Error: start time must be HHMMSS.".to_string())?;
+    let hour = start[0..2].parse::<i64>().map_err(|_error| {
+        render_for(
+            locale,
+            "journal.cli.sol.call.transcripts.start.invalid",
+            &[],
+        )
+    })?;
+    let minute = start[2..4].parse::<i64>().map_err(|_error| {
+        render_for(
+            locale,
+            "journal.cli.sol.call.transcripts.start.invalid",
+            &[],
+        )
+    })?;
+    let second = start[4..6].parse::<i64>().map_err(|_error| {
+        render_for(
+            locale,
+            "journal.cli.sol.call.transcripts.start.invalid",
+            &[],
+        )
+    })?;
     let mut total = hour * 3600 + minute * 60 + second + minutes * 60;
     total = ((total % 86_400) + 86_400) % 86_400;
     Ok(format!(
@@ -462,7 +581,7 @@ fn add_minutes_hhmmss(start: &str, length: &str) -> Result<String, String> {
     ))
 }
 
-fn truncated_output(text: &str, max_bytes: usize) -> CommandOutput {
+fn truncated_output(locale: &str, text: &str, max_bytes: usize) -> CommandOutput {
     let encoded = text.as_bytes();
     if max_bytes > 0 && encoded.len() > max_bytes {
         let mut end = max_bytes;
@@ -473,9 +592,15 @@ fn truncated_output(text: &str, max_bytes: usize) -> CommandOutput {
         return CommandOutput {
             stdout: format!("{truncated}\n"),
             stderr: format!(
-                "[truncated: {} bytes total, --max {}]\n",
-                comma_usize(encoded.len()),
-                comma_usize(max_bytes)
+                "{}\n",
+                display_for(
+                    locale,
+                    "journal.cli.sol.call.transcripts.truncated",
+                    [
+                        ("total", &comma_usize(encoded.len())),
+                        ("maximum", &comma_usize(max_bytes))
+                    ]
+                )
             ),
             exit: 0,
         };
@@ -512,13 +637,24 @@ fn pending_slot_range(start: &str) -> (String, String) {
     )
 }
 
-fn format_pending_scan_note(starts: &[String]) -> String {
-    let noun = if starts.len() == 1 {
-        "segment"
-    } else {
-        "segments"
-    };
-    format!("{} {noun} pending at {}", starts.len(), starts.join(", "))
+fn format_pending_scan_range(locale: &str, start: &str, end: &str, starts: &[String]) -> String {
+    render_for(
+        locale,
+        "journal.cli.sol.call.transcripts.pending",
+        &[
+            ("start", solstone_core_cli_copy::Value::String(start)),
+            ("end", solstone_core_cli_copy::Value::String(end)),
+            ("count", crate::command::count_selector(starts.len() as u64)),
+            (
+                "display_count",
+                solstone_core_cli_copy::Value::String(&starts.len().to_string()),
+            ),
+            (
+                "starts",
+                solstone_core_cli_copy::Value::String(&starts.join(", ")),
+            ),
+        ],
+    )
 }
 
 fn slot_overlaps_range(slot: (&str, &str), range: (&str, &str)) -> bool {
@@ -605,7 +741,7 @@ fn speaker_result(
     Value::Object(result)
 }
 
-fn row_speaker_text(row: &Value) -> (String, String) {
+fn row_speaker_text(locale: &str, row: &Value) -> (String, String) {
     let label = row.get("speaker").unwrap_or(&Value::Null);
     if label.is_null()
         || label
@@ -613,15 +749,28 @@ fn row_speaker_text(row: &Value) -> (String, String) {
             .and_then(Value::as_str)
             .is_some_and(|value| value == "unknown")
     {
-        return ("unknown voice".to_string(), "unknown".to_string());
+        return (
+            render_for(
+                locale,
+                "journal.cli.sol.call.transcripts.unknown.voice",
+                &[],
+            ),
+            "unknown".to_string(),
+        );
     }
     (
         label
             .get("name")
             .or_else(|| label.get("entity_id"))
             .and_then(Value::as_str)
-            .unwrap_or("unknown voice")
-            .to_string(),
+            .map(str::to_string)
+            .unwrap_or_else(|| {
+                render_for(
+                    locale,
+                    "journal.cli.sol.call.transcripts.unknown.voice",
+                    &[],
+                )
+            }),
         label
             .get("confidence_state")
             .or_else(|| label.get("confidence"))
@@ -653,17 +802,18 @@ fn display_value(value: Option<&Value>) -> String {
     }
 }
 
-fn transcripts_error(error: ClientError) -> CommandOutput {
-    transcripts_error_preserving_stdout(error, &[])
+fn transcripts_error(locale: &str, error: ClientError) -> CommandOutput {
+    transcripts_error_preserving_stdout(locale, error, &[])
 }
 
 fn transcripts_error_preserving_stdout(
+    locale: &str,
     error: ClientError,
     stdout_lines: &[String],
 ) -> CommandOutput {
     let stderr = match error {
-        ClientError::Unreachable { .. } => SERVICE_DOWN_MESSAGE.to_string(),
-        other => other.message().to_string(),
+        ClientError::Unreachable { .. } => crate::error::service_down_for(locale),
+        other => other.message_for(locale),
     };
     CommandOutput {
         stdout: if stdout_lines.is_empty() {

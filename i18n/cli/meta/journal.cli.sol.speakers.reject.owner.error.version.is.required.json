@@ -1,0 +1,23 @@
+{
+  "description": "Text shown by the speakers reject owner command.",
+  "context": "Text shown by the speakers reject owner command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "44d89b9a46aa8b219aee5d2dcfdfb1211d4bf14333b7707d6b4a6b0cbcfd204a",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "option_version",
+      "kind": "command",
+      "value": "--version"
+    }
+  ]
+}

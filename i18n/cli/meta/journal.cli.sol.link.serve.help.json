@@ -1,0 +1,98 @@
+{
+  "description": "Native link command output for link serve help. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link serve help. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2bb6c202f01572a535defd95a266545ddcedcf0b42cdd31eae8dcf6ccefa72d8",
+  "max_length": 3093,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "relay_url_relay_url_direct_rel",
+      "kind": "accepted-input",
+      "value": "                      [--relay-url RELAY_URL] [--direct | --relay-only]"
+    },
+    {
+      "name": "solstone_link_serve_h_label_la",
+      "kind": "accepted-input",
+      "value": "solstone link serve [-h] [--label LABEL] [--port PORT]"
+    },
+    {
+      "name": "space_24",
+      "kind": "whitespace",
+      "value": "                        "
+    },
+    {
+      "name": "relay_url_relay_url",
+      "kind": "accepted-input",
+      "value": "  --relay-url RELAY_URL"
+    },
+    {
+      "name": "label_label",
+      "kind": "accepted-input",
+      "value": "  --label LABEL"
+    },
+    {
+      "name": "space_14",
+      "kind": "whitespace",
+      "value": "              "
+    },
+    {
+      "name": "relay_only",
+      "kind": "accepted-input",
+      "value": "  --relay-only"
+    },
+    {
+      "name": "port_port",
+      "kind": "accepted-input",
+      "value": "  --port PORT"
+    },
+    {
+      "name": "space_12",
+      "kind": "whitespace",
+      "value": "            "
+    },
+    {
+      "name": "h_help",
+      "kind": "accepted-input",
+      "value": "  -h, --help"
+    },
+    {
+      "name": "space_11",
+      "kind": "whitespace",
+      "value": "           "
+    },
+    {
+      "name": "space_10",
+      "kind": "whitespace",
+      "value": "          "
+    },
+    {
+      "name": "direct",
+      "kind": "accepted-input",
+      "value": "  --direct"
+    },
+    {
+      "name": "space_9",
+      "kind": "whitespace",
+      "value": "         "
+    },
+    {
+      "name": "url",
+      "kind": "accepted-input",
+      "value": "URL"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

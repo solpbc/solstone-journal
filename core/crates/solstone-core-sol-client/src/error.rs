@@ -18,6 +18,7 @@ pub enum ClientError {
     },
     Timeout {
         detail: Option<String>,
+        presentation: Option<solstone_core_cli_copy::Diagnostic>,
     },
     MalformedSuccess {
         status: Option<u16>,
@@ -34,7 +35,23 @@ pub enum ClientError {
     },
 }
 
+pub fn service_down_for(locale: &str) -> String {
+    solstone_core_cli_copy::render_for(locale, "journal.cli.streams.supervisor", &[])
+}
+
 impl ClientError {
+    #[must_use]
+    pub fn message_for(&self, locale: &str) -> String {
+        let id = match self {
+            ClientError::Unreachable { .. } => "journal.cli.client.error.unreachable",
+            ClientError::Timeout { .. } => "journal.cli.client.error.timeout",
+            ClientError::MalformedSuccess { .. } => "journal.cli.client.error.malformed",
+            ClientError::UnreadableServerError { .. } => "journal.cli.client.error.unreadable",
+            ClientError::ReasonRejected { error, .. } => return error.to_owned(),
+        };
+        solstone_core_cli_copy::render_for(locale, id, &[])
+    }
+
     #[must_use]
     pub fn unreachable(detail: impl Into<Option<String>>) -> Self {
         Self::Unreachable {
@@ -46,6 +63,7 @@ impl ClientError {
     pub fn timeout(detail: impl Into<Option<String>>) -> Self {
         Self::Timeout {
             detail: detail.into(),
+            presentation: None,
         }
     }
 
@@ -73,11 +91,22 @@ impl ClientError {
     pub fn detail(&self) -> Option<&str> {
         match self {
             ClientError::Unreachable { detail }
-            | ClientError::Timeout { detail }
+            | ClientError::Timeout { detail, .. }
             | ClientError::ReasonRejected { detail, .. } => detail.as_deref(),
             ClientError::MalformedSuccess { .. } | ClientError::UnreadableServerError { .. } => {
                 None
             }
+        }
+    }
+
+    #[must_use]
+    pub fn detail_for(&self, locale: &str) -> Option<String> {
+        match self {
+            Self::Timeout {
+                presentation: Some(message),
+                ..
+            } => Some(message.render(locale)),
+            _ => self.detail().map(str::to_owned),
         }
     }
 

@@ -1,0 +1,28 @@
+{
+  "description": "Text shown by the speakers identify error command.",
+  "context": "Text shown by the speakers identify error command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "request_id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "abafa5437660f4efbebc3d3e751aa4b9b5001b926d49e3f26b100048174132ab",
+  "max_length": 177,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "option_request_id",
+      "kind": "command",
+      "value": "--request-id"
+    }
+  ]
+}

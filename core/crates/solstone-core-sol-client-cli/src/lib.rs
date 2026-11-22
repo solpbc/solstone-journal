@@ -15,15 +15,7 @@ pub mod help;
 
 /// Present a typed client failure on the command line. Server-provided reasons are data.
 pub fn display_client_error(error: &solstone_core_sol_client::error::ClientError) -> String {
-    use solstone_core_sol_client::error::ClientError;
-    let id = match error {
-        ClientError::Unreachable { .. } => "journal.cli.client.error.unreachable",
-        ClientError::Timeout { .. } => "journal.cli.client.error.timeout",
-        ClientError::MalformedSuccess { .. } => "journal.cli.client.error.malformed",
-        ClientError::UnreadableServerError { .. } => "journal.cli.client.error.unreadable",
-        ClientError::ReasonRejected { error, .. } => return error.to_owned(),
-    };
-    solstone_core_cli_copy::text(id)
+    error.message_for(solstone_core_cli_copy::cli_locale())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

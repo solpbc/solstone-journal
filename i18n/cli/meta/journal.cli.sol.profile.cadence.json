@@ -1,0 +1,16 @@
+{
+  "description": "Native profile command output for profile cadence. Keep literal arguments and command syntax intact.",
+  "context": "Native profile command output for profile cadence. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "42b9e0bc92468287598016cf206a6e5a8aabff71116743716271076a26e580d7",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

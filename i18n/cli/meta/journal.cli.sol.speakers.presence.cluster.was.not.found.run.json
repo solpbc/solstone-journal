@@ -1,0 +1,33 @@
+{
+  "description": "Text shown by the speakers presence command.",
+  "context": "Text shown by the speakers presence command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "cluster_id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cd1c05c9ee5bd3e3943ff258cb7b3ebe1721c89c9ea8a3237187cded6d3ed56b",
+  "max_length": 348,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone call speakers discover"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

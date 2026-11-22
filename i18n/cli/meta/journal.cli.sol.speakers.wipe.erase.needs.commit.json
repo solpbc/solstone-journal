@@ -1,0 +1,28 @@
+{
+  "description": "Text shown by the speakers wipe command.",
+  "context": "Text shown by the speakers wipe command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "15dece9d0bebb5bb1c939e877672c6ea693bc225a9453cc0390f3768994a2259",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "option_commit",
+      "kind": "command",
+      "value": "--commit"
+    },
+    {
+      "name": "option_erase",
+      "kind": "command",
+      "value": "--erase"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Native profile command output for profile entity id. Keep literal arguments and command syntax intact.",
+  "context": "Native profile command output for profile entity id. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "69bfd1608d46fd14e50e0f309d9dd9df981b99fedab340ca2d37992aa8a1c2f3",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

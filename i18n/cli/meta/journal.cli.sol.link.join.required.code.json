@@ -1,0 +1,23 @@
+{
+  "description": "Native link command output for link join required code. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link join required code. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2b785ec99ba1851ba007c6375f4b3377ff486e7cd1c5dd7030d277fb4ac310eb",
+  "max_length": 141,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "code",
+      "kind": "accepted-input",
+      "value": "--code"
+    }
+  ]
+}

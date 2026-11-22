@@ -12,6 +12,7 @@ store-test-hooks = []
 full-tests = []
 
 [dependencies]
+solstone-core-cli-copy.workspace = true
 base64 = "0.22.1"
 jiff = { workspace = true }
 rustix = { workspace = true }

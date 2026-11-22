@@ -1,0 +1,16 @@
+{
+  "description": "Text shown by the speakers discover command.",
+  "context": "Text shown by the speakers discover command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "effe1f5ae7b89b91879853885504a65b1542705419d55bc9c50c3a4ea29a2dce",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

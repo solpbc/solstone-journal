@@ -2,16 +2,17 @@
 // Copyright (c) 2026 sol pbc
 
 use serde_json::{Value, json};
+use solstone_core_cli_copy::{display_for, render_for};
 
 use crate::command::{CommandContext, CommandOutput};
 use crate::decode::decode_response;
-use crate::error::{ClientError, SERVICE_DOWN_MESSAGE};
+use crate::error::ClientError;
 use crate::json_format::json_pretty_utf8;
 use crate::transport::{ApiRequest, HttpMethod, QueryParam, TimeoutPolicy};
 
 #[must_use]
 pub fn list_candidates(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &[("--status", None)], &["--json"]) {
+    let (parsed, locale) = match parse_args(ctx, &[("--status", None)], &["--json"]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
@@ -23,7 +24,7 @@ pub fn list_candidates(ctx: CommandContext<'_>) -> CommandOutput {
         None,
     ) {
         Ok(payload) => payload,
-        Err(error) => return facets_error(error),
+        Err(error) => return facets_error(locale, error),
     };
     let mut rows = payload
         .get("items")
@@ -37,16 +38,22 @@ pub fn list_candidates(ctx: CommandContext<'_>) -> CommandOutput {
         return crate::agent_output::literal_output(stdout_json(&Value::Array(rows)));
     }
     if rows.is_empty() {
-        return stdout_line("No facet candidates found.");
+        return stdout_line(render_for(locale, "journal.cli.sol.call.facets.empty", &[]));
     }
     let mut lines = Vec::new();
     for row in &rows {
-        lines.push(format!(
-            "{}  [{}]  count={}  last={}",
-            crate::agent_output::literal_links(&display_or(row.get("name"), "")),
-            display_or(row.get("status"), ""),
-            display_value(row.get("count")),
-            display_or(row.get("last_surfaced"), ""),
+        lines.push(display_for(
+            locale,
+            "journal.cli.sol.call.facets.candidate",
+            [
+                (
+                    "name",
+                    &crate::agent_output::literal_links(&display_or(row.get("name"), "")),
+                ),
+                ("status", &display_or(row.get("status"), "")),
+                ("count", &display_value(row.get("count"))),
+                ("day", &display_or(row.get("last_surfaced"), "")),
+            ],
         ));
     }
     stdout(lines)
@@ -54,12 +61,17 @@ pub fn list_candidates(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn accept(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &[], &[]) {
+    let (parsed, locale) = match parse_args(ctx, &[], &[]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
     let Some(name_key) = parsed.positionals.first() else {
-        return missing_argument("call facets accept", "NAME_KEY");
+        return crate::args::typer_missing_for(
+            locale,
+            "call facets accept",
+            "call facets accept [OPTIONS] NAME_KEY",
+            crate::args::Missing::Argument("NAME_KEY"),
+        );
     };
     let result = match request_json(
         ctx,
@@ -69,19 +81,24 @@ pub fn accept(ctx: CommandContext<'_>) -> CommandOutput {
         Some(json!({"name_key": name_key})),
     ) {
         Ok(result) => result,
-        Err(error) => return facets_error(error),
+        Err(error) => return facets_error(locale, error),
     };
-    stdout_line(render_result(&result, "accept", name_key))
+    stdout_line(render_result(locale, &result, "accept", name_key))
 }
 
 #[must_use]
 pub fn dismiss(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &[], &[]) {
+    let (parsed, locale) = match parse_args(ctx, &[], &[]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
     let Some(name_key) = parsed.positionals.first() else {
-        return missing_argument("call facets dismiss", "NAME_KEY");
+        return crate::args::typer_missing_for(
+            locale,
+            "call facets dismiss",
+            "call facets dismiss [OPTIONS] NAME_KEY",
+            crate::args::Missing::Argument("NAME_KEY"),
+        );
     };
     let result = match request_json(
         ctx,
@@ -91,9 +108,9 @@ pub fn dismiss(ctx: CommandContext<'_>) -> CommandOutput {
         Some(json!({"name_key": name_key})),
     ) {
         Ok(result) => result,
-        Err(error) => return facets_error(error),
+        Err(error) => return facets_error(locale, error),
     };
-    stdout_line(render_result(&result, "dismiss", name_key))
+    stdout_line(render_result(locale, &result, "dismiss", name_key))
 }
 
 #[derive(Debug, Default)]
@@ -118,10 +135,12 @@ impl ParsedArgs {
 }
 
 fn parse_args(
-    args: &[String],
+    ctx: CommandContext<'_>,
     options: &[(&str, Option<&str>)],
     flags: &[&str],
-) -> Result<ParsedArgs, String> {
+) -> Result<(ParsedArgs, &'static str), String> {
+    let args = ctx.args;
+    let locale = ctx.human_locale_matching(|option| canonical_option(option, options).is_some());
     let mut parsed = ParsedArgs::default();
     let mut index = 0;
     while index < args.len() {
@@ -135,7 +154,7 @@ fn parse_args(
         } else if let Some(canonical) = canonical_option(token, options) {
             index += 1;
             let Some(value) = args.get(index) else {
-                return Err(format!("Error: option {token} requires an argument."));
+                return Err(crate::args::option_argument_for(locale, token));
             };
             parsed
                 .values
@@ -143,13 +162,13 @@ fn parse_args(
         } else if flags.contains(&token.as_str()) {
             parsed.flags.push(token.clone());
         } else if token.starts_with('-') {
-            return Err(format!("Error: unknown option {token}."));
+            return Err(crate::args::unknown_option_for(locale, token));
         } else {
             parsed.positionals.push(token.clone());
         }
         index += 1;
     }
-    Ok(parsed)
+    Ok((parsed, locale))
 }
 
 fn canonical_option<'a>(token: &str, options: &'a [(&'a str, Option<&'a str>)]) -> Option<&'a str> {
@@ -180,19 +199,40 @@ fn request_json(
     decode_response(&response)
 }
 
-fn render_result(result: &Value, action: &str, name_key: &str) -> String {
+fn render_result(locale: &str, result: &Value, action: &str, name_key: &str) -> String {
     let status = result.get("status").and_then(Value::as_str);
     match status {
-        Some("accepted") => format!(
-            "Accepted facet candidate '{name_key}' as '{}'.",
-            display_value(result.get("facet_slug"))
+        Some("accepted") => display_for(
+            locale,
+            "journal.cli.sol.call.facets.accepted",
+            [
+                ("name_key", &name_key),
+                ("facet", &display_value(result.get("facet_slug"))),
+            ],
         ),
-        Some("dismissed") => format!("Dismissed facet candidate '{name_key}'."),
-        Some("already_accepted") => format!("Facet candidate '{name_key}' already accepted."),
-        Some("already_dismissed") => format!("Facet candidate '{name_key}' already dismissed."),
-        other => format!(
-            "{action} result for '{name_key}': {}",
-            other.unwrap_or("None")
+        Some("dismissed") => display_for(
+            locale,
+            "journal.cli.sol.call.facets.dismissed",
+            [("name_key", &name_key)],
+        ),
+        Some("already_accepted") => display_for(
+            locale,
+            "journal.cli.sol.call.facets.already.accepted",
+            [("name_key", &name_key)],
+        ),
+        Some("already_dismissed") => display_for(
+            locale,
+            "journal.cli.sol.call.facets.already.dismissed",
+            [("name_key", &name_key)],
+        ),
+        other => display_for(
+            locale,
+            "journal.cli.sol.call.facets.action",
+            [
+                ("action", &action),
+                ("name_key", &name_key),
+                ("result", &other.unwrap_or("None")),
+            ],
         ),
     }
 }
@@ -213,34 +253,11 @@ fn stderr(value: impl AsRef<str>) -> CommandOutput {
     CommandOutput::failure(format!("{}\n", value.as_ref()), 1)
 }
 
-fn stderr_with_exit(value: impl Into<String>, exit: i32) -> CommandOutput {
-    CommandOutput {
-        stdout: String::new(),
-        stderr: value.into(),
-        exit,
-    }
-}
-
-fn facets_error(error: ClientError) -> CommandOutput {
+fn facets_error(locale: &str, error: ClientError) -> CommandOutput {
     match error {
-        ClientError::Unreachable { .. } => stderr(SERVICE_DOWN_MESSAGE),
-        other => stderr(other.message()),
+        ClientError::Unreachable { .. } => stderr(crate::error::service_down_for(locale)),
+        other => stderr(other.message_for(locale)),
     }
-}
-
-fn missing_argument(command: &str, name: &str) -> CommandOutput {
-    let message = format!("Missing argument '{name}'.");
-    let spaces = " ".repeat(77_usize.saturating_sub(message.chars().count()));
-    stderr_with_exit(
-        format!(
-            "Usage: {command} [OPTIONS] {name}\n\
-Try '{command} --help' for help.\n\
-╭─ Error ──────────────────────────────────────────────────────────────────────╮\n\
-│ {message}{spaces}│\n\
-╰──────────────────────────────────────────────────────────────────────────────╯\n"
-        ),
-        2,
-    )
 }
 
 fn display_or(value: Option<&Value>, default: &str) -> String {

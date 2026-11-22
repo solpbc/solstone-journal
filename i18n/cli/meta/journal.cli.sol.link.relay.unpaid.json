@@ -1,0 +1,23 @@
+{
+  "description": "Native link command output for link relay unpaid. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link relay unpaid. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dbfa1f39efba576e751d09bd463fb4eff3b1c3622bdee51ddb5eacf0feabe804",
+  "max_length": 270,
+  "risk": "payment",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "direct",
+      "kind": "accepted-input",
+      "value": "--direct"
+    }
+  ]
+}

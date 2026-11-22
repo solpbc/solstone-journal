@@ -1,0 +1,23 @@
+{
+  "description": "Native link command output for link serve runtime unavailable. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link serve runtime unavailable. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "75c80f5f25fb4c5c31930a514d15fa967a7160c1cf98da5848c039bafd945fba",
+  "max_length": 225,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_core",
+      "kind": "accepted-input",
+      "value": "solstone-core"
+    }
+  ]
+}

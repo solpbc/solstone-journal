@@ -1,0 +1,21 @@
+{
+  "description": "Native link command output for link argument unrecognized. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link argument unrecognized. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "unknown",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8b66c815a373ed5ac63249fe0da210125c5e1327d13797764f04c3de5ce1aa70",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

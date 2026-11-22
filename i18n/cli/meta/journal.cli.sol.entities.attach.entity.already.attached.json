@@ -1,0 +1,21 @@
+{
+  "description": "Text shown by the entities attach command.",
+  "context": "Text shown by the entities attach command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "entity",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "20acd62fab91f5bc30cb8be3ced7025417f6c8c4c5c1876a10286e91f8275d3e",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

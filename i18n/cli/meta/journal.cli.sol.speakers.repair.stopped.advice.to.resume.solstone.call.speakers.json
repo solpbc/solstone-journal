@@ -1,0 +1,38 @@
+{
+  "description": "Text shown by the speakers repair stopped advice command.",
+  "context": "Text shown by the speakers repair stopped advice command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "operation_id",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1d646e666e80338341cc394fc57efa4a7c9fe83b7c8e9a5fc1fd26e51ae1c590",
+  "max_length": 297,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "command",
+      "value": "solstone call speakers repair-resume"
+    },
+    {
+      "name": "spacing_2",
+      "kind": "whitespace",
+      "value": "  "
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Text shown by the entities overview command.",
+  "context": "Text shown by the entities overview command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "228a886363aeff38e8cbd0066f9e0139fb00c4085985a6b636417815b47b10e5",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

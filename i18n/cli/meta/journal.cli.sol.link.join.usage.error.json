@@ -1,0 +1,43 @@
+{
+  "description": "Native link command output for link join usage error. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link join usage error. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b8fffbda9affe5c4dfcf39cfd7ad974eae00b99874aebcbc864609ef42bf2254",
+  "max_length": 465,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_link_join_h_home_home",
+      "kind": "accepted-input",
+      "value": "solstone link join [-h] [--home HOME] --code CODE [--as AS_ROLE]"
+    },
+    {
+      "name": "label_label_mark_mark",
+      "kind": "accepted-input",
+      "value": "                     [--label LABEL] [--mark MARK]"
+    },
+    {
+      "name": "solstone_link_join",
+      "kind": "accepted-input",
+      "value": "solstone link join"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

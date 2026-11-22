@@ -1,0 +1,25 @@
+{
+  "description": "Text shown by the entities delete entity command.",
+  "context": "Text shown by the entities delete entity command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "entity_id",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "336423b8c0373b4c0b7e024a9222abe9a4b9b12450096c6749eeb6e649b89f79",
+  "max_length": 156,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

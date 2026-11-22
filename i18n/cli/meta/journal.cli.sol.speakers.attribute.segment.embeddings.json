@@ -1,0 +1,41 @@
+{
+  "description": "Complete counted speakers summary for render attribute segment.",
+  "context": "Complete counted speakers summary for render attribute segment.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "entity_id",
+      "type": "string"
+    },
+    {
+      "name": "embeddings",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "a0b46efcfe67baea1083e8ecfae5990fa6cda9775c9fbc8ec237aed8b28d469f",
+  "max_length": 465,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "spacing_2",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

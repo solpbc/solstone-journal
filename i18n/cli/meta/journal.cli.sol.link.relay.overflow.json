@@ -1,0 +1,28 @@
+{
+  "description": "Native link command output for link relay overflow. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link relay overflow. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0bb77b85b0db80737dce21ca828ec1e35a40812d2833aac3ce72b7f15baa2f73",
+  "max_length": 234,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "direct",
+      "kind": "accepted-input",
+      "value": "--direct"
+    },
+    {
+      "name": "lan_vpn",
+      "kind": "accepted-input",
+      "value": "LAN/VPN"
+    }
+  ]
+}

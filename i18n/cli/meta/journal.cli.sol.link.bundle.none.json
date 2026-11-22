@@ -1,0 +1,28 @@
+{
+  "description": "Native link command output for link bundle none. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link bundle none. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f9dd7840f9c91c2a737e5c883e24dc725e690a9db7f1f46580ccf2466b4934f7",
+  "max_length": 267,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_link_join",
+      "kind": "accepted-input",
+      "value": "solstone link join"
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Text shown by the entities list.attached command.",
+  "context": "Text shown by the entities list.attached command.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "8c1ade14db6b41380c33da847ae05eadc7be7f84716e5527a38d5fb98b9ba908",
+  "max_length": 300,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

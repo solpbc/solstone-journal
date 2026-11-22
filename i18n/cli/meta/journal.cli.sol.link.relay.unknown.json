@@ -1,0 +1,23 @@
+{
+  "description": "Native link command output for link relay unknown. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link relay unknown. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "97d4bb71b8e7e5577409cce193fedf9dede0bda20e74b15b474aa57a7a32e102",
+  "max_length": 207,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_link_join",
+      "kind": "accepted-input",
+      "value": "solstone link join"
+    }
+  ]
+}

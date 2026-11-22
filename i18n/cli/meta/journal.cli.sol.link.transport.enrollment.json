@@ -1,0 +1,23 @@
+{
+  "description": "Native link command output for link transport enrollment. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link transport enrollment. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "050bc9c1f5db7f9c0bc448bb89a23d12e6616b52c26cc1605bcc13782f017b6e",
+  "max_length": 309,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_link_join",
+      "kind": "accepted-input",
+      "value": "solstone link join"
+    }
+  ]
+}

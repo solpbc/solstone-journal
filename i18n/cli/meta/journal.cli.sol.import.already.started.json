@@ -1,0 +1,23 @@
+{
+  "description": "Native import command output for import already started. Keep literal arguments and command syntax intact.",
+  "context": "Native import command output for import already started. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ea8c79bdfc3ac51249b2e901330f6acd9dd8ab2441be30d858c8a01c0886a73e",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

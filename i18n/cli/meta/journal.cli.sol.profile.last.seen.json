@@ -1,0 +1,21 @@
+{
+  "description": "Native profile command output for profile last seen. Keep literal arguments and command syntax intact.",
+  "context": "Native profile command output for profile last seen. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b52eddc4096d8d49cff68bd60e317bab863e612e9231f0db402ec7333c63435c",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

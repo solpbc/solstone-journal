@@ -1,0 +1,28 @@
+{
+  "description": "Native link command output for link serve port invalid. Keep literal arguments and command syntax intact.",
+  "context": "Native link command output for link serve port invalid. Keep literal arguments and command syntax intact.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "54022b73c873980d300a4b4b6a2e63a12641331b6d36a408332a4595459b5105",
+  "max_length": 153,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "port",
+      "kind": "accepted-input",
+      "value": "--port"
+    }
+  ]
+}

@@ -11,6 +11,14 @@ use crate::transport::{ApiRequest, HttpMethod, TimeoutPolicy};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
+/// Select a plural form while preserving the exact count in its separate display argument.
+/// Above the portable catalog range, the final six digits cover the supported CLDR rules.
+pub(crate) fn count_selector(count: u64) -> solstone_core_cli_copy::Value<'static> {
+    let quantity =
+        i32::try_from(count).map_or_else(|_| 1_000_000 + (count % 1_000_000) as i64, i64::from);
+    solstone_core_cli_copy::Value::Cardinal(quantity)
+}
+
 #[derive(Clone, Copy)]
 pub struct CommandContext<'a> {
     pub args: &'a [String],
@@ -25,6 +33,59 @@ pub struct CommandContext<'a> {
     pub link_pairing: Option<&'a dyn LinkJoinPairingSeam>,
     pub link_serve: Option<&'a dyn LinkServeRunner>,
     pub link_status_probe: Option<&'a dyn LinkStatusProbe>,
+}
+
+impl CommandContext<'_> {
+    /// Select display copy for this invocation. Machine switches keep their source English.
+    #[must_use]
+    pub fn human_locale(self) -> &'static str {
+        self.human_locale_with_options(&[])
+    }
+
+    pub(crate) fn human_locale_with_options(self, options: &[&str]) -> &'static str {
+        self.human_locale_matching(|token| options.contains(&token))
+    }
+
+    pub(crate) fn human_locale_matching(self, takes_value: impl Fn(&str) -> bool) -> &'static str {
+        self.locale_for_args(takes_value, false)
+    }
+
+    pub(crate) fn human_locale_before_separator(self, options: &[&str]) -> &'static str {
+        self.locale_for_args(|token| options.contains(&token), true)
+    }
+
+    fn locale_for_args(
+        self,
+        takes_value: impl Fn(&str) -> bool,
+        stop_at_separator: bool,
+    ) -> &'static str {
+        let locale = solstone_core_cli_copy::packaged_locale(
+            self.env.get("SOLSTONE_LOCALE").map(String::as_str),
+        );
+        if locale == solstone_core_cli_copy::ENGLISH {
+            return locale;
+        }
+        let mut args = self.args.iter().peekable();
+        while let Some(arg) = args.next() {
+            if stop_at_separator && arg == "--" {
+                break;
+            }
+            let structured = matches!(
+                arg.as_str(),
+                "--json" | "--jsonl" | "--format=json" | "--format=jsonl"
+            ) || (arg == "--format"
+                && args
+                    .peek()
+                    .is_some_and(|next| matches!(next.as_str(), "json" | "jsonl")));
+            if structured {
+                return solstone_core_cli_copy::ENGLISH;
+            }
+            if takes_value(arg) {
+                args.next();
+            }
+        }
+        locale
+    }
 }
 
 /// Where a command's piped body comes from.
@@ -52,10 +113,24 @@ impl<'a> From<&'a str> for Stdin<'a> {
 impl Stdin<'_> {
     /// The body, read now. A read failure is the command's output.
     pub fn read(self) -> Result<String, CommandOutput> {
+        self.read_for(solstone_core_cli_copy::ENGLISH)
+    }
+
+    pub fn read_for(self, locale: &str) -> Result<String, CommandOutput> {
         match self {
             Self::Text(text) => Ok(text.to_owned()),
             Self::Source(source) => source.read_body().map_err(|error| {
-                CommandOutput::failure(format!("native solstone stdin read failed: {error}\n"), 75)
+                CommandOutput::failure(
+                    format!(
+                        "{}\n",
+                        solstone_core_cli_copy::display_for(
+                            locale,
+                            "journal.cli.client.stdin.read",
+                            [("error", &error)]
+                        )
+                    ),
+                    75,
+                )
             }),
         }
     }
@@ -116,24 +191,80 @@ pub fn journal_today(ctx: CommandContext<'_>) -> Result<String, ClientError> {
 /// "tomorrow". `None` for a key that is not a date.
 #[must_use]
 pub fn format_erase_day(day: &str, today: Option<&str>) -> Option<String> {
+    format_erase_day_for(solstone_core_cli_copy::ENGLISH, day, today)
+}
+
+fn format_erase_day_for(locale: &str, day: &str, today: Option<&str>) -> Option<String> {
+    use solstone_core_cli_copy::{MessageDetail, display_for};
     if day.len() != 8 || !day.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
     }
     let date = solstone_core_time::parse_day(day)?;
-    let mut text = date.strftime("%a %b %-d").to_string().to_lowercase();
-    if today.and_then(|today| today.get(..4)) != day.get(..4) {
-        text.push_str(&date.strftime(" '%y").to_string());
-    }
-    Some(text)
+    let weekday_id = [
+        "journal.window.home.week.day.short.mon",
+        "journal.window.home.week.day.short.tue",
+        "journal.window.home.week.day.short.wed",
+        "journal.window.home.week.day.short.thu",
+        "journal.window.home.week.day.short.fri",
+        "journal.window.home.week.day.short.sat",
+        "journal.window.home.week.day.short.sun",
+    ][date.weekday().to_monday_zero_offset() as usize];
+    let weekday = MessageDetail::window(weekday_id, []).render(locale);
+    let month_id = [
+        "journal.window.shared.date.format.months.since.jan",
+        "journal.window.shared.date.format.months.since.feb",
+        "journal.window.shared.date.format.months.since.mar",
+        "journal.window.shared.date.format.months.since.apr",
+        "journal.window.shared.date.format.months.since.may",
+        "journal.window.shared.date.format.months.since.jun",
+        "journal.window.shared.date.format.months.since.jul",
+        "journal.window.shared.date.format.months.since.aug",
+        "journal.window.shared.date.format.months.since.sep",
+        "journal.window.shared.date.format.months.since.oct",
+        "journal.window.shared.date.format.months.since.nov",
+        "journal.window.shared.date.format.months.since.dec",
+    ][(date.month() - 1) as usize];
+    let month = MessageDetail::window(month_id, []).render(locale);
+    let day_number = date.day();
+    Some(if today.and_then(|today| today.get(..4)) == day.get(..4) {
+        display_for(
+            locale,
+            "journal.cli.client.date.short",
+            [
+                ("weekday", &weekday),
+                ("month", &month),
+                ("day", &day_number),
+            ],
+        )
+    } else {
+        display_for(
+            locale,
+            "journal.cli.client.date.short.year",
+            [
+                ("weekday", &weekday),
+                ("month", &month),
+                ("day", &day_number),
+                ("year", &date.strftime("%y")),
+            ],
+        )
+    })
 }
 
 /// The day a delete's answer says its thing is erased on (`trash.erase_day`),
 /// written for the owner with [`format_erase_day`]. Asks the journal for its
 /// today to know the year; without it the year is always written.
 pub fn erase_day_of(ctx: CommandContext<'_>, answer: &Value) -> Option<String> {
+    erase_day_of_for(ctx.human_locale(), ctx, answer)
+}
+
+pub(crate) fn erase_day_of_for(
+    locale: &str,
+    ctx: CommandContext<'_>,
+    answer: &Value,
+) -> Option<String> {
     let day = answer.pointer("/trash/erase_day").and_then(Value::as_str)?;
     let today = journal_today(ctx).ok();
-    format_erase_day(day, today.as_deref())
+    format_erase_day_for(locale, day, today.as_deref())
 }
 
 /// What the command line says of a thing it moved to the trash: its name,
@@ -173,8 +304,21 @@ pub fn backups_choice(
     from: bool,
     not_from: bool,
 ) -> Result<BackupsChoice, String> {
+    backups_choice_for(ctx.human_locale(), ctx, from, not_from)
+}
+
+pub(crate) fn backups_choice_for(
+    locale: &str,
+    ctx: CommandContext<'_>,
+    from: bool,
+    not_from: bool,
+) -> Result<BackupsChoice, String> {
     if from && not_from {
-        return Err("Error: choose --from-backups or --not-from-backups, not both.".to_owned());
+        return Err(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.client.erase.backups.conflict",
+            &[],
+        ));
     }
     if not_from {
         return Ok(BackupsChoice::default());
@@ -194,7 +338,11 @@ pub fn backups_choice(
     // Not known is not "not set up": a setting that ticks it is never dropped
     // without a word.
     if state.is_none() {
-        return Err(BACKUPS_UNCHECKED.to_owned());
+        return Err(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.client.erase.backups.unchecked",
+            &[],
+        ));
     }
     let set_up = state
         .as_ref()
@@ -202,7 +350,11 @@ pub fn backups_choice(
         .and_then(Value::as_bool)
         .unwrap_or(false);
     if from && !set_up {
-        return Err(NO_BACKUP_SET_UP.to_owned());
+        return Err(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.client.erase.backups.missing",
+            &[],
+        ));
     }
     let available = state
         .as_ref()
@@ -210,7 +362,11 @@ pub fn backups_choice(
         .and_then(Value::as_bool)
         .unwrap_or(false);
     if from && !available {
-        return Err(NOT_AVAILABLE_HERE.to_owned());
+        return Err(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.client.erase.backups.unavailable",
+            &[],
+        ));
     }
     let set_up = set_up && available;
     let setting = state
@@ -236,6 +392,52 @@ pub fn backups_next_line(choice: BackupsChoice) -> Option<&'static str> {
         (false, _) => None,
         (true, false) => Some("Removing it from your backups next."),
         (true, true) => Some("Removing it from your backups once you resume backup."),
+    }
+}
+
+pub fn backups_next_line_for(locale: &str, choice: BackupsChoice) -> Option<String> {
+    match (choice.chosen, choice.paused) {
+        (false, _) => None,
+        (true, false) => Some(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.client.erase.backups.next",
+            &[],
+        )),
+        (true, true) => Some(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.client.erase.backups.resume",
+            &[],
+        )),
+    }
+}
+
+pub fn moved_to_trash_line_for(
+    locale: &str,
+    name: &str,
+    erase_failed: bool,
+    day: Option<&str>,
+) -> String {
+    match (erase_failed, day) {
+        (false, None) => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.client.trash.moved",
+            [("name", &name)],
+        ),
+        (false, Some(day)) => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.client.trash.moved.day",
+            [("name", &name), ("day", &day)],
+        ),
+        (true, None) => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.client.trash.moved.failed",
+            [("name", &name)],
+        ),
+        (true, Some(day)) => solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.client.trash.moved.failed.day",
+            [("name", &name), ("day", &day)],
+        ),
     }
 }
 
