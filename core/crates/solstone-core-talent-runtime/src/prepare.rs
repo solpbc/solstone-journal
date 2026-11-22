@@ -137,6 +137,7 @@ pub fn prepare(
     }
     let sources = composed.get("sources").and_then(Value::as_object).cloned();
     let mut entry_sources = Vec::new();
+    let mut topic_input_kinds = None;
     let mut speaker_count = None;
     let mut passage_digest = None;
     let mut entry_layout = solstone_core_transcripts::TranscriptLayout::default();
@@ -162,6 +163,9 @@ pub fn prepare(
         let mut transcript = loaded.text;
         let counts = loaded.counts;
         entry_sources = loaded.sources;
+        if name == "sense" {
+            topic_input_kinds = loaded.input_kinds;
+        }
         entry_layout = loaded.layout;
         if mode == PrepareMode::Preview
             && entry_layout.entries.iter().any(|offset| {
@@ -395,6 +399,7 @@ pub fn prepare(
     crate::product_names::prepare(&context.journal, &name, &mut composed, &entry_sources);
     let mut prepared = PreparedTalent::new(name, composed);
     prepared.participation_floor = participation_floor;
+    prepared.topic_input_kinds = topic_input_kinds;
     prepared.log_generate_input = logs_talent_requests(&context.journal);
     // Work's message notes read the raw request, before any floor packet.
     if prepared.name == "work" {
@@ -439,6 +444,11 @@ pub fn prepare(
         if prepared.terminal_reading.is_none() && prepared.floor_reading.is_none() {
             prepared.floor_reading =
                 crate::browser_reading::floor_reading(&prepared.config, &context.journal);
+            if prepared.floor_reading.is_some()
+                && let Some(kinds) = &mut prepared.topic_input_kinds
+            {
+                kinds.insert(solstone_core_format::content::AdmittedCategory::ScreenText);
+            }
         }
     }
     prepared.passage_layout = passage_digest.map(|digest| (digest, entry_layout));
@@ -1629,7 +1639,12 @@ mod tests {
 
     /// The shipped Sense prompt and schema over one transcript in a journal with
     /// `desk-a` and `home` enabled.
-    fn prepare_shipped_sense(stream: &str, file: &str, header: Value) -> PreparedTalent {
+    fn prepare_shipped_sense(
+        stream: &str,
+        file: &str,
+        header: Value,
+        additional_files: &[(&str, &str)],
+    ) -> PreparedTalent {
         let root = tempfile::tempdir().expect("root");
         let payload = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../payload/solstone");
         let talent_root = root.path().join("talent");
@@ -1665,6 +1680,9 @@ mod tests {
             transcript += &(json!({"start":"00:00:01","text":text}).to_string() + "\n");
         }
         fs::write(segment.join(file), transcript).expect("transcript");
+        for &(name, text) in additional_files {
+            fs::write(segment.join(name), text).expect("additional input");
+        }
         for name in ["sense.md", "sense.schema.json"] {
             fs::copy(payload.join("talent").join(name), talent_root.join(name))
                 .expect("talent copy");
@@ -1708,7 +1726,7 @@ mod tests {
                 json!({"imported":{"id":"20260101_090000","facet":"desk-a"},"raw":"../../../imports/20260101_090000/note.md","untimed":true,"topics":"lease terms","setting":"workplace"}),
             ),
         ] {
-            let prepared = prepare_shipped_sense(stream, file, header);
+            let prepared = prepare_shipped_sense(stream, file, header, &[]);
             assert_eq!(
                 sense_facet_choices(&prepared),
                 (json!(["desk-a"]), json!(["high"]), json!(1)),
@@ -1748,7 +1766,7 @@ mod tests {
                 json!({"imported":{"id":"20260101_090000","facet":"gone"},"raw":"../../../imports/20260101_090000/note.md"}),
             ),
         ] {
-            let prepared = prepare_shipped_sense(stream, file, header);
+            let prepared = prepare_shipped_sense(stream, file, header, &[]);
             assert_eq!(
                 sense_facet_choices(&prepared),
                 (
@@ -1763,6 +1781,42 @@ mod tests {
                 instruction.contains("Home Things"),
                 "{stream}: {instruction}"
             );
+        }
+    }
+
+    #[test]
+    fn sense_persists_journal_owned_input_kinds_with_its_output() {
+        use solstone_core_format::content::topics::SENSE_INPUT_KINDS;
+        let output = tempfile::tempdir().unwrap();
+        for (files, expected) in [
+            (&[][..], json!(["transcripts"])),
+            (
+                &[(
+                    "screen.jsonl",
+                    concat!(
+                        r#"{"frame_id":1,"timestamp":13,"requests":[],"analysis":{"visual_description":"An open editor","primary":"coding","secondary":"none","overlap":false},"content":{"text":"A function in a document"}}"#,
+                        "\n",
+                    ),
+                )][..],
+                json!(["transcripts", "screen_text"]),
+            ),
+        ] {
+            let mut prepared =
+                prepare_shipped_sense("default", "audio.jsonl", json!({"raw":"audio.flac"}), files);
+            let path = output.path().join("sense.json");
+            prepared.config.insert("output_path".into(), json!(path));
+            let context = ExecutionContext {
+                journal: output.path().into(),
+            };
+            crate::writers::write_output_if_configured(
+                &prepared,
+                &context,
+                r#"{"topics":["Shared ideas"],"_topic_input_kinds":["photos"]}"#,
+            )
+            .unwrap();
+            let written: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+            assert_eq!(written["topics"], json!(["Shared ideas"]));
+            assert_eq!(written[SENSE_INPUT_KINDS], expected);
         }
     }
 

@@ -114,6 +114,67 @@ fn sense_partial_projections_replace_their_notice_with_the_result() {
     }
 }
 
+#[test]
+fn published_topics_bind_the_exact_text_through_partial_and_empty_results() {
+    use solstone_core_format::content::topics::{SENSE_INPUT_KINDS, TopicDocument};
+
+    let (_journal, context) = fixture_journal();
+    let segment = context.day_dir.join("default/120000_60");
+    let path = format!("{DAY}/default/120000_60/talents/topics.md");
+    let mut log = RunLogWriter::open(&context.journal, DAY, "segment");
+    let publish = |log: &mut RunLogWriter, words: &[&str], partial: bool, topics: &[&str]| {
+        let mut sense = serde_json::json!({
+            "density": "active", "content_type": "social", "activity_summary": "Talked.",
+            "facets": [], "topics": topics,
+        });
+        sense[SENSE_INPUT_KINDS] = serde_json::json!(words);
+        if partial {
+            sense["partial_input"] = serde_json::json!({"dropped_entries": 2});
+        }
+        write_sense_and_change(
+            &context,
+            log,
+            "120000_60",
+            Some("default"),
+            &segment,
+            sense.as_object().unwrap(),
+        )
+        .unwrap();
+        TopicDocument::read(&context.journal, &path).unwrap()
+    };
+    let speech = publish(&mut log, &["transcripts"], false, &["Shared ideas"]);
+    assert_eq!(speech.kinds, Some([AdmittedCategory::Transcripts].into()));
+    assert!(speech.text.contains("Shared ideas"));
+    let mixed = publish(
+        &mut log,
+        &["transcripts", "screen_text"],
+        false,
+        &["Shared ideas"],
+    );
+    assert_eq!(mixed.text, speech.text);
+    assert_eq!(
+        mixed.kinds,
+        Some([AdmittedCategory::Transcripts, AdmittedCategory::ScreenText].into())
+    );
+    let partial = publish(
+        &mut log,
+        &["transcripts", "screen_text"],
+        true,
+        &["Shared ideas"],
+    );
+    assert!(partial.text.contains("Left out:"));
+    assert_eq!(partial.kinds, mixed.kinds);
+    let empty = publish(&mut log, &["transcripts"], false, &[]);
+    assert!(empty.text.is_empty());
+    assert_eq!(empty.kinds, speech.kinds);
+    // An interrupted write or damaged record must not inherit the narrower set.
+    fs::write(segment.join("talents/topics.md"), &mixed.text).unwrap();
+    assert_eq!(
+        TopicDocument::read(&context.journal, &path).unwrap().kinds,
+        None
+    );
+}
+
 fn fixture_journal() -> (tempfile::TempDir, ThinkContext) {
     let journal = tempfile::tempdir().unwrap();
     let config_path = journal.path().join("config/journal.json");

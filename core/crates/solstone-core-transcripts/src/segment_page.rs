@@ -87,6 +87,15 @@ pub struct SegmentClock {
     pub exclusive_end_seconds: u32,
 }
 
+impl SegmentClock {
+    pub fn overlaps(&self, from: u32, to: u32) -> bool {
+        if self.start_seconds == self.exclusive_end_seconds {
+            return (from..to).contains(&self.start_seconds);
+        }
+        self.start_seconds.max(from) < self.exclusive_end_seconds.min(to)
+    }
+}
+
 pub fn segment_clock(directory_name: &str) -> Option<SegmentClock> {
     let key = solstone_core_format::segment::segment_key(directory_name)?;
     let (time_part, length_part) = key.split_once('_')?;
@@ -517,7 +526,8 @@ pub fn segment_has_permitted_files(
     segment: &Segment,
     permissions: &BTreeSet<solstone_core_format::content::AdmittedCategory>,
 ) -> bool {
-    permitted_transcript_files(segment, Some(permissions)).is_ok()
+    permitted_transcript_files(segment, Some(permissions))
+        .is_ok_and(|files| !files.paths.is_empty() || !files.content_kinds.is_empty())
 }
 
 fn has_screen_media(segment: &Path, origin: &str) -> Result<bool, SegmentTranscriptReadError> {

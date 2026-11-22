@@ -14,9 +14,9 @@ use solstone_core_format::agent_memory::{Coordinate, Origin, SourceKey};
 use solstone_core_format::content::conversation::{self, ConversationMedium};
 use solstone_core_format::content::strava_body::STRAVA_STREAM;
 use solstone_core_format::content::{
-    Family, RawPerceptFamily, iter_talent_text_projections, parse_raw_percept_records,
-    produce_browser_attended_chunks, produce_chunks, produce_raw_percept_chunks_by_shape,
-    produce_screen_talent_raw_screen_chunks,
+    AdmittedCategory, Family, RawPerceptFamily, iter_talent_text_projections,
+    parse_raw_percept_records, produce_browser_attended_chunks, produce_chunks,
+    produce_raw_percept_chunks_by_shape, produce_screen_talent_raw_screen_chunks,
 };
 use solstone_core_format::segment::segment_parse;
 use solstone_core_journal_io::paths::{PathOrDay, StreamLocation, iter_segments};
@@ -154,6 +154,9 @@ pub struct ScreenTranscript {
     /// What each rendered entry was rendered from, in transcript order.
     pub sources: Vec<Option<EntrySource>>,
     pub layout: TranscriptLayout,
+    /// Permissions for the rendered source material, independent of whether
+    /// the renderer retained a copy of the raw producer records.
+    pub input_kinds: Option<BTreeSet<AdmittedCategory>>,
 }
 
 /// Where the renderer wrote the transcript's own headings, as byte offsets
@@ -193,6 +196,7 @@ impl ScreenTranscript {
             cuts: Vec::new(),
             sources: Vec::new(),
             layout: TranscriptLayout::default(),
+            input_kinds: None,
         }
     }
 }
@@ -343,6 +347,8 @@ struct Entry {
     segment_start: DateTime,
     segment_end: DateTime,
     prefix: &'static str,
+    input_kind: Option<AdmittedCategory>,
+    additional_messages: bool,
     content: String,
     stream: Option<String>,
     output_name: Option<String>,
@@ -1159,7 +1165,7 @@ fn process_segment(
         for path in markdown {
             match fs::read_to_string(path) {
                 Ok(content) if !content.trim().is_empty() => {
-                    entries.push(entry(
+                    let mut item = entry(
                         start,
                         end,
                         segment,
@@ -1177,7 +1183,22 @@ fn process_segment(
                         .join(""),
                         stream.clone(),
                         None,
-                    ));
+                    );
+                    let relative = format!(
+                        "{day}/{}/{}/{}",
+                        stream.as_deref().unwrap_or("_default"),
+                        segment.key,
+                        path.file_name()
+                            .and_then(|name| name.to_str())
+                            .unwrap_or_default(),
+                    );
+                    item.input_kind = Some(
+                        solstone_core_format::content::kinds::segment_file_permission(&relative),
+                    );
+                    if conversation::unresolved_markdown(&relative) {
+                        item.additional_messages = true;
+                    }
+                    entries.push(item);
                 }
                 Ok(_) => {}
                 Err(error) => {
@@ -1221,7 +1242,7 @@ fn process_segment(
                     .collect::<Vec<_>>()
                     .join("\n\n");
                     if !content.is_empty() {
-                        entries.push(entry(
+                        let mut item = entry(
                             start,
                             end,
                             segment,
@@ -1229,7 +1250,9 @@ fn process_segment(
                             content,
                             stream.clone(),
                             None,
-                        ));
+                        );
+                        item.input_kind = Some(AdmittedCategory::Body);
+                        entries.push(item);
                     }
                 }
                 Err(error) => {
@@ -1258,7 +1281,7 @@ fn process_segment(
                 RawPerceptFamily::Audio,
                 PerceptProjection::Generic,
             ) {
-                entries.push(entry(
+                let mut item = entry(
                     start,
                     end,
                     segment,
@@ -1266,7 +1289,9 @@ fn process_segment(
                     content.text,
                     stream.clone(),
                     None,
-                ));
+                );
+                item.input_kind = Some(AdmittedCategory::Photos);
+                entries.push(item);
             }
         }
     }
@@ -1499,6 +1524,8 @@ fn process_segment(
                             segment_start: start,
                             segment_end: end,
                             prefix: "agent_output",
+                            input_kind: None,
+                            additional_messages: false,
                             content: projection.text,
                             stream: stream.clone(),
                             output_name: Some(projection.stem),
@@ -2115,6 +2142,16 @@ fn entry(
         segment_start: start,
         segment_end: end,
         prefix,
+        input_kind: match prefix {
+            "transcript" | "spoken" | "conversation" => Some(AdmittedCategory::Transcripts),
+            "written" => Some(AdmittedCategory::Messages),
+            "memory_original" => Some(AdmittedCategory::Notes),
+            "percept" | "browser" | "protected_video" | "desktop_activity" => {
+                Some(AdmittedCategory::ScreenText)
+            }
+            _ => None,
+        },
+        additional_messages: prefix == "conversation",
         content,
         stream,
         output_name,
@@ -2170,6 +2207,7 @@ fn groups_to_markdown(mut entries: Vec<Entry>) -> ScreenTranscript {
     let mut source_ranges = Vec::new();
     let mut group_lines = Vec::new();
     let mut entry_lines = Vec::new();
+    let mut input_kinds = Some(BTreeSet::new());
     for group in groups {
         let first = &group[0];
         group_lines.push(lines.len());
@@ -2209,6 +2247,16 @@ fn groups_to_markdown(mut entries: Vec<Entry>) -> ScreenTranscript {
                     entry.output_name.as_deref().unwrap_or("output")
                 )),
                 _ => continue,
+            }
+            if let Some(kinds) = &mut input_kinds {
+                if let Some(kind) = entry.input_kind {
+                    kinds.insert(kind);
+                    if entry.additional_messages {
+                        kinds.insert(AdmittedCategory::Messages);
+                    }
+                } else {
+                    input_kinds = None;
+                }
             }
             entry_lines.push(entry_heading_line);
             sources.push(entry.source);
@@ -2300,6 +2348,7 @@ fn groups_to_markdown(mut entries: Vec<Entry>) -> ScreenTranscript {
         cuts,
         sources,
         layout,
+        input_kinds,
     }
 }
 

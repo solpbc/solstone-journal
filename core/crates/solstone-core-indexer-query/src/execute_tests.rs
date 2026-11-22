@@ -1438,7 +1438,7 @@ fn search_excludes_authored_chat_rows_and_leaves_cleanup_to_indexing() {
 #[test]
 fn connection_search_uses_classification_and_never_serializes_scores() {
     let (root, connection) = seeded_root("connection-boundary");
-    let path = "20260107/default/123456_300/talents/topics.md";
+    let path = "20260107/default/123456_300/talents/audio.md";
     insert(
         &connection,
         "visible boundary text",
@@ -1895,7 +1895,7 @@ fn connection_refusals_and_unknown_categories_are_typed() {
 #[test]
 fn connection_no_tokenizable_query_probes_coverage_and_degraded_state() {
     let (root, connection) = building_root("connection-no-tokenizable");
-    let path = "20260107/default/123456_300/talents/topics.md";
+    let path = "20260107/default/123456_300/talents/audio.md";
     insert(
         &connection,
         "visible boundary text",
@@ -3793,7 +3793,7 @@ fn screen_text_denial_preserves_case_and_near_name_siblings() {
 fn possible_name_rows_return_only_through_an_admission_that_runs_inside_the_query() {
     let (root, connection) = seeded_root("possible-name-admission");
     let names = "20260101/default/100000_60/talents/possible_names.json";
-    let brief = "20260101/default/100000_60/talents/topics.md";
+    let brief = "20260101/default/100000_60/talents/audio.md";
     insert(
         &connection,
         "possible name: Friar",

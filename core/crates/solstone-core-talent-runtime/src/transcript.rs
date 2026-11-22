@@ -29,6 +29,7 @@ pub(crate) struct LoadedTranscript {
     pub memory_incomplete: bool,
     pub sources: Vec<Option<EntrySource>>,
     pub layout: TranscriptLayout,
+    pub input_kinds: Option<BTreeSet<solstone_core_format::content::AdmittedCategory>>,
 }
 
 pub(crate) fn sources_from_config(config: &Map<String, Value>) -> Sources {
@@ -284,6 +285,7 @@ pub(crate) fn load_transcript(
         memory_incomplete,
         sources: transcript.sources,
         layout: transcript.layout,
+        input_kinds: transcript.input_kinds,
     })
 }
 

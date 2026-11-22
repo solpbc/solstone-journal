@@ -69,7 +69,7 @@ impl Journal {
         )
         .unwrap();
         if let Some(brief) = brief {
-            fs::write(dir.join("talents/topics.md"), format!("{brief}\n")).unwrap();
+            fs::write(dir.join("talents/audio.md"), format!("{brief}\n")).unwrap();
         }
     }
 
@@ -520,7 +520,7 @@ fn fetch_reads_an_entry_whose_file_was_indexed_again_and_says_so() {
         .unwrap()
         .to_owned();
     let rescan = |key: &str, brief: &str| {
-        let path = journal.segment_dir(key).join("talents/topics.md");
+        let path = journal.segment_dir(key).join("talents/audio.md");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, format!("{brief}\n")).unwrap();
         solstone_core_indexer_store::scan::rescan_file(journal.path(), &path).unwrap();

@@ -857,10 +857,13 @@ mod tests {
                 .map(|text| ContentPart::Text { text })
                 .collect::<Vec<_>>()
         );
-        assert_eq!(
-            serde_json::from_str::<Value>(&fs::read_to_string(dest).unwrap()).unwrap(),
-            expected
-        );
+        let mut written: Value = serde_json::from_str(&fs::read_to_string(dest).unwrap()).unwrap();
+        let input_kinds = written
+            .as_object_mut()
+            .unwrap()
+            .remove(solstone_core_format::content::topics::SENSE_INPUT_KINDS);
+        assert_eq!(input_kinds, Some(json!(["transcripts"])));
+        assert_eq!(written, expected);
         assert_eq!(fs::read(source).unwrap(), raw);
         let events = String::from_utf8(events).unwrap();
         assert!(events.contains("product_spelling_view"));

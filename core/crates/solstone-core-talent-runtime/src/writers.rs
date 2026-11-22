@@ -124,7 +124,23 @@ pub(crate) fn write_output_if_configured_cancellable(
 ) -> Result<bool, String> {
     check_cancellation(cancellation)?;
     let output = crate::partial_input::output(output, prepared);
-    let output = output.as_str();
+    // Persist the worker's own source kinds in the same atomic Sense result.
+    // Routing retries and continuations carry it with the same result.
+    let sense_output = (prepared.name == "sense")
+        .then(|| serde_json::from_str::<serde_json::Map<String, Value>>(&output).ok())
+        .flatten()
+        .map(|mut sense| {
+            use solstone_core_format::content::topics::{SENSE_INPUT_KINDS, kind_words};
+            sense.remove(SENSE_INPUT_KINDS);
+            if let Some(kinds) = &prepared.topic_input_kinds {
+                sense.insert(
+                    SENSE_INPUT_KINDS.to_owned(),
+                    serde_json::json!(kind_words(kinds)),
+                );
+            }
+            Value::Object(sense).to_string()
+        });
+    let output = sense_output.as_deref().unwrap_or(&output);
     let Some(path_str) = prepared.config.get("output_path").and_then(Value::as_str) else {
         return Ok(false);
     };

@@ -412,6 +412,9 @@ pub fn agent_indexed_permission(
     path: &str,
     stored: AdmittedCategory,
 ) -> Option<AdmittedCategory> {
+    if super::topics::segment_path(path).is_some() {
+        return None; // Segment topics have a separate multi-kind boundary.
+    }
     if !(path.starts_with("imports/") && path.ends_with("/summary.md")) {
         return Some(indexed_permission(journal, path, stored));
     }

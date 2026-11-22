@@ -106,6 +106,18 @@ impl ConnectionBoundary {
         &self.scope
     }
 
+    pub fn allows_topic(
+        &self,
+        document: &solstone_core_format::content::topics::TopicDocument,
+    ) -> bool {
+        document
+            .required_kinds()
+            .all(|kind| self.categories.contains(&kind))
+            && document
+                .selected_kinds()
+                .any(|kind| self.selects_kind(kind))
+    }
+
     /// Decide whether a freshly classified source remains inside this connection.
     ///
     /// This is the in-memory equivalent of the connection classification
@@ -126,6 +138,12 @@ impl ConnectionBoundary {
             return false;
         };
         let path = &classification.path;
+        use solstone_core_format::content::topics::{TopicDocument, segment_path};
+        if segment_path(path).is_some() {
+            return self.allows_scope(classification)
+                && TopicDocument::read(journal, path)
+                    .is_some_and(|document| self.allows_topic(&document));
+        }
         let Some(category) = solstone_core_format::content::kinds::agent_indexed_permission(
             Some(journal),
             path,

@@ -29,7 +29,263 @@ const FACET_B: &str = "123e4567-e89b-42d3-a456-426614174001";
 const DAY: &str = "20260914";
 const STREAM: &str = "default";
 const SEGMENT: &str = "090000_300";
-const PATH: &str = "20260914/default/090000_300/talents/topics.md";
+const PATH: &str = "20260914/default/090000_300/talents/audio.md";
+
+#[test]
+fn topic_provenance_gates_search_and_fetch_of_existing_index_rows() {
+    use solstone_core_format::content::AdmittedCategory as Kind;
+    use solstone_core_format::content::kinds::permission_words;
+    use solstone_core_format::content::topics::{POSSIBLE_INPUTS, PROVENANCE_FILE, provenance};
+
+    let journal = tempfile::tempdir_in(crate::test_scratch()).unwrap();
+    let root = journal.path();
+    type TopicCase<'a> = (&'a str, &'a [Kind], &'a [(&'a str, &'a str)]);
+    let cases: &[TopicCase<'_>] = &[
+        (
+            "screentopic",
+            &[Kind::ScreenText],
+            &[("screen.jsonl", "{}")],
+        ),
+        (
+            "speechtopic",
+            &[Kind::Transcripts],
+            &[("audio.jsonl", "{}")],
+        ),
+        (
+            "phototopic",
+            &[Kind::Photos],
+            &[("image_transcript.md", "A flower photograph")],
+        ),
+        (
+            "notetopic",
+            &[Kind::Notes],
+            &[("note_transcript.md", "A note about a flower")],
+        ),
+        (
+            "mixedtopic",
+            &[Kind::Transcripts, Kind::ScreenText],
+            &[("audio.jsonl", "{}"), ("screen.jsonl", "{}")],
+        ),
+    ];
+    let mut fixtures = Vec::new();
+    for (i, (word, kinds, sources)) in cases.iter().enumerate() {
+        for (suffix, known) in [("old", false), ("new", true)] {
+            let key = format!("{:02}{}00_0", 9 + i, if known { "10" } else { "00" });
+            let rel = format!("{DAY}/desk/{key}/talents/topics.md");
+            let path = root.join("chronicle").join(&rel);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            let segment = path.parent().unwrap().parent().unwrap();
+            for &(name, text) in *sources {
+                fs::write(segment.join(name), text).unwrap();
+            }
+            let term = format!("{word}{suffix}");
+            let text = format!("## Topics\n\n- {term}\n");
+            fs::write(&path, &text).unwrap();
+            fixtures.push((
+                rel,
+                path,
+                term,
+                text,
+                known.then(|| kinds.iter().copied().collect()),
+            ));
+        }
+    }
+    // The classification and chunks were built before provenance existed.
+    solstone_core_indexer_store::scan::scan_journal(root, true).unwrap();
+    let index = solstone_core_indexer_store::open_index_reader(root).unwrap();
+    for (rel, path, _, text, kinds) in &fixtures {
+        let category: String = index
+            .query_row(
+                "SELECT category FROM chunk_classification WHERE path IN (?1, ?2)",
+                params![rel, format!("chronicle/{rel}")],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(category, "transcripts");
+        if let Some(kinds) = kinds {
+            fs::write(
+                path.with_file_name(PROVENANCE_FILE),
+                provenance(text, Some(kinds)).to_string(),
+            )
+            .unwrap();
+        }
+        // The source set on disk is neither proof nor a prerequisite to reading the topic.
+        let segment = path.parent().unwrap().parent().unwrap();
+        if segment.join("screen.jsonl").exists() {
+            fs::remove_file(segment.join("screen.jsonl")).unwrap();
+        }
+    }
+    let set_grant = |grant: &[&str]| {
+        PermissionStore::open(root)
+            .set_permission(
+                CONNECTION,
+                ReadPermission {
+                    categories: grant.iter().map(|word| (*word).to_owned()).collect(),
+                    scope: ReadScope::WholeJournal,
+                },
+            )
+            .unwrap();
+    };
+    let every_kind = permission_words().collect::<Vec<_>>();
+    let topic_inputs = POSSIBLE_INPUTS
+        .iter()
+        .map(|kind| kind.as_str())
+        .collect::<Vec<_>>();
+    let all_kinds = |grant: &[&str]| {
+        for (_, _, term, _, kinds) in &fixtures {
+            let search = probe(&journal, "search", json!({"query": term})).unwrap();
+            let hits = search["results"].as_array().unwrap();
+            let expected = kinds
+                .as_ref()
+                .map_or_else(
+                    || topic_inputs.clone(),
+                    solstone_core_format::content::topics::kind_words,
+                )
+                .iter()
+                .all(|kind| grant.contains(kind));
+            assert_eq!(
+                hits.len(),
+                usize::from(expected),
+                "{grant:?} {term}: {search}"
+            );
+            if let Some(hit) = hits.first() {
+                let fetched =
+                    probe(&journal, "fetch", json!({"reference": hit["reference"]})).unwrap();
+                assert!(fetched["text"].as_str().unwrap().contains(term));
+                for item in [hit, &fetched] {
+                    match kinds
+                        .as_ref()
+                        .map(solstone_core_format::content::topics::kind_words)
+                        .as_deref()
+                    {
+                        Some([kind]) => assert_eq!(item["content_kind"], *kind),
+                        Some(kinds) => {
+                            assert_eq!(item["content_kinds"], json!(kinds));
+                            assert!(item.get("content_kind").is_none());
+                        }
+                        None => {
+                            assert!(item.get("content_kind").is_none());
+                            assert!(item.get("content_kinds").is_none());
+                        }
+                    }
+                }
+            }
+        }
+    };
+    for grant in [
+        every_kind.as_slice(),
+        &["transcripts"][..],
+        &["screen_text"][..],
+        &["transcripts", "screen_text"][..],
+        &["photos"][..],
+        &["notes"][..],
+        topic_inputs.as_slice(),
+    ] {
+        set_grant(grant);
+        all_kinds(grant);
+    }
+
+    // Updating an existing grandfathered connection to all permissions uses the
+    // same stored grant on the reader as a new all-permissions connection.
+    set_grant(&["transcripts", "facets", "entities"]);
+    set_grant(&every_kind);
+    all_kinds(&every_kind);
+
+    let (_, path, term, _, _) = fixtures
+        .iter()
+        .find(|(_, _, term, _, _)| term == "mixedtopicnew")
+        .unwrap();
+    let search = probe(&journal, "search", json!({"query": term})).unwrap();
+    let reference = search["results"][0]["reference"].clone();
+    let replacement = "## Topics\n\n- a fresh entry\n";
+    fs::write(path, replacement).unwrap();
+    fs::write(
+        path.with_file_name(PROVENANCE_FILE),
+        provenance(replacement, Some(&[Kind::Transcripts].into())).to_string(),
+    )
+    .unwrap();
+    assert_eq!(
+        probe(&journal, "fetch", json!({"reference": reference})),
+        Err(McpProbeError::Unavailable)
+    );
+    for grant in [&["transcripts"][..], every_kind.as_slice()] {
+        set_grant(grant);
+        let stale = probe(&journal, "search", json!({"query": term, "limit": 1})).unwrap();
+        assert_eq!(stale["results"], json!([]), "{stale}");
+        assert!(stale["next_cursor"].is_null(), "{stale}");
+    }
+}
+
+#[test]
+fn transcript_time_window_includes_points_and_omits_empty_segments() {
+    let journal = tempfile::tempdir_in(crate::test_scratch()).unwrap();
+    let root = journal.path();
+    for (place, name) in [
+        ("import.image/113000_0", "image_transcript.md"),
+        ("import.image/123000_0", "screenshot_transcript.md"),
+        ("import.document/130000_0", "document_transcript.md"),
+        ("import.document/133000_0", "document_transcript.md"),
+        ("desk/120000_300", "location.jsonl"),
+        ("desk/121000_300", "screen.jsonl"),
+    ] {
+        let path = root.join("chronicle").join(DAY).join(place);
+        fs::create_dir_all(&path).unwrap();
+        fs::write(path.join(name), "source line\n").unwrap();
+    }
+    for permissions in [
+        vec!["transcripts"],
+        vec![
+            "transcripts",
+            "photos",
+            "screen_text",
+            "documents",
+            "places",
+        ],
+    ] {
+        PermissionStore::open(root)
+            .set_permission(
+                CONNECTION,
+                ReadPermission {
+                    categories: permissions.iter().map(|word| (*word).to_owned()).collect(),
+                    scope: ReadScope::WholeJournal,
+                },
+            )
+            .unwrap();
+        let result = probe(
+            &journal,
+            "list_transcripts",
+            json!({
+                "day": DAY, "time_from": "11:30", "time_to": "13:30",
+            }),
+        )
+        .unwrap();
+        let rows = result["transcripts"].as_array().unwrap();
+        assert_eq!(
+            rows.len(),
+            if permissions.len() == 1 { 0 } else { 3 },
+            "{result}"
+        );
+        for (row, clock) in rows.iter().zip(["11:30", "12:30", "13:00"]) {
+            assert!(row["time"].as_str().unwrap().starts_with(clock));
+            assert_eq!(row["seconds"], 0);
+            assert_eq!(row["content_kinds"].as_array().unwrap().len(), 1);
+        }
+        if !rows.is_empty() {
+            let span = probe(
+                &journal,
+                "get_transcript",
+                json!({"reference": result["span_reference"]}),
+            )
+            .unwrap();
+            let segments = span["segments"].as_array().unwrap();
+            assert_eq!(segments.len(), rows.len());
+            for (item, row) in segments.iter().zip(rows) {
+                assert_eq!(item["time"], row["time"]);
+                assert_eq!(item["content_kinds"], row["content_kinds"]);
+            }
+        }
+    }
+}
 
 #[test]
 fn ordinary_reads_keep_cross_source_memory_grants_and_own_recall_stays_scoped() {
@@ -249,13 +505,6 @@ fn kinds_keep_old_grants_strict_across_segment_search_and_fetch() {
             "20260914/default/090000_300/talents/custom.md",
             "customneedle",
             "facets",
-            false,
-            true,
-        ),
-        (
-            "20260914/default/090000_300/talents/topics.md",
-            "topicsneedle",
-            "transcripts",
             false,
             true,
         ),
@@ -605,7 +854,7 @@ fn fixture() -> tempfile::TempDir {
     )
     .unwrap();
     fs::write(segment.join("audio.jsonl"), "percept material\n").unwrap();
-    fs::write(segment.join("talents/topics.md"), "disk bytes\n").unwrap();
+    fs::write(segment.join("talents/audio.md"), "disk bytes\n").unwrap();
     for (directory, id, detached) in [
         ("primary", "entity-primary", false),
         ("same-name", "entity-same-name", false),
@@ -1195,7 +1444,7 @@ fn ac14_unauthorized_chunks_do_not_change_visible_search_page_or_coverage() {
         "[{\"facet\":\"beta\"}]",
     )
     .unwrap();
-    let unauthorized_path = "20260914/default/100000_300/talents/topics.md";
+    let unauthorized_path = "20260914/default/100000_300/talents/audio.md";
     let index = solstone_core_indexer_store::db::open_index(journal.path()).unwrap();
     index
         .execute(
@@ -2226,7 +2475,7 @@ fn setup_shared_link_journal() -> tempfile::TempDir {
         "alpha_transcript_token\n",
     )
     .unwrap();
-    fs::write(alpha_seg.join("talents/topics.md"), "brief bytes\n").unwrap();
+    fs::write(alpha_seg.join("talents/audio.md"), "brief bytes\n").unwrap();
     fs::write(
         alpha_seg.join("stream.json"),
         json!({"stream": "not-alpha"}).to_string(),
@@ -2245,7 +2494,7 @@ fn setup_shared_link_journal() -> tempfile::TempDir {
         "beta_transcript_token\n",
     )
     .unwrap();
-    fs::write(beta_seg.join("talents/topics.md"), "brief bytes\n").unwrap();
+    fs::write(beta_seg.join("talents/audio.md"), "brief bytes\n").unwrap();
 
     let flat_dup = chronicle.join("090000_300");
     fs::create_dir_all(flat_dup.join("talents")).unwrap();
@@ -2319,7 +2568,7 @@ impl TranscriptPageCheck for CountingChecker {
 #[test]
 fn a_summary_hit_links_only_to_its_own_streams_segment() {
     let journal = setup_shared_link_journal();
-    let path = "20261010/beta/090000_300/talents/topics.md";
+    let path = "20261010/beta/090000_300/talents/audio.md";
     plant_chunk(
         journal.path(),
         path,
@@ -2834,11 +3083,11 @@ fn unreadable_or_deleted_segments_get_no_link_and_search_still_succeeds() {
     .unwrap();
 
     let paths = [
-        "20261010/alpha/090000_300/talents/topics.md",
-        "20261010/alpha/100000_300/talents/topics.md",
-        "20261010/alpha/110000_300/talents/topics.md",
-        "20261010/alpha/120000_300/talents/topics.md",
-        "20261010/alpha/130000_300/talents/topics.md",
+        "20261010/alpha/090000_300/talents/audio.md",
+        "20261010/alpha/100000_300/talents/audio.md",
+        "20261010/alpha/110000_300/talents/audio.md",
+        "20261010/alpha/120000_300/talents/audio.md",
+        "20261010/alpha/130000_300/talents/audio.md",
     ];
     for (i, p) in paths.iter().enumerate() {
         plant_chunk(
@@ -2905,7 +3154,7 @@ fn links_keep_the_replay_digest_stable() {
     let journal = setup_shared_link_journal();
     plant_chunk(
         journal.path(),
-        "20261010/beta/090000_300/talents/topics.md",
+        "20261010/beta/090000_300/talents/audio.md",
         "20261010",
         "",
         0,
@@ -3301,7 +3550,7 @@ fn raw_transcript_text_never_reaches_search_or_fetch() {
 
     plant_chunk(
         journal.path(),
-        "20261010/alpha/090000_300/talents/topics.md",
+        "20261010/alpha/090000_300/talents/audio.md",
         "20261010",
         "alpha",
         0,
@@ -3581,7 +3830,7 @@ fn write_chronicle_segment(
         format!("[{{\"facet\":\"{facet}\"}}]"),
     )
     .unwrap();
-    fs::write(seg.join("talents/topics.md"), format!("{text}\n")).unwrap();
+    fs::write(seg.join("talents/audio.md"), format!("{text}\n")).unwrap();
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -7310,9 +7559,9 @@ fn setup_freeze_barrier_journal() -> tempfile::TempDir {
     )
     .unwrap();
     fs::write(seg1_dir.join("audio.jsonl"), "first percept\n").unwrap();
-    fs::write(seg1_dir.join("talents/topics.md"), "first disk bytes\n").unwrap();
+    fs::write(seg1_dir.join("talents/audio.md"), "first disk bytes\n").unwrap();
 
-    let seg1_path = format!("{DAY}/{STREAM}/{seg1_name}/talents/topics.md");
+    let seg1_path = format!("{DAY}/{STREAM}/{seg1_name}/talents/audio.md");
     plant_chunk(
         journal.path(),
         &seg1_path,
@@ -7325,7 +7574,7 @@ fn setup_freeze_barrier_journal() -> tempfile::TempDir {
         &[FACET_A],
     );
 
-    let seg2_path = format!("{DAY}/{STREAM}/{SEGMENT}/talents/topics.md");
+    let seg2_path = format!("{DAY}/{STREAM}/{SEGMENT}/talents/audio.md");
     plant_chunk(
         journal.path(),
         &seg2_path,
@@ -7389,6 +7638,7 @@ fn removal_after_marker_sampling_never_advertises_a_tombstone_page() {
 #[cfg(feature = "test-hooks")]
 #[test]
 fn removal_after_marker_sampling_refuses_an_old_live_empty_reference() {
+    use crate::references::{ReferenceTarget, SegmentReference};
     use crate::source_freeze_barrier::{FreezePoint, run_with_source_freeze_barrier};
 
     let journal = fixture();
@@ -7399,7 +7649,34 @@ fn removal_after_marker_sampling_refuses_an_old_live_empty_reference() {
         fs::remove_file(segment.join("audio.jsonl")).unwrap();
     }
     let list = probe(&journal, "list_transcripts", json!({"day": DAY})).unwrap();
-    let reference = list["transcripts"][0]["reference"].as_str().unwrap();
+    assert_eq!(list["transcripts"], json!([]));
+    let segment_object =
+        solstone_core_journal_io::Segment::resolve_exact(&root, DAY, STREAM, SEGMENT)
+            .unwrap()
+            .unwrap();
+    let page =
+        solstone_core_transcripts::read_segment_transcript_page(&segment_object, None, None, None)
+            .unwrap();
+    let permission = PermissionStore::open(&root)
+        .get_permission(CONNECTION)
+        .unwrap()
+        .unwrap();
+    let reference = crate::dispatch::codec()
+        .mint(
+            CONNECTION,
+            permission.generation,
+            ReferenceTarget::Segment(SegmentReference {
+                day: DAY.to_owned(),
+                stream: STREAM.to_owned(),
+                segment: SEGMENT.to_owned(),
+                version: page.version.fingerprint(),
+                source_index: None,
+                byte_offset: None,
+                statement_ordinal: None,
+                message: None,
+            }),
+        )
+        .unwrap();
     let before = probe(&journal, "get_transcript", json!({"reference": reference})).unwrap();
     assert!(before["entries"].as_array().unwrap().is_empty());
     let (result, fired) = run_with_source_freeze_barrier(
@@ -7730,7 +8007,7 @@ fn removed_segment_marker_matrix_withheld_from_all_read_tools() {
 }
 
 #[test]
-fn live_empty_segment_releases_empty_transcript_and_survives_listing() {
+fn live_empty_segment_is_omitted_from_listing_but_derived_text_is_searchable() {
     let journal = fixture();
     let seg_dir = journal
         .path()
@@ -7746,23 +8023,7 @@ fn live_empty_segment_releases_empty_transcript_and_survives_listing() {
 
     let list = probe(&journal, "list_transcripts", json!({"day": DAY})).unwrap();
     let transcripts = list["transcripts"].as_array().unwrap();
-    assert_eq!(
-        transcripts.len(),
-        1,
-        "empty transcript segment must be listed"
-    );
-    let transcript_ref = transcripts[0]["reference"].as_str().unwrap();
-
-    let transcript = probe(
-        &journal,
-        "get_transcript",
-        json!({"reference": transcript_ref}),
-    )
-    .unwrap();
-    assert!(
-        transcript["entries"].as_array().unwrap().is_empty(),
-        "empty transcript entries must be empty"
-    );
+    assert!(transcripts.is_empty(), "{list}");
 
     let search = probe(&journal, "search", json!({"query": "indexed"})).unwrap();
     assert_eq!(search["results"].as_array().unwrap().len(), 1);
@@ -7831,9 +8092,9 @@ fn unindexed_planted_sibling_outside_facet_does_not_affect_grant() {
 
     let s3 = parent_dir.join("120000_300");
     fs::create_dir_all(s3.join("talents")).unwrap();
-    fs::write(s3.join("talents/topics.md"), "disk bytes\n").unwrap();
+    fs::write(s3.join("talents/audio.md"), "disk bytes\n").unwrap();
     #[cfg(unix)]
-    std::os::unix::fs::symlink(s3.join("talents/topics.md"), s3.join("tombstone.json")).unwrap();
+    std::os::unix::fs::symlink(s3.join("talents/audio.md"), s3.join("tombstone.json")).unwrap();
 
     fs::write(parent_dir.join("130000_300"), b"regular file").unwrap();
 
@@ -7890,9 +8151,9 @@ fn door_seam_remove_segments_withholds_retained_references_without_leak() {
     )
     .unwrap();
     fs::write(seg2_dir.join("audio.jsonl"), "second percept\n").unwrap();
-    fs::write(seg2_dir.join("talents/topics.md"), "second disk bytes\n").unwrap();
+    fs::write(seg2_dir.join("talents/audio.md"), "second disk bytes\n").unwrap();
 
-    let seg2_path = format!("{DAY}/{STREAM}/{seg2_name}/talents/topics.md");
+    let seg2_path = format!("{DAY}/{STREAM}/{seg2_name}/talents/audio.md");
     plant_chunk(
         journal.path(),
         &seg2_path,
@@ -8076,7 +8337,7 @@ fn search_examination_budget_continuation_over_withheld_candidates() {
         let tx = index.transaction().unwrap();
         for i in 1..=1001 {
             let seg = format!("000000_{i:04}");
-            let path = format!("20260914/default/{seg}/talents/topics.md");
+            let path = format!("20260914/default/{seg}/talents/audio.md");
             let seg_dir = journal
                 .path()
                 .join("chronicle")
@@ -8172,7 +8433,7 @@ fn search_examination_budget_continuation_over_withheld_candidates() {
         let tx = index.transaction().unwrap();
         for i in 1..=1000 {
             let seg = format!("000000_{i:04}");
-            let path = format!("20260914/default/{seg}/talents/topics.md");
+            let path = format!("20260914/default/{seg}/talents/audio.md");
             let seg_dir = journal
                 .path()
                 .join("chronicle")
@@ -8209,10 +8470,10 @@ fn search_examination_budget_continuation_over_withheld_candidates() {
             .join("default")
             .join("090000_300");
         fs::create_dir_all(live_seg.join("talents")).unwrap();
-        fs::write(live_seg.join("talents/topics.md"), "live brief bytes\n").unwrap();
+        fs::write(live_seg.join("talents/audio.md"), "live brief bytes\n").unwrap();
         fs::write(live_seg.join("meeting_transcript.md"), "live transcript\n").unwrap();
 
-        let live_path = "20260913/default/090000_300/talents/topics.md";
+        let live_path = "20260913/default/090000_300/talents/audio.md";
         tx.execute(
             "INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) \
              VALUES ('budgetexamneedle live', ?1, '20260913', '', 'fixture-stream', 'default', 0, '')",
@@ -16101,7 +16362,7 @@ fn a_days_list_is_read_in_one_go_through_its_span_reference() {
     assert_eq!(times, ["10:00-10:05"]);
     assert_eq!(
         narrowed["gaps"],
-        json!([{"from": "09:35", "to": "10:00"}, {"from": "10:05", "to": "10:30"}]),
+        json!([{"from": "09:30", "to": "10:00"}, {"from": "10:05", "to": "10:30"}]),
         "{narrowed}"
     );
 
@@ -18293,11 +18554,16 @@ fn agent_rows_report_source_and_content_kind_across_materials() {
         "audio.jsonl",
         "{\"source\":\"recording\"}\n{\"start\":\"10:00:05\",\"text\":\"Pack campstoveneedle before sunrise.\"}\n",
     );
+    let speech_topic = "Packing campstoveneedle before sunrise.\n";
+    let talents = root.join(format!("chronicle/{day}/macos_audio/100000_300/talents"));
+    fs::write(talents.join("topics.md"), speech_topic).unwrap();
     fs::write(
-        root.join(format!(
-            "chronicle/{day}/macos_audio/100000_300/talents/topics.md"
-        )),
-        "Packing campstoveneedle before sunrise.\n",
+        talents.join(solstone_core_format::content::topics::PROVENANCE_FILE),
+        solstone_core_format::content::topics::provenance(
+            speech_topic,
+            Some(&[solstone_core_format::content::AdmittedCategory::Transcripts].into()),
+        )
+        .to_string(),
     )
     .unwrap();
     // Screen-text segment (no speech file) for search/fetch/list verification.
@@ -19016,6 +19282,7 @@ fn transcripts_only_connection_never_sees_unpermitted_kinds_or_sources() {
             "\"screen_text\"",
             "hidden note",
             "hidden document",
+            "topic summary",
         ] {
             assert!(
                 !serialized.contains(forbidden),
@@ -19033,16 +19300,7 @@ fn transcripts_only_connection_never_sees_unpermitted_kinds_or_sources() {
     .unwrap();
     assert_no_foreign_kind_or_source("search", &search);
     let hits = search["results"].as_array().unwrap();
-    assert_eq!(hits.len(), 1, "{search}");
-    assert_eq!(hits[0]["content_kind"], "transcripts");
-    let fetched = probe(
-        &journal,
-        "fetch",
-        json!({"reference": hits[0]["reference"]}),
-    )
-    .unwrap();
-    assert_no_foreign_kind_or_source("fetch", &fetched);
-    assert_eq!(fetched["content_kind"], "transcripts");
+    assert!(hits.is_empty(), "{search}");
 
     // list_transcripts + get_transcript (single and span)
     let listed = probe(&journal, "list_transcripts", json!({"day": day})).unwrap();

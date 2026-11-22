@@ -27,6 +27,7 @@ mod imports;
 pub use formatters::{FormatterView, PlaceFormatter, format_file};
 pub mod kinds;
 mod registry;
+pub mod topics;
 pub use registry::*;
 mod morning_briefing;
 mod observations;
@@ -590,6 +591,18 @@ pub(crate) const INDEX_FAMILY_PATTERNS: &[FilePattern] = &[
             category: AdmittedCategory::Transcripts,
             basis: ScopeBasis::SegmentAssigned,
         },
+        segment: None,
+    },
+    FilePattern {
+        pattern: "*/*/*/talents/topics.provenance.json",
+        format: FileFormat::NotContent,
+        classification: ContentResolution::Unrecognized,
+        kind: KindAssignment::NotContent,
+        unit: ContentUnit::Record,
+        offered_to: OfferedTo::NONE,
+        condition: FileCondition::Path,
+        root: PatternRoot::DayRooted,
+        disposition: IndexDisposition::Excluded,
         segment: None,
     },
     FilePattern {

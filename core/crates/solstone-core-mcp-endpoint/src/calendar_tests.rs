@@ -100,7 +100,7 @@ fn capture(journal: &Path, day: &str, segment: &str, text: &str) {
         .join(segment);
     fs::create_dir_all(dir.join("talents")).unwrap();
     fs::write(dir.join("talents/facets.json"), r#"[{"facet":"work"}]"#).unwrap();
-    fs::write(dir.join("talents/topics.md"), format!("{text}\n")).unwrap();
+    fs::write(dir.join("talents/audio.md"), format!("{text}\n")).unwrap();
 }
 
 fn index(journal: &Path) {

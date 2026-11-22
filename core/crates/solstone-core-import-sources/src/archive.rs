@@ -4416,6 +4416,41 @@ mod tests {
     }
 
     #[test]
+    fn archive_preserves_recorded_topic_inputs_and_does_not_assign_legacy_inputs() {
+        use solstone_core_format::content::AdmittedCategory as Kind;
+        use solstone_core_format::content::topics::{TopicDocument, provenance};
+
+        let tree = PlanTree::new();
+        let text = "## Topics\n\n- Shared ideas\n";
+        let kinds = [Kind::Transcripts, Kind::ScreenText].into();
+        let record = provenance(text, Some(&kinds)).to_string();
+        let new = "chronicle/20260101/desk/093000_300/talents/topics.md";
+        let old = "chronicle/20260101/desk/093500_300/talents/topics.md";
+        let archive = write_zip(
+            &tree.path,
+            &[
+                (new, text.as_bytes()),
+                (
+                    "chronicle/20260101/desk/093000_300/talents/topics.provenance.json",
+                    record.as_bytes(),
+                ),
+                (old, text.as_bytes()),
+            ],
+        );
+        let target = tree.path.join("target");
+        fs::create_dir(&target).unwrap();
+        let result = merge_journal_archive(&archive, &target, &merge_options(&tree), None).unwrap();
+        assert_eq!(result.merge_summary.segments_copied, 2);
+
+        let restored = TopicDocument::read(&target, new).unwrap();
+        assert_eq!(restored.text, text);
+        assert_eq!(restored.kinds, Some(kinds));
+        let legacy = TopicDocument::read(&target, old).unwrap();
+        assert_eq!(legacy.text, text);
+        assert_eq!(legacy.kinds, None);
+    }
+
+    #[test]
     fn merge_copies_same_key_siblings_to_distinct_destinations() {
         let tree = PlanTree::new();
         let archive = write_zip(

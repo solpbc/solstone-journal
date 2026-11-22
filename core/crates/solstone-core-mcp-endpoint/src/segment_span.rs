@@ -125,7 +125,7 @@ pub(crate) fn day_segments(
             let Some(clock) = &clock else {
                 continue;
             };
-            if clock.start_seconds.max(from) >= clock.exclusive_end_seconds.min(to) {
+            if !clock.overlaps(from, to) {
                 continue;
             }
         }
@@ -206,6 +206,7 @@ pub(crate) fn day_gaps(
         .filter_map(|item| {
             item.clock
                 .as_ref()
+                .filter(|clock| clock.start_seconds < clock.exclusive_end_seconds)
                 .map(|clock| (clock.start_seconds, clock.exclusive_end_seconds))
         })
         .collect();

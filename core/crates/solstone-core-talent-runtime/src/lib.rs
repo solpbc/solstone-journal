@@ -87,6 +87,8 @@ pub struct PreparedTalent {
     pub config: Map<String, Value>,
     /// Bound to the exact loaded text, before sparse notes or request fitting.
     pub(crate) passage_layout: Option<([u8; 32], solstone_core_transcripts::TranscriptLayout)>,
+    pub(crate) topic_input_kinds:
+        Option<std::collections::BTreeSet<solstone_core_format::content::AdmittedCategory>>,
     pub(crate) entry_sources: Vec<Option<solstone_core_transcripts::EntrySource>>,
     /// What terminal sampling read and left out, emitted once with the run.
     pub(crate) terminal_reading: Option<Value>,
@@ -113,6 +115,7 @@ impl PreparedTalent {
             name,
             config,
             passage_layout: None,
+            topic_input_kinds: None,
             entry_sources: Vec::new(),
             terminal_reading: None,
             participation_floor: None,

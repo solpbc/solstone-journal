@@ -11,6 +11,9 @@ use jiff::Timestamp;
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_format::agent_memory::{Coordinate, Origin, SourceKey};
+use solstone_core_format::content::topics::{
+    TopicDocument, kind_words, segment_path as topic_segment,
+};
 use solstone_core_indexer_query::{
     AdmittedCategory, ConnectionBoundary, ConnectionScope, ConnectionSearchRequest,
     ConnectionStartAfter, EntryLocation, OwnMemoryOpenError, QueryBoundary,
@@ -534,6 +537,7 @@ fn fetch_target_missing_kind(
             use solstone_core_format::content::kinds::{
                 additional_indexed_permission, agent_indexed_permission,
             };
+            // The topic boundary does not disclose which inputs a saved reference may contain.
             let category = agent_indexed_permission(Some(journal_root), path, category)?;
             [Some(category), additional_indexed_permission(path)]
                 .into_iter()
@@ -1911,6 +1915,20 @@ fn search(
                 activity_proof: None,
                 omit_cursor: false,
             });
+            let topic = if topic_segment(&hit.metadata.path).is_some() {
+                let Some(document) =
+                    TopicDocument::read(journal_root, &hit.metadata.path).filter(|doc| {
+                        boundary.allows_topic(doc)
+                            && doc.matches_chunk(&hit.metadata.path, hit.metadata.idx, &hit.text)
+                    })
+                else {
+                    live_dropped = true;
+                    continue;
+                };
+                Some(document)
+            } else {
+                None
+            };
             let Some(classification) = FacetDeclarationSet::from_journal(journal_root)
                 .ok()
                 .map(|declarations| {
@@ -1922,7 +1940,11 @@ fn search(
                     )
                 })
                 .filter(|classification| {
-                    boundary.allows_classification(journal_root, classification)
+                    if topic.is_some() {
+                        boundary.allows_scope(classification)
+                    } else {
+                        boundary.allows_classification(journal_root, classification)
+                    }
                 })
             else {
                 live_dropped = true;
@@ -2006,19 +2028,27 @@ fn search(
                 served_text
             };
             let photo = crate::photo_picture::is_photo_description(&hit.metadata.path);
-            let category = solstone_core_format::content::kinds::indexed_permission(
-                Some(journal_root),
-                &hit.metadata.path,
-                classification
-                    .category
-                    .and_then(AdmittedCategory::from_stored_word)
-                    .unwrap_or(AdmittedCategory::Transcripts),
-            );
+            let category = topic
+                .as_ref()
+                .and_then(|doc| {
+                    doc.selected_kinds()
+                        .find(|kind| boundary.selects_kind(*kind))
+                })
+                .unwrap_or_else(|| {
+                    solstone_core_format::content::kinds::indexed_permission(
+                        Some(journal_root),
+                        &hit.metadata.path,
+                        classification
+                            .category
+                            .and_then(AdmittedCategory::from_stored_word)
+                            .unwrap_or(AdmittedCategory::Transcripts),
+                    )
+                });
             if request.query.trim().is_empty()
                 && request.content_kinds.is_some()
                 && match category {
                     AdmittedCategory::Photos => !photo || hit.metadata.idx != 0,
-                    AdmittedCategory::Notes => hit.metadata.idx != 0,
+                    AdmittedCategory::Notes => topic.is_some() || hit.metadata.idx != 0,
                     _ => false,
                 }
             {
@@ -2213,6 +2243,9 @@ fn search(
             );
 
             if !allowed
+                || topic.as_ref().is_some_and(|doc| {
+                    TopicDocument::read(journal_root, &hit.metadata.path).as_ref() != Some(doc)
+                })
                 || source_digest.as_deref().is_some_and(|digest| {
                     !*screen_text_checks
                         .entry((hit.metadata.path.clone(), digest.to_owned()))
@@ -2273,7 +2306,11 @@ fn search(
             } else {
                 category
             };
-            insert_indexed_kind(&mut value, &hit.metadata.path, hit_kind);
+            if let Some(doc) = &topic {
+                insert_topic_kinds(&mut value, doc);
+            } else {
+                insert_indexed_kind(&mut value, &hit.metadata.path, hit_kind);
+            }
             if let Some(stream) =
                 indexed_hit_stream(&hit.metadata.stream, &hit.metadata.path, record.as_ref())
             {
@@ -2841,6 +2878,15 @@ fn fetch(
             if !live_allows(journal_root, &boundary, &entry.path, Some(&entry.stream)) {
                 return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
             }
+            let topic = if topic_segment(&entry.path).is_some() {
+                Some(
+                    TopicDocument::read(journal_root, &entry.path)
+                        .filter(|doc| boundary.allows_topic(doc))
+                        .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?,
+                )
+            } else {
+                None
+            };
             let possible_names = ConnectionPossibleNames::new(journal_root, snapshot);
             if is_screen_text {
                 #[cfg(feature = "test-hooks")]
@@ -3025,6 +3071,13 @@ fn fetch(
                             .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?;
                     (text, None, None)
                 }
+                ActivityAdmit::NotActivity(content) if topic.is_some() => {
+                    let doc = topic
+                        .as_ref()
+                        .filter(|doc| doc.matches_chunk(&entry.path, entry.idx, &content))
+                        .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?;
+                    (doc.text.clone(), None, None)
+                }
                 ActivityAdmit::NotActivity(content) => {
                     let text = match markdown_fetch(
                         journal_root,
@@ -3078,7 +3131,11 @@ fn fetch(
                 crate::source_freeze_barrier::FreezePoint::After,
             );
 
-            if !allowed {
+            if !allowed
+                || topic.as_ref().is_some_and(|doc| {
+                    TopicDocument::read(journal_root, &entry.path).as_ref() != Some(doc)
+                })
+            {
                 return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
             }
 
@@ -3095,11 +3152,15 @@ fn fetch(
                 "date": entry.day,
                 "text": decoded.as_deref().unwrap_or(&text),
             });
-            insert_indexed_kind(
-                &mut value,
-                &entry.path,
-                indexed_entry_kind(journal_root, &entry.path, record.as_ref()),
-            );
+            if let Some(doc) = &topic {
+                insert_topic_kinds(&mut value, doc);
+            } else {
+                insert_indexed_kind(
+                    &mut value,
+                    &entry.path,
+                    indexed_entry_kind(journal_root, &entry.path, record.as_ref()),
+                );
+            }
             if let Some(stream) = indexed_hit_stream(&entry.stream, &entry.path, record.as_ref()) {
                 value["source"] = json!(source_label(&source_labels(journal_root), stream));
             }
@@ -4010,9 +4071,7 @@ fn list_transcripts(
                 let Some(ref clock) = clock else {
                     continue;
                 };
-                let start = clock.start_seconds;
-                let end = clock.exclusive_end_seconds;
-                if std::cmp::max(start, from_sec) >= std::cmp::min(end, to_sec) {
+                if !clock.overlaps(from_sec, to_sec) {
                     continue;
                 }
             }
@@ -4110,6 +4169,10 @@ fn list_transcripts(
                     continue;
                 }
             };
+
+            if page.content_kinds.is_empty() && !page.unresolved_conversation {
+                continue;
+            }
 
             if segments.len() == request.limit {
                 has_more = true;
@@ -4654,6 +4717,17 @@ fn insert_indexed_kind(value: &mut Value, path: &str, kind: AdmittedCategory) {
         value["conversation_state"] = json!("unresolved");
     } else {
         value["content_kind"] = json!(kind.as_str());
+    }
+}
+
+fn insert_topic_kinds(value: &mut Value, doc: &TopicDocument) {
+    let Some(kinds) = &doc.kinds else {
+        return;
+    };
+    if kinds.len() == 1 {
+        value["content_kind"] = json!(kinds.first().expect("one kind").as_str());
+    } else {
+        value["content_kinds"] = json!(kind_words(kinds));
     }
 }
 

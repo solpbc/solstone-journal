@@ -3484,7 +3484,27 @@ fn publish_segment_topics<W: std::io::Write>(
             markdown.unwrap_or("").to_owned(),
             sense,
         );
-        match replace_text_checked(context, &topics_path, &bytes) {
+        use solstone_core_format::content::AdmittedCategory;
+        use solstone_core_format::content::topics::{
+            PROVENANCE_FILE, SENSE_INPUT_KINDS, parse_kinds, provenance,
+        };
+        let mut kinds = sense
+            .get(SENSE_INPUT_KINDS)
+            .and_then(Value::as_array)
+            .and_then(|words| parse_kinds(words.iter().map(|word| word.as_str().unwrap_or(""))));
+        // Verbatim quotes also depend on the speech reread by the publisher.
+        if eval.kept_quotes > 0
+            && let Some(kinds) = &mut kinds
+        {
+            kinds.insert(AdmittedCategory::Transcripts);
+        }
+        let publish = replace_json_checked(
+            context,
+            &topics_path.with_file_name(PROVENANCE_FILE),
+            &provenance(&bytes, kinds.as_ref()),
+        )
+        .and_then(|()| replace_text_checked(context, &topics_path, &bytes));
+        match publish {
             Ok(()) => {
                 published.insert(topics_path);
             }

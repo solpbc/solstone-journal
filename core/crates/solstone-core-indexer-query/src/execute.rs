@@ -557,7 +557,7 @@ fn append_connection_prefilter(plan: &mut SqlPlan, boundary: &ConnectionBoundary
     }
     let placeholders = category_placeholders(categories.len());
     let mut clause = format!(
-        "EXISTS (SELECT 1 FROM chunk_classification cc WHERE cc.path=chunks.path AND cc.eligible=1 AND cc.unclassified=0 AND solstone_indexed_permission(chunks.path,cc.category) IN ({placeholders})"
+        "EXISTS (SELECT 1 FROM chunk_classification cc WHERE cc.path=chunks.path AND cc.eligible=1 AND cc.unclassified=0 AND (solstone_is_topic(chunks.path) OR solstone_indexed_permission(chunks.path,cc.category) IN ({placeholders}))"
     );
     let mut params = categories;
     match boundary.scope() {
@@ -576,6 +576,19 @@ fn append_connection_prefilter(plan: &mut SqlPlan, boundary: &ConnectionBoundary
     }
     clause.push(')');
     push_keyed(plan, &format!(" AND {clause}"), &params);
+    let grant = kind_mask(boundary.categories().iter().copied());
+    // Empty Photos and Notes queries browse the original items (including week previews).
+    let originals_only = boundary.has_kind_filter() && !plan.has_live_match_expression;
+    let selection = kind_mask(boundary.categories().iter().copied().filter(|kind| {
+        boundary.selects_kind(*kind)
+            && !(originals_only
+                && matches!(kind, AdmittedCategory::Notes | AdmittedCategory::Photos))
+    }));
+    plan.where_clause.push_str(&format!(
+        " AND CASE WHEN solstone_is_topic(chunks.path)
+          THEN solstone_current_topic_chunk(chunks.path,chunks.idx,chunks.content,{grant},{selection})
+          ELSE 1 END"
+    ));
     plan.where_clause.push_str(" AND (chunks.path NOT GLOB 'imports/*/summary.md' OR solstone_current_summary_chunk(chunks.path,chunks.idx,chunks.content))");
     if !boundary
         .categories()
@@ -629,6 +642,12 @@ fn category_placeholders(count: usize) -> String {
         .join(", ")
 }
 
+fn kind_mask(kinds: impl IntoIterator<Item = AdmittedCategory>) -> i64 {
+    kinds
+        .into_iter()
+        .fold(0, |mask, kind| mask | (1 << kind as u32))
+}
+
 fn register_indexed_permissions(
     connection: &Connection,
     journal: Option<PathBuf>,
@@ -636,6 +655,47 @@ fn register_indexed_permissions(
     use solstone_core_format::content::kinds::{
         additional_indexed_permission, agent_indexed_permission,
     };
+    use solstone_core_format::content::topics::{TopicDocument, segment_path};
+    connection.create_scalar_function(
+        "solstone_is_topic",
+        1,
+        FunctionFlags::SQLITE_UTF8
+            | FunctionFlags::SQLITE_DETERMINISTIC
+            | FunctionFlags::SQLITE_DIRECTONLY,
+        |ctx| Ok(segment_path(ctx.get_raw(0).as_str()?).is_some()),
+    )?;
+    let topic_root = journal.clone();
+    let last_topic = std::cell::RefCell::new(None::<(String, Option<TopicDocument>)>);
+    connection.create_scalar_function(
+        "solstone_current_topic_chunk",
+        5,
+        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DIRECTONLY,
+        move |ctx| {
+            let path = ctx.get_raw(0).as_str()?;
+            let index = ctx.get_raw(1).as_i64()?;
+            let text = ctx.get_raw(2).as_str()?;
+            let grant = ctx.get_raw(3).as_i64()?;
+            let selection = ctx.get_raw(4).as_i64()?;
+            let mut last = last_topic.borrow_mut();
+            if !last.as_ref().is_some_and(|(old, _)| old == path) {
+                *last = Some((
+                    path.to_owned(),
+                    topic_root
+                        .as_deref()
+                        .and_then(|root| TopicDocument::read(root, path)),
+                ));
+            }
+            Ok(last
+                .as_ref()
+                .and_then(|(_, doc)| doc.as_ref())
+                .is_some_and(|doc| {
+                    let required = kind_mask(doc.required_kinds());
+                    required & grant == required
+                        && kind_mask(doc.selected_kinds()) & selection != 0
+                        && doc.matches_chunk(path, index, text)
+                }))
+        },
+    )?;
     // The same path may back many indexed chunks. Cache only within this
     // reader, as with body import manifests before the other kinds were added.
     let summary_root = journal.clone();

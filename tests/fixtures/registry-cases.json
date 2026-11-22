@@ -680,6 +680,11 @@
     "condition": "Path"
   },
   {
+    "path": "20260107/custom/120000_60/talents/topics.provenance.json",
+    "pattern": "*/*/*/talents/topics.provenance.json",
+    "condition": "Path"
+  },
+  {
     "path": "20260107/custom/120000_60/talents/topics.md",
     "pattern": "*/*/*/talents/topics.md",
     "condition": "Path"
