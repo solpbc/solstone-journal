@@ -13,7 +13,22 @@ use solstone_core_facets::append_action_log;
 pub use solstone_core_chatgpt_auth::*;
 
 pub fn begin_sign_in(journal: &Path) -> Result<SignInAttempt, CredentialError> {
-    let attempt = solstone_core_chatgpt_auth::begin_sign_in(journal)?;
+    logged_begin(journal, solstone_core_chatgpt_auth::begin_sign_in(journal)?)
+}
+
+/// Begin a sign-in whose callback the solstone app showing this journal catches at
+/// `redirect_uri`.
+pub fn begin_brokered_sign_in(
+    journal: &Path,
+    redirect_uri: &str,
+) -> Result<SignInAttempt, CredentialError> {
+    logged_begin(
+        journal,
+        solstone_core_chatgpt_auth::begin_brokered_sign_in(journal, redirect_uri)?,
+    )
+}
+
+fn logged_begin(journal: &Path, attempt: SignInAttempt) -> Result<SignInAttempt, CredentialError> {
     append_action_log(
         journal,
         None,

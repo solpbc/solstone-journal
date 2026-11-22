@@ -16,8 +16,8 @@ use solstone_core_journal_io::{FileLock, LockError};
 
 use crate::authorize::{DYNAMIC_CLIENT_ID, build_authorize_params};
 use crate::callback::{
-    bind_loopback_listener, parse_pasted_callback_detailed, receive_browser_callback,
-    respond_to_callback_stream,
+    bind_loopback_listener, broker_redirect_uri, parse_pasted_callback_detailed,
+    receive_browser_callback, respond_to_callback_stream,
 };
 use crate::credential::{ClosedOutcome, CredentialError};
 use crate::exchange::exchange_code_for_tokens;
@@ -321,7 +321,29 @@ fn host_id_from_bytes(mut bytes: [u8; 16]) -> String {
     )
 }
 
+/// Begin a sign-in whose browser callback this journal's own loopback listener catches.
 pub fn begin_sign_in(journal: &Path) -> Result<SignInAttempt, CredentialError> {
+    begin_with(journal, None)
+}
+
+/// Begin a sign-in whose browser callback the solstone app showing this journal catches at
+/// `redirect_uri`, on the computer the owner is at. This journal binds no listener of its own,
+/// so the app's listener has no rival even when both run on one computer; the app hands the
+/// callback back and it finishes through the attempt's single-use finish. An address that is
+/// not SIWC's loopback callback is refused as `redirect_invalid`.
+pub fn begin_brokered_sign_in(
+    journal: &Path,
+    redirect_uri: &str,
+) -> Result<SignInAttempt, CredentialError> {
+    let redirect_uri = broker_redirect_uri(redirect_uri)
+        .ok_or_else(|| CredentialError::Refused(Some("redirect_invalid".to_owned())))?;
+    begin_with(journal, Some(redirect_uri))
+}
+
+fn begin_with(
+    journal: &Path,
+    broker_redirect: Option<String>,
+) -> Result<SignInAttempt, CredentialError> {
     let auth_base = auth_base_url();
 
     let _lock =
@@ -345,8 +367,15 @@ pub fn begin_sign_in(journal: &Path) -> Result<SignInAttempt, CredentialError> {
         }
     };
 
-    let (listener, redirect_uri) = bind_loopback_listener()
-        .map_err(|e| CredentialError::Io(format!("failed to bind loopback listener: {e}")))?;
+    let (listener, redirect_uri) = match broker_redirect {
+        Some(redirect_uri) => (None, redirect_uri),
+        None => {
+            let (listener, redirect_uri) = bind_loopback_listener().map_err(|e| {
+                CredentialError::Io(format!("failed to bind loopback listener: {e}"))
+            })?;
+            (Some(Arc::new(listener)), redirect_uri)
+        }
+    };
 
     let params = build_authorize_params(
         &auth_base,
@@ -370,7 +399,7 @@ pub fn begin_sign_in(journal: &Path) -> Result<SignInAttempt, CredentialError> {
         begin_epoch: doc.epoch,
         begin_registration: doc.registration.clone(),
         created_at_unix: now_unix_secs(),
-        listener: Some(Arc::new(listener)),
+        listener,
     };
 
     set_active_attempt(attempt.clone());

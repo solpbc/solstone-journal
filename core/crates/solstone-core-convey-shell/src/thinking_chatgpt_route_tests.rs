@@ -583,3 +583,116 @@ async fn chatgpt_routes_sign_in_by_pasted_url_list_models_and_sign_out() {
         assert!(!line.contains("127.0.0.1"));
     }
 }
+
+/// The solstone app showing the journal catches the browser's return on the owner's computer.
+/// The journal begins with the app's address, binds nothing, tells the page the state the app
+/// must check, and finishes from the callback the app hands back.
+#[tokio::test]
+async fn chatgpt_routes_sign_in_through_an_app_caught_callback() {
+    let _routes = CHATGPT_ROUTES.lock().await;
+    let dir = temporary_journal();
+    let root = dir.path().to_path_buf();
+    let stub = Arc::new(Mutex::new(StubState::default()));
+    let base = start_stub(stub.clone());
+    chatgpt::set_test_auth_base_url_override(Some(base.clone()));
+    chatgpt::set_test_api_base_url_override(Some(base));
+    let mut api = Responses {
+        app: crate::router(root.clone()),
+        seen: Vec::new(),
+    };
+
+    // Anything but SIWC's loopback callback is refused, and nothing begins.
+    let before = chatgpt::get_active_attempt().map(|attempt| attempt.attempt_id);
+    for refused in [
+        "http://localhost:54321/auth/callback",
+        "https://127.0.0.1:54321/auth/callback",
+        "http://127.0.0.1:54321/callback",
+    ] {
+        let (status, body) = api
+            .call(
+                "POST",
+                "/app/thinking/api/chatgpt/sign-in",
+                Some(json!({ "redirect_uri": refused })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{refused}");
+        assert_eq!(body["reason_code"], "redirect_invalid", "{refused}");
+    }
+    assert_eq!(
+        chatgpt::get_active_attempt().map(|attempt| attempt.attempt_id),
+        before
+    );
+
+    // The app holds a port; the journal must not compete for one.
+    let held = TcpListener::bind("127.0.0.1:0").expect("app port binds");
+    let redirect = format!(
+        "http://127.0.0.1:{}/auth/callback",
+        held.local_addr().expect("port").port()
+    );
+    let (status, body) = api
+        .call(
+            "POST",
+            "/app/thinking/api/chatgpt/sign-in",
+            Some(json!({ "redirect_uri": redirect })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let attempt_id = body["attempt_id"].as_str().expect("attempt id").to_string();
+    let authorize_url = body["authorize_url"].as_str().expect("authorize url");
+    let expected_state = body["expected_state"].as_str().expect("expected state");
+    assert_eq!(query_param(authorize_url, "state"), expected_state);
+    assert_eq!(
+        query_param(authorize_url, "redirect_uri"),
+        redirect.replace(':', "%3A").replace('/', "%2F")
+    );
+    let attempt = chatgpt::get_active_attempt().expect("pending attempt");
+    assert_eq!(attempt.attempt_id, attempt_id);
+    assert!(attempt.listener.is_none(), "the journal binds no listener");
+    assert_eq!(api.attempt(&attempt_id).await, json!({"state": "pending"}));
+
+    // What the app catches is handed to the named attempt, which exchanges for its address.
+    stub.lock().expect("stub state").nonce = attempt.nonce.clone();
+    let callback = format!(
+        "{redirect}?code=ac_brokered&scope=openid&state={expected_state}&client_id=oaiapp_test"
+    );
+    assert_eq!(api.finish_named(&attempt_id, &callback).await, "signed_in");
+    assert_eq!(
+        api.attempt(&attempt_id).await,
+        json!({"state": "signed_in", "reason": "signed_in"})
+    );
+    assert!(api.signed_in().await);
+    let exchange = stub
+        .lock()
+        .expect("stub state")
+        .requests
+        .iter()
+        .find(|request| {
+            request.form.get("grant_type").map(String::as_str) == Some("authorization_code")
+        })
+        .cloned()
+        .expect("code exchanged");
+    assert_eq!(exchange.form["code"], "ac_brokered");
+    assert_eq!(exchange.form["redirect_uri"], redirect);
+    assert_eq!(exchange.form["code_verifier"], attempt.verifier);
+    assert_eq!(
+        api.finish_named(&attempt_id, &callback).await,
+        "callback_invalid"
+    );
+    drop(held);
+
+    // With no address, the journal listens for itself, as before, and the state stays inside
+    // the authorize URL.
+    let (status, body) = api
+        .call("POST", "/app/thinking/api/chatgpt/sign-in", Some(json!({})))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.get("expected_state").is_none());
+    assert!(
+        chatgpt::get_active_attempt()
+            .expect("pending attempt")
+            .listener
+            .is_some()
+    );
+    chatgpt::set_test_auth_base_url_override(None);
+    chatgpt::set_test_api_base_url_override(None);
+}

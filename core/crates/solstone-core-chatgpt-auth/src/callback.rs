@@ -55,6 +55,23 @@ pub fn bind_loopback_listener() -> Result<(TcpListener, String), std::io::Error>
     Ok((listener, redirect_uri))
 }
 
+/// The callback address a solstone app may hand in when it, not this journal, catches the
+/// browser's return: SIWC's loopback callback on `127.0.0.1`, at a port the app holds. `None` for
+/// anything else, so a brokered sign-in never sends OpenAI a redirect SIWC would refuse.
+pub fn broker_redirect_uri(value: &str) -> Option<String> {
+    let port = value
+        .strip_prefix("http://127.0.0.1:")?
+        .strip_suffix("/auth/callback")?;
+    if port.is_empty() || port.len() > 5 || port.starts_with('0') {
+        return None;
+    }
+    if !port.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let port: u16 = port.parse().ok()?;
+    (port >= 1024).then(|| format!("http://127.0.0.1:{port}/auth/callback"))
+}
+
 pub fn parse_query_pairs_refusing_duplicates(
     query: &str,
 ) -> Result<HashMap<String, String>, CallbackError> {

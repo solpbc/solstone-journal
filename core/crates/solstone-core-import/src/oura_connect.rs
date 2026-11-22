@@ -21,6 +21,8 @@ use crate::{BodyIngestError, BodyIngestErrorKind};
 
 const CALLBACK_ADDR: &str = "127.0.0.1:8765";
 const CALLBACK_URL: &str = "http://localhost:8765/callback";
+/// The `Host` a browser sends when it follows `CALLBACK_URL`.
+const CALLBACK_HOST: &str = "localhost:8765";
 const AUTH_URL: &str = "https://cloud.ouraring.com/oauth/authorize";
 const MAX_REQUEST_BYTES: usize = 8192;
 const OAUTH_SCOPES: [&str; 9] = [
@@ -370,6 +372,12 @@ fn read_callback(
     if parts.next() != Some("HTTP/1.1") || parts.next().is_some() {
         return Err(source("authorization_callback"));
     }
+    // A request that names another host, such as a page rebound onto this port, is refused and
+    // the connect keeps waiting.
+    if !names_callback_host(request) {
+        callback_response(stream, 400, "Oura authorization rejected.")?;
+        return Ok(None);
+    }
     let code = match callback_code(target, expected_state) {
         Err(error) if error.stage() == "authorization_declined" => {
             callback_response(
@@ -416,7 +424,7 @@ fn callback_code(target: &str, expected_state: &str) -> Result<Option<String>, B
         Some([value]) if !value.is_empty() => Some(value.as_str()),
         _ => None,
     };
-    if one("state") != Some(expected_state) {
+    if !one("state").is_some_and(|state| same_secret(state, expected_state)) {
         return Ok(None);
     }
     // Oura sends the owner back with an error and no code when they decline.
@@ -424,6 +432,37 @@ fn callback_code(target: &str, expected_state: &str) -> Result<Option<String>, B
         return Err(source("authorization_declined"));
     }
     Ok(one("code").map(str::to_owned))
+}
+
+/// Whether the request carries exactly one `Host` header, and it is the callback's.
+fn names_callback_host(request: &str) -> bool {
+    let mut hosts = request
+        .split("\r\n")
+        .skip(1)
+        .take_while(|line| !line.is_empty())
+        .filter_map(|line| line.split_once(':'))
+        .filter(|(name, _)| name.trim().eq_ignore_ascii_case("host"))
+        .map(|(_, value)| value.trim());
+    matches!(
+        (hosts.next(), hosts.next()),
+        (Some(host), None) if host.eq_ignore_ascii_case(CALLBACK_HOST)
+    )
+}
+
+/// Compare the `state` that came back with this connect's, without the time taken telling how
+/// much of it matched.
+fn same_secret(given: &str, expected: &str) -> bool {
+    let (given, expected) = (given.as_bytes(), expected.as_bytes());
+    if given.len() != expected.len() {
+        return false;
+    }
+    let difference = given
+        .iter()
+        .zip(expected)
+        .fold(0_u8, |difference, (left, right)| {
+            difference | (left ^ right)
+        });
+    std::hint::black_box(difference) == 0
 }
 
 fn callback_response(
@@ -717,6 +756,51 @@ mod tests {
         );
         assert_eq!(
             callback_code("/other?code=one&state=expected", "expected").unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn a_callback_names_this_port_on_localhost_once() {
+        let request =
+            |headers: &str| format!("GET /callback?code=c&state=s HTTP/1.1\r\n{headers}\r\n");
+        assert!(names_callback_host(&request("Host: localhost:8765\r\n")));
+        assert!(names_callback_host(&request(
+            "host:LOCALHOST:8765\r\nAccept: */*\r\n"
+        )));
+        for refused in [
+            "",
+            "Host: 127.0.0.1:8765\r\n",
+            "Host: localhost\r\n",
+            "Host: localhost:8766\r\n",
+            "Host: attacker.example:8765\r\n",
+            "Host: localhost:8765.attacker.example\r\n",
+            "Host: localhost:8765\r\nHost: localhost:8765\r\n",
+            "X-Forwarded-Host: localhost:8765\r\n",
+        ] {
+            assert!(!names_callback_host(&request(refused)), "{refused:?}");
+        }
+        // A header after the blank line is body, not a header.
+        assert!(!names_callback_host(
+            "GET /callback HTTP/1.1\r\n\r\nHost: localhost:8765\r\n"
+        ));
+    }
+
+    #[test]
+    fn state_matches_only_in_full() {
+        assert!(same_secret("expected", "expected"));
+        for wrong in [
+            "",
+            "expecte",
+            "expectedd",
+            "Expected",
+            "expectee",
+            "xpected",
+        ] {
+            assert!(!same_secret(wrong, "expected"), "{wrong:?}");
+        }
+        assert_eq!(
+            callback_code("/callback?code=one&state=expectee", "expected").unwrap(),
             None
         );
     }

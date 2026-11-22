@@ -4555,6 +4555,132 @@ async function main() {
     passedCases += 1;
   }
 
+  // A solstone app that catches the browser's return brokers ChatGPT sign-in: the journal
+  // begins with the app's loopback address and binds nothing, the app is handed the attempt's
+  // state, and its callback finishes the attempt. A phone app, which can't catch SIWC's
+  // loopback return, falls through to the journal's own sign-in.
+  {
+    runWithJournalCatalog(fs.readFileSync(path.join(manifestDir, 'assets/static/oauth-broker.js'), 'utf8'), context);
+    assert(window.solstoneOAuthBroker, 'the broker loads');
+    const BROKER_URI = 'http://127.0.0.1:54321/auth/callback';
+    const AUTH_URL = 'https://auth.openai.com/api/accounts/authorize?state=state-broker';
+    const CALLBACK = `${BROKER_URI}?code=c1&scope=openid&state=state-broker`;
+    const base = window.apiJson;
+    const savedSetTimeout = context.setTimeout;
+    context.setTimeout = () => 0;
+    let calls = [];
+    let signedIn = false;
+    window.apiJson = (url, options = {}) => {
+      calls.push({ url, method: options.method || 'GET', body: options.body ?? null });
+      if (url === '/app/thinking/api/chatgpt/sign-in') {
+        return Promise.resolve({ attempt_id: 'attempt_broker', authorize_url: AUTH_URL, expected_state: 'state-broker' });
+      }
+      if (url === '/app/thinking/api/chatgpt/sign-in/attempt_broker') {
+        return Promise.resolve({ state: signedIn ? 'signed_in' : 'pending' });
+      }
+      if (url === '/app/thinking/api/chatgpt/sign-in/attempt_broker/finish') {
+        signedIn = true;
+        return Promise.resolve({ reason: 'signed_in' });
+      }
+      if (url === '/app/thinking/api/chatgpt/sign-out') return Promise.resolve({ revoked: true });
+      if (url === '/app/thinking/api/chatgpt/status') {
+        return Promise.resolve(signedIn ? { signed_in: true, email: 'owner@example.com' } : { signed_in: false });
+      }
+      if (url.startsWith('/app/thinking/api/chatgpt/models')) return Promise.resolve({ models: [] });
+      if (url.startsWith('/app/thinking/api/providers')) return Promise.resolve(thinking.state.providers);
+      return base(url, options);
+    };
+    const hostMessages = [];
+    let authorizeReply = deferred();
+    let prepareOutcome = 'ready';
+    window.solstoneJournalHost = {
+      version: 2,
+      types: ['import.pick', 'auth.prepare', 'auth.authorize', 'auth.cancel'],
+      send(message) {
+        hostMessages.push(message);
+        if (message.type === 'auth.prepare') {
+          return Promise.resolve(prepareOutcome === 'ready'
+            ? { type: 'auth.prepared', id: message.id, outcome: 'ready', session_id: 'session-1', mode: 'loopback', redirect_uri: BROKER_URI }
+            : { type: 'auth.prepared', id: message.id, outcome: prepareOutcome });
+        }
+        if (message.type === 'auth.authorize') {
+          return authorizeReply.promise.then((reply) => ({ type: 'auth.result', id: message.id, ...reply }));
+        }
+        if (message.type === 'auth.cancel') {
+          authorizeReply.resolve({ outcome: 'cancelled' });
+          return Promise.resolve({ type: 'auth.result', id: message.id, outcome: 'cancelled' });
+        }
+        return Promise.resolve({ type: 'unsupported', id: message.id });
+      },
+    };
+    const reset = () => {
+      calls = [];
+      hostMessages.length = 0;
+      openedWindows.length = 0;
+      authorizeReply = deferred();
+      signedIn = false;
+      sessionStorage.removeItem(thinking.CHATGPT_ATTEMPT_STORAGE_KEY);
+      thinking.state.chatgpt.attempt = null;
+      thinking.state.chatgpt.activeLaunch = null;
+      thinking.state.chatgpt.screen = 'card';
+    };
+    const signInBegins = () => calls.filter((call) => call.url === '/app/thinking/api/chatgpt/sign-in');
+
+    // One click from a desktop app.
+    reset();
+    await thinking.startChatGptSignIn({ startOver: false });
+    await settle();
+    const prepare = hostMessages.find((message) => message.type === 'auth.prepare');
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(prepare.preferences)), [{ mode: 'loopback', host: '127.0.0.1', path: '/auth/callback', port: 0 }], 'the app is asked for SIWC\'s loopback return only');
+    assert.strictEqual(signInBegins().length, 1, 'one sign-in begins');
+    assert.deepStrictEqual(JSON.parse(signInBegins()[0].body), { redirect_uri: BROKER_URI }, 'the journal begins with the app\'s address');
+    const authorize = hostMessages.find((message) => message.type === 'auth.authorize');
+    assert(authorize, 'the app is asked to open the sign-in');
+    assert.strictEqual(authorize.session_id, 'session-1');
+    assert.strictEqual(authorize.authorize_url, AUTH_URL);
+    assert.strictEqual(authorize.expected_state, 'state-broker', 'the app checks the attempt\'s own state');
+    assert.strictEqual(authorize.timeout_seconds, 600);
+    assert(openedWindows.every((win) => win.closed && win.location.href === 'about:blank'), 'the page opens no sign-in of its own');
+    assert.strictEqual(thinking.state.chatgpt.screen, 'pending', 'the owner sees the sign-in under way');
+    authorizeReply.resolve({ outcome: 'callback', callback_url: CALLBACK });
+    for (let round = 0; round < 6; round += 1) await settle();
+    const finish = calls.find((call) => call.url === '/app/thinking/api/chatgpt/sign-in/attempt_broker/finish');
+    assert(finish, 'the app\'s callback finishes the named attempt');
+    assert.strictEqual(JSON.parse(finish.body).redirect_url, CALLBACK, 'the callback is handed over unchanged');
+    assert.strictEqual(thinking.state.chatgpt.screen, 'panel', 'one click signs in');
+    assert.strictEqual(sessionStorage.getItem(thinking.CHATGPT_ATTEMPT_STORAGE_KEY), null);
+
+    // Cancelling while the app holds the sign-in lets the app's listener go.
+    reset();
+    await thinking.startChatGptSignIn({ startOver: false });
+    await settle();
+    thinking.cancelChatGptSignIn();
+    for (let round = 0; round < 4; round += 1) await settle();
+    const cancel = hostMessages.find((message) => message.type === 'auth.cancel');
+    assert(cancel, 'cancel reaches the app');
+    assert.strictEqual(cancel.session_id, 'session-1');
+    assert(!calls.some((call) => call.url.endsWith('/finish')), 'a cancelled sign-in finishes nothing');
+    assert.strictEqual(thinking.state.chatgpt.screen, 'card');
+
+    // A phone app can't catch a loopback return, so the journal signs in on its own.
+    reset();
+    prepareOutcome = 'no_compatible_mode';
+    await thinking.startChatGptSignIn({ startOver: false });
+    await settle();
+    assert.strictEqual(signInBegins().length, 1, 'one sign-in begins');
+    assert.strictEqual(signInBegins()[0].body, '{}', 'the journal listens for itself');
+    assert(!hostMessages.some((message) => message.type === 'auth.authorize'), 'the app is not asked to open it');
+    assert.strictEqual(openedWindows.length, 1);
+    assert.strictEqual(openedWindows[0].location.href, AUTH_URL, 'the page opens the sign-in itself');
+    assert.strictEqual(thinking.state.chatgpt.screen, 'pending');
+
+    thinking.cancelChatGptSignIn();
+    await settle();
+    delete window.solstoneJournalHost;
+    window.apiJson = base;
+    context.setTimeout = savedSetTimeout;
+  }
+
   // Thinking on the view contract: the real fragment through the real shell.
   const contractCases = await require('./thinking_contract_dom.js')(manifestDir);
   passedCases += contractCases;

@@ -14,10 +14,11 @@ use solstone_core_journal_io::LockOptions;
 
 use crate::attempt::{
     ATTEMPT_EXPIRATION_SECS, AttemptState, AttemptStatus, SignInAttempt, active_attempt_named,
-    attempt_status, finish_active_sign_in, finish_sign_in, generate_host_id, get_status,
-    registration, set_active_attempt, sign_out,
+    attempt_status, begin_brokered_sign_in, finish_active_sign_in, finish_sign_in,
+    generate_host_id, get_active_attempt, get_status, registration, set_active_attempt, sign_out,
 };
 use crate::authorize::{DYNAMIC_CLIENT_ID, build_authorize_params};
+use crate::callback::broker_redirect_uri;
 use crate::credential::{ChatGptCredential, ClosedOutcome, CredentialError};
 use crate::overrides::auth_base_url;
 use crate::refresh::ChatGptAuthManager;
@@ -1447,4 +1448,142 @@ fn a_refused_client_after_a_lost_race_is_superseded_without_a_write() {
                 .is_none_or(|registration| !registration.client_refused)
         );
     }
+}
+
+const BROKER_REDIRECT: &str = "http://127.0.0.1:54321/auth/callback";
+
+#[test]
+fn a_brokered_sign_in_binds_nothing_and_finishes_through_the_apps_callback() {
+    let _registry = hold_attempt_registry();
+    let dir = journal_dir();
+    let journal = dir.path();
+    let attempt = begin_brokered_sign_in(journal, BROKER_REDIRECT).expect("begins");
+    assert!(
+        attempt.listener.is_none(),
+        "the app holds the port, so the journal binds nothing of its own"
+    );
+    assert_eq!(attempt.redirect_uri, BROKER_REDIRECT);
+    assert!(attempt.authorize_url.contains(&format!(
+        "redirect_uri={}",
+        solstone_core_auth_flow::percent_encode(BROKER_REDIRECT)
+    )));
+    assert!(
+        attempt
+            .authorize_url
+            .contains(&format!("client_id={DYNAMIC_CLIENT_ID}"))
+    );
+    assert!(
+        attempt
+            .authorize_url
+            .contains(&format!("state={}", attempt.state))
+    );
+    assert_eq!(attempt_status(&attempt.attempt_id), pending());
+
+    // A return with another state leaves the attempt waiting.
+    let fake = FakeOpenAi::new(journal);
+    let stray = format!("{BROKER_REDIRECT}?code=ac_x&state=not-{}", attempt.state);
+    assert_eq!(
+        finish_sign_in(
+            journal,
+            &*fake,
+            &attempt,
+            Some(&stray),
+            Duration::from_secs(5)
+        )
+        .map(|result| result.outcome),
+        Err(ClosedOutcome::CallbackInvalid)
+    );
+    assert_eq!(attempt_status(&attempt.attempt_id), pending());
+    assert!(fake.exchanges().is_empty());
+
+    fake.accept_code("ac_b", &attempt.nonce, TEST_SUBJECT);
+    let callback = format!(
+        "{BROKER_REDIRECT}?code=ac_b&scope=openid&state={}&client_id={TEST_CLIENT}",
+        attempt.state
+    );
+    assert_eq!(
+        finish_sign_in(
+            journal,
+            &*fake,
+            &attempt,
+            Some(&callback),
+            Duration::from_secs(5)
+        )
+        .map(|result| result.outcome),
+        Ok(ClosedOutcome::SignedIn)
+    );
+    let exchanges = fake.exchanges();
+    assert_eq!(exchanges.len(), 1);
+    assert_eq!(
+        exchanges[0]["redirect_uri"], BROKER_REDIRECT,
+        "the code is exchanged for the address it was issued to"
+    );
+    assert_eq!(exchanges[0]["client_id"], TEST_CLIENT);
+    assert_eq!(
+        attempt_status(&attempt.attempt_id),
+        ended(AttemptState::SignedIn, ClosedOutcome::SignedIn)
+    );
+    let doc = read_doc(journal);
+    assert_eq!(doc.subject.as_deref(), Some(TEST_SUBJECT));
+    assert!(doc.tokens.is_some());
+
+    // The attempt is single-use: the same callback again finishes nothing.
+    assert_eq!(
+        finish_sign_in(
+            journal,
+            &*fake,
+            &attempt,
+            Some(&callback),
+            Duration::from_secs(5)
+        )
+        .map(|result| result.outcome),
+        Err(ClosedOutcome::CallbackInvalid)
+    );
+    assert_eq!(fake.exchanges().len(), 1);
+}
+
+#[test]
+fn a_brokered_sign_in_takes_only_siwcs_loopback_callback() {
+    for accepted in [
+        "http://127.0.0.1:1024/auth/callback",
+        BROKER_REDIRECT,
+        "http://127.0.0.1:65535/auth/callback",
+    ] {
+        assert_eq!(broker_redirect_uri(accepted).as_deref(), Some(accepted));
+    }
+    for refused in [
+        "",
+        "http://localhost:54321/auth/callback",
+        "https://127.0.0.1:54321/auth/callback",
+        "http://[::1]:54321/auth/callback",
+        "http://127.0.0.1/auth/callback",
+        "http://127.0.0.1:0/auth/callback",
+        "http://127.0.0.1:80/auth/callback",
+        "http://127.0.0.1:054321/auth/callback",
+        "http://127.0.0.1:65536/auth/callback",
+        "http://127.0.0.1:+5432/auth/callback",
+        "http://127.0.0.1:54321/callback",
+        "http://127.0.0.1:54321/auth/callback/",
+        "http://127.0.0.1:54321/auth/callback?next=1",
+        "http://127.0.0.1:54321/auth/callback#x",
+        "http://user@127.0.0.1:54321/auth/callback",
+        " http://127.0.0.1:54321/auth/callback",
+        "solstone://oauth/callback",
+    ] {
+        assert_eq!(broker_redirect_uri(refused), None, "{refused:?}");
+    }
+
+    let _registry = hold_attempt_registry();
+    let dir = journal_dir();
+    let before = get_active_attempt().map(|attempt| attempt.attempt_id);
+    match begin_brokered_sign_in(dir.path(), "http://localhost:54321/auth/callback") {
+        Err(CredentialError::Refused(Some(code))) => assert_eq!(code, "redirect_invalid"),
+        other => panic!("refused address began: {other:?}"),
+    }
+    assert_eq!(
+        get_active_attempt().map(|attempt| attempt.attempt_id),
+        before,
+        "a refused begin replaces no attempt"
+    );
+    assert!(!credential_path(dir.path()).exists(), "and writes nothing");
 }

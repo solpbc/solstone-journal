@@ -2391,26 +2391,49 @@ fn thinking_config_busy_response(locale: &str) -> Response {
     .into_response()
 }
 
-async fn chatgpt_sign_in(Extension(journal): Extension<Arc<JournalRoot>>) -> Response {
-    match solstone_core_thinking::chatgpt::begin_sign_in(&journal.0) {
+#[derive(Debug, serde::Deserialize, Default)]
+struct ChatGptBeginBody {
+    /// Where the solstone app showing this journal catches the browser's return. Absent, this
+    /// journal listens for it itself.
+    #[serde(default)]
+    redirect_uri: Option<String>,
+}
+
+async fn chatgpt_sign_in(Extension(journal): Extension<Arc<JournalRoot>>, body: Bytes) -> Response {
+    let brokered = serde_json::from_slice::<ChatGptBeginBody>(&body)
+        .ok()
+        .and_then(|body| body.redirect_uri);
+    let begun = match brokered.as_deref() {
+        Some(redirect_uri) => {
+            solstone_core_thinking::chatgpt::begin_brokered_sign_in(&journal.0, redirect_uri)
+        }
+        None => solstone_core_thinking::chatgpt::begin_sign_in(&journal.0),
+    };
+    match begun {
         Ok(attempt) => {
-            let attempt_id = attempt.attempt_id.clone();
-            let authorize_url = attempt.authorize_url.clone();
-            let j = journal.0.clone();
-            std::thread::spawn(move || {
-                let transport = solstone_core_thinking::chatgpt::UreqTransport;
-                let _ = solstone_core_thinking::chatgpt::finish_sign_in(
-                    &j,
-                    &transport,
-                    &attempt,
-                    None,
-                    Duration::from_secs(600),
-                );
+            let mut answer = json!({
+                "attempt_id": attempt.attempt_id,
+                "authorize_url": attempt.authorize_url,
             });
-            json_response(json!({
-                "attempt_id": attempt_id,
-                "authorize_url": authorize_url,
-            }))
+            if attempt.listener.is_none() {
+                // A brokered attempt has no listener here. The app checks the state the browser
+                // returns with, and the attempt finishes when the app hands its callback to the
+                // finish route.
+                answer["expected_state"] = json!(attempt.state);
+            } else {
+                let j = journal.0.clone();
+                std::thread::spawn(move || {
+                    let transport = solstone_core_thinking::chatgpt::UreqTransport;
+                    let _ = solstone_core_thinking::chatgpt::finish_sign_in(
+                        &j,
+                        &transport,
+                        &attempt,
+                        None,
+                        Duration::from_secs(600),
+                    );
+                });
+            }
+            json_response(answer)
         }
         Err(err) => chatgpt_credential_error_response(err),
     }

@@ -151,6 +151,27 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     if (launch) launch.popup = null;
     try { if (popup && !popup.closed) popup.close(); } catch (_err) {}
   }
+
+  // SIWC returns only to http://127.0.0.1:<port>/auth/callback, so a solstone app that can
+  // catch the browser's return on the owner's computer is asked for exactly that.
+  const CHATGPT_BROKER_PREFERENCES = Object.freeze([
+    Object.freeze({ mode: 'loopback', host: '127.0.0.1', path: '/auth/callback', port: 0 }),
+  ]);
+
+  function chatGptBroker() {
+    const broker = window.solstoneOAuthBroker;
+    if (!broker || typeof broker.run !== 'function' || typeof broker.supportsNativeBroker !== 'function') {
+      return null;
+    }
+    return broker.supportsNativeBroker() ? broker : null;
+  }
+
+  function cancelChatGptBroker() {
+    const broker = window.solstoneOAuthBroker;
+    if (broker && typeof broker.cancelActive === 'function') {
+      Promise.resolve(broker.cancelActive()).catch(() => {});
+    }
+  }
   const confidentialTerminalPhases = new Set(['not_verified', 'repair_needed', 'early_access', 'journal_limit']);
   const installInFlightStates = new Set(['resolving', 'downloading', 'verifying', 'installing']);
   const installTerminalStates = new Set(['idle', 'installed', 'failed', 'unavailable']);
@@ -5281,6 +5302,73 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     await refreshChatGpt();
   }
 
+  // The solstone app showing the journal catches the browser's return on the owner's
+  // computer and hands it back, so a journal reached over the relay still signs in with one
+  // click. Resolves true once the app holds the sign-in (or the launch was dropped), false when
+  // the app can't catch a ChatGPT return, and rejects when the journal refuses to begin.
+  function startBrokeredChatGptSignIn(launch) {
+    const broker = chatGptBroker();
+    if (!broker) return Promise.resolve(false);
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const settle = (fn, value) => {
+        if (settled) return;
+        settled = true;
+        fn(value);
+      };
+      broker.run({
+        preferences: CHATGPT_BROKER_PREFERENCES,
+        allowJournalLoopback: false,
+        allowDeviceCode: false,
+        start: async ({ redirectUri }) => {
+          if (!launchCurrent(launch)) {
+            settle(resolve, true);
+            return { available: false };
+          }
+          let response;
+          try {
+            response = await api('api/chatgpt/sign-in', {
+              method: 'POST',
+              body: JSON.stringify({ redirect_uri: redirectUri }),
+            });
+          } catch (err) {
+            if (err?.reasonCode === 'redirect_invalid') return { available: false };
+            throw err;
+          }
+          if (!launchCurrent(launch)) {
+            settle(resolve, true);
+            return { available: false };
+          }
+          const rawUrl = response?.authorize_url;
+          const expectedState = response?.expected_state;
+          if (!window.solstoneOutside.allowedUrl(rawUrl) || typeof expectedState !== 'string' || !expectedState) {
+            throw new Error('chatgpt_sign_in_failed');
+          }
+          const attempt = { id: response.attempt_id, authorizeUrl: rawUrl };
+          state.chatgpt.attempt = attempt;
+          window.sessionStorage.setItem(CHATGPT_ATTEMPT_STORAGE_KEY, JSON.stringify(attempt));
+          state.chatgpt.screen = 'pending';
+          state.chatgpt.liveStatus = 'pending_status';
+          state.byoMode = 'chatgpt';
+          setSelectedByoProvider('chatgpt');
+          renderAll();
+          stopChatGptPoll();
+          const token = ++state.chatgpt.pollToken;
+          pollChatGptAttempt(attempt.id, token).catch(() => {});
+          settle(resolve, true);
+          return { authorizeUrl: rawUrl, expectedState, attemptId: attempt.id, timeoutSeconds: 600 };
+        },
+        finish: async ({ attemptId, callbackUrl }) => {
+          if (!attemptId || state.chatgpt.attempt?.id !== attemptId) return null;
+          return submitChatGptCallback(callbackUrl);
+        },
+      }).then(
+        (result) => settle(resolve, !(result && result.ok === false && result.strategy === null)),
+        (err) => settle(reject, err),
+      );
+    });
+  }
+
   async function startChatGptSignIn({ startOver = false } = {}) {
     if (chatGptStartGateOwner) return;
     if (state.chatgpt.activeLaunch) {
@@ -5339,6 +5427,12 @@ window.SolViews.register('thinking', { mount: (ctx) => {
           }
         }
       }
+
+      if (await startBrokeredChatGptSignIn(launch)) {
+        closeChatGptPopup(launch);
+        return;
+      }
+      if (!launchCurrent(launch)) { closeChatGptPopup(launch); return; }
 
       const response = await api('api/chatgpt/sign-in', { method: 'POST', body: '{}' });
       if (!launchCurrent(launch)) { closeChatGptPopup(launch); return; }
@@ -5429,6 +5523,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
   }
 
   function cancelChatGptSignIn() {
+    cancelChatGptBroker();
     if (state.chatgpt.activeLaunch) {
       releaseChatGptGate(state.chatgpt.activeLaunch);
       state.chatgpt.activeLaunch.cancelled = true;
@@ -5448,6 +5543,12 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     const input = $('chatgptRedirectUrl');
     const redirectUrl = String(input?.value || '');
     if (!redirectUrl) return;
+    await submitChatGptCallback(redirectUrl, input);
+  }
+
+  // Hand the journal the address the browser came back to, pasted by the owner or caught by
+  // the solstone app.
+  async function submitChatGptCallback(redirectUrl, input = null) {
     const attemptId = state.chatgpt.attempt?.id;
     const url = attemptId
       ? `api/chatgpt/sign-in/${encodeURIComponent(attemptId)}/finish`
@@ -5460,6 +5561,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
       if (response?.reason === 'signed_in') {
         await refreshChatGpt();
         if (state.chatgpt.status?.signed_in) {
+          cancelChatGptBroker();
           stopChatGptPoll();
           window.sessionStorage.removeItem(CHATGPT_ATTEMPT_STORAGE_KEY);
           state.chatgpt.attempt = null;
