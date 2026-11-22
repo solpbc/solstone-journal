@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for update summary target.",
+  "context": "Journal command-line text for update summary target.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "available",
+      "type": "string"
+    },
+    {
+      "name": "journal",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f8f8ed1117be24d0cd27840ea5e6490a7c5548dcfe8a20fb542ea5e67b6c9d1e",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

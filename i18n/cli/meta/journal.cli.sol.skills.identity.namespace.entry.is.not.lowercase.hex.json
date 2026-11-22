@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for skills identity namespace entry is not lowercase hex.",
+  "context": "Journal command-line text for skills identity namespace entry is not lowercase hex.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "80498ec09137ba2f0f9102d7de8b103624a3812910708ad4fbe515663f69ba27",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

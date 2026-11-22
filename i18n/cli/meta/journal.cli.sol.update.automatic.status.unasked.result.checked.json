@@ -1,0 +1,48 @@
+{
+  "description": "Journal command-line text for update automatic status unasked result checked.",
+  "context": "Journal command-line text for update automatic status unasked result checked.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "result",
+      "type": "string"
+    },
+    {
+      "name": "code",
+      "type": "string"
+    },
+    {
+      "name": "date",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "f8ed47e3b48f4c9d53ea1dad6157efff5b446b9fc3af13e5697f5a059dc2367c",
+  "max_length": 1314,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "result",
+    "type": "string",
+    "enum_values": [
+      "up-to-date",
+      "installed",
+      "off",
+      "paused",
+      "held",
+      "hold-unknown",
+      "offline",
+      "metered",
+      "waiting-for-signed-installer",
+      "busy",
+      "not-eligible",
+      "failed"
+    ],
+    "enum_default": "failed"
+  }
+}

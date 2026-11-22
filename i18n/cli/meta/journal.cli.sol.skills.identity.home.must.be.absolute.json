@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for skills identity home must be absolute.",
+  "context": "Journal command-line text for skills identity home must be absolute.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "38f4b820298b213a229b6eb23564052f98d8ad999696a132e2010472b147fbf3",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

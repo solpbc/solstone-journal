@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for launcher executable unix.",
+  "context": "Journal command-line text for launcher executable unix.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1bdda7407b91bd02fe0e3677f7fd5bc062a903d18dcf73a081c47fb25b40179e",
+  "max_length": 156,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "sibling",
+      "kind": "command",
+      "value": "solstone-core-sol"
+    },
+    {
+      "name": "solstone_name",
+      "kind": "command",
+      "value": "solstone"
+    }
+  ]
+}

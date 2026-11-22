@@ -17,10 +17,12 @@ publish = false
 unsafe_code = "deny"
 
 [features]
+cli-copy = ["dep:solstone-core-cli-copy"]
 test-hooks = []
 full-tests = []
 
 [dependencies]
+solstone-core-cli-copy = { workspace = true, optional = true }
 getrandom.workspace = true
 sha2.workspace = true
 

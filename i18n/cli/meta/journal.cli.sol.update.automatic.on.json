@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for update automatic on.",
+  "context": "Journal command-line text for update automatic on.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a142614da79d75199f6521c87bbfe14d83b73c11d668f0f508cd166301c6e241",
+  "max_length": 141,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

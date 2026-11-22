@@ -12,6 +12,11 @@ publish = false
 [features]
 full-tests = []
 
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+solstone-core-cli-copy.workspace = true
+
 [dev-dependencies]
 tempfile = "3.24.0"
 

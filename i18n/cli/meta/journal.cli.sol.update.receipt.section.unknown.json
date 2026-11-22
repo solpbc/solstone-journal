@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for update receipt section unknown.",
+  "context": "Journal command-line text for update receipt section unknown.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "section",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9d37ea617b4617615f9fef2375cd5ed23fd6218b1a0d94be991483e2aaeb6966",
+  "max_length": 86,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "config_file",
+      "kind": "accepted-input",
+      "value": "install.conf"
+    }
+  ]
+}

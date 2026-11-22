@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for update catalogue schema unsupported schema.",
+  "context": "Journal command-line text for update catalogue schema unsupported schema.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "861ab0efe5914d41e2dd9d76b33708902a7c6feb1dab49535c3027e6b6ad6c48",
+  "max_length": 85,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

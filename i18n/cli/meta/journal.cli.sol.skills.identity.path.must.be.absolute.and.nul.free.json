@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for skills identity path must be absolute and nul free.",
+  "context": "Journal command-line text for skills identity path must be absolute and nul free.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6a6d4b1f6e15f520b08139f03d0fdff806a9d10915dc72af3c5207edfc1713c2",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

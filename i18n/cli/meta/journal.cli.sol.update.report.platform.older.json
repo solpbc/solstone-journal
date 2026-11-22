@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for update report platform older.",
+  "context": "Journal command-line text for update report platform older.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d602528dc2a1eda6aa14369b309d8ec2686f50ff3fb9ab8713f4614f1c46e89e",
+  "max_length": 137,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "version_flag",
+      "kind": "flag",
+      "value": "--version"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for root package.",
+  "context": "Journal command-line text for root package.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "da51490f9dfa208d7d71a43e2d3e3a4d037829941cd3084d8d1a49b215487841",
+  "max_length": 177,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_name",
+      "kind": "command",
+      "value": "solstone"
+    }
+  ]
+}

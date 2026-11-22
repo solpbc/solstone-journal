@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for update receipt native malformed.",
+  "context": "Journal command-line text for update receipt native malformed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b0e2332ee5e6cc2f5650b406948600fd68db192cb301280438429382c02695c5",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "receipt_file",
+      "kind": "accepted-input",
+      "value": "install-receipt"
+    }
+  ]
+}

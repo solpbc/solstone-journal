@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for skills path ancestor absent.",
+  "context": "Journal command-line text for skills path ancestor absent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4688ef62786bc650f84d2070092e4a99f83f40038235ea26ee9ac4ef11fa7ad0",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

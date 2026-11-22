@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for resident platform.",
+  "context": "Journal command-line text for resident platform.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6c893cadd10823d7d28e5a5f4f0134301290a48314f30a324ca5a63292a827fa",
+  "max_length": 81,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

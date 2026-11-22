@@ -43,11 +43,12 @@ const EXIT_CONFIG: u8 = 78;
 const EXIT_TEMPFAIL: u8 = 75;
 const DEFAULT_CONVEY_PORT: i64 = 5015;
 const SOLSTONE_CONVEY_PORT_ENV: &str = "SOLSTONE_CONVEY_PORT";
-const USAGE: &str = "Usage: solstone <command> [args...]\n";
 const SERVICE_MOVED_EXIT: i32 = 2;
-const SOL_SERVICE_CMD_REMOVED_ERROR_TAIL: &str = "(commands that run the journal on this computer are under 'solstone journal'; see 'solstone journal --help'.)";
 
-fn resolve_convey_port(env: &BTreeMap<String, String>) -> Result<i64, CommandOutput> {
+fn resolve_convey_port(
+    env: &BTreeMap<String, String>,
+    args: &[OsString],
+) -> Result<i64, CommandOutput> {
     match env.get(SOLSTONE_CONVEY_PORT_ENV) {
         None => Ok(DEFAULT_CONVEY_PORT),
         Some(value) => match value.parse::<i64>() {
@@ -55,7 +56,15 @@ fn resolve_convey_port(env: &BTreeMap<String, String>) -> Result<i64, CommandOut
             _ => Err(CommandOutput::failure(
                 format!(
                     "{}\n",
-                    solstone_core_cli_copy::text("journal.cli.client.port.invalid")
+                    solstone_core_cli_copy::render_for(
+                        if args.iter().any(|arg| arg == "--json" || arg == "--jsonl") {
+                            solstone_core_cli_copy::ENGLISH
+                        } else {
+                            solstone_core_cli_copy::cli_locale()
+                        },
+                        "journal.cli.client.port.invalid",
+                        &[]
+                    )
                 ),
                 i32::from(EXIT_CONFIG),
             )),
@@ -154,7 +163,7 @@ fn run_about(args: &[OsString]) -> ExitCode {
         return render_output(CommandOutput::failure(usage(), i32::from(EXIT_USAGE)));
     }
     let env = env::vars().collect::<BTreeMap<_, _>>();
-    let port = match resolve_convey_port(&env) {
+    let port = match resolve_convey_port(&env, args) {
         Ok(port) => port,
         Err(output) => return render_output(output),
     };
@@ -262,19 +271,28 @@ fn version_output() -> CommandOutput {
 
 fn help_output() -> CommandOutput {
     CommandOutput {
-        stdout: help::render_root_help(),
+        stdout: help::render_root_help_for(solstone_core_cli_copy::cli_locale()),
         stderr: String::new(),
         exit: 0,
     }
 }
 
 fn usage_error_output() -> CommandOutput {
-    CommandOutput::failure(USAGE, i32::from(EXIT_USAGE))
+    CommandOutput::failure(
+        format!(
+            "{}\n",
+            solstone_core_cli_copy::text("journal.cli.sol.usage")
+        ),
+        i32::from(EXIT_USAGE),
+    )
 }
 
 fn unsupported_output() -> CommandOutput {
     CommandOutput::failure(
-        "Unsupported native solstone command.\n",
+        format!(
+            "{}\n",
+            solstone_core_cli_copy::text("journal.cli.sol.unsupported")
+        ),
         i32::from(EXIT_USAGE),
     )
 }
@@ -283,7 +301,8 @@ fn service_moved_output(command: &OsStr) -> CommandOutput {
     let command = command.to_string_lossy();
     CommandOutput::failure(
         format!(
-            "'{command}' moved to 'solstone journal {command}'; run that instead.\n{SOL_SERVICE_CMD_REMOVED_ERROR_TAIL}\n"
+            "{}\n",
+            solstone_core_cli_copy::display("journal.cli.sol.moved", [("command", &command)])
         ),
         SERVICE_MOVED_EXIT,
     )
@@ -306,19 +325,27 @@ enum ProjectRootError {
     Unclassified(PathBuf),
 }
 
-impl std::fmt::Display for ProjectRootError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl ProjectRootError {
+    fn message_detail(&self) -> solstone_core_cli_copy::MessageDetail {
         match self {
-            ProjectRootError::CurrentExe(error) => write!(
-                formatter,
-                "native solstone project root resolution failed: could not inspect current executable: {error}"
+            Self::CurrentExe(error) => solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.sol.root.inspect",
+                [("error", error)],
             ),
-            ProjectRootError::Unclassified(executable) => write!(
-                formatter,
-                "native solstone project root resolution failed: could not locate source checkout or installed solstone package from {}",
-                executable.display()
+            Self::Unclassified(path) => solstone_core_cli_copy::MessageDetail::message(
+                "journal.cli.sol.root.package",
+                [("path", &path.display())],
             ),
         }
+    }
+    fn render(&self, locale: &str) -> String {
+        self.message_detail().render_for_output(Some(locale))
+    }
+}
+
+impl std::fmt::Display for ProjectRootError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.render(solstone_core_cli_copy::ENGLISH))
     }
 }
 
@@ -328,7 +355,7 @@ fn run_root() -> ExitCode {
     match resolve_project_root() {
         Ok(root) => render_output(CommandOutput::success(format!("{}\n", root.display()))),
         Err(error) => {
-            eprintln!("{error}");
+            eprintln!("{}", error.render(solstone_core_cli_copy::cli_locale()));
             ExitCode::from(EXIT_CONFIG)
         }
     }
@@ -388,14 +415,19 @@ pub(crate) fn run_with_update_seams(
     runner: &dyn solstone_core_update::InstallerRunner,
     probe: &dyn solstone_core_update::PackageProbe,
 ) -> CommandOutput {
+    let locale = if args.iter().any(|arg| arg == "--json") {
+        solstone_core_cli_copy::ENGLISH
+    } else {
+        solstone_core_cli_copy::terminal_locale().unwrap_or(solstone_core_cli_copy::ENGLISH)
+    };
     if args
         .iter()
         .any(|arg| arg == OsStr::new("--help") || arg == OsStr::new("-h"))
     {
-        return CommandOutput::success(solstone_core_update::render_help());
+        return CommandOutput::success(solstone_core_update::render_help_in(locale));
     }
 
-    let update_args = match solstone_core_update::parse_args(args) {
+    let update_args = match solstone_core_update::parse_args_in(locale, args) {
         Ok(args) => args,
         Err(err) => {
             return CommandOutput::failure(format!("{}\n", err.message), i32::from(EXIT_USAGE));
@@ -410,6 +442,7 @@ pub(crate) fn run_with_update_seams(
             | solstone_core_update::CommandMode::Unattended
     ) {
         return run_automatic_mode(
+            locale,
             &update_args,
             os_linux,
             executable,
@@ -421,7 +454,8 @@ pub(crate) fn run_with_update_seams(
     }
 
     let result = if let Some(data_dir) = data_dir {
-        solstone_core_update::perform(
+        solstone_core_update::perform_in(
+            locale,
             catalogue,
             runner,
             fetch,
@@ -434,7 +468,7 @@ pub(crate) fn run_with_update_seams(
         )
     } else {
         Err((
-            solstone_core_update::UpdateReport::owner_context_unknown(),
+            solstone_core_update::UpdateReport::owner_context_unknown_in(locale),
             1,
         ))
     };
@@ -452,7 +486,7 @@ pub(crate) fn run_with_update_seams(
             exit: exit_code,
         }
     } else {
-        let body = solstone_core_update::render_human(&report);
+        let body = solstone_core_update::render_human_in(locale, &report);
         CommandOutput {
             stdout: body,
             stderr: String::new(),
@@ -462,7 +496,9 @@ pub(crate) fn run_with_update_seams(
 }
 
 /// `solstone update --automatic on|off|status` and `--unattended`.
+#[allow(clippy::too_many_arguments)]
 fn run_automatic_mode(
+    locale: &str,
     update_args: &solstone_core_update::UpdateArgs,
     os_linux: bool,
     executable: &Path,
@@ -493,11 +529,22 @@ fn run_automatic_mode(
     let (Some(data_dir), Some(home)) = (data_dir, env::var_os("HOME").map(PathBuf::from)) else {
         return refused(
             "owner-context-unknown",
-            "couldn't find your data directory.",
+            &solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.automatic.home",
+                &[],
+            ),
         );
     };
     if !os_linux {
-        return refused("non-linux", "solstone update --automatic works on linux.");
+        return refused(
+            "non-linux",
+            &solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.automatic.linux",
+                &[],
+            ),
+        );
     }
     let systemctl = automatic::RealSystemctl;
     let ownership = solstone_core_update::classify_ownership(executable, data_dir, etc_dir, probe);
@@ -508,30 +555,43 @@ fn run_automatic_mode(
     match update_args.mode {
         CommandMode::AutomaticOn => {
             let Some(pos) = positive.filter(|pos| automatic::eligible(pos)) else {
-                let message =
-                    automatic::ineligible_message(&ownership, probe.has_repo_source(etc_dir));
+                let message = automatic::ineligible_message_in(
+                    locale,
+                    &ownership,
+                    probe.has_repo_source(etc_dir),
+                );
                 return refused("not-eligible", &message);
             };
-            match automatic::turn_on(pos, data_dir, &home, &systemctl) {
+            match automatic::turn_on_in(locale, pos, data_dir, &home, &systemctl) {
                 Ok(()) => render(
                     json!({"status": "on"}),
-                    "automatic updates are on. your journal never restarts on its own; a new version starts the next time it does.".to_owned(),
+                    solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.sol.update.automatic.on",
+                        &[],
+                    ),
                     0,
                 ),
                 Err(refusal) => refused(refusal.code, &refusal.message),
             }
         }
-        CommandMode::AutomaticOff => match automatic::turn_off(data_dir, &home, &systemctl) {
-            Ok(()) => render(
-                json!({"status": "off"}),
-                "automatic updates are off. to update, run solstone update.".to_owned(),
-                0,
-            ),
-            Err(refusal) => refused(refusal.code, &refusal.message),
-        },
+        CommandMode::AutomaticOff => {
+            match automatic::turn_off_in(locale, data_dir, &home, &systemctl) {
+                Ok(()) => render(
+                    json!({"status": "off"}),
+                    solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.sol.update.automatic.off",
+                        &[],
+                    ),
+                    0,
+                ),
+                Err(refusal) => refused(refusal.code, &refusal.message),
+            }
+        }
         CommandMode::AutomaticStatus => {
             let status = automatic::status(positive, data_dir);
-            let human = automatic_status_line(&status);
+            let human = automatic_status_line(locale, &status);
             render(json!(status), human, 0)
         }
         _ => {
@@ -555,10 +615,7 @@ fn run_automatic_mode(
                 now_unix,
             }
             .run();
-            let human = format!(
-                "automatic update: {}",
-                automatic_result_words(&outcome.result)
-            );
+            let human = automatic_run_line(locale, &outcome.result);
             render(json!(outcome), human, 0)
         }
     }
@@ -579,22 +636,56 @@ fn automatic_journal_path(home: &Path) -> PathBuf {
     .path
 }
 
-fn automatic_status_line(status: &solstone_core_update::automatic::AutomaticStatus) -> String {
+fn automatic_status_line(
+    locale: &str,
+    status: &solstone_core_update::automatic::AutomaticStatus,
+) -> String {
     use solstone_core_update::automatic::Choice;
     let choice = match status.choice {
-        Choice::On if status.paused => "stopped after two tries that didn't work",
+        Choice::On if status.paused => "paused",
         Choice::On => "on",
         Choice::Off => "off",
-        Choice::Unasked => "not turned on",
+        Choice::Unasked => "unasked",
     };
-    let mut line = format!("automatic updates: {choice}");
-    if let Some(at) = status.last_check_unix {
-        line.push_str(&format!(" · last checked {}", utc_date(at)));
+    let date = status.last_check_unix.map(utc_date);
+    let Some(result) = status.last_result.as_deref() else {
+        return match date {
+            Some(date) => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.sol.update.automatic.status.checked",
+                [("choice", &(choice)), ("date", &(date))],
+            ),
+            None => solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.sol.update.automatic.status",
+                [("choice", &(choice))],
+            ),
+        };
+    };
+    let id = match (status.choice, status.paused, date.is_some()) {
+        (Choice::On, true, false) => "journal.cli.sol.update.automatic.status.paused.result",
+        (Choice::On, true, true) => "journal.cli.sol.update.automatic.status.paused.result.checked",
+        (Choice::On, false, false) => "journal.cli.sol.update.automatic.status.on.result",
+        (Choice::On, false, true) => "journal.cli.sol.update.automatic.status.on.result.checked",
+        (Choice::Off, _, false) => "journal.cli.sol.update.automatic.status.off.result",
+        (Choice::Off, _, true) => "journal.cli.sol.update.automatic.status.off.result.checked",
+        (Choice::Unasked, _, false) => "journal.cli.sol.update.automatic.status.unasked.result",
+        (Choice::Unasked, _, true) => {
+            "journal.cli.sol.update.automatic.status.unasked.result.checked"
+        }
+    };
+    match date {
+        Some(date) => solstone_core_cli_copy::display_for(
+            locale,
+            id,
+            [("result", &result), ("code", &result), ("date", &date)],
+        ),
+        None => solstone_core_cli_copy::display_for(
+            locale,
+            id,
+            [("result", &result), ("code", &result)],
+        ),
     }
-    if let Some(ref result) = status.last_result {
-        line.push_str(&format!(" · {}", automatic_result_words(result)));
-    }
-    line
 }
 
 /// `YYYY-MM-DD` in UTC for a Unix time (days-from-civil, inverted).
@@ -616,22 +707,12 @@ fn utc_date(unix: u64) -> String {
     format!("{year:04}-{month:02}-{day:02}")
 }
 
-/// Owner words for a run's result. A failure keeps its code, for support.
-fn automatic_result_words(result: &str) -> String {
-    match result {
-        "up-to-date" => "up to date".to_owned(),
-        "installed" => "installed a new version".to_owned(),
-        "off" => "automatic updates are off".to_owned(),
-        "paused" => "stopped after two tries that didn't work".to_owned(),
-        "held" => "updates are held".to_owned(),
-        "hold-unknown" => "the update hold can't be read".to_owned(),
-        "offline" => "couldn't reach the update service".to_owned(),
-        "metered" => "waiting for a connection that isn't metered".to_owned(),
-        "waiting-for-signed-installer" => "waiting for the next release".to_owned(),
-        "busy" => "another update was running".to_owned(),
-        "not-eligible" => "this install can't update itself".to_owned(),
-        code => format!("the update didn't work ({code})"),
-    }
+fn automatic_run_line(locale: &str, result: &str) -> String {
+    solstone_core_cli_copy::display_for(
+        locale,
+        "journal.cli.sol.update.automatic.run",
+        [("result", &(result)), ("code", &(result))],
+    )
 }
 
 fn run_top_level_link(
@@ -703,7 +784,7 @@ fn run_top_level_link_with_runtime(
         Some(args) => args,
         None => return render_output(usage_error_output()),
     };
-    let port = match resolve_convey_port(env) {
+    let port = match resolve_convey_port(env, command_args) {
         Ok(port) => port,
         Err(output) => return render_output(output),
     };
@@ -818,11 +899,10 @@ fn run_dispatched_with_runtime(
     let args = match os_strings_to_strings(command_args) {
         Some(args) => args,
         None => {
-            eprint!("{USAGE}");
-            return ExitCode::from(EXIT_USAGE);
+            return render_output(usage_error_output());
         }
     };
-    let port = match resolve_convey_port(env) {
+    let port = match resolve_convey_port(env, command_args) {
         Ok(port) => port,
         Err(output) => return render_output(output),
     };
@@ -938,7 +1018,13 @@ pub fn run_resident_command(handler: ResidentHandler, context: CommandContext<'_
         Ok(shutdown) => shutdown,
         Err(error) => {
             return render_output(CommandOutput::failure(
-                format!("native solstone resident signal setup failed: {error}\n"),
+                format!(
+                    "{}\n",
+                    solstone_core_cli_copy::display(
+                        "journal.cli.sol.resident.signal",
+                        [("error", &error)]
+                    )
+                ),
                 i32::from(EXIT_TEMPFAIL),
             ));
         }
@@ -952,7 +1038,13 @@ pub fn run_resident_command(handler: ResidentHandler, context: CommandContext<'_
     print!("{}", resident.startup());
     if let Err(error) = io::stdout().flush() {
         return render_output(CommandOutput::failure(
-            format!("native solstone resident startup flush failed: {error}\n"),
+            format!(
+                "{}\n",
+                solstone_core_cli_copy::display(
+                    "journal.cli.sol.resident.startup",
+                    [("error", &error)]
+                )
+            ),
             i32::from(EXIT_TEMPFAIL),
         ));
     }
@@ -1036,8 +1128,10 @@ struct RealShutdownSignal;
 
 #[cfg(not(any(unix, windows)))]
 impl RealShutdownSignal {
-    fn install() -> Result<Self, &'static str> {
-        Err("shutdown signals are unavailable on this platform")
+    fn install() -> Result<Self, String> {
+        Err(solstone_core_cli_copy::text(
+            "journal.cli.sol.resident.platform",
+        ))
     }
 }
 
@@ -1706,7 +1800,7 @@ mod tests {
     #[test]
     fn resolve_convey_port_defaults_when_unset() {
         assert_eq!(
-            resolve_convey_port(&BTreeMap::new()),
+            resolve_convey_port(&BTreeMap::new(), &[]),
             Ok(DEFAULT_CONVEY_PORT)
         );
     }
@@ -1742,7 +1836,7 @@ mod tests {
     fn resolve_convey_port_accepts_decimal_range() {
         for (value, expected) in [("6200", 6200), ("1", 1), ("65535", 65535)] {
             let env = BTreeMap::from([(SOLSTONE_CONVEY_PORT_ENV.to_string(), value.to_string())]);
-            assert_eq!(resolve_convey_port(&env), Ok(expected));
+            assert_eq!(resolve_convey_port(&env, &[]), Ok(expected));
         }
     }
 
@@ -1750,7 +1844,7 @@ mod tests {
     fn resolve_convey_port_rejects_invalid_explicit_values() {
         for value in ["", "0", "-1", "65536", "abc"] {
             let env = BTreeMap::from([(SOLSTONE_CONVEY_PORT_ENV.to_string(), value.to_string())]);
-            let output = resolve_convey_port(&env).expect_err("invalid convey port must fail");
+            let output = resolve_convey_port(&env, &[]).expect_err("invalid convey port must fail");
             assert_eq!(output.exit, i32::from(EXIT_CONFIG));
             assert!(output.stderr.contains(SOLSTONE_CONVEY_PORT_ENV));
             assert!(output.stderr.contains('1'));
@@ -1899,7 +1993,7 @@ mod tests {
     fn buffered_usage_error_output_stays_byte_identical_without_resident_arm() {
         let output = usage_error_output();
         assert_eq!(output.stdout, "");
-        assert_eq!(output.stderr, USAGE);
+        assert_eq!(output.stderr, "Usage: solstone <command> [args...]\n");
         assert_eq!(output.exit, i32::from(EXIT_USAGE));
     }
 

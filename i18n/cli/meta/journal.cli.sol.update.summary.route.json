@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for update summary route.",
+  "context": "Journal command-line text for update summary route.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "377644fb498a3b60d43bc1b3863f0154acb2ad736bd1a36d70e54655b5025906",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

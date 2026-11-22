@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for skills exe current.",
+  "context": "Journal command-line text for skills exe current.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9f7f2885f19ea77ad625515350db4adacad9de7a758b5b7a3e09f3d61dd890b7",
+  "max_length": 72,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

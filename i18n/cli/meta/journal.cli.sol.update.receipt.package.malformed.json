@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for update receipt package malformed.",
+  "context": "Journal command-line text for update receipt package malformed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "265219a00c62e4bd1fa5b5eb3de5a7d3d7a0f579a0253309f63feb46056a09d1",
+  "max_length": 79,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "config_file",
+      "kind": "accepted-input",
+      "value": "install.conf"
+    }
+  ]
+}

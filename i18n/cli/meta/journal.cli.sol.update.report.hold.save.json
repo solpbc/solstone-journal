@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for update report hold save.",
+  "context": "Journal command-line text for update report hold save.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a9ceb30f46b70b8f4a739c28bc0f4cf2c1fa299e9a4700271c5c9de6dadf84d1",
+  "max_length": 102,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for skills remove retired.",
+  "context": "Journal command-line text for skills remove retired.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "agent",
+      "type": "string"
+    },
+    {
+      "name": "skill",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a31ebd1821238bc03006c881031b23d718afd15d9476c6711aa08bfc0c164446",
+  "max_length": 98,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

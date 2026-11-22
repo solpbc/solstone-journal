@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for skills operation error.",
+  "context": "Journal command-line text for skills operation error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "operation",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1ad9f9b0d150d116697172c8a684661adbd883610cbfcb1786dca4edb82c0bd9",
+  "max_length": 76,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

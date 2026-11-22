@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for skills tree reference.",
+  "context": "Journal command-line text for skills tree reference.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e6c7852aeaa00e561686a2bd6e71f60b1e1df3259baaf2669d4353532f80afc8",
+  "max_length": 107,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "skill_file",
+      "kind": "accepted-input",
+      "value": "SKILL.md"
+    }
+  ]
+}

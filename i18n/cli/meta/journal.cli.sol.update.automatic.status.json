@@ -1,0 +1,32 @@
+{
+  "description": "Journal command-line text for update automatic status.",
+  "context": "Journal command-line text for update automatic status.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "choice",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "4f39c2eecb9d988d7871a402a5ed146b917ca334d360bdd10f8a943ec1f5bff2",
+  "max_length": 235,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "choice",
+    "type": "string",
+    "enum_values": [
+      "on",
+      "off",
+      "unasked",
+      "paused"
+    ],
+    "enum_default": "paused"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for update rollback epoch.",
+  "context": "Journal command-line text for update rollback epoch.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6b73081e57ebb0c98f99cccc5ef4b4ef2068c11ee441d30055745534a71313ec",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

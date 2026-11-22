@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for resident signal.",
+  "context": "Journal command-line text for resident signal.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "74168e7b5cc48a226be4f14f41e263afb95d8479cc7b50f72c229480f58729c5",
+  "max_length": 98,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_name",
+      "kind": "command",
+      "value": "solstone"
+    }
+  ]
+}

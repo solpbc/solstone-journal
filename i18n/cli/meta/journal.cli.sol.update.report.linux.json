@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for update report linux.",
+  "context": "Journal command-line text for update report linux.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4384e87ec8e3befae86b46a7ea73c223373c94aeee9818a6a7e76614481af070",
+  "max_length": 74,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "update_command",
+      "kind": "command",
+      "value": "solstone update"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for update report installer failed.",
+  "context": "Journal command-line text for update report installer failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "aafd043e82e4f93920c6213b782499e5e868a40eba79365ba4d396da48f1aa40",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for update argument utf8.",
+  "context": "Journal command-line text for update argument utf8.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "edf8491a5704a1ffa33edcd735adb4777c910addb6f266478fe0d262509935b1",
+  "max_length": 69,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "encoding",
+      "kind": "accepted-input",
+      "value": "utf-8"
+    }
+  ]
+}

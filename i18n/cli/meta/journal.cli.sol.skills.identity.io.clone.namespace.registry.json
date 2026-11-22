@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for skills identity io clone namespace registry.",
+  "context": "Journal command-line text for skills identity io clone namespace registry.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b127c85672e2d62b73b04f3f540e108c0d6abd08c7f234120906455c803eccd7",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

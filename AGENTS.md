@@ -494,10 +494,11 @@ Put command-line help, progress and human-readable errors in
 `i18n/cli/source/en-US.ftl`. Use the existing window message when the command
 shows the same copy. Keep machine output stable, including JSON keys, codes
 and values. Run `make journal-cli-catalog` after changing the CLI catalog.
+It also updates the messages the Unix launcher prints when it cannot start the native command.
 
 Keep the English Markdown that Think and Describe write readable on its own. Store the message identities and argument ranges in the matching `.md.display` file. When reading it, check that it still matches the Markdown before translating only the marked messages.
 
-Converted crates: `solstone-core-about`, `solstone-core-backfill-cli`, `solstone-core-backup-cli`, `solstone-core-brain`, `solstone-core-brain-owner`, `solstone-core-cli-boundary`, `solstone-core-depict`, `solstone-core-describe`, `solstone-core-doctor`, `solstone-core-journal-stats-cli`, `solstone-core-offload`, `solstone-core-reprocess-cli`, `solstone-core-retention`, `solstone-core-segment-cli`, `solstone-core-streams-cli`, `solstone-core-talent-cli`, `solstone-core-talent-config`, `solstone-core-think-cli`, `solstone-core-transcribe`.
+Converted crates: `solstone-core-about`, `solstone-core-backfill-cli`, `solstone-core-backup-cli`, `solstone-core-brain`, `solstone-core-brain-owner`, `solstone-core-cli-boundary`, `solstone-core-depict`, `solstone-core-describe`, `solstone-core-doctor`, `solstone-core-journal-stats-cli`, `solstone-core-offload`, `solstone-core-reprocess-cli`, `solstone-core-retention`, `solstone-core-segment-cli`, `solstone-core-sol`, `solstone-core-streams-cli`, `solstone-core-talent-cli`, `solstone-core-talent-config`, `solstone-core-think-cli`, `solstone-core-transcribe`, `solstone-core-update`.
 
 ## 9. File headers, naming, dependencies
 

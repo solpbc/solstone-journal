@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for help apps.",
+  "context": "Journal command-line text for help apps.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fd0015571599b174117ea50f9e12cf3561c1fe42cf796317bbddc58d5ca94c7d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "invocation",
+      "kind": "command",
+      "value": "solstone call <app>"
+    }
+  ]
+}

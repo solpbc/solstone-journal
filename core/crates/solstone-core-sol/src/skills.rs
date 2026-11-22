@@ -8,6 +8,9 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
+use solstone_core_cli_copy::{ENGLISH, MessageDetail, cli_locale, display, text};
+use std::fmt::Write as _;
+
 use sha2::{Digest, Sha256};
 
 use solstone_core_sol_client::command::CommandOutput;
@@ -15,7 +18,9 @@ use solstone_core_sol_client::command::CommandOutput;
 use super::{EXIT_CONFIG, resolve_project_root};
 
 const EXIT_ARGPARSE_USAGE: i32 = 2;
-const USAGE: &str = "Usage: solstone skills <install|uninstall|list> [args...]\n";
+fn usage() -> String {
+    format!("{}\n", text("journal.cli.sol.skills.usage"))
+}
 const ALL_AGENTS: &str = "all";
 const PROJECT_MULTI_AGENT: &str = "agents";
 const PROJECT_CLAUDE_SKILLS_REL: &str = ".claude/skills";
@@ -24,8 +29,6 @@ const USER_SKILL_NAME: &str = "solstone";
 const RETIRED_USER_SKILL_NAME: &str = "sol";
 const RETIRED_SOL_USER_SKILL_JSON: &str =
     include_str!("../../../fixtures/native-sol/retired-sol-user-skill-v1.json");
-const GLOBAL_SKIP_MESSAGE: &str =
-    "no AI coding agent config directories found — skipping skill registration";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Agent {
@@ -89,7 +92,10 @@ impl AgentSelection {
         if value == OsStr::new("gemini") {
             return Ok(Self::One(Agent::Gemini));
         }
-        Err(format!("unsupported --agent {}", value.to_string_lossy()))
+        Err(display(
+            "journal.cli.sol.skills.agent.invalid",
+            [("agent", &(value.to_string_lossy()))],
+        ))
     }
 
     fn user_agents(self) -> (Vec<AgentSpec>, bool) {
@@ -129,15 +135,20 @@ struct RuntimeContext {
     project_root: PathBuf,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum Action {
-    Error,
+    Error(MessageDetail),
     Installed,
     Noop,
     Removed,
     Replaced,
-    Skipped,
-    Warning,
+    SkippedMissingConfig,
+    SkippedNothing,
+    RemovedRetired,
+    RemovedStale,
+    WarningRetired,
+    WarningExisting,
+    WarningStale,
 }
 
 #[derive(Debug, Clone)]
@@ -146,7 +157,6 @@ struct ActionRow {
     skill: String,
     action: Action,
     path: PathBuf,
-    reason: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -158,19 +168,16 @@ impl InstallReport {
     fn error_count(&self) -> usize {
         self.rows
             .iter()
-            .filter(|row| row.action == Action::Error)
+            .filter(|row| matches!(row.action, Action::Error(_)))
             .count()
     }
 
     fn all_skipped(&self) -> bool {
         !self.rows.is_empty()
-            && self.rows.iter().all(|row| {
-                row.action == Action::Skipped
-                    && row
-                        .reason
-                        .as_deref()
-                        .is_some_and(|reason| reason.starts_with("config dir absent at "))
-            })
+            && self
+                .rows
+                .iter()
+                .all(|row| row.action == Action::SkippedMissingConfig)
     }
 }
 
@@ -178,7 +185,7 @@ impl InstallReport {
 struct StatusRow {
     agent: String,
     skill: String,
-    state: &'static str,
+    installed: bool,
 }
 
 pub(crate) fn run(args: &[OsString]) -> CommandOutput {
@@ -187,17 +194,11 @@ pub(crate) fn run(args: &[OsString]) -> CommandOutput {
         Err(message) => return usage_error(message),
     };
     if matches!(command, SkillsCommand::Help) {
-        return CommandOutput::success(USAGE);
+        return CommandOutput::success(usage());
     }
     let context = match real_context() {
         Ok(context) => context,
-        Err(message) => {
-            return CommandOutput {
-                stdout: String::new(),
-                stderr: message,
-                exit: i32::from(EXIT_CONFIG),
-            };
-        }
+        Err(detail) => return failure_output(&detail, i32::from(EXIT_CONFIG)),
     };
     run_with_context(command, &context)
 }
@@ -205,11 +206,14 @@ pub(crate) fn run(args: &[OsString]) -> CommandOutput {
 fn run_with_context(command: SkillsCommand, context: &RuntimeContext) -> CommandOutput {
     match execute(command, context) {
         Ok(output) => output,
-        Err(message) => CommandOutput::failure(format!("error: {message}\n"), 1),
+        Err(detail) => failure_output(&detail, 1),
     }
 }
 
-fn execute(command: SkillsCommand, context: &RuntimeContext) -> Result<CommandOutput, String> {
+fn execute(
+    command: SkillsCommand,
+    context: &RuntimeContext,
+) -> Result<CommandOutput, MessageDetail> {
     match command {
         SkillsCommand::Install(args) => {
             if let Some(project) = args.project {
@@ -243,25 +247,22 @@ fn execute(command: SkillsCommand, context: &RuntimeContext) -> Result<CommandOu
             };
             Ok(CommandOutput::success(status_output(&rows)))
         }
-        SkillsCommand::Help => Ok(CommandOutput::success(USAGE)),
+        SkillsCommand::Help => Ok(CommandOutput::success(usage())),
     }
 }
 
-fn real_context() -> Result<RuntimeContext, String> {
+fn real_context() -> Result<RuntimeContext, MessageDetail> {
     let home = std::env::var_os("HOME")
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
-        .ok_or_else(|| {
-            "solstone: native skills home is unavailable. Set HOME to your home directory.\n"
-                .to_string()
-        })?;
+        .ok_or_else(|| MessageDetail::message("journal.cli.sol.skills.home.missing", []))?;
     let cwd = std::env::current_dir().map_err(|error| {
-        format!("solstone: native skills cwd is unavailable: {error}. Run this command from an accessible directory.\n")
+        MessageDetail::message("journal.cli.sol.skills.cwd.failed", [("error", &error)])
     })?;
     let root = resolve_project_root().map_err(|error| {
-        format!(
-            "solstone: native skills payload root is unavailable: {error}. Reinstall solstone and solstone-core.\n"
-        )
+        error
+            .message_detail()
+            .context("journal.cli.sol.skills.payload.failed")
     })?;
     let project_root = canonicalize_project_root_for_skills(root);
     Ok(RuntimeContext {
@@ -277,7 +278,7 @@ fn canonicalize_project_root_for_skills(root: PathBuf) -> PathBuf {
 
 fn parse_command(args: &[OsString]) -> Result<SkillsCommand, String> {
     let Some((command, rest)) = args.split_first() else {
-        return Err("missing subcommand".to_string());
+        return Err(text("journal.cli.sol.skills.subcommand.missing"));
     };
     if command == OsStr::new("-h") || command == OsStr::new("--help") {
         return Ok(SkillsCommand::Help);
@@ -291,7 +292,10 @@ fn parse_command(args: &[OsString]) -> Result<SkillsCommand, String> {
     if command == OsStr::new("list") {
         return parse_list_args(rest).map(SkillsCommand::List);
     }
-    Err(format!("unknown subcommand {}", command.to_string_lossy()))
+    Err(display(
+        "journal.cli.sol.skills.subcommand.invalid",
+        [("command_name", &(command.to_string_lossy()))],
+    ))
 }
 
 fn parse_install_args(args: &[OsString]) -> Result<InstallArgs, String> {
@@ -303,7 +307,7 @@ fn parse_install_args(args: &[OsString]) -> Result<InstallArgs, String> {
         if arg == OsStr::new("--agent") {
             index += 1;
             let Some(value) = args.get(index) else {
-                return Err("--agent requires a value".to_string());
+                return Err(text("journal.cli.sol.skills.agent.required"));
             };
             agent = AgentSelection::parse(value)?;
         } else if let Some(value) = flag_value(arg, "--agent=") {
@@ -320,7 +324,10 @@ fn parse_install_args(args: &[OsString]) -> Result<InstallArgs, String> {
         } else if let Some(value) = flag_value(arg, "--project=") {
             project = Some(OsString::from(value));
         } else {
-            return Err(format!("unrecognized argument {}", arg.to_string_lossy()));
+            return Err(display(
+                "journal.cli.sol.skills.argument.invalid",
+                [("argument", &(arg.to_string_lossy()))],
+            ));
         }
         index += 1;
     }
@@ -344,7 +351,10 @@ fn parse_list_args(args: &[OsString]) -> Result<ListArgs, String> {
         } else if let Some(value) = flag_value(arg, "--project=") {
             project = Some(OsString::from(value));
         } else {
-            return Err(format!("unrecognized argument {}", arg.to_string_lossy()));
+            return Err(display(
+                "journal.cli.sol.skills.argument.invalid",
+                [("argument", &(arg.to_string_lossy()))],
+            ));
         }
         index += 1;
     }
@@ -358,7 +368,7 @@ fn flag_value<'a>(arg: &'a OsStr, prefix: &str) -> Option<&'a str> {
 fn usage_error(message: String) -> CommandOutput {
     CommandOutput {
         stdout: String::new(),
-        stderr: format!("{USAGE}solstone skills: error: {message}\n"),
+        stderr: format!("{}{message}\n", usage()),
         exit: EXIT_ARGPARSE_USAGE,
     }
 }
@@ -406,16 +416,16 @@ fn resolve_non_strict(path: &Path, cwd: &Path, _home: &Path) -> PathBuf {
     resolved
 }
 
-fn resolve_user_skill(project_root: &Path) -> Result<PathBuf, String> {
+fn resolve_user_skill(project_root: &Path) -> Result<PathBuf, MessageDetail> {
     let skill_dir = project_root
         .join("solstone")
         .join("talent")
         .join(USER_SKILL_NAME);
     let skill_file = skill_dir.join("SKILL.md");
     if !skill_file.is_file() {
-        return Err(format!(
-            "expected bundled umbrella skill at solstone/talent/solstone/SKILL.md ({})",
-            skill_file.display()
+        return Err(MessageDetail::message(
+            "journal.cli.sol.skills.payload.umbrella",
+            [("path", &(skill_file.display()))],
         ));
     }
     Ok(skill_dir)
@@ -510,9 +520,8 @@ fn cleanup_retired_sol_user_skill(skills_root: &Path, agent: &str, report: &mut 
                 Ok(()) => report.rows.push(ActionRow {
                     agent: agent.to_string(),
                     skill: RETIRED_USER_SKILL_NAME.to_string(),
-                    action: Action::Removed,
+                    action: Action::RemovedRetired,
                     path: leftover,
-                    reason: Some("retired product skill".to_string()),
                 }),
                 Err(error) => {
                     append_error(
@@ -528,12 +537,8 @@ fn cleanup_retired_sol_user_skill(skills_root: &Path, agent: &str, report: &mut 
         RetiredSkillMatch::Mismatch => report.rows.push(ActionRow {
             agent: agent.to_string(),
             skill: RETIRED_USER_SKILL_NAME.to_string(),
-            action: Action::Warning,
-            path: leftover.clone(),
-            reason: Some(format!(
-                "does not match the retired sol skill; existing content at {} preserved",
-                leftover.display()
-            )),
+            action: Action::WarningRetired,
+            path: leftover,
         }),
     }
 }
@@ -542,8 +547,8 @@ fn install_user(skill_dir: &Path, home: &Path, selection: AgentSelection) -> Ins
     let (selected, default_all) = selection.user_agents();
     let mut report = InstallReport::default();
 
-    let guard = match solstone_core_user_skill::selected_journal_for_install(home)
-        .and_then(|j| solstone_core_user_skill::guard_user_skill_mutation(home, &j))
+    let guard = match solstone_core_user_skill::selected_journal_for_install_detailed(home)
+        .and_then(|j| solstone_core_user_skill::guard_user_skill_mutation_detailed(home, &j))
     {
         Ok(guard) => guard,
         Err(err) => {
@@ -552,9 +557,8 @@ fn install_user(skill_dir: &Path, home: &Path, selection: AgentSelection) -> Ins
                 report.rows.push(ActionRow {
                     agent: spec.name.to_string(),
                     skill: USER_SKILL_NAME.to_string(),
-                    action: Action::Error,
+                    action: Action::Error(err.clone()),
                     path: target,
-                    reason: Some(err.clone()),
                 });
             }
             return report;
@@ -571,8 +575,8 @@ fn install_user(skill_dir: &Path, home: &Path, selection: AgentSelection) -> Ins
                 report.rows.push(ActionRow {
                     agent: spec.name.to_string(),
                     skill: String::new(),
-                    action: Action::Skipped,
-                    reason: Some(format!("config dir absent at {}", config_root.display())),
+                    action: Action::SkippedMissingConfig,
+
                     path: config_root,
                 });
                 continue;
@@ -582,9 +586,8 @@ fn install_user(skill_dir: &Path, home: &Path, selection: AgentSelection) -> Ins
                 report.rows.push(ActionRow {
                     agent: spec.name.to_string(),
                     skill: String::new(),
-                    action: Action::Error,
+                    action: Action::Error(e.to_string().into()),
                     path: error_path,
-                    reason: Some(e.to_string()),
                 });
                 continue;
             }
@@ -600,9 +603,11 @@ fn install_user(skill_dir: &Path, home: &Path, selection: AgentSelection) -> Ins
                 report.rows.push(ActionRow {
                     agent: spec.name.to_string(),
                     skill: String::new(),
-                    action: Action::Error,
+                    action: Action::Error(MessageDetail::message(
+                        "journal.cli.sol.skills.config.not.directory",
+                        [("path", &(config_root.display()))],
+                    )),
                     path: error_path,
-                    reason: Some(format!("{} is not a directory", config_root.display())),
                 });
                 continue;
             }
@@ -611,9 +616,8 @@ fn install_user(skill_dir: &Path, home: &Path, selection: AgentSelection) -> Ins
                 report.rows.push(ActionRow {
                     agent: spec.name.to_string(),
                     skill: String::new(),
-                    action: Action::Error,
+                    action: Action::Error(e.to_string().into()),
                     path: error_path,
-                    reason: Some(e.to_string()),
                 });
                 continue;
             }
@@ -623,34 +627,33 @@ fn install_user(skill_dir: &Path, home: &Path, selection: AgentSelection) -> Ins
         let retired_path = skills_root.join(RETIRED_USER_SKILL_NAME);
         let target = skills_root.join(USER_SKILL_NAME);
 
-        if let Err(e) = guard.allows(&retired_path) {
+        if let Err(e) = guard.allows_detailed(&retired_path) {
             report.rows.push(ActionRow {
                 agent: spec.name.to_string(),
                 skill: RETIRED_USER_SKILL_NAME.to_string(),
-                action: Action::Error,
+                action: Action::Error(e),
                 path: retired_path,
-                reason: Some(e),
             });
             continue;
         }
 
-        if let Err(e) = guard.allows(&target) {
+        if let Err(e) = guard.allows_detailed(&target) {
             report.rows.push(ActionRow {
                 agent: spec.name.to_string(),
                 skill: USER_SKILL_NAME.to_string(),
-                action: Action::Error,
+                action: Action::Error(e),
                 path: target,
-                reason: Some(e),
             });
             continue;
         }
 
         cleanup_retired_sol_user_skill(&skills_root, spec.name, &mut report);
 
-        let sync_res = guard.sync(
+        let sync_res = guard.sync_detailed(
             skill_dir,
             &target,
             solstone_core_user_skill::UserSkillMode::Install,
+            cli_locale(),
         );
         match sync_res {
             solstone_core_user_skill::UserSkillSync::Installed => {
@@ -659,7 +662,6 @@ fn install_user(skill_dir: &Path, home: &Path, selection: AgentSelection) -> Ins
                     skill: USER_SKILL_NAME.to_string(),
                     action: Action::Installed,
                     path: target,
-                    reason: None,
                 });
             }
             solstone_core_user_skill::UserSkillSync::Replaced => {
@@ -668,7 +670,6 @@ fn install_user(skill_dir: &Path, home: &Path, selection: AgentSelection) -> Ins
                     skill: USER_SKILL_NAME.to_string(),
                     action: Action::Replaced,
                     path: target,
-                    reason: None,
                 });
             }
             solstone_core_user_skill::UserSkillSync::Unchanged => {
@@ -677,36 +678,36 @@ fn install_user(skill_dir: &Path, home: &Path, selection: AgentSelection) -> Ins
                     skill: USER_SKILL_NAME.to_string(),
                     action: Action::Noop,
                     path: target,
-                    reason: None,
                 });
             }
             solstone_core_user_skill::UserSkillSync::Failed(msg) => {
                 report.rows.push(ActionRow {
                     agent: spec.name.to_string(),
                     skill: USER_SKILL_NAME.to_string(),
-                    action: Action::Error,
+                    action: Action::Error(msg),
                     path: target,
-                    reason: Some(msg),
                 });
             }
             solstone_core_user_skill::UserSkillSync::Preserved => {
                 report.rows.push(ActionRow {
                     agent: spec.name.to_string(),
                     skill: USER_SKILL_NAME.to_string(),
-                    action: Action::Error,
+                    action: Action::Error(MessageDetail::message(
+                        "journal.cli.sol.skills.target.preserved",
+                        [],
+                    )),
                     path: target,
-                    reason: Some(
-                        "target path overlaps protected journal or is preserved".to_string(),
-                    ),
                 });
             }
             solstone_core_user_skill::UserSkillSync::Ineligible => {
                 report.rows.push(ActionRow {
                     agent: spec.name.to_string(),
                     skill: USER_SKILL_NAME.to_string(),
-                    action: Action::Error,
+                    action: Action::Error(MessageDetail::message(
+                        "journal.cli.sol.skills.target.ineligible",
+                        [],
+                    )),
                     path: target,
-                    reason: Some("target is ineligible for install".to_string()),
                 });
             }
         }
@@ -727,9 +728,8 @@ fn uninstall_user(skill_dir: &Path, home: &Path, selection: AgentSelection) -> I
             report.rows.push(ActionRow {
                 agent: spec.name.to_string(),
                 skill: String::new(),
-                action: Action::Skipped,
-                path: parent.clone(),
-                reason: Some(format!("config dir absent at {}", parent.display())),
+                action: Action::SkippedMissingConfig,
+                path: parent,
             });
             continue;
         }
@@ -743,9 +743,8 @@ fn uninstall_user(skill_dir: &Path, home: &Path, selection: AgentSelection) -> I
                 report.rows.push(ActionRow {
                     agent: spec.name.to_string(),
                     skill: USER_SKILL_NAME.to_string(),
-                    action: Action::Skipped,
+                    action: Action::SkippedNothing,
                     path: target,
-                    reason: Some("nothing to remove".to_string()),
                 });
             }
             Err(error) => {
@@ -755,9 +754,11 @@ fn uninstall_user(skill_dir: &Path, home: &Path, selection: AgentSelection) -> I
                 report.rows.push(ActionRow {
                     agent: spec.name.to_string(),
                     skill: USER_SKILL_NAME.to_string(),
-                    action: Action::Error,
+                    action: Action::Error(MessageDetail::message(
+                        "journal.cli.sol.skills.remove.directory",
+                        [],
+                    )),
                     path: target,
-                    reason: Some("refusing to remove non-directory".to_string()),
                 });
             }
             Ok(_) => {
@@ -770,7 +771,6 @@ fn uninstall_user(skill_dir: &Path, home: &Path, selection: AgentSelection) -> I
                     skill: USER_SKILL_NAME.to_string(),
                     action: Action::Removed,
                     path: target,
-                    reason: None,
                 });
             }
         }
@@ -781,7 +781,7 @@ fn uninstall_user(skill_dir: &Path, home: &Path, selection: AgentSelection) -> I
 fn project_targets(
     target: &Path,
     selection: AgentSelection,
-) -> Result<Vec<(&'static str, PathBuf)>, String> {
+) -> Result<Vec<(&'static str, PathBuf)>, MessageDetail> {
     match selection {
         AgentSelection::All => Ok(vec![
             ("claude", target.join(PROJECT_CLAUDE_SKILLS_REL)),
@@ -790,19 +790,27 @@ fn project_targets(
         AgentSelection::One(Agent::Claude) => {
             Ok(vec![("claude", target.join(PROJECT_CLAUDE_SKILLS_REL))])
         }
-        AgentSelection::One(agent) => Err(format!(
-            "--agent {} is not supported with --project; use --agent all or --agent claude",
-            agent.spec().name
+        AgentSelection::One(agent) => Err(MessageDetail::message(
+            "journal.cli.sol.skills.project.agent",
+            [("agent", &(agent.spec().name))],
         )),
     }
+}
+
+fn project_skill_error(path: PathBuf) -> MessageDetail {
+    MessageDetail::message(
+        "journal.cli.sol.skills.payload.project",
+        [("path", &(path.display()))],
+    )
 }
 
 fn install_project(
     project_root: &Path,
     target: &Path,
     selection: AgentSelection,
-) -> Result<InstallReport, String> {
-    let sources = solstone_core_skill_state::discover_project_sources(project_root)?;
+) -> Result<InstallReport, MessageDetail> {
+    let sources = solstone_core_skill_state::discover_project_sources_checked(project_root)
+        .map_err(project_skill_error)?;
     let source_names = sources
         .iter()
         .filter_map(|source| source.file_name().map(OsString::from))
@@ -841,7 +849,6 @@ fn install_project_source(
                     skill: name.to_string(),
                     action: Action::Noop,
                     path: link,
-                    reason: None,
                 });
             }
             Ok(_) => {
@@ -856,7 +863,6 @@ fn install_project_source(
                     skill: name.to_string(),
                     action: Action::Replaced,
                     path: link,
-                    reason: None,
                 });
             }
             Err(error) => append_error(&mut report.rows, agent, name, &link, error),
@@ -864,9 +870,8 @@ fn install_project_source(
         Ok(_) => report.rows.push(ActionRow {
             agent: agent.to_string(),
             skill: name.to_string(),
-            action: Action::Warning,
+            action: Action::WarningExisting,
             path: link,
-            reason: Some("existing content at target preserved".to_string()),
         }),
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             if let Err(error) = create_symlink(Path::new(&target), &link) {
@@ -878,7 +883,6 @@ fn install_project_source(
                 skill: name.to_string(),
                 action: Action::Installed,
                 path: link,
-                reason: None,
             });
         }
         Err(error) => append_error(&mut report.rows, agent, name, &link, error),
@@ -916,17 +920,15 @@ fn remove_stale_project_links(
                 report.rows.push(ActionRow {
                     agent: agent.to_string(),
                     skill: name,
-                    action: Action::Removed,
+                    action: Action::RemovedStale,
                     path: link,
-                    reason: Some("stale".to_string()),
                 });
             }
             Ok(_) => report.rows.push(ActionRow {
                 agent: agent.to_string(),
                 skill: name,
-                action: Action::Warning,
+                action: Action::WarningStale,
                 path: link,
-                reason: Some("existing content at stale target preserved".to_string()),
             }),
             Err(error) => append_error(&mut report.rows, agent, &name, &link, error),
         }
@@ -937,8 +939,9 @@ fn uninstall_project(
     project_root: &Path,
     target: &Path,
     selection: AgentSelection,
-) -> Result<InstallReport, String> {
-    let sources = solstone_core_skill_state::discover_project_sources(project_root)?;
+) -> Result<InstallReport, MessageDetail> {
+    let sources = solstone_core_skill_state::discover_project_sources_checked(project_root)
+        .map_err(project_skill_error)?;
     let mut report = InstallReport::default();
     for (agent, link_parent) in project_targets(target, selection)? {
         for source in &sources {
@@ -952,9 +955,8 @@ fn uninstall_project(
                     report.rows.push(ActionRow {
                         agent: agent.to_string(),
                         skill: name.to_string(),
-                        action: Action::Skipped,
+                        action: Action::SkippedNothing,
                         path: link,
-                        reason: Some("nothing to remove".to_string()),
                     });
                 }
                 Err(error) => append_error(&mut report.rows, agent, name, &link, error),
@@ -962,9 +964,11 @@ fn uninstall_project(
                     report.rows.push(ActionRow {
                         agent: agent.to_string(),
                         skill: name.to_string(),
-                        action: Action::Error,
+                        action: Action::Error(MessageDetail::message(
+                            "journal.cli.sol.skills.remove.symlink",
+                            [],
+                        )),
                         path: link,
-                        reason: Some("refusing to remove non-symlink".to_string()),
                     });
                 }
                 Ok(_) => {
@@ -977,7 +981,6 @@ fn uninstall_project(
                         skill: name.to_string(),
                         action: Action::Removed,
                         path: link,
-                        reason: None,
                     });
                 }
             }
@@ -996,135 +999,197 @@ fn list_user_status(skill_dir: &Path, home: &Path) -> Vec<StatusRow> {
                     .file_name()
                     .unwrap_or_else(|| OsStr::new(USER_SKILL_NAME)),
             );
-            let state = if target.join("SKILL.md").is_file() {
-                "installed"
-            } else {
-                "not installed"
-            };
+            let installed = target.join("SKILL.md").is_file();
             StatusRow {
                 agent: spec.name.to_string(),
                 skill: USER_SKILL_NAME.to_string(),
-                state,
+                installed,
             }
         })
         .collect()
 }
 
-fn list_project_status(project_root: &Path, target: &Path) -> Result<Vec<StatusRow>, String> {
+fn list_project_status(
+    project_root: &Path,
+    target: &Path,
+) -> Result<Vec<StatusRow>, MessageDetail> {
     let mut rows = Vec::new();
     for (agent, link_parent) in project_targets(target, AgentSelection::All)? {
-        for link in
-            solstone_core_skill_state::inspect_router_skill_links(project_root, &link_parent)?
+        for link in solstone_core_skill_state::inspect_router_skill_links_checked(
+            project_root,
+            &link_parent,
+        )
+        .map_err(project_skill_error)?
         {
-            let state = if link.state == solstone_core_skill_state::RouterSkillLinkState::Installed
-            {
-                "installed"
-            } else {
-                "not installed"
-            };
+            let installed =
+                link.state == solstone_core_skill_state::RouterSkillLinkState::Installed;
             rows.push(StatusRow {
                 agent: agent.to_string(),
                 skill: link.name,
-                state,
+                installed,
             });
         }
     }
     Ok(rows)
 }
 
+fn setup_failure_receipt(detail: &MessageDetail) -> Option<String> {
+    use solstone_core_skill_state::setup_failure::{DISPLAY_LOCALE_ENV, encode};
+    let locale = std::env::var(DISPLAY_LOCALE_ENV).ok()?;
+    if locale.is_empty() || locale == ENGLISH || cli_locale() != ENGLISH {
+        return None;
+    }
+    Some(encode(
+        detail.to_string(),
+        locale.clone(),
+        detail.render(&locale),
+    ))
+}
+
+fn failure_output(detail: &MessageDetail, exit: i32) -> CommandOutput {
+    CommandOutput {
+        stdout: setup_failure_receipt(detail).unwrap_or_default(),
+        stderr: format!("{}\n", detail.render(cli_locale())),
+        exit,
+    }
+}
+
 fn report_output(report: InstallReport, operation: &str) -> CommandOutput {
     let mut stdout = String::new();
     let mut stderr = String::new();
     let mut warnings = Vec::new();
+    let mut setup_receipt = None;
     for row in &report.rows {
-        match row.action {
-            Action::Noop => {}
-            Action::Warning => warnings.push(row),
-            Action::Error => {
-                stderr.push_str(&format!(
-                    "error: {operation} {}: {}\n",
-                    row.path.display(),
-                    row.reason.as_deref().unwrap_or_default()
-                ));
+        let line = match &row.action {
+            Action::Noop => continue,
+            Action::Error(detail) => {
+                let line = detail.clone().context_with(
+                    "journal.cli.sol.skills.operation.error",
+                    [("operation", &operation), ("path", &row.path.display())],
+                );
+                if stderr.is_empty() {
+                    setup_receipt = setup_failure_receipt(&line);
+                }
+                writeln!(stderr, "{}", line.render(cli_locale())).unwrap();
+                continue;
             }
-            Action::Skipped => {
-                let skill = if row.skill.is_empty() {
-                    String::new()
-                } else {
-                    format!(" {}", row.skill)
-                };
-                stdout.push_str(&format!(
-                    "skipped {}{} ({})\n",
-                    row.agent,
-                    skill,
-                    row.reason.as_deref().unwrap_or_default()
+            Action::SkippedMissingConfig => display(
+                "journal.cli.sol.skills.skip.config",
+                [("agent", &(row.agent)), ("path", &(row.path.display()))],
+            ),
+            Action::SkippedNothing => display(
+                "journal.cli.sol.skills.skip.absent",
+                [("agent", &(row.agent)), ("skill", &(row.skill))],
+            ),
+            Action::RemovedRetired => display(
+                "journal.cli.sol.skills.remove.retired",
+                [
+                    ("agent", &(row.agent)),
+                    ("skill", &(row.skill)),
+                    ("path", &(row.path.display())),
+                ],
+            ),
+            Action::RemovedStale => display(
+                "journal.cli.sol.skills.remove.stale",
+                [
+                    ("agent", &(row.agent)),
+                    ("skill", &(row.skill)),
+                    ("path", &(row.path.display())),
+                ],
+            ),
+            Action::Removed => display(
+                "journal.cli.sol.skills.remove.done",
+                [
+                    ("agent", &(row.agent)),
+                    ("skill", &(row.skill)),
+                    ("path", &(row.path.display())),
+                ],
+            ),
+            Action::Installed => display(
+                "journal.cli.sol.skills.install.done",
+                [
+                    ("agent", &(row.agent)),
+                    ("skill", &(row.skill)),
+                    ("path", &(row.path.display())),
+                ],
+            ),
+            Action::Replaced => display(
+                "journal.cli.sol.skills.replace.done",
+                [
+                    ("agent", &(row.agent)),
+                    ("skill", &(row.skill)),
+                    ("path", &(row.path.display())),
+                ],
+            ),
+            Action::WarningRetired => {
+                warnings.push(display(
+                    "journal.cli.sol.skills.warning.retired",
+                    [
+                        ("agent", &(row.agent)),
+                        ("skill", &(row.skill)),
+                        ("path", &(row.path.display())),
+                    ],
                 ));
+                continue;
             }
-            Action::Removed if row.reason.is_some() => {
-                stdout.push_str(&format!(
-                    "removed {} {} ({}) -> {}\n",
-                    row.agent,
-                    row.skill,
-                    row.reason.as_deref().unwrap_or_default(),
-                    row.path.display()
+            Action::WarningExisting => {
+                warnings.push(display(
+                    "journal.cli.sol.skills.warning.existing",
+                    [
+                        ("agent", &(row.agent)),
+                        ("skill", &(row.skill)),
+                        ("path", &(row.path.display())),
+                    ],
                 ));
+                continue;
             }
-            Action::Removed => {
-                stdout.push_str(&format!(
-                    "removed {} {} -> {}\n",
-                    row.agent,
-                    row.skill,
-                    row.path.display()
+            Action::WarningStale => {
+                warnings.push(display(
+                    "journal.cli.sol.skills.warning.stale",
+                    [
+                        ("agent", &(row.agent)),
+                        ("skill", &(row.skill)),
+                        ("path", &(row.path.display())),
+                    ],
                 ));
+                continue;
             }
-            Action::Installed => {
-                stdout.push_str(&format!(
-                    "installed {} {} -> {}\n",
-                    row.agent,
-                    row.skill,
-                    row.path.display()
-                ));
-            }
-            Action::Replaced => {
-                stdout.push_str(&format!(
-                    "replaced {} {} -> {}\n",
-                    row.agent,
-                    row.skill,
-                    row.path.display()
-                ));
-            }
-        }
+        };
+        writeln!(stdout, "{line}").unwrap();
     }
     if !warnings.is_empty() {
-        stdout.push_str("Warnings:\n");
-        for row in warnings {
-            stdout.push_str(&format!(
-                "warning {} {} -> {} ({})\n",
-                row.agent,
-                row.skill,
-                row.path.display(),
-                row.reason.as_deref().unwrap_or_default()
-            ));
+        writeln!(stdout, "{}", text("journal.cli.sol.skills.warnings")).unwrap();
+        for line in warnings {
+            writeln!(stdout, "{line}").unwrap();
         }
     }
     if report.all_skipped() {
-        stdout.push_str(GLOBAL_SKIP_MESSAGE);
-        stdout.push('\n');
+        writeln!(stdout, "{}", text("journal.cli.sol.skills.skip.all")).unwrap();
     }
     CommandOutput {
-        stdout,
+        stdout: setup_receipt.unwrap_or(stdout),
         stderr,
         exit: if report.error_count() > 0 { 1 } else { 0 },
     }
 }
 
 fn status_output(rows: &[StatusRow]) -> String {
-    let mut output = format!("{:<10} {:<20} state\n", "agent", "skill");
+    let mut output = format!("{}\n", text("journal.cli.sol.skills.status.header"));
     for row in rows {
-        output.push_str(&format!(
-            "{:<10} {:<20} {}\n",
-            row.agent, row.skill, row.state
-        ));
+        let agent = format!("{:<10}", row.agent);
+        let skill = format!("{:<20}", row.skill);
+        let line = if row.installed {
+            display(
+                "journal.cli.sol.skills.status.installed",
+                [("agent", &(agent)), ("skill", &(skill))],
+            )
+        } else {
+            display(
+                "journal.cli.sol.skills.status.absent",
+                [("agent", &(agent)), ("skill", &(skill))],
+            )
+        };
+        writeln!(output, "{line}").unwrap();
     }
     output
 }
@@ -1139,9 +1204,8 @@ fn append_error(
     rows.push(ActionRow {
         agent: agent.to_string(),
         skill: skill.to_string(),
-        action: Action::Error,
+        action: Action::Error(error.to_string().into()),
         path: path.to_path_buf(),
-        reason: Some(error.to_string()),
     });
 }
 
@@ -1187,7 +1251,7 @@ fn create_symlink(target: &Path, link: &Path) -> io::Result<()> {
 fn create_symlink(_target: &Path, _link: &Path) -> io::Result<()> {
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
-        "symlink creation unsupported",
+        text("journal.cli.sol.skills.symlink.unsupported"),
     ))
 }
 
@@ -1671,7 +1735,7 @@ mod tests {
         let error = report
             .rows
             .iter()
-            .find(|row| row.action == Action::Error)
+            .find(|row| matches!(row.action, Action::Error(_)))
             .expect("expected one structural error row");
         assert_eq!(error.agent, "claude");
         assert_eq!(error.path, claude_skills_root);
@@ -1751,19 +1815,18 @@ mod tests {
         assert!(!leftover.exists());
         assert!(foreign.join("notes.md").is_file());
         assert!(home.join(".claude/skills/solstone/SKILL.md").is_file());
-        assert!(report.rows.iter().any(|row| {
-            row.skill == "sol"
-                && row.action == Action::Removed
-                && row.reason.as_deref() == Some("retired product skill")
-        }));
-        assert!(report.rows.iter().any(|row| {
-            row.skill == "sol"
-                && row.action == Action::Warning
-                && row
-                    .reason
-                    .as_deref()
-                    .is_some_and(|reason| reason.contains("does not match the retired sol skill"))
-        }));
+        assert!(
+            report
+                .rows
+                .iter()
+                .any(|row| { row.skill == "sol" && row.action == Action::RemovedRetired })
+        );
+        assert!(
+            report
+                .rows
+                .iter()
+                .any(|row| { row.skill == "sol" && row.action == Action::WarningRetired })
+        );
     }
 
     #[cfg(all(test, feature = "full-tests"))]
@@ -1819,7 +1882,11 @@ mod tests {
         assert!(output.stdout.contains("claude"));
         assert!(output.stdout.contains("codex"));
         assert!(!output.stdout.contains("gemini"));
-        assert!(output.stdout.contains(GLOBAL_SKIP_MESSAGE));
+        assert!(
+            output.stdout.contains(
+                "no AI coding agent config directories found — skipping skill registration"
+            )
+        );
     }
 
     #[cfg(all(test, feature = "full-tests"))]

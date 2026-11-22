@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for update report catalogue invalid.",
+  "context": "Journal command-line text for update report catalogue invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8f52cf295acf7d85ab2051ec089b159743c1f21e5e715c7952e43a07a900643c",
+  "max_length": 73,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

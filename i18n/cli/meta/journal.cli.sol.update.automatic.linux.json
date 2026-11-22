@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for update automatic linux.",
+  "context": "Journal command-line text for update automatic linux.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "32fb74d2d77f703b0c30ac2db27412a63007860b09a88d73d54b15a20740154b",
+  "max_length": 70,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "automatic_command",
+      "kind": "command",
+      "value": "solstone update --automatic"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for update summary failure.",
+  "context": "Journal command-line text for update summary failure.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "code",
+      "type": "string"
+    },
+    {
+      "name": "message",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "05d0d4992cfa7f997359013830fd10459872d70a886737f62b54a3c8d8b397f9",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

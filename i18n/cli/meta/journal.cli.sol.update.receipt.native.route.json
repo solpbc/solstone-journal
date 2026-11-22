@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for update receipt native route.",
+  "context": "Journal command-line text for update receipt native route.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "daf928fc222f63dabef04f0abd582b3da2438a270349de3e03ba6311a0df456c",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for update catalogue schema no version.",
+  "context": "Journal command-line text for update catalogue schema no version.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ff31f9d61841e28c12fe6fabb6ec45acf41fce5eb10d047bae68c9ba1d5c011b",
+  "max_length": 77,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

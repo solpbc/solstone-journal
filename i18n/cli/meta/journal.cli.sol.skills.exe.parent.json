@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for skills exe parent.",
+  "context": "Journal command-line text for skills exe parent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "45310f8910eb8dd022345ae1a0a36010b3c46a5523711a44439e2d417ef457fb",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

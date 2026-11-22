@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for skills identity census.",
+  "context": "Journal command-line text for skills identity census.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b7b119e21f758d2ec3036c7a1663141e2c2266a6b97800e77973d4d9fc5b352f",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

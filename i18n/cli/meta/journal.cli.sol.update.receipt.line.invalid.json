@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for update receipt line invalid.",
+  "context": "Journal command-line text for update receipt line invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "line",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8a2280378f1b3d159c436092e3451e3368edfd59d68d530f73f18eac155e511d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

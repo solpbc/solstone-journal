@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for unsupported.",
+  "context": "Journal command-line text for unsupported.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d212761c209a2e48d6ecff3371241704171bc4992b359d6c5f72c32e39955f23",
+  "max_length": 78,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_name",
+      "kind": "command",
+      "value": "solstone"
+    }
+  ]
+}

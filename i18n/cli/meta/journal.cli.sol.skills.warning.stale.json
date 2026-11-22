@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for skills warning stale.",
+  "context": "Journal command-line text for skills warning stale.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "agent",
+      "type": "string"
+    },
+    {
+      "name": "skill",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "52b88e4d4cdd6b46c4b0a86447c314243d93864ca9915b537665e34a427f52db",
+  "max_length": 119,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

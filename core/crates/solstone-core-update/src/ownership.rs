@@ -268,6 +268,10 @@ struct IniFile {
 }
 
 fn parse_ini_file(path: &Path) -> Result<IniFile, String> {
+    parse_ini_file_in(solstone_core_cli_copy::ENGLISH, path)
+}
+
+fn parse_ini_file_in(locale: &str, path: &Path) -> Result<IniFile, String> {
     let content = fs::read_to_string(path).map_err(|e| e.to_string())?;
     let mut sections = BTreeMap::new();
     let mut current_section: Option<String> = None;
@@ -281,26 +285,48 @@ fn parse_ini_file(path: &Path) -> Result<IniFile, String> {
         if let Some(rest) = trimmed.strip_prefix('[') {
             let section_name = rest
                 .strip_suffix(']')
-                .ok_or_else(|| "unclosed section header".to_owned())?
+                .ok_or_else(|| {
+                    solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.sol.update.receipt.section.unclosed",
+                        &[],
+                    )
+                })?
                 .trim();
             if sections.contains_key(section_name) {
-                return Err(format!("duplicate section [{section_name}]"));
+                return Err(solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.sol.update.receipt.section.duplicate",
+                    [("section", &(section_name))],
+                ));
             }
             sections.insert(section_name.to_owned(), BTreeMap::new());
             current_section = Some(section_name.to_owned());
         } else if let Some((key, val)) = trimmed.split_once('=') {
-            let sec_name = current_section
-                .as_ref()
-                .ok_or_else(|| "key outside section".to_owned())?;
+            let sec_name = current_section.as_ref().ok_or_else(|| {
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.sol.update.receipt.key.outside",
+                    &[],
+                )
+            })?;
             let sec_map = sections.get_mut(sec_name).expect("section exists");
             let k = key.trim().to_owned();
             let v = val.trim().to_owned();
             if sec_map.contains_key(&k) {
-                return Err(format!("duplicate key {k} in section [{sec_name}]"));
+                return Err(solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.sol.update.receipt.section.key.duplicate",
+                    [("key", &(k)), ("section", &(sec_name))],
+                ));
             }
             sec_map.insert(k, v);
         } else {
-            return Err(format!("malformed line: {trimmed}"));
+            return Err(solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.sol.update.receipt.line.invalid",
+                [("line", &(trimmed))],
+            ));
         }
     }
 
@@ -427,6 +453,13 @@ fn executable_matches_prefix(executable: &Path, prefix: &Path) -> bool {
 }
 
 pub(crate) fn parse_install_receipt(path: &Path) -> Result<BTreeMap<String, String>, String> {
+    parse_install_receipt_in(solstone_core_cli_copy::ENGLISH, path)
+}
+
+pub(crate) fn parse_install_receipt_in(
+    locale: &str,
+    path: &Path,
+) -> Result<BTreeMap<String, String>, String> {
     let content = fs::read_to_string(path).map_err(|e| e.to_string())?;
     let mut map = BTreeMap::new();
     for line in content.lines() {
@@ -438,11 +471,19 @@ pub(crate) fn parse_install_receipt(path: &Path) -> Result<BTreeMap<String, Stri
             let key = k.trim().to_owned();
             let val = v.trim().to_owned();
             if map.contains_key(&key) {
-                return Err(format!("duplicate key {key}"));
+                return Err(solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.sol.update.receipt.key.duplicate",
+                    [("key", &(key))],
+                ));
             }
             map.insert(key, val);
         } else {
-            return Err("not key=value".to_owned());
+            return Err(solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.receipt.line.pair",
+                &[],
+            ));
         }
     }
     Ok(map)
@@ -458,6 +499,22 @@ fn normalize_component_section(sec_name: &str) -> Option<&str> {
 }
 
 pub fn classify_ownership(
+    executable: &Path,
+    data_dir: &Path,
+    etc_dir: &Path,
+    probe: &dyn PackageProbe,
+) -> OwnershipResult {
+    classify_ownership_in(
+        solstone_core_cli_copy::ENGLISH,
+        executable,
+        data_dir,
+        etc_dir,
+        probe,
+    )
+}
+
+pub fn classify_ownership_in(
+    locale: &str,
     executable: &Path,
     data_dir: &Path,
     etc_dir: &Path,
@@ -481,7 +538,11 @@ pub fn classify_ownership(
     {
         return OwnershipResult::Refusal {
             code: "ownership-unknown".to_owned(),
-            message: "user install.conf is not a regular file".to_owned(),
+            message: solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.receipt.user.file",
+                &[],
+            ),
         };
     }
 
@@ -490,17 +551,25 @@ pub fn classify_ownership(
     {
         return OwnershipResult::Refusal {
             code: "ownership-unknown".to_owned(),
-            message: "package install.conf is not a regular file".to_owned(),
+            message: solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.receipt.package.file",
+                &[],
+            ),
         };
     }
 
     let tree_ini = if tree_receipt_path.is_file() {
-        match parse_ini_file(&tree_receipt_path) {
+        match parse_ini_file_in(locale, &tree_receipt_path) {
             Ok(ini) => Some(ini),
             Err(e) => {
                 return OwnershipResult::Refusal {
                     code: "ownership-unknown".to_owned(),
-                    message: format!("malformed user install.conf: {e}"),
+                    message: solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.sol.update.receipt.user.malformed",
+                        [("detail", &(e))],
+                    ),
                 };
             }
         }
@@ -509,12 +578,16 @@ pub fn classify_ownership(
     };
 
     let pkg_ini = if pkg_receipt_path.is_file() {
-        match parse_ini_file(&pkg_receipt_path) {
+        match parse_ini_file_in(locale, &pkg_receipt_path) {
             Ok(ini) => Some(ini),
             Err(e) => {
                 return OwnershipResult::Refusal {
                     code: "ownership-unknown".to_owned(),
-                    message: format!("malformed package install.conf: {e}"),
+                    message: solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.sol.update.receipt.package.malformed",
+                        [("detail", &(e))],
+                    ),
                 };
             }
         }
@@ -531,7 +604,11 @@ pub fn classify_ownership(
             if normalize_component_section(sec).is_none() {
                 return Some(OwnershipResult::Refusal {
                     code: "ownership-unknown".to_owned(),
-                    message: format!("unrecognized section in install.conf: {sec}"),
+                    message: solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.sol.update.receipt.section.unknown",
+                        [("section", &(sec))],
+                    ),
                 });
             }
         }
@@ -562,7 +639,14 @@ pub fn classify_ownership(
                     .is_some_and(|v| crate::compare_platform_versions(v, v).is_some())
         });
         if !valid {
-            return OwnershipResult::Refusal { code: "ownership-unknown".to_owned(), message: "the installation receipt is incomplete or unsupported. use the original installer to recover it.".to_owned() };
+            return OwnershipResult::Refusal {
+                code: "ownership-unknown".to_owned(),
+                message: solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.sol.update.receipt.incomplete",
+                    &[],
+                ),
+            };
         }
     }
 
@@ -584,7 +668,14 @@ pub fn classify_ownership(
                     _ => false,
                 };
             if !valid {
-                return OwnershipResult::Refusal { code: "ownership-unknown".to_owned(), message: "the installation receipt is incomplete or unsupported. use the original installer to recover it.".to_owned() };
+                return OwnershipResult::Refusal {
+                    code: "ownership-unknown".to_owned(),
+                    message: solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.sol.update.receipt.incomplete",
+                        &[],
+                    ),
+                };
             }
         }
     }
@@ -610,7 +701,11 @@ pub fn classify_ownership(
     if any_journal && any_cli {
         return OwnershipResult::Refusal {
             code: "source-ambiguous".to_owned(),
-            message: "both journal and cli components are recorded".to_owned(),
+            message: solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.receipt.duplicate.roles",
+                &[],
+            ),
         };
     }
 
@@ -624,7 +719,11 @@ pub fn classify_ownership(
             if t_has && p_has {
                 return OwnershipResult::Refusal {
                     code: "ownership-unknown".to_owned(),
-                    message: format!("component {comp} claimed by both tree and package receipts"),
+                    message: solstone_core_cli_copy::display_for(
+                        locale,
+                        "journal.cli.sol.update.receipt.claimed.twice",
+                        [("component", &(comp))],
+                    ),
                 };
             }
         }
@@ -637,7 +736,14 @@ pub fn classify_ownership(
             .iter()
             .any(|key| tree.get(*key) != package.get(*key))
         {
-            return OwnershipResult::Refusal { code: "ownership-unknown".to_owned(), message: "the installation receipt is incomplete or unsupported. use the original installer to recover it.".to_owned() };
+            return OwnershipResult::Refusal {
+                code: "ownership-unknown".to_owned(),
+                message: solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.sol.update.receipt.incomplete",
+                    &[],
+                ),
+            };
         }
     }
 
@@ -761,7 +867,7 @@ pub fn classify_ownership(
     }
 
     // Check positive standalone native-tree
-    if let Some(native_res) = classify_native_tree(executable, tree_ini.as_ref(), probe) {
+    if let Some(native_res) = classify_native_tree(locale, executable, tree_ini.as_ref(), probe) {
         return native_res;
     }
 
@@ -778,7 +884,11 @@ pub fn classify_ownership(
     if probe.owns_journal(executable) {
         return OwnershipResult::Refusal {
             code: "install-not-owned".to_owned(),
-            message: UNRECORDED_PACKAGE_MESSAGE.to_owned(),
+            message: solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.receipt.unrecorded",
+                &[],
+            ),
         };
     }
 
@@ -1114,6 +1224,7 @@ fn native_tree_policy(receipt: &BTreeMap<String, String>) -> Option<ServicePolic
 }
 
 fn classify_native_tree(
+    locale: &str,
     executable: &Path,
     tree_ini: Option<&IniFile>,
     probe: &dyn PackageProbe,
@@ -1151,19 +1262,27 @@ fn classify_native_tree(
         if meta.file_type().is_symlink() || !meta.file_type().is_file() {
             return Some(OwnershipResult::Refusal {
                 code: "ownership-unknown".to_owned(),
-                message: "native install-receipt is not a regular file".to_owned(),
+                message: solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.sol.update.receipt.native.file",
+                    &[],
+                ),
             });
         }
     } else {
         return None;
     }
 
-    let receipt = match parse_install_receipt(&receipt_path) {
+    let receipt = match parse_install_receipt_in(locale, &receipt_path) {
         Ok(r) => r,
         Err(e) => {
             return Some(OwnershipResult::Refusal {
                 code: "ownership-unknown".to_owned(),
-                message: format!("malformed native install-receipt: {e}"),
+                message: solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.sol.update.receipt.native.malformed",
+                    [("detail", &(e))],
+                ),
             });
         }
     };
@@ -1171,14 +1290,22 @@ fn classify_native_tree(
     if receipt.get("schema_version").map(|s| s.as_str()) != Some("1") {
         return Some(OwnershipResult::Refusal {
             code: "ownership-unknown".to_owned(),
-            message: "native receipt schema_version must be 1".to_owned(),
+            message: solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.receipt.native.schema",
+                &[],
+            ),
         });
     }
 
     if receipt.get("route").map(|s| s.as_str()) != Some("tree") {
         return Some(OwnershipResult::Refusal {
             code: "ownership-unknown".to_owned(),
-            message: "native receipt route must be tree".to_owned(),
+            message: solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.receipt.native.route",
+                &[],
+            ),
         });
     }
 
@@ -1193,7 +1320,11 @@ fn classify_native_tree(
     if &tree_ver != receipt_ver {
         return Some(OwnershipResult::Refusal {
             code: "ownership-unknown".to_owned(),
-            message: "installed version does not match receipt journal_version".to_owned(),
+            message: solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.receipt.native.version",
+                &[],
+            ),
         });
     }
 

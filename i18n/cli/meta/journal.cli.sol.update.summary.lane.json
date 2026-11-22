@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for update summary lane.",
+  "context": "Journal command-line text for update summary lane.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e2f2d13c7a1f66658b0e933821846b1cf3ad05527dc7b04bbf394868a08ff93c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for skills agent invalid.",
+  "context": "Journal command-line text for skills agent invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "agent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fb902d01a11c8513fba48ae0129241f18b3a54b53448b0bf8a5a8e832cd06bb7",
+  "max_length": 97,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "skill_command",
+      "kind": "command",
+      "value": "solstone skills"
+    },
+    {
+      "name": "agent_flag",
+      "kind": "flag",
+      "value": "--agent"
+    }
+  ]
+}

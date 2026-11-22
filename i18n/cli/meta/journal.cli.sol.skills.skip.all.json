@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for skills skip all.",
+  "context": "Journal command-line text for skills skip all.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "771912abea8efa19a80eff96470b3c8ec778b0a49e6fc796ea3ee69ec4c71f38",
+  "max_length": 105,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

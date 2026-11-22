@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for skills status absent.",
+  "context": "Journal command-line text for skills status absent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "agent",
+      "type": "string"
+    },
+    {
+      "name": "skill",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6bc41b05ee976e3b357704ab3fa2f90d63485acf1c1fe6d87d34954f54302639",
+  "max_length": 67,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

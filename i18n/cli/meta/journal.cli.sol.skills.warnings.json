@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for skills warnings.",
+  "context": "Journal command-line text for skills warnings.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "538e723c9a0c2f5fe649f7201c0a2d0db0b939360aa50827aa7bea6838e7c9bd",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

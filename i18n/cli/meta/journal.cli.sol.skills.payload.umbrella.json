@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for skills payload umbrella.",
+  "context": "Journal command-line text for skills payload umbrella.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f7c3bd8122bf9ae846b8772b0b95cf9bbbf979d2822da34aed1b7348c40e1b90",
+  "max_length": 101,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "skill_file",
+      "kind": "accepted-input",
+      "value": "solstone/talent/solstone/SKILL.md"
+    }
+  ]
+}

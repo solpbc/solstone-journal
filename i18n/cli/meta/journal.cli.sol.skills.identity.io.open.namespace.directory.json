@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for skills identity io open namespace directory.",
+  "context": "Journal command-line text for skills identity io open namespace directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4e821933bd1b49ec6c22d34955fc87b4058c690cbce931ceb096d66d485e1e4d",
+  "max_length": 68,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

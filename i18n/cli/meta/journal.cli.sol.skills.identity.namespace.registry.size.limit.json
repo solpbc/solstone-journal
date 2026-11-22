@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for skills identity namespace registry size limit.",
+  "context": "Journal command-line text for skills identity namespace registry size limit.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1b395a2e102b95271c90a2cf715b479258462bc7afb1f2b9bb222bff68024486",
+  "max_length": 65,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

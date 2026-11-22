@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use solstone_core_cli_copy::{ENGLISH, MessageDetail, display_for};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
@@ -13,13 +14,26 @@ pub enum UserSkillMode {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum UserSkillSync {
+pub enum UserSkillSync<E = String> {
     Installed,
     Replaced,
     Unchanged,
     Ineligible, // refresh only: not our skill; no warn
     Preserved,  // overlap or unknown evidence; caller warns
-    Failed(String),
+    Failed(E),
+}
+
+impl UserSkillSync<MessageDetail> {
+    fn into_source(self) -> UserSkillSync {
+        match self {
+            Self::Failed(detail) => UserSkillSync::Failed(detail.to_string()),
+            Self::Installed => UserSkillSync::Installed,
+            Self::Replaced => UserSkillSync::Replaced,
+            Self::Unchanged => UserSkillSync::Unchanged,
+            Self::Ineligible => UserSkillSync::Ineligible,
+            Self::Preserved => UserSkillSync::Preserved,
+        }
+    }
 }
 
 static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -86,19 +100,34 @@ pub fn bundled_user_skill_dir() -> io::Result<PathBuf> {
 
 /// Determine the selected journal path for user skill installation.
 pub fn selected_journal_for_install(home: &Path) -> Result<PathBuf, String> {
+    selected_journal_for_install_detailed(home).map_err(|detail| detail.to_string())
+}
+
+pub fn selected_journal_for_install_detailed(home: &Path) -> Result<PathBuf, MessageDetail> {
     if !home.is_absolute() {
-        return Err("home must be an absolute path".to_string());
+        return Err(MessageDetail::message(
+            "journal.cli.sol.skills.home.absolute",
+            [],
+        ));
     }
     let config_val = match solstone_core_journal::read_config_journal(home) {
         Ok(val) => val,
-        Err(e) => return Err(format!("config journal decode error: {e:?}")),
+        Err(e) => {
+            return Err(MessageDetail::message(
+                "journal.cli.sol.skills.config.decode",
+                [("kind", &(format!("{e:?}")))],
+            ));
+        }
     };
     let env_val = std::env::var_os("SOLSTONE_JOURNAL");
     let env_opt = env_val.as_deref().filter(|s| !s.is_empty());
     let resolved =
         solstone_core_journal::resolve_journal_path(env_opt, config_val.as_deref(), None, home);
     if !resolved.path.is_absolute() {
-        return Err("resolved journal path is not absolute".to_string());
+        return Err(MessageDetail::message(
+            "journal.cli.sol.skills.journal.resolved",
+            [],
+        ));
     }
     Ok(resolved.path)
 }
@@ -108,36 +137,67 @@ pub fn guard_user_skill_mutation(
     home: &Path,
     selected_journal: &Path,
 ) -> Result<UserSkillGuard, String> {
+    guard_user_skill_mutation_detailed(home, selected_journal).map_err(|detail| detail.to_string())
+}
+
+pub fn guard_user_skill_mutation_detailed(
+    home: &Path,
+    selected_journal: &Path,
+) -> Result<UserSkillGuard, MessageDetail> {
     if !home.is_absolute() {
-        return Err("home must be an absolute path".to_string());
+        return Err(MessageDetail::message(
+            "journal.cli.sol.skills.home.absolute",
+            [],
+        ));
     }
     if !selected_journal.is_absolute() {
-        return Err("selected journal must be an absolute path".to_string());
+        return Err(MessageDetail::message(
+            "journal.cli.sol.skills.journal.absolute",
+            [],
+        ));
     }
     let owner = solstone_core_installation_identity::OwnerBase::at_home(
         home.to_path_buf(),
         solstone_core_installation_identity::PlatformTag::current(),
     )
-    .map_err(|e| format!("cannot form owner base at {}: {e}", home.display()))?;
+    .map_err(|e| {
+        e.message_detail().context_with(
+            "journal.cli.sol.skills.owner.base",
+            [("path", &home.display())],
+        )
+    })?;
 
-    let exe = std::env::current_exe().map_err(|e| format!("cannot determine current exe: {e}"))?;
+    let exe = std::env::current_exe().map_err(|e| {
+        MessageDetail::message("journal.cli.sol.skills.exe.current", [("error", &(e))])
+    })?;
     let exe_dir = exe
         .parent()
-        .ok_or_else(|| "current exe has no parent directory".to_string())?;
+        .ok_or_else(|| MessageDetail::message("journal.cli.sol.skills.exe.parent", []))?;
     let id_root = solstone_core_journal::resolve_identity_root_from_executable_dir(exe_dir)
         .unwrap_or_else(|| exe_dir.to_path_buf());
-    let root_token = solstone_core_installation_identity::root_token_from_path(&id_root)
-        .map_err(|e| format!("cannot derive root token from {}: {e}", id_root.display()))?;
+    let root_token =
+        solstone_core_installation_identity::root_token_from_path(&id_root).map_err(|e| {
+            e.message_detail().context_with(
+                "journal.cli.sol.skills.identity.root",
+                [("path", &id_root.display())],
+            )
+        })?;
 
     let census = solstone_core_installation_identity::read_installation_journal_census(
         &owner,
         &root_token,
         false,
     )
-    .map_err(|e| format!("census read failed: {e}"))?;
+    .map_err(|e| {
+        e.message_detail()
+            .context("journal.cli.sol.skills.identity.census")
+    })?;
 
     if !census.registry_known {
-        return Err("installation registry is unknown".to_string());
+        return Err(MessageDetail::message(
+            "journal.cli.sol.skills.registry.unknown",
+            [],
+        ));
     }
 
     let mut protected_journals =
@@ -153,16 +213,31 @@ pub fn guard_user_skill_mutation(
     })
 }
 
+fn io_detail(error: io::Error) -> MessageDetail {
+    match error.downcast::<MessageDetail>() {
+        Ok(detail) => detail,
+        Err(external) => external.to_string().into(),
+    }
+}
+
 impl UserSkillGuard {
     /// Verify whether a destination path is allowed to be mutated.
     pub fn allows(&self, path: &Path) -> Result<(), String> {
+        self.allows_detailed(path)
+            .map_err(|detail| detail.to_string())
+    }
+
+    pub fn allows_detailed(&self, path: &Path) -> Result<(), MessageDetail> {
         if !path.is_absolute() {
-            return Err("path must be absolute".to_string());
+            return Err(MessageDetail::message(
+                "journal.cli.sol.skills.path.absolute",
+                [],
+            ));
         }
         if self.protected_journals.overlaps(path) {
-            return Err(format!(
-                "path {} overlaps protected journal",
-                path.display()
+            return Err(MessageDetail::message(
+                "journal.cli.sol.skills.path.overlap",
+                [("path", &(path.display()))],
             ));
         }
 
@@ -181,27 +256,34 @@ impl UserSkillGuard {
                     }
                 }
                 Err(e) => {
-                    return Err(format!(
-                        "inspecting ancestor {} failed: {e}",
-                        cursor.display()
+                    return Err(MessageDetail::message(
+                        "journal.cli.sol.skills.path.inspect",
+                        [("path", &(cursor.display())), ("error", &(e))],
                     ));
                 }
             }
         }
         if cursor.as_os_str().is_empty() {
-            return Err(format!("no existing ancestor found for {}", path.display()));
+            return Err(MessageDetail::message(
+                "journal.cli.sol.skills.path.ancestor.absent",
+                [("path", &(path.display()))],
+            ));
         }
-        let canonical_ancestor = fs::canonicalize(&cursor)
-            .map_err(|e| format!("canonicalizing ancestor {} failed: {e}", cursor.display()))?;
+        let canonical_ancestor = fs::canonicalize(&cursor).map_err(|e| {
+            MessageDetail::message(
+                "journal.cli.sol.skills.path.canonical",
+                [("path", &(cursor.display())), ("error", &(e))],
+            )
+        })?;
         let mut resolved_path = canonical_ancestor;
         for comp in suffix_components.into_iter().rev() {
             resolved_path.push(comp);
         }
 
         if self.protected_journals.overlaps(&resolved_path) {
-            return Err(format!(
-                "resolved ancestor path {} overlaps protected journal",
-                resolved_path.display()
+            return Err(MessageDetail::message(
+                "journal.cli.sol.skills.path.resolved.overlap",
+                [("path", &(resolved_path.display()))],
             ));
         }
         Ok(())
@@ -209,22 +291,39 @@ impl UserSkillGuard {
 
     /// Synchronize the user skill into the destination path.
     pub fn sync(&self, source: &Path, target: &Path, mode: UserSkillMode) -> UserSkillSync {
+        self.sync_detailed(source, target, mode, ENGLISH)
+            .into_source()
+    }
+
+    pub fn sync_detailed(
+        &self,
+        source: &Path,
+        target: &Path,
+        mode: UserSkillMode,
+        locale: &str,
+    ) -> UserSkillSync<MessageDetail> {
         if self.allows(target).is_err() {
             return UserSkillSync::Preserved;
         }
         match solstone_core_skill_state::user_skill_copy_matches(source, source) {
             Ok(true) => {}
             Ok(false) => {
-                return UserSkillSync::Failed(
-                    "bundled skill contains linked or special entries".to_string(),
-                );
+                return UserSkillSync::Failed(MessageDetail::message(
+                    "journal.cli.sol.skills.bundle.linked",
+                    [],
+                ));
             }
-            Err(e) => return UserSkillSync::Failed(e.to_string()),
+            Err(e) => return UserSkillSync::Failed(io_detail(e)),
         }
 
         let target_parent = match target.parent() {
             Some(p) => p,
-            None => return UserSkillSync::Failed("target has no parent directory".to_string()),
+            None => {
+                return UserSkillSync::Failed(MessageDetail::message(
+                    "journal.cli.sol.skills.target.parent",
+                    [],
+                ));
+            }
         };
 
         let count = COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -243,18 +342,18 @@ impl UserSkillGuard {
                 Err(e) if e.kind() == io::ErrorKind::NotFound => {
                     return UserSkillSync::Ineligible;
                 }
-                Err(e) => return UserSkillSync::Failed(e.to_string()),
+                Err(e) => return UserSkillSync::Failed(io_detail(e)),
                 Ok(meta) => {
                     let file_type = meta.file_type();
                     if file_type.is_symlink() {
                         let link_target = match fs::read_link(target) {
                             Ok(t) if t.is_absolute() => t,
                             Ok(t) => target_parent.join(t),
-                            Err(e) => return UserSkillSync::Failed(e.to_string()),
+                            Err(e) => return UserSkillSync::Failed(io_detail(e)),
                         };
                         let bundled = match bundled_user_skill_dir() {
                             Ok(b) => b,
-                            Err(e) => return UserSkillSync::Failed(e.to_string()),
+                            Err(e) => return UserSkillSync::Failed(io_detail(e)),
                         };
                         let is_windows = self.platform
                             == solstone_core_installation_identity::PlatformTag::Windows;
@@ -278,29 +377,30 @@ impl UserSkillGuard {
                             Err(e) if e.kind() == io::ErrorKind::NotFound => {
                                 return UserSkillSync::Ineligible;
                             }
-                            Err(e) => return UserSkillSync::Failed(e.to_string()),
+                            Err(e) => return UserSkillSync::Failed(io_detail(e)),
                         }
                         match fs::read(&skill_md) {
                             Ok(bytes) => match check_skill_md_name(&bytes) {
                                 SkillMdCheck::MatchesSolstone => {}
                                 SkillMdCheck::Ineligible => return UserSkillSync::Ineligible,
                                 SkillMdCheck::InvalidUtf8(err) => {
-                                    return UserSkillSync::Failed(format!(
-                                        "SKILL.md is not valid UTF-8: {err}"
+                                    return UserSkillSync::Failed(MessageDetail::message(
+                                        "journal.cli.sol.skills.file.utf",
+                                        [("error", &(err))],
                                     ));
                                 }
                             },
-                            Err(e) => return UserSkillSync::Failed(e.to_string()),
+                            Err(e) => return UserSkillSync::Failed(io_detail(e)),
                         }
                         if let Err(e) =
                             solstone_core_skill_state::validate_user_skill_copy_entries(target)
                         {
-                            return UserSkillSync::Failed(e.to_string());
+                            return UserSkillSync::Failed(io_detail(e));
                         }
                         match solstone_core_skill_state::user_skill_copy_matches(source, target) {
                             Ok(true) => return UserSkillSync::Unchanged,
                             Ok(false) => {}
-                            Err(e) => return UserSkillSync::Failed(e.to_string()),
+                            Err(e) => return UserSkillSync::Failed(io_detail(e)),
                         }
                     } else {
                         return UserSkillSync::Ineligible;
@@ -316,29 +416,29 @@ impl UserSkillGuard {
             if is_regular_dir {
                 if let Err(e) = solstone_core_skill_state::validate_user_skill_copy_entries(target)
                 {
-                    return UserSkillSync::Failed(e.to_string());
+                    return UserSkillSync::Failed(io_detail(e));
                 }
                 match solstone_core_skill_state::user_skill_copy_matches(source, target) {
                     Ok(true) => return UserSkillSync::Unchanged,
                     Ok(false) => {}
-                    Err(e) => return UserSkillSync::Failed(e.to_string()),
+                    Err(e) => return UserSkillSync::Failed(io_detail(e)),
                 }
             }
             if !target_parent.exists() {
                 match fs::create_dir(target_parent) {
                     Ok(()) => {}
-                    Err(e) => return UserSkillSync::Failed(e.to_string()),
+                    Err(e) => return UserSkillSync::Failed(io_detail(e)),
                 }
             }
         }
 
         if let Err(e) = fs::create_dir(&staging_dir) {
-            return UserSkillSync::Failed(e.to_string());
+            return UserSkillSync::Failed(io_detail(e));
         }
 
         if let Err(e) = copy_tree_to_staging(source, &staging_dir) {
             let _ = fs::remove_dir_all(&staging_dir);
-            return UserSkillSync::Failed(e.to_string());
+            return UserSkillSync::Failed(io_detail(e));
         }
 
         let aside_name = format!(
@@ -348,7 +448,7 @@ impl UserSkillGuard {
         );
         let aside_dir = target_parent.join(aside_name);
 
-        self.publish_staged_skill(&staging_dir, target, &aside_dir, target_exists)
+        self.publish_staged_skill(&staging_dir, target, &aside_dir, target_exists, locale)
     }
 
     fn publish_staged_skill(
@@ -357,7 +457,8 @@ impl UserSkillGuard {
         target: &Path,
         aside_dir: &Path,
         target_exists: bool,
-    ) -> UserSkillSync {
+        locale: &str,
+    ) -> UserSkillSync<MessageDetail> {
         if self.allows(target).is_err() || self.allows(staging_dir).is_err() {
             return UserSkillSync::Preserved;
         }
@@ -370,13 +471,13 @@ impl UserSkillGuard {
             }
             if let Err(e) = fs::create_dir(aside_dir) {
                 let _ = fs::remove_dir_all(staging_dir);
-                return UserSkillSync::Failed(e.to_string());
+                return UserSkillSync::Failed(io_detail(e));
             }
             let previous = aside_dir.join("previous");
             if let Err(e) = fs::rename(target, &previous) {
                 let _ = fs::remove_dir(aside_dir);
                 let _ = fs::remove_dir_all(staging_dir);
-                return UserSkillSync::Failed(e.to_string());
+                return UserSkillSync::Failed(io_detail(e));
             }
             if let Err(e) = fs::rename(staging_dir, target) {
                 let rollback = fs::rename(&previous, target);
@@ -384,11 +485,15 @@ impl UserSkillGuard {
                 return match rollback {
                     Ok(()) => {
                         let _ = fs::remove_dir(aside_dir);
-                        UserSkillSync::Failed(e.to_string())
+                        UserSkillSync::Failed(io_detail(e))
                     }
-                    Err(rollback_error) => UserSkillSync::Failed(format!(
-                        "publishing skill failed: {e}; restoring failed: {rollback_error}; backup path: {}",
-                        previous.display()
+                    Err(rollback_error) => UserSkillSync::Failed(MessageDetail::message(
+                        "journal.cli.sol.skills.publish.rollback",
+                        [
+                            ("error", &(e)),
+                            ("restore", &(rollback_error)),
+                            ("path", &(previous.display())),
+                        ],
                     )),
                 };
             }
@@ -396,16 +501,23 @@ impl UserSkillGuard {
             // remove the backup, so it must never roll that partial tree back over it.
             if let Err(e) = fs::remove_dir_all(aside_dir) {
                 log::warn!(
-                    "refresh user skills: installed {}; old skill cleanup at {} failed: {e}",
-                    target.display(),
-                    aside_dir.display()
+                    "{}",
+                    display_for(
+                        locale,
+                        "journal.cli.sol.skills.cleanup.failed",
+                        [
+                            ("path", &(target.display())),
+                            ("backup", &(aside_dir.display())),
+                            ("error", &(e))
+                        ]
+                    )
                 );
             }
             UserSkillSync::Replaced
         } else {
             if let Err(e) = fs::rename(staging_dir, target) {
                 let _ = fs::remove_dir_all(staging_dir);
-                return UserSkillSync::Failed(e.to_string());
+                return UserSkillSync::Failed(io_detail(e));
             }
             UserSkillSync::Installed
         }
@@ -514,7 +626,7 @@ fn copy_tree_inner(src: &Path, dst: &Path, wrote_first_file: &mut bool) -> io::R
         if file_type.is_symlink() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "symlinks are not permitted in user skill trees",
+                MessageDetail::message("journal.cli.sol.skills.copy.symlink", []),
             ));
         } else if file_type.is_dir() {
             fs::create_dir_all(&dst_path)?;
@@ -528,7 +640,7 @@ fn copy_tree_inner(src: &Path, dst: &Path, wrote_first_file: &mut bool) -> io::R
         } else {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "special files are not permitted in user skill trees",
+                MessageDetail::message("journal.cli.sol.skills.copy.special", []),
             ));
         }
     }
@@ -651,7 +763,7 @@ mod tests {
         let guard = guard_user_skill_mutation(&home, &backup).unwrap();
         let before = fs::read(target.join("SKILL.md")).unwrap();
         assert_eq!(
-            guard.publish_staged_skill(&staging, &target, &backup, true),
+            guard.publish_staged_skill(&staging, &target, &backup, true, ENGLISH),
             UserSkillSync::Preserved
         );
         assert!(!backup.exists());
@@ -666,7 +778,7 @@ mod tests {
         let guard = guard_user_skill_mutation(&home, &temp.path().join("journal")).unwrap();
         let before = fs::read(target.join("SKILL.md")).unwrap();
         assert!(matches!(
-            guard.publish_staged_skill(&staging, &target, &backup, true),
+            guard.publish_staged_skill(&staging, &target, &backup, true, ENGLISH),
             UserSkillSync::Failed(_)
         ));
         assert!(backup.is_dir());
@@ -684,7 +796,7 @@ mod tests {
         let guard = guard_user_skill_mutation(&home, &temp.path().join("journal")).unwrap();
         let before = fs::read(target.join("SKILL.md")).unwrap();
         assert!(matches!(
-            guard.publish_staged_skill(&staging, &target, &backup, true),
+            guard.publish_staged_skill(&staging, &target, &backup, true, ENGLISH),
             UserSkillSync::Failed(_)
         ));
         assert_eq!(fs::read(target.join("SKILL.md")).unwrap(), before);
@@ -717,7 +829,7 @@ mod tests {
         let _restore = Restore(vec![locked, backup.join("previous/locked")]);
         let guard = guard_user_skill_mutation(&home, &temp.path().join("journal")).unwrap();
         assert_eq!(
-            guard.publish_staged_skill(&staging, &target, &backup, true),
+            guard.publish_staged_skill(&staging, &target, &backup, true, ENGLISH),
             UserSkillSync::Replaced
         );
         assert!(solstone_core_skill_state::user_skill_copy_matches(&source, &target).unwrap());

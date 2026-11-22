@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for update argument lane value.",
+  "context": "Journal command-line text for update argument lane value.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "lane",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3c189cc0c2b44bd44ff1a468a5db66c97dab7da536db9b32439ff7c2b3b4a9c4",
+  "max_length": 89,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "lane_values",
+      "kind": "accepted-input",
+      "value": "release, staging, or dev"
+    }
+  ]
+}

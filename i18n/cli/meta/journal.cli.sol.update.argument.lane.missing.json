@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for update argument lane missing.",
+  "context": "Journal command-line text for update argument lane missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "70153e16ac0f6754dee496c0177e14e0fb5db8e0ec710b0e5fd620b48755cc70",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "lane_flag",
+      "kind": "flag",
+      "value": "--lane"
+    }
+  ]
+}

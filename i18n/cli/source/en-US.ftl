@@ -5109,3 +5109,582 @@ journal.cli.describe.stored.note.bounded = [{ $mark }: extraction output bounded
 journal.cli.describe.stored.note.ocr = text recognized from your screens. it may contain recognition errors. this says what was visible, not what you read, typed or did. masking passwords and other secrets is best effort; your redaction rules do not apply.
 
 journal.cli.describe.stored.ocr.heading = { $clock } · { $category }
+
+journal.cli.sol.help.apps = Apps ({ $invocation }):
+
+journal.cli.sol.help.computer = This computer
+
+journal.cli.sol.help.journal = Your journal
+
+journal.cli.sol.help.title = { $solstone_name } - your journal, from the command line
+
+journal.cli.sol.help.tools = Tools
+
+journal.cli.sol.launcher.cycle.mac = { $solstone_name }: native launcher symlink cycle detected. Reinstall the journal app.
+
+journal.cli.sol.launcher.cycle.unix = { $solstone_name }: native launcher symlink cycle detected. Reinstall { $solstone_name } and { $sibling }.
+
+journal.cli.sol.launcher.dangling.mac = { $solstone_name }: native launcher symlink is dangling: { $path }. Reinstall the journal app.
+
+journal.cli.sol.launcher.dangling.unix = { $solstone_name }: native launcher symlink is dangling: { $path }. Reinstall { $solstone_name } and { $sibling }.
+
+journal.cli.sol.launcher.executable.mac = { $solstone_name }: native { $sibling } sibling is not executable: { $path }. Reinstall the journal app.
+
+journal.cli.sol.launcher.executable.unix = { $solstone_name }: native { $sibling } sibling is not executable: { $path }. Reinstall { $solstone_name } and { $sibling }.
+
+journal.cli.sol.launcher.missing.mac = { $solstone_name }: native { $sibling } sibling is missing: { $path }. Reinstall the journal app.
+
+journal.cli.sol.launcher.missing.unix = { $solstone_name }: native { $sibling } sibling is missing: { $path }. Reinstall { $solstone_name } and { $sibling }.
+
+journal.cli.sol.moved = '{ $command }' moved to '{ $journal_command } { $command }'; run that instead.{ $line_break }(commands that run the journal on this computer are under '{ $journal_command }'; see '{ $journal_help }'.)
+
+journal.cli.sol.resident.platform = shutdown signals are unavailable on this platform
+
+journal.cli.sol.resident.signal = native { $solstone_name } resident signal setup failed: { $error }
+
+journal.cli.sol.resident.startup = native { $solstone_name } resident startup flush failed: { $error }
+
+journal.cli.sol.root.inspect = native { $solstone_name } project root resolution failed: could not inspect current executable: { $error }
+
+journal.cli.sol.root.package = native { $solstone_name } project root resolution failed: could not locate source checkout or installed { $solstone_name } package from { $path }
+
+journal.cli.sol.skills.agent.invalid = { $skill_command }: error: unsupported { $agent_flag } { $agent }
+
+journal.cli.sol.skills.agent.required = { $skill_command }: error: { $agent_flag } requires a value
+
+journal.cli.sol.skills.argument.invalid = { $skill_command }: error: unrecognized argument { $argument }
+
+journal.cli.sol.skills.bundle.linked = bundled skill contains linked or special entries
+
+journal.cli.sol.skills.cleanup.failed = refresh user skills: installed { $path }; old skill cleanup at { $backup } failed: { $error }
+
+journal.cli.sol.skills.config.decode = config journal decode error: { $kind }
+
+journal.cli.sol.skills.config.not.directory = { $path } is not a directory
+
+journal.cli.sol.skills.copy.special = special files are not permitted in user skill trees
+
+journal.cli.sol.skills.copy.symlink = symlinks are not permitted in user skill trees
+
+journal.cli.sol.skills.cwd.failed = { $solstone }: native skills cwd is unavailable: { $error }. Run this command from an accessible directory.
+
+journal.cli.sol.skills.exe.current = cannot determine current exe: { $error }
+
+journal.cli.sol.skills.exe.parent = current exe has no parent directory
+
+journal.cli.sol.skills.file.utf = { $skill_file } is not valid { $encoding }: { $error }
+
+journal.cli.sol.skills.home.absolute = home must be an absolute path
+
+journal.cli.sol.skills.home.missing = { $solstone }: native skills home is unavailable. Set { $home } to your home directory.
+
+journal.cli.sol.skills.identity.census = census read failed: { $detail }
+
+journal.cli.sol.skills.identity.home.must.be.absolute = home must be absolute
+
+journal.cli.sol.skills.identity.installation.identity.is.unsupported.for.android = installation identity is unsupported for Android
+
+journal.cli.sol.skills.identity.io.clone.namespace.directory = clone namespace directory: { $error }
+
+journal.cli.sol.skills.identity.io.clone.namespace.registry = clone namespace registry: { $error }
+
+journal.cli.sol.skills.identity.io.open.home.directory = open home directory: { $error }
+
+journal.cli.sol.skills.identity.io.open.namespace.directory = open namespace directory: { $error }
+
+journal.cli.sol.skills.identity.io.open.namespace.registry = open namespace registry: { $error }
+
+journal.cli.sol.skills.identity.io.read.namespace.registry = read namespace registry: { $error }
+
+journal.cli.sol.skills.identity.io.stat.storage.directory = stat storage directory: { $error }
+
+journal.cli.sol.skills.identity.io.stat.storage.file = stat storage file: { $error }
+
+journal.cli.sol.skills.identity.namespace.entry.is.not.lowercase.hex = namespace entry is not lowercase hex
+
+journal.cli.sol.skills.identity.namespace.registry.entries.limit = namespace registry exceeds 1024 entries
+
+journal.cli.sol.skills.identity.namespace.registry.size.limit = namespace registry exceeds 16 MiB
+
+journal.cli.sol.skills.identity.path.escapes.its.absolute.root = path escapes its absolute root
+
+journal.cli.sol.skills.identity.path.must.be.absolute.and.nul.free = path must be absolute and NUL-free
+
+journal.cli.sol.skills.identity.root = cannot derive root token from { $path }: { $detail }
+
+journal.cli.sol.skills.identity.storage.directory.does.not.have.private.mode = storage directory does not have mode { $mode }
+
+journal.cli.sol.skills.identity.storage.directory.is.not.owned.by.the.current.user = storage directory is not owned by the current user
+
+journal.cli.sol.skills.identity.storage.file.does.not.have.private.mode = storage file does not have mode { $mode }
+
+journal.cli.sol.skills.identity.storage.file.is.not.owned.by.the.current.user = storage file is not owned by the current user
+
+journal.cli.sol.skills.install.done = installed { $agent } { $skill } -> { $path }
+
+journal.cli.sol.skills.journal.absolute = selected journal must be an absolute path
+
+journal.cli.sol.skills.journal.resolved = resolved journal path is not absolute
+
+journal.cli.sol.skills.operation.error = error: { $operation } { $path }: { $detail }
+
+journal.cli.sol.skills.owner.base = cannot form owner base at { $path }: { $detail }
+
+journal.cli.sol.skills.path.absolute = path must be absolute
+
+journal.cli.sol.skills.path.ancestor.absent = no existing ancestor found for { $path }
+
+journal.cli.sol.skills.path.canonical = canonicalizing ancestor { $path } failed: { $error }
+
+journal.cli.sol.skills.path.inspect = inspecting ancestor { $path } failed: { $error }
+
+journal.cli.sol.skills.path.overlap = path { $path } overlaps protected journal
+
+journal.cli.sol.skills.path.resolved.overlap = resolved ancestor path { $path } overlaps protected journal
+
+journal.cli.sol.skills.payload.failed = { $solstone }: native skills payload root is unavailable: { $detail }. Reinstall { $solstone } and { $core }.
+
+journal.cli.sol.skills.payload.project = error: expected project skill at { $path }
+
+journal.cli.sol.skills.payload.umbrella = error: expected bundled umbrella skill at { $skill_file } ({ $path })
+
+journal.cli.sol.skills.project.agent = error: { $agent_flag } { $agent } is not supported with { $project_flag }; use { $all_option } or { $claude_option }
+
+journal.cli.sol.skills.project.missing = expected project skill at { $path }
+
+journal.cli.sol.skills.publish.rollback = publishing skill failed: { $error }; restoring failed: { $restore }; backup path: { $path }
+
+journal.cli.sol.skills.registry.unknown = installation registry is unknown
+
+journal.cli.sol.skills.remove.directory = refusing to remove non-directory
+
+journal.cli.sol.skills.remove.done = removed { $agent } { $skill } -> { $path }
+
+journal.cli.sol.skills.remove.retired = removed { $agent } { $skill } (retired product skill) -> { $path }
+
+journal.cli.sol.skills.remove.stale = removed { $agent } { $skill } (stale) -> { $path }
+
+journal.cli.sol.skills.remove.symlink = refusing to remove non-symlink
+
+journal.cli.sol.skills.replace.done = replaced { $agent } { $skill } -> { $path }
+
+journal.cli.sol.skills.skip.absent = skipped { $agent } { $skill } (nothing to remove)
+
+journal.cli.sol.skills.skip.all = no AI coding agent config directories found — skipping skill registration
+
+journal.cli.sol.skills.skip.config = skipped { $agent } (config dir absent at { $path })
+
+journal.cli.sol.skills.status.absent = { $agent } { $skill } not installed
+
+journal.cli.sol.skills.status.header = agent      skill                state
+
+journal.cli.sol.skills.status.installed = { $agent } { $skill } installed
+
+journal.cli.sol.skills.subcommand.invalid = { $skill_command }: error: unknown subcommand { $command_name }
+
+journal.cli.sol.skills.subcommand.missing = { $skill_command }: error: missing subcommand
+
+journal.cli.sol.skills.symlink.unsupported = symlink creation unsupported
+
+journal.cli.sol.skills.target.ineligible = target is ineligible for install
+
+journal.cli.sol.skills.target.parent = target has no parent directory
+
+journal.cli.sol.skills.target.preserved = target path overlaps protected journal or is preserved
+
+journal.cli.sol.skills.tree.directory = skill tree requires an ordinary directory
+
+journal.cli.sol.skills.tree.linked = linked entries are not permitted in user skill trees
+
+journal.cli.sol.skills.tree.reference = bundled skill reference requires a directory with a regular { $skill_file }
+
+journal.cli.sol.skills.tree.special = special entries are not permitted in user skill trees
+
+journal.cli.sol.skills.usage = Usage: { $syntax }
+
+journal.cli.sol.skills.warning.existing = warning { $agent } { $skill } -> { $path } (existing content at target preserved)
+
+journal.cli.sol.skills.warning.retired = warning { $agent } { $skill } -> { $path } (does not match the retired { $retired_skill } skill; existing content at { $path } preserved)
+
+journal.cli.sol.skills.warning.stale = warning { $agent } { $skill } -> { $path } (existing content at stale target preserved)
+
+journal.cli.sol.skills.warnings = Warnings:
+
+journal.cli.sol.unsupported = Unsupported native { $solstone_name } command.
+
+journal.cli.sol.update.argument.automatic.conflict = { $automatic_flag } and { $unattended_flag } can only be combined with { $json_flag }
+
+journal.cli.sol.update.argument.automatic.missing = { $automatic_flag } requires { $automatic_values }
+
+journal.cli.sol.update.argument.automatic.value = { $automatic_flag } takes { $automatic_values }, not '{ $value }'
+
+journal.cli.sol.update.argument.lane.missing = { $lane_flag } requires a value
+
+journal.cli.sol.update.argument.lane.utf8 = { $lane_flag } must be valid { $encoding }
+
+journal.cli.sol.update.argument.lane.value = invalid release lane '{ $lane }'; choose { $lane_values }
+
+journal.cli.sol.update.argument.mode.conflict = choose only one of { $check_flag }, { $hold_flag }, { $unhold_flag }, or { $rollback_flag }
+
+journal.cli.sol.update.argument.unknown = unrecognized flag: { $flag }
+
+journal.cli.sol.update.argument.utf8 = arguments must be valid { $encoding }
+
+journal.cli.sol.update.argument.version.conflict = { $version_flag } cannot be combined with { $check_flag }, { $hold_flag }, or { $unhold_flag }
+
+journal.cli.sol.update.argument.version.format = invalid version format '{ $version }'; must be { $version_format } or { $revision_format }
+
+journal.cli.sol.update.argument.version.missing = { $version_flag } requires a value
+
+journal.cli.sol.update.argument.version.numeric = invalid version format '{ $version }'; components must be numeric
+
+journal.cli.sol.update.argument.version.revision = invalid platform revision in '{ $version }'; revision must be numeric digits
+
+journal.cli.sol.update.argument.version.utf8 = { $version_flag } must be valid { $encoding }
+
+journal.cli.sol.update.argument.yes.conflict = { $yes_flag } cannot be combined with { $check_flag }, { $hold_flag }, or { $unhold_flag }
+
+journal.cli.sol.update.automatic.choice = couldn't save your choice.
+
+journal.cli.sol.update.automatic.home = couldn't find your data directory.
+
+journal.cli.sol.update.automatic.ineligible = this install can't update itself. automatic updates work on an install from { $install_url }.
+
+journal.cli.sol.update.automatic.ineligible.generic = this install can't update itself.
+
+journal.cli.sol.update.automatic.linux = { $automatic_command } works on linux.
+
+journal.cli.sol.update.automatic.off = automatic updates are off. to update, run { $update_command }.
+
+journal.cli.sol.update.automatic.on = automatic updates are on. your journal never restarts on its own; a new version starts the next time it does.
+
+journal.cli.sol.update.automatic.package.add = installed from a package. to get updates through your system's updater, add the { $brand } repository: { $package_url }
+
+journal.cli.sol.update.automatic.prefix = the install directory's name can't go in a service file.
+
+journal.cli.sol.update.automatic.run = { $result ->
+    [up-to-date] automatic update: up to date
+    [installed] automatic update: installed a new version
+    [off] automatic update: automatic updates are off
+    [paused] automatic update: stopped after two tries that didn't work
+    [held] automatic update: updates are held
+    [hold-unknown] automatic update: the update hold can't be read
+    [offline] automatic update: couldn't reach the update service
+    [metered] automatic update: waiting for a connection that isn't metered
+    [waiting-for-signed-installer] automatic update: waiting for the next release
+    [busy] automatic update: another update was running
+    [not-eligible] automatic update: this install can't update itself
+    *[failed] automatic update: the update didn't work ({ $code })
+    }
+
+journal.cli.sol.update.automatic.session = couldn't set up the daily update check. your systemd user session may not be running.
+
+journal.cli.sol.update.automatic.status = { $choice ->
+    [on] automatic updates: on
+    [off] automatic updates: off
+    [unasked] automatic updates: not turned on
+    *[paused] automatic updates: stopped after two tries that didn't work
+    }
+
+journal.cli.sol.update.automatic.status.checked = { $choice ->
+    [on] automatic updates: on · last checked { $date }
+    [off] automatic updates: off · last checked { $date }
+    [unasked] automatic updates: not turned on · last checked { $date }
+    *[paused] automatic updates: stopped after two tries that didn't work · last checked { $date }
+    }
+
+journal.cli.sol.update.automatic.status.off.result = { $result ->
+    [up-to-date] automatic updates: off · up to date
+    [installed] automatic updates: off · installed a new version
+    [off] automatic updates: off · automatic updates are off
+    [paused] automatic updates: off · stopped after two tries that didn't work
+    [held] automatic updates: off · updates are held
+    [hold-unknown] automatic updates: off · the update hold can't be read
+    [offline] automatic updates: off · couldn't reach the update service
+    [metered] automatic updates: off · waiting for a connection that isn't metered
+    [waiting-for-signed-installer] automatic updates: off · waiting for the next release
+    [busy] automatic updates: off · another update was running
+    [not-eligible] automatic updates: off · this install can't update itself
+    *[failed] automatic updates: off · the update didn't work ({ $code })
+    }
+
+journal.cli.sol.update.automatic.status.off.result.checked = { $result ->
+    [up-to-date] automatic updates: off · last checked { $date } · up to date
+    [installed] automatic updates: off · last checked { $date } · installed a new version
+    [off] automatic updates: off · last checked { $date } · automatic updates are off
+    [paused] automatic updates: off · last checked { $date } · stopped after two tries that didn't work
+    [held] automatic updates: off · last checked { $date } · updates are held
+    [hold-unknown] automatic updates: off · last checked { $date } · the update hold can't be read
+    [offline] automatic updates: off · last checked { $date } · couldn't reach the update service
+    [metered] automatic updates: off · last checked { $date } · waiting for a connection that isn't metered
+    [waiting-for-signed-installer] automatic updates: off · last checked { $date } · waiting for the next release
+    [busy] automatic updates: off · last checked { $date } · another update was running
+    [not-eligible] automatic updates: off · last checked { $date } · this install can't update itself
+    *[failed] automatic updates: off · last checked { $date } · the update didn't work ({ $code })
+    }
+
+journal.cli.sol.update.automatic.status.on.result = { $result ->
+    [up-to-date] automatic updates: on · up to date
+    [installed] automatic updates: on · installed a new version
+    [off] automatic updates: on · automatic updates are off
+    [paused] automatic updates: on · stopped after two tries that didn't work
+    [held] automatic updates: on · updates are held
+    [hold-unknown] automatic updates: on · the update hold can't be read
+    [offline] automatic updates: on · couldn't reach the update service
+    [metered] automatic updates: on · waiting for a connection that isn't metered
+    [waiting-for-signed-installer] automatic updates: on · waiting for the next release
+    [busy] automatic updates: on · another update was running
+    [not-eligible] automatic updates: on · this install can't update itself
+    *[failed] automatic updates: on · the update didn't work ({ $code })
+    }
+
+journal.cli.sol.update.automatic.status.on.result.checked = { $result ->
+    [up-to-date] automatic updates: on · last checked { $date } · up to date
+    [installed] automatic updates: on · last checked { $date } · installed a new version
+    [off] automatic updates: on · last checked { $date } · automatic updates are off
+    [paused] automatic updates: on · last checked { $date } · stopped after two tries that didn't work
+    [held] automatic updates: on · last checked { $date } · updates are held
+    [hold-unknown] automatic updates: on · last checked { $date } · the update hold can't be read
+    [offline] automatic updates: on · last checked { $date } · couldn't reach the update service
+    [metered] automatic updates: on · last checked { $date } · waiting for a connection that isn't metered
+    [waiting-for-signed-installer] automatic updates: on · last checked { $date } · waiting for the next release
+    [busy] automatic updates: on · last checked { $date } · another update was running
+    [not-eligible] automatic updates: on · last checked { $date } · this install can't update itself
+    *[failed] automatic updates: on · last checked { $date } · the update didn't work ({ $code })
+    }
+
+journal.cli.sol.update.automatic.status.paused.result = { $result ->
+    [up-to-date] automatic updates: stopped after two tries that didn't work · up to date
+    [installed] automatic updates: stopped after two tries that didn't work · installed a new version
+    [off] automatic updates: stopped after two tries that didn't work · automatic updates are off
+    [paused] automatic updates: stopped after two tries that didn't work · stopped after two tries that didn't work
+    [held] automatic updates: stopped after two tries that didn't work · updates are held
+    [hold-unknown] automatic updates: stopped after two tries that didn't work · the update hold can't be read
+    [offline] automatic updates: stopped after two tries that didn't work · couldn't reach the update service
+    [metered] automatic updates: stopped after two tries that didn't work · waiting for a connection that isn't metered
+    [waiting-for-signed-installer] automatic updates: stopped after two tries that didn't work · waiting for the next release
+    [busy] automatic updates: stopped after two tries that didn't work · another update was running
+    [not-eligible] automatic updates: stopped after two tries that didn't work · this install can't update itself
+    *[failed] automatic updates: stopped after two tries that didn't work · the update didn't work ({ $code })
+    }
+
+journal.cli.sol.update.automatic.status.paused.result.checked = { $result ->
+    [up-to-date] automatic updates: stopped after two tries that didn't work · last checked { $date } · up to date
+    [installed] automatic updates: stopped after two tries that didn't work · last checked { $date } · installed a new version
+    [off] automatic updates: stopped after two tries that didn't work · last checked { $date } · automatic updates are off
+    [paused] automatic updates: stopped after two tries that didn't work · last checked { $date } · stopped after two tries that didn't work
+    [held] automatic updates: stopped after two tries that didn't work · last checked { $date } · updates are held
+    [hold-unknown] automatic updates: stopped after two tries that didn't work · last checked { $date } · the update hold can't be read
+    [offline] automatic updates: stopped after two tries that didn't work · last checked { $date } · couldn't reach the update service
+    [metered] automatic updates: stopped after two tries that didn't work · last checked { $date } · waiting for a connection that isn't metered
+    [waiting-for-signed-installer] automatic updates: stopped after two tries that didn't work · last checked { $date } · waiting for the next release
+    [busy] automatic updates: stopped after two tries that didn't work · last checked { $date } · another update was running
+    [not-eligible] automatic updates: stopped after two tries that didn't work · last checked { $date } · this install can't update itself
+    *[failed] automatic updates: stopped after two tries that didn't work · last checked { $date } · the update didn't work ({ $code })
+    }
+
+journal.cli.sol.update.automatic.status.unasked.result = { $result ->
+    [up-to-date] automatic updates: not turned on · up to date
+    [installed] automatic updates: not turned on · installed a new version
+    [off] automatic updates: not turned on · automatic updates are off
+    [paused] automatic updates: not turned on · stopped after two tries that didn't work
+    [held] automatic updates: not turned on · updates are held
+    [hold-unknown] automatic updates: not turned on · the update hold can't be read
+    [offline] automatic updates: not turned on · couldn't reach the update service
+    [metered] automatic updates: not turned on · waiting for a connection that isn't metered
+    [waiting-for-signed-installer] automatic updates: not turned on · waiting for the next release
+    [busy] automatic updates: not turned on · another update was running
+    [not-eligible] automatic updates: not turned on · this install can't update itself
+    *[failed] automatic updates: not turned on · the update didn't work ({ $code })
+    }
+
+journal.cli.sol.update.automatic.status.unasked.result.checked = { $result ->
+    [up-to-date] automatic updates: not turned on · last checked { $date } · up to date
+    [installed] automatic updates: not turned on · last checked { $date } · installed a new version
+    [off] automatic updates: not turned on · last checked { $date } · automatic updates are off
+    [paused] automatic updates: not turned on · last checked { $date } · stopped after two tries that didn't work
+    [held] automatic updates: not turned on · last checked { $date } · updates are held
+    [hold-unknown] automatic updates: not turned on · last checked { $date } · the update hold can't be read
+    [offline] automatic updates: not turned on · last checked { $date } · couldn't reach the update service
+    [metered] automatic updates: not turned on · last checked { $date } · waiting for a connection that isn't metered
+    [waiting-for-signed-installer] automatic updates: not turned on · last checked { $date } · waiting for the next release
+    [busy] automatic updates: not turned on · last checked { $date } · another update was running
+    [not-eligible] automatic updates: not turned on · last checked { $date } · this install can't update itself
+    *[failed] automatic updates: not turned on · last checked { $date } · the update didn't work ({ $code })
+    }
+
+journal.cli.sol.update.catalogue.download = could not fetch the release catalogue.
+
+journal.cli.sol.update.catalogue.key = the release key in this build is unreadable.
+
+journal.cli.sol.update.catalogue.lane = unknown release lane: { $lane }
+
+journal.cli.sol.update.catalogue.latest = the latest release marker is malformed.
+
+journal.cli.sol.update.catalogue.pin = the release catalogue names a different release key.
+
+journal.cli.sol.update.catalogue.release = the release catalogue does not match the requested release.
+
+journal.cli.sol.update.catalogue.schema.bad.catalogue.revision = the release catalogue is invalid: bad catalogue revision.
+
+journal.cli.sol.update.catalogue.schema.bad.desktop.version = the release catalogue is invalid: bad desktop version.
+
+journal.cli.sol.update.catalogue.schema.bad.installer = the release catalogue is invalid: bad installer.
+
+journal.cli.sol.update.catalogue.schema.bad.version = the release catalogue is invalid: bad version.
+
+journal.cli.sol.update.catalogue.schema.installer.in.an.unsupported.schema = the release catalogue is invalid: installer in an unsupported schema.
+
+journal.cli.sol.update.catalogue.schema.key.id = the release catalogue is invalid: key id.
+
+journal.cli.sol.update.catalogue.schema.no.journal.version = the release catalogue is invalid: no journal version.
+
+journal.cli.sol.update.catalogue.schema.no.version = the release catalogue is invalid: no version.
+
+journal.cli.sol.update.catalogue.schema.not.json = the release catalogue is invalid: not json.
+
+journal.cli.sol.update.catalogue.schema.unsupported.protocol = the release catalogue is invalid: unsupported protocol.
+
+journal.cli.sol.update.catalogue.schema.unsupported.schema = the release catalogue is invalid: unsupported schema.
+
+journal.cli.sol.update.catalogue.signature = the release catalogue failed its signature check.
+
+journal.cli.sol.update.catalogue.version = the requested platform version is invalid.
+
+journal.cli.sol.update.help = usage: { $syntax }{ $line_break }{ $line_break }update your installed { $brand } journal and apps.{ $line_break }{ $line_break }options:{ $line_break }{ $indent_2 }{ $check_option }{ $gap_6 }check whether an update is available without changing anything{ $line_break }{ $indent_2 }{ $json_option }{ $gap_7 }emit output as json{ $line_break }{ $indent_2 }{ $lane_option }{ $gap_7 }release lane to track ({ $lane_values }){ $line_break }{ $indent_2 }{ $version_option }{ $gap_4 }specific target version to install{ $line_break }{ $indent_2 }{ $hold_option }{ $gap_7 }hold updates so a later update does not install them{ $line_break }{ $indent_2 }{ $unhold_option }{ $gap_5 }release update hold{ $line_break }{ $indent_2 }{ $rollback_option }{ $gap_3 }roll back to an earlier retained installation{ $line_break }{ $indent_2 }{ $yes_option }{ $gap_8 }accept unattended update prompts{ $line_break }{ $indent_2 }{ $automatic_option }{ $gap_2 }{ $automatic_values }: whether your journal updates itself once a day{ $line_break }{ $indent_2 }{ $help_option }{ $gap_7 }show this help message
+
+journal.cli.sol.update.receipt.claimed.twice = component { $component } claimed by both tree and package receipts
+
+journal.cli.sol.update.receipt.duplicate.roles = both journal and cli components are recorded
+
+journal.cli.sol.update.receipt.incomplete = the installation receipt is incomplete or unsupported. use the original installer to recover it.
+
+journal.cli.sol.update.receipt.key.duplicate = duplicate key { $key }
+
+journal.cli.sol.update.receipt.key.outside = key outside section
+
+journal.cli.sol.update.receipt.line.invalid = malformed line: { $line }
+
+journal.cli.sol.update.receipt.line.pair = not key=value
+
+journal.cli.sol.update.receipt.native.file = native { $receipt_file } is not a regular file
+
+journal.cli.sol.update.receipt.native.malformed = malformed native { $receipt_file }: { $detail }
+
+journal.cli.sol.update.receipt.native.route = native receipt route must be tree
+
+journal.cli.sol.update.receipt.native.schema = native receipt { $schema_field } must be 1
+
+journal.cli.sol.update.receipt.native.version = installed version does not match receipt { $journal_field }
+
+journal.cli.sol.update.receipt.package.file = package { $config_file } is not a regular file
+
+journal.cli.sol.update.receipt.package.malformed = malformed package { $config_file }: { $detail }
+
+journal.cli.sol.update.receipt.section.duplicate = duplicate section [{ $section }]
+
+journal.cli.sol.update.receipt.section.key.duplicate = duplicate key { $key } in section [{ $section }]
+
+journal.cli.sol.update.receipt.section.unclosed = unclosed section header
+
+journal.cli.sol.update.receipt.section.unknown = unrecognized section in { $config_file }: { $section }
+
+journal.cli.sol.update.receipt.unrecorded = this journal was installed from a package without the { $brand } installer, so { $update_command } can't update it yet. run { $install_command } once. it checks the installed files against the signed release, and { $update_command } updates it after that.
+
+journal.cli.sol.update.receipt.user.file = user { $config_file } is not a regular file
+
+journal.cli.sol.update.receipt.user.malformed = malformed user { $config_file }: { $detail }
+
+journal.cli.sol.update.report.available = an update is available.
+
+journal.cli.sol.update.report.available.package.add = an update is available. installed from a package. to get updates through your system's updater, add the { $brand } repository: { $package_url }
+
+journal.cli.sol.update.report.available.package.configured = an update is available. installed from a package. updates come through your system's updater.
+
+journal.cli.sol.update.report.catalogue.invalid = the selected release metadata is invalid.
+
+journal.cli.sol.update.report.checkout = this copy is a source checkout. install the released journal to update it.
+
+journal.cli.sol.update.report.current = your journal is up to date.
+
+journal.cli.sol.update.report.current.package.add = your journal is up to date. installed from a package. to get updates through your system's updater, add the { $brand } repository: { $package_url }
+
+journal.cli.sol.update.report.current.package.configured = your journal is up to date. installed from a package. updates come through your system's updater.
+
+journal.cli.sol.update.report.held = updates are held. run { $unhold_command } to release them.
+
+journal.cli.sol.update.report.hold.changed = the update hold cannot be read. nothing was changed.
+
+journal.cli.sol.update.report.hold.off = updates are no longer held.
+
+journal.cli.sol.update.report.hold.on = updates are held.
+
+journal.cli.sol.update.report.hold.save = could not save the update hold. check your data directory permissions.
+
+journal.cli.sol.update.report.hold.unreadable = the update hold cannot be read.
+
+journal.cli.sol.update.report.install.directory = the installation directory could not be identified.
+
+journal.cli.sol.update.report.installer.arguments = invalid installer arguments.
+
+journal.cli.sol.update.report.installer.failed = installation did not succeed. use the original installer to recover.
+
+journal.cli.sol.update.report.installer.fetch = could not fetch the installer.
+
+journal.cli.sol.update.report.installer.run = could not run the installer.
+
+journal.cli.sol.update.report.installer.tookover = updated your journal. it now updates with the { $brand } installer, from where it is.
+
+journal.cli.sol.update.report.installer.updated = updated your journal.
+
+journal.cli.sol.update.report.linux = { $update_command } is available on linux.
+
+journal.cli.sol.update.report.mode = this mode is not an update.
+
+journal.cli.sol.update.report.owner.unknown = could not identify how this copy of { $brand } was installed. use the installer that installed it to update it.
+
+journal.cli.sol.update.report.platform.older = could not match this older build to a platform release. choose a platform version with { $version_flag }.
+
+journal.cli.sol.update.report.rollback.package = this package route cannot install an older journal. nothing was changed.
+
+journal.cli.sol.update.report.unknown = update status is unknown.
+
+journal.cli.sol.update.rollback.epoch = install the current version or another release in this upgrade epoch
+
+journal.cli.sol.update.rollback.link = current version link is missing or unreadable
+
+journal.cli.sol.update.rollback.metadata = installed release metadata is unreadable
+
+journal.cli.sol.update.rollback.no.older = no eligible older build is retained. choose a platform version with { $version_flag }, or reinstall the current release.
+
+journal.cli.sol.update.rollback.policy = the current release has no supported retention policy
+
+journal.cli.sol.update.rollback.range.absent = the installed release has no declared reader range. nothing was changed.
+
+journal.cli.sol.update.rollback.range.outside = the selected version is outside the declared reader range. nothing was changed.
+
+journal.cli.sol.update.rollback.retained = that build is not retained; reinstall the current version
+
+journal.cli.sol.update.rollback.state = the installer cannot establish the state of your journal. nothing was changed.
+
+journal.cli.sol.update.rollback.version = target version { $target_version } is not older than { $installed_version }
+
+journal.cli.sol.update.summary.failure = { $code }: { $message }
+
+journal.cli.sol.update.summary.hold.held = hold: held
+
+journal.cli.sol.update.summary.hold.unheld = hold: unheld
+
+journal.cli.sol.update.summary.hold.unknown = hold: unknown
+
+journal.cli.sol.update.summary.journal = journal: { $value }
+
+journal.cli.sol.update.summary.lane = lane: { $value }
+
+journal.cli.sol.update.summary.platform = platform: { $value }
+
+journal.cli.sol.update.summary.route = route: { $value }
+
+journal.cli.sol.update.summary.target = available: { $available } (journal { $journal })
+
+journal.cli.sol.usage = Usage: { $syntax }

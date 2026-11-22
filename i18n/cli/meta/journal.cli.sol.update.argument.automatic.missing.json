@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for update argument automatic missing.",
+  "context": "Journal command-line text for update argument automatic missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "92e6ca6bbb54e87fb50e36bb7a28beb9b3b9f042a25c619004ea0f4f08e7fb69",
+  "max_length": 82,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "automatic_values",
+      "kind": "accepted-input",
+      "value": "on, off or status"
+    },
+    {
+      "name": "automatic_flag",
+      "kind": "flag",
+      "value": "--automatic"
+    }
+  ]
+}

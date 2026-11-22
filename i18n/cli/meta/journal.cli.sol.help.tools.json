@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for help tools.",
+  "context": "Journal command-line text for help tools.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c88e3fc85716ef48d6ff519fe0e0af6b5bde106c4f03a57250623d3d9cf5ab7f",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

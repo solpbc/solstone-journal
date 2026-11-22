@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line text for update automatic off.",
+  "context": "Journal command-line text for update automatic off.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a73943492d4b814f14c38d24c197de9189c0437a3d5375d640a9b5be50eee2d6",
+  "max_length": 94,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "update_command",
+      "kind": "command",
+      "value": "solstone update"
+    }
+  ]
+}

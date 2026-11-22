@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for update summary hold held.",
+  "context": "Journal command-line text for update summary hold held.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4ba88993db8a441c9fab92ed466ae674b829066242272d4a59701bfe12d379c3",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for update receipt incomplete.",
+  "context": "Journal command-line text for update receipt incomplete.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c194f2be9e52d7ef6f1117ec1a6eff2ab8183b8ce7a292afe6a2493817afdf15",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

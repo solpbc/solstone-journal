@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for update argument version format.",
+  "context": "Journal command-line text for update argument version format.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "version",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "434b8d023d3e2c31c795447ea0d46bf90543a62fe7c88e839c484296e369c74e",
+  "max_length": 122,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "revision_format",
+      "kind": "accepted-input",
+      "value": "MAJOR.MINOR.PATCH-rN"
+    },
+    {
+      "name": "version_format",
+      "kind": "accepted-input",
+      "value": "MAJOR.MINOR.PATCH"
+    }
+  ]
+}

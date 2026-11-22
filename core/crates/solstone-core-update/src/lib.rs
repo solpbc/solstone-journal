@@ -22,7 +22,10 @@ use serde::{Deserialize, Serialize};
 pub use catalogue::{
     CatalogueListing, CatalogueRefusal, PlatformCatalogue, RealPlatformCatalogue, StoredCatalogue,
 };
-pub use command::{CommandMode, CommandParseError, UpdateArgs, parse_args, render_help};
+pub use command::{
+    CommandMode, CommandParseError, UpdateArgs, parse_args, parse_args_in, render_help,
+    render_help_in,
+};
 pub use delegate::{
     InstallerOutput, InstallerRunner, PlatformInvocation, RealInstallerRunner, StdinMode,
     UnattendedInstallerRunner, build_native_mutation_argv, build_platform_mutation_invocations,
@@ -86,6 +89,10 @@ pub struct UpdateReport {
 
 impl UpdateReport {
     pub fn checkout_unknown(hold: HoldState) -> Self {
+        Self::checkout_unknown_in(solstone_core_cli_copy::ENGLISH, hold)
+    }
+
+    pub fn checkout_unknown_in(locale: &str, hold: HoldState) -> Self {
         Self {
             availability: Availability::Unknown,
             current: None,
@@ -97,15 +104,20 @@ impl UpdateReport {
             hold,
             target: None,
             code: Some("source-checkout".to_owned()),
-            message: Some(
-                "this copy is a source checkout. install the released journal to update it."
-                    .to_owned(),
-            ),
+            message: Some(solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.report.checkout",
+                &[],
+            )),
             components: None,
         }
     }
 
     pub fn not_owned_unknown(hold: HoldState) -> Self {
+        Self::not_owned_unknown_in(solstone_core_cli_copy::ENGLISH, hold)
+    }
+
+    pub fn not_owned_unknown_in(locale: &str, hold: HoldState) -> Self {
         Self {
             availability: Availability::Unknown,
             current: None,
@@ -117,9 +129,11 @@ impl UpdateReport {
             hold,
             target: None,
             code: Some("install-not-owned".to_owned()),
-            message: Some(
-                "could not identify how this copy of solstone was installed. use the installer that installed it to update it.".to_owned(),
-            ),
+            message: Some(solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.report.owner.unknown",
+                &[],
+            )),
             components: None,
         }
     }
@@ -181,9 +195,17 @@ fn owner_data_dir_from(
 
 impl UpdateReport {
     pub fn owner_context_unknown() -> Self {
+        Self::owner_context_unknown_in(solstone_core_cli_copy::ENGLISH)
+    }
+
+    pub fn owner_context_unknown_in(locale: &str) -> Self {
         Self::refusal_unknown(
             "hold-unknown",
-            "the update hold cannot be read.",
+            &solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.report.hold.unreadable",
+                &[],
+            ),
             HoldState::Unknown,
         )
     }
@@ -199,6 +221,7 @@ pub fn check(
     lane_override: Option<&str>,
 ) -> UpdateReport {
     check_selected(
+        solstone_core_cli_copy::ENGLISH,
         catalogue,
         probe,
         executable,
@@ -248,6 +271,7 @@ fn acquire(
 
 #[allow(clippy::too_many_arguments)]
 fn check_selected(
+    locale: &str,
     catalogue: &dyn PlatformCatalogue,
     probe: &dyn PackageProbe,
     executable: &Path,
@@ -262,7 +286,7 @@ fn check_selected(
     if !os_linux {
         return UpdateReport::refusal_unknown(
             "non-linux",
-            "solstone update is available on linux.",
+            &solstone_core_cli_copy::render_for(locale, "journal.cli.sol.update.report.linux", &[]),
             HoldState::Unknown,
         );
     }
@@ -270,14 +294,18 @@ fn check_selected(
     if hold == HoldState::Unknown {
         return UpdateReport::refusal_unknown(
             "hold-unknown",
-            "the update hold cannot be read.",
+            &solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.report.hold.unreadable",
+                &[],
+            ),
             hold,
         );
     }
-    let ownership = classify_ownership(executable, data_dir, etc_dir, probe);
+    let ownership = ownership::classify_ownership_in(locale, executable, data_dir, etc_dir, probe);
     let pos = match ownership {
-        OwnershipResult::SourceCheckout => return UpdateReport::checkout_unknown(hold),
-        OwnershipResult::NotOwned => return UpdateReport::not_owned_unknown(hold),
+        OwnershipResult::SourceCheckout => return UpdateReport::checkout_unknown_in(locale, hold),
+        OwnershipResult::NotOwned => return UpdateReport::not_owned_unknown_in(locale, hold),
         OwnershipResult::Refusal { code, message } => {
             return UpdateReport::refusal_unknown(&code, &message, hold);
         }
@@ -287,7 +315,7 @@ fn check_selected(
     let lane = lane_override.unwrap_or(&pos.lane);
 
     // The signed catalogue is verified in-process; checking runs nothing.
-    let listing = match catalogue.listing(lane, version) {
+    let listing = match catalogue.listing_for(locale, lane, version) {
         Ok(listing) => listing,
         Err(refusal) => {
             return UpdateReport {
@@ -312,7 +340,11 @@ fn check_selected(
     {
         return UpdateReport::refusal_unknown(
             "catalogue-invalid",
-            "the selected release metadata is invalid.",
+            &solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.report.catalogue.invalid",
+                &[],
+            ),
             hold,
         );
     }
@@ -436,18 +468,49 @@ pub fn perform(
     os_linux: bool,
     args: &UpdateArgs,
 ) -> Result<UpdateReport, (UpdateReport, i32)> {
+    perform_in(
+        solstone_core_cli_copy::ENGLISH,
+        catalogue,
+        runner,
+        fetch,
+        probe,
+        executable,
+        data_dir,
+        etc_dir,
+        os_linux,
+        args,
+    )
+}
+
+#[allow(clippy::too_many_arguments, clippy::result_large_err)]
+pub fn perform_in(
+    locale: &str,
+    catalogue: &dyn PlatformCatalogue,
+    runner: &dyn InstallerRunner,
+    fetch: &dyn InstallerFetch,
+    probe: &dyn PackageProbe,
+    executable: &Path,
+    data_dir: &Path,
+    etc_dir: &Path,
+    os_linux: bool,
+    args: &UpdateArgs,
+) -> Result<UpdateReport, (UpdateReport, i32)> {
     let hold = read_hold_state(data_dir);
     let refusal =
         |code: &str, message: &str| (UpdateReport::refusal_unknown(code, message, hold), 1);
     if !os_linux {
         return Err(refusal(
             "non-linux",
-            "solstone update is available on linux.",
+            &solstone_core_cli_copy::render_for(locale, "journal.cli.sol.update.report.linux", &[]),
         ));
     }
-    let pos = match classify_ownership(executable, data_dir, etc_dir, probe) {
-        OwnershipResult::SourceCheckout => return Err((UpdateReport::checkout_unknown(hold), 1)),
-        OwnershipResult::NotOwned => return Err((UpdateReport::not_owned_unknown(hold), 1)),
+    let pos = match ownership::classify_ownership_in(locale, executable, data_dir, etc_dir, probe) {
+        OwnershipResult::SourceCheckout => {
+            return Err((UpdateReport::checkout_unknown_in(locale, hold), 1));
+        }
+        OwnershipResult::NotOwned => {
+            return Err((UpdateReport::not_owned_unknown_in(locale, hold), 1));
+        }
         OwnershipResult::Refusal { code, message } => return Err(refusal(&code, &message)),
         OwnershipResult::Positive(pos) => pos,
     };
@@ -465,7 +528,14 @@ pub fn perform(
         | CommandMode::AutomaticOff
         | CommandMode::AutomaticStatus
         | CommandMode::Unattended => {
-            return Err(refusal("mode-unsupported", "this mode is not an update."));
+            return Err(refusal(
+                "mode-unsupported",
+                &solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.sol.update.report.mode",
+                    &[],
+                ),
+            ));
         }
         CommandMode::Hold | CommandMode::Unhold => {
             let held = args.mode == CommandMode::Hold;
@@ -477,7 +547,11 @@ pub fn perform(
             result.map_err(|_| {
                 refusal(
                     "hold-failed",
-                    "could not save the update hold. check your data directory permissions.",
+                    &solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.sol.update.report.hold.save",
+                        &[],
+                    ),
                 )
             })?;
             report.hold = if held {
@@ -485,18 +559,24 @@ pub fn perform(
             } else {
                 HoldState::Unheld
             };
-            report.message = Some(
-                if held {
-                    "updates are held."
-                } else {
-                    "updates are no longer held."
-                }
-                .to_owned(),
-            );
+            report.message = Some(if held {
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.sol.update.report.hold.on",
+                    &[],
+                )
+            } else {
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.sol.update.report.hold.off",
+                    &[],
+                )
+            });
             return Ok(report);
         }
         CommandMode::Check => {
-            report = check(
+            report = check_selected(
+                locale,
                 catalogue,
                 probe,
                 executable,
@@ -504,24 +584,50 @@ pub fn perform(
                 etc_dir,
                 true,
                 args.lane.as_deref(),
+                None,
             );
-            report.message = match report.availability {
-                Availability::Available => Some("an update is available.".to_owned()),
-                Availability::NotAvailable => Some("your journal is up to date.".to_owned()),
+            let available = match report.availability {
+                Availability::Available => true,
+                Availability::NotAvailable => false,
                 Availability::Unknown | Availability::Installed => return Err((report, 1)),
             };
-            // A package install updates through the system's updater.
-            if pos
+            let package = pos
                 .components
                 .iter()
                 .any(|c| (c.name == "journal" || c.name == "cli") && c.route != "tree")
-                && let Some(message) = report.message.as_mut()
-            {
-                message.push(' ');
-                message.push_str(automatic::package_route_message(
-                    probe.has_repo_source(etc_dir),
-                ));
-            }
+                .then(|| probe.has_repo_source(etc_dir));
+            report.message = Some(match (available, package) {
+                (true, None) => solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.sol.update.report.available",
+                    &[],
+                ),
+                (false, None) => solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.sol.update.report.current",
+                    &[],
+                ),
+                (true, Some(true)) => solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.sol.update.report.available.package.configured",
+                    &[],
+                ),
+                (true, Some(false)) => solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.sol.update.report.available.package.add",
+                    &[],
+                ),
+                (false, Some(true)) => solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.sol.update.report.current.package.configured",
+                    &[],
+                ),
+                (false, Some(false)) => solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.sol.update.report.current.package.add",
+                    &[],
+                ),
+            });
             return Ok(report);
         }
         _ => {}
@@ -529,13 +635,17 @@ pub fn perform(
     if hold == HoldState::Held {
         return Err(refusal(
             "held",
-            "updates are held. run solstone update --unhold to release them.",
+            &solstone_core_cli_copy::render_for(locale, "journal.cli.sol.update.report.held", &[]),
         ));
     }
     if hold == HoldState::Unknown {
         return Err(refusal(
             "hold-unknown",
-            "the update hold cannot be read. nothing was changed.",
+            &solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.report.hold.changed",
+                &[],
+            ),
         ));
     }
     let journal_is_package = pos
@@ -545,7 +655,11 @@ pub fn perform(
     if args.mode == CommandMode::Rollback && journal_is_package {
         return Err(refusal(
             "downgrade-route-unsupported",
-            "this package route cannot install an older journal. nothing was changed.",
+            &solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.report.rollback.package",
+                &[],
+            ),
         ));
     }
     let retained = if args.mode == CommandMode::Rollback
@@ -557,13 +671,21 @@ pub fn perform(
         let prefix = pos.prefix.as_deref().ok_or_else(|| {
             refusal(
                 "ownership-unknown",
-                "the installation directory could not be identified.",
+                &solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.sol.update.report.install.directory",
+                    &[],
+                ),
             )
         })?;
         Some(
-            select_newest_admissible_rollback(prefix, &pos.current_journal_version)
-                .map_err(|e| refusal(&e.code, &e.message))?
-                .0,
+            downgrade::select_newest_admissible_rollback_in(
+                locale,
+                prefix,
+                &pos.current_journal_version,
+            )
+            .map_err(|e| refusal(&e.code, &e.message))?
+            .0,
         )
     } else {
         None
@@ -576,11 +698,16 @@ pub fn perform(
         } else {
             return Err(refusal(
                 "platform-revision-unknown",
-                "could not match this older build to a platform release. choose a platform version with --version.",
+                &solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.sol.update.report.platform.older",
+                    &[],
+                ),
             ));
         }
     } else {
         report = check_selected(
+            locale,
             catalogue,
             probe,
             executable,
@@ -599,7 +726,11 @@ pub fn perform(
             && report.availability == Availability::NotAvailable
             && !moves_to_platform
         {
-            report.message = Some("your journal is up to date.".to_owned());
+            report.message = Some(solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.report.current",
+                &[],
+            ));
             return Ok(report);
         }
         (
@@ -612,25 +743,46 @@ pub fn perform(
         if journal_is_package {
             return Err(refusal(
                 "downgrade-route-unsupported",
-                "this package route cannot install an older journal. nothing was changed.",
+                &solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.sol.update.report.rollback.package",
+                    &[],
+                ),
             ));
         }
         let prefix = pos.prefix.as_deref().ok_or_else(|| {
             refusal(
                 "ownership-unknown",
-                "the installation directory could not be identified.",
+                &solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.sol.update.report.install.directory",
+                    &[],
+                ),
             )
         })?;
-        check_target_admissibility(prefix, &pos.current_journal_version, &target_journal)
-            .map_err(|e| refusal(&e.code, &e.message))?;
+        downgrade::check_target_admissibility_in(
+            locale,
+            prefix,
+            &pos.current_journal_version,
+            &target_journal,
+        )
+        .map_err(|e| refusal(&e.code, &e.message))?;
     }
     let source = if pos.route_kind == RouteKind::NativeTree && !moves_to_platform {
         InstallerSource::Native
     } else {
         InstallerSource::Platform
     };
-    let script = acquire(fetch, source)
-        .map_err(|_| refusal("fetch-failed", "could not fetch the installer."))?;
+    let script = acquire(fetch, source).map_err(|_| {
+        refusal(
+            "fetch-failed",
+            &solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.report.installer.fetch",
+                &[],
+            ),
+        )
+    })?;
     let invocations = if moves_to_platform {
         // The platform installer finds the journal in its default prefix, so
         // it gets no prefix of its own: its tree components keep the default.
@@ -642,7 +794,16 @@ pub fn perform(
             lane,
             args.yes,
         )
-        .map_err(|_| refusal("argv-failed", "invalid installer arguments."))?
+        .map_err(|_| {
+            refusal(
+                "argv-failed",
+                &solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.sol.update.report.installer.arguments",
+                    &[],
+                ),
+            )
+        })?
     } else if pos.route_kind == RouteKind::NativeTree {
         let component = pos.components.first().expect("positive native component");
         vec![PlatformInvocation {
@@ -654,7 +815,16 @@ pub fn perform(
                 &component.name,
                 component.policy,
             )
-            .map_err(|_| refusal("argv-failed", "invalid installer arguments."))?,
+            .map_err(|_| {
+                refusal(
+                    "argv-failed",
+                    &solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.sol.update.report.installer.arguments",
+                        &[],
+                    ),
+                )
+            })?,
             stdin_mode: StdinMode::Closed,
             components: vec![component.name.clone()],
         }]
@@ -667,7 +837,16 @@ pub fn perform(
             lane,
             args.yes,
         )
-        .map_err(|_| refusal("argv-failed", "invalid installer arguments."))?
+        .map_err(|_| {
+            refusal(
+                "argv-failed",
+                &solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.sol.update.report.installer.arguments",
+                    &[],
+                ),
+            )
+        })?
     };
     let mut components = Vec::new();
     for invocation in invocations {
@@ -682,7 +861,11 @@ pub fn perform(
                 report.current = None;
                 report.platform_version = None;
                 report.code = Some("runner-failed".to_owned());
-                report.message = Some("could not run the installer.".to_owned());
+                report.message = Some(solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.sol.update.report.installer.run",
+                    &[],
+                ));
                 report.components = Some(components);
                 return Err((report, 1));
             }
@@ -718,14 +901,15 @@ pub fn perform(
                     .unwrap_or("installer-failed")
                     .to_owned(),
             );
-            report.message = Some(
-                value["message"]
-                    .as_str()
-                    .unwrap_or(
-                        "installation did not succeed. use the original installer to recover.",
+            report.message = Some(value["message"].as_str().map(str::to_owned).unwrap_or_else(
+                || {
+                    solstone_core_cli_copy::render_for(
+                        locale,
+                        "journal.cli.sol.update.report.installer.failed",
+                        &[],
                     )
-                    .to_owned(),
-            );
+                },
+            ));
             report.components = Some(components);
             return Err((
                 report,
@@ -745,14 +929,19 @@ pub fn perform(
     if pos.route_kind != RouteKind::NativeTree || moves_to_platform {
         automatic::record_owner_update(data_dir, report.platform_version.as_deref());
     }
-    report.message = Some(
-        if moves_to_platform {
-            "updated your journal. it now updates with the solstone installer, from where it is."
-        } else {
-            "updated your journal."
-        }
-        .to_owned(),
-    );
+    report.message = Some(if moves_to_platform {
+        solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.sol.update.report.installer.tookover",
+            &[],
+        )
+    } else {
+        solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.sol.update.report.installer.updated",
+            &[],
+        )
+    });
     Ok(report)
 }
 
@@ -768,44 +957,80 @@ fn is_standalone_prefix(prefix: &Path) -> bool {
 }
 
 pub fn render_human(report: &UpdateReport) -> String {
+    render_human_in(solstone_core_cli_copy::ENGLISH, report)
+}
+
+pub fn render_human_in(locale: &str, report: &UpdateReport) -> String {
     let mut lines = Vec::new();
-    for (label, value) in [
-        ("journal", report.current.as_deref()),
-        ("platform", report.platform_version.as_deref()),
-        ("lane", report.lane.as_deref()),
-        ("route", report.route.as_deref()),
-    ] {
-        if let Some(value) = value {
-            lines.push(format!("{label}: {value}"));
-        }
-    }
-    lines.push(format!(
-        "hold: {}",
-        match report.hold {
-            HoldState::Held => "held",
-            HoldState::Unheld => "unheld",
-            HoldState::Unknown => "unknown",
-        }
-    ));
-    if let Some(ref target) = report.target {
-        lines.push(format!(
-            "available: {} (journal {})",
-            target
-                .platform_version
-                .as_deref()
-                .unwrap_or(&target.journal_version),
-            target.journal_version
+    if let Some(value) = &report.current {
+        lines.push(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.sol.update.summary.journal",
+            [("value", &(value))],
         ));
     }
-    if let Some(ref code) = report.code {
-        lines.push(format!(
-            "{code}: {}",
-            report
-                .message
-                .as_deref()
-                .unwrap_or("update status is unknown.")
+    if let Some(value) = &report.platform_version {
+        lines.push(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.sol.update.summary.platform",
+            [("value", &(value))],
         ));
-    } else if let Some(ref message) = report.message {
+    }
+    if let Some(value) = &report.lane {
+        lines.push(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.sol.update.summary.lane",
+            [("value", &(value))],
+        ));
+    }
+    if let Some(value) = &report.route {
+        lines.push(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.sol.update.summary.route",
+            [("value", &(value))],
+        ));
+    }
+    lines.push(match report.hold {
+        HoldState::Held => solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.sol.update.summary.hold.held",
+            &[],
+        ),
+        HoldState::Unheld => solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.sol.update.summary.hold.unheld",
+            &[],
+        ),
+        HoldState::Unknown => solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.sol.update.summary.hold.unknown",
+            &[],
+        ),
+    });
+    if let Some(target) = &report.target {
+        let available = target
+            .platform_version
+            .as_deref()
+            .unwrap_or(&target.journal_version);
+        lines.push(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.sol.update.summary.target",
+            [
+                ("available", &(available)),
+                ("journal", &(target.journal_version)),
+            ],
+        ));
+    }
+    if let Some(code) = &report.code {
+        let message = report.message.clone().unwrap_or_else(|| {
+            solstone_core_cli_copy::render_for(locale, "journal.cli.sol.update.report.unknown", &[])
+        });
+        lines.push(solstone_core_cli_copy::display_for(
+            locale,
+            "journal.cli.sol.update.summary.failure",
+            [("code", &(code)), ("message", &(message))],
+        ));
+    } else if let Some(message) = &report.message {
         lines.push(message.clone());
     }
     format!("{}\n", lines.join("\n"))

@@ -1,0 +1,36 @@
+{
+  "description": "Journal command-line text for skills warning retired.",
+  "context": "Journal command-line text for skills warning retired.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "agent",
+      "type": "string"
+    },
+    {
+      "name": "skill",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "37fbf5dbd06e6d0c71e1823e495bf2294d1dcf2c3346e02cf9570e6293ece778",
+  "max_length": 169,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "retired_skill",
+      "kind": "accepted-input",
+      "value": "sol"
+    }
+  ]
+}

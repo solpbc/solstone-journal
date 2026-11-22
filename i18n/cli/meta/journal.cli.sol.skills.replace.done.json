@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for skills replace done.",
+  "context": "Journal command-line text for skills replace done.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "agent",
+      "type": "string"
+    },
+    {
+      "name": "skill",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e4cdcaf1318169b4f9619c9a41c2ca6a3ea8375bae5662f98dc592c731b8dd71",
+  "max_length": 75,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

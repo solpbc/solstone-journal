@@ -1,0 +1,29 @@
+{
+  "description": "Journal command-line text for skills cleanup failed.",
+  "context": "Journal command-line text for skills cleanup failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "backup",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d7ea96fff356f7ad6962ac592b8b1fc7756e2dc755966e28850f92144236e69a",
+  "max_length": 125,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

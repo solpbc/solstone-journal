@@ -1,0 +1,28 @@
+{
+  "description": "Journal command-line text for skills subcommand invalid.",
+  "context": "Journal command-line text for skills subcommand invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9158adb844f1d4bfeb20cf339d48db80b42b960debe6e5e02fbee932ed22d279",
+  "max_length": 95,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "skill_command",
+      "kind": "command",
+      "value": "solstone skills"
+    }
+  ]
+}

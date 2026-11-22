@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for skills skip config.",
+  "context": "Journal command-line text for skills skip config.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "agent",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "71dce0109ddd9a096a02e55484f8c62366d17ae1b5c8334edfa7c26fbc6a22ab",
+  "max_length": 83,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

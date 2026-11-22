@@ -5,10 +5,14 @@
 //!
 //! It also compares user-skill directory trees, still read-only.
 
+use solstone_core_cli_copy::{ENGLISH, MessageDetail, display_for};
+
 use std::ffi::OsString;
 use std::fs;
 use std::io;
 use std::path::{Component, Path, PathBuf};
+
+pub mod setup_failure;
 
 pub const ROUTER_SKILL_NAMES: [&str; 2] = ["solstone", "journal"];
 
@@ -36,15 +40,22 @@ pub struct StaleRouterSkillLink {
 
 /// Locate the two canonical router-skill source directories.
 pub fn discover_project_sources(project_root: &Path) -> Result<Vec<PathBuf>, String> {
+    discover_project_sources_checked(project_root).map_err(|path| {
+        display_for(
+            ENGLISH,
+            "journal.cli.sol.skills.project.missing",
+            [("path", &(path.display()))],
+        )
+    })
+}
+
+pub fn discover_project_sources_checked(project_root: &Path) -> Result<Vec<PathBuf>, PathBuf> {
     let mut sources = Vec::new();
     for name in ROUTER_SKILL_NAMES {
         let source = project_root.join("solstone").join("talent").join(name);
         let skill_file = source.join("SKILL.md");
         if !skill_file.is_file() {
-            return Err(format!(
-                "expected project skill at {}",
-                skill_file.display()
-            ));
+            return Err(skill_file);
         }
         sources.push(source);
     }
@@ -62,7 +73,20 @@ pub fn inspect_router_skill_links(
     project_root: &Path,
     link_parent: &Path,
 ) -> Result<Vec<RouterSkillLink>, String> {
-    discover_project_sources(project_root).map(|sources| {
+    inspect_router_skill_links_checked(project_root, link_parent).map_err(|path| {
+        display_for(
+            ENGLISH,
+            "journal.cli.sol.skills.project.missing",
+            [("path", &(path.display()))],
+        )
+    })
+}
+
+pub fn inspect_router_skill_links_checked(
+    project_root: &Path,
+    link_parent: &Path,
+) -> Result<Vec<RouterSkillLink>, PathBuf> {
+    discover_project_sources_checked(project_root).map(|sources| {
         sources
             .into_iter()
             .map(|source| {
@@ -139,7 +163,7 @@ pub fn validate_user_skill_copy_entries(root: &Path) -> io::Result<()> {
     if skill_entry_is_link(&metadata) || !metadata.is_dir() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            "skill tree requires an ordinary directory",
+            MessageDetail::message("journal.cli.sol.skills.tree.directory", []),
         ));
     }
     for entry in fs::read_dir(root)? {
@@ -149,7 +173,7 @@ pub fn validate_user_skill_copy_entries(root: &Path) -> io::Result<()> {
         if skill_entry_is_link(&metadata) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "linked entries are not permitted in user skill trees",
+                MessageDetail::message("journal.cli.sol.skills.tree.linked", []),
             ));
         }
         if metadata.is_dir() {
@@ -161,7 +185,7 @@ pub fn validate_user_skill_copy_entries(root: &Path) -> io::Result<()> {
         } else {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "special entries are not permitted in user skill trees",
+                MessageDetail::message("journal.cli.sol.skills.tree.special", []),
             ));
         }
     }
@@ -214,7 +238,7 @@ pub fn user_skill_copy_matches(bundled: &Path, installed: &Path) -> std::io::Res
     {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            "bundled skill reference requires a directory with a regular SKILL.md",
+            MessageDetail::message("journal.cli.sol.skills.tree.reference", []),
         ));
     }
     if !target_meta.is_dir() || skill_entry_is_link(&target_meta) {

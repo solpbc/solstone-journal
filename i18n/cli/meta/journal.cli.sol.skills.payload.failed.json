@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for skills payload failed.",
+  "context": "Journal command-line text for skills payload failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "306229910845d001f760eb237c82513aaf00b803926dee07f17e4a52a9bb0163",
+  "max_length": 141,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "core",
+      "kind": "command",
+      "value": "solstone-core"
+    },
+    {
+      "name": "solstone",
+      "kind": "command",
+      "value": "solstone"
+    }
+  ]
+}

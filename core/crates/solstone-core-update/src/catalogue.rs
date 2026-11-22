@@ -64,6 +64,14 @@ pub trait PlatformCatalogue: Send + Sync {
         lane: &str,
         version: Option<&str>,
     ) -> Result<CatalogueListing, CatalogueRefusal>;
+    fn listing_for(
+        &self,
+        _locale: &str,
+        lane: &str,
+        version: Option<&str>,
+    ) -> Result<CatalogueListing, CatalogueRefusal> {
+        self.listing(lane, version)
+    }
 }
 
 /// Reads one catalogue document by its path under the update origin.
@@ -88,13 +96,26 @@ impl PlatformCatalogue for RealPlatformCatalogue {
         lane: &str,
         version: Option<&str>,
     ) -> Result<CatalogueListing, CatalogueRefusal> {
+        self.listing_for(solstone_core_cli_copy::ENGLISH, lane, version)
+    }
+
+    fn listing_for(
+        &self,
+        locale: &str,
+        lane: &str,
+        version: Option<&str>,
+    ) -> Result<CatalogueListing, CatalogueRefusal> {
         let key = crate::fetch::update_platform_key().ok_or_else(|| {
             CatalogueRefusal::new(
                 "pin-invalid",
-                "the release key in this build is unreadable.",
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.sol.update.catalogue.key",
+                    &[],
+                ),
             )
         })?;
-        verified_listing(&HttpCatalogueBytes, &key, lane, version)
+        verified_listing_in(locale, &HttpCatalogueBytes, &key, lane, version)
     }
 }
 
@@ -155,10 +176,24 @@ pub fn verified_listing(
     lane: &str,
     version: Option<&str>,
 ) -> Result<CatalogueListing, CatalogueRefusal> {
+    verified_listing_in(solstone_core_cli_copy::ENGLISH, bytes, key, lane, version)
+}
+
+pub fn verified_listing_in(
+    locale: &str,
+    bytes: &dyn CatalogueBytes,
+    key: &PublicKey,
+    lane: &str,
+    version: Option<&str>,
+) -> Result<CatalogueListing, CatalogueRefusal> {
     if !matches!(lane, "release" | "staging" | "dev") {
         return Err(CatalogueRefusal::new(
             "lane-invalid",
-            format!("unknown release lane: {lane}"),
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.sol.update.catalogue.lane",
+                [("lane", &(lane))],
+            ),
         ));
     }
     let resolved = match version {
@@ -166,17 +201,32 @@ pub fn verified_listing(
         Some(_) => {
             return Err(CatalogueRefusal::new(
                 "version-invalid",
-                "the requested platform version is invalid.",
+                solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.sol.update.catalogue.version",
+                    &[],
+                ),
             ));
         }
         None => {
-            let latest = fetch(bytes, &format!("/solstone/{lane}/latest"), LATEST_MAX_BYTES)?;
-            parse_latest(&latest)?
+            let latest = fetch(
+                locale,
+                bytes,
+                &format!("/solstone/{lane}/latest"),
+                LATEST_MAX_BYTES,
+            )?;
+            parse_latest(locale, &latest)?
         }
     };
     let base = format!("/solstone/{lane}/{resolved}");
-    let manifest = fetch(bytes, &format!("{base}/platform.json"), MANIFEST_MAX_BYTES)?;
+    let manifest = fetch(
+        locale,
+        bytes,
+        &format!("{base}/platform.json"),
+        MANIFEST_MAX_BYTES,
+    )?;
     let signature = fetch(
+        locale,
         bytes,
         &format!("{base}/platform.json.minisig"),
         SIGNATURE_MAX_BYTES,
@@ -190,23 +240,35 @@ pub fn verified_listing(
     .map_err(|_| {
         CatalogueRefusal::new(
             "signature-invalid",
-            "the release catalogue failed its signature check.",
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.catalogue.signature",
+                &[],
+            ),
         )
     })?;
-    read_manifest(&manifest, key, lane, &resolved)
+    read_manifest(locale, &manifest, key, lane, &resolved)
 }
 
 fn fetch(
+    locale: &str,
     bytes: &dyn CatalogueBytes,
     path: &str,
     max_bytes: u64,
 ) -> Result<Vec<u8>, CatalogueRefusal> {
     bytes.get(path, max_bytes).map_err(|_| {
-        CatalogueRefusal::new("fetch-failed", "could not fetch the release catalogue.")
+        CatalogueRefusal::new(
+            "fetch-failed",
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.catalogue.download",
+                &[],
+            ),
+        )
     })
 }
 
-fn parse_latest(bytes: &[u8]) -> Result<String, CatalogueRefusal> {
+fn parse_latest(locale: &str, bytes: &[u8]) -> Result<String, CatalogueRefusal> {
     let text = std::str::from_utf8(bytes).ok();
     let coordinate = text
         .map(|text| {
@@ -216,36 +278,64 @@ fn parse_latest(bytes: &[u8]) -> Result<String, CatalogueRefusal> {
         })
         .filter(|coordinate| is_catalogue_coordinate(coordinate));
     coordinate.map(str::to_owned).ok_or_else(|| {
-        CatalogueRefusal::new("latest-invalid", "the latest release marker is malformed.")
+        CatalogueRefusal::new(
+            "latest-invalid",
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.catalogue.latest",
+                &[],
+            ),
+        )
     })
 }
 
 fn read_manifest(
+    locale: &str,
     bytes: &[u8],
     key: &PublicKey,
     lane: &str,
     resolved: &str,
 ) -> Result<CatalogueListing, CatalogueRefusal> {
-    let invalid = |detail: &str| {
-        CatalogueRefusal::new(
-            "schema-invalid",
-            format!("the release catalogue is invalid: {detail}."),
-        )
-    };
-    let value: serde_json::Value =
-        serde_json::from_slice(bytes).map_err(|_| invalid("not json"))?;
+    let invalid = |message| CatalogueRefusal::new("schema-invalid", message);
+    let value: serde_json::Value = serde_json::from_slice(bytes).map_err(|_| {
+        invalid(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.sol.update.catalogue.schema.not.json",
+            &[],
+        ))
+    })?;
     if value["protocol_version"].as_u64() != Some(1) {
-        return Err(invalid("unsupported protocol"));
+        return Err(invalid(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.sol.update.catalogue.schema.unsupported.protocol",
+            &[],
+        )));
     }
-    let version = value["version"]
-        .as_str()
-        .ok_or_else(|| invalid("no version"))?;
+    let version = value["version"].as_str().ok_or_else(|| {
+        invalid(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.sol.update.catalogue.schema.no.version",
+            &[],
+        ))
+    })?;
     let journal = value["components"]["journal"]["version"]
         .as_str()
-        .ok_or_else(|| invalid("no journal version"))?;
+        .ok_or_else(|| {
+            invalid(solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.catalogue.schema.no.journal.version",
+                &[],
+            ))
+        })?;
     let desktop_version = match value["components"]["desktop"]["version"].as_str() {
         Some(v) if is_canonical_version(v) => Some(v.to_owned()),
-        Some(_) => return Err(invalid("bad desktop version")),
+        Some(_) => {
+            return Err(invalid(solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.catalogue.schema.bad.desktop.version",
+                &[],
+            )));
+        }
         None => None,
     };
     let coordinate = match value["schema_version"].as_u64() {
@@ -254,33 +344,71 @@ fn read_manifest(
             Some(revision) if revision > 0 && version == journal => {
                 format!("{version}-r{revision}")
             }
-            _ => return Err(invalid("bad catalogue revision")),
+            _ => {
+                return Err(invalid(solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.sol.update.catalogue.schema.bad.catalogue.revision",
+                    &[],
+                )));
+            }
         },
-        _ => return Err(invalid("unsupported schema")),
+        _ => {
+            return Err(invalid(solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.catalogue.schema.unsupported.schema",
+                &[],
+            )));
+        }
     };
     if !is_canonical_version(version) || !is_canonical_version(journal) {
-        return Err(invalid("bad version"));
+        return Err(invalid(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.sol.update.catalogue.schema.bad.version",
+            &[],
+        )));
     }
     if coordinate != resolved || value["lane"].as_str() != Some(lane) {
         return Err(CatalogueRefusal::new(
             "release-coherence",
-            "the release catalogue does not match the requested release.",
+            solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.catalogue.release",
+                &[],
+            ),
         ));
     }
     let installer = match value.get("installer") {
         None => None,
         Some(block) if value["schema_version"].as_u64() == Some(2) => {
-            Some(read_installer_copy(block).ok_or_else(|| invalid("bad installer"))?)
+            Some(read_installer_copy(block).ok_or_else(|| {
+                invalid(solstone_core_cli_copy::render_for(
+                    locale,
+                    "journal.cli.sol.update.catalogue.schema.bad.installer",
+                    &[],
+                ))
+            })?)
         }
-        Some(_) => return Err(invalid("installer in an unsupported schema")),
+        Some(_) => {
+            return Err(invalid(solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.sol.update.catalogue.schema.installer.in.an.unsupported.schema",
+                &[],
+            )));
+        }
     };
-    let keynum: [u8; 8] = key.keynum().try_into().map_err(|_| invalid("key id"))?;
+    let keynum: [u8; 8] = key.keynum().try_into().map_err(|_| {
+        invalid(solstone_core_cli_copy::render_for(
+            locale,
+            "journal.cli.sol.update.catalogue.schema.key.id",
+            &[],
+        ))
+    })?;
     if value["platform_key_id"].as_str()
         != Some(format!("{:016X}", u64::from_le_bytes(keynum)).as_str())
     {
         return Err(CatalogueRefusal::new(
             "pin-mismatch",
-            "the release catalogue names a different release key.",
+            solstone_core_cli_copy::render_for(locale, "journal.cli.sol.update.catalogue.pin", &[]),
         ));
     }
     Ok(CatalogueListing {
@@ -571,7 +699,10 @@ mod tests {
         ] {
             assert!(!is_catalogue_coordinate(bad), "{bad}");
         }
-        assert_eq!(parse_latest(b"2.0.59-r1\r\n").unwrap(), "2.0.59-r1");
-        assert!(parse_latest(b"2.0.59-r1\n\n").is_err());
+        assert_eq!(
+            parse_latest(solstone_core_cli_copy::ENGLISH, b"2.0.59-r1\r\n").unwrap(),
+            "2.0.59-r1"
+        );
+        assert!(parse_latest(solstone_core_cli_copy::ENGLISH, b"2.0.59-r1\n\n").is_err());
     }
 }

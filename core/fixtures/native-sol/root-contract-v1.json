@@ -6,21 +6,24 @@
         "call",
         "import"
       ],
-      "heading": "Your journal"
+      "heading": "Your journal",
+      "heading_message": "journal.cli.sol.help.journal"
     },
     {
       "commands": [
         "journal",
         "update"
       ],
-      "heading": "This computer"
+      "heading": "This computer",
+      "heading_message": "journal.cli.sol.help.computer"
     },
     {
       "commands": [
         "skills",
         "link"
       ],
-      "heading": "Tools"
+      "heading": "Tools",
+      "heading_message": "journal.cli.sol.help.tools"
     }
   ],
   "call_groups": [

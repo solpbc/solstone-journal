@@ -1,0 +1,25 @@
+{
+  "description": "Journal command-line text for skills path canonical.",
+  "context": "Journal command-line text for skills path canonical.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8ec0d15deacd1107294ce83ed5b05f0e80cf3c740660f260c695fe7ceabc466e",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

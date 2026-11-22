@@ -1,0 +1,38 @@
+{
+  "description": "Journal command-line text for moved.",
+  "context": "Journal command-line text for moved.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "494893ca62412235c5959566e46b0d9f87b3093c7d06e058e37d93d7afcf63f6",
+  "max_length": 232,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "journal_command",
+      "kind": "command",
+      "value": "solstone journal"
+    },
+    {
+      "name": "journal_help",
+      "kind": "command",
+      "value": "solstone journal --help"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

@@ -1,0 +1,133 @@
+{
+  "description": "Journal command-line text for update help.",
+  "context": "Journal command-line text for update help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1f1daf985588a9e4f280d581dd81c5116e092795d75aa9e6a72a6c8c50f9b180",
+  "max_length": 1116,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone update [--check] [--json] [--lane release|staging|dev] [--version VER] [--hold] [--unhold] [--rollback] [--yes] [--automatic on|off|status] [--help]"
+    },
+    {
+      "name": "brand",
+      "kind": "mark-word",
+      "value": "solstone"
+    },
+    {
+      "name": "indent_2",
+      "kind": "whitespace",
+      "value": "  "
+    },
+    {
+      "name": "check_option",
+      "kind": "accepted-input",
+      "value": "--check"
+    },
+    {
+      "name": "gap_6",
+      "kind": "whitespace",
+      "value": "      "
+    },
+    {
+      "name": "json_option",
+      "kind": "accepted-input",
+      "value": "--json"
+    },
+    {
+      "name": "gap_7",
+      "kind": "whitespace",
+      "value": "       "
+    },
+    {
+      "name": "lane_option",
+      "kind": "accepted-input",
+      "value": "--lane"
+    },
+    {
+      "name": "lane_values",
+      "kind": "accepted-input",
+      "value": "release, staging, or dev"
+    },
+    {
+      "name": "version_option",
+      "kind": "accepted-input",
+      "value": "--version"
+    },
+    {
+      "name": "gap_4",
+      "kind": "whitespace",
+      "value": "    "
+    },
+    {
+      "name": "hold_option",
+      "kind": "accepted-input",
+      "value": "--hold"
+    },
+    {
+      "name": "unhold_option",
+      "kind": "accepted-input",
+      "value": "--unhold"
+    },
+    {
+      "name": "gap_5",
+      "kind": "whitespace",
+      "value": "     "
+    },
+    {
+      "name": "rollback_option",
+      "kind": "accepted-input",
+      "value": "--rollback"
+    },
+    {
+      "name": "gap_3",
+      "kind": "whitespace",
+      "value": "   "
+    },
+    {
+      "name": "yes_option",
+      "kind": "accepted-input",
+      "value": "--yes"
+    },
+    {
+      "name": "gap_8",
+      "kind": "whitespace",
+      "value": "        "
+    },
+    {
+      "name": "automatic_option",
+      "kind": "accepted-input",
+      "value": "--automatic"
+    },
+    {
+      "name": "gap_2",
+      "kind": "whitespace",
+      "value": "  "
+    },
+    {
+      "name": "automatic_values",
+      "kind": "accepted-input",
+      "value": "on, off or status"
+    },
+    {
+      "name": "help_option",
+      "kind": "accepted-input",
+      "value": "--help"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

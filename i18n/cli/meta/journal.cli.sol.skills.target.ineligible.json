@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for skills target ineligible.",
+  "context": "Journal command-line text for skills target ineligible.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "322013a3e57f1b9580ae6ceb055c69781060c2f0a1eadcacd4d0cc3fe5ef1aba",
+  "max_length": 64,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

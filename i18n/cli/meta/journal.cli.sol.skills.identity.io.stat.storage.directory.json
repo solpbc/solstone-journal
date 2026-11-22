@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for skills identity io stat storage directory.",
+  "context": "Journal command-line text for skills identity io stat storage directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bf0569a225a262b7cdc8bf3eac54b1957f06f9b5961d47e3cea6dad9d24d043c",
+  "max_length": 66,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

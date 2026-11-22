@@ -676,6 +676,9 @@ pub enum IdentityError {
     Guard(GuardError),
 }
 
+#[cfg(feature = "cli-copy")]
+mod cli_copy;
+
 impl fmt::Display for IdentityError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

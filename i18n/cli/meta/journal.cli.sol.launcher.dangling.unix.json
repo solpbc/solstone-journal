@@ -1,0 +1,33 @@
+{
+  "description": "Journal command-line text for launcher dangling unix.",
+  "context": "Journal command-line text for launcher dangling unix.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "359d4c24ed67d95bd94790bb32835eb27830172cac0374719b24238a1dc9fc35",
+  "max_length": 146,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "sibling",
+      "kind": "command",
+      "value": "solstone-core-sol"
+    },
+    {
+      "name": "solstone_name",
+      "kind": "command",
+      "value": "solstone"
+    }
+  ]
+}

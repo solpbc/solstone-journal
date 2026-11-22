@@ -1727,11 +1727,14 @@ check-journal-window-catalog:
 		exit 1; \
 	fi
 
-JOURNAL_CLI_CATALOG = CARGO_TARGET_DIR="$(RUST_TARGET_DIR)/i18n-catalog" cargo run --quiet --manifest-path tools/i18n/Cargo.toml --locked --offline -- targets i18n/cli --channel production --target rust
+JOURNAL_CLI_COMPILER = CARGO_TARGET_DIR="$(RUST_TARGET_DIR)/i18n-catalog" cargo run --quiet --manifest-path tools/i18n/Cargo.toml --locked --offline
+JOURNAL_LAUNCHER_COPY = $(JOURNAL_CLI_COMPILER) --example journal-launcher -- production
+JOURNAL_CLI_CATALOG = $(JOURNAL_CLI_COMPILER) -- targets i18n/cli --channel production --target rust
 
 .PHONY: journal-cli-catalog check-journal-cli-catalog
 journal-cli-catalog:
 	$(JOURNAL_CLI_CATALOG) --out i18n/generated/cli
+	$(JOURNAL_LAUNCHER_COPY)
 
 check-journal-cli-catalog:
 	@set -eu; \
@@ -1739,7 +1742,8 @@ check-journal-cli-catalog:
 	check_dir=$$(mktemp -d "$(RUST_TARGET_DIR)/journal-catalog.XXXXXX"); \
 	trap 'rm -rf "$$check_dir"' 0 1 2 15; \
 	if ! $(JOURNAL_CLI_CATALOG) --out "$$check_dir/cli" || \
-	   ! diff -qr i18n/generated/cli "$$check_dir/cli"; then \
+	   ! diff -qr i18n/generated/cli "$$check_dir/cli" || \
+	   ! $(JOURNAL_LAUNCHER_COPY) --check; then \
 		echo "Journal CLI catalog is stale. Refresh source revisions if needed, then run make journal-cli-catalog." >&2; \
 		exit 1; \
 	fi

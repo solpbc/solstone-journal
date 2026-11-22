@@ -1,0 +1,21 @@
+{
+  "description": "Journal command-line text for update summary platform.",
+  "context": "Journal command-line text for update summary platform.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "22b99ffefc54d1a1023f41341ad57c64157b1ba9dc7f2577c985cd7884fab461",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

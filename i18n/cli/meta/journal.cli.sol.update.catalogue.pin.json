@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for update catalogue pin.",
+  "context": "Journal command-line text for update catalogue pin.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e1bb351deef97d9dbea69e708df512d597a031dc3325565818cfa594ec4fc1c4",
+  "max_length": 84,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

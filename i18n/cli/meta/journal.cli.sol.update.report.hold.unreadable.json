@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for update report hold unreadable.",
+  "context": "Journal command-line text for update report hold unreadable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0da8beec0df6ee0bf527f01907ce7dd9878db4d1a84abcb7ab1fa7ba7673b08d",
+  "max_length": 63,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

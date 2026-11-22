@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for update report installer arguments.",
+  "context": "Journal command-line text for update report installer arguments.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "068de8b2aa888461c3cc0e66a1d3007b00e57ae70444a91d0f9e92a750ebc7b5",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}
