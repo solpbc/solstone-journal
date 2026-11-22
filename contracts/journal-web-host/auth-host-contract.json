@@ -1,0 +1,10 @@
+{
+  "authorize": "auth.authorize",
+  "cancel": "auth.cancel",
+  "capability": "solstoneJournalHost",
+  "prepare": "auth.prepare",
+  "prepared": "auth.prepared",
+  "result": "auth.result",
+  "unsupported": "unsupported",
+  "version": 2
+}

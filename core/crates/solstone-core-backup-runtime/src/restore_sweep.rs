@@ -368,6 +368,8 @@ mod tests {
             "cache/models/x",
             "indexer/journal.sqlite",
             "config/chatgpt-sign-in.json",
+            "config/plaud-sign-in.json",
+            "config/plaud-sign-in.json.renewal",
             "health/service.log",
             "health/providers/local.json",
             "health/init-restore.json",

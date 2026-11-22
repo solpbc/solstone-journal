@@ -316,7 +316,7 @@ fn expected_consumers() -> BTreeSet<(String, String)> {
         ("solstone-core-segment-cli/src/read.rs", "is_tail"),
         // relocates a segment and repairs the named stream tail
         ("solstone-core-segment/src/relocate.rs", "relocate_segment"),
-        // the same relocation, with refusals rendered in the caller's locale
+        // locale-parameterized relocation entry point behind relocate_segment
         (
             "solstone-core-segment/src/relocate.rs",
             "relocate_segment_for",

@@ -6131,6 +6131,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-oauth"
+version = "2.0.87"
+dependencies = [
+ "getrandom 0.3.4",
+ "ring",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "solstone-core-auth-flow",
+ "solstone-core-journal-io",
+ "subtle",
+ "tempfile",
+ "webpki-roots 1.0.10",
+]
+
+[[package]]
 name = "solstone-core-observe-audio"
 version = "2.0.87"
 dependencies = [

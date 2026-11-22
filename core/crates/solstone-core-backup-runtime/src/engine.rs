@@ -7306,7 +7306,7 @@ mod tests {
             root
         };
         let endpoint = format!("{root}/mcp-endpoint");
-        let chatgpt = format!("{root}/config/chatgpt-sign-in.json*");
+        let sign_in = format!("{root}/config/*-sign-in.json*");
         assert!(
             args.windows(2)
                 .any(|pair| pair[0] == "--exclude" && pair[1] == endpoint),
@@ -7314,7 +7314,7 @@ mod tests {
         );
         assert!(
             args.windows(2)
-                .any(|pair| pair[0] == "--exclude" && pair[1] == chatgpt),
+                .any(|pair| pair[0] == "--exclude" && pair[1] == sign_in),
             "{args:?}"
         );
     }

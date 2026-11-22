@@ -69,8 +69,17 @@ fn backup_argv_excludes_the_chatgpt_sign_in_file_and_its_moved_aside_copies() {
         "chatgpt-sign-in.json.lock",
         "chatgpt-sign-in.json.unreadable-1700000000",
         "chatgpt-sign-in.json.unreadable-1700000500",
+        "plaud-sign-in.json",
+        "plaud-sign-in.json.lock",
+        "plaud-sign-in.json.renewal",
+        "plaud-sign-in.json.unreadable-1700000000",
     ];
-    let kept = ["journal.json", "chatgpt-notes.json"];
+    let kept = [
+        "journal.json",
+        "chatgpt-notes.json",
+        "sign-in.json",
+        "plaud-notes.json",
+    ];
     for name in excluded.iter().chain(&kept) {
         fs::write(config.join(name), b"{}").expect("file writes");
     }

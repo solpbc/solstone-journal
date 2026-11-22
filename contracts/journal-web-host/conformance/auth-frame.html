@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Auth frame fixture</title>
+<script type="module">
+const contract = await (await fetch('../auth-host-contract.json')).json();
+const host = window[contract.capability];
+const hasAuth = Boolean(host && Array.isArray(host.types) && (
+  host.types.includes(contract.prepare) ||
+  host.types.includes(contract.authorize) ||
+  host.types.includes(contract.cancel)
+));
+parent.postMessage({
+  fixture: 'auth-frame',
+  capability: typeof host !== 'undefined',
+  hasAuth,
+}, location.origin);
+</script></html>

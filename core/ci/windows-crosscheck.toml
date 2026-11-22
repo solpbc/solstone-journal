@@ -39,8 +39,13 @@ target = "x86_64-pc-windows-msvc"
 # with no cfg(target_os) gate.
 # The CLI copy reader adds one cross-platform Rust library over the shared
 # process-locale selector and Fluent.
-workspace_packages = 145
-library_packages = 138
+# Re-derived on 2026-11-21 with the same metadata join: solstone-core-oauth
+# adds one member and one library (145/138 -> 146/139). It is cross-platform
+# Rust over ring/rustls/journal-io (only a test-only unix permission check is
+# cfg(unix)-gated); because it depends on ring, the Linux cross-check leaves it
+# to native Windows CI with ring's other dependents.
+workspace_packages = 146
+library_packages = 139
 
 [[exclusions]]
 package = "ring"
