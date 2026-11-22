@@ -3053,6 +3053,7 @@ button:focus:not(:focus-visible) {
           </div>
           <p class="granola-note">{{journal.window.settings.plaud.disconnect.note}}</p>
         </div>
+        <p class="granola-load-error" id="plaudActionError" role="alert" hidden></p>
 
         <p class="granola-load-error" id="plaudLoadError" role="alert" hidden>{{journal.window.settings.plaud.load.failed}}</p>
       </div>
@@ -6772,6 +6773,7 @@ const plaud = {
   poll: null,
   signingIn: false,
   signInController: null,
+  signInCancellation: null,
   pending: null,
 };
 const plaudEl = id => document.getElementById(id);
@@ -6806,14 +6808,20 @@ function plaudPasteError(message) {
   granolaText(el, message || '');
 }
 
+function plaudActionError(message) {
+  const el = plaudEl('plaudActionError');
+  granolaText(el, message);
+  granolaHidden(el, !message);
+}
+
 function plaudLandings(held) {
   const shown = id => plaudEl(id);
   if (plaudEl('plaudPending')?.contains(held)) {
     return plaud.data?.connected
-      ? [shown('plaudCheck'), shown('plaudDisconnect'), shown('field-plaud-sync-enabled')]
+      ? [shown('plaudSignInAgain'), shown('plaudCheck'), shown('plaudDisconnect'), shown('field-plaud-sync-enabled')]
       : [shown('plaudSignIn'), shown('plaudOffKept')];
   }
-  if (plaudEl('plaudSignedOut')?.contains(held)) {
+  if (held === shown('plaudSignInAgain') || plaudEl('plaudSignedOut')?.contains(held)) {
     return [shown('plaudPasteUrl'), shown('plaudCancelSignIn'), shown('plaudCheck'), shown('plaudDisconnect')];
   }
   return [shown('plaudOffKept'), shown('plaudSignIn'), shown('plaudDisconnect')];
@@ -6919,7 +6927,7 @@ function renderPlaud() {
       );
     }
     granolaHidden(plaudEl('plaudOpenAgain'), !pending.authorizeUrl);
-    granolaHidden(plaudEl('plaudShowPaste'), pending.showPaste);
+    granolaHidden(plaudEl('plaudShowPaste'), pending.mode === 'native' || pending.showPaste);
     granolaHidden(plaudEl('plaudPastePanel'), !pending.showPaste);
     granolaMark(plaudEl('plaudPasteSubmit'), pending.submitting ? 'busy' : null);
   }
@@ -6951,6 +6959,7 @@ function renderPlaud() {
   const other = name => (plaud.busy && plaud.busy !== name ? 'off' : null);
   granolaMark(plaudEl('plaudSignIn'), plaud.busy === 'sign-in' ? 'busy' : other('sign-in'));
   granolaMark(plaudEl('plaudSignInAgain'), plaud.busy === 'sign-in' ? 'busy' : other('sign-in'));
+  granolaMark(plaudEl('plaudCancelSignIn'), plaud.signInCancellation ? 'busy' : null);
   granolaMark(check, plaud.busy === 'check' || data.syncing ? 'busy' : other('check'));
   granolaMark(plaudEl('plaudDisconnect'), plaud.busy === 'disconnect' ? 'busy' : other('disconnect'));
 
@@ -6980,25 +6989,20 @@ async function loadPlaud() {
 
 function cancelPlaudSignIn(notifyServer = true) {
   clearTimeout(plaud.poll);
-  if (plaud.pending && typeof plaud.pending.cancel === 'function') {
-    const cancel = plaud.pending.cancel;
-    plaud.pending = null;
-    cancel();
-  }
-  if (plaud.signInController) {
-    plaud.signInController.abort();
-    plaud.signInController = null;
-  }
-  plaud.signingIn = false;
-  if (plaud.busy === 'sign-in') plaud.busy = false;
+  const controller = plaud.signInController;
+  if (!controller || controller.signal.aborted) return;
   if (notifyServer) {
-    void settingsFetch('/app/settings/api/plaud/sign-in', { method: 'DELETE' }).catch(() => {});
+    // Keep retry unavailable until the journal's single active attempt has been cancelled.
+    plaud.signInCancellation = settingsFetch('/app/settings/api/plaud/sign-in', { method: 'DELETE' }).catch(() => {});
   }
-  if (plaud.data) renderPlaud();
+  plaud.pending?.cancel?.();
+  controller.abort();
+  if (notifyServer) renderPlaud();
 }
 
 async function startPlaudSignIn() {
   if (plaud.busy || plaud.signingIn) return;
+  plaudActionError('');
   const broker = window.solstoneOAuthBroker;
   if (!broker || typeof broker.run !== 'function') {
     plaudSignInError(window.JournalI18n.render('journal.window.settings.plaud.signin.failed'));
@@ -7030,6 +7034,10 @@ async function startPlaudSignIn() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
+        if (strategy === broker.STRATEGIES.NATIVE_BROKER) {
+          plaud.pending = { mode: 'native' };
+          renderPlaud();
+        }
         return {
           attemptId: started.attempt_id,
           authorizeUrl: started.authorize_url,
@@ -7182,6 +7190,8 @@ async function startPlaudSignIn() {
   } catch (err) {
     caughtError = err;
   } finally {
+    if (plaud.signInCancellation) await plaud.signInCancellation;
+    plaud.signInCancellation = null;
     plaud.signingIn = false;
     plaud.busy = false;
     plaud.pending = null;
@@ -7190,9 +7200,9 @@ async function startPlaudSignIn() {
 
   if (ctx.disposed) return;
 
-  const cancelled = runResult?.outcome === 'cancelled' || runResult?.result?.state === 'cancelled';
+  const cancelled = controller.signal.aborted || runResult?.outcome === 'cancelled' || runResult?.result?.state === 'cancelled';
   const innerFailed = runResult?.result?.state === 'failed' || runResult?.result?.state === 'expired';
-  if (caughtError) {
+  if (!cancelled && caughtError) {
     plaudSignInError(
       caughtError?.serverMessage
       || window.JournalI18n.render('journal.window.settings.plaud.signin.failed'),
@@ -7205,6 +7215,7 @@ async function startPlaudSignIn() {
   } else if (!cancelled) {
     plaudSignInError('');
   }
+  if (cancelled) renderPlaud();
   await loadPlaud();
 }
 
@@ -7223,17 +7234,13 @@ async function submitPlaudPaste() {
 async function checkPlaud() {
   if (plaud.busy || plaud.data?.syncing) return;
   plaud.busy = 'check';
+  plaudActionError('');
   renderPlaud();
   try {
     await settingsApi('/app/settings/api/plaud/sync', { method: 'POST' });
-    granolaHidden(plaudEl('plaudLoadError'), true);
   } catch (err) {
-    const loadErr = plaudEl('plaudLoadError');
-    if (loadErr) {
-      loadErr.textContent = err?.serverMessage
-        || window.JournalI18n.render('journal.window.settings.plaud.check.failed');
-      loadErr.hidden = false;
-    }
+    plaudActionError(err?.serverMessage
+      || window.JournalI18n.render('journal.window.settings.plaud.check.failed'));
   } finally {
     plaud.busy = false;
   }
@@ -7243,17 +7250,13 @@ async function checkPlaud() {
 async function disconnectPlaud() {
   if (plaud.busy) return;
   plaud.busy = 'disconnect';
+  plaudActionError('');
   renderPlaud();
   try {
     await settingsApi('/app/settings/api/plaud', { method: 'DELETE' });
-    granolaHidden(plaudEl('plaudLoadError'), true);
   } catch (err) {
-    const loadErr = plaudEl('plaudLoadError');
-    if (loadErr) {
-      loadErr.textContent = err?.serverMessage
-        || window.JournalI18n.render('journal.window.settings.plaud.disconnect.failed');
-      loadErr.hidden = false;
-    }
+    plaudActionError(err?.serverMessage
+      || window.JournalI18n.render('journal.window.settings.plaud.disconnect.failed'));
   } finally {
     plaud.busy = false;
   }

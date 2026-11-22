@@ -1960,6 +1960,7 @@ module.exports = async function settingsContractCases(crateDir) {
         const method = String(fetchOpts?.method || 'GET').toUpperCase();
         if (u.pathname === '/app/settings/api/plaud') {
           if (method === 'DELETE') {
+            if (opts.actionErrors?.disconnect) throw opts.actionErrors.disconnect;
             state = { ...state, connected: false, account_label: null, enabled: false, syncing: false, attention: null, attention_code: null };
             return { success: true, revoked: true };
           }
@@ -1984,6 +1985,7 @@ module.exports = async function settingsContractCases(crateDir) {
           return { success: true, reason: 'signed_in', account_label: 'Alex Rivera' };
         }
         if (u.pathname === '/app/settings/api/plaud/sync' && method === 'POST') {
+          if (opts.actionErrors?.check) throw opts.actionErrors.check;
           state = { ...state, syncing: true };
           return { success: true };
         }
@@ -1997,6 +1999,32 @@ module.exports = async function settingsContractCases(crateDir) {
     p.plaudAttempt = (next) => { attemptStatus = { ...attemptStatus, ...next }; };
     return p;
   }
+
+  await test('Plaud keeps action errors visible after a successful status refresh', async () => {
+    const actionErrors = {
+      check: new Error('check rejected'),
+      disconnect: new Error('disconnect rejected'),
+    };
+    const p = await plaudPage(PLAUD_ON, { actionErrors });
+    const error = p.byId('plaudActionError');
+
+    p.press(p.byId('plaudCheck'));
+    await settle();
+    assert.strictEqual(error.hidden, false, 'a failed check remains visible');
+    assert.strictEqual(p.byId('plaudLoadError').hidden, true, 'the status refresh succeeded');
+    assert.strictEqual(p.byId('plaudCheck').disabled, false, 'check can be retried');
+
+    p.press(p.byId('plaudDisconnect'));
+    await settle();
+    assert.strictEqual(error.hidden, false, 'a failed disconnect remains visible');
+    assert.strictEqual(p.byId('plaudConnected').hidden, false, 'the sign-in is still connected');
+
+    delete actionErrors.disconnect;
+    p.press(p.byId('plaudDisconnect'));
+    await settle();
+    assert.strictEqual(error.hidden, true, 'a successful retry clears the action error');
+    assert.strictEqual(p.byId('plaudOffKept').hidden, false, 'the imported recordings remain after disconnect');
+  });
 
   await test('Plaud sign-in uses native_broker first when window.solstoneJournalHost is present and displays nickname', async () => {
     const brokerMessages = [];
@@ -2031,6 +2059,48 @@ module.exports = async function settingsContractCases(crateDir) {
     assert.strictEqual(p.byId('plaudConnected').hidden, false);
     assert.strictEqual(p.byId('plaudState').dataset.state, 'connected');
     assert.ok(p.byId('plaudFacts').textContent.includes('Alex Rivera'), 'shows connected nickname');
+  });
+
+  await test('Plaud offers Cancel while the native browser is open and waits for journal cancellation before retry', async () => {
+    let authorize;
+    let nativeCancelled = false;
+    const journalHost = {
+      version: 2,
+      types: ['auth.prepare', 'auth.authorize', 'auth.cancel'],
+      async send(msg) {
+        if (msg.type === 'auth.prepare') {
+          return { type: 'auth.prepared', id: msg.id, outcome: 'ready', session_id: 'sess-1', mode: 'loopback', redirect_uri: 'http://127.0.0.1:49999/auth/callback' };
+        }
+        if (msg.type === 'auth.authorize') {
+          return new Promise(resolve => {
+            authorize = () => resolve({ type: 'auth.result', id: msg.id, outcome: 'cancelled' });
+          });
+        }
+        nativeCancelled = true;
+        authorize();
+        return { type: 'auth.result', id: msg.id, outcome: 'cancelled' };
+      },
+    };
+    const p = await plaudPage(PLAUD_OFF, { journalHost, nativeV1Capability: true });
+    p.holds.push(call => call.url === '/app/settings/api/plaud/sign-in' && call.method === 'DELETE');
+    p.press(p.byId('plaudSignIn'));
+    await settle();
+    assert.ok(authorize, 'native authorization is waiting for the browser');
+    assert.strictEqual(p.byId('plaudPending').hidden, false);
+    assert.strictEqual(p.byId('plaudCancelSignIn').getAttribute('aria-disabled'), null);
+    assert.strictEqual(p.byId('plaudShowPaste').hidden, true);
+
+    p.press(p.byId('plaudCancelSignIn'));
+    await settle();
+    assert.strictEqual(nativeCancelled, true);
+    assert.strictEqual(p.byId('plaudCancelSignIn').getAttribute('aria-disabled'), 'true');
+    assert.strictEqual(p.byId('plaudSignedOut').hidden, true, 'retry waits for the cancellation response');
+    p.writes().find(call => call.url === '/app/settings/api/plaud/sign-in' && call.method === 'DELETE').answer({ success: true });
+    await settle();
+    assert.strictEqual(p.byId('plaudPending').hidden, true);
+    assert.strictEqual(p.byId('plaudSignedOut').hidden, false);
+    assert.strictEqual(p.byId('plaudSignIn').getAttribute('aria-disabled'), null);
+    assert.strictEqual(p.byId('plaudSignInError').hidden, true);
   });
 
   await test('Plaud sign-in uses journal_loopback on localhost plain browser and polls attempt until signed in', async () => {
