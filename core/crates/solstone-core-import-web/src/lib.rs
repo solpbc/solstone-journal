@@ -113,6 +113,10 @@ fn router(journal_root: PathBuf, route: Option<Arc<ImportRouteSlot>>) -> Router 
             "/app/import/api/imports/{timestamp}",
             axum::routing::delete(delete::delete),
         )
+        .route(
+            "/app/import/api/{timestamp}/discard",
+            post(lifecycle::discard),
+        )
         .route("/app/import/api/{timestamp}", get(imports::detail))
         .route("/app/import/{timestamp}", get(assets::shell))
         .layer(axum::middleware::from_fn(http::render_refusal))

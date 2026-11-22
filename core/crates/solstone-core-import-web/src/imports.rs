@@ -438,6 +438,7 @@ pub(crate) async fn list(
         .get("client_item_id")
         .filter(|value| !value.is_empty());
     let imports_dir = state.root.join("imports");
+    crate::lifecycle::maybe_sweep_abandoned_uploads(&state.root);
     let Ok(entries) = fs::read_dir(&imports_dir) else {
         return json_response(
             StatusCode::OK,
@@ -507,11 +508,15 @@ pub(crate) async fn list(
                 && solstone_core_import::import_trash::deletes_here(
                     &solstone_core_import::import_trash::source_of(&state.root, &timestamp),
                 );
+            let needs_review = row_needs_review(&state, &entry.path(), &timestamp, status);
             info.values.insert("deletable".into(), json!(deletable));
             // Its segments waiting in the trash, which an erase now takes too;
             // only when there are any, so a row's fields are as they were.
             if let Some(count) = waiting.get(&timestamp).filter(|count| **count > 0) {
                 info.values.insert("waiting".into(), json!(count));
+            }
+            if needs_review {
+                info.values.insert("needs_review".into(), json!(true));
             }
             rows.push(info);
         }
@@ -570,6 +575,65 @@ pub(crate) async fn list(
     )
 }
 
+fn row_needs_review(
+    state: &AppState,
+    directory: &Path,
+    timestamp: &str,
+    status: Option<&str>,
+) -> bool {
+    if status != Some("pending") {
+        return false;
+    }
+    if state
+        .route
+        .as_ref()
+        .is_some_and(|slot| slot.retains(timestamp))
+    {
+        return false;
+    }
+    if directory.join("imported.json").exists() {
+        return false;
+    }
+    let Ok(metadata) = solstone_core_import::read_import_metadata(&state.root, timestamp) else {
+        return false;
+    };
+    if metadata.get("is_local_path").and_then(Value::as_bool) == Some(true) {
+        return false;
+    }
+    let hint = metadata
+        .get("source_hint")
+        .and_then(Value::as_str)
+        .map(str::trim);
+    if hint == Some("audio_archive") {
+        return false;
+    }
+    let confirmation_source = hint == Some("apple_health")
+        || metadata
+            .get("confirmation_required")
+            .and_then(Value::as_bool)
+            == Some(true);
+    if !confirmation_source {
+        return false;
+    }
+    if solstone_core_import::saved_start::saved_start_state(&metadata, timestamp)
+        != solstone_core_import::saved_start::SavedStartState::Eligible
+    {
+        return false;
+    }
+    let Some(file_path) = metadata.get("file_path").and_then(Value::as_str) else {
+        return false;
+    };
+    if !Path::new(file_path).exists() {
+        return false;
+    }
+    if crate::lifecycle::apple_card_already_ran(&state.root, timestamp, false) {
+        return false;
+    }
+    let projection = solstone_core_import::project_import_result(&state.root, timestamp);
+    projection.status == solstone_core_import::ProjectionStatus::Pending
+        && projection.raw_publication.is_none()
+}
+
 pub(crate) async fn detail(
     selected_locale: Option<Extension<ResponseLocale>>,
     State(state): State<AppState>,
@@ -579,6 +643,7 @@ pub(crate) async fn detail(
     if solstone_core_import::validate_timestamp(&timestamp).is_err() {
         return import_not_found("Import not found");
     }
+    crate::lifecycle::maybe_sweep_abandoned_uploads(&state.root);
     let guard = crate::start_lock::acquire(&state.root, &timestamp).await;
     match tokio::task::spawn_blocking(move || {
         let _guard = guard;
@@ -1231,5 +1296,127 @@ mod tests {
         }
         assert_no_path(&body, &raw_path);
         assert_no_path(&list_body, &raw_path);
+    }
+
+    #[tokio::test]
+    async fn list_emits_needs_review_only_for_eligible_confirmation_required_staged_imports() {
+        let dir = tempdir().unwrap();
+        let journal = dir.path();
+        let seed = |id: &str, filename: Option<&str>, extra: Value| {
+            let import_dir = journal.join("imports").join(id);
+            fs::create_dir_all(&import_dir).unwrap();
+            let file_path = import_dir.join("export.zip");
+            if let Some(bytes) = filename {
+                fs::write(&file_path, bytes.as_bytes()).unwrap();
+            }
+            let mut meta: solstone_core_import::ImportMetadata = serde_json::from_value(json!({
+                "import_id": id,
+                "original_filename": "export.zip",
+                "file_path": file_path.to_string_lossy(),
+                "file_size": 12,
+                "source_hash": "0123456789abcdef",
+                "source_timestamp": id,
+                "source_hint": "apple_health",
+                "is_local_path": false,
+            }))
+            .unwrap();
+            solstone_core_import::saved_start::initialize_saved_start(&mut meta, id).unwrap();
+            if let Some(src) = extra.as_object() {
+                for (k, v) in src {
+                    meta.insert(k.clone(), v.clone());
+                }
+            }
+            fs::write(
+                import_dir.join("import.json"),
+                serde_json::to_vec(&meta).unwrap(),
+            )
+            .unwrap();
+            import_dir
+        };
+
+        // Positive: eligible pending Apple Health upload with file on disk.
+        let eligible_id = "20261122_150001";
+        seed(eligible_id, Some("apple-export"), json!({}));
+
+        // Negative 1: is_local_path = true
+        let local_id = "20261122_150002";
+        seed(
+            local_id,
+            Some("apple-export"),
+            json!({"is_local_path": true}),
+        );
+
+        // Negative 2: audio_archive source_hint
+        let audio_id = "20261122_150003";
+        seed(
+            audio_id,
+            Some("audio-zip"),
+            json!({"source_hint": "audio_archive"}),
+        );
+
+        // Negative 3: raw_publication present (partial imported.json with no status)
+        let raw_pub_id = "20261122_150004";
+        let raw_pub_dir = seed(raw_pub_id, Some("apple-export"), json!({}));
+        fs::write(
+            raw_pub_dir.join("imported.json"),
+            br#"{"entries_written":0}"#,
+        )
+        .unwrap();
+
+        // Negative 4: imported.json exists (completed)
+        let done_id = "20261122_150005";
+        let done_dir = seed(done_id, Some("apple-export"), json!({}));
+        fs::write(done_dir.join("imported.json"), br#"{"status":"success"}"#).unwrap();
+
+        // Negative 5: apple_card_already_ran (body-progress.json present)
+        let ran_id = "20261122_150006";
+        let ran_dir = seed(ran_id, Some("apple-export"), json!({}));
+        fs::write(ran_dir.join("body-progress.json"), br#"{"phase":"write"}"#).unwrap();
+
+        // Negative 6: missing staged file on disk
+        let missing_file_id = "20261122_150007";
+        seed(missing_file_id, None, json!({}));
+
+        // Negative 7: non-confirmation source (e.g. chatgpt plan_failed orphan)
+        let chatgpt_id = "20261122_150008";
+        seed(
+            chatgpt_id,
+            Some("conversations.json"),
+            json!({"source_hint": "chatgpt"}),
+        );
+
+        let state = AppState {
+            root: journal.to_path_buf(),
+            route: None,
+        };
+        let list_resp = list(None, State(state), Query(HashMap::new())).await;
+        let list_bytes = axum::body::to_bytes(list_resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let list_body: Value = serde_json::from_slice(&list_bytes).unwrap();
+        let imports = list_body["imports"].as_array().expect("imports array");
+        let row_for = |id: &str| {
+            imports
+                .iter()
+                .find(|r| r["timestamp"] == id)
+                .unwrap_or_else(|| panic!("row {id} missing from list"))
+        };
+
+        assert_eq!(row_for(eligible_id).get("needs_review"), Some(&json!(true)));
+        for neg in [
+            local_id,
+            audio_id,
+            raw_pub_id,
+            done_id,
+            ran_id,
+            missing_file_id,
+            chatgpt_id,
+        ] {
+            assert!(
+                row_for(neg).get("needs_review").is_none(),
+                "negative twin {neg} must omit needs_review: {:?}",
+                row_for(neg)
+            );
+        }
     }
 }

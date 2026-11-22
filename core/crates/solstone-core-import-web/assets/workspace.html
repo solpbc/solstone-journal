@@ -334,6 +334,9 @@
 }
 
 .import-primary-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 44px;
   padding: 0.7rem 1rem;
   font-size: 0.95rem;
@@ -343,6 +346,7 @@
   border: none;
   border-radius: 10px;
   cursor: pointer;
+  text-decoration: none;
   transition: background 0.1s ease;
 }
 
@@ -521,6 +525,7 @@
 .import-status { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 0.85em; }
 .import-status.success { background: var(--success-wash); color: var(--success-ink); }
 .import-status.pending { background: var(--warn-wash); color: var(--warn-ink); }
+.import-status.review { background: var(--orange-wash); color: var(--orange-text-aa); border: 1px solid color-mix(in srgb, var(--orange) 35%, transparent); font-weight: 600; white-space: nowrap; }
 .import-status.failed { background: var(--danger-wash); color: var(--danger); }
 .import-status.running { background: var(--hairline); color: var(--ink-soft-paper); display: inline-flex; align-items: center; gap: 6px; }
 .import-status.running::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ink-faint-paper); animation: pulse 1.5s ease-in-out infinite; }
@@ -594,6 +599,173 @@
 
 .import-table tbody tr.import-row--stalled:hover {
   background: color-mix(in srgb, var(--warn) 12%, transparent);
+}
+
+.import-table tbody tr.import-row--review {
+  background: color-mix(in srgb, var(--orange) 5%, transparent);
+}
+
+.import-table tbody tr.import-row--review:hover {
+  background: var(--orange-wash);
+}
+
+.import-review-link {
+  color: var(--orange-text-aa);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  white-space: nowrap;
+}
+
+.import-handoff-tray {
+  margin-bottom: 1.5rem;
+  padding: 0.9rem 1rem;
+  border-radius: 12px;
+  border: 1px solid var(--hairline);
+  background: var(--paper);
+}
+.import-handoff-tray[hidden] { display: none; }
+.import-handoff-head {
+  margin: 0 0 0.65rem 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+.import-handoff-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.import-handoff-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem 0.9rem;
+  flex-wrap: wrap;
+  padding: 0.75rem 0.9rem;
+  border-radius: 10px;
+  border: 1px solid var(--hairline);
+  background: var(--cream);
+}
+.import-handoff-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.import-handoff-row.is-review {
+  background: var(--orange-wash);
+  border-color: color-mix(in srgb, var(--orange) 42%, var(--hairline));
+}
+.import-handoff-row.is-attention {
+  background: var(--danger-wash);
+  border-color: color-mix(in srgb, var(--danger) 42%, var(--hairline));
+}
+.import-handoff-row.is-done {
+  background: var(--success-wash);
+  border-color: color-mix(in srgb, var(--success) 38%, var(--hairline));
+}
+.import-mk {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+.import-handoff-row.is-waiting .import-mk {
+  border: 2px solid var(--ink-soft);
+  background: transparent;
+}
+.import-handoff-row.is-sending .import-mk {
+  background: var(--orange);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+.import-handoff-row.is-review .import-mk {
+  border: 2px solid var(--orange);
+  background: var(--orange);
+  box-shadow: inset 0 0 0 2px var(--paper);
+}
+.import-handoff-row.is-done .import-mk {
+  background: var(--success);
+  color: var(--paper);
+}
+.import-handoff-row.is-attention .import-mk {
+  background: var(--danger);
+  color: var(--ink-on-danger);
+}
+.import-handoff-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.import-handoff-kicker {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--orange-text-aa);
+  margin-bottom: 0.15rem;
+}
+.import-handoff-row.is-attention .import-handoff-kicker {
+  color: var(--danger);
+}
+.import-handoff-name {
+  font-weight: 600;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.import-handoff-sub {
+  font-size: 0.88rem;
+  color: var(--ink-soft);
+  margin-top: 0.15rem;
+  overflow-wrap: anywhere;
+}
+.import-handoff-hint {
+  font-size: 0.84rem;
+  color: var(--ink-soft);
+  margin-top: 0.25rem;
+}
+.import-handoff-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+.import-handoff-link {
+  color: var(--orange-text-aa);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  font-weight: 600;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.25rem;
+}
+.import-handoff-dismiss {
+  min-width: 44px;
+  min-height: 44px;
+  border: 1px solid var(--hairline-2);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.import-handoff-dismiss:hover {
+  background: var(--cream-bright);
+  color: var(--ink);
 }
 
 .import-table tbody tr:active {
@@ -719,7 +891,8 @@
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 @keyframes spin { to { transform:rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
-    .import-status.running::before {
+    .import-status.running::before,
+    .import-handoff-row.is-sending .import-mk {
         animation: none;
         opacity: 1;
     }
@@ -1915,6 +2088,9 @@ function renderImportRow(imp, picking = false) {
   let statusClass;
   let statusText;
   let statusDetail = '';
+  const needsReview = imp.status === 'pending' && (
+    imp.needs_review === true || (imp.source_hint === 'apple_health' && imp.needs_review !== false)
+  );
   if (imp.status === 'success') {
     statusClass = 'success';
     statusText = imp.body_state === 'saved' ? bodyStateLabel(window.JournalI18n.render('journal.window.import.status.saved')) : window.JournalI18n.render('journal.window.import.status.completed');
@@ -1939,6 +2115,9 @@ function renderImportRow(imp, picking = false) {
   } else if (imp.status === 'running') {
     statusClass = 'running';
     statusText = window.JournalI18n.render('journal.window.import.status.running');
+  } else if (needsReview) {
+    statusClass = 'review';
+    statusText = window.JournalI18n.render('journal.window.import.ox.status.ready.to.review');
   } else {
     statusClass = 'pending';
     statusText = window.JournalI18n.render('journal.window.import.status.pending');
@@ -1986,7 +2165,10 @@ function renderImportRow(imp, picking = false) {
 
   const picked = picking && importPick.ids.has(imp.timestamp);
   const note = picking ? importPick.notes.get(imp.timestamp) : null;
-  let html = `<tr${picked ? ' class="import-row--picked"' : ''} data-import-id="${escapeHtml(imp.timestamp)}" data-source-type="${escapeHtml(imp.source_type || '')}" data-deletable="${imp.deletable === true}"`;
+  const rowClasses = [];
+  if (picked) rowClasses.push('import-row--picked');
+  if (needsReview) rowClasses.push('import-row--review');
+  let html = `<tr${rowClasses.length ? ` class="${rowClasses.join(' ')}"` : ''} data-import-id="${escapeHtml(imp.timestamp)}" data-source-type="${escapeHtml(imp.source_type || '')}" data-deletable="${imp.deletable === true}"`;
   if (isArchive) {
     html += ` data-saved="${imp.saved ?? 0}" data-remaining="${imp.remaining ?? 0}" data-left-out="${imp.left_out ?? 0}" data-processing="${imp.processing ?? 0}" data-unavailable="${imp.unavailable_parts ?? 0}"`;
   }
@@ -2009,8 +2191,8 @@ function renderImportRow(imp, picking = false) {
     ? handoffText('device', [['device', String(imp.observer_handle)]])
     : originKey ? handoffText('origin.' + originKey) : '';
   html += `<td class="source-cell"><div class="import-source-label">${sourceCell}</div>${origin ? '<div>' + escapeHtml(origin) + '</div>' : ''}</td>`;
-  if (imp.source_hint === 'apple_health' && imp.status === 'pending') {
-    statusDetail += `<div><a href="/app/import/#guide/apple_health/${encodedId}">${escapeHtml(handoffText('health.review'))}</a></div>`;
+  if (needsReview) {
+    statusDetail += `<div><a class="import-review-link" href="/app/import/${encodedId}">${window.JournalI18n.renderHtml('journal.window.import.ox.history.review.link')}</a></div>`;
   }
   html += `<td class="status-cell"><span class="import-status ${statusClass}">${statusText}</span>${statusDetail}</td>`;
   html += `<td class="stats-cell import-stats-cell">${statsText}</td>`;
@@ -2831,6 +3013,7 @@ async function loadImports() {
         clearPendingImport(imp.timestamp);
       }
     });
+    if (typeof reconcileHandoffWithHistory === 'function') reconcileHandoffWithHistory(importsCache);
     return true;
   } catch (err) {
     if (generation !== historyRequestGeneration) return false;
@@ -3064,6 +3247,7 @@ function updateImportRow(importId, eventData, options = {}) {
   const safeId = typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(importId) : importId;
   const row = document.querySelector(`tr[data-import-id="${safeId}"]`);
   if (!row) {
+    if (typeof updateHandoffFromSse === 'function') updateHandoffFromSse(importId, cleanEventData);
     refreshInlineProgress(importId, cleanEventData);
     return;
   }
@@ -3130,6 +3314,7 @@ function updateImportRow(importId, eventData, options = {}) {
     if (bodyLabel) ctx.setTimeout(() => loadImports(), 1000);
   }
 
+  if (typeof updateHandoffFromSse === 'function') updateHandoffFromSse(importId, cleanEventData);
   refreshInlineProgress(importId, cleanEventData);
 }
 
@@ -3481,30 +3666,282 @@ function importHost() {
 }
 
 let dropOnCurrentCard;
-const handoffRows = new Map();
-function handoffStatus(item, text, row = null, name = null) {
-  const host = document.getElementById('handoffStatus');
-  if (!host) return;
-  let line = handoffRows.get(item);
-  if (!line || !host.contains(line)) {
-    line = document.createElement('div');
-    host.append(line);
-    handoffRows.set(item, line);
+const HANDOFF_DEVICE_NOUNS = new Set(['iphone', 'ipad', 'phone', 'mac', 'PC', 'computer']);
+const HANDOFF_VALID_ID = /^[0-9]{8}_[0-9]{6}$/;
+const handoffItems = new Map();
+
+function validHandoffImportId(value) {
+  return typeof value === 'string' && HANDOFF_VALID_ID.test(value) ? value : null;
+}
+
+function formatHandoffSize(bytes) {
+  const n = Number(bytes);
+  if (!Number.isFinite(n) || n <= 0) return '';
+  if (n < 1024) return `${Math.round(n)} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(n / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+function renderHandoffTray() {
+  const tray = document.getElementById('handoffStatus');
+  if (!tray) return;
+  const entries = [...handoffItems.values()];
+  writeHidden(tray, entries.length === 0);
+  const list = tray.querySelector('.import-handoff-list') || tray;
+  if (!entries.length) {
+    if (list.childNodes.length) list.replaceChildren();
+    return;
   }
-  line.textContent = '';
-  if (name) {
-    const title = document.createElement('strong');
-    title.textContent = name;
-    line.append(title, document.createElement('br'));
+  const activeKey = document.activeElement?.closest?.('[data-handoff-item]')?.getAttribute('data-handoff-item') || null;
+  const activeAction = document.activeElement?.getAttribute?.('data-handoff-action') || null;
+  const nodes = [];
+  for (const entry of entries) {
+    const isReview = entry.state === 'attention' && entry.reviewRequired === true && Boolean(entry.importId);
+    const isAttention = entry.state === 'attention' && !isReview;
+    const isDone = entry.state === 'delivered';
+    const isSending = entry.state === 'uploading';
+    const row = document.createElement('div');
+    row.className = 'import-handoff-row ' + (isReview ? 'is-review' : isAttention ? 'is-attention' : isDone ? 'is-done' : isSending ? 'is-sending' : 'is-waiting');
+    row.setAttribute('data-handoff-item', entry.item);
+    if (isAttention) row.setAttribute('role', 'alert');
+
+    const main = document.createElement('div');
+    main.className = 'import-handoff-main';
+    const mk = document.createElement('span');
+    mk.className = 'import-mk';
+    mk.setAttribute('aria-hidden', 'true');
+    if (isDone) mk.textContent = '✓';
+    else if (isAttention) mk.textContent = '!';
+    main.appendChild(mk);
+
+    const body = document.createElement('div');
+    body.className = 'import-handoff-body';
+    if (isReview) {
+      const kicker = document.createElement('div');
+      kicker.className = 'import-handoff-kicker';
+      kicker.textContent = window.JournalI18n.render('journal.window.import.ox.tray.review.heading');
+      body.appendChild(kicker);
+    } else if (isAttention) {
+      const kicker = document.createElement('div');
+      kicker.className = 'import-handoff-kicker';
+      kicker.textContent = window.JournalI18n.render('journal.window.import.ox.tray.attention.badge');
+      body.appendChild(kicker);
+    }
+
+    if (entry.name) {
+      const nameEl = document.createElement('div');
+      nameEl.className = 'import-handoff-name';
+      const sizeStr = formatHandoffSize(entry.sizeBytes);
+      nameEl.textContent = sizeStr && (isSending || entry.state === 'waiting') ? `${entry.name} · ${sizeStr}` : entry.name;
+      body.appendChild(nameEl);
+    }
+
+    const sub = document.createElement('div');
+    sub.className = 'import-handoff-sub';
+    if (isReview) {
+      sub.textContent = window.JournalI18n.render('journal.window.import.ox.tray.review.detail');
+    } else if (isAttention) {
+      sub.textContent = (entry.reason && String(entry.reason).trim()) || handoffText('refused');
+    } else if (isDone) {
+      if (entry.liveCompleted) {
+        sub.textContent = window.JournalI18n.render('journal.window.import.ox.tray.completed.summary', [['summary', entry.liveCompleted]]);
+      } else if (entry.liveStage) {
+        sub.textContent = window.JournalI18n.render('journal.window.import.ox.tray.in.journal.stage', [['stage', entry.liveStage]]);
+      } else {
+        sub.textContent = window.JournalI18n.render('journal.window.import.ox.tray.in.journal');
+      }
+    } else if (isSending) {
+      sub.textContent = entry.deviceNoun && HANDOFF_DEVICE_NOUNS.has(entry.deviceNoun)
+        ? window.JournalI18n.render('journal.window.import.ox.tray.sending.device', [['device', entry.deviceNoun]])
+        : window.JournalI18n.render('journal.window.import.ox.tray.sending.generic');
+    } else {
+      sub.textContent = entry.text || window.JournalI18n.render('journal.window.import.ox.tray.waiting');
+    }
+    body.appendChild(sub);
+
+    if (isAttention) {
+      const hint = document.createElement('div');
+      hint.className = 'import-handoff-hint';
+      hint.textContent = window.JournalI18n.render(
+        entry.retryable === false
+          ? 'journal.window.import.ox.tray.attention.remove'
+          : 'journal.window.import.ox.tray.attention.retryable'
+      );
+      body.appendChild(hint);
+    }
+    main.appendChild(body);
+    row.appendChild(main);
+
+    const actions = document.createElement('div');
+    actions.className = 'import-handoff-actions';
+    if (isReview) {
+      const cta = document.createElement('a');
+      cta.className = 'import-primary-btn';
+      cta.href = '/app/import/' + encodeURIComponent(entry.importId);
+      cta.setAttribute('data-handoff-action', 'review');
+      cta.textContent = window.JournalI18n.render('journal.window.import.ox.tray.review.action');
+      actions.appendChild(cta);
+    } else if (isDone) {
+      if (entry.importId) {
+        const viewLink = document.createElement('a');
+        viewLink.className = 'import-handoff-link';
+        viewLink.href = '/app/import/' + encodeURIComponent(entry.importId);
+        viewLink.setAttribute('data-handoff-action', 'view');
+        viewLink.textContent = window.JournalI18n.render('journal.window.import.ox.tray.view.import');
+        actions.appendChild(viewLink);
+      }
+      const dismiss = document.createElement('button');
+      dismiss.type = 'button';
+      dismiss.className = 'import-handoff-dismiss';
+      dismiss.setAttribute('data-handoff-action', 'dismiss');
+      dismiss.setAttribute('aria-label', window.JournalI18n.render('journal.window.import.accessible.name.close'));
+      dismiss.textContent = '×';
+      dismiss.onclick = () => {
+        handoffItems.delete(entry.item);
+        renderHandoffTray();
+      };
+      actions.appendChild(dismiss);
+    } else if (isAttention) {
+      const dismiss = document.createElement('button');
+      dismiss.type = 'button';
+      dismiss.className = 'import-handoff-dismiss';
+      dismiss.setAttribute('data-handoff-action', 'dismiss');
+      dismiss.setAttribute('aria-label', window.JournalI18n.render('journal.window.import.accessible.name.close'));
+      dismiss.textContent = '×';
+      dismiss.onclick = () => {
+        handoffItems.delete(entry.item);
+        renderHandoffTray();
+      };
+      actions.appendChild(dismiss);
+    }
+    if (actions.childNodes.length) row.appendChild(actions);
+
+    nodes.push(row);
   }
-  if (row && /^\d{8}_\d{6}$/.test(row)) {
-    const link = document.createElement('a');
-    link.href = '/app/import/' + encodeURIComponent(row);
-    link.textContent = text;
-    line.append(link);
-  } else {
-    line.append(text);
+  list.replaceChildren();
+  nodes.forEach(n => list.appendChild(n));
+  // Preserve focus only if focus was already inside the tray; never steal focus from elsewhere.
+  if (activeKey && activeAction) {
+    const esc = val => (typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(val) : String(val).replace(/["\\]/g, '\\$&'));
+    const restore = list.querySelector(`[data-handoff-item="${esc(activeKey)}"] [data-handoff-action="${esc(activeAction)}"]`);
+    if (restore && restore.focus) restore.focus();
   }
+}
+
+function handoffStatus(item, text, row = null, name = null, opts = null) {
+  if (!document.getElementById('handoffStatus')) return;
+  const key = String(item);
+  const existing = handoffItems.get(key) || { item: key };
+  const importId = validHandoffImportId(row) || existing.importId || null;
+  handoffItems.set(key, {
+    ...existing,
+    state: opts?.state || existing.state || 'waiting',
+    name: name || existing.name || '',
+    text: text || '',
+    reason: opts?.state === 'attention' ? (text || existing.reason || '') : (opts?.reason ?? existing.reason ?? ''),
+    retryable: opts && 'retryable' in opts ? opts.retryable : existing.retryable,
+    reviewRequired: opts && 'reviewRequired' in opts ? opts.reviewRequired : false,
+    importId,
+  });
+  renderHandoffTray();
+}
+
+function updateHandoffEvent(state) {
+  if (!state?.item) return;
+  const key = String(state.item);
+  if (state.state === 'gone') {
+    if (handoffItems.delete(key)) renderHandoffTray();
+    return;
+  }
+  const existing = handoffItems.get(key) || { item: key };
+  const importId = validHandoffImportId(state.import_id) || existing.importId || null;
+  const reviewRequired = state.state === 'attention' && (
+    state.review_required === true
+    || (state.reason_code === 'import_preview_required'
+      && typeof state.kind === 'string'
+      && (state.kind === 'body_confirmation_required' || state.kind === 'confirmation_required' || state.kind.endsWith('_confirmation_required')))
+  ) && Boolean(importId);
+  const next = {
+    ...existing,
+    state: state.state || existing.state || 'waiting',
+    name: state.name || existing.name || '',
+    deviceNoun: typeof state.device_noun === 'string' ? state.device_noun : existing.deviceNoun,
+    sizeBytes: Number.isFinite(Number(state.size_bytes)) ? Number(state.size_bytes) : existing.sizeBytes,
+    importId,
+    reviewRequired,
+    reason: state.state === 'attention' ? (state.reason || '') : '',
+    retryable: typeof state.retryable === 'boolean' ? state.retryable : existing.retryable,
+    text: '',
+  };
+  if (next.state !== 'delivered') {
+    next.liveStage = '';
+    next.liveCompleted = '';
+  }
+  handoffItems.set(key, next);
+  renderHandoffTray();
+  if (state.state === 'delivered' || importId) loadImports();
+}
+
+function updateHandoffFromSse(importId, eventData) {
+  if (!importId || !handoffItems.size) return;
+  let changed = false;
+  for (const entry of handoffItems.values()) {
+    if (entry.importId !== importId) continue;
+    const status = eventData.status || (eventData.event === 'completed' ? 'success' : eventData.event === 'error' ? 'failed' : null);
+    if (eventData.event === 'completed' || status === 'success') {
+      entry.state = 'delivered';
+      entry.reviewRequired = false;
+      const summary = formatImportStats(eventData.entries_written, eventData.entities_seeded);
+      if (summary && summary !== '—') entry.liveCompleted = summary;
+      entry.liveStage = '';
+      changed = true;
+    } else if (eventData.event === 'error' || status === 'failed') {
+      entry.state = 'attention';
+      entry.reviewRequired = false;
+      entry.reason = eventData.error || window.JournalI18n.render('journal.window.import.status.text.failed');
+      entry.retryable = false;
+      changed = true;
+    } else if (eventData.event === 'started' || eventData.event === 'status') {
+      entry.state = 'delivered';
+      entry.reviewRequired = false;
+      entry.liveStage = humanStageName(eventData.stage, eventData.source_display);
+      changed = true;
+    }
+  }
+  if (changed) renderHandoffTray();
+}
+
+function reconcileHandoffWithHistory(imports) {
+  if (!handoffItems.size || !Array.isArray(imports)) return;
+  const byId = new Map(imports.map(imp => [imp.timestamp, imp]));
+  let changed = false;
+  for (const entry of handoffItems.values()) {
+    if (!entry.importId) continue;
+    const imp = byId.get(entry.importId);
+    if (!imp) continue;
+    if (entry.state === 'attention' && !entry.reviewRequired && imp.needs_review === true) {
+      entry.reviewRequired = true;
+      changed = true;
+    } else if (entry.reviewRequired && imp.status !== 'pending') {
+      entry.reviewRequired = false;
+      if (imp.status === 'success') {
+        entry.state = 'delivered';
+        const summary = formatImportStats(imp.entries_written, imp.entities_seeded);
+        entry.liveCompleted = summary && summary !== '—' ? summary : '';
+      } else if (imp.status === 'running') {
+        entry.state = 'delivered';
+      }
+      changed = true;
+    } else if (entry.state === 'delivered' && imp.status === 'success' && !entry.liveCompleted) {
+      const summary = formatImportStats(imp.entries_written, imp.entities_seeded);
+      if (summary && summary !== '—') {
+        entry.liveCompleted = summary;
+        changed = true;
+      }
+    }
+  }
+  if (changed) renderHandoffTray();
 }
 
 function enableHandoff(area, input, control) {
@@ -3566,16 +4003,16 @@ function enableHandoff(area, input, control) {
         ...(dropToken ? {drop:dropToken} : {})});
       if (ctx.disposed || reply.id !== id) return;
       for (const item of reply.items || []) {
-        handoffStatus(item.item, handoffText('waiting', [['name', item.name]]));
+        handoffStatus(item.item, '', null, item.name, { state: 'waiting' });
       }
       for (const item of reply.refused || []) {
-        handoffStatus(crypto.randomUUID(), item.reason || handoffText('refused'), null, item.name);
+        handoffStatus(crypto.randomUUID(), item.reason || handoffText('refused'), null, item.name, { state: 'attention', retryable: false });
       }
       if (reply.outcome !== 'queued') {
-        handoffStatus(id, reply.reason || handoffText(({busy:'busy',cancelled:'cancelled'})[reply.outcome] || 'refused'));
+        handoffStatus(id, reply.reason || handoffText(({busy:'busy',cancelled:'cancelled'})[reply.outcome] || 'refused'), null, null, { state: 'attention', retryable: false });
       }
     } catch (error) {
-      handoffStatus(id, error?.message || handoffText('refused'));
+      handoffStatus(id, error?.message || handoffText('refused'), null, null, { state: 'attention', retryable: false });
     }
   }
   control.onclick = event => { event.preventDefault(); pick(); };
@@ -3596,19 +4033,22 @@ function enableHandoff(area, input, control) {
 }
 
 if (importHost()) {
-  const region = document.createElement('div');
+  const region = document.createElement('section');
   region.id = 'handoffStatus';
-  region.setAttribute('role', 'status');
-  region.setAttribute('aria-live', 'polite');
+  region.className = 'import-handoff-tray';
+  region.hidden = true;
+  const heading = document.createElement('h3');
+  heading.className = 'import-handoff-head';
+  heading.textContent = window.JournalI18n.render('journal.window.import.ox.tray.heading');
+  const list = document.createElement('div');
+  list.className = 'import-handoff-list';
+  list.setAttribute('role', 'status');
+  list.setAttribute('aria-live', 'polite');
+  region.appendChild(heading);
+  region.appendChild(list);
   document.getElementById('importGuide')?.before(region);
   ctx.on(window, window.solstoneImportContract.drop, event => dropOnCurrentCard?.(event));
-  ctx.on(window, window.solstoneImportContract.event, event => {
-    const state = event.detail;
-    if (!state?.item) return;
-    const label = {waiting:'waiting', uploading:'sending', delivered:'delivered', gone:'refused'}[state.state];
-    if (label || state.reason) handoffStatus(state.item, state.reason || (label === 'refused' ? handoffText(label) : handoffText(label, [['name', state.name]])), state.import_id);
-    if (state.state === 'delivered' || state.import_id) loadImports();
-  });
+  ctx.on(window, window.solstoneImportContract.event, event => updateHandoffEvent(event.detail));
 }
 
 function setupGuidedUploadArea() {
@@ -5325,20 +5765,79 @@ document.getElementById('contentMonth').addEventListener('change', function() {
 
 // Load import details
 let importDetailRequest = 0;
+let detailPollTimer = null;
+let detailLiveStage = null;
+let detailLastData = null;
+
+function stopDetailPoll() {
+  if (detailPollTimer !== null) {
+    ctx.clearTimeout(detailPollTimer);
+    detailPollTimer = null;
+  }
+}
+
+function scheduleDetailPoll() {
+  stopDetailPoll();
+  if (ctx.disposed) return;
+  detailPollTimer = ctx.setTimeout(() => {
+    detailPollTimer = null;
+    if (!ctx.disposed) loadImportDetail();
+  }, 2000);
+}
+
+const detailBodyFacetApi = {
+  async load(sourceName) {
+    const response = await ctx.fetch(sourceName === 'apple_health' ? '/app/import/api/body-facet?source=apple_health' : '/app/import/api/body-facet');
+    return response.ok ? await response.json() : null;
+  },
+  async answer(answer, offer, sourceName) {
+    const response = await importWrite('/app/import/api/body-facet', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ answer, offer, source: sourceName }),
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !payload || !payload.offer) {
+      const err = new Error(payload?.error || window.JournalI18n.render('journal.window.import.response.error.your.journal.couldn.t.finish.that'));
+      err.status = response.status;
+      err.payload = payload;
+      err.serverMessage = payload?.error || '';
+      throw err;
+    }
+    return payload;
+  },
+};
+
+function navigateAfterDiscard() {
+  stopDetailPoll();
+  if (window.SolRouter && typeof window.SolRouter.go === 'function') {
+    window.SolRouter.go('/app/import/');
+  } else {
+    window.location.href = '/app/import/';
+  }
+}
+
 function loadImportDetail(keepSavedStart = false) {
   const request = ++importDetailRequest;
   return ctx.read(`/app/import/api/${importDetailPathSegment}`)
     .then(data => {
       if (request !== importDetailRequest) return;
+      if (typeof detailLastData !== 'undefined') detailLastData = data;
       reportImportReady('content');
       const overview = document.getElementById('overviewContent');
       const restoreFocus = Boolean(overview.querySelector('[data-saved-start-slot]')?.contains(document.activeElement));
       // A re-read that says nothing new leaves the page as it is.
       const metaDrawn = drawMarkup(document.getElementById('importMeta'), window.ImportDetail.renderMeta(data));
-      const overviewDrawn = drawMarkup(overview, window.ImportDetail.renderDetail(data));
+      const stage = typeof detailLiveStage !== 'undefined' ? detailLiveStage : null;
+      const overviewDrawn = drawMarkup(overview, window.ImportDetail.renderDetail(data, stage));
       window.ImportDetail.mountSavedStart(overview, data, () => loadImportDetail(true), restoreFocus, {
-        render: showImportOriginals,
-        pending: host => host?.dataset.originalsPending === "true",
+        originals: {
+          render: showImportOriginals,
+          pending: host => host?.dataset.originalsPending === 'true',
+        },
+        bodyFacet: typeof detailBodyFacetApi !== 'undefined' ? detailBodyFacetApi : null,
+        onDiscard: typeof navigateAfterDiscard === 'function' ? navigateAfterDiscard : null,
+        autoPreview: true,
       });
       if (restoreFocus && !overview.querySelector('[data-saved-start-slot]')) {
         const heading = document.getElementById('importDetailHeading');
@@ -5350,9 +5849,23 @@ function loadImportDetail(keepSavedStart = false) {
       if ((metaDrawn || overviewDrawn) && firstWallTime && window.JournalClock?.placeNote) {
         window.JournalClock.placeNote(firstWallTime, { inside: false });
       }
+      if (data?.status === 'running') {
+        if (typeof scheduleDetailPoll === 'function') scheduleDetailPoll();
+      } else {
+        if (typeof stopDetailPoll === 'function') stopDetailPoll();
+        if (typeof detailLiveStage !== 'undefined') detailLiveStage = null;
+      }
     })
     .catch(err => {
       if (request !== importDetailRequest) return;
+      if (typeof stopDetailPoll === 'function') stopDetailPoll();
+      if (err?.status === 404 && /^[0-9]{8}_[0-9]{6}$/.test(importDetailTimestamp) && typeof window.ImportDetail?.renderExpiredRecovery === 'function') {
+        reportImportReady('content');
+        const expired = window.ImportDetail.renderExpiredRecovery();
+        document.getElementById('importMeta').innerHTML = expired.metaHtml;
+        document.getElementById('overviewContent').innerHTML = expired.bodyHtml;
+        return;
+      }
       reportImportReady('error');
       const serverMessage = window.SurfaceState.serverMessageFrom(err);
       const escapedMessage = window.AppServices.escapeHtml(serverMessage);
@@ -5378,9 +5891,25 @@ function initImportDetail() {
   loadImportDetail();
 
   const detailEventsCleanup = ctx.listen('importer', { correlationKey: 'import_id' }, eventData => {
-    if (!IMPORT_ROW_EVENTS.has(eventData.event)) return;
     if (eventData.import_id !== importDetailTimestamp) return;
-    loadImportDetail();
+    if (eventData.event === 'started' || eventData.event === 'status' || eventData.event === 'stage' || eventData.event === 'progress') {
+      const stats = formatProgressStats(eventData);
+      const pct = eventData.items_total > 0
+        ? Math.round(((eventData.items_processed || 0) / eventData.items_total) * 100)
+        : (typeof eventData.percent === 'number' ? eventData.percent : null);
+      detailLiveStage = {
+        headline: eventData.stage ? humanStageName(eventData.stage, eventData.source_display) : (detailLiveStage?.headline || ''),
+        detail: stats.length ? stats.join(' • ') : (detailLiveStage?.detail || ''),
+        pct,
+      };
+      const slot = document.querySelector('[data-running-progress-slot]');
+      if (slot && detailLastData?.status === 'running') {
+        drawMarkup(slot, window.ImportDetail.renderRunningProgress(detailLastData, detailLiveStage));
+      }
+    }
+    if (IMPORT_ROW_EVENTS.has(eventData.event)) {
+      loadImportDetail();
+    }
   });
 
   function openContentFromHash() {
@@ -5394,6 +5923,7 @@ function initImportDetail() {
 
   // A page load out of an import's page still ends its stream here.
   const detailTeardown = () => {
+    stopDetailPoll();
     if (typeof detailEventsCleanup === 'function') {
       detailEventsCleanup();
     }
@@ -5479,10 +6009,140 @@ else initImportWorkspace();
 
 /* Status badge */
 .status-badge { display: inline-block; padding: 4px 10px; border-radius: 6px; font-size: 0.85em; margin-left: 1em; }
+.status-badge:first-child { margin-left: 0; }
+@media (max-width: 480px) { .status-badge { margin-left: 0; margin-top: 0.35rem; } }
 .status-badge.success { background: var(--success-wash); color: var(--success-ink); }
 .status-badge.pending { background: var(--warn-wash); color: var(--warn-ink); }
+.status-badge.review { background: var(--orange-wash); color: var(--orange-text-aa); border: 1px solid color-mix(in srgb, var(--orange) 35%, transparent); font-weight: 600; }
+.status-badge.expired { background: var(--hairline); color: var(--ink-soft); }
 .status-badge.failed { background: var(--danger-wash); color: var(--danger); }
 .status-badge.running { background: var(--hairline); color: var(--ink-soft-paper); }
+
+.import-saved-start {
+  border: 1px solid color-mix(in srgb, var(--orange) 35%, var(--hairline));
+  border-radius: 12px;
+  padding: 1.15rem 1.25rem;
+  margin-bottom: 1.25rem;
+  background: var(--paper);
+}
+.import-review-heading { margin: 0 0 0.7rem; font-size: 1.02rem; font-weight: 600; color: var(--ink); }
+.import-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 0.65rem;
+  margin-bottom: 0.85rem;
+}
+.import-preview-stat {
+  padding: 0.7rem 0.85rem;
+  border-radius: 10px;
+  background: var(--cream);
+  border: 1px solid var(--hairline);
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.import-preview-stat b { font-size: 1.1rem; font-weight: 700; color: var(--ink); }
+.import-preview-stat span { font-size: 0.82rem; color: var(--ink-soft); }
+.import-preview-summary { margin: 0 0 0.6rem; color: var(--ink); font-size: 0.96rem; }
+.import-preview-extra { margin: 0.35rem 0; color: var(--ink-soft); font-size: 0.88rem; }
+.import-preview-space { margin: 0.55rem 0 0; font-size: 0.88rem; color: var(--ink-soft); }
+.import-preview-space-warn {
+  margin: 0.65rem 0 0;
+  padding: 0.75rem 0.9rem;
+  border-radius: 8px;
+  background: var(--danger-wash);
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+  color: var(--danger);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.import-option-group {
+  margin-top: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  max-width: 440px;
+}
+.import-option-group label { font-size: 0.88rem; font-weight: 600; color: var(--ink); }
+.import-option-group select,
+.import-option-group input {
+  min-height: 44px;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--hairline-2);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+}
+.import-option-group select:focus,
+.import-option-group input:focus {
+  outline: none;
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 10%, transparent);
+}
+.import-option-question { margin: 0 0 0.35rem; font-weight: 600; color: var(--ink); }
+.import-expiry-note { margin: 0.8rem 0 0; font-size: 0.85rem; color: var(--ink-soft); }
+.import-saved-start .import-secondary-btn { min-height: 44px; }
+.import-discard-trigger { min-height: 44px; }
+.import-discard-confirm {
+  margin-top: 0.9rem;
+  padding: 0.95rem 1.05rem;
+  border-radius: 10px;
+  background: var(--danger-wash);
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+}
+.import-discard-confirm h4 { margin: 0 0 0.35rem; font-size: 0.98rem; color: var(--danger); }
+.import-discard-confirm p { margin: 0 0 0.65rem; font-size: 0.9rem; color: var(--ink); }
+.import-discard-error { color: var(--danger); font-weight: 600; }
+.import-danger-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0.7rem 1rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  background: var(--danger);
+  color: var(--ink-on-danger);
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.import-danger-btn:hover { background: color-mix(in srgb, var(--danger) 78%, var(--surface-dark)); }
+
+.import-running-slot:empty { display: none; }
+.import-running-card {
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  padding: 1.1rem 1.25rem;
+  margin-bottom: 1.25rem;
+  background: var(--paper);
+}
+.import-running-headline { margin: 0; font-size: 1.02rem; font-weight: 600; color: var(--ink); }
+.import-running-detail { margin: 0.35rem 0 0; font-size: 0.9rem; color: var(--ink-soft); }
+.import-running-bar {
+  margin-top: 0.75rem;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--hairline);
+  overflow: hidden;
+}
+.import-running-fill {
+  height: 100%;
+  background: var(--orange);
+  border-radius: 999px;
+  transition: width 0.25s ease;
+}
+
+.import-expired-card {
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  padding: 1.25rem;
+  margin-bottom: 1.25rem;
+  background: var(--paper);
+}
+.import-expired-lead { margin: 0 0 0.5rem; font-size: 1rem; font-weight: 600; color: var(--ink); }
+.import-expired-recovery { margin: 0 0 1rem; font-size: 0.92rem; color: var(--ink-soft); }
 
 .import-leads-card { border: 1px solid var(--hairline); border-radius: 6px; padding: 1rem; margin-bottom: 1rem; background: var(--paper); }
 .import-leads-card h2 { margin: 0 0 0.6rem; font-size: 1rem; }

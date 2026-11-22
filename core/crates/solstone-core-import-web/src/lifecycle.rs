@@ -6,13 +6,13 @@ use std::{
     collections::BTreeMap,
     io::Write,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex, OnceLock},
     thread,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use axum::{
-    extract::{Json, Multipart, State},
+    extract::{Json, Multipart, Path as AxumPath, State},
     http::StatusCode,
     response::Response,
 };
@@ -167,7 +167,7 @@ pub(crate) fn is_apple_card(metadata: &ImportMetadata) -> bool {
 
 /// Whether an Apple Health card import has run, or (with `stopped_only`) has a
 /// recorded stop.
-fn apple_card_already_ran(root: &Path, import_id: &str, stopped_only: bool) -> bool {
+pub(crate) fn apple_card_already_ran(root: &Path, import_id: &str, stopped_only: bool) -> bool {
     let Ok(metadata) = read_import_metadata(root, import_id) else {
         return false;
     };
@@ -257,6 +257,119 @@ fn apple_card_arguments(data: &Value, metadata: &ImportMetadata, record_id: &str
 
 /// How long a Strava upload may wait to be started before it is removed.
 const ABANDONED_STRAVA_UPLOAD: Duration = Duration::from_secs(60 * 60);
+const ABANDONED_SWEEP_INTERVAL: Duration = Duration::from_secs(5 * 60);
+
+/// Run the abandoned-upload sweep opportunistically on long-running journals
+/// without hammering the imports directory on every read.
+pub(crate) fn maybe_sweep_abandoned_uploads(root: &Path) {
+    static LAST_SWEEP: OnceLock<Mutex<BTreeMap<PathBuf, Instant>>> = OnceLock::new();
+    let table = LAST_SWEEP.get_or_init(|| Mutex::new(BTreeMap::new()));
+    let now = Instant::now();
+    let should_run = match table.lock() {
+        Ok(mut guard) => match guard.get(root) {
+            Some(previous) if now.duration_since(*previous) < ABANDONED_SWEEP_INTERVAL => false,
+            _ => {
+                if guard.len() > 32 {
+                    guard.retain(|_, prev| now.duration_since(*prev) < ABANDONED_SWEEP_INTERVAL);
+                }
+                guard.insert(root.to_path_buf(), now);
+                true
+            }
+        },
+        Err(_) => false,
+    };
+    if should_run {
+        sweep_abandoned_strava_uploads(root);
+    }
+}
+
+/// Discard an unstarted staged waiting copy (`POST /app/import/api/{timestamp}/discard`).
+///
+/// Serialized under `start_lock`, `whole_journal_restore::begin_target_use`, and
+/// `hold_import_lock`. Refuses with `409` if the import is active, running,
+/// already started/consumed, or has any recorded run artifacts; returns `404`
+/// for malformed or absent IDs without touching disk.
+pub(crate) async fn discard(
+    State(state): State<AppState>,
+    AxumPath(timestamp): AxumPath<String>,
+) -> Response {
+    if validate_timestamp(&timestamp).is_err() {
+        return import_not_found("Import not found");
+    }
+    let guard = crate::start_lock::acquire(&state.root, &timestamp).await;
+    let root = state.root.clone();
+    let route = state.route.clone();
+    match tokio::task::spawn_blocking(move || {
+        let _guard = guard;
+        discard_sync(&root, route.as_deref(), &timestamp)
+    })
+    .await
+    {
+        Ok(response) => response,
+        Err(_) => metadata_failed("discard worker stopped"),
+    }
+}
+
+fn discard_conflict(detail: &str) -> Response {
+    json_response(
+        StatusCode::CONFLICT,
+        json!({
+            "error": detail,
+            "reason_code": "discard_not_allowed",
+        }),
+    )
+}
+
+fn discard_sync(root: &Path, route: Option<&crate::ImportRouteSlot>, timestamp: &str) -> Response {
+    if contained_import_file(root, timestamp, "import.json").is_err() {
+        return import_not_found("Import not found");
+    }
+    let dir = root.join("imports").join(timestamp);
+    let import_json_path = dir.join("import.json");
+    if !import_json_path.exists() {
+        return import_not_found("Import not found");
+    }
+    let _target_use = match solstone_core_journal_io::whole_journal_restore::begin_target_use(root)
+    {
+        Ok(guard) => guard,
+        Err(_) => return discard_conflict("journal is busy"),
+    };
+    let _lock = match solstone_core_import::hold_import_lock(root, timestamp) {
+        Ok(lock) => lock,
+        Err(_) => return discard_conflict("import is locked"),
+    };
+    if !import_json_path.exists() {
+        return import_not_found("Import not found");
+    }
+    if route.is_some_and(|slot| slot.retains(timestamp)) {
+        return discard_conflict("import is currently active");
+    }
+    let Ok(metadata) = read_import_metadata(root, timestamp) else {
+        return discard_conflict("import metadata cannot be verified");
+    };
+    if solstone_core_import::saved_start::saved_start_state(&metadata, timestamp)
+        != solstone_core_import::saved_start::SavedStartState::Eligible
+    {
+        return discard_conflict("import is no longer waiting to start");
+    }
+    let projection = solstone_core_import::project_import_result(root, timestamp);
+    if projection.status != solstone_core_import::ProjectionStatus::Pending
+        || projection.raw_publication.is_some()
+        || dir.join("imported.json").exists()
+        || apple_card_already_ran(root, timestamp, false)
+        || solstone_core_import::metadata::attempt_holder(root, timestamp)
+            == solstone_core_import::metadata::AttemptHolder::Held
+    {
+        return discard_conflict("import has already started or processed");
+    }
+    if let Err(err) = solstone_core_import::discard_abandoned_import_records(root, timestamp) {
+        return metadata_failed(format!("could not discard staged import: {err}"));
+    }
+    json_response(
+        StatusCode::OK,
+        json!({"discarded": true, "import_id": timestamp}),
+    )
+}
 
 /// Remove Strava downloads uploaded on the Strava card and never imported.
 ///
@@ -7142,5 +7255,170 @@ mod tests {
             crate::multipart::MAX_PART_BYTES as u64 + 1
         ));
         assert!((crate::multipart::MAX_PART_BYTES as u64) < MAX_EXPORT_BYTES);
+    }
+
+    #[tokio::test]
+    async fn discard_removes_eligible_saved_upload_and_refuses_invalid_or_active_states() {
+        let root = TempDir::new().unwrap();
+        let make_staged = |id: &str, extra: Value| {
+            let dir = root.path().join("imports").join(id);
+            fs::create_dir_all(&dir).unwrap();
+            let file_path = dir.join("export.zip");
+            fs::write(&file_path, b"PK\x03\x04dummy").unwrap();
+            let mut meta: ImportMetadata = serde_json::from_value(json!({
+                "import_id": id,
+                "original_filename": "export.zip",
+                "file_path": file_path.to_string_lossy(),
+                "file_size": 9,
+                "source_hash": "0123456789abcdef",
+                "source_timestamp": id,
+                "source_hint": "apple_health",
+                "is_local_path": false,
+            }))
+            .unwrap();
+            solstone_core_import::saved_start::initialize_saved_start(&mut meta, id).unwrap();
+            if let Some(src) = extra.as_object() {
+                for (k, v) in src {
+                    meta.insert(k.clone(), v.clone());
+                }
+            }
+            fs::write(dir.join("import.json"), serde_json::to_vec(&meta).unwrap()).unwrap();
+            dir
+        };
+
+        // 1. Eligible staged upload -> 200 and removes directory.
+        let ok_id = "20261122_140001";
+        let ok_dir = make_staged(ok_id, json!({}));
+        let resp = crate::routes(root.path().to_path_buf())
+            .oneshot(
+                Request::post(format!("/app/import/api/{ok_id}/discard"))
+                    .header("content-type", "application/json")
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (status, body) = response_json(resp).await;
+        assert_eq!(status, StatusCode::OK, "{body:?}");
+        assert_eq!(body["discarded"], true);
+        assert_eq!(body["import_id"], ok_id);
+        assert!(
+            !ok_dir.exists(),
+            "staged import directory should be deleted"
+        );
+
+        // 2. Second discard on same ID -> 404.
+        let resp_gone = crate::routes(root.path().to_path_buf())
+            .oneshot(
+                Request::post(format!("/app/import/api/{ok_id}/discard"))
+                    .header("content-type", "application/json")
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp_gone.status(), StatusCode::NOT_FOUND);
+
+        // 3. Invalid / non-ASCII timestamp -> 404 without touching disk.
+        let resp_bad = crate::routes(root.path().to_path_buf())
+            .oneshot(
+                Request::post("/app/import/api/not-a-timestamp/discard")
+                    .header("content-type", "application/json")
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp_bad.status(), StatusCode::NOT_FOUND);
+
+        // 4. Refuses 409 when imported.json exists (already completed).
+        let done_id = "20261122_140002";
+        let done_dir = make_staged(done_id, json!({}));
+        fs::write(done_dir.join("imported.json"), br#"{"status":"success"}"#).unwrap();
+        let resp_done = crate::routes(root.path().to_path_buf())
+            .oneshot(
+                Request::post(format!("/app/import/api/{done_id}/discard"))
+                    .header("content-type", "application/json")
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp_done.status(), StatusCode::CONFLICT);
+        assert!(done_dir.exists());
+
+        // 5. Refuses 409 when raw_publication is present (partial imported.json with no status).
+        let pub_id = "20261122_140003";
+        let pub_dir = make_staged(pub_id, json!({}));
+        fs::write(pub_dir.join("imported.json"), br#"{"entries_written":0}"#).unwrap();
+        let resp_pub = crate::routes(root.path().to_path_buf())
+            .oneshot(
+                Request::post(format!("/app/import/api/{pub_id}/discard"))
+                    .header("content-type", "application/json")
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp_pub.status(), StatusCode::CONFLICT);
+        assert!(pub_dir.exists());
+
+        // 6. Refuses 409 when attempt is already started/consumed.
+        let started_id = "20261122_140004";
+        let started_dir = make_staged(
+            started_id,
+            json!({
+                "attempt": {
+                    "attempt_id": format!("{started_id}:1"),
+                    "generation": 1,
+                    "state": "running",
+                    "started_at_ms": 1_000,
+                }
+            }),
+        );
+        let resp_started = crate::routes(root.path().to_path_buf())
+            .oneshot(
+                Request::post(format!("/app/import/api/{started_id}/discard"))
+                    .header("content-type", "application/json")
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp_started.status(), StatusCode::CONFLICT);
+        assert!(started_dir.exists());
+
+        // 7. Refuses 409 when import lock is currently held (active run).
+        let active_id = "20261122_140005";
+        let active_dir = make_staged(active_id, json!({}));
+        let held_lock = solstone_core_import::hold_import_lock(root.path(), active_id).unwrap();
+        let resp_active = crate::routes(root.path().to_path_buf())
+            .oneshot(
+                Request::post(format!("/app/import/api/{active_id}/discard"))
+                    .header("content-type", "application/json")
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        drop(held_lock);
+        assert_eq!(resp_active.status(), StatusCode::CONFLICT);
+        assert!(active_dir.exists());
+
+        // 8. Refuses 409 when apple_card_already_ran (body-progress.json present).
+        let ran_id = "20261122_140006";
+        let ran_dir = make_staged(ran_id, json!({}));
+        fs::write(ran_dir.join("body-progress.json"), br#"{"phase":"write"}"#).unwrap();
+        let resp_ran = crate::routes(root.path().to_path_buf())
+            .oneshot(
+                Request::post(format!("/app/import/api/{ran_id}/discard"))
+                    .header("content-type", "application/json")
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp_ran.status(), StatusCode::CONFLICT);
+        assert!(ran_dir.exists());
     }
 }

@@ -21244,3 +21244,75 @@ journal.window.mcp.owner.diagnostic.token.read = could not read { $path }: { $er
 journal.window.mcp.owner.diagnostic.token.unsupported.schema = { $literal_mcp } token store has unsupported schema { $schema }: { $path }
 
 journal.window.mcp.owner.diagnostic.token.write = could not write { $literal_mcp } token store: { $error }
+
+journal.window.import.ox.tray.heading = from this device
+
+journal.window.import.ox.tray.review.heading = waiting for your review
+
+journal.window.import.ox.tray.waiting = waiting in the solstone app
+
+journal.window.import.ox.tray.sending.device = sending from your { $device }…
+
+journal.window.import.ox.tray.sending.generic = sending to your journal…
+
+journal.window.import.ox.tray.review.detail = saved in your journal. preview and confirm to start.
+
+journal.window.import.ox.tray.review.action = review and confirm
+
+journal.window.import.ox.tray.in.journal.stage = in your journal · { $stage }
+
+journal.window.import.ox.tray.in.journal = in your journal
+
+journal.window.import.ox.tray.completed.summary = completed · { $summary }
+
+journal.window.import.ox.tray.view.import = view import
+
+journal.window.import.ox.tray.attention.badge = needs attention
+
+journal.window.import.ox.tray.attention.retryable = open import in the solstone app to try again or remove.
+
+journal.window.import.ox.tray.attention.remove = open import in the solstone app to remove it.
+
+journal.window.import.ox.status.ready.to.review = ready to review
+
+journal.window.import.ox.history.review.link = review and start
+
+journal.window.import.ox.detail.checking = checking what's in { $name }…
+
+journal.window.import.ox.detail.try.preview.again = try preview again
+
+journal.window.import.ox.detail.found.heading = what your journal found
+
+journal.window.import.ox.detail.space.available = needs about { $need } · { $free } free where your journal lives
+
+journal.window.import.ox.detail.space.insufficient = not enough free space where your journal lives to bring this in. free up space there and try again.
+
+journal.window.import.ox.detail.nothing.new = nothing new to bring in from this file.
+
+journal.window.import.ox.detail.facet.label = which facet should these go into?
+
+journal.window.import.ox.detail.context.label = context (optional)
+
+journal.window.import.ox.detail.context.hint = a short note about what this is, so it's easier to find later
+
+journal.window.import.ox.detail.expiry.note = if you leave without starting, your journal removes the waiting copy after an hour.
+
+journal.window.import.ox.detail.discard.button = discard waiting copy
+
+journal.window.import.ox.detail.discard.title = discard this waiting copy?
+
+journal.window.import.ox.detail.discard.body = this removes the unstarted file from your journal. nothing has been imported yet.
+
+journal.window.import.ox.detail.discard.confirm = discard
+
+journal.window.import.ox.detail.discard.cancel = cancel
+
+journal.window.import.ox.detail.expired.badge = expired
+
+journal.window.import.ox.detail.expired.body = this waiting copy was removed after an hour without starting.
+
+journal.window.import.ox.detail.expired.recovery = if you added it from a solstone app, open import there to send it again, or go back to imports to choose the file again.
+
+journal.window.import.ox.detail.back.to.imports = back to imports
+
+journal.window.import.ox.detail.keep.originals.hint = turn this on if you want a copy of the original files in your journal.

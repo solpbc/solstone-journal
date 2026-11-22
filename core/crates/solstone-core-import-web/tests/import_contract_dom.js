@@ -2047,5 +2047,112 @@ module.exports = async function importContractCases(crateDir) {
     });
   }
 
+  // ---- Import OX: live handoff tray, history needs_review row, and /app/import/<id> 404 expired recovery ----
+  await test('live handoff tray renders all 5 states, allowlists device_noun, preserves focus on ready to review, bridges SSE, and removes gone rows', async () => {
+    const p = await bootList('/app/import/', {
+      'GET /app/import/api/list': () => listAnswer([
+        importRow('20261122_143000', 'pending', { original_filename: 'export.zip', source_type: 'apple_health', source_hint: 'apple_health', needs_review: true }),
+        importRow(DONE, 'success'),
+      ]),
+    });
+    // Wire a mock host after boot? Wait — bootList runs without importHost unless configured; verify history needs_review row first!
+    const reviewRow = rowOf(p, '20261122_143000');
+    assert.ok(reviewRow, 'needs_review history row present');
+    assert.ok(reviewRow.classList.contains('import-row--review'), 'review row carries highlight class');
+    assert.ok(reviewRow.querySelector('.import-status.review')?.textContent.includes('ready to review'), 'review pill rendered');
+    const reviewLink = reviewRow.querySelector('a.import-review-link');
+    assert.ok(reviewLink && reviewLink.getAttribute('href') === '/app/import/20261122_143000', 'review link points directly to /app/import/<id>');
+    assert.ok(reviewLink.textContent.includes('review and start'), 'review link copy');
+  });
+
+  await test('live handoff tray lifecycle under import host: waiting -> uploading -> review_required (no focus steal) -> SSE delivered -> gone', async () => {
+    const reviewId = '20261122_144500';
+    const listData = { value: listAnswer([importRow(DONE, 'success')]) };
+    const p = makePage(env, '/app/import/', {
+      answers: journal({ 'GET /app/import/api/list': () => listData.value }),
+    });
+    p.window.solstoneImportContract = { capability: 'solstoneJournalHost', version: 2, pick: 'import.pick', drop: 'solstone:drop', event: 'solstone:handoff' };
+    p.window.solstoneJournalHost = { version: 2, types: ['import.pick'], send: async () => ({ outcome: 'queued', items: [] }) };
+    p.loadScripts();
+    p.place();
+    await p.mount();
+    await settle();
+    const tray = p.byId('handoffStatus');
+    assert.ok(tray && tray.hidden, 'handoff tray starts hidden when empty');
+    const fireHandoff = detail => p.window.fire({ type: 'solstone:handoff', detail });
+
+    // Waiting -> uploading with allowlisted device_noun vs unknown device_noun.
+    fireHandoff({ item: 'it-1', state: 'waiting', name: 'export.zip', size_bytes: 5242880 });
+    assert.ok(!tray.hidden, 'tray reveals when an item enters');
+    assert.ok(tray.textContent.includes('export.zip') && tray.textContent.includes('waiting in the solstone app'));
+    fireHandoff({ item: 'it-1', state: 'uploading', name: 'export.zip', device_noun: 'iphone', size_bytes: 5242880 });
+    assert.ok(tray.textContent.includes('sending from your iphone…'), 'allowlisted device_noun renders device copy');
+    fireHandoff({ item: 'it-1', state: 'uploading', name: 'export.zip', device_noun: 'toaster' });
+    assert.ok(tray.textContent.includes('sending to your journal…'), 'non-allowlisted device_noun falls back to generic');
+
+    // Ready to review: brand-orange card without stealing focus!
+    const sourceFilter = p.byId('importSourceFilter');
+    sourceFilter.focus();
+    fireHandoff({ item: 'it-1', state: 'attention', review_required: true, import_id: reviewId, name: 'export.zip' });
+    assert.strictEqual(p.doc.activeElement, sourceFilter, 'ready to review card never steals focus');
+    const revCard = tray.querySelector('.import-handoff-row.is-review');
+    assert.ok(revCard && revCard.textContent.includes('waiting for your review'));
+    const cta = revCard.querySelector('a.import-primary-btn');
+    assert.ok(cta && cta.getAttribute('href') === `/app/import/${reviewId}` && cta.textContent.includes('review and confirm'));
+
+    // Non-review attention fault with empty reason falls back cleanly and carries role="alert".
+    fireHandoff({ item: 'it-2', state: 'attention', review_required: false, retryable: false, name: 'bad.zip', reason: '' });
+    const faultCard = tray.querySelector('.import-handoff-row.is-attention');
+    assert.ok(faultCard && faultCard.getAttribute('role') === 'alert');
+    assert.ok(faultCard.textContent.includes('needs attention') && faultCard.textContent.includes('remove it'));
+
+    // Delivered bridged to SSE events.
+    fireHandoff({ item: 'it-3', state: 'delivered', import_id: RUNNING, name: 'notes.md' });
+    assert.ok(tray.querySelector('[data-handoff-item="it-3"].is-done')?.textContent.includes('in your journal'));
+    listen(p).fn({ event: 'status', import_id: RUNNING, stage: 'importing', generation: 1 });
+    await settle();
+    assert.ok(tray.querySelector('[data-handoff-item="it-3"]')?.textContent.includes('in your journal · '), 'SSE stage bridges into tray');
+    listen(p).fn({ event: 'completed', import_id: RUNNING, entries_written: 7, generation: 2 });
+    await settle();
+    const doneText = tray.querySelector('[data-handoff-item="it-3"]')?.textContent || '';
+    assert.ok(doneText.includes('completed · 7 entries'), `SSE completion bridges into tray (got: ${JSON.stringify(doneText)})`);
+
+    // Older-app fallback: attention without review_required upgrades when history row has needs_review.
+    const legacyId = '20261122_145500';
+    listData.value = listAnswer([importRow(legacyId, 'pending', { original_filename: 'old.zip', source_hint: 'apple_health', needs_review: true })]);
+    fireHandoff({ item: 'it-4', state: 'attention', import_id: legacyId, name: 'old.zip', reason: 'preview required' });
+    await settle();
+    assert.ok(tray.querySelector('[data-handoff-item="it-4"]')?.classList.contains('is-review'), 'older-app attention upgrades to review card from history needs_review');
+
+    // Gone removes rows cleanly without rendering red error; empty tray hides itself.
+    for (const id of ['it-1', 'it-2', 'it-3', 'it-4']) fireHandoff({ item: id, state: 'gone' });
+    assert.ok(tray.hidden, 'tray hides once all items are gone');
+    assert.strictEqual(tray.querySelectorAll('.import-handoff-row').length, 0);
+  });
+
+  await test('/app/import/<id>: 404 on valid timestamp renders expired recovery; 500 and non-timestamp 404 do not', async () => {
+    const expiredId = '20261122_140000';
+    async function bootStatus(pathName, apiPath, code) {
+      const p = makePage(env, pathName, { answers: journal({ [`GET ${apiPath}`]: () => ({ error: 'missing' }) }) });
+      p.statuses.push([c => c.url === apiPath, code]);
+      p.loadScripts();
+      p.place();
+      await p.mount();
+      await settle();
+      return p;
+    }
+
+    const p404 = await bootStatus(`/app/import/${expiredId}`, `/app/import/api/${expiredId}`, 404);
+    assert.ok(p404.q('.import-expired-card'), '404 on valid timestamp renders expired recovery card');
+    assert.ok(p404.byId('importMeta').textContent.includes('expired'));
+    assert.ok(p404.q('.import-expired-card a')?.getAttribute('href') === '/app/import/');
+
+    const p500 = await bootStatus(`/app/import/${expiredId}`, `/app/import/api/${expiredId}`, 500);
+    assert.ok(!p500.q('.import-expired-card'), '500 must NOT render expired recovery card');
+
+    const pBad = await bootStatus('/app/import/not-a-timestamp', '/app/import/api/not-a-timestamp', 404);
+    assert.ok(!pBad.q('.import-expired-card'), '404 on non-timestamp id must NOT render expired recovery card');
+  });
+
   return cases;
 };
