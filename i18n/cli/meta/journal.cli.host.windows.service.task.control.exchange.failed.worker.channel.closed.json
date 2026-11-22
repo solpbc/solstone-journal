@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service task control exchange failed worker channel closed.",
+  "context": "Journal host output for windows service task control exchange failed worker channel closed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "acca28945d2870485cae7d6dbd165b5a50d78e4905d9eeec27a10306ae39d34c",
+  "max_length": 153,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Journal host health runtime.",
+  "context": "Journal host health runtime.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "message",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "58ad8c76e20669fc3c2d2903bf10622ed3f814f326a1205b11e130d5f8010c63",
+  "max_length": 213,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

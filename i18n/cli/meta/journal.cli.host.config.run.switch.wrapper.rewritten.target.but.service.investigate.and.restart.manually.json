@@ -1,0 +1,32 @@
+{
+  "description": "Native config command, run switch. Preserve terminal syntax and supplied data.",
+  "context": "Native config command, run switch. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "target",
+      "type": "string"
+    },
+    {
+      "name": "code",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c82f0c22fce8deb63bba846c0a9fad5ac81950292dd26675a962a943445afffe",
+  "max_length": 486,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_1",
+      "kind": "command",
+      "value": "solstone journal service restart --if-installed"
+    }
+  ]
+}

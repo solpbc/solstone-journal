@@ -18,5 +18,7 @@ pub use count::{
     parse_integer_text, parse_service_port, python_int_whitespace_ranges,
 };
 pub use error::CollectError;
-pub use follow::{FollowFatalError, run_follow, run_follow_from_snapshot};
+pub use follow::{
+    FollowDiagnostic, FollowFatalError, run_follow, run_follow_from_snapshot, run_follow_on_empty,
+};
 pub use render::{normalize_raw_stream, render_collected, render_raw_stream};

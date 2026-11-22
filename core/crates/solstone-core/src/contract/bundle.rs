@@ -33,51 +33,63 @@ pub(crate) fn build_bundle(paths: &ContractPaths) -> Result<Value, String> {
         .filter(|source| !discovered.contains(*source))
         .collect::<Vec<_>>();
     if !missing.is_empty() {
-        return Err(format!(
-            "contract: missing required schema sources: {}",
-            missing.join(", ")
+        return Err(solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.contract.build.bundle.missing.required.schema.sources.sources",
+            [("sources", &missing.join(", "))],
         ));
     }
     for source in sources {
         let schema = load_json(&source)?;
         let schema = schema.as_object().ok_or_else(|| {
-            format!(
-                "contract: schema must be a JSON object: {}",
-                source.display()
+            solstone_core_cli_copy::display_for(
+                crate::host_locale(),
+                "journal.cli.host.contract.build.bundle.schema.must.be.json.object",
+                [("path", &source.display())],
             )
         })?;
         validate_schema(&Value::Object(schema.clone())).map_err(|error| {
-            format!(
-                "contract: invalid JSON Schema {}: {error}",
-                source.display()
+            solstone_core_cli_copy::display_for(
+                crate::host_locale(),
+                "journal.cli.host.contract.build.bundle.invalid.json.schema.path",
+                [("path", &source.display()), ("error", &error)],
             )
         })?;
         let meta = metadata(schema, &source)?;
         let format_id = meta["format_id"]
             .as_str()
-            .ok_or_else(|| format!("contract: {}: format_id must be a string", source.display()))?
+            .ok_or_else(|| {
+                solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.contract.build.bundle.path.format.id.must.be",
+                    [("path", &source.display())],
+                )
+            })?
             .to_owned();
         let relative = repo_relative(&source, &paths.root);
         let mut entry = json!({"source": relative, "schema": schema});
         if format_id == "browser-jsonl" {
             let source_bytes = fs::read(&source).map_err(|error| {
-                format!(
-                    "contract: cannot read browser schema {}: {error}",
-                    source.display()
+                solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.contract.build.bundle.cannot.read.browser.schema.path",
+                    [("path", &source.display()), ("error", &error)],
                 )
             })?;
             if source_bytes != solstone_core_ingest_contract::browser_schema_bytes() {
-                return Err(
-                    "contract: browser schema bytes diverged from solstone-core-ingest-contract"
-                        .to_owned(),
-                );
+                return Err(solstone_core_cli_copy::render_for(
+                    crate::host_locale(),
+                    "journal.cli.host.contract.build.bundle.browser.schema.bytes.diverged.from",
+                    &[],
+                ));
             }
             entry["digest"] = Value::String(solstone_core_ingest_contract::browser_schema_digest());
         }
         if schemas.insert(format_id.clone(), entry).is_some() {
-            return Err(format!(
-                "contract: {}: duplicate journal contract format id '{format_id}'",
-                source.display()
+            return Err(solstone_core_cli_copy::display_for(
+                crate::host_locale(),
+                "journal.cli.host.contract.build.bundle.path.duplicate.format.id.format",
+                [("path", &source.display()), ("format_id", &format_id)],
             ));
         }
     }
@@ -118,17 +130,22 @@ fn discover_schema_sources(paths: &ContractPaths) -> Result<Vec<PathBuf>, String
         // Discovery intentionally validates JSON before looking at metadata.
         // See the deliberate native divergence documented above.
         let value = load_json(path)?;
-        let object = value
-            .as_object()
-            .ok_or_else(|| format!("contract: schema must be a JSON object: {}", path.display()))?;
+        let object = value.as_object().ok_or_else(|| {
+            solstone_core_cli_copy::display_for(
+                crate::host_locale(),
+                "journal.cli.host.contract.build.bundle.schema.must.be.json.object",
+                [("path", &path.display())],
+            )
+        })?;
         let relative = repo_relative(path, &paths.root);
         if object.contains_key(CONTRACT_META) {
             metadata(object, path)?;
             sources.push(path.clone());
         } else if REQUIRED_SOURCES.contains(&relative.as_str()) {
-            return Err(format!(
-                "contract: {}: missing {CONTRACT_META}",
-                path.display()
+            return Err(solstone_core_cli_copy::display_for(
+                crate::host_locale(),
+                "journal.cli.host.contract.discover.schema.sources.path.missing.meta",
+                [("path", &path.display()), ("contract_meta", &CONTRACT_META)],
             ));
         }
     }
@@ -136,11 +153,22 @@ fn discover_schema_sources(paths: &ContractPaths) -> Result<Vec<PathBuf>, String
 }
 
 fn walk_schema_files(directory: &Path, output: &mut Vec<PathBuf>) -> Result<(), String> {
-    let entries = fs::read_dir(directory)
-        .map_err(|error| format!("contract: cannot read {}: {error}", directory.display()))?;
+    let entries = fs::read_dir(directory).map_err(|error| {
+        solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.contract.walk.schema.files.cannot.read.path",
+            [("path", &directory.display()), ("error", &error)],
+        )
+    })?;
     for entry in entries {
         let path = entry
-            .map_err(|error| format!("contract: cannot read schema entry: {error}"))?
+            .map_err(|error| {
+                solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.contract.walk.schema.files.cannot.read.schema.entry",
+                    [("error", &error)],
+                )
+            })?
             .path();
         if path.is_dir() {
             walk_schema_files(&path, output)?;
@@ -156,10 +184,20 @@ fn walk_schema_files(directory: &Path, output: &mut Vec<PathBuf>) -> Result<(), 
 }
 
 fn load_json(path: &Path) -> Result<Value, String> {
-    let content = fs::read_to_string(path)
-        .map_err(|error| format!("contract: cannot read {}: {error}", path.display()))?;
-    serde_json::from_str(&content)
-        .map_err(|error| format!("contract: invalid JSON in {}: {error}", path.display()))
+    let content = fs::read_to_string(path).map_err(|error| {
+        solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.contract.walk.schema.files.cannot.read.path",
+            [("path", &path.display()), ("error", &error)],
+        )
+    })?;
+    serde_json::from_str(&content).map_err(|error| {
+        solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.contract.load.json.invalid.json.in.path",
+            [("path", &path.display()), ("error", &error)],
+        )
+    })
 }
 
 fn metadata<'a>(
@@ -169,7 +207,16 @@ fn metadata<'a>(
     let meta = schema
         .get(CONTRACT_META)
         .and_then(Value::as_object)
-        .ok_or_else(|| format!("contract: {}: missing {CONTRACT_META}", source.display()))?;
+        .ok_or_else(|| {
+            solstone_core_cli_copy::display_for(
+                crate::host_locale(),
+                "journal.cli.host.contract.discover.schema.sources.path.missing.meta",
+                [
+                    ("path", &source.display()),
+                    ("contract_meta", &CONTRACT_META),
+                ],
+            )
+        })?;
     for key in [
         "format_id",
         "schema_owner",
@@ -180,47 +227,72 @@ fn metadata<'a>(
         "key_fields",
     ] {
         if !meta.contains_key(key) {
-            return Err(format!(
-                "contract: {}: missing contract metadata: {key}",
-                source.display()
+            return Err(solstone_core_cli_copy::display_for(
+                crate::host_locale(),
+                "journal.cli.host.contract.metadata.path.missing.metadata.key",
+                [("path", &source.display()), ("key", &key)],
             ));
         }
     }
     if !meta.get("allowed_producers").is_some_and(Value::is_array) {
-        return Err(format!(
-            "contract: {}: allowed_producers must be a list",
-            source.display()
+        return Err(solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.contract.metadata.path.allowed.producers.must.be",
+            [("path", &source.display())],
         ));
     }
     if !meta.get("key_fields").is_some_and(Value::is_array) {
-        return Err(format!(
-            "contract: {}: key_fields must be a list",
-            source.display()
+        return Err(solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.contract.metadata.path.key.fields.must.be",
+            [("path", &source.display())],
         ));
     }
     Ok(meta)
 }
 
 pub(crate) fn read_artifact(path: &Path) -> Result<Value, String> {
-    let content = fs::read_to_string(path)
-        .map_err(|error| format!("contract: cannot read {}: {error}", path.display()))?;
-    serde_json::from_str(&content)
-        .map_err(|error| format!("contract: invalid JSON in {}: {error}", path.display()))
+    let content = fs::read_to_string(path).map_err(|error| {
+        solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.contract.walk.schema.files.cannot.read.path",
+            [("path", &path.display()), ("error", &error)],
+        )
+    })?;
+    serde_json::from_str(&content).map_err(|error| {
+        solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.contract.load.json.invalid.json.in.path",
+            [("path", &path.display()), ("error", &error)],
+        )
+    })
 }
 
 pub(crate) fn classify_breaking_changes(current: &Value, committed: &Value) -> Vec<String> {
     let Some(current) = current.get("schemas").and_then(Value::as_object) else {
-        return vec!["solstone journal contract bundle is malformed".to_owned()];
+        return vec![solstone_core_cli_copy::render_for(
+            crate::host_locale(),
+            "journal.cli.host.contract.classify.breaking.changes.bundle.malformed",
+            &[],
+        )];
     };
     let Some(committed) = committed.get("schemas").and_then(Value::as_object) else {
-        return vec!["solstone journal contract bundle is malformed".to_owned()];
+        return vec![solstone_core_cli_copy::render_for(
+            crate::host_locale(),
+            "journal.cli.host.contract.classify.breaking.changes.bundle.malformed",
+            &[],
+        )];
     };
     let mut changes = Vec::new();
     for format in committed
         .keys()
         .filter(|format| !current.contains_key(*format))
     {
-        changes.push(format!("{format}: removed format"));
+        changes.push(solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.contract.classify.breaking.changes.format.removed.format",
+            [("format", &format)],
+        ));
     }
     for format in committed
         .keys()
@@ -231,10 +303,10 @@ pub(crate) fn classify_breaking_changes(current: &Value, committed: &Value) -> V
         for field in string_set(committed_meta.get("key_fields"))
             .difference(&string_set(current_meta.get("key_fields")))
         {
-            changes.push(format!("{format}: removed key field '{field}'"));
+            changes.push(solstone_core_cli_copy::display_for(crate::host_locale(), "journal.cli.host.contract.classify.breaking.changes.format.removed.key.field.field", [("format", &format), ("field", &field)]));
         }
         for path in producer_paths(&committed_meta).difference(&producer_paths(&current_meta)) {
-            changes.push(format!("{format}: removed producer path '{path}'"));
+            changes.push(solstone_core_cli_copy::display_for(crate::host_locale(), "journal.cli.host.contract.classify.breaking.changes.format.removed.producer.path.path", [("format", &format), ("path", &path)]));
         }
     }
     changes

@@ -1,0 +1,28 @@
+{
+  "description": "Native contract validate command, format errors. Preserve terminal syntax and supplied data.",
+  "context": "Native contract validate command, format errors. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c90c8b27b37e1f96e3cf26e4cfe2fb6600f353c68b8b70ad4d0c78724d8ceee2",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_1",
+      "kind": "accepted-input",
+      "value": "JSON"
+    }
+  ]
+}

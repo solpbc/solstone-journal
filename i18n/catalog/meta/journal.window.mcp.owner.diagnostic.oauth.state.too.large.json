@@ -1,0 +1,23 @@
+{
+  "description": "MCP owner diagnostic for oauth state too large.",
+  "context": "MCP owner diagnostic for oauth state too large.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6b8ba74598b5f3cad0450804cd5bffadf73e9d9c8471db376288e32fefffecc1",
+  "max_length": 141,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_oauth",
+      "kind": "accepted-input",
+      "value": "OAuth"
+    }
+  ]
+}

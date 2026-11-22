@@ -1,0 +1,23 @@
+{
+  "description": "Journal host health tasks empty.",
+  "context": "Journal host health tasks empty.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "200975def06b7d7795ca6b2373314aa158dc1ade8a99344beb8eaa66962a4aa6",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

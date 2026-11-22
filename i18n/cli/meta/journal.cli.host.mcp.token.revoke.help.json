@@ -1,0 +1,48 @@
+{
+  "description": "Terminal help and usage for mcp token revoke help.",
+  "context": "Terminal help and usage for mcp token revoke help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cadac211a3f03776aac2178946e07db1477079a9179f13a675c5daaafa74c977",
+  "max_length": 918,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal mcp token revoke [-h] --label LABEL",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_5",
+      "value": "     ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_6",
+      "value": "--label LABEL",
+      "kind": "command"
+    }
+  ]
+}

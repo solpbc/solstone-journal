@@ -1,0 +1,23 @@
+{
+  "description": "Journal host output for mcp token token management is not compiled into this build.",
+  "context": "Journal host output for mcp token token management is not compiled into this build.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6c36008b1dbd9f4cb63a3e9363199fd54b176247e3f87c1d2ede048b53c1bb60",
+  "max_length": 246,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command_solstone_journal_mcp_token",
+      "kind": "command",
+      "value": "solstone journal mcp token"
+    }
+  ]
+}

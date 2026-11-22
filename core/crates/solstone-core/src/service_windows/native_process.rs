@@ -18,12 +18,15 @@ pub(super) struct RetainedProcess {
 
 impl RetainedProcess {
     pub(super) fn open(expected: ProcessInstance) -> io::Result<Self> {
-        let birth = expected
-            .birth
-            .windows_filetime()
-            .ok_or_else(|| io::Error::other("native process birth is missing"))?;
+        let birth = expected.birth.windows_filetime().ok_or_else(|| {
+            io::Error::other(crate::host_text(
+                "journal.cli.host.windows.service.native.process.birth.is.missing",
+            ))
+        })?;
         if expected.pid == 0 {
-            return Err(io::Error::other("native process PID is invalid"));
+            return Err(io::Error::other(crate::host_text(
+                "journal.cli.host.windows.service.native.process.pid.is.invalid",
+            )));
         }
         // SAFETY: no inherited handle or process mutation rights are requested.
         #[allow(unsafe_code)]
@@ -60,7 +63,9 @@ impl RetainedProcess {
         }
         let actual = (u64::from(creation.dwHighDateTime) << 32) | u64::from(creation.dwLowDateTime);
         if actual != birth {
-            return Err(io::Error::other("native process birth changed"));
+            return Err(io::Error::other(crate::host_text(
+                "journal.cli.host.windows.service.native.process.birth.changed",
+            )));
         }
         Ok(Self { handle })
     }

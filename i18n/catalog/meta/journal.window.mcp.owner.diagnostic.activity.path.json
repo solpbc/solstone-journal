@@ -1,0 +1,21 @@
+{
+  "description": "MCP owner diagnostic for activity path.",
+  "context": "MCP owner diagnostic for activity path.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7d791ad1017d2a060ac2eafd3c253da77eb1e0e24558e06c7b9590570889e0ed",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

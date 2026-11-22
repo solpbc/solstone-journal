@@ -59,14 +59,19 @@ impl Worker {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        let mut child = command
-            .spawn()
-            .map_err(|error| format!("task control spawn failed: {error}"))?;
+        let mut child = command.spawn().map_err(|error| {
+            crate::host_display(
+                "journal.cli.host.windows.service.task.control.spawn.failed",
+                [("error", &error)],
+            )
+        })?;
         let (Some(stdin), Some(stdout), Some(mut stderr_pipe)) =
             (child.stdin.take(), child.stdout.take(), child.stderr.take())
         else {
             let _ = child.kill();
-            return Err("task control stdio missing".to_owned());
+            return Err(crate::host_text(
+                "journal.cli.host.windows.service.task.control.stdio.missing",
+            ));
         };
         let (requests, requests_rx) = mpsc::channel::<Vec<u8>>();
         let (replies_tx, replies) = mpsc::channel();
@@ -120,8 +125,12 @@ impl Worker {
                 other => break other,
             }
         };
-        format!(
-            "direct-worker stop request: {termination:?}; direct-worker observation: {observed:?}"
+        crate::host_display(
+            "journal.cli.host.windows.service.direct.worker.stop.request.direct.worker.observation",
+            [
+                ("termination", &(format!("{:?}", termination))),
+                ("observed", &(format!("{:?}", observed))),
+            ],
         )
     }
 
@@ -183,13 +192,13 @@ fn read_reply(stdout: &mut BufReader<ChildStdout>) -> io::Result<Vec<u8>> {
     if read == 0 {
         return Err(io::Error::new(
             io::ErrorKind::UnexpectedEof,
-            "task control worker exited",
+            crate::host_text("journal.cli.host.windows.service.task.control.worker.exited"),
         ));
     }
     if line.last() != Some(&b'\n') {
-        return Err(io::Error::other(
-            "task control output exceeds its byte limit",
-        ));
+        return Err(io::Error::other(crate::host_text(
+            "journal.cli.host.windows.service.task.control.output.exceeds.its.byte.limit",
+        )));
     }
     while matches!(line.last(), Some(b'\n' | b'\r')) {
         line.pop();
@@ -222,11 +231,15 @@ impl ControlSession {
         request.insert(REQUEST_ID.to_owned(), Value::String(id.clone()));
         let input = serde_json::to_vec(&request).map_err(|error| error.to_string())?;
         if input.len() > INPUT_LIMIT {
-            return Err("task control input exceeds its byte limit".into());
+            return Err(crate::host_text(
+                "journal.cli.host.windows.service.task.control.input.exceeds.its.byte.limit",
+            ));
         }
         let remaining = caller_deadline.saturating_duration_since(Instant::now());
         if remaining <= Duration::from_millis(10) {
-            return Err("task control deadline elapsed before spawn".into());
+            return Err(crate::host_text(
+                "journal.cli.host.windows.service.task.control.deadline.elapsed.before.spawn",
+            ));
         }
         let mut slot = self.worker.borrow_mut();
         if slot
@@ -265,7 +278,9 @@ impl ControlSession {
                         // worker can be trusted to line up either.
                         None => {
                             *slot = None;
-                            return Err("task operation returned invalid JSON".to_owned());
+                            return Err(crate::host_text(
+                                "journal.cli.host.windows.service.task.operation.returned.invalid.json",
+                            ));
                         }
                     }
                 }
@@ -273,20 +288,26 @@ impl ControlSession {
                     let stderr = slot.take().expect("worker present").exited(deadline);
                     return Ok(ControlReply::Exited { stderr });
                 }
-                Ok(Err(error)) => format!("task control exchange failed: {error}"),
-                Err(mpsc::RecvTimeoutError::Timeout) => {
-                    "task control exchange timed out".to_owned()
-                }
-                Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    "task control exchange failed: worker channel closed".to_owned()
-                }
+                Ok(Err(error)) => crate::host_display(
+                    "journal.cli.host.windows.service.task.control.exchange.failed",
+                    [("error", &error)],
+                ),
+                Err(mpsc::RecvTimeoutError::Timeout) => crate::host_text(
+                    "journal.cli.host.windows.service.task.control.exchange.timed.out",
+                ),
+                Err(mpsc::RecvTimeoutError::Disconnected) => crate::host_text(
+                    "journal.cli.host.windows.service.task.control.exchange.failed.worker.channel.closed",
+                ),
             }
         } else {
-            "task control exchange failed: worker channel closed".to_owned()
+            crate::host_text(
+                "journal.cli.host.windows.service.task.control.exchange.failed.worker.channel.closed",
+            )
         };
         let observation = slot.take().expect("worker present").stop(deadline);
-        Err(format!(
-            "{reason}; {observation}; scheduler RPC may have changed state; re-inspection required"
+        Err(crate::host_display(
+            "journal.cli.host.windows.service.scheduler.rpc.may.have.changed.state.re.inspection.required",
+            [("reason", &reason), ("observation", &observation)],
         ))
     }
 }

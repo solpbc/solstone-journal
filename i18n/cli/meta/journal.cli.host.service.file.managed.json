@@ -1,0 +1,40 @@
+{
+  "description": "Journal host service file managed.",
+  "context": "Journal host service file managed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "operation",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "9f794a8bd315eb9ebca4a30aed2d73fafce04108ebc063a7144b9647ff690f8b",
+  "max_length": 1533,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "operation",
+    "type": "string",
+    "enum_values": [
+      "change-journal-folder",
+      "install",
+      "operate",
+      "restart",
+      "route-repair",
+      "status",
+      "stop",
+      "uninstall"
+    ],
+    "enum_default": "uninstall"
+  }
+}

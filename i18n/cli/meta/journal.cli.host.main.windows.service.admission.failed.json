@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output for main windows service admission failed.",
+  "context": "Journal host output for main windows service admission failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2f5eeaf7aee7f7d01e55853e6726ecda5d009baead57272df3aef5098759f65f",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

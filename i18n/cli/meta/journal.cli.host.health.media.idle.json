@@ -1,0 +1,16 @@
+{
+  "description": "Journal host health media idle.",
+  "context": "Journal host health media idle.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b3ce8ad0cb01da6810aff21b7b84b848ef68f3ad1a944a46e317f4772a2918db",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal host output for mcp activity request arguments exceeded the record bound and were not stored.",
+  "context": "Journal host output for mcp activity request arguments exceeded the record bound and were not stored.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3b67c989df47ce2c85ffde62b644db2cfbd0c2654ae5ab824cee2d424e56896b",
+  "max_length": 234,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "space_4",
+      "kind": "whitespace",
+      "value": "    "
+    }
+  ]
+}

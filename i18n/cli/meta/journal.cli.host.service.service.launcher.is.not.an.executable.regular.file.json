@@ -1,0 +1,16 @@
+{
+  "description": "Journal host service service launcher is not an executable regular file.",
+  "context": "Journal host service service launcher is not an executable regular file.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2c635d7dcce85af641775dbbdc44cffbbfbc37dfdc088eecfbd639b7a2671efb",
+  "max_length": 150,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service manager load service.",
+  "context": "Journal host service manager load service.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "result",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4c86fc8e62085dcecbb29fa00a8caead3c8b1190aa3ee1c527104b8a9aa2e1a8",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

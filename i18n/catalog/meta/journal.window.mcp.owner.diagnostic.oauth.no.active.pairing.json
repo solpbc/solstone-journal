@@ -1,0 +1,16 @@
+{
+  "description": "MCP owner diagnostic for oauth no active pairing.",
+  "context": "MCP owner diagnostic for oauth no active pairing.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e93cf0a290f7672ef507eff953173f3fdab478b1d6e16c5427a9b4eacc2110d9",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

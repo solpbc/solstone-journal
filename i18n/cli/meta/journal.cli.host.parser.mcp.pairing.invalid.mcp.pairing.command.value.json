@@ -1,0 +1,32 @@
+{
+  "description": "Terminal diagnostic for parser mcp pairing invalid mcp pairing command value.",
+  "context": "Terminal diagnostic for parser mcp pairing invalid mcp pairing command value.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    },
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0c42f3bbc6dc15b7c7677bc2b3505cf5cf059663de70b02d1f65c5e84fd237b7",
+  "max_length": 198,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "term",
+      "value": "MCP",
+      "kind": "mark-word"
+    }
+  ]
+}

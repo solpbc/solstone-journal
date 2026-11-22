@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service service home.",
+  "context": "Journal host service service home.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a4a16ecf1e75038ef0ac857d0cff79aed7319f6feed0cdb438393fa89bc21b5c",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

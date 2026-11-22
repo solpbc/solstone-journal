@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service task operation returned inconsistent evidence.",
+  "context": "Journal host output for windows service task operation returned inconsistent evidence.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d7e83371ff66af8deaa659555edd2596028a0fd442e074037d71e4d029644b2f",
+  "max_length": 135,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

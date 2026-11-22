@@ -1,0 +1,16 @@
+{
+  "description": "Journal host logs grep compile.",
+  "context": "Journal host logs grep compile.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "15e36ab41e616425bbf70d3a962100deeb43eec224120dab9159355f7b265966",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

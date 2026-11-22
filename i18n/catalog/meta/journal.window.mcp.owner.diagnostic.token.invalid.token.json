@@ -1,0 +1,16 @@
+{
+  "description": "MCP owner diagnostic for token invalid token.",
+  "context": "MCP owner diagnostic for token invalid token.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "96309d8da66e61dbaeb80c33d39a79b127f670a0a100bf04025f9c6110720ea2",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

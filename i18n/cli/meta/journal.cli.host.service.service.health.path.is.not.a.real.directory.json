@@ -1,0 +1,16 @@
+{
+  "description": "Journal host service service health path is not a real directory.",
+  "context": "Journal host service service health path is not a real directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f2193a6783a0cdc7f522ea665c1d49a6e31d832a9e3539597c2b0773c2bd4e9a",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

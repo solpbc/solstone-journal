@@ -1,0 +1,43 @@
+{
+  "description": "Terminal help and usage for install models usage.",
+  "context": "Terminal help and usage for install models usage.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d45c63913a08e9657a1918c9f0a3a20a84dba220bb411176a8060cbd5110c65a",
+  "max_length": 351,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal install-models [-h] [--check | --force]",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "spaces_30",
+      "value": "                              ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "syntax_4",
+      "value": "[--required-only]",
+      "kind": "command"
+    },
+    {
+      "name": "syntax_5",
+      "value": "[--variant {auto,cpu,cuda,coreml}]",
+      "kind": "command"
+    }
+  ]
+}

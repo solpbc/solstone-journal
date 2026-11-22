@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service it is registered to another account.",
+  "context": "Journal host output for windows service it is registered to another account.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6523313212dfb722e43aa9eff3c29110fb701af4db273ed934b590ae2a582173",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

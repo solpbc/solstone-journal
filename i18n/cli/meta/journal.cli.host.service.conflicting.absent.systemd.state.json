@@ -1,0 +1,23 @@
+{
+  "description": "Journal host service conflicting absent systemd state.",
+  "context": "Journal host service conflicting absent systemd state.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3544285655aaad884d7c33df0c867122e5f2525a95234b0821cd3e2b46d81982",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "systemd",
+      "kind": "accepted-input",
+      "value": "systemd"
+    }
+  ]
+}

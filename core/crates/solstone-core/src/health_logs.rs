@@ -6,14 +6,12 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use solstone_core_cli::{
-    HEALTH_LOGS_HELP, HEALTH_LOGS_USAGE, HealthLogsArgs, HealthLogsValueCheck,
-};
+use solstone_core_cli::{HealthLogsArgs, HealthLogsValueCheck};
 use solstone_core_operational_logs::{
     CollectError, HealthLogsQuery, ParsedCount, collect_health_logs, parse_health_log_count,
-    render_collected, run_follow,
+    render_collected, run_follow_on_empty,
 };
-use solstone_core_system::operational_log_parse::parse_health_log_since;
+use solstone_core_system::operational_log_parse::{HealthLogSinceError, parse_health_log_since};
 use solstone_core_system_health::{
     GrepCompileError, compile_grep_pattern, sanitize_for_terminal, sanitize_os_bytes_for_terminal,
 };
@@ -52,7 +50,14 @@ pub(super) fn help(args: HealthLogsArgs) -> ExitCode {
     if let Err(error) = prepare(args, now) {
         return usage_value_error(&error);
     }
-    print!("{HEALTH_LOGS_HELP}");
+    print!(
+        "{}",
+        solstone_core_cli_copy::render_for(
+            super::host_locale(),
+            "journal.cli.host.health.logs.help",
+            &[]
+        )
+    );
     ExitCode::SUCCESS
 }
 
@@ -61,8 +66,22 @@ pub(super) fn usage(args: HealthLogsArgs) -> ExitCode {
     if let Err(error) = prepare(args, now) {
         return usage_value_error(&error);
     }
-    eprint!("{HEALTH_LOGS_USAGE}");
-    eprintln!("solstone journal health logs: error: invalid arguments");
+    eprint!(
+        "{}",
+        solstone_core_cli_copy::render_for(
+            super::host_locale(),
+            "journal.cli.host.health.logs.usage",
+            &[]
+        )
+    );
+    eprintln!(
+        "{}",
+        solstone_core_cli_copy::display_for(
+            super::host_locale(),
+            "journal.cli.host.arguments.invalid",
+            [("command", &("solstone journal health logs"))]
+        )
+    );
     ExitCode::from(2)
 }
 
@@ -85,12 +104,34 @@ fn prepare(args: HealthLogsArgs, now: jiff::civil::DateTime) -> Result<PreparedH
                     Ok(ParsedCount::Value(value)) => value,
                     Ok(ParsedCount::SaturatedPositive) => i64::MAX,
                     Ok(ParsedCount::SaturatedNegative) => i64::MIN,
-                    Err(error) => return Err(format!("invalid count: {error:?}")),
+                    Err(error) => {
+                        return Err(solstone_core_cli_copy::display_for(
+                            crate::host_locale(),
+                            "journal.cli.host.logs.count",
+                            [("detail", &(format!("{error:?}")))],
+                        ));
+                    }
                 };
             }
             HealthLogsValueCheck::Since(value) => {
-                since =
-                    Some(parse_health_log_since(&value, now).map_err(|error| error.to_string())?);
+                since = Some(
+                    parse_health_log_since(&value, now).map_err(|error| match error {
+                        HealthLogSinceError::RelativeOverflow { .. } => {
+                            solstone_core_cli_copy::render_for(
+                                crate::host_locale(),
+                                "journal.cli.host.logs.since.overflow",
+                                &[],
+                            )
+                        }
+                        HealthLogSinceError::InvalidTime { input } => {
+                            solstone_core_cli_copy::display_for(
+                                crate::host_locale(),
+                                "journal.cli.host.logs.since.invalid",
+                                [("input", &(input))],
+                            )
+                        }
+                    })?,
+                );
             }
             HealthLogsValueCheck::Grep(value) => {
                 grep = Some(compile_grep_pattern(&value).map_err(grep_error)?);
@@ -109,12 +150,21 @@ fn prepare(args: HealthLogsArgs, now: jiff::civil::DateTime) -> Result<PreparedH
 fn run_follow_mode(journal: &std::path::Path, is_tty: bool) -> ExitCode {
     let stopped = Arc::new(AtomicBool::new(false));
     install_stop_listener(stopped.clone());
-    let result = run_follow(
+    let result = run_follow_on_empty(
         journal,
         &|| stopped.load(Ordering::Relaxed),
         &mut std::io::stdout(),
         is_tty,
-        &mut |warning| eprintln!("{warning}"),
+        &mut || {
+            eprintln!(
+                "{}",
+                solstone_core_cli_copy::render_for(
+                    crate::host_locale(),
+                    "journal.cli.host.logs.follow.empty",
+                    &[]
+                )
+            )
+        },
     );
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -151,14 +201,25 @@ fn install_stop_listener(stopped: Arc<AtomicBool>) {
 
 fn usage_value_error(message: &str) -> ExitCode {
     eprintln!(
-        "solstone journal health logs: error: {}",
-        sanitize_for_terminal(message)
+        "{}",
+        solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.logs.health.usage",
+            [("detail", &(sanitize_for_terminal(message)))]
+        )
     );
     ExitCode::from(2)
 }
 
 fn failure(message: SafeDiagnostic) -> ExitCode {
-    eprintln!("health logs: {}", message.0);
+    eprintln!(
+        "{}",
+        solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.logs.health.error",
+            [("detail", &(message.0))]
+        )
+    );
     ExitCode::FAILURE
 }
 
@@ -180,21 +241,26 @@ fn collect_error_message(error: CollectError) -> SafeDiagnostic {
 }
 
 fn follow_error_message(error: solstone_core_operational_logs::FollowFatalError) -> SafeDiagnostic {
-    let message = format!(
-        "{} failed for {}",
-        error.operation,
-        terminal_path(&error.path)
-    );
-    error
-        .source
-        .as_ref()
-        .map(|source| {
-            SafeDiagnostic(format!(
-                "{message}: {}",
-                sanitize_for_terminal(&source.to_string())
-            ))
-        })
-        .unwrap_or(SafeDiagnostic(message))
+    let path = terminal_path(&error.path);
+    if let Some(message) = crate::service_logs::known_follow_error(&error, &path) {
+        return SafeDiagnostic(message);
+    }
+    match error.source {
+        Some(source) => SafeDiagnostic(solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.logs.follow.source",
+            [
+                ("operation", &(error.operation)),
+                ("path", &(path)),
+                ("source", &(sanitize_for_terminal(&source.to_string()))),
+            ],
+        )),
+        None => SafeDiagnostic(solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.logs.follow.failed",
+            [("operation", &(error.operation)), ("path", &(path))],
+        )),
+    }
 }
 
 fn terminal_path(path: &std::path::Path) -> String {
@@ -204,12 +270,22 @@ fn terminal_path(path: &std::path::Path) -> String {
 fn grep_error(error: GrepCompileError) -> String {
     match error {
         GrepCompileError::UnsupportedFamily { family, offset } => {
-            format!("unsupported regex feature '{family}' at byte offset {offset}")
+            solstone_core_cli_copy::display_for(
+                crate::host_locale(),
+                "journal.cli.host.logs.grep.unsupported",
+                [("family", &(family)), ("offset", &(offset))],
+            )
         }
-        GrepCompileError::InvalidPattern { offset } => {
-            format!("invalid regex pattern at byte offset {offset}")
-        }
-        GrepCompileError::NativeCompileFailure => "regex pattern could not be compiled".to_owned(),
+        GrepCompileError::InvalidPattern { offset } => solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.logs.grep.invalid",
+            [("offset", &(offset))],
+        ),
+        GrepCompileError::NativeCompileFailure => solstone_core_cli_copy::render_for(
+            crate::host_locale(),
+            "journal.cli.host.logs.grep.compile",
+            &[],
+        ),
     }
 }
 

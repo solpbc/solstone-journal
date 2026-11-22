@@ -1,0 +1,33 @@
+{
+  "description": "Journal host output for mcp status status mcp capability configuration is invalid.",
+  "context": "Journal host output for mcp status status mcp capability configuration is invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "56c0cac9b13488c344172c8f5924c90140c6d53bafa01d6bb16d68eaf6034fce",
+  "max_length": 318,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command_solstone_journal_mcp_status",
+      "kind": "command",
+      "value": "solstone journal mcp status"
+    },
+    {
+      "name": "literal_mcp",
+      "kind": "accepted-input",
+      "value": "MCP"
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "description": "Journal setup argument validation: variant.",
+  "context": "Journal setup argument validation: variant.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "054bf70d78336efd682d0e723ff197e727def435cee9e43619e4bb6d7c91c134",
+  "max_length": 252,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "variant_flag",
+      "value": "--variant",
+      "kind": "flag"
+    },
+    {
+      "name": "choices",
+      "value": "auto, cpu, cuda, coreml",
+      "kind": "accepted-input"
+    }
+  ]
+}

@@ -1,0 +1,58 @@
+{
+  "description": "Terminal help and usage for mcp pairing help.",
+  "context": "Terminal help and usage for mcp pairing help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0ac2e72aeed9624109e702cff03ea6a0e9c78e1086036ebbfd6dbee09f7fed62",
+  "max_length": 1272,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal mcp pairing [-h] {generate,revoke} ...",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    },
+    {
+      "name": "subcommand",
+      "value": "generate",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "spaces_4",
+      "value": "    ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "subcommand_7",
+      "value": "revoke",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "spaces_6",
+      "value": "      ",
+      "kind": "whitespace"
+    }
+  ]
+}

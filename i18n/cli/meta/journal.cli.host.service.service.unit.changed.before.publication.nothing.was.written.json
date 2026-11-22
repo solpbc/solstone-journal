@@ -1,0 +1,16 @@
+{
+  "description": "Journal host service service unit changed before publication nothing was written.",
+  "context": "Journal host service service unit changed before publication nothing was written.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5ff784f3b0cd9b03da137865f66011d97ce1bb0db0e09c5f370d9f68422da370",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

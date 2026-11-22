@@ -86,7 +86,10 @@ fn script(task_path: &str, value_name: &str) -> String {
 }
 
 fn registry_error(action: &str, code: u32) -> String {
-    format!("Windows sign-in resume {action} failed (Windows error {code})")
+    crate::host_display(
+        "journal.cli.host.windows.service.windows.sign.in.resume.failed.windows.error",
+        [("action", &action), ("code", &code)],
+    )
 }
 
 #[allow(unsafe_code)]
@@ -137,7 +140,9 @@ fn close_key(key: HKEY) {
 
 #[allow(unsafe_code)]
 fn set_entry(id: &str, command: &str) -> Result<(), String> {
-    let key = open_run_key(true)?.ok_or("Windows Run key was not opened")?;
+    let key = open_run_key(true)?.ok_or_else(|| {
+        crate::host_text("journal.cli.host.windows.service.windows.run.key.was.not.opened")
+    })?;
     let name = wide(OsStr::new(&value_name(id)));
     let value = wide(OsStr::new(command));
     let bytes: Vec<u8> = value.into_iter().flat_map(u16::to_le_bytes).collect();
@@ -172,7 +177,9 @@ fn set_entry(id: &str, command: &str) -> Result<(), String> {
     };
     close_key(key);
     if code != 0 || kind != REG_SZ || readback[..length as usize] != bytes {
-        return Err("Windows sign-in resume registry readback differed".to_owned());
+        return Err(crate::host_text(
+            "journal.cli.host.windows.service.windows.sign.in.resume.registry.readback.differed",
+        ));
     }
     Ok(())
 }
@@ -194,7 +201,9 @@ fn delete_entry(id: &str) -> Result<(), String> {
 
 pub(super) fn arm(owner_base: &Path, id: &str, task_path: &str) -> Result<(), String> {
     let script_path = script_path(owner_base, id)?;
-    let windows = std::env::var_os("SystemRoot").ok_or("SystemRoot is unavailable")?;
+    let windows = std::env::var_os("SystemRoot").ok_or_else(|| {
+        crate::host_text("journal.cli.host.windows.service.systemroot.is.unavailable")
+    })?;
     // Explorer's HKCU Run launcher does not resolve a forward slash in the
     // executable path, even though direct process launches do on Windows.
     let wscript = Path::new(&windows).join("System32").join("wscript.exe");
@@ -208,13 +217,16 @@ pub(super) fn arm(owner_base: &Path, id: &str, task_path: &str) -> Result<(), St
             .iter()
             .any(|path| path.to_string_lossy().contains(['"', '\r', '\n']))
     {
-        return Err(
-            "Windows sign-in resume command exceeds the Run key limit or has an invalid path"
-                .to_owned(),
-        );
+        return Err(crate::host_text(
+            "journal.cli.host.windows.service.windows.sign.in.resume.command.exceeds.the.run.key.limit",
+        ));
     }
-    fs::write(&script_path, script(task_path, &value_name(id)))
-        .map_err(|error| format!("could not prepare Windows sign-in resume: {error}"))?;
+    fs::write(&script_path, script(task_path, &value_name(id))).map_err(|error| {
+        crate::host_display(
+            "journal.cli.host.windows.service.could.not.prepare.windows.sign.in.resume",
+            [("error", &error)],
+        )
+    })?;
     set_entry(id, &command)
 }
 
@@ -224,7 +236,10 @@ pub(super) fn clear(owner_base: &Path, id: &str) -> Result<(), String> {
     match fs::remove_file(path) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(format!("could not clear Windows sign-in resume: {error}")),
+        Err(error) => Err(crate::host_display(
+            "journal.cli.host.windows.service.could.not.clear.windows.sign.in.resume",
+            [("error", &error)],
+        )),
     }
 }
 

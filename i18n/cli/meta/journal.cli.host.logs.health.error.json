@@ -1,0 +1,21 @@
+{
+  "description": "Journal host logs health error.",
+  "context": "Journal host logs health error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "583086f561822624fde4bf90499cd01cf4fb2cc27ac8a640482153e629095ac8",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

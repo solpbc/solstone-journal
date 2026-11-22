@@ -1,0 +1,21 @@
+{
+  "description": "MCP owner diagnostic for token duplicate label.",
+  "context": "MCP owner diagnostic for token duplicate label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "label",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ea623a95a534f66e0249d01d4282635695461c1942254f71ec4fc5e56c4ad8a2",
+  "max_length": 150,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

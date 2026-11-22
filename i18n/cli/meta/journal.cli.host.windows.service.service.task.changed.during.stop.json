@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service service task changed during stop.",
+  "context": "Journal host output for windows service service task changed during stop.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "83af3eda5288a562a847ecabf5ec65370eed46c75cb3271f60b01b2a0f0fa7b4",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

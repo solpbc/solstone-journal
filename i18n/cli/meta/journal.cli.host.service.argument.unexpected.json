@@ -1,0 +1,33 @@
+{
+  "description": "Terminal diagnostic for service argument unexpected.",
+  "context": "Terminal diagnostic for service argument unexpected.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "text",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "99a2567fd758e0b37c50424742de74cf64930aba18b235cfa33669d8f852b870",
+  "max_length": 240,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "flag",
+      "value": "--port",
+      "kind": "flag"
+    },
+    {
+      "name": "argument",
+      "value": "PORT",
+      "kind": "accepted-input"
+    }
+  ]
+}

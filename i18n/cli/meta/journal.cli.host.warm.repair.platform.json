@@ -1,0 +1,23 @@
+{
+  "description": "Journal host warm repair platform.",
+  "context": "Journal host warm repair platform.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "43f1036239367fe34d4e9f7be1e6cd25f100ed87a21ed615fd1928ed4432bcb9",
+  "max_length": 162,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "space_2",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ]
+}

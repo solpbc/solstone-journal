@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service service task is absent and its forwarder cleanup cannot be.",
+  "context": "Journal host output for windows service service task is absent and its forwarder cleanup cannot be.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "47cdd35e1cde80f971290e56ad4b46988aeec915a36a700406d2acd43573fcc0",
+  "max_length": 201,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

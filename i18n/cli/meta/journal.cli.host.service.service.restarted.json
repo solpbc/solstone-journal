@@ -1,0 +1,16 @@
+{
+  "description": "Journal host service service restarted.",
+  "context": "Journal host service service restarted.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1feb18dd8460efdaea0012b22b2353488682994c78bef54004fa097cfcb3b914",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

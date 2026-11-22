@@ -1,0 +1,33 @@
+{
+  "description": "Journal host output for mcp activity bytes.",
+  "context": "Journal host output for mcp activity bytes.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "byte_count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cb6e9b5690c9150f8f22917e6c97afc5cdb42352abcb0de1431dd4da5f23013a",
+  "max_length": 135,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "space_4",
+      "kind": "whitespace",
+      "value": "    "
+    },
+    {
+      "name": "space_3",
+      "kind": "whitespace",
+      "value": "   "
+    }
+  ]
+}

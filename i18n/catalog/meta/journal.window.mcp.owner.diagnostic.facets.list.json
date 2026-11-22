@@ -1,0 +1,21 @@
+{
+  "description": "MCP owner diagnostic for facets list.",
+  "context": "MCP owner diagnostic for facets list.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a1330d2f76346878ffab3ff6f3f26c4d55392c197bcc506e417fc7c6f819dcd2",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

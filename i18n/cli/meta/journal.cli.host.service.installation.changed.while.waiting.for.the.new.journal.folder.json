@@ -1,0 +1,16 @@
+{
+  "description": "Journal host service installation changed while waiting for the new journal folder.",
+  "context": "Journal host service installation changed while waiting for the new journal folder.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8db7af01c516f1fffb446ea1319c8410eea0695b792448b17438ba7f22d01e37",
+  "max_length": 183,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

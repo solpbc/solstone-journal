@@ -1,0 +1,23 @@
+{
+  "description": "Journal host service launchd omitted the runtime state.",
+  "context": "Journal host service launchd omitted the runtime state.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "55537a082c06cf1a4f4c80b3ea579ce8a2525db5be987617823dd9a4b6854bb0",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "launchd",
+      "kind": "accepted-input",
+      "value": "launchd"
+    }
+  ]
+}

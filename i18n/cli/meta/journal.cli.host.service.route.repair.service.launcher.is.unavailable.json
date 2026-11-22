@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service route repair service launcher is unavailable.",
+  "context": "Journal host service route repair service launcher is unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "64852876bab5c2ee2f85933812c50210fb15efcfeae021b1cbe65d94758d3b62",
+  "max_length": 168,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

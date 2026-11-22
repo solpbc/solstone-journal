@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for supervisor your journal can t start because another account on this.",
+  "context": "Journal host output for supervisor your journal can t start because another account on this.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bca18d9621fbaf38c75f1a62f15f675ca52bcba089d1ed885c0af9b1c6a22256",
+  "max_length": 597,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

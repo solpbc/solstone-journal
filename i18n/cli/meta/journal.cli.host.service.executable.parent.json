@@ -1,0 +1,16 @@
+{
+  "description": "Journal host service executable parent.",
+  "context": "Journal host service executable parent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "99b8661d79f654b231780b4a807f82652b96624615df45ffc3e0117a482c287c",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

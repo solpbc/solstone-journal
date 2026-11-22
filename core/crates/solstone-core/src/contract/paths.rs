@@ -30,16 +30,22 @@ impl ContractPaths {
         if let Some(root) = env::var_os("SOLSTONE_CONTRACT_ROOT").filter(|root| !root.is_empty()) {
             return Self::from_root(PathBuf::from(root));
         }
-        let executable = env::current_exe()
-            .map_err(|error| format!("contract: could not inspect current executable: {error}"))?;
+        let executable = env::current_exe().map_err(|error| {
+            solstone_core_cli_copy::display_for(
+                crate::host_locale(),
+                "journal.cli.host.contract.resolve.could.not.inspect.current.executable",
+                [("error", &error)],
+            )
+        })?;
         Self::resolve_from_executable(&executable)
     }
 
     fn resolve_from_executable(executable: &Path) -> Result<Self, String> {
         let Some(executable_dir) = executable.parent() else {
-            return Err(format!(
-                "contract: could not locate installed solstone package or source checkout from {}",
-                executable.display()
+            return Err(solstone_core_cli_copy::display_for(
+                crate::host_locale(),
+                "journal.cli.host.contract.resolve.from.executable.could.not.locate.installed.package",
+                [("path", &executable.display())],
             ));
         };
         // A checkout is asked for by name rather than taken from the
@@ -54,9 +60,10 @@ impl ContractPaths {
         let Some(root) =
             solstone_core_journal::resolve_installation_root_from_executable_dir(executable_dir)
         else {
-            return Err(format!(
-                "contract: could not locate installed solstone package or source checkout from {}",
-                executable.display()
+            return Err(solstone_core_cli_copy::display_for(
+                crate::host_locale(),
+                "journal.cli.host.contract.resolve.from.executable.could.not.locate.installed.package",
+                [("path", &executable.display())],
             ));
         };
         Self::from_root(root)
@@ -65,9 +72,10 @@ impl ContractPaths {
     pub(crate) fn from_root(root: PathBuf) -> Result<Self, String> {
         let solstone = root.join("solstone");
         if !solstone.is_dir() {
-            return Err(format!(
-                "contract: solstone package tree not found: {}",
-                solstone.display()
+            return Err(solstone_core_cli_copy::display_for(
+                crate::host_locale(),
+                "journal.cli.host.contract.from.root.package.tree.not.found.path",
+                [("path", &solstone.display())],
             ));
         }
         // The generated layout and bundle are payload, and a checkout keeps its
@@ -100,9 +108,10 @@ impl ContractPaths {
 
     pub(crate) fn fixture_journal(&self) -> Result<&Path, String> {
         if !self.fixture.is_dir() {
-            return Err(format!(
-                "contract: fixture journal missing: {}",
-                self.fixture.display()
+            return Err(solstone_core_cli_copy::display_for(
+                crate::host_locale(),
+                "journal.cli.host.contract.fixture.journal.fixture.missing.path",
+                [("path", &self.fixture.display())],
             ));
         }
         Ok(&self.fixture)

@@ -1,0 +1,21 @@
+{
+  "description": "MCP owner diagnostic for token invalid label.",
+  "context": "MCP owner diagnostic for token invalid label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c05ce29a83b56bcae15d2f2199241c76e61b516d4d539257895a4a3bc0319dec",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

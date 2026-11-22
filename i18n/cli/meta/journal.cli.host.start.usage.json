@@ -1,0 +1,53 @@
+{
+  "description": "Terminal help and usage for start usage.",
+  "context": "Terminal help and usage for start usage.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c67a4bfcc4ddb203d40e1ff6afb78673dfc660f4099660ae4c44f5714c40e14b",
+  "max_length": 603,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal start [-h] [--no-daily] [--no-cortex] [--no-spl]",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "spaces_21",
+      "value": "                     ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "syntax_4",
+      "value": "[--no-convey] [--no-schedule]",
+      "kind": "command"
+    },
+    {
+      "name": "syntax_5",
+      "value": "[--hosted-parent] [--journal JOURNAL]",
+      "kind": "command"
+    },
+    {
+      "name": "syntax_6",
+      "value": "[--direct-port DIRECT_PORT] [-v] [-d]",
+      "kind": "command"
+    },
+    {
+      "name": "syntax_7",
+      "value": "[port]",
+      "kind": "command"
+    }
+  ]
+}

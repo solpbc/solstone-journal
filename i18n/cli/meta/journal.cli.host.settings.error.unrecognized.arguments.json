@@ -1,0 +1,28 @@
+{
+  "description": "Terminal diagnostic for settings error unrecognized arguments.",
+  "context": "Terminal diagnostic for settings error unrecognized arguments.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "96c9f6c3e412968d4a95cdbc70dbf5dd952e2f5937c7fbf931bb719636745503",
+  "max_length": 165,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "value": "solstone journal settings",
+      "kind": "command"
+    }
+  ]
+}

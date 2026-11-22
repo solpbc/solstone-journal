@@ -1,0 +1,28 @@
+{
+  "description": "MCP owner diagnostic for token directory.",
+  "context": "MCP owner diagnostic for token directory.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5819bb4fe980ef09d7f82f092cd5be24e9140113463ff861d39f9753d991b1d2",
+  "max_length": 186,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_mcp",
+      "kind": "accepted-input",
+      "value": "MCP"
+    }
+  ]
+}

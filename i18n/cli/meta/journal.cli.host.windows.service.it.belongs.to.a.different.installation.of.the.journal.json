@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service it belongs to a different installation of the journal.",
+  "context": "Journal host output for windows service it belongs to a different installation of the journal.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "48609de150c95958650fae93635b4ea7caa74453d8f35cacad23919d5dc7ddd4",
+  "max_length": 159,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

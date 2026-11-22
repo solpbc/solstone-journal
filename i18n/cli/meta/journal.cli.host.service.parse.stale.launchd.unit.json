@@ -1,0 +1,28 @@
+{
+  "description": "Journal host service parse stale launchd unit.",
+  "context": "Journal host service parse stale launchd unit.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "beefc0405a1f0e06980c28b8a67f739206f4712dcdfe132931649c94dee48751",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "launchd",
+      "kind": "accepted-input",
+      "value": "launchd"
+    }
+  ]
+}

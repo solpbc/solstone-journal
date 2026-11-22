@@ -1,0 +1,32 @@
+{
+  "description": "Journal host health queue hold.",
+  "context": "Journal host health queue hold.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    },
+    {
+      "name": "details",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "68dc6ca3a06594a8bbcc7509d1c1fb8261128deba57dffeb7ccf3da1f0ff592c",
+  "max_length": 141,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "space_2",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ]
+}

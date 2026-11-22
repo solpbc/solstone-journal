@@ -1,0 +1,16 @@
+{
+  "description": "Native install provider command, run local inner with platform and target sha. Preserve terminal syntax and supplied data.",
+  "context": "Native install provider command, run local inner with platform and target sha. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2bdeec4adf8c0154434b33e881093af5493d2f9c87938403c5afa6353272b0e4",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

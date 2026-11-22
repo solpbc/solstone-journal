@@ -1,0 +1,28 @@
+{
+  "description": "Journal host service inspect launchd directory.",
+  "context": "Journal host service inspect launchd directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bf1ea4384239625ae9c65027f95546522c17037c4ba5ce25ba282715d744018f",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "launchd",
+      "kind": "accepted-input",
+      "value": "launchd"
+    }
+  ]
+}

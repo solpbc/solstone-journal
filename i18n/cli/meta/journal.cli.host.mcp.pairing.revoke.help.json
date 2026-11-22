@@ -1,0 +1,38 @@
+{
+  "description": "Terminal help and usage for mcp pairing revoke help.",
+  "context": "Terminal help and usage for mcp pairing revoke help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2d9439c5bc2dd665d34eb7c46858d9e4eabb6668f85c2ebf019ade8e0e00b51b",
+  "max_length": 648,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal mcp pairing revoke [-h]",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    }
+  ]
+}

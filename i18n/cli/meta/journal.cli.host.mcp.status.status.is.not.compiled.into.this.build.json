@@ -1,0 +1,23 @@
+{
+  "description": "Journal host output for mcp status status is not compiled into this build.",
+  "context": "Journal host output for mcp status status is not compiled into this build.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "039c71ecb5b658754baaf0ca70016843aa1586ef70b5ee33302204efc2b3306e",
+  "max_length": 216,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command_solstone_journal_mcp_status",
+      "kind": "command",
+      "value": "solstone journal mcp status"
+    }
+  ]
+}

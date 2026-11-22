@@ -1,0 +1,98 @@
+{
+  "description": "Terminal help and usage for thinking chatgpt help.",
+  "context": "Terminal help and usage for thinking chatgpt help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bb480b2709188f689d1aab1b81cd0f77b2721e1da80d4107f8744e6cd63bd2da",
+  "max_length": 2196,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal thinking chatgpt [-h] {sign-in,sign-out,status,models} ...",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "term",
+      "value": "ChatGPT",
+      "kind": "mark-word"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "choices",
+      "value": "{sign-in,sign-out,status,models}",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "spaces_4",
+      "value": "    ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "subcommand",
+      "value": "sign-in",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "spaces_14",
+      "value": "              ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "term_9",
+      "value": "OAuth",
+      "kind": "mark-word"
+    },
+    {
+      "name": "subcommand_10",
+      "value": "sign-out",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "spaces_13",
+      "value": "             ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "subcommand_12",
+      "value": "status",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "spaces_15",
+      "value": "               ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "subcommand_14",
+      "value": "models",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_12",
+      "value": "            ",
+      "kind": "whitespace"
+    }
+  ]
+}

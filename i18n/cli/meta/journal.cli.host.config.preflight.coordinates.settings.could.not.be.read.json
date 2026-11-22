@@ -1,0 +1,21 @@
+{
+  "description": "Native config command, preflight coordinates. Preserve terminal syntax and supplied data.",
+  "context": "Native config command, preflight coordinates. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "eb8317cee9c0c77f44bd57a1f5b75928822636b1141487014be0b6fef0ab5cd5",
+  "max_length": 210,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

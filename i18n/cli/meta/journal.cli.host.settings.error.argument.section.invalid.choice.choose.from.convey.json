@@ -1,0 +1,38 @@
+{
+  "description": "Terminal diagnostic for settings error argument section invalid choice choose from convey.",
+  "context": "Terminal diagnostic for settings error argument section invalid choice choose from convey.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d4d4d5817b7606a2895ed7d67704afdd6e847c86b179834544eed348f2a6bf19",
+  "max_length": 303,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "value": "solstone journal settings",
+      "kind": "command"
+    },
+    {
+      "name": "literal",
+      "value": "section",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "literal_3",
+      "value": "convey",
+      "kind": "accepted-input"
+    }
+  ]
+}

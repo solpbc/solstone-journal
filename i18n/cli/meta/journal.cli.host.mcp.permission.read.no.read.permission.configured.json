@@ -1,0 +1,23 @@
+{
+  "description": "Journal host output for mcp permission read no read permission configured.",
+  "context": "Journal host output for mcp permission read no read permission configured.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "33d7f1ffff2198fdabcbc79a47e693663041d438333bf3ca89e363759fcadb74",
+  "max_length": 138,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "space_7",
+      "kind": "whitespace",
+      "value": "       "
+    }
+  ]
+}

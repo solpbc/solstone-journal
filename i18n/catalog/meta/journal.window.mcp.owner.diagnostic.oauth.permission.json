@@ -1,0 +1,16 @@
+{
+  "description": "MCP owner diagnostic for oauth permission.",
+  "context": "MCP owner diagnostic for oauth permission.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0ca7ed6306ae30a104830bac39b691e37bf38eadfa36cb90d5a1cb2ffca6d2b1",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

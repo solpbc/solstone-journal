@@ -1,0 +1,23 @@
+{
+  "description": "Journal host service incomplete systemd property set.",
+  "context": "Journal host service incomplete systemd property set.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4c43f217849d3adbb64fea1c44b80a3117bd663f64c0d60b6a20954870ed4d8d",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "systemd",
+      "kind": "accepted-input",
+      "value": "systemd"
+    }
+  ]
+}

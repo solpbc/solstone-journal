@@ -1,0 +1,28 @@
+{
+  "description": "Native open command, socket linux old. Preserve terminal syntax and supplied data.",
+  "context": "Native open command, socket linux old. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "33fb85453a90c15963eb0af93a51947c200c441037bf2e2881a84a7c8f2e4994",
+  "max_length": 384,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_1",
+      "kind": "command",
+      "value": "solstone journal down"
+    },
+    {
+      "name": "literal_2",
+      "kind": "command",
+      "value": "solstone journal up"
+    }
+  ]
+}

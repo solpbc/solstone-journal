@@ -1,0 +1,21 @@
+{
+  "description": "Journal host logs service error.",
+  "context": "Journal host logs service error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1ae2b047d3b4ea46b9945c3d5ec450c93ecb6390f2d7a4f760a1ef786f88d322",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

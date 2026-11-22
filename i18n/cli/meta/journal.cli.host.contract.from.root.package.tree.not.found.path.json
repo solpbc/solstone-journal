@@ -1,0 +1,21 @@
+{
+  "description": "Native contract paths command, from root. Preserve terminal syntax and supplied data.",
+  "context": "Native contract paths command, from root. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5eb0c14c1616e94da515a47512305a6ff8a0d85ddcf2afe2cb9648dd1d0ee657",
+  "max_length": 156,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

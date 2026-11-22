@@ -1,0 +1,38 @@
+{
+  "description": "Terminal help and usage for mcp token list help.",
+  "context": "Terminal help and usage for mcp token list help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "17dc3f43bb083bda97245fc7c167e4ddf8b88f0ced63b509364539a2e66a6bb2",
+  "max_length": 696,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal mcp token list [-h]",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    }
+  ]
+}

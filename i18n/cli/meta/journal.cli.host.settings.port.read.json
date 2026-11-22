@@ -1,0 +1,25 @@
+{
+  "description": "Journal host settings port read.",
+  "context": "Journal host settings port read.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8549e09964540cfe3d16f39bbd8b354a60231dc0a760497272d5c06c625f0067",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

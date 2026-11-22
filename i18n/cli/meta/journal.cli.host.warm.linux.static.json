@@ -1,0 +1,43 @@
+{
+  "description": "Journal host warm linux static.",
+  "context": "Journal host warm linux static.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ffa862514fe3524830b6fde4f057a029f28b8c4033fb93ce5b89891c5871781e",
+  "max_length": 798,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone_core_journal",
+      "kind": "accepted-input",
+      "value": "solstone-core-journal"
+    },
+    {
+      "name": "solstone_core_depict",
+      "kind": "accepted-input",
+      "value": "solstone-core-depict"
+    },
+    {
+      "name": "solstone_retention",
+      "kind": "accepted-input",
+      "value": "solstone-retention"
+    },
+    {
+      "name": "solstone_core_sol",
+      "kind": "accepted-input",
+      "value": "solstone-core-sol"
+    },
+    {
+      "name": "solstone_core",
+      "kind": "accepted-input",
+      "value": "solstone-core"
+    }
+  ]
+}

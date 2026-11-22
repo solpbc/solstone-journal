@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output for mcp status lan disabled.",
+  "context": "Journal host output for mcp status lan disabled.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "port",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e32f004a9c3a2eda55f69c5d89dfdf490e77102b7874a5f800ddc0793ac29839",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Journal host service stale launchd plist changed during cleanup preserved.",
+  "context": "Journal host service stale launchd plist changed during cleanup preserved.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a23f9c84a70cbb4512b4dea1f1b1466cfa8c39afcb8d6346a80cfc421323cf01",
+  "max_length": 204,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "launchd",
+      "kind": "accepted-input",
+      "value": "launchd"
+    }
+  ]
+}

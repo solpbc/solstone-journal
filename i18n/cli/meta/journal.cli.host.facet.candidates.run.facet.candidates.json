@@ -1,0 +1,21 @@
+{
+  "description": "Native facet candidates command, run. Preserve terminal syntax and supplied data.",
+  "context": "Native facet candidates command, run. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "da4d51e6e9e0af88e26f5887f8c41b2a13e503010500c4e16d807f9c342fe23f",
+  "max_length": 156,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

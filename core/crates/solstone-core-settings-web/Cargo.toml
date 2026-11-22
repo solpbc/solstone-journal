@@ -58,5 +58,8 @@ temp-env = "0.3.6"
 tokio = { workspace = true, features = ["macros", "rt", "sync"] }
 tower.workspace = true
 
+[target.'cfg(windows)'.dev-dependencies]
+solstone-core-callosum = { workspace = true, features = ["full-tests"] }
+
 [features]
 full-tests = []

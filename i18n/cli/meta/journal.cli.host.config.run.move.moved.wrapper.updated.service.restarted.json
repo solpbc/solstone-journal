@@ -1,0 +1,16 @@
+{
+  "description": "Native config command, run move. Preserve terminal syntax and supplied data.",
+  "context": "Native config command, run move. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fa96649134898165770d1b71c7e1c63fa38cf483b93423fa9adaa289c3c4a092",
+  "max_length": 150,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

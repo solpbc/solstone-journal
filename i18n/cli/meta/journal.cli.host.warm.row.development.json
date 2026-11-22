@@ -1,0 +1,25 @@
+{
+  "description": "Journal host warm row development.",
+  "context": "Journal host warm row development.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "binary",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "eaa51d074cb8ad8363223c4f4b4ceacf1e8fd1360066b45eac3d7b6be2a627b7",
+  "max_length": 210,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal host service route repair service unit has no execstart.",
+  "context": "Journal host service route repair service unit has no execstart.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b0ee655017fd4a5b13630d4f93c258192e5d6f6c6e84125746645d86514039ec",
+  "max_length": 144,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "exec_start",
+      "kind": "accepted-input",
+      "value": "ExecStart"
+    }
+  ]
+}

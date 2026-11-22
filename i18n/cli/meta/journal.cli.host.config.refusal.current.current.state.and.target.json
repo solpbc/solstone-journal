@@ -1,0 +1,29 @@
+{
+  "description": "Native config command, refusal. Preserve terminal syntax and supplied data.",
+  "context": "Native config command, refusal. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "current_state",
+      "type": "string"
+    },
+    {
+      "name": "target_state",
+      "type": "string"
+    },
+    {
+      "name": "flags",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "65ea363d374d22648a3a187cc2cdc7bd2753c476c3455bd3c68529c0d9dc9daf",
+  "max_length": 360,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

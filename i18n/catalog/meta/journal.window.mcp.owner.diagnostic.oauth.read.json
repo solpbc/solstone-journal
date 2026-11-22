@@ -1,0 +1,28 @@
+{
+  "description": "MCP owner diagnostic for oauth read.",
+  "context": "MCP owner diagnostic for oauth read.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3ca5a0e5bdba92986135006753b4a2b9c6164e4c16491dbfb369f5a0dd228da8",
+  "max_length": 168,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_mcp",
+      "kind": "accepted-input",
+      "value": "MCP"
+    },
+    {
+      "name": "literal_oauth",
+      "kind": "accepted-input",
+      "value": "OAuth"
+    }
+  ]
+}

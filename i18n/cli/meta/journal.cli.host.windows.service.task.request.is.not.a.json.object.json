@@ -1,0 +1,23 @@
+{
+  "description": "Journal host output for windows service task request is not a json object.",
+  "context": "Journal host output for windows service task request is not a json object.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "eb9944905aef0bdf023704bb4538d0e84b8ef8759f6184b492487626ac303a1e",
+  "max_length": 138,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_json",
+      "kind": "accepted-input",
+      "value": "JSON"
+    }
+  ]
+}

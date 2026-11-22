@@ -1,0 +1,23 @@
+{
+  "description": "MCP owner diagnostic for oauth invalid grant.",
+  "context": "MCP owner diagnostic for oauth invalid grant.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "41b6a3ac20c7a8cc79f77b38f285418465bac98c85ca65319bf221fa28762ebe",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_oauth",
+      "kind": "accepted-input",
+      "value": "OAuth"
+    }
+  ]
+}

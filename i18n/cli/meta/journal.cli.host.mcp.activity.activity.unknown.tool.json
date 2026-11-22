@@ -1,0 +1,28 @@
+{
+  "description": "Journal host output for mcp activity activity unknown tool.",
+  "context": "Journal host output for mcp activity activity unknown tool.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "965d94ecc22f812aa90ff54d2a1956fe6a012cd91a1ef18613ac215557999c28",
+  "max_length": 201,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command_solstone_journal_mcp_activity",
+      "kind": "command",
+      "value": "solstone journal mcp activity"
+    }
+  ]
+}

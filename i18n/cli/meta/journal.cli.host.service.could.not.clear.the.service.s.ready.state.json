@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service could not clear the service s ready state.",
+  "context": "Journal host service could not clear the service s ready state.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e7354269332879d6015b4dc87a6da21a154da45e0fa1090ca593574e778c7e95",
+  "max_length": 159,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

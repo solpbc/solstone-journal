@@ -29,6 +29,30 @@ pub struct FollowFatalError {
     pub source: Option<io::Error>,
 }
 
+/// Failures raised by the follower itself, distinguished from an opaque OS error.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FollowDiagnostic {
+    RootUnavailable,
+    DescriptorChanged,
+}
+
+impl std::fmt::Display for FollowDiagnostic {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::RootUnavailable => "journal root unavailable",
+            Self::DescriptorChanged => "oplog descriptor changed while following",
+        })
+    }
+}
+
+impl std::error::Error for FollowDiagnostic {}
+
+impl FollowFatalError {
+    pub fn diagnostic(&self) -> Option<FollowDiagnostic> {
+        self.source.as_ref()?.get_ref()?.downcast_ref().copied()
+    }
+}
+
 struct CatalogSource {
     root: PathBuf,
 }
@@ -60,12 +84,25 @@ pub fn run_follow(
     is_tty: bool,
     warn: &mut dyn FnMut(String),
 ) -> Result<(), FollowFatalError> {
+    run_follow_on_empty(journal_root, stop, output, is_tty, &mut || {
+        warn("No log files found.".to_owned())
+    })
+}
+
+/// Run canonical follow and notify the caller when discovery found no sources.
+pub fn run_follow_on_empty(
+    journal_root: &Path,
+    stop: &dyn Fn() -> bool,
+    output: &mut dyn Write,
+    is_tty: bool,
+    on_empty: &mut dyn FnMut(),
+) -> Result<(), FollowFatalError> {
     run_follow_with_sleep(
         journal_root,
         stop,
         output,
         is_tty,
-        warn,
+        on_empty,
         &std::thread::sleep,
     )
 }
@@ -180,7 +217,7 @@ impl RawOplogFollower {
         let root = JournalRoot::open(journal_root).map_err(|_| FollowFatalError {
             path: journal_root.to_path_buf(),
             operation: "catalog",
-            source: Some(io::Error::other("journal root unavailable")),
+            source: Some(io::Error::other(FollowDiagnostic::RootUnavailable)),
         })?;
         let snapshot =
             catalog_oplogs(root, &days).map_err(|error| catalog_error(journal_root, error))?;
@@ -254,7 +291,7 @@ fn raw_catalog_identity_error(entry: &OplogCatalogEntry) -> FollowFatalError {
     FollowFatalError {
         path: PathBuf::from(entry.leaf()),
         operation: "catalog",
-        source: Some(io::Error::other("oplog descriptor changed while following")),
+        source: Some(io::Error::other(FollowDiagnostic::DescriptorChanged)),
     }
 }
 
@@ -263,7 +300,7 @@ fn run_follow_with_sleep(
     stop: &dyn Fn() -> bool,
     output: &mut dyn Write,
     is_tty: bool,
-    warn: &mut dyn FnMut(String),
+    on_empty: &mut dyn FnMut(),
     sleep: &dyn Fn(std::time::Duration),
 ) -> Result<(), FollowFatalError> {
     let source = CatalogSource {
@@ -273,7 +310,7 @@ fn run_follow_with_sleep(
     let initial = OplogFollower::discover_initial(&source, &clock)
         .map_err(|error| catalog_error(journal_root, error))?;
     if !initial.has_tracked_sources {
-        warn("No log files found.".to_owned());
+        on_empty();
         return Ok(());
     }
     let follower = OplogFollower::from_state(initial.state);
@@ -368,6 +405,25 @@ mod tests {
     }
 
     #[test]
+    fn equal_error_words_preserve_their_source() {
+        for reason in [
+            FollowDiagnostic::DescriptorChanged,
+            FollowDiagnostic::RootUnavailable,
+        ] {
+            let failure = |source| FollowFatalError {
+                path: PathBuf::new(),
+                operation: "catalog",
+                source: Some(source),
+            };
+            assert_eq!(failure(io::Error::other(reason)).diagnostic(), Some(reason));
+            assert_eq!(
+                failure(io::Error::other(reason.to_string())).diagnostic(),
+                None
+            );
+        }
+    }
+
+    #[test]
     fn flush_failure_returns_before_later_rows_or_sleep() {
         let temporary = tempfile::tempdir().unwrap();
         for source in ["alpha", "beta"] {
@@ -390,7 +446,7 @@ mod tests {
             &|| false,
             &mut output,
             false,
-            &mut |_| {},
+            &mut || {},
             &|_| sleeps.set(sleeps.get() + 1),
         )
         .unwrap_err();

@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service cannot resolve task artifact directory.",
+  "context": "Journal host output for windows service cannot resolve task artifact directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c6b3884d22c35042e95fb1f0d8fa0a6d67a82464689f24cc701854efb1fa0bc2",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

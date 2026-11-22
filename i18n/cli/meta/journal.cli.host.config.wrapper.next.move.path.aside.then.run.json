@@ -1,0 +1,28 @@
+{
+  "description": "Native config command, wrapper next. Preserve terminal syntax and supplied data.",
+  "context": "Native config command, wrapper next. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f442e137ef281a3ba9e82b1e1fb094a48d7ed374f7d5534ec653886e59558f24",
+  "max_length": 267,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_1",
+      "kind": "command",
+      "value": "solstone journal setup"
+    }
+  ]
+}

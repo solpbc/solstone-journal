@@ -1,0 +1,21 @@
+{
+  "description": "MCP owner diagnostic for permission lock.",
+  "context": "MCP owner diagnostic for permission lock.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ea59ba269ef836d5069e8d6973055fee85deaae11ed7381e45fa1af4df22aa06",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

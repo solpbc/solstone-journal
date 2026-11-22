@@ -1,0 +1,28 @@
+{
+  "description": "Journal host supervisor journal token mismatch.",
+  "context": "Journal host supervisor journal token mismatch.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dc7cf105bafbe4db890efaa2bf52840f0783df7854ebefa2f18c6325ede6f4e7",
+  "max_length": 621,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "setup",
+      "kind": "accepted-input",
+      "value": "solstone journal setup"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

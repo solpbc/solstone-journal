@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output for mcp status token count.",
+  "context": "Journal host output for mcp status token count.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c96c7528423d4fed97e556c8f4dac376cacfd2917be8a247edd81270792d0c6d",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

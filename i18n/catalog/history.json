@@ -76129,6 +76129,42 @@
       "selector": null
     },
     {
+      "id": "journal.window.host.disk.back.title",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f73742e6469736b2e6261636b2e7469746c65",
+      "namespace": "journal.window.host.disk.back",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.host.disk.low.message",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f73742e6469736b2e6c6f772e6d657373616765",
+      "namespace": "journal.window.host.disk.low",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.host.disk.low.title",
+      "resource": "m6a6f75726e616c2e77696e646f772e686f73742e6469736b2e6c6f772e7469746c65",
+      "namespace": "journal.window.host.disk.low",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.import.accessible.label.notebook",
       "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e61636365737369626c652e6c6162656c2e6e6f7465626f6f6b",
       "namespace": "journal.window.import.accessible.label",
@@ -104619,6 +104655,1052 @@
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.activity.path",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e61637469766974792e70617468",
+      "namespace": "journal.window.mcp.owner.diagnostic.activity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.facet.id",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e66616365742e6964",
+      "namespace": "journal.window.mcp.owner.diagnostic.facet",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "command_solstone_journal_backfill_facet_ids",
+          "kind": "command",
+          "value": "solstone journal backfill-facet-ids"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.facet.read",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e66616365742e72656164",
+      "namespace": "journal.window.mcp.owner.diagnostic.facet",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.facet.unknown",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e66616365742e756e6b6e6f776e",
+      "namespace": "journal.window.mcp.owner.diagnostic.facet",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.facets.list",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e6661636574732e6c697374",
+      "namespace": "journal.window.mcp.owner.diagnostic.facets",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.label.ascii.control",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e6c6162656c2e61736369692e636f6e74726f6c",
+      "namespace": "journal.window.mcp.owner.diagnostic.label.ascii",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "literal_ascii",
+          "kind": "accepted-input",
+          "value": "ASCII"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.label.boundary",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e6c6162656c2e626f756e64617279",
+      "namespace": "journal.window.mcp.owner.diagnostic.label",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.label.disallowed.byte",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e6c6162656c2e646973616c6c6f7765642e62797465",
+      "namespace": "journal.window.mcp.owner.diagnostic.label.disallowed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "literal_ascii",
+          "kind": "accepted-input",
+          "value": "ASCII"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.label.empty",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e6c6162656c2e656d707479",
+      "namespace": "journal.window.mcp.owner.diagnostic.label",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.label.too.long",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e6c6162656c2e746f6f2e6c6f6e67",
+      "namespace": "journal.window.mcp.owner.diagnostic.label.too",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.oauth.binding.mismatch",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e6f617574682e62696e64696e672e6d69736d61746368",
+      "namespace": "journal.window.mcp.owner.diagnostic.oauth.binding",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "literal_oauth",
+          "kind": "accepted-input",
+          "value": "OAuth"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.oauth.client.not.found",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e6f617574682e636c69656e742e6e6f742e666f756e64",
+      "namespace": "journal.window.mcp.owner.diagnostic.oauth.client.not",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "literal_oauth",
+          "kind": "accepted-input",
+          "value": "OAuth"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.oauth.code.expired",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e6f617574682e636f64652e65787069726564",
+      "namespace": "journal.window.mcp.owner.diagnostic.oauth.code",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "literal_oauth",
+          "kind": "accepted-input",
+          "value": "OAuth"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.oauth.directory",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e6f617574682e6469726563746f7279",
+      "namespace": "journal.window.mcp.owner.diagnostic.oauth",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "literal_mcp",
+          "kind": "accepted-input",
+          "value": "MCP"
+        },
+        {
+          "name": "literal_oauth",
+          "kind": "accepted-input",
+          "value": "OAuth"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.oauth.entry.too.large",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e6f617574682e656e7472792e746f6f2e6c61726765",
+      "namespace": "journal.window.mcp.owner.diagnostic.oauth.entry.too",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "literal_oauth",
+          "kind": "accepted-input",
+          "value": "OAuth"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.oauth.invalid.grant",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e6f617574682e696e76616c69642e6772616e74",
+      "namespace": "journal.window.mcp.owner.diagnostic.oauth.invalid",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "literal_oauth",
+          "kind": "accepted-input",
+          "value": "OAuth"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.oauth.invalid.token",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e6f617574682e696e76616c69642e746f6b656e",
+      "namespace": "journal.window.mcp.owner.diagnostic.oauth.invalid",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "literal_oauth",
+          "kind": "accepted-input",
+          "value": "OAuth"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.oauth.lock",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e6f617574682e6c6f636b",
+      "namespace": "journal.window.mcp.owner.diagnostic.oauth",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "literal_mcp",
+          "kind": "accepted-input",
+          "value": "MCP"
+        },
+        {
+          "name": "literal_oauth",
+          "kind": "accepted-input",
+          "value": "OAuth"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.oauth.malformed",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e6f617574682e6d616c666f726d6564",
+      "namespace": "journal.window.mcp.owner.diagnostic.oauth",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "literal_mcp",
+          "kind": "accepted-input",
+          "value": "MCP"
+        },
+        {
+          "name": "literal_oauth",
+          "kind": "accepted-input",
+          "value": "OAuth"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.oauth.no.active.pairing",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e6f617574682e6e6f2e6163746976652e70616972696e67",
+      "namespace": "journal.window.mcp.owner.diagnostic.oauth.no.active",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.oauth.pairing.locked",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e6f617574682e70616972696e672e6c6f636b6564",
+      "namespace": "journal.window.mcp.owner.diagnostic.oauth.pairing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.oauth.pairing.mismatch",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e6f617574682e70616972696e672e6d69736d61746368",
+      "namespace": "journal.window.mcp.owner.diagnostic.oauth.pairing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.oauth.permission",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e6f617574682e7065726d697373696f6e",
+      "namespace": "journal.window.mcp.owner.diagnostic.oauth",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.oauth.quota",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e6f617574682e71756f7461",
+      "namespace": "journal.window.mcp.owner.diagnostic.oauth",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "literal_oauth",
+          "kind": "accepted-input",
+          "value": "OAuth"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.oauth.randomness",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e6f617574682e72616e646f6d6e657373",
+      "namespace": "journal.window.mcp.owner.diagnostic.oauth",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "literal_oauth",
+          "kind": "accepted-input",
+          "value": "OAuth"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.oauth.read",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e6f617574682e72656164",
+      "namespace": "journal.window.mcp.owner.diagnostic.oauth",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "literal_mcp",
+          "kind": "accepted-input",
+          "value": "MCP"
+        },
+        {
+          "name": "literal_oauth",
+          "kind": "accepted-input",
+          "value": "OAuth"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.oauth.refresh.reused",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e6f617574682e726566726573682e726575736564",
+      "namespace": "journal.window.mcp.owner.diagnostic.oauth.refresh",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "literal_oauth",
+          "kind": "accepted-input",
+          "value": "OAuth"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.oauth.state.too.large",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e6f617574682e73746174652e746f6f2e6c61726765",
+      "namespace": "journal.window.mcp.owner.diagnostic.oauth.state.too",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "literal_oauth",
+          "kind": "accepted-input",
+          "value": "OAuth"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.oauth.transaction.exhausted",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e6f617574682e7472616e73616374696f6e2e657868617573746564",
+      "namespace": "journal.window.mcp.owner.diagnostic.oauth.transaction",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "literal_oauth",
+          "kind": "accepted-input",
+          "value": "OAuth"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.oauth.transaction.expired",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e6f617574682e7472616e73616374696f6e2e65787069726564",
+      "namespace": "journal.window.mcp.owner.diagnostic.oauth.transaction",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "literal_oauth",
+          "kind": "accepted-input",
+          "value": "OAuth"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.oauth.transaction.not.found",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e6f617574682e7472616e73616374696f6e2e6e6f742e666f756e64",
+      "namespace": "journal.window.mcp.owner.diagnostic.oauth.transaction.not",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "literal_oauth",
+          "kind": "accepted-input",
+          "value": "OAuth"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.oauth.unsupported.schema",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e6f617574682e756e737570706f727465642e736368656d61",
+      "namespace": "journal.window.mcp.owner.diagnostic.oauth.unsupported",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "literal_mcp",
+          "kind": "accepted-input",
+          "value": "MCP"
+        },
+        {
+          "name": "literal_oauth",
+          "kind": "accepted-input",
+          "value": "OAuth"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.oauth.write",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e6f617574682e7772697465",
+      "namespace": "journal.window.mcp.owner.diagnostic.oauth",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "literal_mcp",
+          "kind": "accepted-input",
+          "value": "MCP"
+        },
+        {
+          "name": "literal_oauth",
+          "kind": "accepted-input",
+          "value": "OAuth"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.permission.agent.state.fault",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e7065726d697373696f6e2e6167656e742e73746174652e6661756c74",
+      "namespace": "journal.window.mcp.owner.diagnostic.permission.agent.state",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.permission.connection.not.found",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e7065726d697373696f6e2e636f6e6e656374696f6e2e6e6f742e666f756e64",
+      "namespace": "journal.window.mcp.owner.diagnostic.permission.connection.not",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "key",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.permission.directory",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e7065726d697373696f6e2e6469726563746f7279",
+      "namespace": "journal.window.mcp.owner.diagnostic.permission",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.permission.invalid.connection.key",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e7065726d697373696f6e2e696e76616c69642e636f6e6e656374696f6e2e6b6579",
+      "namespace": "journal.window.mcp.owner.diagnostic.permission.invalid.connection",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "key",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.permission.lock",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e7065726d697373696f6e2e6c6f636b",
+      "namespace": "journal.window.mcp.owner.diagnostic.permission",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.permission.malformed",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e7065726d697373696f6e2e6d616c666f726d6564",
+      "namespace": "journal.window.mcp.owner.diagnostic.permission",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.permission.read",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e7065726d697373696f6e2e72656164",
+      "namespace": "journal.window.mcp.owner.diagnostic.permission",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.permission.unsupported.schema",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e7065726d697373696f6e2e756e737570706f727465642e736368656d61",
+      "namespace": "journal.window.mcp.owner.diagnostic.permission.unsupported",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "schema",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.permission.write",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e7065726d697373696f6e2e7772697465",
+      "namespace": "journal.window.mcp.owner.diagnostic.permission",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.token.directory",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e746f6b656e2e6469726563746f7279",
+      "namespace": "journal.window.mcp.owner.diagnostic.token",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "literal_mcp",
+          "kind": "accepted-input",
+          "value": "MCP"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.token.duplicate.label",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e746f6b656e2e6475706c69636174652e6c6162656c",
+      "namespace": "journal.window.mcp.owner.diagnostic.token.duplicate",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "label",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.token.invalid.label",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e746f6b656e2e696e76616c69642e6c6162656c",
+      "namespace": "journal.window.mcp.owner.diagnostic.token.invalid",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.token.invalid.token",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e746f6b656e2e696e76616c69642e746f6b656e",
+      "namespace": "journal.window.mcp.owner.diagnostic.token.invalid",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.token.lock",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e746f6b656e2e6c6f636b",
+      "namespace": "journal.window.mcp.owner.diagnostic.token",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "literal_mcp",
+          "kind": "accepted-input",
+          "value": "MCP"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.token.malformed",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e746f6b656e2e6d616c666f726d6564",
+      "namespace": "journal.window.mcp.owner.diagnostic.token",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "literal_mcp",
+          "kind": "accepted-input",
+          "value": "MCP"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.token.not.found",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e746f6b656e2e6e6f742e666f756e64",
+      "namespace": "journal.window.mcp.owner.diagnostic.token.not",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "label",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.token.randomness",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e746f6b656e2e72616e646f6d6e657373",
+      "namespace": "journal.window.mcp.owner.diagnostic.token",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.token.read",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e746f6b656e2e72656164",
+      "namespace": "journal.window.mcp.owner.diagnostic.token",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.token.unsupported.schema",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e746f6b656e2e756e737570706f727465642e736368656d61",
+      "namespace": "journal.window.mcp.owner.diagnostic.token.unsupported",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "schema",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "path",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "literal_mcp",
+          "kind": "accepted-input",
+          "value": "MCP"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.mcp.owner.diagnostic.token.write",
+      "resource": "m6a6f75726e616c2e77696e646f772e6d63702e6f776e65722e646961676e6f737469632e746f6b656e2e7772697465",
+      "namespace": "journal.window.mcp.owner.diagnostic.token",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "error",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "literal_mcp",
+          "kind": "accepted-input",
+          "value": "MCP"
+        }
+      ],
       "selector": null
     },
     {

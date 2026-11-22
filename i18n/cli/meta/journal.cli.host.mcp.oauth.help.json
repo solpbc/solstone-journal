@@ -1,0 +1,63 @@
+{
+  "description": "Terminal help and usage for mcp oauth help.",
+  "context": "Terminal help and usage for mcp oauth help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3c1be2bd239ee2780d7677d144f3981e7e5d42f2718714a40ca1b0ecc2ba694e",
+  "max_length": 1335,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal mcp oauth [-h] {list,revoke} ...",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "term",
+      "value": "OAuth",
+      "kind": "mark-word"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    },
+    {
+      "name": "subcommand",
+      "value": "list",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "spaces_8",
+      "value": "        ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "subcommand_8",
+      "value": "revoke",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "spaces_6",
+      "value": "      ",
+      "kind": "whitespace"
+    }
+  ]
+}

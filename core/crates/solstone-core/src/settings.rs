@@ -16,6 +16,7 @@
 //! error cleanly with a non-zero exit instead. That is an intentional native
 //! improvement, not a port-default fallback.
 
+use solstone_core_cli_copy::{display_for, render_for};
 use std::fs;
 use std::io;
 use std::path::Path;
@@ -24,7 +25,7 @@ use std::process::ExitCode;
 use solstone_core_cli::{SettingsCommand, SettingsConveyCommand};
 use solstone_core_journal::ensure_journal_dir_with_label;
 
-use crate::{EXIT_TEMPFAIL, eprint_journal_path_error, resolve_process_journal_path};
+use crate::{EXIT_TEMPFAIL, eprint_journal_path_error_in, resolve_process_journal_path};
 
 // Machine-wide default loopback port, shared across logins. A second copy on
 // this port, including one started under another login, must fail the bind
@@ -33,25 +34,54 @@ const DEFAULT_SERVICE_PORT: i64 = 5015;
 const EXIT_FAILURE: u8 = 1;
 
 pub(crate) fn run(command: SettingsCommand) -> ExitCode {
+    let locale = if matches!(
+        command,
+        SettingsCommand::Convey(SettingsConveyCommand::Status { json: true })
+    ) {
+        solstone_core_cli_copy::ENGLISH
+    } else {
+        crate::host_locale()
+    };
     let journal = match resolve_process_journal_path() {
         Ok(journal) => journal,
         Err(error) => {
-            eprint_journal_path_error(error);
+            eprint_journal_path_error_in(locale, error);
             return ExitCode::from(EXIT_TEMPFAIL);
         }
     };
     if let Err(error) = ensure_journal_dir_with_label(&journal.path, journal.label) {
-        eprintln!("{error}");
+        eprintln!(
+            "{}",
+            display_for(
+                locale,
+                "journal.cli.path.create",
+                [
+                    ("source", &error.source),
+                    ("path", &error.path.display()),
+                    ("error", &error.error)
+                ]
+            )
+        );
         return ExitCode::from(EXIT_FAILURE);
     }
 
     match command {
         SettingsCommand::RootFallbackHelp => {
-            print!("{}", solstone_core_cli::SETTINGS_HELP);
+            print!(
+                "{}",
+                render_for(crate::host_locale(), "journal.cli.host.settings.help", &[])
+            );
             ExitCode::from(EXIT_FAILURE)
         }
         SettingsCommand::Convey(SettingsConveyCommand::FallbackHelp) => {
-            print!("{}", solstone_core_cli::SETTINGS_CONVEY_HELP);
+            print!(
+                "{}",
+                render_for(
+                    crate::host_locale(),
+                    "journal.cli.host.settings.convey.help",
+                    &[]
+                )
+            );
             ExitCode::from(EXIT_FAILURE)
         }
         SettingsCommand::Convey(SettingsConveyCommand::Status { json }) => {
@@ -61,11 +91,23 @@ pub(crate) fn run(command: SettingsCommand) -> ExitCode {
 }
 
 fn print_status(journal: &Path, json: bool) -> ExitCode {
+    let locale = if json {
+        solstone_core_cli_copy::ENGLISH
+    } else {
+        crate::host_locale()
+    };
     let port_path = journal.join("health/convey.port");
     let port = match read_convey_port(&port_path) {
         Ok(port) => convey_port_or_default(port),
         Err(error) => {
-            eprintln!("Error: {}: {error}", port_path.display());
+            eprintln!(
+                "{}",
+                display_for(
+                    locale,
+                    "journal.cli.host.settings.port.read",
+                    [("path", &(port_path.display())), ("detail", &(error))]
+                )
+            );
             return ExitCode::from(EXIT_FAILURE);
         }
     };
@@ -74,9 +116,14 @@ fn print_status(journal: &Path, json: bool) -> ExitCode {
         println!("{{\n  \"dashboard_url\": \"http://localhost:{port}\"\n}}");
     } else {
         println!(
-            "convey\n  bind:              127.0.0.1:{port}\n  {}",
-            open_line(port)
+            "{}",
+            display_for(
+                crate::host_locale(),
+                "journal.cli.host.settings.bind",
+                [("address", &(format!("127.0.0.1:{port}")))]
+            )
         );
+        println!("  {}", open_line(port));
     }
     ExitCode::SUCCESS
 }
@@ -85,9 +132,13 @@ fn print_status(journal: &Path, json: bool) -> ExitCode {
 /// macOS and Linux it names the command that does.
 fn open_line(port: i64) -> String {
     if cfg!(any(target_os = "linux", target_os = "macos")) {
-        "open it with:      solstone journal open".to_owned()
+        render_for(crate::host_locale(), "journal.cli.host.settings.open", &[])
     } else {
-        format!("dashboard url:     http://localhost:{port}")
+        display_for(
+            crate::host_locale(),
+            "journal.cli.host.settings.url",
+            [("url", &(format!("http://localhost:{port}")))],
+        )
     }
 }
 

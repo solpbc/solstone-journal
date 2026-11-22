@@ -1,0 +1,16 @@
+{
+  "description": "Journal host supervisor recovery coordinator stopped before ready.",
+  "context": "Journal host supervisor recovery coordinator stopped before ready.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "344cf4e09a026e2884f76c6aca07476afff863d7b2eb2e40b3e4cc716170fa43",
+  "max_length": 159,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

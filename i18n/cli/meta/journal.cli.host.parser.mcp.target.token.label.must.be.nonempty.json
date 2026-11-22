@@ -1,0 +1,21 @@
+{
+  "description": "Terminal diagnostic for parser mcp target token label must be nonempty.",
+  "context": "Terminal diagnostic for parser mcp target token label must be nonempty.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "846bfb4854b61deb6bb35643527bb3c850413bed15766fc61f25f0ec53707837",
+  "max_length": 147,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

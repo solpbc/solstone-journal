@@ -1,0 +1,25 @@
+{
+  "description": "MCP owner diagnostic for permission read.",
+  "context": "MCP owner diagnostic for permission read.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2c28333c4e4d589a0d6f9383909bed224cc96ea1c9cd8b3666486bcfccb6fbc8",
+  "max_length": 153,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

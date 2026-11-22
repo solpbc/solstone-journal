@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service service readiness has no installed forwarder admission.",
+  "context": "Journal host output for windows service service readiness has no installed forwarder admission.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b2d9d50999b3d633e606f1530ac173bdae872c862394494063596337bfc85e9f",
+  "max_length": 162,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

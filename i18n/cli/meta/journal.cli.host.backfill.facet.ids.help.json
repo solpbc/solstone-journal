@@ -1,0 +1,53 @@
+{
+  "description": "Terminal help and usage for backfill facet ids help.",
+  "context": "Terminal help and usage for backfill facet ids help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "685e9c07c603b60ae5d174242dec5a9d5f6a57869cc4ca62981b1a228eb02dd1",
+  "max_length": 1086,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal backfill-facet-ids [-h] [--commit]",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "term",
+      "value": "UUIDv4",
+      "kind": "mark-word"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    },
+    {
+      "name": "option_6",
+      "value": "--commit",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_4",
+      "value": "    ",
+      "kind": "whitespace"
+    }
+  ]
+}

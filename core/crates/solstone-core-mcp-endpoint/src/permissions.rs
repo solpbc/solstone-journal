@@ -102,28 +102,72 @@ pub fn resolve_permission_facet_names(
     journal_path: &Path,
     names: &[String],
 ) -> Result<Vec<String>, String> {
-    let declared = solstone_core_facets::list_declared_facet_names(journal_path)
-        .map_err(|error| format!("could not list declared facets: {error}"))?;
+    resolve_permission_facet_names_for(solstone_core_window_catalog::ENGLISH, journal_path, names)
+}
+
+pub fn resolve_permission_facet_names_for(
+    locale: &str,
+    journal_path: &Path,
+    names: &[String],
+) -> Result<Vec<String>, String> {
+    use solstone_core_window_catalog as catalog;
+    let declared =
+        solstone_core_facets::list_declared_facet_names(journal_path).map_err(|error| {
+            catalog::strings(
+                locale,
+                "journal.window.mcp.owner.diagnostic.facets.list",
+                [(
+                    "error",
+                    &solstone_core_facets::cli_copy::store(locale, &error),
+                )],
+            )
+        })?;
     let mut ids = BTreeSet::new();
     for name in names {
         if !declared.iter().any(|declared_name| declared_name == name) {
-            return Err(format!("unknown facet {name:?}"));
+            return Err(catalog::strings(
+                locale,
+                "journal.window.mcp.owner.diagnostic.facet.unknown",
+                [("name", &format!("{:?}", name))],
+            ));
         }
         let declaration = solstone_core_facets::read_facet_declaration(journal_path, name)
-            .map_err(|error| format!("could not read facet {name:?}: {error}"))?
-            .ok_or_else(|| format!("unknown facet {name:?}"))?;
+            .map_err(|error| {
+                catalog::strings(
+                    locale,
+                    "journal.window.mcp.owner.diagnostic.facet.read",
+                    [
+                        ("name", &format!("{:?}", name)),
+                        (
+                            "error",
+                            &solstone_core_facets::cli_copy::store(locale, &error),
+                        ),
+                    ],
+                )
+            })?
+            .ok_or_else(|| {
+                catalog::strings(
+                    locale,
+                    "journal.window.mcp.owner.diagnostic.facet.unknown",
+                    [("name", &format!("{:?}", name))],
+                )
+            })?;
         let Some(id) = declaration
             .value()
             .get("id")
             .and_then(serde_json::Value::as_str)
         else {
-            return Err(format!(
-                "facet {name:?} has no stable id; run solstone journal backfill-facet-ids"
+            return Err(catalog::strings(
+                locale,
+                "journal.window.mcp.owner.diagnostic.facet.id",
+                [("name", &format!("{:?}", name))],
             ));
         };
         if !solstone_core_facets::is_well_formed_facet_id(id) {
-            return Err(format!(
-                "facet {name:?} has no stable id; run solstone journal backfill-facet-ids"
+            return Err(catalog::strings(
+                locale,
+                "journal.window.mcp.owner.diagnostic.facet.id",
+                [("name", &format!("{:?}", name))],
             ));
         }
         ids.insert(id.to_owned());

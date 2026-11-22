@@ -1,0 +1,16 @@
+{
+  "description": "Native config command, run switch. Preserve terminal syntax and supplied data.",
+  "context": "Native config command, run switch. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "61b0c78e009827fc919e61f8adcab6dfa3cc1b0d025d0c078cd59ec43b61329c",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

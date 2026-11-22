@@ -1,0 +1,46 @@
+{
+  "description": "Owner terminal count for backfill facets dry.",
+  "context": "Owner terminal count for backfill facets dry.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "scanned",
+      "type": "string"
+    },
+    {
+      "name": "backfilled",
+      "type": "string"
+    },
+    {
+      "name": "scanned_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "backfilled_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "7142b0ba795071566ef03c749721626334406baecc544087cc226e10af83fd7c",
+  "max_length": 1893,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_commit",
+      "kind": "flag",
+      "value": "--commit"
+    }
+  ],
+  "selector": {
+    "name": "scanned_quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output for process admission.",
+  "context": "Journal host output for process admission.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8bb5790627397703bd8891677a541da3bbcec6da6c858b86c091d7adf84a7b07",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

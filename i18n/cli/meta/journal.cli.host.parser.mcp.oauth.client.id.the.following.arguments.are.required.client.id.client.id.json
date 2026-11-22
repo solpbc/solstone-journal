@@ -1,0 +1,33 @@
+{
+  "description": "Terminal diagnostic for parser mcp oauth client id the following arguments are required client id client id.",
+  "context": "Terminal diagnostic for parser mcp oauth client id the following arguments are required client id client id.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "294f47d54a2f66e840d4098e01956092b880b8cc1e4be9049dd72f91b412f37d",
+  "max_length": 246,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "flag",
+      "value": "--client-id",
+      "kind": "flag"
+    },
+    {
+      "name": "argument",
+      "value": "CLIENT_ID",
+      "kind": "accepted-input"
+    }
+  ]
+}

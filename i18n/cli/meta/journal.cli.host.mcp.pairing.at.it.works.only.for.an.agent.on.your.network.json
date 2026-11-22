@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for mcp pairing at it works only for an agent on your network.",
+  "context": "Journal host output for mcp pairing at it works only for an agent on your network.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "025e74174ddb1398fd73197de536b88f71350fec2cb424aed1fe114f0f14d9a3",
+  "max_length": 129,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

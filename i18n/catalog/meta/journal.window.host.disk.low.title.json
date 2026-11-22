@@ -1,0 +1,16 @@
+{
+  "description": "Journal owner notice disk low title.",
+  "context": "Journal owner notice disk low title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "35ae16df8a85dfd0146e8e9002a903ac472894509bb7f7104622e3c3c98e5dcf",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

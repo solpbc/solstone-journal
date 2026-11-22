@@ -1,0 +1,32 @@
+{
+  "description": "Native contract bundle command, load json. Preserve terminal syntax and supplied data.",
+  "context": "Native contract bundle command, load json. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "76b5ce850026cb82a4b43bed5df6d6f6e7476ccc744f4846de62430ab713d651",
+  "max_length": 141,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_1",
+      "kind": "accepted-input",
+      "value": "JSON"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Native contract validate command, validate json. Preserve terminal syntax and supplied data.",
+  "context": "Native contract validate command, validate json. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a28ca74759a5a1f237e1b7dc55b86778045febdd351647cfaff7364a275310af",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_1",
+      "kind": "accepted-input",
+      "value": "JSON"
+    }
+  ]
+}

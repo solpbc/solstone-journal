@@ -1,0 +1,28 @@
+{
+  "description": "Native install provider command, global. Preserve terminal syntax and supplied data.",
+  "context": "Native install provider command, global. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cbd8b8891c9bb51dc7cac9d97ef40f282ee86884729d399ed65ea616a69f83ec",
+  "max_length": 246,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_1",
+      "kind": "accepted-input",
+      "value": "parakeet.cpp"
+    },
+    {
+      "name": "literal_2",
+      "kind": "accepted-input",
+      "value": "Core ML"
+    }
+  ]
+}

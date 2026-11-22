@@ -1,0 +1,25 @@
+{
+  "description": "Journal host health ced unsupported.",
+  "context": "Journal host health ced unsupported.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "arch",
+      "type": "string"
+    },
+    {
+      "name": "os",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ac4d179a58b680fd1979049d3cc712fa24e8fda01044e14c1b7b1abf8f4bde59",
+  "max_length": 246,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

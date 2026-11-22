@@ -1,0 +1,68 @@
+{
+  "description": "Terminal help and usage for contract help.",
+  "context": "Terminal help and usage for contract help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "95669025867a5d877dae731a681c9458cc4d50e6c866633f309b8ccf68032b9c",
+  "max_length": 1500,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal contract [-h] {build,check} ...",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "choices",
+      "value": "{build,check}",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "spaces_4",
+      "value": "    ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "subcommand",
+      "value": "build",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "spaces_15",
+      "value": "               ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "subcommand_8",
+      "value": "check",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_12",
+      "value": "            ",
+      "kind": "whitespace"
+    }
+  ]
+}

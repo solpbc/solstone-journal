@@ -1,0 +1,143 @@
+{
+  "description": "Terminal help and usage for mcp activity help.",
+  "context": "Terminal help and usage for mcp activity help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9a47c2e3433c0cbc4c0c1cbc204b27e6a8d9cdba8ef5037e571effc6eb3e15df",
+  "max_length": 3405,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal mcp activity [-h] [--token LABEL | --oauth CLIENT_ID [--created TIMESTAMP]]",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "spaces_37",
+      "value": "                                     ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "syntax_4",
+      "value": "[--tool TOOL] [--outcome OUTCOME] [--day-from YYYYMMDD]",
+      "kind": "command"
+    },
+    {
+      "name": "syntax_5",
+      "value": "[--day-to YYYYMMDD] [--limit N] [--json]",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_11",
+      "value": "           ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_9",
+      "value": "--token LABEL",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_8",
+      "value": "        ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_11",
+      "value": "--oauth CLIENT_ID",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_4",
+      "value": "    ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "term",
+      "value": "OAuth",
+      "kind": "mark-word"
+    },
+    {
+      "name": "option_14",
+      "value": "--created TIMESTAMP",
+      "kind": "command"
+    },
+    {
+      "name": "flag",
+      "value": "--oauth",
+      "kind": "flag"
+    },
+    {
+      "name": "option_16",
+      "value": "--tool TOOL",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_10",
+      "value": "          ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_18",
+      "value": "--outcome OUTCOME",
+      "kind": "command"
+    },
+    {
+      "name": "option_19",
+      "value": "--day-from YYYYMMDD",
+      "kind": "command"
+    },
+    {
+      "name": "option_20",
+      "value": "--day-to YYYYMMDD",
+      "kind": "command"
+    },
+    {
+      "name": "option_21",
+      "value": "--limit N",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_12",
+      "value": "            ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_23",
+      "value": "--json",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_15",
+      "value": "               ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "term_25",
+      "value": "JSON",
+      "kind": "mark-word"
+    }
+  ]
+}

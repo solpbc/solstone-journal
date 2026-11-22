@@ -1,0 +1,33 @@
+{
+  "description": "Terminal diagnostic for parser mcp token label the following arguments are required label label.",
+  "context": "Terminal diagnostic for parser mcp token label the following arguments are required label label.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "294f47d54a2f66e840d4098e01956092b880b8cc1e4be9049dd72f91b412f37d",
+  "max_length": 246,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "flag",
+      "value": "--label",
+      "kind": "flag"
+    },
+    {
+      "name": "argument",
+      "value": "LABEL",
+      "kind": "accepted-input"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output for spl service spl service failed.",
+  "context": "Journal host output for spl service spl service failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "class",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bb38649ffb71bf6cc48a56e312d78b2723474fb5cdd036d6037ad8a5be34c393",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

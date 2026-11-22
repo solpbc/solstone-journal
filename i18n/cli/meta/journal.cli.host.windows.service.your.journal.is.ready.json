@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service your journal is ready.",
+  "context": "Journal host output for windows service your journal is ready.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f2e961006380b63a72311c6a5389bd61314645e56e70d2a46f3c94f960c03348",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

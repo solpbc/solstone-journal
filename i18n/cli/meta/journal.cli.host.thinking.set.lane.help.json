@@ -1,0 +1,118 @@
+{
+  "description": "Terminal help and usage for thinking set lane help.",
+  "context": "Terminal help and usage for thinking set lane help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ef547d6921fb1eb727f2a994509aa8b8aca1e92149ce60a48ec85b4de723873d",
+  "max_length": 2070,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal thinking set-lane [-h] {local,byo,confidential} [--provider PROVIDER] [--model MODEL] [--journal PATH]",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "literal",
+      "value": "generate",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "choices",
+      "value": "{local,byo,confidential}",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "spaces_24",
+      "value": "                        ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_12",
+      "value": "            ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_9",
+      "value": "--provider PROVIDER",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_3",
+      "value": "   ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "argument",
+      "value": "BYO",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "literal_12",
+      "value": "anthropic",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "literal_13",
+      "value": "chatgpt",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "literal_14",
+      "value": "google",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "literal_15",
+      "value": "local",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "literal_16",
+      "value": "openai",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "option_17",
+      "value": "--model MODEL",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_9",
+      "value": "         ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_19",
+      "value": "--journal PATH",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_8",
+      "value": "        ",
+      "kind": "whitespace"
+    }
+  ]
+}

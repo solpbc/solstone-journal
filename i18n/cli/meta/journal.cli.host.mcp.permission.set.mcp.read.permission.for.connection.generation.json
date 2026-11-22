@@ -1,0 +1,32 @@
+{
+  "description": "Journal host output for mcp permission set mcp read permission for connection generation.",
+  "context": "Journal host output for mcp permission set mcp read permission for connection generation.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "connection",
+      "type": "string"
+    },
+    {
+      "name": "generation",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "df754aa7df1cd5f967d0b2d27afaa8bf0f067011f42f51c84e2fbd66484d01a2",
+  "max_length": 291,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_mcp",
+      "kind": "accepted-input",
+      "value": "MCP"
+    }
+  ]
+}

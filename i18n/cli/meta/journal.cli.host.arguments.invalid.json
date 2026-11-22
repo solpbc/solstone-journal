@@ -1,0 +1,21 @@
+{
+  "description": "Terminal diagnostic for arguments invalid.",
+  "context": "Terminal diagnostic for arguments invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e339006fbeb4825abb0efe852e2c6d2c995a88021d57ca79530e863801deeabb",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for mcp pairing at it works only at your own domain.",
+  "context": "Journal host output for mcp pairing at it works only at your own domain.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5618e4cd179c9fc79bd89f529b094cf108fff0dfa4276bfb79197dbb3a51fc87",
+  "max_length": 128,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

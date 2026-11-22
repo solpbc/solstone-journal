@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service service task changed during run admission.",
+  "context": "Journal host output for windows service service task changed during run admission.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "49eac05d59406681523a1c474fc07dbd96b69ebaa6353202f9664753d47bed06",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

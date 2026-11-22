@@ -1,0 +1,37 @@
+{
+  "description": "Journal host output for mcp activity record.",
+  "context": "Journal host output for mcp activity record.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "segment",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4a10ce25ef4a257d5dd2e55ac08d461eaa90a83a162c6148b3ff9fb095060bdb",
+  "max_length": 156,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "space_4",
+      "kind": "whitespace",
+      "value": "    "
+    },
+    {
+      "name": "space_2",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ]
+}

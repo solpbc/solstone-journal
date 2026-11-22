@@ -1,0 +1,118 @@
+{
+  "description": "Terminal help and usage for mcp help.",
+  "context": "Terminal help and usage for mcp help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "473e3e306e9f4db13cf3e457150b0008f752e2575276c0e2cb7125e7f515cbb5",
+  "max_length": 3216,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal mcp [-h] {service,local-door,status,token,pairing,oauth,permission,activity,probe} ...",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_12",
+      "value": "            ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "subcommand",
+      "value": "service",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "spaces_15",
+      "value": "               ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "term",
+      "value": "MCP",
+      "kind": "mark-word"
+    },
+    {
+      "name": "subcommand_9",
+      "value": "local-door",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "subcommand_10",
+      "value": "status",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "spaces_16",
+      "value": "                ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "subcommand_12",
+      "value": "token",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "spaces_17",
+      "value": "                 ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "subcommand_14",
+      "value": "pairing",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "subcommand_15",
+      "value": "oauth",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "term_16",
+      "value": "OAuth",
+      "kind": "mark-word"
+    },
+    {
+      "name": "subcommand_17",
+      "value": "permission",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "subcommand_18",
+      "value": "activity",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "spaces_14",
+      "value": "              ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "subcommand_20",
+      "value": "probe",
+      "kind": "accepted-input"
+    }
+  ]
+}

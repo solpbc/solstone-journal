@@ -1,0 +1,42 @@
+{
+  "description": "Native config command, decide. Preserve terminal syntax and supplied data.",
+  "context": "Native config command, decide. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "current_state",
+      "type": "string"
+    },
+    {
+      "name": "target_state",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a600bd7d28aca539a10945e151827010495a3349fb21a0af25092d9bbac85228",
+  "max_length": 492,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_1",
+      "kind": "accepted-input",
+      "value": "--switch"
+    },
+    {
+      "name": "literal_2",
+      "kind": "accepted-input",
+      "value": "--force"
+    },
+    {
+      "name": "literal_3",
+      "kind": "accepted-input",
+      "value": "--move"
+    }
+  ]
+}

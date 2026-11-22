@@ -1,0 +1,48 @@
+{
+  "description": "Terminal help and usage for mcp token create help.",
+  "context": "Terminal help and usage for mcp token create help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6850089cd31b5d1cfb2a68008477a4bfd7067221d9190a14b9284bee77c3c50e",
+  "max_length": 1032,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal mcp token create [-h] --label LABEL",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_5",
+      "value": "     ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_6",
+      "value": "--label LABEL",
+      "kind": "command"
+    }
+  ]
+}

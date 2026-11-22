@@ -1,0 +1,25 @@
+{
+  "description": "Journal host warm row signal.",
+  "context": "Journal host warm row signal.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "binary",
+      "type": "string"
+    },
+    {
+      "name": "signal",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "95e02ba6b13e9ec2a60d28aad88f76e39a9bf464c0419426fec94aaa050bcbe8",
+  "max_length": 171,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

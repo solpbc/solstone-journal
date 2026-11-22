@@ -1,0 +1,25 @@
+{
+  "description": "Terminal diagnostic for parser cortex unrecognized arguments arguments.",
+  "context": "Terminal diagnostic for parser cortex unrecognized arguments arguments.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    },
+    {
+      "name": "arguments",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1602cf530ed9ad861361b365e25499e8c08732d95a849b8e9647f26171cb5c33",
+  "max_length": 177,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

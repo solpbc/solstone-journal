@@ -1,0 +1,38 @@
+{
+  "description": "Journal host supervisor journal program folder.",
+  "context": "Journal host supervisor journal program folder.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0644aeb697a78f18108033781e34b82cd2dce9842e9fbc44acdcb451b434bf92",
+  "max_length": 1269,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "setup",
+      "kind": "accepted-input",
+      "value": "solstone journal setup --accept-existing-journal --journal \"D:\\journal\""
+    },
+    {
+      "name": "uninstall",
+      "kind": "accepted-input",
+      "value": "solstone journal service uninstall"
+    },
+    {
+      "name": "stop",
+      "kind": "accepted-input",
+      "value": "solstone journal service stop"
+    },
+    {
+      "name": "path",
+      "kind": "accepted-input",
+      "value": "D:\\journal"
+    }
+  ]
+}

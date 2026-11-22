@@ -32,13 +32,18 @@ const OBSERVE_PROGRESS_INTERVAL: Duration = Duration::from_secs(10);
 // single-element host allowlist, so naming github.com and huggingface.co here
 // would name two parties the native path never contacts. Carried verbatim from
 // the reference's post-flip wording rather than re-authored.
-const PARAKEET_DOWNLOAD_DISCLOSURE: &str = "parakeet-cpp fetches two artifacts into this journal's provider cache before it can run, both from updates.solstone.app: the parakeet.cpp server binary (MIT) and the speech model (CC-BY-4.0). see THIRD_PARTY_NOTICES.md.";
-const LOCAL_DOWNLOAD_DISCLOSURE: &str = "local model assets: downloading the llama.cpp runtime (MIT; the CUDA build also carries NVIDIA-licensed runtime components) and the model (Apache-2.0) from updates.solstone.app. see THIRD_PARTY_NOTICES.md.";
-const WINDOWS_PARAKEET_BUNDLED: &str = "parakeet.cpp and its speech model come with the journal on windows, so there's nothing to install. see THIRD_PARTY_NOTICES.md.";
+const PARAKEET_DOWNLOAD_DISCLOSURE: &str =
+    "!journal.cli.host.install.provider.global.parakeet.cpp.fetches.two.artifacts";
+const LOCAL_DOWNLOAD_DISCLOSURE: &str =
+    "!journal.cli.host.install.provider.global.local.model.assets.downloading.llama";
+const WINDOWS_PARAKEET_BUNDLED: &str =
+    "!journal.cli.host.install.provider.global.parakeet.cpp.and.its.speech";
 const MAC_PARAKEET_UNAVAILABLE: &str =
-    "parakeet.cpp can't run on a mac. a mac transcribes with its Core ML model instead.";
-const WINDOWS_LOCAL_DOWNLOAD_DISCLOSURE: &str = "local thinking downloads the model and vision projector (Apache-2.0) from updates.solstone.app when needed. the runtime is included with the journal. see THIRD_PARTY_NOTICES.md.";
-const MLX_LOCAL_DOWNLOAD_DISCLOSURE: &str = "local thinking downloads the model (Apache-2.0) from updates.solstone.app. the MLX runtime is included with the journal. see THIRD_PARTY_NOTICES.md.";
+    "journal.cli.host.install.provider.global.parakeet.cpp.can.t.run";
+const WINDOWS_LOCAL_DOWNLOAD_DISCLOSURE: &str =
+    "!journal.cli.host.install.provider.global.local.thinking.downloads.model.and";
+const MLX_LOCAL_DOWNLOAD_DISCLOSURE: &str =
+    "!journal.cli.host.install.provider.global.local.thinking.downloads.model.apache";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct InstallProviderOutcome {
@@ -78,7 +83,17 @@ fn supervisor_refusal_outcome(refusal: SupervisorRefusal) -> InstallProviderOutc
             SupervisorRefusal::Unavailable => 1,
         },
         stdout: Vec::new(),
-        stderr: refusal.message().map(str::to_owned).into_iter().collect(),
+        stderr: refusal
+            .message()
+            .map(|_| {
+                solstone_core_cli_copy::render_for(
+                    crate::host_locale(),
+                    "journal.cli.streams.supervisor",
+                    &[],
+                )
+            })
+            .into_iter()
+            .collect(),
     }
 }
 
@@ -197,9 +212,10 @@ where
         name => {
             return InstallProviderOutcome::failure(
                 2,
-                format!(
-                    "unsupported provider {}; supported: local, parakeet",
-                    reference_repr(name)
+                solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.install.provider.run.inner.with.unsupported.provider.provider.supported.local",
+                    [("provider", &reference_repr(name))],
                 ),
             );
         }
@@ -219,14 +235,22 @@ where
         return outcome;
     }
     let readiness = readiness_provider(&journal);
-    let mut stderr = vec![PARAKEET_DOWNLOAD_DISCLOSURE.to_owned()];
+    let mut stderr = vec![solstone_core_cli_copy::render_for(
+        crate::host_locale(),
+        PARAKEET_DOWNLOAD_DISCLOSURE,
+        &[],
+    )];
     let readiness_status = readiness["status"].as_str().unwrap_or("proof-unavailable");
     if readiness_status == "ready" {
         let install = match status::read_status(&journal, "parakeet") {
             Ok(install) => install,
             Err(error) => return unavailable_status_error("parakeet", stderr, error),
         };
-        stderr.push("parakeet already installed".to_owned());
+        stderr.push(solstone_core_cli_copy::render_for(
+            crate::host_locale(),
+            "journal.cli.host.install.provider.run.inner.with.parakeet.already.installed",
+            &[],
+        ));
         return InstallProviderOutcome::success(vec![render_status(&install)], stderr);
     }
     if matches!(readiness_status, "proof-unavailable" | "host-ineligible") {
@@ -257,7 +281,8 @@ where
     let held = match lease::acquire(&journal, "parakeet") {
         Ok(held) => held,
         Err(error) => {
-            stderr.push(error.to_string());
+            stderr
+                .push(solstone_core_local::install::io_detail(error).render(crate::host_locale()));
             return InstallProviderOutcome {
                 exit_code: 1,
                 stdout: Vec::new(),
@@ -304,9 +329,16 @@ fn parakeet_host_without_install(os_name: &str) -> Option<InstallProviderOutcome
     match os_name {
         "windows" => Some(InstallProviderOutcome::success(
             Vec::new(),
-            vec![WINDOWS_PARAKEET_BUNDLED.to_owned()],
+            vec![solstone_core_cli_copy::render_for(
+                crate::host_locale(),
+                WINDOWS_PARAKEET_BUNDLED,
+                &[],
+            )],
         )),
-        "darwin" => Some(InstallProviderOutcome::failure(1, MAC_PARAKEET_UNAVAILABLE)),
+        "darwin" => Some(InstallProviderOutcome::failure(
+            1,
+            solstone_core_cli_copy::render_for(crate::host_locale(), MAC_PARAKEET_UNAVAILABLE, &[]),
+        )),
         _ => None,
     }
 }
@@ -414,11 +446,15 @@ where
     };
     let readiness = readiness_provider(&journal);
     let mut stderr = vec![if os_name.eq_ignore_ascii_case("windows") {
-        WINDOWS_LOCAL_DOWNLOAD_DISCLOSURE.to_owned()
+        solstone_core_cli_copy::render_for(
+            crate::host_locale(),
+            WINDOWS_LOCAL_DOWNLOAD_DISCLOSURE,
+            &[],
+        )
     } else if os_name == "darwin" {
-        MLX_LOCAL_DOWNLOAD_DISCLOSURE.to_owned()
+        solstone_core_cli_copy::render_for(crate::host_locale(), MLX_LOCAL_DOWNLOAD_DISCLOSURE, &[])
     } else {
-        LOCAL_DOWNLOAD_DISCLOSURE.to_owned()
+        solstone_core_cli_copy::render_for(crate::host_locale(), LOCAL_DOWNLOAD_DISCLOSURE, &[])
     }];
     let readiness_status = readiness["status"].as_str().unwrap_or("proof-unavailable");
     if readiness_status == "ready" {
@@ -426,7 +462,7 @@ where
             Ok(install) => install,
             Err(error) => return unavailable_status_error("local", stderr, error),
         };
-        stderr.push("local already installed".to_owned());
+        stderr.push(solstone_core_cli_copy::render_for(crate::host_locale(), "journal.cli.host.install.provider.run.local.inner.with.platform.and.target.sha.local.already.installed", &[]));
         return InstallProviderOutcome::success(vec![render_status(&install)], stderr);
     }
     if matches!(readiness_status, "proof-unavailable" | "host-ineligible") {
@@ -436,7 +472,7 @@ where
         if let Err(error) =
             status::record_terminal_refusal(&journal, "local", reason_code, reason_code)
         {
-            stderr.push(error.to_string());
+            stderr.push(error.into_detail().render(crate::host_locale()));
         }
         stderr.push(reason_code.to_owned());
         return InstallProviderOutcome {
@@ -464,7 +500,8 @@ where
         }
         Ok(false) => {}
         Err(error) => {
-            stderr.push(error.to_string());
+            stderr
+                .push(solstone_core_local::install::io_detail(error).render(crate::host_locale()));
             return InstallProviderOutcome {
                 exit_code: 1,
                 stdout: Vec::new(),
@@ -506,7 +543,7 @@ where
                 if let Err(persistence_error) =
                     status::record_terminal_refusal(&journal, "local", "install_failed", &error)
                 {
-                    stderr.push(persistence_error.to_string());
+                    stderr.push(persistence_error.into_detail().render(crate::host_locale()));
                 }
                 stderr.push(error);
                 return InstallProviderOutcome {
@@ -739,7 +776,7 @@ fn local_target_sha(journal: &Path) -> Result<String, String> {
                 .and_then(Value::as_str)
                 .map(str::to_owned)
         })
-        .ok_or_else(|| "local fingerprint dispatch omitted target_fingerprint_sha256".to_owned())
+        .ok_or_else(|| solstone_core_cli_copy::render_for(crate::host_locale(), "journal.cli.host.install.provider.local.target.sha.local.fingerprint.dispatch.omitted.target", &[]))
 }
 
 fn observe_existing(
@@ -783,9 +820,7 @@ where
     if !status::is_in_flight(&current.install_state)
         || current.target_fingerprint_sha256.as_deref() != Some(target_sha)
     {
-        stderr.push(format!(
-            "{provider} install already running for a different target"
-        ));
+        stderr.push(solstone_core_cli_copy::display_for(crate::host_locale(), "journal.cli.host.install.provider.observe.existing.with.provider.install.already.running.for", [("provider", &provider)]));
         return InstallProviderOutcome {
             exit_code: 1,
             stdout: Vec::new(),
@@ -813,7 +848,7 @@ where
             }
         }
         Ok(status::ObserveAttempt::TimedOut) => {
-            stderr.push(format!("timed out observing {provider} install"));
+            stderr.push(solstone_core_cli_copy::display_for(crate::host_locale(), "journal.cli.host.install.provider.observe.existing.with.timed.out.observing.provider.install", [("provider", &provider)]));
             InstallProviderOutcome {
                 exit_code: 1,
                 stdout: Vec::new(),
@@ -832,9 +867,14 @@ fn progress_line(provider: &str, state: &status::InstallStatus) -> String {
             None => format!(" {received}"),
         })
         .unwrap_or_default();
-    format!(
-        "observing {provider} install: {}{suffix}",
-        state.install_state
+    solstone_core_cli_copy::display_for(
+        crate::host_locale(),
+        "journal.cli.host.install.provider.progress.line.observing.provider.install.state.suffix",
+        [
+            ("provider", &provider),
+            ("state", &state.install_state),
+            ("suffix", &suffix),
+        ],
     )
 }
 
@@ -868,13 +908,10 @@ fn install_failure(
 fn unavailable_status_error(
     provider: &str,
     error_lines: Vec<String>,
-    error: impl ToString,
+    error: status::StatusError,
 ) -> InstallProviderOutcome {
     let mut stderr = error_lines;
-    stderr.push(format!(
-        "could not read persisted {provider} install status: {}",
-        error.to_string()
-    ));
+    stderr.push(solstone_core_cli_copy::display_for(crate::host_locale(), "journal.cli.host.install.provider.unavailable.status.error.could.not.read.persisted.provider", [("provider", &provider), ("error", &error.into_detail().render(crate::host_locale()))]));
     InstallProviderOutcome {
         exit_code: 1,
         stdout: Vec::new(),
@@ -891,12 +928,15 @@ fn is_install_busy(error: &DispatchError) -> bool {
 }
 
 fn dispatch_message(provider: &str, error: DispatchError) -> String {
-    error
-        .envelope
-        .error
-        .as_ref()
-        .map(|error| error.message.clone())
-        .unwrap_or_else(|| format!("{provider} install failed"))
+    if error.envelope.error.is_some() {
+        error.into_detail().render(crate::host_locale())
+    } else {
+        solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.install.provider.dispatch.message.provider.install.failed",
+            [("provider", &provider)],
+        )
+    }
 }
 
 fn render_status(status: &status::InstallStatus) -> String {
@@ -1095,7 +1135,14 @@ mod tests {
             "arm64",
         );
         assert_eq!(refused.exit_code, 1);
-        assert_eq!(refused.stderr, vec![MAC_PARAKEET_UNAVAILABLE.to_owned()]);
+        assert_eq!(
+            refused.stderr,
+            vec![solstone_core_cli_copy::render_for(
+                crate::host_locale(),
+                MAC_PARAKEET_UNAVAILABLE,
+                &[]
+            )]
+        );
 
         let bundled = run_inner_with(
             options("parakeet"),
@@ -1109,7 +1156,14 @@ mod tests {
             "x86_64",
         );
         assert_eq!(bundled.exit_code, 0);
-        assert_eq!(bundled.stderr, vec![WINDOWS_PARAKEET_BUNDLED.to_owned()]);
+        assert_eq!(
+            bundled.stderr,
+            vec![solstone_core_cli_copy::render_for(
+                crate::host_locale(),
+                WINDOWS_PARAKEET_BUNDLED,
+                &[]
+            )]
+        );
 
         let reached = run_inner_with(
             options("parakeet"),
@@ -2069,7 +2123,12 @@ mod tests {
             darwin
                 .stderr
                 .iter()
-                .filter(|line| line.as_str() == MLX_LOCAL_DOWNLOAD_DISCLOSURE)
+                .filter(|line| line.as_str()
+                    == solstone_core_cli_copy::render_for(
+                        crate::host_locale(),
+                        MLX_LOCAL_DOWNLOAD_DISCLOSURE,
+                        &[]
+                    ))
                 .count(),
             1,
             "{:?}",
@@ -2097,7 +2156,14 @@ mod tests {
             "linux",
             "x86_64",
         );
-        assert_eq!(linux.stderr[0], LOCAL_DOWNLOAD_DISCLOSURE);
+        assert_eq!(
+            linux.stderr[0],
+            solstone_core_cli_copy::render_for(
+                crate::host_locale(),
+                LOCAL_DOWNLOAD_DISCLOSURE,
+                &[]
+            )
+        );
     }
 
     #[test]
@@ -2106,15 +2172,41 @@ mod tests {
         // `origin_key` against a single-element host allowlist, so a disclosure
         // naming github.com or huggingface.co would name parties this path
         // never contacts.
-        assert!(PARAKEET_DOWNLOAD_DISCLOSURE.contains("updates.solstone.app"));
+        assert!(
+            solstone_core_cli_copy::render_for(
+                crate::host_locale(),
+                PARAKEET_DOWNLOAD_DISCLOSURE,
+                &[]
+            )
+            .contains("updates.solstone.app")
+        );
         for third_party in ["github.com", "huggingface.co"] {
             assert!(
-                !PARAKEET_DOWNLOAD_DISCLOSURE.contains(third_party),
+                !solstone_core_cli_copy::render_for(
+                    crate::host_locale(),
+                    PARAKEET_DOWNLOAD_DISCLOSURE,
+                    &[]
+                )
+                .contains(third_party),
                 "parakeet disclosure names {third_party}"
             );
         }
-        assert!(!LOCAL_DOWNLOAD_DISCLOSURE.contains("github.com"));
-        assert!(!LOCAL_DOWNLOAD_DISCLOSURE.contains("huggingface.co"));
+        assert!(
+            !solstone_core_cli_copy::render_for(
+                crate::host_locale(),
+                LOCAL_DOWNLOAD_DISCLOSURE,
+                &[]
+            )
+            .contains("github.com")
+        );
+        assert!(
+            !solstone_core_cli_copy::render_for(
+                crate::host_locale(),
+                LOCAL_DOWNLOAD_DISCLOSURE,
+                &[]
+            )
+            .contains("huggingface.co")
+        );
     }
 
     #[test]

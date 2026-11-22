@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service cannot identify one running service task.",
+  "context": "Journal host output for windows service cannot identify one running service task.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4ee9b09d1ac33b3599448eab56c6c8bdaa1a8cbffc59edc69e07a5bb5c931964",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

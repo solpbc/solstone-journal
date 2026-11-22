@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output for windows service could not write update intent record.",
+  "context": "Journal host output for windows service could not write update intent record.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d2d1e045238b63bc3be8dea51d4d64f008585b69e78e30bebfb1576be1f74df7",
+  "max_length": 144,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

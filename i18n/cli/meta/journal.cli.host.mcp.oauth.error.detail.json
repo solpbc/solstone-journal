@@ -1,0 +1,36 @@
+{
+  "description": "Journal host output for render oauth store error .",
+  "context": "Journal host output for render oauth store error .",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    },
+    {
+      "name": "operation",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "df2b05b5952b794e3f32d6cb7b6b58c77d9a43f214051bf3155288aa3ef62099",
+  "max_length": 219,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command_solstone_journal_mcp",
+      "kind": "command",
+      "value": "solstone journal mcp"
+    }
+  ]
+}

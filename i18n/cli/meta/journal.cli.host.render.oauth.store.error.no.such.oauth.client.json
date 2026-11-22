@@ -1,0 +1,37 @@
+{
+  "description": "Journal host output for render oauth store error no such oauth client.",
+  "context": "Journal host output for render oauth store error no such oauth client.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    },
+    {
+      "name": "operation",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2ac4b07b45459f63cda0d51b8d24f057748d9642bbb741521c37704175f26603",
+  "max_length": 288,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command_solstone_journal_mcp",
+      "kind": "command",
+      "value": "solstone journal mcp"
+    },
+    {
+      "name": "literal_oauth",
+      "kind": "accepted-input",
+      "value": "OAuth"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal host output for mcp activity no recorded mcp activity matches.",
+  "context": "Journal host output for mcp activity no recorded mcp activity matches.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "191110de94deb3f20311b650f38d70698e6187ced2d9ad48b35dc0929dc2ff3b",
+  "max_length": 138,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_mcp",
+      "kind": "accepted-input",
+      "value": "MCP"
+    }
+  ]
+}

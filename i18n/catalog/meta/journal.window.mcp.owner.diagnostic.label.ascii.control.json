@@ -1,0 +1,23 @@
+{
+  "description": "MCP owner diagnostic for label ascii control.",
+  "context": "MCP owner diagnostic for label ascii control.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d9a2c96a1010203901fe31463924096fcee3d2984b43b194506f8f3c8396199e",
+  "max_length": 144,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_ascii",
+      "kind": "accepted-input",
+      "value": "ASCII"
+    }
+  ]
+}

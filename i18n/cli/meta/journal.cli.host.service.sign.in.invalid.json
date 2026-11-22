@@ -1,0 +1,33 @@
+{
+  "description": "Terminal diagnostic for service sign in invalid.",
+  "context": "Terminal diagnostic for service sign in invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3e7a29d389f10399e0bcc4202ccac2a71523ef68f696d246016c66e7767cac50",
+  "max_length": 165,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "flag",
+      "value": "--initial-start-at-sign-in",
+      "kind": "flag"
+    },
+    {
+      "name": "literal",
+      "value": "on",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "literal_3",
+      "value": "off",
+      "kind": "accepted-input"
+    }
+  ]
+}

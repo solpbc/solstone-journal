@@ -89,12 +89,26 @@ fn render_snapshot(
     output: &mut dyn Write,
 ) -> io::Result<()> {
     if !snapshot.has_descriptors() {
-        return output.write_all(b"=== service logs === (no oplog leaves)\n");
+        return writeln!(
+            output,
+            "{}",
+            solstone_core_cli_copy::render_for(
+                crate::host_locale(),
+                "journal.cli.host.logs.service.empty",
+                &[]
+            )
+        );
     }
     let normalized = normalize_raw_stream(snapshot.tail(), is_tty);
     let body = final_codepoints(&normalized, TAIL_CODEPOINT_LIMIT);
-    let mut staged = Vec::with_capacity("=== service logs ===\n".len() + body.len() + 1);
-    staged.extend_from_slice(b"=== service logs ===\n");
+    let header = solstone_core_cli_copy::render_for(
+        crate::host_locale(),
+        "journal.cli.host.logs.service.heading",
+        &[],
+    );
+    let mut staged = Vec::with_capacity(header.len() + body.len() + 2);
+    staged.extend_from_slice(header.as_bytes());
+    staged.push(b'\n');
     staged.extend_from_slice(body.as_bytes());
     staged.push(b'\n');
     output.write_all(&staged)
@@ -106,8 +120,12 @@ fn unsupported_platform(platform: HostPlatform, stderr: &mut impl Write) -> Opti
     };
     let _ = writeln!(
         stderr,
-        "Error: unsupported platform '{}'",
-        sanitize_for_terminal(platform)
+        "{}",
+        solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.logs.service.unsupported",
+            [("platform", &(sanitize_for_terminal(platform)))]
+        )
     );
     Some(ExitCode::FAILURE)
 }
@@ -148,7 +166,15 @@ fn final_codepoints(value: &str, count: usize) -> &str {
 }
 
 fn failure(stderr: &mut impl Write, message: SafeDiagnostic) -> ExitCode {
-    let _ = writeln!(stderr, "service logs: {}", message.0);
+    let _ = writeln!(
+        stderr,
+        "{}",
+        solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.logs.service.error",
+            [("detail", &(message.0))]
+        )
+    );
     ExitCode::FAILURE
 }
 
@@ -156,17 +182,40 @@ fn collect_error_message(error: CollectError) -> SafeDiagnostic {
     SafeDiagnostic::dynamic(error.to_string())
 }
 
+pub(super) fn known_follow_error(error: &FollowFatalError, path: &str) -> Option<String> {
+    use solstone_core_operational_logs::FollowDiagnostic;
+    let id = match error.diagnostic()? {
+        FollowDiagnostic::RootUnavailable => "journal.cli.host.logs.follow.root",
+        FollowDiagnostic::DescriptorChanged => "journal.cli.host.logs.follow.descriptor",
+    };
+    Some(solstone_core_cli_copy::display_for(
+        crate::host_locale(),
+        id,
+        [("path", &path)],
+    ))
+}
+
 fn follow_error_message(error: FollowFatalError) -> SafeDiagnostic {
-    let message = format!(
-        "{} failed for {}",
-        error.operation,
-        terminal_path(&error.path)
-    );
-    error
-        .source
-        .as_ref()
-        .map(|source| SafeDiagnostic::dynamic(format!("{message}: {source}")))
-        .unwrap_or(SafeDiagnostic::dynamic(message))
+    let path = terminal_path(&error.path);
+    if let Some(message) = known_follow_error(&error, &path) {
+        return SafeDiagnostic::dynamic(message);
+    }
+    match error.source {
+        Some(source) => SafeDiagnostic::dynamic(solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.logs.follow.source",
+            [
+                ("operation", &(error.operation)),
+                ("path", &(path)),
+                ("source", &(source)),
+            ],
+        )),
+        None => SafeDiagnostic::dynamic(solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.logs.follow.failed",
+            [("operation", &(error.operation)), ("path", &(path))],
+        )),
+    }
 }
 
 struct SafeDiagnostic(String);
@@ -177,7 +226,11 @@ impl SafeDiagnostic {
     }
 
     fn source(operation: &str, source: &dyn std::fmt::Display) -> Self {
-        Self::dynamic(format!("{operation} failed: {source}"))
+        Self::dynamic(solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.logs.service.operation",
+            [("operation", &(operation)), ("source", &(source))],
+        ))
     }
 }
 

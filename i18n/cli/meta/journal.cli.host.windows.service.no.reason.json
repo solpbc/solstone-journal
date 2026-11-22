@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service no reason.",
+  "context": "Journal host output for windows service no reason.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9a02c9a12742a7787c21aa20c8bd00f97783cd0a9ceb5442bcd513f1fedbeaab",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

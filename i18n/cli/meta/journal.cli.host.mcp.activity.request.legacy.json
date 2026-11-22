@@ -1,0 +1,23 @@
+{
+  "description": "Journal host output for mcp activity request schema 1 not recorded.",
+  "context": "Journal host output for mcp activity request schema 1 not recorded.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ba3ab89ab7b0a368582e709a09756c008e6453d574a6bdcf5de94fdd30bd52f9",
+  "max_length": 135,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "space_4",
+      "kind": "whitespace",
+      "value": "    "
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal host service service command timed out.",
+  "context": "Journal host service service command timed out.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cc62025f8893031424ea94e452fd9a0376c08037530abd95dcdfd8d8abd9d48b",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

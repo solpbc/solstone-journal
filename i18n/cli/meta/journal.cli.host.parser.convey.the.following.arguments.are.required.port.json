@@ -1,0 +1,28 @@
+{
+  "description": "Terminal diagnostic for parser convey the following arguments are required port.",
+  "context": "Terminal diagnostic for parser convey the following arguments are required port.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5354988fb350bbfd6f4f7ef62b0a3fe0a618ca8a7a5f6820ac64c5dae2d1f32d",
+  "max_length": 204,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "flag",
+      "value": "--port",
+      "kind": "flag"
+    }
+  ]
+}

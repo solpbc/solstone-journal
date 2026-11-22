@@ -1,0 +1,23 @@
+{
+  "description": "Journal host output for windows service task operation returned invalid json.",
+  "context": "Journal host output for windows service task operation returned invalid json.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "83c97c380555cf15cabf0bdd17e1d640e7d384a5d1e8d478b8b151087a94c9ac",
+  "max_length": 147,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_json",
+      "kind": "accepted-input",
+      "value": "JSON"
+    }
+  ]
+}

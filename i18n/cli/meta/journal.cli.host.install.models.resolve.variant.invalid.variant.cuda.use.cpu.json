@@ -1,0 +1,42 @@
+{
+  "description": "Native install models command, resolve variant. Preserve terminal syntax and supplied data.",
+  "context": "Native install models command, resolve variant. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "os",
+      "type": "string"
+    },
+    {
+      "name": "arch",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "97971aff0b67f4cae107ff48a360639ff8d748a408a795b0965556506631166d",
+  "max_length": 186,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_1",
+      "kind": "accepted-input",
+      "value": "JOURNAL_VARIANT"
+    },
+    {
+      "name": "literal_2",
+      "kind": "accepted-input",
+      "value": "'cuda'"
+    },
+    {
+      "name": "literal_3",
+      "kind": "accepted-input",
+      "value": "'cpu'"
+    }
+  ]
+}

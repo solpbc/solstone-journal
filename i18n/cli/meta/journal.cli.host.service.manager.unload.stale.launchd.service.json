@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service manager unload stale launchd service.",
+  "context": "Journal host service manager unload stale launchd service.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "result",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "edc267ca701b71d66ad6bd36d4df3a39cf8efc669ffd31e5d175d4451803c50d",
+  "max_length": 144,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

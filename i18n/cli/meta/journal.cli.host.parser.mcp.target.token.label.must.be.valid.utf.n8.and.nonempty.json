@@ -1,0 +1,28 @@
+{
+  "description": "Terminal diagnostic for parser mcp target token label must be valid utf n8 and nonempty.",
+  "context": "Terminal diagnostic for parser mcp target token label must be valid utf n8 and nonempty.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "950a3407aa62be1ffa18e47d2768f0555264378adf565b722d263fcf76ba41e1",
+  "max_length": 207,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "term",
+      "value": "UTF-8",
+      "kind": "mark-word"
+    }
+  ]
+}

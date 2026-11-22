@@ -3625,8 +3625,11 @@ window.SolViews.register('thinking', { mount: (ctx) => {
   }
 
   function renderChatGptPending(chatgptText) {
+    const automaticReturn = state.chatgpt.attempt?.brokered === true
+      || window.solstoneOAuthBroker?.isSameMachineBrowser();
     setText('chatgptPendingHeading', chatgptText.pending_heading || '');
     setText('chatgptPendingSub', chatgptText.pending_sub || '');
+    setHidden('chatgptPendingSub', !automaticReturn);
     setText('chatgptPendingNotice', state.chatgpt.pendingNotice || '');
     setHidden('chatgptPendingNotice', !state.chatgpt.pendingNotice);
     const liveStatusKey = state.chatgpt.liveStatus || 'pending_status';
@@ -3634,6 +3637,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     setButtonText('chatgptReopen', chatgptText.reopen || '');
     setButtonText('chatgptCancel', chatgptText.cancel || '');
     setText('chatgptFallbackHeading', chatgptText.fallback_heading || '');
+    setHidden('chatgptFallbackHeading', !automaticReturn);
     setText('chatgptFallbackExplanation', chatgptText.fallback_explanation || '');
     setText('chatgptAddressLabel', chatgptText.address_label || '');
     setButtonText('chatgptFinish', chatgptText.finish || '');
@@ -5345,7 +5349,7 @@ window.SolViews.register('thinking', { mount: (ctx) => {
           if (!window.solstoneOutside.allowedUrl(rawUrl) || typeof expectedState !== 'string' || !expectedState) {
             throw new Error('chatgpt_sign_in_failed');
           }
-          const attempt = { id: response.attempt_id, authorizeUrl: rawUrl };
+          const attempt = { id: response.attempt_id, authorizeUrl: rawUrl, brokered: true };
           state.chatgpt.attempt = attempt;
           window.sessionStorage.setItem(CHATGPT_ATTEMPT_STORAGE_KEY, JSON.stringify(attempt));
           state.chatgpt.screen = 'pending';
@@ -5915,6 +5919,15 @@ window.SolViews.register('thinking', { mount: (ctx) => {
     $('chatgptReopen')?.addEventListener('click', reopenChatGptTab);
     $('chatgptCancel')?.addEventListener('click', cancelChatGptSignIn);
     $('chatgptFinish')?.addEventListener('click', () => pressed('chatgptFinish', () => [$('chatgptModelHeading')], finishChatGptSignIn));
+    const keepChatGptAddressVisible = () => {
+      const address = $('chatgptRedirectUrl');
+      if (address && address === document.activeElement) {
+        address.scrollIntoView({block: 'center'});
+      }
+    };
+    // Mobile keyboards can resize the layout viewport or just the visual viewport.
+    ctx.on(window, 'resize', keepChatGptAddressVisible);
+    if (window.visualViewport) ctx.on(window.visualViewport, 'resize', keepChatGptAddressVisible);
     $('chatgptSignOut')?.addEventListener('click', () => pressed('chatgptSignOut', () => [$('chatgptCardContinue')], () => signOutChatGpt({ forget: false })));
     $('chatgptPanelStartOver')?.addEventListener('click', () => pressed('chatgptPanelStartOver', signingIn, () => startChatGptSignIn({ startOver: true })));
     $('chatgptPickOther')?.addEventListener('click', () => {

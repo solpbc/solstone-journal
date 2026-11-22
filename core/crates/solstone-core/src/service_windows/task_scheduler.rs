@@ -148,7 +148,9 @@ pub(super) fn execute_until(
         )
     } as usize;
     if length == 0 || length >= directory.len() {
-        return Err("native Windows directory is unavailable".to_owned());
+        return Err(crate::host_text(
+            "journal.cli.host.windows.service.native.windows.directory.is.unavailable",
+        ));
     }
     let system_root = OsString::from_wide(&directory[..length]);
     let system_root_path = PathBuf::from(&system_root);
@@ -181,7 +183,9 @@ pub(super) fn execute_until(
         command
     };
     let serde_json::Value::Object(request) = request else {
-        return Err("task request is not a JSON object".to_owned());
+        return Err(crate::host_text(
+            "journal.cli.host.windows.service.task.request.is.not.a.json.object",
+        ));
     };
     let (reply, stderr) = match session.exchange(command, request, deadline)? {
         ControlReply::Reply { value, stderr } => (Some(value), stderr),
@@ -203,14 +207,20 @@ pub(super) fn execute_until(
         // terminal. Bound and sanitize it here rather than in the extractor,
         // which stays a pure text function; the raw streams remain in the
         // operation's own captured output for support.
-        let reason = solstone_core_system_health::sanitize_str_for_terminal_bounded(
-            &solstone_core_service_unit::windows_task_failure_reason(line.as_bytes(), &stderr),
-        );
-        return Err(render_operation_failure(name, &reason));
+        let supplied =
+            solstone_core_service_unit::windows_task_supplied_reason(line.as_bytes(), &stderr);
+        let reason = supplied
+            .as_deref()
+            .map(solstone_core_system_health::sanitize_str_for_terminal_bounded);
+        return Err(render_operation_failure(name, reason.as_deref()));
     }
     let snapshot: Snapshot = reply
         .and_then(|value| serde_json::from_value(value).ok())
-        .ok_or("task operation returned invalid JSON")?;
+        .ok_or_else(|| {
+            crate::host_text(
+                "journal.cli.host.windows.service.task.operation.returned.invalid.json",
+            )
+        })?;
     if snapshot.schema != SCHEMA
         || snapshot
             .instances
@@ -239,28 +249,32 @@ pub(super) fn execute_until(
                 || !snapshot.instances.is_empty()
                 || snapshot.run_instance.is_some()))
     {
-        return Err("task operation returned inconsistent evidence".to_owned());
+        return Err(crate::host_text(
+            "journal.cli.host.windows.service.task.operation.returned.inconsistent.evidence",
+        ));
     }
     Ok(snapshot)
 }
 
-fn render_operation_failure(operation: &str, reason: &str) -> String {
-    let reason = if reason == "windows gave no reason" {
-        "windows gave no reason."
-    } else {
-        reason
+fn render_operation_failure(operation: &str, supplied: Option<&str>) -> String {
+    let fallback;
+    let reason = match supplied {
+        Some("windows gave no reason") => "windows gave no reason.",
+        Some(text) => text,
+        None => {
+            fallback = crate::host_text("journal.cli.host.windows.service.no.reason");
+            &fallback
+        }
     };
     if operation == "inspect" {
-        format!(
-            "background support for your journal couldn't be checked.\n\
-             try again in a moment. if it keeps failing, include the details below in a support request.\n\
-             details: {reason}"
+        crate::host_display(
+            "journal.cli.host.windows.service.background.support.for.your.journal.couldn.t.be.checked.try",
+            [("reason", &reason)],
         )
     } else {
-        format!(
-            "background support for your journal couldn't be changed.\n\
-             run `solstone journal service status` to check it.\n\
-             details: {reason}"
+        crate::host_display(
+            "journal.cli.host.windows.service.background.support.for.your.journal.couldn.t.be.changed.run",
+            [("reason", &reason)],
         )
     }
 }
@@ -272,7 +286,7 @@ mod tests {
     #[test]
     fn a_change_failure_names_the_status_recovery_and_keeps_details_separate() {
         assert_eq!(
-            render_operation_failure("update", "powershell.exe: access is denied"),
+            render_operation_failure("update", Some("powershell.exe: access is denied")),
             "background support for your journal couldn't be changed.\n\
              run `solstone journal service status` to check it.\n\
              details: powershell.exe: access is denied"
@@ -282,7 +296,7 @@ mod tests {
     #[test]
     fn an_inspect_failure_does_not_send_the_owner_back_into_the_failed_read() {
         assert_eq!(
-            render_operation_failure("inspect", "task-read-refused"),
+            render_operation_failure("inspect", Some("task-read-refused")),
             "background support for your journal couldn't be checked.\n\
              try again in a moment. if it keeps failing, include the details below in a support request.\n\
              details: task-read-refused"
@@ -292,7 +306,7 @@ mod tests {
     #[test]
     fn an_empty_worker_reason_keeps_the_locked_honest_fallback() {
         assert_eq!(
-            render_operation_failure("run", "windows gave no reason"),
+            render_operation_failure("run", Some("windows gave no reason")),
             "background support for your journal couldn't be changed.\n\
              run `solstone journal service status` to check it.\n\
              details: windows gave no reason."

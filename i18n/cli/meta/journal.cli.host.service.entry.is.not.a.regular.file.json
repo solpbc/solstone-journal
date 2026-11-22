@@ -1,0 +1,16 @@
+{
+  "description": "Journal host service entry is not a regular file.",
+  "context": "Journal host service entry is not a regular file.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "09b9a9eacf529fb3577d15d9121ff7fb5caef66bfc1c8d3445a702f7c73a8015",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

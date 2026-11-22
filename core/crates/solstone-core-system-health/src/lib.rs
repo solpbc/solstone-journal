@@ -121,7 +121,7 @@ pub use source::{
 pub use sync_copy::{
     ADMISSION_WAIT_UNVERIFIABLE_COPY, HEARTBEAT_WITHOUT_WAIT_MARKER_COPY, SyncRescanDiagnosis,
     describe_sync_rescan, describe_sync_rescan_in, format_admission_waiting_copy,
-    format_sync_scan_failure_copy,
+    format_sync_scan_failure_copy, format_sync_scan_failure_copy_in,
 };
 pub use terminal::{
     LONGEST_REST_MS, RepeatedFailure, SegmentTalentFailures, is_floor_talent_capped,

@@ -1,0 +1,72 @@
+{
+  "description": "Terminal diagnostic for parser mcp activity unknown option accepted token oauth created tool outcome day from day to limit json other.",
+  "context": "Terminal diagnostic for parser mcp activity unknown option accepted token oauth created tool outcome day from day to limit json other.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    },
+    {
+      "name": "other",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c3eea9d73b09530d5afd6a65ddfe8de2f3762e1ce513b4eddc624b2c3db7a9d8",
+  "max_length": 513,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "flag",
+      "value": "--token",
+      "kind": "flag"
+    },
+    {
+      "name": "flag_2",
+      "value": "--oauth",
+      "kind": "flag"
+    },
+    {
+      "name": "flag_3",
+      "value": "--created",
+      "kind": "flag"
+    },
+    {
+      "name": "flag_4",
+      "value": "--tool",
+      "kind": "flag"
+    },
+    {
+      "name": "flag_5",
+      "value": "--outcome",
+      "kind": "flag"
+    },
+    {
+      "name": "flag_6",
+      "value": "--day-from",
+      "kind": "flag"
+    },
+    {
+      "name": "flag_7",
+      "value": "--day-to",
+      "kind": "flag"
+    },
+    {
+      "name": "flag_8",
+      "value": "--limit",
+      "kind": "flag"
+    },
+    {
+      "name": "flag_9",
+      "value": "--json",
+      "kind": "flag"
+    }
+  ]
+}

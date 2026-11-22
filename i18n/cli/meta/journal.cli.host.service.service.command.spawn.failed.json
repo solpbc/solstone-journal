@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service service command spawn failed.",
+  "context": "Journal host service service command spawn failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "16e3ae1a6dc137e7bcea6671dbc970b872bbbd088b325f08d2d29904c1ac7e01",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

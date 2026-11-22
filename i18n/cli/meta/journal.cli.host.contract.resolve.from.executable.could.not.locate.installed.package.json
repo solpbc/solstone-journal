@@ -1,0 +1,21 @@
+{
+  "description": "Native contract paths command, resolve from executable. Preserve terminal syntax and supplied data.",
+  "context": "Native contract paths command, resolve from executable. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cf5fff3f4420777d792b0676f97f53492ebb46e98ef6847c490fca4a5c29b534",
+  "max_length": 261,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

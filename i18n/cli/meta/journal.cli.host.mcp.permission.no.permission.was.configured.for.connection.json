@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output for mcp permission no permission was configured for connection.",
+  "context": "Journal host output for mcp permission no permission was configured for connection.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "connection",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a07c41452a0d7e8522e215a809b195840be92597dd07eec29bd0d8e5f45c8c15",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

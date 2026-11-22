@@ -1,0 +1,16 @@
+{
+  "description": "Journal host health media absent.",
+  "context": "Journal host health media absent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d54fa30130b9064b1a9f685a64c333e6db328d8c308a154d038ea0fc21384b36",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

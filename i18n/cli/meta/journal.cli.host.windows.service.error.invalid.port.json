@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output for windows service error invalid port.",
+  "context": "Journal host output for windows service error invalid port.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "port",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "57c5a42180939dd6b0a751a9a3e0e9461967ad790527e386f7c75c28931cca22",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "description": "Journal host output for mcp status status could not read mcp capability configuration.",
+  "context": "Journal host output for mcp status status could not read mcp capability configuration.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d603939d9cbce1fb507bcd68c6ceaeef03ccdc2074fa2e806874a4d8f39e8063",
+  "max_length": 330,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command_solstone_journal_mcp_status",
+      "kind": "command",
+      "value": "solstone journal mcp status"
+    },
+    {
+      "name": "literal_mcp",
+      "kind": "accepted-input",
+      "value": "MCP"
+    }
+  ]
+}

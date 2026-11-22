@@ -1,0 +1,23 @@
+{
+  "description": "Journal host service stale launchd unit is not a dictionary.",
+  "context": "Journal host service stale launchd unit is not a dictionary.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "724207e9b7a24a29f5074e3b751c9fac023f66423e63d902127b319755e26d54",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "launchd",
+      "kind": "accepted-input",
+      "value": "launchd"
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "description": "Terminal diagnostic for parser validate day day must be eight digits yyyymmdd got value.",
+  "context": "Terminal diagnostic for parser validate day day must be eight digits yyyymmdd got value.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    },
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4273d74e1e5c19395286f66d311386a7776f2a0fe4b3b8b6bd2403575e347849",
+  "max_length": 231,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "argument",
+      "value": "YYYYMMDD",
+      "kind": "accepted-input"
+    }
+  ]
+}

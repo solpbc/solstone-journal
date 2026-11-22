@@ -1,0 +1,28 @@
+{
+  "description": "Journal host service could not verify the solstone installation.",
+  "context": "Journal host service could not verify the solstone installation.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a0ba8c3d2c48171352e588e86884d11d59f8940119cfe01fab2b9a74f049d97b",
+  "max_length": 177,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone",
+      "kind": "accepted-input",
+      "value": "solstone"
+    }
+  ]
+}

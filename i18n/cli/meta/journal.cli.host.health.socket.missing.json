@@ -1,0 +1,28 @@
+{
+  "description": "Journal host health socket missing.",
+  "context": "Journal host health socket missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0153ddec9b78ec4e83324744a97b70280639d6d541257679a4d2d5f816086617",
+  "max_length": 207,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

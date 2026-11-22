@@ -1,0 +1,21 @@
+{
+  "description": "Journal host warm platforms.",
+  "context": "Journal host warm platforms.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "rows",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e21310c75e09f04bdd617bd643be86b25bd3837f42c9c5ace415faa05633e1b5",
+  "max_length": 426,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

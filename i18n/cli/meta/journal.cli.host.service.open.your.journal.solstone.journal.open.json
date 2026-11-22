@@ -1,0 +1,23 @@
+{
+  "description": "Journal host service open your journal solstone journal open.",
+  "context": "Journal host service open your journal solstone journal open.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b151a3e79b3174dae7abe15e7aeaa8653b23760c7698c7829b214830031dbd88",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "open",
+      "kind": "accepted-input",
+      "value": "solstone journal open"
+    }
+  ]
+}

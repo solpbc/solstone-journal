@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service task xml readback missing.",
+  "context": "Journal host output for windows service task xml readback missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "574c4eafeec13932d73c18fb8a28ddeac87454c47211dc6178b7401a3d649632",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal setup argument validation: timeout.",
+  "context": "Journal setup argument validation: timeout.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fa95060c537eb9e781b7c7369b260f205f491236a2b618ee61fa1c7638a1f8fa",
+  "max_length": 150,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "timeout_flag",
+      "value": "--step-timeout-seconds",
+      "kind": "flag"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal host service service directory contains unsafe component.",
+  "context": "Journal host service service directory contains unsafe component.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b7eb73b96f6b2f2f20c328a7cb53382415c27bca7fd3b85d04f78af8c310b977",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

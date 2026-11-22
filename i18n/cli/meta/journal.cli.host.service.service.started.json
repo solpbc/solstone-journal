@@ -1,0 +1,16 @@
+{
+  "description": "Journal host service service started.",
+  "context": "Journal host service service started.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8c857d705262ec609e0c3d50d171473f5c9eff96a15e46046134463dba5dbaff",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

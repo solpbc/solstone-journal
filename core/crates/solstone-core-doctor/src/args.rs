@@ -15,7 +15,11 @@ pub struct DoctorArgs {
 pub struct DoctorUsageError(&'static str);
 impl DoctorUsageError {
     pub fn message(&self) -> String {
-        copy::text(self.0)
+        self.message_for(copy::cli_locale())
+    }
+
+    pub fn message_for(&self, locale: &str) -> String {
+        copy::render_for(locale, self.0, &[])
     }
 }
 pub fn help() -> String {

@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service service task differs from the current installation binding.",
+  "context": "Journal host output for windows service service task differs from the current installation binding.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5aeade7b469b7bdd823a8b9a01114930879f8472dc897246306e1734a1eedb17",
+  "max_length": 174,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

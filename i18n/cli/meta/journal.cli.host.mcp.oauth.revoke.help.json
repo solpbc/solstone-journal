@@ -1,0 +1,53 @@
+{
+  "description": "Terminal help and usage for mcp oauth revoke help.",
+  "context": "Terminal help and usage for mcp oauth revoke help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c924f26c89dce463bd44f50cfd0a4563cc628a40dad97489cd7bb7ef5e7e2034",
+  "max_length": 888,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal mcp oauth revoke [-h] --client-id CLIENT_ID",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "term",
+      "value": "OAuth",
+      "kind": "mark-word"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_13",
+      "value": "             ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_7",
+      "value": "--client-id CLIENT_ID",
+      "kind": "command"
+    }
+  ]
+}

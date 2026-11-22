@@ -1,0 +1,21 @@
+{
+  "description": "Native install models command, ready line. Preserve terminal syntax and supplied data.",
+  "context": "Native install models command, ready line. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6ae509567ba9042f9384b492405a35014049fbb96b010c5415a678a040d6131a",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "MCP owner diagnostic for token malformed.",
+  "context": "MCP owner diagnostic for token malformed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4cce99f23cb01b8cf690939fc3b31bf7c0fde42cc3aa2fa75883a8ac746349b6",
+  "max_length": 156,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_mcp",
+      "kind": "accepted-input",
+      "value": "MCP"
+    }
+  ]
+}

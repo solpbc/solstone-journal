@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output for mcp permission generation.",
+  "context": "Journal host output for mcp permission generation.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "generation",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "70382f38ddddc2d42f73438e85e17316578be1f095c98c8fbe7e0da477aeab80",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

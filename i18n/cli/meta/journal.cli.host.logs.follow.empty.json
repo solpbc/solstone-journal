@@ -1,0 +1,16 @@
+{
+  "description": "Journal host logs follow empty.",
+  "context": "Journal host logs follow empty.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8e786bd17740389ad4b3fe3c0eb34b68380534707bac2b94c20f3af2ed9c043a",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

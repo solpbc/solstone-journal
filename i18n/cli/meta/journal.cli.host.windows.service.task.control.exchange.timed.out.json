@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service task control exchange timed out.",
+  "context": "Journal host output for windows service task control exchange timed out.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4912fa1dcac12005577aab055378493ae7fb08492a88a861dfbdea757bae2622",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

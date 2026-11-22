@@ -9,6 +9,7 @@ mod action_log;
 mod activity_calendar;
 mod activity_placement;
 mod body_facet;
+pub mod cli_copy;
 pub mod entity_trash;
 pub mod facet_trash;
 mod moment_copies;

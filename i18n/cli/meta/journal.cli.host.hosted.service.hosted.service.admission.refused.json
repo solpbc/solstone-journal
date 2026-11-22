@@ -1,0 +1,25 @@
+{
+  "description": "Journal host output for hosted service hosted service admission refused.",
+  "context": "Journal host output for hosted service hosted service admission refused.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "service",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7f4430954e74612bfa7fc893f082da87769d1780452b1faecf634b12d4aa3fbb",
+  "max_length": 171,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

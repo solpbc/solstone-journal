@@ -1,0 +1,28 @@
+{
+  "description": "Native importer desktop command, run resolved. Preserve terminal syntax and supplied data.",
+  "context": "Native importer desktop command, run resolved. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bd22b346778fb3ef117c89f5236223faa967f6aebe3fc4ceda68e953189deadf",
+  "max_length": 135,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service stopped background support for your journal stays off until you.",
+  "context": "Journal host output for windows service stopped background support for your journal stays off until you.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "baf88bc04eaac4d51cb351c970d56c61d2f15384196a881cff3772bc89a54524",
+  "max_length": 294,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Native config command, rewrite preflighted with. Preserve terminal syntax and supplied data.",
+  "context": "Native config command, rewrite preflighted with. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9a5c18f704629ff30fbe2b86e183a686f2e66a821f8c525cd4d153e3f80a98fe",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_1",
+      "kind": "accepted-input",
+      "value": "UTF-8"
+    }
+  ]
+}

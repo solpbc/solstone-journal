@@ -1,0 +1,21 @@
+{
+  "description": "Journal host supervisor binding home.",
+  "context": "Journal host supervisor binding home.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "21a36c40d42a8c6eeaa333316e3a683a5bcb319a1923bc38c3df63c5ce42545d",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

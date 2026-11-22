@@ -13,6 +13,7 @@ publish = false
 full-tests = []
 
 [dependencies]
+solstone-core-cli-copy.workspace = true
 solstone-core-window-catalog.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true

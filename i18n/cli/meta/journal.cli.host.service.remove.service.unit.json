@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service remove service unit.",
+  "context": "Journal host service remove service unit.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2e8e5a0107339d29669f2c29441a4abbc74e9f3ddde949c99bd1f4e5d9d07f8f",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

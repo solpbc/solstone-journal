@@ -1,0 +1,16 @@
+{
+  "description": "Journal host service service enabled.",
+  "context": "Journal host service service enabled.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8c6a6595b0531f1165abd206ea00c32c42a1023cfc912435e2e52aaf7ad6cb2c",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Journal host heartbeat error.",
+  "context": "Journal host heartbeat error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "detail",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "34a0c190d747071187eb9b1c1531c29f2ee163335fecc98201e338a5ce8b2192",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "accepted-input",
+      "value": "solstone journal heartbeat"
+    }
+  ]
+}

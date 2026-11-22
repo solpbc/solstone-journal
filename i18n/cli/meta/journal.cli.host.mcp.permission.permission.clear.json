@@ -1,0 +1,28 @@
+{
+  "description": "Journal host output for mcp permission permission clear.",
+  "context": "Journal host output for mcp permission permission clear.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8270b7e9e1def55069f8f754ab2e1f649bbb501a7780c0d847052bce89d4f553",
+  "max_length": 186,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command_solstone_journal_mcp_permission_clear",
+      "kind": "command",
+      "value": "solstone journal mcp permission clear"
+    }
+  ]
+}

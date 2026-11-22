@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service installed command contains invalid text.",
+  "context": "Journal host output for windows service installed command contains invalid text.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e45a9f653b1846390ec941a5852e22eabf865b5795c98c3e8cbf70ef1c61b262",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

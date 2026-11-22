@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service windows service action contains non unicode text.",
+  "context": "Journal host output for windows service windows service action contains non unicode text.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2afd4eb81358eceec401c04ac1d477b2c097a8168577c5e8ca4963cf94101375",
+  "max_length": 144,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

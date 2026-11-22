@@ -9735,3 +9735,1886 @@ journal.cli.social.failed = couldn't finish: { $detail }
 journal.cli.social.receive.failed = couldn't read the space { $sharer } shared with you: { $detail }
 
 journal.cli.social.resolve.done = { $account } is { $did }, hosted at { $host }.
+
+journal.cli.host.arguments.invalid = { $command }: error: invalid arguments
+
+journal.cli.host.backfill.facet.ids.help = usage: { $syntax }{ $line_break }{ $line_break }Backfill missing { $term } identifiers across all facet declarations.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_2 }show this help message and exit{ $line_break }{ $spaces_2 }{ $option_6 }{ $spaces_4 }Write backfilled facet IDs to disk (default is dry run){ $line_break }
+
+journal.cli.host.backfill.facet.ids.solstone.journal.backfill.facet.ids.error = { $command_solstone_journal_backfill_facet_ids }: error: { $error }
+
+journal.cli.host.backfill.facet.ids.usage = usage: { $syntax }{ $line_break }
+
+journal.cli.host.backfill.facets.applied = { $scanned_quantity ->
+    [one] { $backfilled_quantity ->
+        [one] Examined { $scanned } facet; backfilled an ID for { $backfilled } facet.
+        *[other] Examined { $scanned } facet; backfilled IDs for { $backfilled } facets.
+        }
+    *[other] { $backfilled_quantity ->
+        [one] Examined { $scanned } facets; backfilled an ID for { $backfilled } facet.
+        *[other] Examined { $scanned } facets; backfilled IDs for { $backfilled } facets.
+        }
+    }
+
+journal.cli.host.backfill.facets.dry = { $scanned_quantity ->
+    [one] { $backfilled_quantity ->
+        [one] Dry run: examined { $scanned } facet; { $backfilled } facet requires an ID (pass { $literal_commit } to apply).
+        *[other] Dry run: examined { $scanned } facet; { $backfilled } facets require IDs (pass { $literal_commit } to apply).
+        }
+    *[other] { $backfilled_quantity ->
+        [one] Dry run: examined { $scanned } facets; { $backfilled } facet requires an ID (pass { $literal_commit } to apply).
+        *[other] Dry run: examined { $scanned } facets; { $backfilled } facets require IDs (pass { $literal_commit } to apply).
+        }
+    }
+
+journal.cli.host.check.help = usage: { $syntax }{ $line_break }{ $line_break }Readiness verdict for bundled local journal models.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_2 }show this help message and exit{ $line_break }{ $spaces_2 }{ $option_5 }{ $spaces_6 }emit the readiness verdict as { $term } for agents{ $line_break }
+
+journal.cli.host.check.usage = usage: { $syntax }{ $line_break }
+
+journal.cli.host.config.admit.rewrite.identity.admission = solstone journal config: identity admission refused: { $error }
+
+journal.cli.host.config.admit.rewrite.identity.owner = solstone journal config: identity owner refused: { $error }
+
+journal.cli.host.config.admit.rewrite.identity.root = solstone journal config: identity root refused: { $error }
+
+journal.cli.host.config.admit.rewrite.path = solstone journal config: journal path refused: { $error }
+
+journal.cli.host.config.corrupt.settings.file.at.path.couldn = your settings file at { $path } couldn't be read. your settings were not changed. repair the file or restore { $literal_1 } from a backup, then try again.
+
+journal.cli.host.config.cross.filesystem.cannot.move.across.filesystems.filesystem = solstone journal config: refused: cannot move across filesystems (filesystem ids { $source_device } and { $target_device }); stop your journal with '{ $literal_1 }', copy the journal folder to the new path, use { $literal_3 }, then start it again with '{ $literal_2 }'
+
+journal.cli.host.config.decide.move.requires.not.active.target = solstone journal config: refused: { $literal_3 } requires a not active target; current is { $current_state } and target is { $target_state }; valid flags: { $literal_1 }, { $literal_2 }
+
+journal.cli.host.config.execute.already.set.path = solstone journal config: journal already set to { $path }
+
+journal.cli.host.config.execute.before.mutation = solstone journal config: refused before mutation: { $error }
+
+journal.cli.host.config.execute.warning.force.bypasses.confirmation.and = solstone journal config: warning: { $literal_1 } bypasses confirmation and target activity checks
+
+journal.cli.host.config.existing.target.move.target.already.exists.path = solstone journal config: refused: move target already exists: { $path }
+
+journal.cli.host.config.help = usage: { $syntax }{ $line_break }{ $spaces_7 }{ $syntax_4 }{ $line_break }{ $line_break }positional arguments:{ $line_break }{ $spaces_2 }{ $choices }{ $line_break }{ $spaces_4 }{ $subcommand }{ $spaces_10 }show the configured journal path and source{ $line_break }{ $spaces_4 }{ $subcommand_10 }{ $spaces_2 }change the journal path used by this installation{ $line_break }
+
+journal.cli.host.config.identity.root.from.current.executable = solstone journal config: { $error }
+
+journal.cli.host.config.journal.path.contains.shell.active.character = solstone journal config: refused: journal path contains shell-active character: { $path }
+
+journal.cli.host.config.journal.path.source.tree.fallback.path = solstone journal config: refused: { $path } is the source-tree fallback path but this is not a source checkout
+
+journal.cli.host.config.maybe.restart.current.service.could.not.restart.service.at = could not restart service at the original journal folder
+
+journal.cli.host.config.missing.current.move.source.does.not.exist = solstone journal config: refused: move source does not exist: { $path }
+
+journal.cli.host.config.missing.parent.move.target.parent.does.not = solstone journal config: refused: move target parent does not exist: { $directory }
+
+journal.cli.host.config.plan.action.action = action:  { $action }
+
+journal.cli.host.config.plan.current.left.intact.re.adopt = current journal is left intact. to re-adopt it later: { $literal_1 } { $path } { $literal_2 } { $literal_3 }
+
+journal.cli.host.config.plan.current.path.state = current: { $path } ({ $state })
+
+journal.cli.host.config.plan.dry.run.yes.nothing.will = dry-run: yes; nothing will be changed
+
+journal.cli.host.config.plan.filesystem.different.devices = filesystem: different devices
+
+journal.cli.host.config.plan.filesystem.same.device = filesystem: same device
+
+journal.cli.host.config.plan.move = move
+
+journal.cli.host.config.plan.plan.summary = { $literal_1 } - plan summary
+
+journal.cli.host.config.plan.proceed = proceed
+
+journal.cli.host.config.plan.re.run.with.yes.proceed = re-run with { $literal_1 } to proceed
+
+journal.cli.host.config.plan.switch = switch
+
+journal.cli.host.config.plan.target.path.state = target:  { $path } ({ $state })
+
+journal.cli.host.config.preflight.coordinates.saved.location.not.recognized.or = the saved journal location is not recognized or could not be read; settings were not changed
+
+journal.cli.host.config.preflight.coordinates.settings.could.not.be.read = your settings could not be read; settings were not changed: { $error }
+
+journal.cli.host.config.prepare.folder.relocation.requires.managed.posix = journal-folder relocation requires a managed { $literal_1 } installation
+
+journal.cli.host.config.read.wrapper.targets.cannot.read.path.e = solstone journal config: refused: cannot read { $path }: { $e }
+
+journal.cli.host.config.read.wrapper.targets.location.changed.while.this.command = journal location changed while this command waited; try the folder change again
+
+journal.cli.host.config.refusal.current.current.state.and.target = solstone journal config: refused: current is { $current_state } and target is { $target_state }; valid flags: { $flags }
+
+journal.cli.host.config.rewrite.preflighted.with.path.not.utf8 = journal path is not { $literal_1 }
+
+journal.cli.host.config.run.move.could.not.stop.service.before = solstone journal config: could not stop service before move ({ $error })
+
+journal.cli.host.config.run.move.could.not.stop.service.before.stop.service.before.move = solstone journal config: could not stop service before move
+
+journal.cli.host.config.run.move.move.failed.e = solstone journal config: move failed: { $e }
+
+journal.cli.host.config.run.move.moved.wrapper.updated.service.restarted = journal moved; wrapper updated; service restarted.
+
+journal.cli.host.config.run.move.remains.at.target.could.not = journal remains at { $target }; could not finish saving the new location: { $e }; retry: { $literal_1 } { $path } { $literal_2 } { $literal_3 }
+
+journal.cli.host.config.run.move.remains.at.target.retry.path = journal remains at { $target }; retry: { $literal_1 } { $path } { $literal_2 } { $literal_3 }
+
+journal.cli.host.config.run.move.service.installed.but.not.running = service installed but not running; journal moved; wrapper updated.
+
+journal.cli.host.config.run.move.service.not.installed.moved.wrapper = service not installed; journal moved; wrapper updated.
+
+journal.cli.host.config.run.move.wrapper.updated.target.but.service = wrapper updated to { $target } but service start failed; restart manually
+
+journal.cli.host.config.run.switch.cannot.create.path.e = solstone journal config: refused: cannot create { $path }: { $e }
+
+journal.cli.host.config.run.switch.cannot.inspect.managed.wrappers = solstone journal config: refused: cannot inspect managed wrappers: { $error }
+
+journal.cli.host.config.run.switch.cannot.lock.managed.wrappers = solstone journal config: refused: cannot lock managed wrappers: { $error }
+
+journal.cli.host.config.run.switch.could.not.finish.saving.new = could not finish saving the new journal location: { $message }; retry: { $literal_1 } { $path } { $literal_2 } { $literal_3 }
+
+journal.cli.host.config.run.switch.could.not.finish.saving.new.journal.path.switch.yes = could not finish saving the new journal location: { $e }; retry: { $literal_1 } { $path } { $literal_2 } { $literal_3 }
+
+journal.cli.host.config.run.switch.could.not.stop.service.before = could not stop service before changing journal folder
+
+journal.cli.host.config.run.switch.now.at.target.could.not = your journal is now at { $target }; could not update its service: { $error }; retry: { $literal_1 } { $path } { $literal_2 } { $literal_3 }
+
+journal.cli.host.config.run.switch.service.installed.but.not.running = service installed but not running; wrapper updated.
+
+journal.cli.host.config.run.switch.service.not.installed.wrapper.updated = service not installed; wrapper updated.
+
+journal.cli.host.config.run.switch.wrapper.rewritten.target.but.service = solstone journal config: wrapper rewritten to { $target } but journal service restart could not run ({ $error }); restart manually
+
+journal.cli.host.config.run.switch.wrapper.rewritten.target.but.service.investigate.and.restart.manually = solstone journal config: wrapper rewritten to { $target } but '{ $literal_1 }' exited { $code }; investigate and restart manually
+
+journal.cli.host.config.run.switch.wrapper.updated.service.restarted = wrapper updated; service restarted.
+
+journal.cli.host.config.run.unsupported.folder.service.action = unsupported journal-folder service action
+
+journal.cli.host.config.service.summary.service.installed.and.running.will = service: installed and running; will stop, move, rewrite wrapper, restart
+
+journal.cli.host.config.service.summary.service.installed.and.running.will.will.rewrite.wrapper.restart = service: installed and running; will rewrite wrapper, restart
+
+journal.cli.host.config.service.summary.service.installed.but.not.running = service: installed but not running; will move and rewrite wrapper
+
+journal.cli.host.config.service.summary.service.installed.but.not.running.running.will.rewrite.wrapper = service: installed but not running; will rewrite wrapper
+
+journal.cli.host.config.service.summary.service.not.installed.will.move = service: not installed; will move and rewrite wrapper
+
+journal.cli.host.config.service.summary.service.not.installed.will.rewrite = service: not installed; will rewrite wrapper
+
+journal.cli.host.config.show.next.next = next: { $next }
+
+journal.cli.host.config.show.source.built.in.default = built-in default ({ $literal_1 })
+
+journal.cli.host.config.show.source.source.tree.fallback = source-tree fallback
+
+journal.cli.host.config.show.source.user.toml = user config ({ $literal_1 })
+
+journal.cli.host.config.state.active = active
+
+journal.cli.host.config.state.not.active = not active
+
+journal.cli.host.config.usage = usage: { $syntax }{ $line_break }{ $spaces_7 }{ $syntax_4 }{ $line_break }
+
+journal.cli.host.config.wrapper.next.move.path.aside.then.run = move { $path } aside, then run '{ $literal_1 }' from the solstone source checkout
+
+journal.cli.host.config.wrapper.refusal.wrapper.not.managed.wrapper.run = solstone journal config: refused: { $wrapper } is not a managed wrapper (run '{ $literal_1 }' from the solstone source checkout to install the wrapper first)
+
+journal.cli.host.contract.build.bundle.browser.schema.bytes.diverged.from = contract: browser schema bytes diverged from { $literal_1 }
+
+journal.cli.host.contract.build.bundle.cannot.read.browser.schema.path = contract: cannot read browser schema { $path }: { $error }
+
+journal.cli.host.contract.build.bundle.invalid.json.schema.path = contract: invalid { $literal_1 } Schema { $path }: { $error }
+
+journal.cli.host.contract.build.bundle.missing.required.schema.sources.sources = contract: missing required schema sources: { $sources }
+
+journal.cli.host.contract.build.bundle.path.duplicate.format.id.format = contract: { $path }: duplicate journal contract format id '{ $format_id }'
+
+journal.cli.host.contract.build.bundle.path.format.id.must.be = contract: { $path }: { $literal_1 } must be a string
+
+journal.cli.host.contract.build.bundle.schema.must.be.json.object = contract: schema must be a { $literal_1 } object: { $path }
+
+journal.cli.host.contract.build.help = usage: { $syntax }{ $line_break }{ $line_break }Build the journal contract bundle.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_12 }show this help message and exit{ $line_break }{ $spaces_2 }{ $option_6 }{ $spaces_15 }Check whether the bundle is current without writing.{ $line_break }{ $spaces_2 }{ $option_8 }{ $spaces_11 }Contract checkout or installed-package root.{ $line_break }
+
+journal.cli.host.contract.build.usage = usage: { $syntax }{ $line_break }
+
+journal.cli.host.contract.check.help = usage: { $syntax }{ $line_break }{ $line_break }Check the bundle and journal files against their schemas.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_12 }show this help message and exit{ $line_break }{ $spaces_2 }{ $option_6 }{ $spaces_8 }Additional journal root to validate (repeatable).{ $line_break }{ $spaces_2 }{ $option_8 }{ $spaces_11 }Contract checkout or installed-package root.{ $line_break }
+
+journal.cli.host.contract.check.usage = usage: { $syntax }{ $line_break }
+
+journal.cli.host.contract.classify.breaking.changes.bundle.malformed = solstone journal contract bundle is malformed
+
+journal.cli.host.contract.classify.breaking.changes.format.removed.format = { $format }: removed format
+
+journal.cli.host.contract.classify.breaking.changes.format.removed.key.field.field = { $format }: removed key field '{ $field }'
+
+journal.cli.host.contract.classify.breaking.changes.format.removed.producer.path.path = { $format }: removed producer path '{ $path }'
+
+journal.cli.host.contract.discover.schema.sources.path.missing.meta = contract: { $path }: missing { $contract_meta }
+
+journal.cli.host.contract.fixture.journal.fixture.missing.path = contract: fixture journal missing: { $path }
+
+journal.cli.host.contract.format.errors.invalid.json.schema = invalid { $literal_1 } Schema: { $error }
+
+journal.cli.host.contract.from.root.package.tree.not.found.path = contract: solstone package tree not found: { $path }
+
+journal.cli.host.contract.help = usage: { $syntax }{ $line_break }{ $line_break }Build and validate the journal contract bundle.{ $line_break }{ $line_break }positional arguments:{ $line_break }{ $spaces_2 }{ $choices }{ $line_break }{ $spaces_4 }{ $subcommand }{ $spaces_15 }Build the contract bundle.{ $line_break }{ $spaces_4 }{ $subcommand_8 }{ $spaces_15 }Check the bundle and journal files.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_12 }show this help message and exit{ $line_break }
+
+journal.cli.host.contract.load.json.invalid.json.in.path = contract: invalid { $literal_1 } in { $path }: { $error }
+
+journal.cli.host.contract.metadata.path.allowed.producers.must.be = contract: { $path }: { $literal_1 } must be a list
+
+journal.cli.host.contract.metadata.path.key.fields.must.be = contract: { $path }: { $literal_1 } must be a list
+
+journal.cli.host.contract.metadata.path.missing.metadata.key = contract: { $path }: missing contract metadata: { $key }
+
+journal.cli.host.contract.resolve.could.not.inspect.current.executable = contract: could not inspect current executable: { $error }
+
+journal.cli.host.contract.resolve.from.executable.could.not.locate.installed.package = contract: could not locate installed solstone package or source checkout from { $path }
+
+journal.cli.host.contract.run.build.cannot.create.bundle.directory = contract: cannot create bundle directory: { $error }
+
+journal.cli.host.contract.run.build.cannot.write.path = contract: cannot write { $path }: { $error }
+
+journal.cli.host.contract.run.build.path.stale.run.build = { $path } is stale; run `{ $literal_1 }`
+
+journal.cli.host.contract.run.build.wrote.path = wrote { $path }
+
+journal.cli.host.contract.run.check.bundle.artifact.missing.path = contract: bundle artifact missing: { $path }
+
+journal.cli.host.contract.run.check.no.covered.files.found.under = contract: no contract-covered files found under { $path }
+
+journal.cli.host.contract.run.check.tree.not.found.path.expected = contract: journal tree not found: { $path } (expected { $expected })
+
+journal.cli.host.contract.usage = usage: { $syntax }{ $line_break }
+
+journal.cli.host.contract.validate.contract.file.unsupported.file.kind.kind = unsupported contract file kind: { $kind }
+
+journal.cli.host.contract.validate.headered.jsonl.headered.jsonl.requires.header.line = { $literal_1 } requires a header line
+
+journal.cli.host.contract.validate.headered.jsonl.invalid.utf8 = invalid { $literal_1 }: { $error }
+
+journal.cli.host.contract.validate.headered.jsonl.line.must.be.json.object = line must be a { $literal_1 } object
+
+journal.cli.host.contract.validate.headered.jsonl.missing.schema.definition = missing schema definition
+
+journal.cli.host.contract.validate.json.invalid.json = invalid { $literal_1 }: { $error }
+
+journal.cli.host.contract.validated = { $quantity ->
+    [one] validated { $display_count } contract-covered file under { $root }
+   *[other] validated { $display_count } contract-covered files under { $root }
+    }
+
+journal.cli.host.contract.walk.four.levels.cannot.read.entry = contract: cannot read journal entry: { $error }
+
+journal.cli.host.contract.walk.schema.files.cannot.read.path = contract: cannot read { $path }: { $error }
+
+journal.cli.host.contract.walk.schema.files.cannot.read.schema.entry = contract: cannot read schema entry: { $error }
+
+journal.cli.host.convey.help = usage: { $syntax }{ $line_break }{ $line_break }{ $term } web interface{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_5 }show this help message and exit{ $line_break }{ $spaces_2 }{ $option_7 }{ $spaces_4 }Port to serve on{ $line_break }{ $spaces_2 }{ $option_9 }{ $spaces_2 }Enable verbose output{ $line_break }{ $spaces_2 }{ $option_10 }{ $spaces_4 }Enable debug logging{ $line_break }
+
+journal.cli.host.convey.usage = usage: { $syntax }{ $line_break }
+
+journal.cli.host.cortex.help = usage: { $syntax }{ $line_break }{ $line_break }{ $term } { $term_4 } Talent Manager{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_5 }show this help message and exit{ $line_break }{ $spaces_2 }{ $option_8 }{ $spaces_2 }Enable verbose output{ $line_break }{ $spaces_2 }{ $option_9 }{ $spaces_4 }Enable debug logging{ $line_break }
+
+journal.cli.host.cortex.service.cortex.service.failed = cortex service failed: { $error }
+
+journal.cli.host.cortex.usage = usage: { $syntax }{ $line_break }
+
+journal.cli.host.down.help = usage: { $syntax }{ $line_break }{ $line_break }Stop the journal service.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_2 }show this help message and exit{ $line_break }
+
+journal.cli.host.facet.candidates.help = usage: { $syntax }{ $line_break }{ $line_break }Record recurring facet review candidates.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_5 }show this help message and exit{ $line_break }{ $spaces_2 }{ $option_6 }{ $spaces_2 }Enable verbose output{ $line_break }{ $spaces_2 }{ $option_7 }{ $spaces_4 }Enable debug logging{ $line_break }
+
+journal.cli.host.facet.candidates.recorded = { $quantity ->
+    [one] Recorded/updated { $display_count } facet candidate.
+   *[other] Recorded/updated { $display_count } facet candidate(s).
+    }
+
+journal.cli.host.facet.candidates.run.facet.candidates = solstone journal facet-candidates: error: { $error }
+
+journal.cli.host.facet.candidates.run.facet.candidates.root.path.not = solstone journal facet-candidates: error: journal root { $path } is not a directory
+
+journal.cli.host.facet.candidates.usage = usage: { $syntax }{ $line_break }
+
+journal.cli.host.grab.help = usage: { $syntax }{ $line_break }{ $line_break }Walk observed screen frames and optionally write frame images.{ $line_break }{ $line_break }positional arguments:{ $line_break }{ $spaces_2 }{ $subcommand }{ $spaces_11 }Path tokens: { $path_tokens }{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_5 }show this help message and exit{ $line_break }{ $spaces_2 }{ $option_9 }{ $spaces_6 }Write the selected frame image here ({ $extension }, { $extension_12 }, { $extension_13 }, or{ $line_break }{ $spaces_17 }{ $extension_15 }).{ $line_break }{ $spaces_2 }{ $option_16 }{ $spaces_8 }Replace an existing output path.{ $line_break }{ $spaces_2 }{ $option_18 }{ $spaces_9 }Emit { $term } instead of table or plain output.{ $line_break }{ $spaces_2 }{ $option_21 }{ $spaces_2 }Enable verbose output{ $line_break }{ $spaces_2 }{ $option_22 }{ $spaces_4 }Enable debug logging{ $line_break }
+
+journal.cli.host.grab.usage = usage: { $syntax }{ $line_break }
+
+journal.cli.host.health.callosum.clients = { $quantity ->
+    [one] Callosum: { $clients } client
+   *[other] Callosum: { $clients } clients
+    }
+
+journal.cli.host.health.ced.ready = ced.cpp sound-tag engine and model are ready
+
+journal.cli.host.health.ced.unsupported = ced install: unsupported platform { $os }/{ $arch }; skipping ced sound-tag assets
+
+journal.cli.host.health.crash.attempts = { $quantity ->
+    [one] { $space_2 }{ $name } { $attempts } restart attempt
+   *[other] { $space_2 }{ $name } { $attempts } restart attempts
+    }
+
+journal.cli.host.health.crash.reason = { $quantity ->
+    [one] { $space_2 }{ $name } { $attempts } restart attempt{ $space_2 }{ $reason }
+   *[other] { $space_2 }{ $name } { $attempts } restart attempts{ $space_2 }{ $reason }
+    }
+
+journal.cli.host.health.crashed = { $line_break }Crashed:{ $line_break }
+
+journal.cli.host.health.heartbeat.ok = Heartbeat: ok{ $line_break }
+
+journal.cli.host.health.heartbeat.stale = { $line_break }Heartbeat: STALE ({ $stale })
+
+journal.cli.host.health.held = { $space_2 }held { $partition } { $reason }
+
+journal.cli.host.health.help = usage: { $syntax }{ $line_break }{ $line_break }Show the retained supervisor service-health status.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_5 }show this help message and exit{ $line_break }{ $spaces_2 }{ $option_6 }{ $spaces_2 }enable verbose output{ $line_break }{ $spaces_2 }{ $option_7 }{ $spaces_4 }enable debug output{ $line_break }
+
+journal.cli.host.health.logs.help = usage: { $syntax }{ $line_break }{ $line_break }View operational service logs.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_12 }show this help message and exit{ $line_break }{ $spaces_2 }{ $option_6 }{ $spaces_18 }number of lines to show (default: 5){ $line_break }{ $spaces_2 }{ $option_8 }{ $spaces_20 }follow log output{ $line_break }{ $spaces_2 }{ $option_10 }{ $spaces_10 }show rows at or after { $argument }{ $line_break }{ $spaces_2 }{ $option_13 }{ $spaces_8 }show rows for one service{ $line_break }{ $spaces_2 }{ $option_15 }{ $spaces_8 }show rows matching { $argument_16 }{ $line_break }{ $spaces_2 }{ $option_17 }{ $spaces_9 }enable verbose output{ $line_break }{ $spaces_2 }{ $option_19 }{ $spaces_11 }enable debug output{ $line_break }
+
+journal.cli.host.health.logs.usage = usage: { $syntax }{ $line_break }
+
+journal.cli.host.health.media.absent = Media processor: not reporting
+
+journal.cli.host.health.media.depth.stale = Media processor: { $depth } pending (stale, { $seconds }s since beacon)
+
+journal.cli.host.health.media.idle = Media processor: idle
+
+journal.cli.host.health.media.pending = Media processor: { $depth } pending
+
+journal.cli.host.health.media.stale = Media processor: stale ({ $seconds }s since beacon)
+
+journal.cli.host.health.not.running = Cannot connect: your journal isn't running{ $line_break }
+
+journal.cli.host.health.queue = { $space_2 }queued { $name } { $count }
+
+journal.cli.host.health.queue.hold = { $space_2 }queue-hold { $reason } { $details }
+
+journal.cli.host.health.rfdetr.assets = Object detection is degraded because its RF-DETR assets are unavailable. Screen descriptions will continue. Use `{ $command }` to check or repair the RF-DETR assets.
+
+journal.cli.host.health.rfdetr.package = object detection is unavailable. repair or reinstall your journal.
+
+journal.cli.host.health.rfdetr.ready = rf-detr.cpp object-detection engine and model are ready
+
+journal.cli.host.health.rfdetr.unsupported = rf-detr install: unsupported platform { $os }/{ $arch }; skipping rf-detr object-detection assets
+
+journal.cli.host.health.runtime = Cannot connect: health runtime unavailable: { $message }{ $line_break }
+
+journal.cli.host.health.service.days = { $space_2 }{ $name } pid { $pid }{ $space_2 }uptime { $days }d
+
+journal.cli.host.health.service.days.hours = { $space_2 }{ $name } pid { $pid }{ $space_2 }uptime { $days }d { $hours }h
+
+journal.cli.host.health.service.days.hours.minutes = { $space_2 }{ $name } pid { $pid }{ $space_2 }uptime { $days }d { $hours }h { $minutes }m
+
+journal.cli.host.health.service.days.minutes = { $space_2 }{ $name } pid { $pid }{ $space_2 }uptime { $days }d { $minutes }m
+
+journal.cli.host.health.service.hours = { $space_2 }{ $name } pid { $pid }{ $space_2 }uptime { $hours }h
+
+journal.cli.host.health.service.hours.minutes = { $space_2 }{ $name } pid { $pid }{ $space_2 }uptime { $hours }h { $minutes }m
+
+journal.cli.host.health.service.minutes = { $space_2 }{ $name } pid { $pid }{ $space_2 }uptime { $minutes }m
+
+journal.cli.host.health.service.seconds = { $space_2 }{ $name } pid { $pid }{ $space_2 }uptime { $seconds }s
+
+journal.cli.host.health.services = Services:{ $line_break }
+
+journal.cli.host.health.socket.encoding = Cannot connect: callosum socket path is not valid UTF-8{ $line_break }
+
+journal.cli.host.health.socket.inspect = Cannot connect: callosum socket is not inspectable: { $reason }{ $line_break }
+
+journal.cli.host.health.socket.missing = Cannot connect: callosum socket not found at { $path }{ $line_break }
+
+journal.cli.host.health.socket.type = path is not a Unix socket
+
+journal.cli.host.health.status.error = Cannot connect: supervisor status error: { $service }: { $reason }{ $line_break }
+
+journal.cli.host.health.status.invalid = Cannot connect: supervisor sent an invalid status payload at { $path }
+
+journal.cli.host.health.task.running = { $space_2 }{ $name } { $duration }s
+
+journal.cli.host.health.task.slow = { $space_2 }{ $name } { $duration }s{ $space_2 }SLOW (cap { $limit }s)
+
+journal.cli.host.health.task.stuck = { $space_2 }{ $name } { $duration }s{ $space_2 }STUCK (cap { $limit }s)
+
+journal.cli.host.health.tasks = Tasks:{ $line_break }
+
+journal.cli.host.health.tasks.empty = Tasks: none{ $line_break }
+
+journal.cli.host.health.timeout = Timed out waiting for supervisor status (10s){ $line_break }
+
+journal.cli.host.health.timeout.frames = Timed out waiting for supervisor status (10s; dropped { $count } malformed frame(s)){ $line_break }
+
+journal.cli.host.health.usage = usage: { $syntax }{ $line_break }
+
+journal.cli.host.heartbeat.error = { $command }: { $detail }
+
+journal.cli.host.heartbeat.help = usage: { $syntax }{ $line_break }{ $line_break }Run deterministic health repair pass{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_2 }show this help message and exit{ $line_break }{ $spaces_2 }{ $option_5 }{ $spaces_5 }Run full check regardless of recency{ $line_break }
+
+journal.cli.host.heartbeat.oplog = failed to create heartbeat oplog: { $detail }
+
+journal.cli.host.heartbeat.usage = usage: { $syntax }{ $line_break }
+
+journal.cli.host.hosted.service.hosted.service.admission.refused = hosted { $service } service admission refused: { $error }
+
+journal.cli.host.importer.desktop.run.resolved.could.not.show.import.day = could not show import day notice: { $error }{ $line_break }
+
+journal.cli.host.importer.desktop.run.resolved.could.not.show.import.size = could not show import size: { $error }{ $line_break }
+
+journal.cli.host.install.models.coreml.disclosure.parakeet.assets.downloading.parakeet.tdt = parakeet assets: downloading the { $model } { $literal_4 } model ({ $literal_3 }) from { $literal_2 }. see { $literal_1 }.
+
+journal.cli.host.install.models.help = usage: { $syntax }{ $line_break }{ $spaces_30 }{ $syntax_4 }{ $line_break }{ $spaces_30 }{ $syntax_5 }{ $line_break }{ $line_break }install and verify { $term }'s bundled { $argument } models (local { $argument_8 } plus bundled{ $line_break }{ $term_9 }{ $path } assets). default action checks the local { $argument_8 } artifacts and{ $line_break }fetches if missing; { $flag } re-fetches; { $flag_12 } verifies only and exits{ $line_break }nonzero on any problem.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_12 }show this help message and exit{ $line_break }{ $spaces_2 }{ $option_16 }{ $spaces_15 }verify bundled assets and local { $argument_8 } artifacts without{ $line_break }{ $spaces_24 }fetching.{ $line_break }{ $spaces_2 }{ $option_19 }{ $spaces_15 }ignore readiness and refetch{ $path_20 } local { $argument_8 }{ $line_break }{ $spaces_24 }artifacts.{ $line_break }{ $spaces_2 }{ $option_21 }{ $spaces_7 }install or verify only bundled models required for{ $line_break }{ $spaces_24 }journal readiness; do not fetch optional providers.{ $line_break }{ $spaces_2 }{ $flag_23 } { $choices }{ $line_break }{ $spaces_24 }journal variant to install or verify. { $literal } honors{ $line_break }{ $spaces_24 }{ $argument_26 } on { $literal_27 }{ $path_28 }, then { $literal }detects.{ $line_break }
+
+journal.cli.host.install.models.install.required.rfdetr.rf.detr.install.unsupported.platform = { $literal_1 } install: unsupported platform { $os }/{ $arch }; skipping { $literal_1 } object-detection assets
+
+journal.cli.host.install.models.install.with.live.progress.parakeet.model.model.name.percent = parakeet model { $model_name }: { $percent }% ({ $received } / { $total } MB)
+
+journal.cli.host.install.models.install.with.live.progress.parakeet.model.model.name.verifying = parakeet model { $model_name }: verifying download
+
+journal.cli.host.install.models.install.with.live.progress.parakeet.setup.download.starting = parakeet setup: download starting
+
+journal.cli.host.install.models.install.with.live.progress.parakeet.setup.downloading.required.files = parakeet setup: downloading required files { $percent }% ({ $received } / { $total } MB)
+
+journal.cli.host.install.models.install.with.live.progress.preparing.parakeet.speech.model.model = preparing parakeet speech model: { $model_name }
+
+journal.cli.host.install.models.parakeet.ready.parakeet.cpp.check.failed.model = { $literal_1 } check failed: model missing at { $path }
+
+journal.cli.host.install.models.parakeet.ready.parakeet.cpp.check.failed.name = { $literal_1 } check failed: { $name } missing at { $path }
+
+journal.cli.host.install.models.parakeet.ready.parakeet.cpp.check.failed.name.not.executable.at.path = { $literal_1 } check failed: { $name } not executable at { $path }
+
+journal.cli.host.install.models.parakeet.ready.parakeet.model.path.missing = parakeet model path missing
+
+journal.cli.host.install.models.parakeet.ready.parakeet.path.missing = parakeet path missing
+
+journal.cli.host.install.models.parakeet.without.download.parakeet.install.unsupported.platform.os = parakeet install: unsupported platform { $os }/{ $arch }; supported: { $literal_1 }, { $literal_2 }
+
+journal.cli.host.install.models.parakeet.without.download.parakeet.speech.recognition.ships.inside = parakeet: speech recognition ships inside the journal app on windows, so there is nothing to download
+
+journal.cli.host.install.models.ready.line.model.ready.path = model ready: { $path }
+
+journal.cli.host.install.models.resolve.variant.invalid.variant.cuda.use.cpu = invalid { $literal_1 }={ $literal_2 }; use { $literal_3 } on { $os }/{ $arch }
+
+journal.cli.host.install.models.resolve.variant.invalid.variant.value.use.cpu = invalid { $literal_1 }='{ $value }'; use { $literal_3 } or { $literal_2 }
+
+journal.cli.host.install.models.resolve.variant.variant.coreml.not.supported.on = variant { $literal_1 } not supported on { $os }
+
+journal.cli.host.install.models.resolve.variant.variant.coreml.not.supported.on.supported.on.os.arch = variant { $literal_1 } not supported on { $os }/{ $arch }
+
+journal.cli.host.install.models.resolve.variant.variant.cpu.not.supported.on = variant { $literal_1 } not supported on { $os }
+
+journal.cli.host.install.models.resolve.variant.variant.cpu.not.supported.on.supported.on.os.arch = variant { $literal_1 } not supported on { $os }/{ $arch }
+
+journal.cli.host.install.models.resolve.variant.variant.cuda.not.supported.on = variant { $literal_1 } not supported on { $os }
+
+journal.cli.host.install.models.resolve.variant.variant.cuda.not.supported.on.supported.on.os.arch = variant { $literal_1 } not supported on { $os }/{ $arch }
+
+journal.cli.host.install.models.rfdetr.bundled.asset.disclosure.rf.detr.assets.verifying.bundled = rf-detr assets: verifying the bundled { $literal_2 } { $version } engine ({ $literal_3 }) and { $literal_4 } nano { $literal_5 } weights ({ $literal_3 }). see { $literal_1 }.
+
+journal.cli.host.install.models.rfdetr.repair.object.detection.unavailable.repair.or = object detection is unavailable. repair or reinstall your journal. { $error }
+
+journal.cli.host.install.models.run.inner.speech.install.already.running.wait = speech install is already running; wait for it to finish
+
+journal.cli.host.install.models.run.inner.with.bundled.asset.verification.failed = bundled asset verification failed: { $error }
+
+journal.cli.host.install.models.run.inner.with.observing.parakeet.install.state.suffix = observing parakeet install: { $state }{ $suffix }
+
+journal.cli.host.install.models.run.inner.with.parakeet.install.already.running.for = parakeet install already running for a different target
+
+journal.cli.host.install.models.run.inner.with.parakeet.install.failed = parakeet install failed
+
+journal.cli.host.install.models.run.inner.with.timed.out.observing.parakeet.install = timed out observing parakeet install
+
+journal.cli.host.install.models.usage = usage: { $syntax }{ $line_break }{ $spaces_30 }{ $syntax_4 }{ $line_break }{ $spaces_30 }{ $syntax_5 }{ $line_break }
+
+journal.cli.host.install.provider.dispatch.message.provider.install.failed = { $provider } install failed
+
+journal.cli.host.install.provider.global.local.model.assets.downloading.llama = local model assets: downloading the { $literal_4 } runtime ({ $literal_7 }; the { $literal_6 } build also carries { $literal_5 }-licensed runtime components) and the model ({ $literal_3 }) from { $literal_2 }. see { $literal_1 }.
+
+journal.cli.host.install.provider.global.local.thinking.downloads.model.and = local thinking downloads the model and vision projector ({ $literal_3 }) from { $literal_2 } when needed. the runtime is included with the journal. see { $literal_1 }.
+
+journal.cli.host.install.provider.global.local.thinking.downloads.model.apache = local thinking downloads the model ({ $literal_3 }) from { $literal_2 }. the { $literal_4 } runtime is included with the journal. see { $literal_1 }.
+
+journal.cli.host.install.provider.global.parakeet.cpp.and.its.speech = { $literal_2 } and its speech model come with the journal on windows, so there's nothing to install. see { $literal_1 }.
+
+journal.cli.host.install.provider.global.parakeet.cpp.can.t.run = { $literal_1 } can't run on a mac. a mac transcribes with its { $literal_2 } model instead.
+
+journal.cli.host.install.provider.global.parakeet.cpp.fetches.two.artifacts = { $literal_4 } fetches two artifacts into this journal's provider cache before it can run, both from { $literal_2 }: the { $literal_3 } server binary ({ $literal_6 }) and the speech model ({ $literal_5 }). see { $literal_1 }.
+
+journal.cli.host.install.provider.help = usage: { $syntax }{ $line_break }{ $line_break }Install or retry a provider runtime.{ $line_break }{ $line_break }positional arguments:{ $line_break }{ $spaces_2 }{ $subcommand }{ $spaces_8 }Provider to install: '{ $literal }' or '{ $literal_7 }'.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_2 }show this help message and exit{ $line_break }
+
+journal.cli.host.install.provider.local.target.sha.local.fingerprint.dispatch.omitted.target = local fingerprint dispatch omitted target_fingerprint_sha256
+
+journal.cli.host.install.provider.observe.existing.with.provider.install.already.running.for = { $provider } install already running for a different target
+
+journal.cli.host.install.provider.observe.existing.with.timed.out.observing.provider.install = timed out observing { $provider } install
+
+journal.cli.host.install.provider.progress.line.observing.provider.install.state.suffix = observing { $provider } install: { $state }{ $suffix }
+
+journal.cli.host.install.provider.run.inner.with.parakeet.already.installed = parakeet already installed
+
+journal.cli.host.install.provider.run.inner.with.unsupported.provider.provider.supported.local = unsupported provider { $provider }; supported: { $literal_1 }
+
+journal.cli.host.install.provider.run.local.inner.with.platform.and.target.sha.local.already.installed = local already installed
+
+journal.cli.host.install.provider.unavailable.status.error.could.not.read.persisted.provider = could not read persisted { $provider } install status: { $error }
+
+journal.cli.host.install.provider.usage = usage: { $syntax }{ $line_break }
+
+journal.cli.host.installation.executable = could not resolve current executable: { $error }
+
+journal.cli.host.installation.executable.parent = current executable has no containing directory
+
+journal.cli.host.installation.recovery = this installation couldn't be verified.{ $line_break }run `{ $setup }` to check it. if setup finishes successfully, try again.{ $line_break }details: { $detail }
+
+journal.cli.host.installation.root = could not resolve installation identity root from { $directory }
+
+journal.cli.host.logs.count = invalid count: { $detail }
+
+journal.cli.host.logs.follow.descriptor = catalog failed for { $path }: oplog descriptor changed while following
+
+journal.cli.host.logs.follow.empty = No log files found.
+
+journal.cli.host.logs.follow.failed = { $operation } failed for { $path }
+
+journal.cli.host.logs.follow.root = catalog failed for { $path }: journal root unavailable
+
+journal.cli.host.logs.follow.source = { $operation } failed for { $path }: { $source }
+
+journal.cli.host.logs.grep.compile = regex pattern could not be compiled
+
+journal.cli.host.logs.grep.invalid = invalid regex pattern at byte offset { $offset }
+
+journal.cli.host.logs.grep.unsupported = unsupported regex feature '{ $family }' at byte offset { $offset }
+
+journal.cli.host.logs.health.error = health logs: { $detail }
+
+journal.cli.host.logs.health.usage = { $command }: error: { $detail }
+
+journal.cli.host.logs.service.empty = === service logs === (no oplog leaves)
+
+journal.cli.host.logs.service.error = service logs: { $detail }
+
+journal.cli.host.logs.service.heading = === service logs ===
+
+journal.cli.host.logs.service.operation = { $operation } failed: { $source }
+
+journal.cli.host.logs.service.unsupported = Error: unsupported platform '{ $platform }'
+
+journal.cli.host.logs.since.invalid = Invalid time: '{ $input }'. Use e.g., { $examples }
+
+journal.cli.host.logs.since.overflow = Python int too large to convert to C int
+
+journal.cli.host.main.windows.service.admission.failed = windows service admission failed: { $error }
+
+journal.cli.host.malformed.jsonl.warning.solstone.observe.utils.invalid.json.at.line.in = { $literal_warning_solstone_observe_utils }:Invalid { $literal_json } at line { $line } in { $path }: { $error }
+
+journal.cli.host.mcp.activity.activity = { $command_solstone_journal_mcp_activity }: { $error }
+
+journal.cli.host.mcp.activity.activity.is.not.compiled.into.this.build = { $command_solstone_journal_mcp_activity } is not compiled into this build
+
+journal.cli.host.mcp.activity.activity.unknown.outcome = { $command_solstone_journal_mcp_activity }: unknown outcome { $value }
+
+journal.cli.host.mcp.activity.activity.unknown.tool = { $command_solstone_journal_mcp_activity }: unknown tool { $value }
+
+journal.cli.host.mcp.activity.bytes = { $space_4 }bytes:{ $space_3 }{ $byte_count }
+
+journal.cli.host.mcp.activity.created = { $space_4 }created: { $created }
+
+journal.cli.host.mcp.activity.help = usage: { $syntax }{ $line_break }{ $spaces_37 }{ $syntax_4 }{ $line_break }{ $spaces_37 }{ $syntax_5 }{ $line_break }{ $line_break }Show what connections asked for and how each request ended.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_11 }show this help message and exit{ $line_break }{ $spaces_2 }{ $option_9 }{ $spaces_8 }only a bearer-token connection, by its label{ $line_break }{ $spaces_2 }{ $option_11 }{ $spaces_4 }only an { $term } connection, by its client id{ $line_break }{ $spaces_2 }{ $option_14 }{ $spaces_2 }with { $flag }, which grant, when one client id has several{ $line_break }{ $spaces_2 }{ $option_16 }{ $spaces_10 }only requests to this tool{ $line_break }{ $spaces_2 }{ $option_18 }{ $spaces_4 }only requests that ended this way{ $line_break }{ $spaces_2 }{ $option_19 }{ $spaces_2 }from this day{ $line_break }{ $spaces_2 }{ $option_20 }{ $spaces_4 }up to and including this day{ $line_break }{ $spaces_2 }{ $option_21 }{ $spaces_12 }at most N requests, 1 to 1000 (default: 20){ $line_break }{ $spaces_2 }{ $option_23 }{ $spaces_15 }print { $term_25 }{ $line_break }
+
+journal.cli.host.mcp.activity.no.match = { $examined_quantity ->
+    [one] No match in the { $examined } record examined; more may exist further back.
+    *[other] No match in the { $examined } records examined; more may exist further back.
+    }
+
+journal.cli.host.mcp.activity.no.recorded.mcp.activity.matches = No recorded { $literal_mcp } activity matches.
+
+journal.cli.host.mcp.activity.origin = { $space_4 }origin:{ $space_2 }{ $origin }
+
+journal.cli.host.mcp.activity.raise.limit.or.narrow.day.from.day.to.to.see = Raise { $literal_limit } or narrow { $literal_day_from }/{ $literal_day_to } to see more.
+
+journal.cli.host.mcp.activity.reason = { $space_4 }reason:{ $space_2 }{ $reason }
+
+journal.cli.host.mcp.activity.record = { $space_4 }record:{ $space_2 }{ $day }/{ $segment }
+
+journal.cli.host.mcp.activity.request = { $space_4 }request: { $rendered }
+
+journal.cli.host.mcp.activity.request.arguments.exceeded.the.record.bound.and.were.not.stored = { $space_4 }request: (arguments exceeded the record bound and were not stored)
+
+journal.cli.host.mcp.activity.request.legacy = { $space_4 }request: (schema 1: not recorded)
+
+journal.cli.host.mcp.activity.result = { $count_quantity ->
+    [one] { $space_4 }result:{ $space_2 }{ $count } result, digest { $digest }
+    *[other] { $space_4 }result:{ $space_2 }{ $count } result(s), digest { $digest }
+    }
+
+journal.cli.host.mcp.activity.result.targets = { $count_quantity ->
+    [one] { $space_4 }result:{ $space_2 }{ $count } result, digest { $digest }, targets { $targets }
+    *[other] { $space_4 }result:{ $space_2 }{ $count } result(s), digest { $digest }, targets { $targets }
+    }
+
+journal.cli.host.mcp.activity.result.truncated = { $count_quantity ->
+    [one] { $space_4 }result:{ $space_2 }{ $count } result, digest { $digest }, targets { $targets }, ...
+    *[other] { $space_4 }result:{ $space_2 }{ $count } result(s), digest { $digest }, targets { $targets }, ...
+    }
+
+journal.cli.host.mcp.activity.schema.connection = (schema 1: no connection recorded)
+
+journal.cli.host.mcp.activity.shown.complete = { $shown_quantity ->
+    [one] { $shown } record shown of { $examined } examined. { $counts }
+    *[other] { $shown } record(s) shown of { $examined } examined. { $counts }
+    }
+
+journal.cli.host.mcp.activity.shown.partial = { $shown_quantity ->
+    [one] { $shown } record shown of { $examined } examined (more may exist further back). { $counts }
+    *[other] { $shown } record(s) shown of { $examined } examined (more may exist further back). { $counts }
+    }
+
+journal.cli.host.mcp.activity.unreadable = { $count_quantity ->
+    [one] { $count } record in range could not be parsed and is not counted above.
+    *[other] { $count } record(s) in range could not be parsed and are not counted above.
+    }
+
+journal.cli.host.mcp.help = usage: { $syntax }{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_12 }show this help message and exit{ $line_break }{ $line_break }subcommands:{ $line_break }{ $spaces_2 }{ $subcommand }{ $spaces_15 }Run the { $term } endpoint{ $line_break }{ $spaces_2 }{ $subcommand_9 }{ $spaces_12 }Run the connection for agents on this computer{ $line_break }{ $spaces_2 }{ $subcommand_10 }{ $spaces_16 }Show { $term } endpoint status{ $line_break }{ $spaces_2 }{ $subcommand_12 }{ $spaces_17 }Manage { $term } bearer tokens{ $line_break }{ $spaces_2 }{ $subcommand_14 }{ $spaces_15 }Manage the agent pairing code{ $line_break }{ $spaces_2 }{ $subcommand_15 }{ $spaces_17 }Manage registered { $term_16 } clients{ $line_break }{ $spaces_2 }{ $subcommand_17 }{ $spaces_12 }Manage connection read permissions{ $line_break }{ $spaces_2 }{ $subcommand_18 }{ $spaces_14 }Show what connections asked for and how each request ended{ $line_break }{ $spaces_2 }{ $subcommand_20 }{ $spaces_17 }Invoke one { $term } read without opening a port{ $line_break }
+
+journal.cli.host.mcp.local.door.help = usage: { $syntax }{ $line_break }{ $line_break }Run the connection for agents on this computer.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_2 }show this help message and exit{ $line_break }
+
+journal.cli.host.mcp.local.door.local.door.is.not.compiled.into.this.build = { $command_solstone_journal_mcp_local_door } is not compiled into this build
+
+journal.cli.host.mcp.local.door.mcp.local.door.failed = mcp local-door failed: { $class }
+
+journal.cli.host.mcp.oauth.error.detail = { $command_solstone_journal_mcp } { $command } { $operation }: { $error }
+
+journal.cli.host.mcp.oauth.help = usage: { $syntax }{ $line_break }{ $line_break }Manage registered { $term } clients.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_2 }show this help message and exit{ $line_break }{ $line_break }subcommands:{ $line_break }{ $spaces_2 }{ $subcommand }{ $spaces_8 }List registered { $term } clients{ $line_break }{ $spaces_2 }{ $subcommand_8 }{ $spaces_6 }Revoke a registered { $term } client{ $line_break }
+
+journal.cli.host.mcp.oauth.list.help = usage: { $syntax }{ $line_break }{ $line_break }List registered { $term } clients.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_2 }show this help message and exit{ $line_break }
+
+journal.cli.host.mcp.oauth.oauth.is.not.compiled.into.this.build = { $command_solstone_journal_mcp_oauth } is not compiled into this build
+
+journal.cli.host.mcp.oauth.oauth.revoke.no.such.oauth.client = { $command_solstone_journal_mcp_oauth_revoke }: no such { $literal_oauth } client
+
+journal.cli.host.mcp.oauth.revoke.help = usage: { $syntax }{ $line_break }{ $line_break }Revoke a registered { $term } client.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_13 }show this help message and exit{ $line_break }{ $spaces_2 }{ $option_7 }{ $spaces_2 }the client to revoke{ $line_break }
+
+journal.cli.host.mcp.oauth.revoked.oauth.client = Revoked { $literal_oauth } client { $client_id }.
+
+journal.cli.host.mcp.pairing.at.expires.at = Expires at { $expires_at }.
+
+journal.cli.host.mcp.pairing.at.it.works.only.at.your.own.domain = It works only at your own domain.
+
+journal.cli.host.mcp.pairing.at.it.works.only.for.an.agent.on.this.computer = It works only for an agent on this computer.
+
+journal.cli.host.mcp.pairing.at.it.works.only.for.an.agent.on.this.computer.to = It works only for an agent on this computer. To connect an agent another way, use { $literal_door } lan, { $literal_solstone_me } or hostname.
+
+journal.cli.host.mcp.pairing.at.it.works.only.for.an.agent.on.your.network = It works only for an agent on your network.
+
+journal.cli.host.mcp.pairing.at.it.works.only.through.solstone.me = It works only through { $literal_solstone_me }.
+
+journal.cli.host.mcp.pairing.at.pairing.generate.no.hostname.is.set.up.for.this.journal = { $command_solstone_journal_mcp_pairing_generate }: no hostname is set up for this journal. set one up in the agents app first.
+
+journal.cli.host.mcp.pairing.at.pairing.generate.this.journal.s.config.could.not.be.read = { $command_solstone_journal_mcp_pairing_generate }: this journal's config could not be read.
+
+journal.cli.host.mcp.pairing.at.pairing.revoke.no.active.pairing.code.to.revoke = { $command_solstone_journal_mcp_pairing_revoke }: no active pairing code to revoke
+
+journal.cli.host.mcp.pairing.at.revoked.the.active.pairing.code = Revoked the active pairing code.
+
+journal.cli.host.mcp.pairing.at.save.this.now.it.will.not.be.shown.again.and = Save this now. It will not be shown again and cannot be recovered:
+
+journal.cli.host.mcp.pairing.generate.help = usage: { $syntax }{ $line_break }{ $line_break }Generate a pairing code for an agent, valid for 10 minutes and one use. It is shown once.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_12 }show this help message and exit{ $line_break }{ $spaces_2 }{ $flag } { $choices }{ $line_break }{ $spaces_24 }where the code works (default: { $literal }, an agent on this computer){ $line_break }
+
+journal.cli.host.mcp.pairing.generated = Generated a pairing code, valid for 10 minutes and one use.
+
+journal.cli.host.mcp.pairing.help = usage: { $syntax }{ $line_break }{ $line_break }Manage the agent pairing code.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_2 }show this help message and exit{ $line_break }{ $line_break }subcommands:{ $line_break }{ $spaces_2 }{ $subcommand }{ $spaces_4 }Generate a pairing code{ $line_break }{ $spaces_2 }{ $subcommand_7 }{ $spaces_6 }Revoke the current pairing code{ $line_break }
+
+journal.cli.host.mcp.pairing.pairing.is.not.compiled.into.this.build = { $command_solstone_journal_mcp_pairing } is not compiled into this build
+
+journal.cli.host.mcp.pairing.revoke.help = usage: { $syntax }{ $line_break }{ $line_break }Revoke the current pairing code.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_2 }show this help message and exit{ $line_break }
+
+journal.cli.host.mcp.permission.categories = Categories: { $categories }
+
+journal.cli.host.mcp.permission.clear.help = usage: { $syntax }{ $line_break }{ $line_break }Clear one connection's read permission.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_11 }show this help message and exit{ $line_break }{ $spaces_2 }{ $option_6 }{ $spaces_8 }a bearer-token connection, by its label{ $line_break }{ $spaces_2 }{ $option_8 }{ $spaces_4 }an { $term } connection, by its client id{ $line_break }{ $spaces_2 }{ $option_11 }{ $spaces_2 }with { $flag }, which grant, when one client id has several{ $line_break }
+
+journal.cli.host.mcp.permission.cleared.permission.for.connection = Cleared permission for connection { $connection }.
+
+journal.cli.host.mcp.permission.connection = Connection: { $connection }
+
+journal.cli.host.mcp.permission.evaluation = Evaluation: { $evaluation }
+
+journal.cli.host.mcp.permission.generation = Generation: { $generation }
+
+journal.cli.host.mcp.permission.help = usage: { $syntax }{ $line_break }{ $line_break }Manage connection read permissions.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_2 }show this help message and exit{ $line_break }{ $line_break }subcommands:{ $line_break }{ $spaces_2 }{ $subcommand }{ $spaces_8 }Show read permissions, for every connection or one{ $line_break }{ $spaces_2 }{ $subcommand_7 }{ $spaces_9 }Set what one connection may read{ $line_break }{ $spaces_2 }{ $subcommand_9 }{ $spaces_7 }Clear one connection's read permission{ $line_break }
+
+journal.cli.host.mcp.permission.list.facets = { $connection }{ $tab }generation: { $generation }{ $tab }evaluation: { $evaluation }{ $tab }read: facets ({ $facets })
+
+journal.cli.host.mcp.permission.list.none = { $connection }{ $tab }generation: { $generation }{ $tab }evaluation: { $evaluation }{ $tab }no read permission
+
+journal.cli.host.mcp.permission.list.whole = { $connection }{ $tab }generation: { $generation }{ $tab }evaluation: { $evaluation }{ $tab }read: { $literal_whole_journal }
+
+journal.cli.host.mcp.permission.no.mcp.connection.permissions.configured = No { $literal_mcp } connection permissions configured.
+
+journal.cli.host.mcp.permission.no.permission.was.configured.for.connection = No permission was configured for connection { $connection }.
+
+journal.cli.host.mcp.permission.permission.clear = { $command_solstone_journal_mcp_permission_clear }: { $error }
+
+journal.cli.host.mcp.permission.permission.management.is.not.compiled.into.this.build = { $command_solstone_journal_mcp_permission } management is not compiled into this build
+
+journal.cli.host.mcp.permission.permission.no.permission.configured = Permission: no permission configured
+
+journal.cli.host.mcp.permission.permission.set = { $command_solstone_journal_mcp_permission_set }: { $error }
+
+journal.cli.host.mcp.permission.permission.set.choose.a.category.from = { $command_solstone_journal_mcp_permission_set }: choose a category from { $categories }
+
+journal.cli.host.mcp.permission.permission.show = { $command_solstone_journal_mcp_permission_show }: { $error }
+
+journal.cli.host.mcp.permission.read.no.read.permission.configured = Read:{ $space_7 }no read permission configured
+
+journal.cli.host.mcp.permission.scope.facets = Read scope: facets ({ $facets })
+
+journal.cli.host.mcp.permission.scope.whole = Read scope: { $literal_whole_journal }
+
+journal.cli.host.mcp.permission.set.help = usage: { $syntax }{ $line_break }{ $spaces_43 }{ $syntax_4 }{ $line_break }{ $spaces_43 }{ $syntax_5 }{ $line_break }{ $line_break }Set what one connection may read.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_11 }show this help message and exit{ $line_break }{ $spaces_2 }{ $option_9 }{ $spaces_8 }a bearer-token connection, by its label{ $line_break }{ $spaces_2 }{ $option_11 }{ $spaces_4 }an { $term } connection, by its client id{ $line_break }{ $spaces_2 }{ $option_14 }{ $spaces_2 }with { $flag }, which grant, when one client id has several{ $line_break }{ $spaces_2 }{ $option_16 }{ $spaces_2 }a kind this connection may read (repeat for each kind){ $line_break }{ $spaces_2 }{ $option_17 }{ $spaces_8 }only this facet, by name; repeat for more (default: the whole journal){ $line_break }
+
+journal.cli.host.mcp.permission.set.mcp.read.permission.for.connection.generation = Set { $literal_mcp } read permission for connection { $connection } (generation { $generation }).
+
+journal.cli.host.mcp.permission.show.help = usage: { $syntax }{ $line_break }{ $line_break }Show read permissions, for every connection or for one.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_11 }show this help message and exit{ $line_break }{ $spaces_2 }{ $option_6 }{ $spaces_8 }a bearer-token connection, by its label{ $line_break }{ $spaces_2 }{ $option_8 }{ $spaces_4 }an { $term } connection, by its client id{ $line_break }{ $spaces_2 }{ $option_11 }{ $spaces_2 }with { $flag }, which grant, when one client id has several{ $line_break }
+
+journal.cli.host.mcp.probe.help = usage: { $syntax }{ $line_break }{ $spaces_34 }{ $flag } { $argument } { $flag_6 } { $term }{ $line_break }{ $line_break }Invoke one { $term_8 } read as a connection, without opening a port.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_11 }show this help message and exit{ $line_break }{ $spaces_2 }{ $option_12 }{ $spaces_8 }a bearer-token connection, by its label{ $line_break }{ $spaces_2 }{ $option_14 }{ $spaces_4 }an { $term_16 } connection, by its client id{ $line_break }{ $spaces_2 }{ $option_17 }{ $spaces_2 }with { $flag_18 }, which grant, when one client id has several{ $line_break }{ $spaces_2 }{ $option_19 }{ $spaces_10 }the tool to call{ $line_break }{ $spaces_2 }{ $option_21 }{ $spaces_5 }the tool's arguments, as a { $term } object{ $line_break }
+
+journal.cli.host.mcp.service.help = usage: { $syntax }{ $line_break }{ $line_break }Run the { $term } endpoint.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_2 }show this help message and exit{ $line_break }
+
+journal.cli.host.mcp.service.mcp.service.failed = mcp service failed: { $class }
+
+journal.cli.host.mcp.service.service.is.not.compiled.into.this.build = { $command_solstone_journal_mcp_service } is not compiled into this build
+
+journal.cli.host.mcp.status.capability.compiled.in.true = capability compiled in: true
+
+journal.cli.host.mcp.status.capability.disabled = capability: disabled
+
+journal.cli.host.mcp.status.capability.enabled = capability: enabled
+
+journal.cli.host.mcp.status.capability.error = capability: error
+
+journal.cli.host.mcp.status.help = usage: { $syntax }{ $line_break }{ $line_break }Show { $term } endpoint status.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_2 }show this help message and exit{ $line_break }
+
+journal.cli.host.mcp.status.lan.disabled = lan door: off at port { $port }
+
+journal.cli.host.mcp.status.lan.enabled = lan door: enabled at port { $port }
+
+journal.cli.host.mcp.status.local.disabled = local door: not enabled at { $resource }
+
+journal.cli.host.mcp.status.local.enabled = local door: enabled at { $resource }
+
+journal.cli.host.mcp.status.mcp.capability.config.status.only.this.does.not.report.service = { $literal_mcp } capability/config status only; this does not report service liveness.
+
+journal.cli.host.mcp.status.status.could.not.read.bearer.token.ledger = { $command_solstone_journal_mcp_status }: could not read bearer-token ledger: { $error }
+
+journal.cli.host.mcp.status.status.could.not.read.mcp.capability.configuration = { $command_solstone_journal_mcp_status }: could not read { $literal_mcp } capability configuration: { $error }
+
+journal.cli.host.mcp.status.status.is.not.compiled.into.this.build = { $command_solstone_journal_mcp_status } is not compiled into this build
+
+journal.cli.host.mcp.status.status.mcp.capability.configuration.is.invalid = { $command_solstone_journal_mcp_status }: { $literal_mcp } capability configuration is invalid: { $error }
+
+journal.cli.host.mcp.status.token.count = token count: { $count }
+
+journal.cli.host.mcp.status.token.unavailable = token count: unavailable
+
+journal.cli.host.mcp.token.create.help = usage: { $syntax }{ $line_break }{ $line_break }Create a bearer token for a connection. The token is shown once.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_5 }show this help message and exit{ $line_break }{ $spaces_2 }{ $option_6 }{ $spaces_2 }a name for the connection the token is for{ $line_break }
+
+journal.cli.host.mcp.token.created.bearer.token.for.label = Created bearer token for label { $label }.
+
+journal.cli.host.mcp.token.grant.before.the.agent.connects.an.agent.that.connected.first = Grant before the agent connects. An agent that connected first keeps its old tool list until it reconnects.
+
+journal.cli.host.mcp.token.help = usage: { $syntax }{ $line_break }{ $line_break }Manage { $term } bearer tokens.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_2 }show this help message and exit{ $line_break }{ $line_break }subcommands:{ $line_break }{ $spaces_2 }{ $subcommand }{ $spaces_6 }Create a bearer token for a connection{ $line_break }{ $spaces_2 }{ $subcommand_8 }{ $spaces_8 }List tokens{ $line_break }{ $spaces_2 }{ $subcommand_10 }{ $spaces_6 }Revoke a token{ $line_break }
+
+journal.cli.host.mcp.token.list.help = usage: { $syntax }{ $line_break }{ $line_break }List each token's label and when it was created.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_2 }show this help message and exit{ $line_break }
+
+journal.cli.host.mcp.token.revoke.help = usage: { $syntax }{ $line_break }{ $line_break }Revoke the bearer token for a label.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_5 }show this help message and exit{ $line_break }{ $spaces_2 }{ $option_6 }{ $spaces_2 }the label of the token to revoke{ $line_break }
+
+journal.cli.host.mcp.token.revoked.bearer.token.for.label = Revoked bearer token for label { $label }.
+
+journal.cli.host.mcp.token.save.this.token.now.it.will.not.be.shown.again = Save this token now. It will not be shown again and cannot be recovered:
+
+journal.cli.host.mcp.token.token.management.is.not.compiled.into.this.build = { $command_solstone_journal_mcp_token } management is not compiled into this build
+
+journal.cli.host.mcp.token.until.you.grant.it.read.access.an.agent.using.this = Until you grant it read access, an agent using this token sees only { $literal_save_memory } and { $literal_recall_memory }. To let it read your whole journal (add { $literal_facet } NAME to allow only that facet):
+
+journal.cli.host.mcp.usage = usage: { $syntax }{ $line_break }
+
+journal.cli.host.navigate.error.is.no.longer.supported.put.facet.selection.in.the.destination.url.for = { $command }: error: { $option } is no longer supported. Put facet selection in the destination { $term }; for example, { $path }
+
+journal.cli.host.navigate.help = usage: { $syntax }{ $line_break }{ $line_break }Navigate the browser to a path.{ $line_break }{ $line_break }positional arguments:{ $line_break }{ $spaces_2 }{ $subcommand }{ $spaces_18 }{ $term } path to navigate to.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_12 }show this help message and exit{ $line_break }
+
+journal.cli.host.navigate.print.navigation.navigate.path = Navigate: { $path }
+
+journal.cli.host.navigate.run.navigate.callosum.socket.unavailable.path = solstone journal navigate: error: { $literal_1 } socket unavailable: { $path }
+
+journal.cli.host.navigate.run.navigate.failed.encode.callosum.request = solstone journal navigate: error: failed to encode { $literal_1 } request: { $error }
+
+journal.cli.host.navigate.usage = usage: { $syntax }{ $line_break }
+
+journal.cli.host.open.help = usage: { $syntax }{ $line_break }{ $line_break }open your journal in your browser with a one-time link.{ $line_break }{ $line_break }positional arguments:{ $line_break }{ $spaces_2 }{ $subcommand }{ $spaces_10 }page to open (default: /){ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_4 }show this help message and exit{ $line_break }{ $spaces_2 }{ $option_8 }{ $spaces_3 }print the one-time link instead of opening a browser{ $line_break }
+
+journal.cli.host.open.mint.could.not.make.link = your journal could not make a link: { $error }
+
+journal.cli.host.open.mint.could.not.make.link.try = your journal could not make a link. try again.
+
+journal.cli.host.open.mint.response.from.could.not.be = the response from your journal could not be read. try again.
+
+journal.cli.host.open.run.browser.could.not.be.opened = a browser could not be opened here. run this command again with { $literal_1 }, and open the link it prints within a minute.
+
+journal.cli.host.open.run.open.it.from.another.computer = to open it from another computer, first forward the journal's ports over { $literal_1 }, and keep that terminal open:
+
+journal.cli.host.open.run.open.url.path = open your journal: { $url }{ $path }
+
+journal.cli.host.open.socket.linux.down.isn.t.running.for.this = your journal isn't running for this account on this computer, so there is nothing to open. start it with { $literal_1 }.
+
+journal.cli.host.open.socket.linux.old.running.older.than.this.command = your running journal is older than this command. restart it with { $literal_1 }, then { $literal_2 }, and try again.
+
+journal.cli.host.open.socket.mac.down.isn.t.running.for.this = your journal isn't running for this account on this computer, so there is nothing to open. open the journal app to start it.
+
+journal.cli.host.open.socket.mac.old.running.older.than.this.command = your running journal is older than this command. quit the journal app, open it again, and try again.
+
+journal.cli.host.open.socket.windows.down.isn.t.running.for.this = your journal isn't running for this account on this computer, so there is nothing to open. start it from the journal app, and try again.
+
+journal.cli.host.open.socket.windows.old.running.older.than.this.command = your running journal is older than this command. restart it from the journal app, and try again.
+
+journal.cli.host.open.usage = usage: { $syntax }{ $line_break }
+
+journal.cli.host.parser.convey.argument.journal.expected.one.argument = { $command }: error: argument { $flag }: expected one argument
+
+journal.cli.host.parser.convey.argument.port.expected.one.argument = { $command }: error: argument { $flag }: expected one argument
+
+journal.cli.host.parser.convey.argument.port.invalid.int.value = { $command }: error: argument { $flag }: invalid int value
+
+journal.cli.host.parser.convey.argument.port.invalid.int.value.value = { $command }: error: argument { $flag }: invalid int value: '{ $value }'
+
+journal.cli.host.parser.convey.argument.port.must.be.between.n1.and.n65535 = { $command }: error: argument { $flag }: must be between 1 and 65535
+
+journal.cli.host.parser.convey.the.following.arguments.are.required.port = { $command }: error: the following arguments are required: { $flag }
+
+journal.cli.host.parser.convey.unrecognized.arguments.arguments = { $command }: error: unrecognized arguments: { $arguments }
+
+journal.cli.host.parser.cortex.unrecognized.arguments.arguments = { $command }: error: unrecognized arguments: { $arguments }
+
+journal.cli.host.parser.direct.port.value.argument.direct.port.invalid.int.value.value = { $command }: error: argument { $flag }: invalid int value: '{ $value }'
+
+journal.cli.host.parser.direct.port.value.argument.direct.port.must.be.between.n1.and.n65535 = { $command }: error: argument { $flag }: must be between 1 and 65535
+
+journal.cli.host.parser.grab.argument.out.expected.one.argument = { $command }: error: argument { $flag }: expected one argument
+
+journal.cli.host.parser.grab.path.tokens.must.be.valid.unicode = { $command }: error: path tokens must be valid Unicode
+
+journal.cli.host.parser.grab.unrecognized.arguments.arguments = { $command }: error: unrecognized arguments: { $arguments }
+
+journal.cli.host.parser.mcp.activity.expected.argument.after.name = { $command }: error: expected argument after { $name }
+
+journal.cli.host.parser.mcp.activity.limit.must.be.between.n1.and.n1000 = { $command }: error: { $flag } must be between 1 and 1000
+
+journal.cli.host.parser.mcp.activity.must.be.nonempty.name = { $command }: error: { $name } must be nonempty
+
+journal.cli.host.parser.mcp.activity.unknown.option.accepted.token.oauth.created.tool.outcome.day.from.day.to.limit.json.other = { $command }: error: unknown option { $other }; accepted: { $flag }, { $flag_2 }, { $flag_3 }, { $flag_4 }, { $flag_5 }, { $flag_6 }, { $flag_7 }, { $flag_8 }, { $flag_9 }
+
+journal.cli.host.parser.mcp.invalid.mcp.command.value = { $command }: error: invalid { $term } command: { $value }
+
+journal.cli.host.parser.mcp.oauth.client.id.client.id.must.be.valid.utf.n8.and.nonempty = { $command }: error: client-id must be valid { $term } and nonempty
+
+journal.cli.host.parser.mcp.oauth.client.id.expected.exactly.one.client.id.client.id.argument = { $command }: error: expected exactly one { $flag } { $argument } argument
+
+journal.cli.host.parser.mcp.oauth.client.id.the.following.arguments.are.required.client.id.client.id = { $command }: error: the following arguments are required: { $flag } { $argument }
+
+journal.cli.host.parser.mcp.oauth.invalid.mcp.oauth.command.value = { $command }: error: invalid { $term } oauth command: { $value }
+
+journal.cli.host.parser.mcp.oauth.the.following.arguments.are.required.list.revoke = { $command }: error: the following arguments are required: { $literal }, { $literal_2 }
+
+journal.cli.host.parser.mcp.pairing.expected.optional.door.local.lan.solstone.me.hostname.argument = { $command }: error: expected optional { $syntax } argument
+
+journal.cli.host.parser.mcp.pairing.invalid.mcp.pairing.command.value = { $command }: error: invalid { $term } pairing command: { $value }
+
+journal.cli.host.parser.mcp.pairing.the.following.arguments.are.required.generate.revoke = { $command }: error: the following arguments are required: { $literal }, { $literal_2 }
+
+journal.cli.host.parser.mcp.pairing.unknown.door.choose.one.of.local.lan.solstone.me.hostname = { $command }: error: unknown door, choose one of { $literal }, { $literal_2 }, { $literal_3 }, { $literal_4 }
+
+journal.cli.host.parser.mcp.permission.invalid.mcp.permission.command.value = { $command }: error: invalid { $term } permission command: { $value }
+
+journal.cli.host.parser.mcp.permission.set.at.least.one.category.is.required = { $command }: error: at least one { $flag } is required
+
+journal.cli.host.parser.mcp.permission.set.category.must.be.nonempty = { $command }: error: category must be nonempty
+
+journal.cli.host.parser.mcp.permission.set.category.must.be.valid.utf.n8.and.nonempty = { $command }: error: category must be valid { $term } and nonempty
+
+journal.cli.host.parser.mcp.permission.set.expected.argument.after.category = { $command }: error: expected argument after { $flag }
+
+journal.cli.host.parser.mcp.permission.set.expected.argument.after.facet = { $command }: error: expected argument after { $flag }
+
+journal.cli.host.parser.mcp.permission.set.facet.name.must.be.nonempty = { $command }: error: facet name must be nonempty
+
+journal.cli.host.parser.mcp.permission.set.facet.name.must.be.valid.utf.n8.and.nonempty = { $command }: error: facet name must be valid { $term } and nonempty
+
+journal.cli.host.parser.mcp.permission.the.following.arguments.are.required.show.set.clear = { $command }: error: the following arguments are required: { $literal }, { $literal_2 }, { $literal_3 }
+
+journal.cli.host.parser.mcp.probe.arguments.is.required = { $command }: error: { $flag } is required
+
+journal.cli.host.parser.mcp.probe.expected.argument.after.arguments = { $command }: error: expected argument after { $flag }
+
+journal.cli.host.parser.mcp.probe.expected.argument.after.tool = { $command }: error: expected argument after { $flag }
+
+journal.cli.host.parser.mcp.probe.tool.is.required = { $command }: error: { $flag } is required
+
+journal.cli.host.parser.mcp.target.created.cannot.be.used.with.token = { $command }: error: { $flag } cannot be used with { $flag_2 }
+
+journal.cli.host.parser.mcp.target.created.timestamp.must.be.nonempty = { $command }: error: created timestamp must be nonempty
+
+journal.cli.host.parser.mcp.target.created.timestamp.must.be.valid.utf.n8.and.nonempty = { $command }: error: created timestamp must be valid { $term } and nonempty
+
+journal.cli.host.parser.mcp.target.expected.argument.after.created = { $command }: error: expected argument after { $flag }
+
+journal.cli.host.parser.mcp.target.expected.argument.after.oauth = { $command }: error: expected argument after { $flag }
+
+journal.cli.host.parser.mcp.target.expected.argument.after.token = { $command }: error: expected argument after { $flag }
+
+journal.cli.host.parser.mcp.target.oauth.client.id.must.be.nonempty = { $command }: error: oauth client-id must be nonempty
+
+journal.cli.host.parser.mcp.target.oauth.client.id.must.be.valid.utf.n8.and.nonempty = { $command }: error: oauth client-id must be valid { $term } and nonempty
+
+journal.cli.host.parser.mcp.target.one.of.token.or.oauth.is.required = { $command }: error: one of { $flag } or { $flag_2 } is required
+
+journal.cli.host.parser.mcp.target.specify.either.token.or.oauth.not.both = { $command }: error: specify either { $flag } or { $flag_2 }, not both
+
+journal.cli.host.parser.mcp.target.token.label.must.be.nonempty = { $command }: error: token label must be nonempty
+
+journal.cli.host.parser.mcp.target.token.label.must.be.valid.utf.n8.and.nonempty = { $command }: error: token label must be valid { $term } and nonempty
+
+journal.cli.host.parser.mcp.target.unexpected.argument.option = { $command }: error: unexpected argument: { $option }
+
+journal.cli.host.parser.mcp.the.following.arguments.are.required.service.local.door.status.token.pairing.oauth.permission.activity.probe = { $command }: error: the following arguments are required: { $literal }, { $literal_2 }, { $literal_3 }, { $literal_4 }, { $literal_5 }, { $literal_6 }, { $literal_7 }, { $literal_8 }, { $literal_9 }
+
+journal.cli.host.parser.mcp.token.invalid.mcp.token.command.value = { $command }: error: invalid { $term } token command: { $value }
+
+journal.cli.host.parser.mcp.token.label.expected.exactly.one.label.label.argument = { $command }: error: expected exactly one { $flag } { $argument } argument
+
+journal.cli.host.parser.mcp.token.label.label.must.be.valid.utf.n8.and.nonempty = { $command }: error: label must be valid { $term } and nonempty
+
+journal.cli.host.parser.mcp.token.label.the.following.arguments.are.required.label.label = { $command }: error: the following arguments are required: { $flag } { $argument }
+
+journal.cli.host.parser.mcp.token.the.following.arguments.are.required.create.list.revoke = { $command }: error: the following arguments are required: { $literal }, { $literal_2 }, { $literal_3 }
+
+journal.cli.host.parser.schedule.unrecognized.arguments.arguments = { $command }: error: unrecognized arguments: { $arguments }
+
+journal.cli.host.parser.spl.invalid.choice.choose.from.service.value = { $command }: error: invalid choice: { $value } (choose from { $literal })
+
+journal.cli.host.parser.spl.the.following.arguments.are.required.service = { $command }: error: the following arguments are required: { $literal }
+
+journal.cli.host.parser.spl.unrecognized.arguments.arguments = { $command }: error: unrecognized arguments: { $arguments }
+
+journal.cli.host.parser.supervisor.argument.direct.port.cannot.be.repeated = { $command }: error: argument { $flag }: cannot be repeated
+
+journal.cli.host.parser.supervisor.argument.direct.port.expected.one.argument = { $command }: error: argument { $flag }: expected one argument
+
+journal.cli.host.parser.supervisor.argument.direct.port.invalid.int.value = { $command }: error: argument { $flag }: invalid int value
+
+journal.cli.host.parser.validate.day.day.must.be.eight.digits.yyyymmdd.got.value = { $command }: error: day must be eight digits ({ $argument }), got { $value }
+
+journal.cli.host.process.admission = journal process admission failed: { $error }
+
+journal.cli.host.read.error.error.solstone.observe.utils.error.reading = { $literal_error_solstone_observe_utils }:Error reading { $path }: { $error }
+
+journal.cli.host.render.oauth.store.error.no.active.pairing.code = { $command_solstone_journal_mcp } { $command } { $operation }: no active pairing code
+
+journal.cli.host.render.oauth.store.error.no.such.oauth.client = { $command_solstone_journal_mcp } { $command } { $operation }: no such { $literal_oauth } client
+
+journal.cli.host.render.supervisor.host.outcome.supervisor.failed.to.boot = supervisor failed to boot: { $reason }
+
+journal.cli.host.render.supervisor.host.outcome.supervisor.lifecycle.shutdown.failed.cause.readiness.self.heartbeat.identity = supervisor lifecycle shutdown failed: cause={ $cause }, readiness={ $readiness }, self_heartbeat={ $self_heartbeat }, identity={ $identity }
+
+journal.cli.host.render.token.store.error.token = { $command_solstone_journal_mcp_token } { $operation }: { $error }
+
+journal.cli.host.render.token.store.error.token.a.bearer.token.already.exists.for.label = { $command_solstone_journal_mcp_token } { $operation }: a bearer token already exists for label { $label }
+
+journal.cli.host.render.token.store.error.token.invalid.label = { $command_solstone_journal_mcp_token } { $operation }: invalid label: { $error }
+
+journal.cli.host.render.token.store.error.token.no.bearer.token.exists.for.label = { $command_solstone_journal_mcp_token } { $operation }: no bearer token exists for label { $label }
+
+journal.cli.host.resolve.connection.key.solstone.journal.mcp.failed.to.query.oauth.store = { $command_solstone_journal_mcp }: failed to query oauth store: { $e }
+
+journal.cli.host.resolve.connection.key.solstone.journal.mcp.failed.to.query.token.store = { $command_solstone_journal_mcp }: failed to query token store: { $e }
+
+journal.cli.host.resolve.connection.key.solstone.journal.mcp.multiple.oauth.grants.matched.client.id.specify = { $command_solstone_journal_mcp }: multiple { $literal_oauth } grants matched { $literal_client_id } { $client_id }; specify { $literal_created } { $timestamp_arg }
+
+journal.cli.host.resolve.connection.key.solstone.journal.mcp.no.bearer.token.exists.for.label = { $command_solstone_journal_mcp }: no bearer token exists for label { $label }
+
+journal.cli.host.resolve.connection.key.solstone.journal.mcp.no.oauth.grant.found.matching.client.id = { $command_solstone_journal_mcp }: no { $literal_oauth } grant found matching { $literal_client_id } { $client_id }
+
+journal.cli.host.schedule.help = usage: { $syntax }{ $line_break }{ $line_break }Show scheduled tasks{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_5 }show this help message and exit{ $line_break }{ $spaces_2 }{ $option_6 }{ $spaces_2 }Enable verbose output{ $line_break }{ $spaces_2 }{ $option_7 }{ $spaces_4 }Enable debug logging{ $line_break }
+
+journal.cli.host.schedule.usage = usage: { $syntax }{ $line_break }
+
+journal.cli.host.sense.help = usage: { $syntax }{ $line_break }{ $spaces_20 }{ $syntax_4 }{ $line_break }{ $spaces_20 }{ $syntax_5 }{ $line_break }{ $line_break }Unified observe file processor{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_12 }show this help message and exit{ $line_break }{ $spaces_2 }{ $option_9 }{ $spaces_13 }Process files from specific day ({ $argument } format) instead of watching{ $line_break }{ $spaces_2 }{ $option_12 }{ $spaces_2 }Max concurrent screen-describe jobs when using { $flag } (default: 1).{ $line_break }{ $spaces_2 }{ $flag_14 } { $choices }{ $line_break }{ $spaces_24 }Delete existing screen or audio outputs and reprocess (requires { $flag }){ $line_break }{ $spaces_2 }{ $option_17 }{ $spaces_5 }Filter to specific segment ({ $argument_19 } format, requires { $flag }){ $line_break }{ $spaces_2 }{ $option_20 }{ $spaces_7 }Filter to specific stream (requires { $flag }){ $line_break }{ $spaces_2 }{ $option_22 }{ $spaces_13 }Show what would be processed (or deleted with { $flag_14 }) without making changes{ $line_break }{ $spaces_2 }{ $option_23 }{ $spaces_9 }Enable verbose output{ $line_break }{ $spaces_2 }{ $option_25 }{ $spaces_11 }Enable debug logging{ $line_break }
+
+journal.cli.host.sense.sense.batch.failed = sense batch failed: { $error }
+
+journal.cli.host.sense.sense.parent.loss.admission.failed = sense parent-loss admission failed: { $error }
+
+journal.cli.host.sense.service.sense.service.failed = sense service failed: { $class }
+
+journal.cli.host.sense.usage = usage: { $syntax }{ $line_break }{ $spaces_20 }{ $syntax_4 }{ $line_break }{ $spaces_20 }{ $syntax_5 }{ $line_break }
+
+journal.cli.host.service.argument.port = error: unexpected argument '{ $text }'; pass the port as { $flag } { $port }
+
+journal.cli.host.service.argument.range = error: unexpected argument '{ $text }'; pass a port between 1 and 65535 as { $flag } { $argument }
+
+journal.cli.host.service.argument.unexpected = error: unexpected argument '{ $text }'; pass the port as { $flag } { $argument }
+
+journal.cli.host.service.conflicting.absent.systemd.state = conflicting absent { $systemd } state
+
+journal.cli.host.service.could.not.clear.the.service.s.ready.state = could not clear the service's ready state: { $error }
+
+journal.cli.host.service.could.not.find.the.solstone.installation.from = could not find the { $solstone } installation from { $path }
+
+journal.cli.host.service.could.not.resolve.journal = could not resolve journal
+
+journal.cli.host.service.could.not.resolve.the.solstone.executable = could not resolve the { $solstone } executable: { $error }
+
+journal.cli.host.service.could.not.verify.the.saved.installation = could not verify the saved installation: { $error }
+
+journal.cli.host.service.could.not.verify.the.solstone.installation = could not verify the { $solstone } installation: { $error }
+
+journal.cli.host.service.could.not.verify.the.solstone.setup.storage = could not verify the { $solstone } setup storage: { $error }
+
+journal.cli.host.service.couldn.t.confirm.that.the.service.uses.this.journal = couldn't confirm that the service uses this journal. run '{ $setup }' to update its saved location.
+
+journal.cli.host.service.create.service.directory = create service directory: { $source }
+
+journal.cli.host.service.create.service.health.directory = create service health directory: { $source }
+
+journal.cli.host.service.duplicate.systemd.property = duplicate { $systemd } property: { $key }
+
+journal.cli.host.service.entry.is.not.a.regular.file = entry is not a regular file
+
+journal.cli.host.service.error.details = error: { $detail }
+
+journal.cli.host.service.executable.parent = service executable has no parent
+
+journal.cli.host.service.file.absent = { $operation ->
+    [change-journal-folder] service change journal folder refused { $path }: absent
+    [install] service install refused { $path }: absent
+    [operate] service operate refused { $path }: absent
+    [restart] service restart refused { $path }: absent
+    [route-repair] service route repair refused { $path }: absent
+    [status] service status refused { $path }: absent
+    [stop] service stop refused { $path }: absent
+   *[uninstall] service uninstall refused { $path }: absent
+    }
+
+journal.cli.host.service.file.foreign = { $operation ->
+    [change-journal-folder] service change journal folder refused { $path }: not recognized as a service file created by journal
+    [install] service install refused { $path }: not recognized as a service file created by journal
+    [operate] service operate refused { $path }: not recognized as a service file created by journal
+    [restart] service restart refused { $path }: not recognized as a service file created by journal
+    [route-repair] service route repair refused { $path }: not recognized as a service file created by journal
+    [status] service status refused { $path }: not recognized as a service file created by journal
+    [stop] service stop refused { $path }: not recognized as a service file created by journal
+   *[uninstall] service uninstall refused { $path }: not recognized as a service file created by journal
+    }
+
+journal.cli.host.service.file.managed = { $operation ->
+    [change-journal-folder] service change journal folder refused { $path }: managed
+    [install] service install refused { $path }: managed
+    [operate] service operate refused { $path }: managed
+    [restart] service restart refused { $path }: managed
+    [route-repair] service route repair refused { $path }: managed
+    [status] service status refused { $path }: managed
+    [stop] service stop refused { $path }: managed
+   *[uninstall] service uninstall refused { $path }: managed
+    }
+
+journal.cli.host.service.file.unknown = { $operation ->
+    [change-journal-folder] service change journal folder refused { $path }: could not verify the service file: { $cause }
+    [install] service install refused { $path }: could not verify the service file: { $cause }
+    [operate] service operate refused { $path }: could not verify the service file: { $cause }
+    [restart] service restart refused { $path }: could not verify the service file: { $cause }
+    [route-repair] service route repair refused { $path }: could not verify the service file: { $cause }
+    [status] service status refused { $path }: could not verify the service file: { $cause }
+    [stop] service stop refused { $path }: could not verify the service file: { $cause }
+   *[uninstall] service uninstall refused { $path }: could not verify the service file: { $cause }
+    }
+
+journal.cli.host.service.incomplete.systemd.property.set = incomplete { $systemd } property set
+
+journal.cli.host.service.inspect.launchd.directory = inspect { $launchd } directory: { $error }
+
+journal.cli.host.service.inspect.service.directory = inspect service directory: { $error }
+
+journal.cli.host.service.inspect.service.health.directory = inspect service health directory: { $error }
+
+journal.cli.host.service.inspect.service.journal.root = inspect service journal root: { $error }
+
+journal.cli.host.service.inspect.stale.launchd.unit = inspect stale { $launchd } unit: { $error }
+
+journal.cli.host.service.installation.changed.while.waiting.for.the.new.journal.folder = installation changed while waiting for the new journal folder
+
+journal.cli.host.service.launchd.accepted.the.unload.request.but.the.service.is = { $launchd } accepted the unload request, but the service is still present
+
+journal.cli.host.service.launchd.directory.is.not.a.real.directory = { $launchd } directory is not a real directory
+
+journal.cli.host.service.launchd.observation.was.not.utf = { $launchd } observation was not UTF-8
+
+journal.cli.host.service.launchd.omitted.or.malformed.arguments = { $launchd } omitted or malformed arguments
+
+journal.cli.host.service.launchd.omitted.the.runtime.state = { $launchd } omitted the runtime state
+
+journal.cli.host.service.malformed.systemd.property = malformed { $systemd } property
+
+journal.cli.host.service.manager.disable.service = disable service failed: { $result }
+
+journal.cli.host.service.manager.disable.stale.service = disable stale service failed: { $result }
+
+journal.cli.host.service.manager.enable.service = enable service failed: { $result }
+
+journal.cli.host.service.manager.load.installed.service = load installed service failed: { $result }
+
+journal.cli.host.service.manager.load.service = load service failed: { $result }
+
+journal.cli.host.service.manager.load.service.after.changing.journal.folder = load service after changing journal folder failed: { $result }
+
+journal.cli.host.service.manager.reload.service.after.changing.journal.folder = reload service after changing journal folder failed: { $result }
+
+journal.cli.host.service.manager.reload.systemd = reload systemd failed: { $result }
+
+journal.cli.host.service.manager.reload.systemd.for.route.repair = reload systemd for route repair failed: { $result }
+
+journal.cli.host.service.manager.request.launchd.unload = request launchd unload failed: { $result }
+
+journal.cli.host.service.manager.restart.service = restart service failed: { $result }
+
+journal.cli.host.service.manager.restart.service.for.route.repair = restart service for route repair failed: { $result }
+
+journal.cli.host.service.manager.start.after.changing.journal.folder = start after changing journal folder failed: { $result }
+
+journal.cli.host.service.manager.start.service = start service failed: { $result }
+
+journal.cli.host.service.manager.stop.service = stop service failed: { $result }
+
+journal.cli.host.service.manager.stop.service.before.changing.journal.folder = stop service before changing journal folder failed: { $result }
+
+journal.cli.host.service.manager.stop.service.before.restart = stop service before restart failed: { $result }
+
+journal.cli.host.service.manager.stop.stale.service = stop stale service failed: { $result }
+
+journal.cli.host.service.manager.unload.stale.launchd.service = unload stale launchd service failed: { $result }
+
+journal.cli.host.service.manager.unload.stale.service = unload stale service failed: { $result }
+
+journal.cli.host.service.metadata = metadata: { $error }
+
+journal.cli.host.service.open.your.journal = open your journal: { $url }
+
+journal.cli.host.service.open.your.journal.solstone.journal.open = open your journal: { $open }
+
+journal.cli.host.service.parse.stale.launchd.unit = parse stale { $launchd } unit: { $error }
+
+journal.cli.host.service.port.invalid = error: invalid port '{ $value }'
+
+journal.cli.host.service.preserved.service.unit = preserved service unit { $path }
+
+journal.cli.host.service.read = read: { $error }
+
+journal.cli.host.service.ready.timeout = service did not become ready within 120 seconds
+
+journal.cli.host.service.recheck.stale.launchd.unit = recheck stale { $launchd } unit: { $error }
+
+journal.cli.host.service.registration.a.different.unit.answers.to.this.name = { $operation ->
+    [change-journal-folder] service change journal folder refused: a different unit answers to this name. journal will not overwrite it. If that is deliberate, finish the change journal folder yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [clean-stale-launchd-service] service clean stale launchd service refused: a different unit answers to this name. journal will not overwrite it. If that is deliberate, finish the clean stale launchd service yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [install] service install refused: a different unit answers to this name. journal will not overwrite it. If that is deliberate, finish the install yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [operate] service operate refused: a different unit answers to this name. journal will not overwrite it. If that is deliberate, finish the operate yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [start-after-changing-journal-folder] service start after changing journal folder refused: a different unit answers to this name. journal will not overwrite it. If that is deliberate, finish the start after changing journal folder yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [status] service status refused: a different unit answers to this name. journal will not overwrite it. If that is deliberate, finish the status yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [stop] service stop refused: a different unit answers to this name. journal will not overwrite it. If that is deliberate, finish the stop yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [uninstall] service uninstall refused: a different unit answers to this name. journal will not overwrite it. If that is deliberate, finish the uninstall yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [up] service up refused: a different unit answers to this name. journal will not overwrite it. If that is deliberate, finish the up yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [verify-service-stop] service verify service stop refused: a different unit answers to this name. journal will not overwrite it. If that is deliberate, finish the verify service stop yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+   *[verify-unload] service verify unload refused: a different unit answers to this name. journal will not overwrite it. If that is deliberate, finish the verify unload yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    }
+
+journal.cli.host.service.registration.the.launch.agent.is.not.the.one.journal.manages = { $operation ->
+    [change-journal-folder] service change journal folder refused: the launch agent is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the change journal folder yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [clean-stale-launchd-service] service clean stale launchd service refused: the launch agent is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the clean stale launchd service yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [install] service install refused: the launch agent is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the install yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [operate] service operate refused: the launch agent is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the operate yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [start-after-changing-journal-folder] service start after changing journal folder refused: the launch agent is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the start after changing journal folder yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [status] service status refused: the launch agent is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the status yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [stop] service stop refused: the launch agent is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the stop yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [uninstall] service uninstall refused: the launch agent is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the uninstall yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [up] service up refused: the launch agent is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the up yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [verify-service-stop] service verify service stop refused: the launch agent is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the verify service stop yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+   *[verify-unload] service verify unload refused: the launch agent is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the verify unload yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    }
+
+journal.cli.host.service.registration.the.launch.agent.s.program.is.not.a.journal = { $operation ->
+    [change-journal-folder] service change journal folder refused: the launch agent's program is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the change journal folder yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [clean-stale-launchd-service] service clean stale launchd service refused: the launch agent's program is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the clean stale launchd service yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [install] service install refused: the launch agent's program is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the install yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [operate] service operate refused: the launch agent's program is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the operate yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [start-after-changing-journal-folder] service start after changing journal folder refused: the launch agent's program is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the start after changing journal folder yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [status] service status refused: the launch agent's program is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the status yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [stop] service stop refused: the launch agent's program is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the stop yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [uninstall] service uninstall refused: the launch agent's program is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the uninstall yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [up] service up refused: the launch agent's program is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the up yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [verify-service-stop] service verify service stop refused: the launch agent's program is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the verify service stop yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+   *[verify-unload] service verify unload refused: the launch agent's program is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the verify unload yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    }
+
+journal.cli.host.service.registration.the.unit.carries.a.drop.in.journal.did.not = { $operation ->
+    [change-journal-folder] service change journal folder refused: the unit carries a drop-in journal did not write. journal will not overwrite it. If that is deliberate, finish the change journal folder yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [clean-stale-launchd-service] service clean stale launchd service refused: the unit carries a drop-in journal did not write. journal will not overwrite it. If that is deliberate, finish the clean stale launchd service yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [install] service install refused: the unit carries a drop-in journal did not write. journal will not overwrite it. If that is deliberate, finish the install yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [operate] service operate refused: the unit carries a drop-in journal did not write. journal will not overwrite it. If that is deliberate, finish the operate yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [start-after-changing-journal-folder] service start after changing journal folder refused: the unit carries a drop-in journal did not write. journal will not overwrite it. If that is deliberate, finish the start after changing journal folder yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [status] service status refused: the unit carries a drop-in journal did not write. journal will not overwrite it. If that is deliberate, finish the status yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [stop] service stop refused: the unit carries a drop-in journal did not write. journal will not overwrite it. If that is deliberate, finish the stop yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [uninstall] service uninstall refused: the unit carries a drop-in journal did not write. journal will not overwrite it. If that is deliberate, finish the uninstall yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [up] service up refused: the unit carries a drop-in journal did not write. journal will not overwrite it. If that is deliberate, finish the up yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [verify-service-stop] service verify service stop refused: the unit carries a drop-in journal did not write. journal will not overwrite it. If that is deliberate, finish the verify service stop yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+   *[verify-unload] service verify unload refused: the unit carries a drop-in journal did not write. journal will not overwrite it. If that is deliberate, finish the verify unload yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    }
+
+journal.cli.host.service.registration.the.unit.file.is.not.the.one.journal.manages = { $operation ->
+    [change-journal-folder] service change journal folder refused: the unit file is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the change journal folder yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [clean-stale-launchd-service] service clean stale launchd service refused: the unit file is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the clean stale launchd service yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [install] service install refused: the unit file is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the install yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [operate] service operate refused: the unit file is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the operate yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [start-after-changing-journal-folder] service start after changing journal folder refused: the unit file is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the start after changing journal folder yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [status] service status refused: the unit file is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the status yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [stop] service stop refused: the unit file is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the stop yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [uninstall] service uninstall refused: the unit file is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the uninstall yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [up] service up refused: the unit file is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the up yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [verify-service-stop] service verify service stop refused: the unit file is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the verify service stop yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+   *[verify-unload] service verify unload refused: the unit file is not the one journal manages. journal will not overwrite it. If that is deliberate, finish the verify unload yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    }
+
+journal.cli.host.service.registration.the.unit.is.in.an.unexpected.state = { $operation ->
+    [change-journal-folder] service change journal folder refused: the unit is in an unexpected state. journal will not overwrite it. If that is deliberate, finish the change journal folder yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [clean-stale-launchd-service] service clean stale launchd service refused: the unit is in an unexpected state. journal will not overwrite it. If that is deliberate, finish the clean stale launchd service yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [install] service install refused: the unit is in an unexpected state. journal will not overwrite it. If that is deliberate, finish the install yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [operate] service operate refused: the unit is in an unexpected state. journal will not overwrite it. If that is deliberate, finish the operate yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [start-after-changing-journal-folder] service start after changing journal folder refused: the unit is in an unexpected state. journal will not overwrite it. If that is deliberate, finish the start after changing journal folder yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [status] service status refused: the unit is in an unexpected state. journal will not overwrite it. If that is deliberate, finish the status yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [stop] service stop refused: the unit is in an unexpected state. journal will not overwrite it. If that is deliberate, finish the stop yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [uninstall] service uninstall refused: the unit is in an unexpected state. journal will not overwrite it. If that is deliberate, finish the uninstall yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [up] service up refused: the unit is in an unexpected state. journal will not overwrite it. If that is deliberate, finish the up yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [verify-service-stop] service verify service stop refused: the unit is in an unexpected state. journal will not overwrite it. If that is deliberate, finish the verify service stop yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+   *[verify-unload] service verify unload refused: the unit is in an unexpected state. journal will not overwrite it. If that is deliberate, finish the verify unload yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    }
+
+journal.cli.host.service.registration.the.unit.s.execstart.is.not.a.journal.launcher = { $operation ->
+    [change-journal-folder] service change journal folder refused: the unit's ExecStart is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the change journal folder yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [clean-stale-launchd-service] service clean stale launchd service refused: the unit's ExecStart is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the clean stale launchd service yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [install] service install refused: the unit's ExecStart is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the install yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [operate] service operate refused: the unit's ExecStart is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the operate yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [start-after-changing-journal-folder] service start after changing journal folder refused: the unit's ExecStart is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the start after changing journal folder yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [status] service status refused: the unit's ExecStart is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the status yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [stop] service stop refused: the unit's ExecStart is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the stop yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [uninstall] service uninstall refused: the unit's ExecStart is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the uninstall yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [up] service up refused: the unit's ExecStart is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the up yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    [verify-service-stop] service verify service stop refused: the unit's ExecStart is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the verify service stop yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+   *[verify-unload] service verify unload refused: the unit's ExecStart is not a journal launcher. journal will not overwrite it. If that is deliberate, finish the verify unload yourself -- on Linux: `{ $restart_command }` -- then confirm the running build with `{ $inspect_command }`
+    }
+
+journal.cli.host.service.registration.unknown = { $operation ->
+    [change-journal-folder] service change journal folder could not check the service registration: { $cause }
+    [clean-stale-launchd-service] service clean stale launchd service could not check the service registration: { $cause }
+    [install] service install could not check the service registration: { $cause }
+    [operate] service operate could not check the service registration: { $cause }
+    [start-after-changing-journal-folder] service start after changing journal folder could not check the service registration: { $cause }
+    [status] service status could not check the service registration: { $cause }
+    [stop] service stop could not check the service registration: { $cause }
+    [uninstall] service uninstall could not check the service registration: { $cause }
+    [up] service up could not check the service registration: { $cause }
+    [verify-service-stop] service verify service stop could not check the service registration: { $cause }
+   *[verify-unload] service verify unload could not check the service registration: { $cause }
+    }
+
+journal.cli.host.service.remove.service.unit = remove service unit: { $error }
+
+journal.cli.host.service.remove.stale.launchd.unit = remove stale { $launchd } unit: { $error }
+
+journal.cli.host.service.removed = removed { $path }
+
+journal.cli.host.service.removed.stale.launchd.plist = removed stale { $launchd } plist { $path }
+
+journal.cli.host.service.removed.stale.service.registration = removed stale service registration
+
+journal.cli.host.service.route.repair.service.launcher.is.not.an.executable.regular = route repair service launcher is not an executable regular file
+
+journal.cli.host.service.route.repair.service.launcher.is.unavailable = route repair service launcher is unavailable: { $error }
+
+journal.cli.host.service.route.repair.service.unit.has.an.invalid.command.tail = route repair service unit has an invalid command tail
+
+journal.cli.host.service.route.repair.service.unit.has.an.invalid.execstart = route repair service unit has an invalid { $exec_start }
+
+journal.cli.host.service.route.repair.service.unit.has.no.execstart = route repair service unit has no { $exec_start }
+
+journal.cli.host.service.route.repair.service.unit.is.not.utf = route repair service unit is not UTF-8
+
+journal.cli.host.service.run.solstone.journal.setup.or.solstone.journal.service.install = run '{ $setup }' or '{ $install }' to install it.
+
+journal.cli.host.service.scan.launchd.directory = scan { $launchd } directory: { $error }
+
+journal.cli.host.service.scan.launchd.entry = scan { $launchd } entry: { $error }
+
+journal.cli.host.service.service.became.active.during.the.journal.folder.change = service became active during the journal-folder change
+
+journal.cli.host.service.service.command.output.exceeded.kib = service command output exceeded 256 KiB
+
+journal.cli.host.service.service.command.output.failed = service command output failed: { $error }
+
+journal.cli.host.service.service.command.spawn.failed = service command spawn failed: { $error }
+
+journal.cli.host.service.service.command.timed.out = service command timed out
+
+journal.cli.host.service.service.command.wait.failed = service command wait failed: { $error }
+
+journal.cli.host.service.service.directory.contains.unsafe.component = service directory contains unsafe component
+
+journal.cli.host.service.service.directory.escaped.home = service directory escaped home
+
+journal.cli.host.service.service.enabled = service enabled
+
+journal.cli.host.service.service.health.path.is.not.a.real.directory = service health path is not a real directory
+
+journal.cli.host.service.service.home = service home: { $error }
+
+journal.cli.host.service.service.install.could.not.resolve.journal = service install: could not resolve journal
+
+journal.cli.host.service.service.install.current.executable.has.no.directory = service install: current executable has no directory
+
+journal.cli.host.service.service.install.invalid.installation.identity.arguments = service install: invalid installation identity arguments: { $error }
+
+journal.cli.host.service.service.install.requires.installation.identity.arguments = service install requires installation identity arguments
+
+journal.cli.host.service.service.installed = service: installed
+
+journal.cli.host.service.service.journal.root.is.not.a.real.directory = service journal root is not a real directory
+
+journal.cli.host.service.service.launcher.is.not.an.executable.regular.file = service launcher is not an executable regular file
+
+journal.cli.host.service.service.launcher.is.unavailable = service launcher is unavailable: { $error }
+
+journal.cli.host.service.service.loaded.into.launchd = service loaded into { $launchd }
+
+journal.cli.host.service.service.lock = service lock: { $error }
+
+journal.cli.host.service.service.management.is.supported.only.on.linux.and.mac = service management is supported only on linux and mac
+
+journal.cli.host.service.service.not.installed = service: not installed
+
+journal.cli.host.service.service.not.installed.run.solstone.journal.service.install.first = service not installed. run '{ $install }' first.
+
+journal.cli.host.service.service.path.is.not.utf = service path is not UTF-8
+
+journal.cli.host.service.service.registration.has.no.matching.managed.file = service registration has no matching managed file
+
+journal.cli.host.service.service.registration.has.no.valid.port = service registration has no valid port
+
+journal.cli.host.service.service.restarted = service restarted
+
+journal.cli.host.service.service.runtime.state.was.unexpected = { $operation ->
+    [change-journal-folder] service change journal folder runtime state was unexpected
+    [clean-stale-launchd-service] service clean stale launchd service runtime state was unexpected
+    [install] service install runtime state was unexpected
+    [operate] service operate runtime state was unexpected
+    [start-after-changing-journal-folder] service start after changing journal folder runtime state was unexpected
+    [status] service status runtime state was unexpected
+    [stop] service stop runtime state was unexpected
+    [uninstall] service uninstall runtime state was unexpected
+    [up] service up runtime state was unexpected
+    [verify-service-stop] service verify service stop runtime state was unexpected
+   *[verify-unload] service verify unload runtime state was unexpected
+    }
+
+journal.cli.host.service.service.started = service started
+
+journal.cli.host.service.service.stderr.reader.panicked = service stderr reader panicked
+
+journal.cli.host.service.service.stderr.unavailable = service stderr unavailable
+
+journal.cli.host.service.service.stdout.reader.panicked = service stdout reader panicked
+
+journal.cli.host.service.service.stdout.unavailable = service stdout unavailable
+
+journal.cli.host.service.service.stopped = service stopped
+
+journal.cli.host.service.service.stopped.but.its.ready.state.could.not.be = service stopped, but its ready state could not be cleared: { $error }
+
+journal.cli.host.service.service.unit.changed.before.publication.nothing.was.written = service unit changed before publication; nothing was written
+
+journal.cli.host.service.service.unit.changed.during.operation.preserved.replacement = service unit changed during operation; preserved replacement
+
+journal.cli.host.service.service.unit.has.no.parent = service unit has no parent
+
+journal.cli.host.service.service.unit.has.no.trusted.home.ancestor = service unit has no trusted home ancestor
+
+journal.cli.host.service.service.unit.publication.failed = service unit publication failed: { $error }
+
+journal.cli.host.service.service.unit.published.with.uncertain.durability = service unit published with uncertain durability: { $other }
+
+journal.cli.host.service.service.was.not.installed = service was not installed
+
+journal.cli.host.service.sign.in.invalid = error: { $flag } expects { $literal } or { $literal_3 }
+
+journal.cli.host.service.stale.launchd.plist.changed.during.cleanup.preserved = stale { $launchd } plist changed during cleanup; preserved { $path }
+
+journal.cli.host.service.stale.launchd.unit.has.a.foreign.label = stale { $launchd } unit has a foreign label
+
+journal.cli.host.service.stale.launchd.unit.has.conflicting.program.fields = stale { $launchd } unit has conflicting program fields
+
+journal.cli.host.service.stale.launchd.unit.has.no.label = stale { $launchd } unit has no label
+
+journal.cli.host.service.stale.launchd.unit.has.no.launcher = stale { $launchd } unit has no launcher
+
+journal.cli.host.service.stale.launchd.unit.is.foreign.or.unrecognized = stale { $launchd } unit is foreign or unrecognized
+
+journal.cli.host.service.stale.launchd.unit.is.not.a.dictionary = stale { $launchd } unit is not a dictionary
+
+journal.cli.host.service.state.running = state: running ({ $manager })
+
+journal.cli.host.service.state.stopped = state: stopped
+
+journal.cli.host.service.subcommand.unknown = unknown subcommand: { $value }; available: { $literal }
+
+journal.cli.host.service.systemd.observation.was.not.utf = { $systemd } observation was not UTF-8
+
+journal.cli.host.service.the.previous.service.did.not.stop.before.replacement = the previous service did not stop before replacement
+
+journal.cli.host.service.the.solstone.executable.has.no.containing.directory = the { $solstone } executable has no containing directory
+
+journal.cli.host.service.unit.exceeds.mib = unit exceeds 1 MiB
+
+journal.cli.host.service.unit.path.has.no.trusted.home.ancestor = unit path has no trusted home ancestor
+
+journal.cli.host.service.unrecognized.systemd.active.substate.pair = unrecognized { $systemd } active/substate pair
+
+journal.cli.host.service.unsafe.service.directory = unsafe service directory: { $path }
+
+journal.cli.host.service.usage = Usage: { $syntax }{ $line_break }{ $spaces_7 }{ $syntax_4 }{ $spaces_2 }(default: 5015; { $term } only){ $line_break }{ $spaces_7 }{ $syntax_7 }{ $spaces_2 }(restart; { $flag } noops if not installed){ $line_break }{ $spaces_7 }{ $syntax_9 }{ $spaces_29 }(start + status; service must be installed){ $line_break }{ $spaces_7 }{ $syntax_11 }{ $spaces_27 }(stop){ $line_break }
+
+journal.cli.host.service.windows.only = this service command is only available on Windows
+
+journal.cli.host.service.wrote = wrote { $path }
+
+journal.cli.host.settings.bind = convey{ $line_break }{ $space_2 }bind:{ $space_14 }{ $address }
+
+journal.cli.host.settings.convey.error.argument.convey.command.invalid.choice.choose.from.status = { $command }: error: argument { $literal }: invalid choice: '{ $value }' (choose from { $literal_3 })
+
+journal.cli.host.settings.convey.help = usage: { $syntax }{ $line_break }{ $line_break }positional arguments:{ $line_break }{ $spaces_2 }{ $choices }{ $line_break }{ $spaces_4 }{ $subcommand }{ $spaces_4 }Show convey bind and dashboard { $term } status{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_2 }show this help message and exit{ $line_break }
+
+journal.cli.host.settings.convey.usage = usage: { $syntax }{ $line_break }
+
+journal.cli.host.settings.error.argument.section.invalid.choice.choose.from.convey = { $command }: error: argument { $literal }: invalid choice: '{ $value }' (choose from { $literal_3 })
+
+journal.cli.host.settings.error.unrecognized.arguments = { $command }: error: unrecognized arguments: { $value }
+
+journal.cli.host.settings.help = usage: { $syntax }{ $line_break }{ $line_break }Manage local journal settings{ $line_break }{ $line_break }positional arguments:{ $line_break }{ $spaces_2 }{ $choices }{ $line_break }{ $spaces_4 }{ $subcommand }{ $spaces_7 }Manage convey settings{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_5 }show this help message and exit{ $line_break }{ $spaces_2 }{ $option_10 }{ $spaces_2 }Enable verbose output{ $line_break }{ $spaces_2 }{ $option_11 }{ $spaces_4 }Enable debug logging{ $line_break }
+
+journal.cli.host.settings.open = open it with:{ $space_6 }{ $command }
+
+journal.cli.host.settings.port.read = Error: { $path }: { $detail }
+
+journal.cli.host.settings.status.help = usage: { $syntax }{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_2 }show this help message and exit{ $line_break }{ $spaces_2 }{ $option_5 }{ $spaces_6 }Print machine-readable status.{ $line_break }
+
+journal.cli.host.settings.url = dashboard url:{ $space_5 }{ $url }
+
+journal.cli.host.settings.usage = usage: { $syntax }{ $line_break }
+
+journal.cli.host.setup.error = { $literal }: error: { $detail }
+
+journal.cli.host.setup.usage = usage: { $syntax }{ $line_break }{ $spaces_21 }{ $syntax_4 }{ $line_break }{ $spaces_21 }{ $syntax_5 }{ $line_break }{ $spaces_21 }{ $syntax_6 }{ $line_break }{ $spaces_21 }{ $syntax_7 }{ $line_break }{ $spaces_21 }{ $syntax_8 }{ $line_break }{ $spaces_21 }{ $syntax_9 } ({ $term } only){ $line_break }
+
+journal.cli.host.spl.help = usage: { $syntax }{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_5 }show this help message and exit{ $line_break }{ $spaces_2 }{ $option_6 }{ $spaces_2 }Enable verbose output{ $line_break }{ $spaces_2 }{ $option_7 }{ $spaces_4 }Enable debug logging{ $line_break }
+
+journal.cli.host.spl.service.spl.service.failed = spl service failed: { $class }
+
+journal.cli.host.spl.usage = usage: { $syntax }{ $line_break }
+
+journal.cli.host.start.help = usage: { $syntax }{ $line_break }{ $spaces_21 }{ $syntax_4 }{ $line_break }{ $spaces_21 }{ $syntax_5 }{ $line_break }{ $spaces_21 }{ $syntax_6 }{ $line_break }{ $spaces_21 }{ $syntax_7 }{ $line_break }{ $line_break }Monitor journal system health{ $line_break }{ $line_break }positional arguments:{ $line_break }{ $spaces_2 }{ $subcommand }{ $spaces_15 }{ $term } port (0 = auto-select available port){ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_9 }show this help message and exit{ $line_break }{ $spaces_2 }{ $option_14 }{ $spaces_9 }Disable daily processing run at midnight{ $line_break }{ $spaces_2 }{ $option_15 }{ $spaces_8 }Do not start the { $term_17 } server (run it manually for{ $line_break }{ $spaces_21 }debugging){ $line_break }{ $spaces_2 }{ $option_18 }{ $spaces_11 }Do not start the private network relay{ $line_break }{ $spaces_2 }{ $option_20 }{ $spaces_8 }Do not start the { $term } web application{ $line_break }{ $spaces_2 }{ $option_21 }{ $spaces_6 }Do not initialize or run the schedule engine{ $line_break }{ $spaces_2 }{ $option_23 }{ $spaces_4 }Require the direct parent process to remain live{ $line_break }{ $spaces_2 }{ $option_25 }{ $spaces_2 }Use this path as the journal root instead of normal{ $line_break }{ $spaces_21 }journal resolution.{ $line_break }{ $spaces_2 }{ $flag } { $argument }{ $line_break }{ $spaces_21 }Paired-device door port (default: 7657){ $line_break }{ $spaces_2 }{ $option_28 }{ $spaces_6 }Enable verbose output{ $line_break }{ $spaces_2 }{ $option_29 }{ $spaces_8 }Enable debug logging{ $line_break }
+
+journal.cli.host.start.usage = usage: { $syntax }{ $line_break }{ $spaces_21 }{ $syntax_4 }{ $line_break }{ $spaces_21 }{ $syntax_5 }{ $line_break }{ $spaces_21 }{ $syntax_6 }{ $line_break }{ $spaces_21 }{ $syntax_7 }{ $line_break }
+
+journal.cli.host.supervisor.admission.wait.active = another { $brand } start is waiting after finding recent journal activity.{ $break_line }this start did not continue while that wait was active.{ $break_line }wait a moment, then try again.
+
+journal.cli.host.supervisor.admission.wait.terminal = a recent heartbeat from another run is present.{ $break_line }the solstone app did not start while that heartbeat was still present.{ $break_line }wait a moment, then try again.
+
+journal.cli.host.supervisor.admission.wait.unverifiable = startup status couldn't be verified.{ $break_line }wait a moment, then try again.
+
+journal.cli.host.supervisor.already.running = your journal is already running.{ $break_line }{ $break_line }this start stepped aside so the running one is not disturbed. nothing needs doing.{ $break_line }
+
+journal.cli.host.supervisor.binding.home = home: { $error }
+
+journal.cli.host.supervisor.binding.installation.root = installation root: { $error }
+
+journal.cli.host.supervisor.binding.journal.token = journal token: { $error }
+
+journal.cli.host.supervisor.binding.owner.storage = owner storage: { $error }
+
+journal.cli.host.supervisor.binding.root.token = root token: { $error }
+
+journal.cli.host.supervisor.binding.saved.binding = saved binding: { $error }
+
+journal.cli.host.supervisor.binding.unreadable = the saved installation binding could not be loaded
+
+journal.cli.host.supervisor.help = usage: { $syntax }{ $line_break }{ $spaces_26 }{ $syntax_4 }{ $line_break }{ $spaces_26 }{ $syntax_5 }{ $line_break }{ $spaces_26 }{ $syntax_6 }{ $line_break }{ $spaces_26 }{ $syntax_7 }{ $line_break }{ $line_break }Monitor journal system health{ $line_break }{ $line_break }positional arguments:{ $line_break }{ $spaces_2 }{ $subcommand }{ $spaces_15 }{ $term } port (0 = auto-select available port){ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_9 }show this help message and exit{ $line_break }{ $spaces_2 }{ $option_14 }{ $spaces_9 }Disable daily processing run at midnight{ $line_break }{ $spaces_2 }{ $option_15 }{ $spaces_8 }Do not start the { $term_17 } server (run it manually for{ $line_break }{ $spaces_21 }debugging){ $line_break }{ $spaces_2 }{ $option_19 }{ $spaces_11 }Do not start the private network relay{ $line_break }{ $spaces_2 }{ $option_21 }{ $spaces_8 }Do not start the { $term } web application{ $line_break }{ $spaces_2 }{ $option_22 }{ $spaces_6 }Do not initialize or run the schedule engine{ $line_break }{ $spaces_2 }{ $option_24 }{ $spaces_2 }Use this path as the journal root instead of normal{ $line_break }{ $spaces_21 }journal resolution.{ $line_break }{ $spaces_2 }{ $flag } { $argument }{ $line_break }{ $spaces_21 }Paired-device door port (default: 7657){ $line_break }{ $spaces_2 }{ $option_27 }{ $spaces_6 }Enable verbose output{ $line_break }{ $spaces_2 }{ $option_28 }{ $spaces_8 }Enable debug logging{ $line_break }
+
+journal.cli.host.supervisor.journal.program.folder = Reinstalling or uninstalling removes this program folder. Choose a journal location outside it. If your journal is already there, quit the journal app. If setup completed, run `{ $stop }`, then `{ $uninstall }` and wait for it to succeed. Move the whole journal folder outside the program folder before reinstalling or uninstalling, then select its new location with `{ $setup }`, replacing { $path } with its new location.
+
+journal.cli.host.supervisor.journal.token.mismatch = this installation couldn't be verified.{ $line_break }run `{ $setup }` to check it. if setup finishes successfully, try again.{ $line_break }details: the saved installation binding is for a different journal
+
+journal.cli.host.supervisor.lifecycle.redirect = { $supervisor } is the server-launch command (takes a port). For lifecycle, use: { $service_verb }. Did you mean: { $requested } ?
+
+journal.cli.host.supervisor.recovery.closing = this start could not continue.{ $line_break }{ $line_break }the last run is still shutting down. wait a moment, then try again.{ $line_break }{ $line_break }your memories are untouched.{ $line_break }
+
+journal.cli.host.supervisor.recovery.coordinator.retirement.unverified = details: a helper process could not be confirmed stopped
+
+journal.cli.host.supervisor.recovery.coordinator.stopped.before.ready = details: a helper process stopped before it was ready
+
+journal.cli.host.supervisor.recovery.identity.establishment = details: a helper process could not be identified
+
+journal.cli.host.supervisor.recovery.initial.admission.handshake = details: a helper process did not answer in time
+
+journal.cli.host.supervisor.recovery.launch = details: a helper process could not be started
+
+journal.cli.host.supervisor.recovery.retry = this start could not continue.{ $line_break }{ $line_break }wait a moment, then try again.{ $line_break }{ $line_break }your memories are untouched.{ $line_break }
+
+journal.cli.host.supervisor.supervisor.runtime.unavailable = supervisor runtime unavailable: { $error }
+
+journal.cli.host.supervisor.supervisor.service.capture.unavailable = supervisor service capture unavailable: { $error }
+
+journal.cli.host.supervisor.usage = usage: { $syntax }{ $line_break }{ $spaces_26 }{ $syntax_4 }{ $line_break }{ $spaces_26 }{ $syntax_5 }{ $line_break }{ $spaces_26 }{ $syntax_6 }{ $line_break }{ $spaces_26 }{ $syntax_7 }{ $line_break }
+
+journal.cli.host.supervisor.your.journal.can.t.start.because.another.account.on.this = your journal can't start because another account on this computer is running its journal. one journal runs on a computer at a time, so yours can start once that account stops its journal or logs off.
+
+journal.cli.host.supervisor.your.journal.can.t.start.because.port.on.this.computer = your journal can't start because port { $port } on this computer is already in use, usually by a journal running under another account. only one journal can run on this computer at a time.
+
+journal.cli.host.thinking.chatgpt.help = usage: { $syntax }{ $line_break }{ $line_break }Manage { $term } sign-in, tokens, and model catalog.{ $line_break }{ $line_break }positional arguments:{ $line_break }{ $spaces_2 }{ $choices }{ $line_break }{ $spaces_4 }{ $subcommand }{ $spaces_14 }Sign in to { $term } via browser { $term_9 }{ $line_break }{ $spaces_4 }{ $subcommand_10 }{ $spaces_13 }Sign out and revoke active { $term } credentials{ $line_break }{ $spaces_4 }{ $subcommand_12 }{ $spaces_15 }Show current { $term } authentication status{ $line_break }{ $spaces_4 }{ $subcommand_14 }{ $spaces_15 }List available { $term } models{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_12 }show this help message and exit{ $line_break }
+
+journal.cli.host.thinking.chatgpt.models.help = usage: { $syntax }{ $line_break }{ $line_break }List available { $term } models.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_12 }show this help message and exit{ $line_break }{ $spaces_2 }{ $option_7 }{ $spaces_8 }Journal root{ $line_break }{ $spaces_2 }{ $option_9 }{ $spaces_16 }Emit machine-readable { $term_11 }{ $line_break }
+
+journal.cli.host.thinking.chatgpt.models.usage = usage: { $syntax }{ $line_break }
+
+journal.cli.host.thinking.chatgpt.sign.in.help = usage: { $syntax }{ $line_break }{ $line_break }Sign in to { $term } via browser { $term_4 }.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_12 }show this help message and exit{ $line_break }{ $spaces_2 }{ $option_8 }{ $spaces_8 }Journal root{ $line_break }{ $spaces_2 }{ $option_10 }{ $spaces_10 }Do not open default browser automatically{ $line_break }
+
+journal.cli.host.thinking.chatgpt.sign.in.usage = usage: { $syntax }{ $line_break }
+
+journal.cli.host.thinking.chatgpt.sign.out.help = usage: { $syntax }{ $line_break }{ $line_break }Sign out and revoke active { $term } credentials.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_12 }show this help message and exit{ $line_break }{ $spaces_2 }{ $option_7 }{ $spaces_8 }Journal root{ $line_break }{ $spaces_2 }{ $option_9 }{ $spaces_14 }Remove stored credential file and registration{ $line_break }
+
+journal.cli.host.thinking.chatgpt.sign.out.usage = usage: { $syntax }{ $line_break }
+
+journal.cli.host.thinking.chatgpt.status.help = usage: { $syntax }{ $line_break }{ $line_break }Show current { $term } authentication status.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_12 }show this help message and exit{ $line_break }{ $spaces_2 }{ $option_7 }{ $spaces_8 }Journal root{ $line_break }{ $spaces_2 }{ $option_9 }{ $spaces_16 }Emit machine-readable { $term_11 }{ $line_break }
+
+journal.cli.host.thinking.chatgpt.status.usage = usage: { $syntax }{ $line_break }
+
+journal.cli.host.thinking.chatgpt.usage = usage: { $syntax }{ $line_break }
+
+journal.cli.host.thinking.credential.chatgpt.auth.server.temporarily.unavailable = { $literal_1 } auth server is temporarily unavailable (429 or 5xx)
+
+journal.cli.host.thinking.credential.chatgpt.credential.store.busy = { $literal_1 } credential store is busy
+
+journal.cli.host.thinking.credential.chatgpt.request.was.by.auth = { $literal_1 } request was refused by the auth server
+
+journal.cli.host.thinking.credential.chatgpt.request.was.code = { $literal_1 } request was refused: { $code }
+
+journal.cli.host.thinking.credential.chatgpt.server.returned.malformed.payload = { $literal_1 } server returned malformed payload (missing or invalid { $field })
+
+journal.cli.host.thinking.credential.chatgpt.server.returned.malformed.payload.server.returned.malformed.payload = { $literal_1 } server returned malformed payload
+
+journal.cli.host.thinking.credential.chatgpt.token.grant.was.received = { $literal_1 } token grant was received from the server but could not be saved to disk
+
+journal.cli.host.thinking.credential.i.o.during.credential.operation = I/O error during credential operation: { $msg }
+
+journal.cli.host.thinking.credential.network.communicating.with.chatgpt.auth = network error communicating with { $literal_1 } auth servers
+
+journal.cli.host.thinking.credential.path.credential.storage.unreadable.or = { $path }: credential storage is unreadable or corrupted; run '{ $literal_1 }'
+
+journal.cli.host.thinking.credential.this.chatgpt.account.isn.t = this { $literal_1 } account isn't eligible
+
+journal.cli.host.thinking.help = usage: { $syntax }{ $line_break }{ $line_break }Select the journal thinking lane or manage { $term } authentication.{ $line_break }{ $line_break }positional arguments:{ $line_break }{ $spaces_2 }{ $choices }{ $line_break }{ $spaces_4 }{ $subcommand }{ $spaces_13 }Set the thinking lane ({ $literal }, { $literal_10 }, or { $literal_11 }){ $line_break }{ $spaces_4 }{ $subcommand_12 }{ $spaces_14 }Manage { $term } sign-in and tokens{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_12 }show this help message and exit{ $line_break }
+
+journal.cli.host.thinking.run.chatgpt.sign.in.account.mismatch.run.thinking.chatgpt = account mismatch: run '{ $literal_1 }'
+
+journal.cli.host.thinking.run.chatgpt.sign.in.chatgpt.sign.in.failed.outcome = { $literal_1 } sign-in failed: { $outcome }
+
+journal.cli.host.thinking.run.chatgpt.sign.in.chatgpt.sign.in.required.run = { $literal_2 } sign-in required: run '{ $literal_1 }'
+
+journal.cli.host.thinking.run.chatgpt.sign.in.signed.in.chatgpt.successfully = signed in to { $literal_1 } successfully.
+
+journal.cli.host.thinking.run.chatgpt.sign.out.signed.out.chatgpt = signed out of { $literal_1 }.
+
+journal.cli.host.thinking.run.chatgpt.sign.out.signed.out.chatgpt.complete.sign = signed out of { $literal_1 }.{ $line_break }To complete sign-out, disconnect solstone in your { $literal_1 } account settings.
+
+journal.cli.host.thinking.run.chatgpt.status.plan.usage.declined = plan usage: declined
+
+journal.cli.host.thinking.run.chatgpt.status.status.not.signed.in = status: not signed in
+
+journal.cli.host.thinking.run.chatgpt.status.status.signed.in = status: signed in
+
+journal.cli.host.thinking.set.lane.help = usage: { $syntax }{ $line_break }{ $line_break }Set the thinking lane used by { $literal }.{ $line_break }{ $line_break }positional arguments:{ $line_break }{ $spaces_2 }{ $choices }{ $line_break }{ $spaces_24 }Thinking lane to activate.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_12 }show this help message and exit{ $line_break }{ $spaces_2 }{ $option_9 }{ $spaces_3 }{ $argument } provider: { $literal_12 }, { $literal_13 }, { $literal_14 }, { $literal_15 }, or { $literal_16 }{ $line_break }{ $spaces_2 }{ $option_17 }{ $spaces_9 }Cloud { $argument } model name{ $line_break }{ $spaces_2 }{ $option_19 }{ $spaces_8 }Journal root{ $line_break }
+
+journal.cli.host.thinking.set.lane.usage = usage: { $syntax }{ $line_break }
+
+journal.cli.host.thinking.usage = usage: { $syntax }{ $line_break }
+
+journal.cli.host.top.failure = { $command_solstone_journal } top: { $error }
+
+journal.cli.host.top.help = usage: { $syntax }{ $line_break }{ $line_break }Show interactive service, observation, task, and brain activity.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_5 }show this help message and exit{ $line_break }{ $spaces_2 }{ $option_6 }{ $spaces_2 }enable verbose output{ $line_break }{ $spaces_2 }{ $option_7 }{ $spaces_4 }enable debug output{ $line_break }
+
+journal.cli.host.top.usage = usage: { $syntax }{ $line_break }
+
+journal.cli.host.up.help = usage: { $syntax }{ $line_break }{ $line_break }Start the installed journal service if it is not running, then wait until it is ready.{ $line_break }{ $line_break }options:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_2 }show this help message and exit{ $line_break }
+
+journal.cli.host.usage.commands = Usage:{ $line_break }{ $commands }
+
+journal.cli.host.warm.development = A GAP is a development-layout sibling that was not built and therefore was not exercised; it is reported by name but does not fail warm.
+
+journal.cli.host.warm.inventory = Warm checks the { $count } native binaries declared by the host maturin { $bindings } packaging leaves.
+
+journal.cli.host.warm.linux.dynamic = On Linux, { $solstone_core_speakers_analyze } and { $solstone_core_vad_analyze } dynamically load the bundled { $onnx }, and { $solstone_core_vulkan_probe } dynamically loads the host { $vulkan } loader. Warm proves their loader resolution as well as their start-up. { $solstone_core_describe } is asserted neither static nor dynamic here; wheel validation only forbids dynamically linked { $ffmpeg }.
+
+journal.cli.host.warm.linux.static = On Linux, { $solstone_core }, { $solstone_core_journal }, { $solstone_retention }, { $solstone_core_sol }, and { $solstone_core_depict } are statically linked musl. Warm proves that they start and reach their own code; there is no dynamic loader resolution to prove.
+
+journal.cli.host.warm.mac = On macOS every Mach-O links { $library }. The property is non-empty but differs from Linux: warm exposes signing, quarantine, and { $dyld } failures there.
+
+journal.cli.host.warm.platforms = Platform-restricted warm rows: { $rows }. They report NOT APPLICABLE when their applicability does not include this host and do not fail warm.
+
+journal.cli.host.warm.repair.development = { $space_2 }repair: Build this crate in a configured development environment.
+
+journal.cli.host.warm.repair.execution = { $space_2 }repair: Repair the reported host execution failure, then reinstall the owning host tool if needed.
+
+journal.cli.host.warm.repair.missing = { $space_2 }repair: Reinstall or upgrade the owning host tool with the installer family that created this environment.
+
+journal.cli.host.warm.repair.platform = { $space_2 }repair: No repair needed on this platform.
+
+journal.cli.host.warm.row.development = GAP { $binary }: { $path } is absent beside the development executable
+
+journal.cli.host.warm.row.executable = CANNOT LOAD { $binary }: cannot resolve current executable: { $error }
+
+journal.cli.host.warm.row.exit = RAN { $binary }: returned exit { $code }
+
+journal.cli.host.warm.row.library = CANNOT LOAD { $binary }: shared library { $library } could not be loaded
+
+journal.cli.host.warm.row.missing = MISSING { $binary }: { $path } is absent beside the running executable
+
+journal.cli.host.warm.row.no.code = CANNOT LOAD { $binary }: terminated without an exit code
+
+journal.cli.host.warm.row.platform = NOT APPLICABLE { $binary }: Linux-only binary is not applicable on this platform
+
+journal.cli.host.warm.row.signal = CANNOT LOAD { $binary }: terminated by signal { $signal }
+
+journal.cli.host.warm.row.spawn = CANNOT LOAD { $binary }: failed to spawn { $path }: { $error }
+
+journal.cli.host.warm.summary = { $quantity ->
+    [one] Summary: { $ran } ran, { $missing } missing, { $cannot_load } cannot load, { $gaps } gap, { $not_applicable } not applicable.
+   *[other] Summary: { $ran } ran, { $missing } missing, { $cannot_load } cannot load, { $gaps } gaps, { $not_applicable } not applicable.
+    }
+
+journal.cli.host.warm.unresolved = { $space_2 }unresolved library: { $library }
+
+journal.cli.host.windows.service.adopted.installation.has.no.journal.path = adopted installation has no journal path
+
+journal.cli.host.windows.service.background.service.is.not.installed = background service is not installed
+
+journal.cli.host.windows.service.background.service.stopped = background service stopped
+
+journal.cli.host.windows.service.background.support.for.your.journal.couldn.t.be.changed.run = background support for your journal couldn't be changed.{ $break_line }run `{ $command_solstone_journal_service_status }` to check it.{ $break_line }details: { $reason }
+
+journal.cli.host.windows.service.background.support.for.your.journal.couldn.t.be.checked.try = background support for your journal couldn't be checked.{ $break_line }try again in a moment. if it keeps failing, include the details below in a support request.{ $break_line }details: { $reason }
+
+journal.cli.host.windows.service.before.uninstall.deadline.is.out.of.range = before-uninstall deadline is out of range
+
+journal.cli.host.windows.service.cannot.identify.one.running.service.task = cannot identify one running service task
+
+journal.cli.host.windows.service.cannot.resolve.task.artifact.directory = cannot resolve task artifact directory
+
+journal.cli.host.windows.service.clean.uninstall.requires.an.adopted.installation.identity = clean uninstall requires an adopted installation identity
+
+journal.cli.host.windows.service.could.not.clear.prior.update.intent = could not clear prior update intent: { $error }
+
+journal.cli.host.windows.service.could.not.clear.windows.sign.in.resume = could not clear { $literal_windows } sign-in resume: { $error }
+
+journal.cli.host.windows.service.could.not.consume.update.intent = could not consume update intent: { $error }
+
+journal.cli.host.windows.service.could.not.inspect.current.executable = could not inspect current executable: { $error }
+
+journal.cli.host.windows.service.could.not.load.installation.binding = could not load installation binding: { $error }
+
+journal.cli.host.windows.service.could.not.locate.owner.base = could not locate owner base: { $error }
+
+journal.cli.host.windows.service.could.not.prepare.windows.sign.in.resume = could not prepare { $literal_windows } sign-in resume: { $error }
+
+journal.cli.host.windows.service.could.not.read.update.intent.record = could not read update intent record: { $error }
+
+journal.cli.host.windows.service.could.not.resolve.identity.root.from.executable.directory = could not resolve identity root from executable directory
+
+journal.cli.host.windows.service.could.not.resolve.root.token = could not resolve root token: { $error }
+
+journal.cli.host.windows.service.could.not.resolve.uninstall.root = could not resolve uninstall root
+
+journal.cli.host.windows.service.could.not.retrieve.user.sid = could not retrieve user { $literal_sid }: { $error }
+
+journal.cli.host.windows.service.could.not.write.update.intent.record = could not write update intent record: { $error }
+
+journal.cli.host.windows.service.direct.worker.stop.request.direct.worker.observation = direct-worker stop request: { $termination }; direct-worker observation: { $observed }
+
+journal.cli.host.windows.service.error.invalid.port = error: invalid port '{ $port }'
+
+journal.cli.host.windows.service.installation.identity.census.is.unreadable = installation identity census is unreadable
+
+journal.cli.host.windows.service.installation.provider.location.is.unavailable = installation provider location is unavailable
+
+journal.cli.host.windows.service.installed.command.contains.invalid.text = installed command contains invalid text
+
+journal.cli.host.windows.service.installed.task.action.did.not.match.its.readback = installed task action did not match its readback
+
+journal.cli.host.windows.service.is.registered.expected = { $registered } is registered, expected { $expected }
+
+journal.cli.host.windows.service.it.belongs.to.a.different.installation.of.the.journal = it belongs to a different installation of the journal
+
+journal.cli.host.windows.service.it.is.registered.to.another.account = it is registered to another account
+
+journal.cli.host.windows.service.it.runs.the.journal.at.expected = it runs the journal at { $registered }, expected { $journal }
+
+journal.cli.host.windows.service.journal = journal: { $error }
+
+journal.cli.host.windows.service.journal.path.contains.invalid.text = journal path contains invalid text
+
+journal.cli.host.windows.service.native.process.birth.changed = native process birth changed
+
+journal.cli.host.windows.service.native.process.birth.is.missing = native process birth is missing
+
+journal.cli.host.windows.service.native.process.pid.is.invalid = native process PID is invalid
+
+journal.cli.host.windows.service.native.windows.directory.is.unavailable = native { $literal_windows } directory is unavailable
+
+journal.cli.host.windows.service.no.reason = windows gave no reason.
+
+journal.cli.host.windows.service.scheduler.returned.no.task.run.instance = scheduler returned no task run instance
+
+journal.cli.host.windows.service.scheduler.rpc.may.have.changed.state.re.inspection.required = { $reason }; { $observation }; scheduler RPC may have changed state; re-inspection required
+
+journal.cli.host.windows.service.selected.journal.differs.from.the.saved.installation.binding = selected journal differs from the saved installation binding
+
+journal.cli.host.windows.service.service.exited.abnormally.cleanup.remains.unverified = service exited abnormally; cleanup remains unverified
+
+journal.cli.host.windows.service.service.forwarder.admission.is.invalid = service forwarder admission is invalid
+
+journal.cli.host.windows.service.service.installation.guard.differs.from.the.saved.binding = service installation guard differs from the saved binding
+
+journal.cli.host.windows.service.service.readiness.has.no.exact.native.identity = service readiness has no exact native identity
+
+journal.cli.host.windows.service.service.readiness.has.no.installed.forwarder.admission = service readiness has no installed forwarder admission
+
+journal.cli.host.windows.service.service.readiness.identity.changed = service readiness identity changed
+
+journal.cli.host.windows.service.service.run.exited.during.admission = service run exited during admission
+
+journal.cli.host.windows.service.service.scheduler.instance.does.not.match.its.admitted.forwarder = service scheduler instance does not match its admitted forwarder
+
+journal.cli.host.windows.service.service.stop.deadline.elapsed.cleanup.remains.unverified = service stop deadline elapsed; cleanup remains unverified
+
+journal.cli.host.windows.service.service.task.changed.during.run.admission = service task changed during run admission
+
+journal.cli.host.windows.service.service.task.changed.during.start = service task changed during start
+
+journal.cli.host.windows.service.service.task.changed.during.stop = service task changed during stop
+
+journal.cli.host.windows.service.service.task.changed.while.recording.its.state = service task changed while recording its state
+
+journal.cli.host.windows.service.service.task.deletion.was.not.observed = service task deletion was not observed
+
+journal.cli.host.windows.service.service.task.differs.from.the.current.installation.binding = service task differs from the current installation binding
+
+journal.cli.host.windows.service.service.task.instance.changed.during.stop = service task instance changed during stop
+
+journal.cli.host.windows.service.service.task.instance.changed.while.retaining.native.handles = service task instance changed while retaining native handles
+
+journal.cli.host.windows.service.service.task.is.absent.and.its.forwarder.cleanup.cannot.be = service task is absent and its forwarder cleanup cannot be verified
+
+journal.cli.host.windows.service.service.task.is.not.installed = service task is not installed
+
+journal.cli.host.windows.service.stopped.background.support.for.your.journal.starts.again.when.you = Stopped: background support for your journal starts again when you next sign in.
+
+journal.cli.host.windows.service.stopped.background.support.for.your.journal.stays.off.until.you = Stopped: background support for your journal stays off until you start it or open the journal app.
+
+journal.cli.host.windows.service.supervisor.readiness.not.ready = Supervisor readiness: not ready
+
+journal.cli.host.windows.service.supervisor.readiness.ready = Supervisor readiness: ready
+
+journal.cli.host.windows.service.systemroot.is.unavailable = SystemRoot is unavailable
+
+journal.cli.host.windows.service.task = Task: { $task }
+
+journal.cli.host.windows.service.task.control.deadline.elapsed.before.spawn = task control deadline elapsed before spawn
+
+journal.cli.host.windows.service.task.control.exchange.failed = task control exchange failed: { $error }
+
+journal.cli.host.windows.service.task.control.exchange.failed.worker.channel.closed = task control exchange failed: worker channel closed
+
+journal.cli.host.windows.service.task.control.exchange.timed.out = task control exchange timed out
+
+journal.cli.host.windows.service.task.control.input.exceeds.its.byte.limit = task control input exceeds its byte limit
+
+journal.cli.host.windows.service.task.control.output.exceeds.its.byte.limit = task control output exceeds its byte limit
+
+journal.cli.host.windows.service.task.control.spawn.failed = task control spawn failed: { $error }
+
+journal.cli.host.windows.service.task.control.stdio.missing = task control stdio missing
+
+journal.cli.host.windows.service.task.control.worker.exited = task control worker exited
+
+journal.cli.host.windows.service.task.operation.returned.inconsistent.evidence = task operation returned inconsistent evidence
+
+journal.cli.host.windows.service.task.operation.returned.invalid.json = task operation returned invalid { $literal_json }
+
+journal.cli.host.windows.service.task.request.is.not.a.json.object = task request is not a { $literal_json } object
+
+journal.cli.host.windows.service.task.xml.readback.missing = task XML readback missing
+
+journal.cli.host.windows.service.the.installed.solstone.exe.facade.is.unavailable = the installed solstone.exe facade is unavailable
+
+journal.cli.host.windows.service.the.registered.task.has.no.readable.definition = the registered task has no readable definition
+
+journal.cli.host.windows.service.update.intent.record.is.invalid = update intent record is invalid
+
+journal.cli.host.windows.service.windows.run.key.was.not.opened = { $literal_windows } Run key was not opened
+
+journal.cli.host.windows.service.windows.service.action.contains.non.unicode.text = windows service action contains non-Unicode text
+
+journal.cli.host.windows.service.windows.service.action.differs.from.the.complete.saved.binding = windows service action differs from the complete saved binding
+
+journal.cli.host.windows.service.windows.service.binding.unavailable = windows service binding unavailable
+
+journal.cli.host.windows.service.windows.sign.in.resume.command.exceeds.the.run.key.limit = { $literal_windows } sign-in resume command exceeds the Run key limit or has an invalid path
+
+journal.cli.host.windows.service.windows.sign.in.resume.failed.windows.error = { $literal_windows } sign-in resume { $action } failed ({ $literal_windows } error { $code })
+
+journal.cli.host.windows.service.windows.sign.in.resume.registry.readback.differed = { $literal_windows } sign-in resume registry readback differed
+
+journal.cli.host.windows.service.your.journal.didn.t.report.ready.so.the.start.can = your journal didn't report ready, so the start can't be confirmed. run `{ $command_solstone_journal_service } logs` to see why
+
+journal.cli.host.windows.service.your.journal.is.ready = your journal is ready
+
+journal.cli.setup.parser.cwd = could not determine current directory: { $error }
+
+journal.cli.setup.parser.path.empty = { $journal_flag } must not be empty
+
+journal.cli.setup.parser.path.encoding = { $journal_flag } could not be resolved: path is not { $encoding }
+
+journal.cli.setup.parser.path.resolve = { $journal_flag } could not be resolved: { $error }
+
+journal.cli.setup.parser.port = { $port_flag } must be in { $range } (got { $value })
+
+journal.cli.setup.parser.sign.in.encoding = argument { $sign_in_flag }: expected { $on_value } or { $off_value }
+
+journal.cli.setup.parser.sign.in.invalid = argument { $sign_in_flag }: invalid choice: { $value } (choose from { $choices })
+
+journal.cli.setup.parser.sign.in.repeated = argument { $sign_in_flag }: must not be repeated
+
+journal.cli.setup.parser.timeout = argument { $timeout_flag }: invalid int value
+
+journal.cli.setup.parser.unknown = unrecognized arguments
+
+journal.cli.setup.parser.variant = argument { $variant_flag }: invalid choice: { $value } (choose from { $choices })

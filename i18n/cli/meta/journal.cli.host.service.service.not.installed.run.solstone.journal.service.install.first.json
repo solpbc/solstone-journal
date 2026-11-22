@@ -1,0 +1,23 @@
+{
+  "description": "Journal host service service not installed run solstone journal service install first.",
+  "context": "Journal host service service not installed run solstone journal service install first.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "63ca19cdbe230a805a2c560f777b42f442842ca2e698ae32b5a9c9b7ea564fb7",
+  "max_length": 144,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "install",
+      "kind": "accepted-input",
+      "value": "solstone journal service install"
+    }
+  ]
+}

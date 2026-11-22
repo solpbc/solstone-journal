@@ -1,0 +1,23 @@
+{
+  "description": "Journal host service unrecognized systemd active substate pair.",
+  "context": "Journal host service unrecognized systemd active substate pair.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bc0164f6665960ddb0ea45aa06d454f5cb31bd14dadb513d773784bb0ca07a65",
+  "max_length": 138,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "systemd",
+      "kind": "accepted-input",
+      "value": "systemd"
+    }
+  ]
+}

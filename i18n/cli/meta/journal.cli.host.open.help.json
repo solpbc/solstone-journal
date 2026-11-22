@@ -1,0 +1,63 @@
+{
+  "description": "Terminal help and usage for open help.",
+  "context": "Terminal help and usage for open help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ffdefe1802c9a393ceab06cb78474d1b55de7d2084fa544e7a7ae246acc23fb3",
+  "max_length": 1434,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal open [-h] [--print-url] [PATH]",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "subcommand",
+      "value": "PATH",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "spaces_10",
+      "value": "          ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_4",
+      "value": "    ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_8",
+      "value": "--print-url",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_3",
+      "value": "   ",
+      "kind": "whitespace"
+    }
+  ]
+}

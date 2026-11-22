@@ -1,0 +1,28 @@
+{
+  "description": "Journal host service run solstone journal setup or solstone journal service install.",
+  "context": "Journal host service run solstone journal setup or solstone journal service install.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8b2444e7edcedd0f0a7701e46b0ce521a7cf9776f5df7956d6f997050c6e1e0c",
+  "max_length": 147,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "install",
+      "kind": "accepted-input",
+      "value": "solstone journal service install"
+    },
+    {
+      "name": "setup",
+      "kind": "accepted-input",
+      "value": "solstone journal setup"
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Native facet candidates command, facet.candidates.recorded. Preserve terminal syntax and supplied data.",
+  "context": "Native facet candidates command, facet.candidates.recorded. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "display_count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "14aa9df28630b68d1af4dc1b1f1e6f894bb9f4bfcec396b11abec87cb0efc567",
+  "max_length": 453,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

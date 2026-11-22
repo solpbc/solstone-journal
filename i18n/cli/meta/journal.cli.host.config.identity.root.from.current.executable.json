@@ -1,0 +1,21 @@
+{
+  "description": "Native config command, identity root from current executable. Preserve terminal syntax and supplied data.",
+  "context": "Native config command, identity root from current executable. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "310e3355f239d9317d41371f98f354ced5aa96a727908b274a07cb5c2dc15f6f",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

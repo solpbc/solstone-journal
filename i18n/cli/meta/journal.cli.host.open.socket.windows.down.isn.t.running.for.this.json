@@ -1,0 +1,16 @@
+{
+  "description": "Native open command, socket windows down. Preserve terminal syntax and supplied data.",
+  "context": "Native open command, socket windows down. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "af3d8a900d5caa5f74d31f22f947fc27dabb274f2118a46276dae23ad3dd00dc",
+  "max_length": 408,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

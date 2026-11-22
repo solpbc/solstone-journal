@@ -1,0 +1,16 @@
+{
+  "description": "Journal host logs service heading.",
+  "context": "Journal host logs service heading.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "32d7add45e795e6f44bf482d793699e17a3437f164ec2704a039214e1884d2f0",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

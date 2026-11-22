@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output for mcp permission cleared permission for connection.",
+  "context": "Journal host output for mcp permission cleared permission for connection.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "connection",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d7081a28e4c566a0096f5dde01811a375fce5af11fb15f6d26967b0c6efd61fd",
+  "max_length": 150,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

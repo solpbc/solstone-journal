@@ -1,0 +1,68 @@
+{
+  "description": "Terminal help and usage for config help.",
+  "context": "Terminal help and usage for config help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3149e0081863f63038cbd310cf0dfbaf648fe8c8d428e77f351033ef1fd16cfe",
+  "max_length": 1119,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal config [-h] {show,journal} ...",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "spaces_7",
+      "value": "       ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "syntax_4",
+      "value": "solstone journal config journal PATH [--move | --switch | --force] [--yes | --dry-run]",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "choices",
+      "value": "{show,journal}",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "spaces_4",
+      "value": "    ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "subcommand",
+      "value": "show",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "spaces_10",
+      "value": "          ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "subcommand_10",
+      "value": "journal PATH",
+      "kind": "accepted-input"
+    }
+  ]
+}

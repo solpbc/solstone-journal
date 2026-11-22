@@ -1,0 +1,16 @@
+{
+  "description": "Journal host supervisor recovery coordinator retirement unverified.",
+  "context": "Journal host supervisor recovery coordinator retirement unverified.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a01ff15c32d2f3ebd40572662c6118fd383cffe7517813e0bb3b160a8486052a",
+  "max_length": 168,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

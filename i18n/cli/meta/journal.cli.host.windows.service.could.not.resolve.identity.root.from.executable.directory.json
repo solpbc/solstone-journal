@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service could not resolve identity root from executable directory.",
+  "context": "Journal host output for windows service could not resolve identity root from executable directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "89673a6b9d298b6278976585be257527e9b715596087e22209e58f1a80d56411",
+  "max_length": 171,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

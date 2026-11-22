@@ -1,0 +1,32 @@
+{
+  "description": "Journal host output for render token store error token.",
+  "context": "Journal host output for render token store error token.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "operation",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3770742e7d63febe387a2d27a2b68729ff0cb2ae51a49efae67fcde265ed6b8c",
+  "max_length": 198,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command_solstone_journal_mcp_token",
+      "kind": "command",
+      "value": "solstone journal mcp token"
+    }
+  ]
+}

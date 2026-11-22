@@ -1,0 +1,58 @@
+{
+  "description": "Terminal help and usage for install provider help.",
+  "context": "Terminal help and usage for install provider help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "57a283dc26fbe6e11f8a366fafacec9f4dc1458ad93b4efe0f8df59ba511a71a",
+  "max_length": 1149,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal install-provider [-h] name",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "subcommand",
+      "value": "name",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "spaces_8",
+      "value": "        ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "literal",
+      "value": "local",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "literal_7",
+      "value": "parakeet",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    }
+  ]
+}

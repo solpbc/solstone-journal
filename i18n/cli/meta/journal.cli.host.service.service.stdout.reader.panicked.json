@@ -1,0 +1,16 @@
+{
+  "description": "Journal host service service stdout reader panicked.",
+  "context": "Journal host service service stdout reader panicked.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e156a50d40b1d3d58a25185e1b921a3a426b271537d7e27e2d98e396444c2821",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

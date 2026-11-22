@@ -1,0 +1,42 @@
+{
+  "description": "Native config command, run move. Preserve terminal syntax and supplied data.",
+  "context": "Native config command, run move. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "target",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c90ed2444045ce8830189a9f6856fc9bb75c5583adb7d3b7579287daacef3dc0",
+  "max_length": 285,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_1",
+      "kind": "command",
+      "value": "solstone journal config journal"
+    },
+    {
+      "name": "literal_2",
+      "kind": "accepted-input",
+      "value": "--switch"
+    },
+    {
+      "name": "literal_3",
+      "kind": "accepted-input",
+      "value": "--yes"
+    }
+  ]
+}

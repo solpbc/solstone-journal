@@ -1,0 +1,23 @@
+{
+  "description": "Journal host service stale launchd unit has a foreign label.",
+  "context": "Journal host service stale launchd unit has a foreign label.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "66142ceafbe7d408f6157f374d97b71a9a6290524579f205f40b239816c4ea1e",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "launchd",
+      "kind": "accepted-input",
+      "value": "launchd"
+    }
+  ]
+}

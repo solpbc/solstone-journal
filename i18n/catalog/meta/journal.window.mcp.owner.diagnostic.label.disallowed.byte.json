@@ -1,0 +1,23 @@
+{
+  "description": "MCP owner diagnostic for label disallowed byte.",
+  "context": "MCP owner diagnostic for label disallowed byte.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f741298fc9e8fd1d04579caaf6669eab2f9c51dd02362af6d404fed0e0609ff2",
+  "max_length": 234,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_ascii",
+      "kind": "accepted-input",
+      "value": "ASCII"
+    }
+  ]
+}

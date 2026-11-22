@@ -1,0 +1,23 @@
+{
+  "description": "Native open command, run. Preserve terminal syntax and supplied data.",
+  "context": "Native open command, run. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b2aaf3c3e247f03731fab7acbf1a490543df13fcffb70d154474e42ee66736f0",
+  "max_length": 363,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_1",
+      "kind": "accepted-input",
+      "value": "--print-url"
+    }
+  ]
+}

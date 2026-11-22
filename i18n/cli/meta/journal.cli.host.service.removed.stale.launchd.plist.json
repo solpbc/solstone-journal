@@ -1,0 +1,28 @@
+{
+  "description": "Journal host service removed stale launchd plist.",
+  "context": "Journal host service removed stale launchd plist.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cdeebf92dfd55e7d1cd62f70e37a7f9266d0799eb9e1a91522bd0480fe60540a",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "launchd",
+      "kind": "accepted-input",
+      "value": "launchd"
+    }
+  ]
+}

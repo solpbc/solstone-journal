@@ -1,0 +1,23 @@
+{
+  "description": "Journal host health not running.",
+  "context": "Journal host health not running.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c0f98d621d436701ddd733e180efd1a74f0eda86ea1979c3666db769b84bf780",
+  "max_length": 171,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

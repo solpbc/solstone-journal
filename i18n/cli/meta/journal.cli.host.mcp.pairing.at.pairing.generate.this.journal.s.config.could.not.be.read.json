@@ -1,0 +1,23 @@
+{
+  "description": "Journal host output for mcp pairing at pairing generate this journal s config could not be read.",
+  "context": "Journal host output for mcp pairing at pairing generate this journal s config could not be read.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5c67736ceef2235302665d07d8d2ed1aba50941d225567d488c02371d73ff000",
+  "max_length": 276,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command_solstone_journal_mcp_pairing_generate",
+      "kind": "command",
+      "value": "solstone journal mcp pairing generate"
+    }
+  ]
+}

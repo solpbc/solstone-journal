@@ -1,0 +1,78 @@
+{
+  "description": "Terminal help and usage for mcp permission clear help.",
+  "context": "Terminal help and usage for mcp permission clear help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8c480ad8339788af5164cfb81856c77dd079a0bb3695eb73314b0f7f09896fd3",
+  "max_length": 1578,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal mcp permission clear [-h] (--token LABEL | --oauth CLIENT_ID [--created TIMESTAMP])",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_11",
+      "value": "           ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_6",
+      "value": "--token LABEL",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_8",
+      "value": "        ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_8",
+      "value": "--oauth CLIENT_ID",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_4",
+      "value": "    ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "term",
+      "value": "OAuth",
+      "kind": "mark-word"
+    },
+    {
+      "name": "option_11",
+      "value": "--created TIMESTAMP",
+      "kind": "command"
+    },
+    {
+      "name": "flag",
+      "value": "--oauth",
+      "kind": "flag"
+    }
+  ]
+}

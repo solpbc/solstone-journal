@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service task control stdio missing.",
+  "context": "Journal host output for windows service task control stdio missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "68603946b8be027e8efe8fa6bf00ad263fa03edc14f4d0cc64b8696a48715c3b",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

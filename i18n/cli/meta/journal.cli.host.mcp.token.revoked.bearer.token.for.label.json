@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output for mcp token revoked bearer token for label.",
+  "context": "Journal host output for mcp token revoked bearer token for label.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "label",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "032270ff3510f80ddecef0fc5a55d461960efc0ea5277132fbdd73d80fe5a0ac",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

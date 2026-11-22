@@ -1,0 +1,33 @@
+{
+  "description": "Journal host output for mcp token until you grant it read access an agent using this.",
+  "context": "Journal host output for mcp token until you grant it read access an agent using this.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3e4cc4b45555263cd7301768469da0192d48a3a64b719cffbfb9015aa26a6f36",
+  "max_length": 642,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_save_memory",
+      "kind": "accepted-input",
+      "value": "save_memory"
+    },
+    {
+      "name": "literal_recall_memory",
+      "kind": "accepted-input",
+      "value": "recall_memory"
+    },
+    {
+      "name": "literal_facet",
+      "kind": "flag",
+      "value": "--facet"
+    }
+  ]
+}

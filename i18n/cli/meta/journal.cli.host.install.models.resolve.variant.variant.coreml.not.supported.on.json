@@ -1,0 +1,28 @@
+{
+  "description": "Native install models command, resolve variant. Preserve terminal syntax and supplied data.",
+  "context": "Native install models command, resolve variant. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "os",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e7d1af65415ca878611cbc13ccf1cc8db314a39359445bee478d65ddcf566ec3",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_1",
+      "kind": "accepted-input",
+      "value": "'coreml'"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service manager reload service after changing journal folder.",
+  "context": "Journal host service manager reload service after changing journal folder.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "result",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "70d26b31fa56b0dac580c4f80885b48dfe4fd4d81b312d26063b5a13dd107664",
+  "max_length": 192,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

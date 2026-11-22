@@ -1,0 +1,16 @@
+{
+  "description": "MCP owner diagnostic for label boundary.",
+  "context": "MCP owner diagnostic for label boundary.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0c23cefe4e7a5e94fda9b65f58ae3569a229f5c82ffd199c026feeb4853884f1",
+  "max_length": 165,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

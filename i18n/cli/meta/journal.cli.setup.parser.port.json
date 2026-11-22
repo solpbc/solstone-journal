@@ -1,0 +1,33 @@
+{
+  "description": "Journal setup argument validation: port.",
+  "context": "Journal setup argument validation: port.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f28810410fc483e0f04344d45d545b4a2e143c75abbb402cf4d3ec277f215c58",
+  "max_length": 135,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "port_flag",
+      "value": "--port",
+      "kind": "flag"
+    },
+    {
+      "name": "range",
+      "value": "1024-65535",
+      "kind": "accepted-input"
+    }
+  ]
+}

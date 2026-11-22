@@ -1,0 +1,23 @@
+{
+  "description": "Journal host service stale launchd unit has conflicting program fields.",
+  "context": "Journal host service stale launchd unit has conflicting program fields.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "45f52d9476c7105e809af21a886af31fa6705a6f8ea258ae3e589ed182fe0c2f",
+  "max_length": 162,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "launchd",
+      "kind": "accepted-input",
+      "value": "launchd"
+    }
+  ]
+}

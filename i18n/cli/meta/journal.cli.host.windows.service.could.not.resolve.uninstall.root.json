@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service could not resolve uninstall root.",
+  "context": "Journal host output for windows service could not resolve uninstall root.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1516c449955a3570efc6298e7368cf618fbc61c88ab7fa5dc97e5b557f40c5f7",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

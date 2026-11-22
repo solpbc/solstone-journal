@@ -1,0 +1,23 @@
+{
+  "description": "Journal host output for mcp pairing pairing is not compiled into this build.",
+  "context": "Journal host output for mcp pairing pairing is not compiled into this build.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cc631a4f467d0666c1da8a18305187ec5cbdccd14d7c17082bfa7a6ac3322d18",
+  "max_length": 219,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command_solstone_journal_mcp_pairing",
+      "kind": "command",
+      "value": "solstone journal mcp pairing"
+    }
+  ]
+}

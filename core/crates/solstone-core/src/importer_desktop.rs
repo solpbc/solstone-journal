@@ -14,7 +14,7 @@ use solstone_core_generate::OneShotClient;
 use solstone_core_import::text::SystemWireClient as TextWire;
 use solstone_core_import_host::call::{ImportSeams, execute_desktop};
 use solstone_core_import_host::cli_argv::{
-    force_day_notice_with, grammar_outcome_before_preflight, preview_arguments_with,
+    force_day_notice_with, json_mode_before_preflight, preview_arguments_with,
 };
 use solstone_core_import_host::registry::IndexScan;
 #[cfg(not(windows))]
@@ -23,7 +23,9 @@ use solstone_core_import_sources::document::{
     self, DocumentModelClient, PdfWorker, SystemDocumentModelClient,
 };
 use solstone_core_import_sources::image::SystemWireClient as ImageWire;
-use solstone_core_segment::{SUPERVISOR_MESSAGE, SupervisorRefusal, require_solstone};
+#[cfg(test)]
+use solstone_core_segment::SUPERVISOR_MESSAGE;
+use solstone_core_segment::{SupervisorRefusal, require_solstone};
 
 const PDF_WORKER_TIMEOUT: Duration = Duration::from_secs(90);
 
@@ -39,39 +41,45 @@ fn run_with<E>(
     resolve_journal: impl FnOnce() -> Result<PathBuf, E>,
     preflight: impl FnOnce(&Path) -> Result<(), SupervisorRefusal>,
 ) -> Result<(String, String, i32), E> {
-    if let Some(outcome) = grammar_outcome_before_preflight(arguments) {
-        return Ok((outcome.stdout, outcome.stderr, outcome.exit_code));
-    }
+    let json_mode = match json_mode_before_preflight(arguments) {
+        Ok(json_mode) => json_mode,
+        Err(outcome) => return Ok((outcome.stdout, outcome.stderr, outcome.exit_code)),
+    };
     let journal = resolve_journal()?;
-    Ok(run_resolved(arguments, &journal, preflight))
+    Ok(run_resolved(arguments, json_mode, &journal, preflight))
 }
 
 fn run_resolved(
     arguments: &[String],
+    json_mode: bool,
     journal: &Path,
     preflight: impl FnOnce(&Path) -> Result<(), SupervisorRefusal>,
 ) -> (String, String, i32) {
+    let locale = crate::host_locale();
     if let Err(refusal) = preflight(journal) {
-        return refusal_output(refusal);
+        return refusal_output(refusal, locale);
     }
     let notice = match force_day_notice_with(arguments, journal, || Ok(())) {
         Ok(notice) => notice,
         Err(run) => return (run.stdout, run.stderr, run.exit_code),
     };
-    if let Some(notice) = notice {
-        let json_mode = arguments.iter().any(|argument| argument == "--json");
-        if let Err(error) = solstone_core_import::flush_force_notice(
+    if let Some(notice) = notice
+        && let Err(error) = solstone_core_import::flush_force_notice(
             json_mode,
             &notice,
             &mut std::io::stdout(),
             &mut std::io::stderr(),
-        ) {
-            return (
-                String::new(),
-                format!("could not show import day notice: {error}\n"),
-                1,
-            );
-        }
+        )
+    {
+        return (
+            String::new(),
+            solstone_core_cli_copy::display_for(
+                locale,
+                "journal.cli.host.importer.desktop.run.resolved.could.not.show.import.day",
+                [("error", &error)],
+            ),
+            1,
+        );
     }
     let mut execution_arguments = arguments.to_vec();
     let preview_args = match preview_arguments_with(arguments, journal, || Ok(())) {
@@ -87,7 +95,7 @@ fn run_resolved(
         }
         let announces =
             solstone_core_import::size::ImportSize::rendered_announces_work(&preview.stdout);
-        let mut notice: Box<dyn Write> = if arguments.iter().any(|argument| argument == "--json") {
+        let mut notice: Box<dyn Write> = if json_mode {
             Box::new(std::io::stderr())
         } else {
             Box::new(std::io::stdout())
@@ -99,7 +107,11 @@ fn run_resolved(
         {
             return (
                 String::new(),
-                format!("could not show import size: {error}\n"),
+                solstone_core_cli_copy::display_for(
+                    locale,
+                    "journal.cli.host.importer.desktop.run.resolved.could.not.show.import.size",
+                    [("error", &error)],
+                ),
                 1,
             );
         }
@@ -108,10 +120,17 @@ fn run_resolved(
     (run.stdout, run.stderr, run.exit_code)
 }
 
-fn refusal_output(refusal: SupervisorRefusal) -> (String, String, i32) {
+fn refusal_output(refusal: SupervisorRefusal, locale: &str) -> (String, String, i32) {
     match refusal {
         SupervisorRefusal::SpawnedUnavailable => (String::new(), String::new(), 75),
-        SupervisorRefusal::Unavailable => (String::new(), format!("{SUPERVISOR_MESSAGE}\n"), 1),
+        SupervisorRefusal::Unavailable => (
+            String::new(),
+            format!(
+                "{}\n",
+                solstone_core_cli_copy::render_for(locale, "journal.cli.streams.supervisor", &[])
+            ),
+            1,
+        ),
     }
 }
 

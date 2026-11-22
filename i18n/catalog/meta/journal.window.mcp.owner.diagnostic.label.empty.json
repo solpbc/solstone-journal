@@ -1,0 +1,16 @@
+{
+  "description": "MCP owner diagnostic for label empty.",
+  "context": "MCP owner diagnostic for label empty.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "afa69dd057d1fc84f5f70fc7f98225d7b38cf39c1268e6edf78bcae694d0436c",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

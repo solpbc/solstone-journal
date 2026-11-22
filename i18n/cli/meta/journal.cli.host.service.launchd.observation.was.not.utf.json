@@ -1,0 +1,23 @@
+{
+  "description": "Journal host service launchd observation was not utf.",
+  "context": "Journal host service launchd observation was not utf.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9966e9b6bc46bf9a5390702bd970808d6c51f59ac81cefb6c0caf64e29eec1aa",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "launchd",
+      "kind": "accepted-input",
+      "value": "launchd"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Native config command, corrupt. Preserve terminal syntax and supplied data.",
+  "context": "Native config command, corrupt. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7b271dc848dbadb1618054b84c9fda1db4fb3da0697f5e9c5908c2fb4f99b606",
+  "max_length": 477,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_1",
+      "kind": "accepted-input",
+      "value": "config/journal.json"
+    }
+  ]
+}

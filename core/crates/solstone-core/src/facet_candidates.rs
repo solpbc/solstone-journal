@@ -12,8 +12,6 @@ use std::path::Path;
 use std::process::ExitCode;
 use std::time::Duration;
 
-const SUPERVISOR_MESSAGE: &str =
-    "journal isn't running. start it with 'solstone journal up' and retry.";
 const SUPERVISOR_TIMEOUT: Duration = Duration::from_millis(200);
 
 #[derive(Debug, PartialEq, Eq)]
@@ -64,8 +62,12 @@ fn read_convey_port(journal_path: &Path) -> Option<u16> {
 pub(crate) fn run(journal_path: &Path) -> ExitCode {
     if !journal_path.is_dir() {
         eprintln!(
-            "solstone journal facet-candidates: error: journal root {} is not a directory",
-            journal_path.display()
+            "{}",
+            solstone_core_cli_copy::display_for(
+                crate::host_locale(),
+                "journal.cli.host.facet.candidates.run.facet.candidates.root.path.not",
+                [("path", &journal_path.display())]
+            )
         );
         return ExitCode::from(1);
     }
@@ -74,7 +76,14 @@ pub(crate) fn run(journal_path: &Path) -> ExitCode {
         SupervisorGate::Ready => {}
         SupervisorGate::SpawnedUnavailable => return ExitCode::from(75),
         SupervisorGate::Unavailable => {
-            eprintln!("{SUPERVISOR_MESSAGE}");
+            eprintln!(
+                "{}",
+                solstone_core_cli_copy::render_for(
+                    crate::host_locale(),
+                    "journal.cli.streams.supervisor",
+                    &[]
+                )
+            );
             return ExitCode::from(1);
         }
     }
@@ -90,18 +99,50 @@ pub(crate) fn run(journal_path: &Path) -> ExitCode {
     ) {
         Ok(candidates) => candidates,
         Err(error) => {
-            eprintln!("solstone journal facet-candidates: error: {error}");
+            eprintln!(
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.facet.candidates.run.facet.candidates",
+                    [("error", &error)]
+                )
+            );
             return ExitCode::from(1);
         }
     };
 
     match solstone_core_facets::record_facet_candidates(journal_path, &day, &candidates) {
         Ok(count) => {
-            println!("Recorded/updated {count} facet candidate(s).");
+            println!(
+                "{}",
+                solstone_core_cli_copy::render_for(
+                    crate::host_locale(),
+                    "journal.cli.host.facet.candidates.recorded",
+                    &[
+                        (
+                            "quantity",
+                            solstone_core_cli_copy::Value::Cardinal(crate::host_count_quantity(
+                                count as u64
+                            ))
+                        ),
+                        (
+                            "display_count",
+                            solstone_core_cli_copy::Value::String(&count.to_string())
+                        )
+                    ]
+                )
+            );
             ExitCode::SUCCESS
         }
         Err(error) => {
-            eprintln!("solstone journal facet-candidates: error: {error}");
+            eprintln!(
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.facet.candidates.run.facet.candidates",
+                    [("error", &error)]
+                )
+            );
             ExitCode::from(1)
         }
     }

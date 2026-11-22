@@ -1,0 +1,23 @@
+{
+  "description": "Journal host service systemd observation was not utf.",
+  "context": "Journal host service systemd observation was not utf.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "530d7a23a3afe2debad1abf681919727070a224446f077be7d957ceaf4a9458a",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "systemd",
+      "kind": "accepted-input",
+      "value": "systemd"
+    }
+  ]
+}

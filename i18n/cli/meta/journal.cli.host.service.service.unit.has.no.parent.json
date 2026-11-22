@@ -1,0 +1,16 @@
+{
+  "description": "Journal host service service unit has no parent.",
+  "context": "Journal host service service unit has no parent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2ffcf40ea558440f5db154ff90e91c7279c423ac2797d59f310d92cc6d3f88d5",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

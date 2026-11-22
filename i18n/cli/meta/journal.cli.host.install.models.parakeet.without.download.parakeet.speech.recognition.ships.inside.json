@@ -1,0 +1,16 @@
+{
+  "description": "Native install models command, parakeet without download. Preserve terminal syntax and supplied data.",
+  "context": "Native install models command, parakeet without download. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "52dbd600140a94e132fe34ee24421ddf964d2241bb0f57e063b98f8e30667210",
+  "max_length": 303,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

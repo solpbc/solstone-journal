@@ -1,0 +1,23 @@
+{
+  "description": "Native config command, show source. Preserve terminal syntax and supplied data.",
+  "context": "Native config command, show source. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "af6f565df08b996cf7fb40909cab0f4bd3f9a375634abc87918d2514f67851ea",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_1",
+      "kind": "accepted-input",
+      "value": "~/.config/solstone/config.toml"
+    }
+  ]
+}

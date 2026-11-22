@@ -1,0 +1,16 @@
+{
+  "description": "Native config command, plan. Preserve terminal syntax and supplied data.",
+  "context": "Native config command, plan. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "16c899e13f30a7a617a0c0998938acdbd46e490ffd605d4fc33c7396e33ff494",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "description": "Journal host output for mcp activity raise limit or narrow day from day to to see.",
+  "context": "Journal host output for mcp activity raise limit or narrow day from day to to see.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c5310dba141273dad3c7d1b65ecbdfbff0e5c0e8c8bee91ed2211a70a9453b83",
+  "max_length": 267,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_limit",
+      "kind": "flag",
+      "value": "--limit"
+    },
+    {
+      "name": "literal_day_from",
+      "kind": "flag",
+      "value": "--day-from"
+    },
+    {
+      "name": "literal_day_to",
+      "kind": "flag",
+      "value": "--day-to"
+    }
+  ]
+}

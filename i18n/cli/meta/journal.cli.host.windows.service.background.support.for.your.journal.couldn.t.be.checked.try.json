@@ -1,0 +1,28 @@
+{
+  "description": "Journal host output for windows service background support for your journal couldn t be checked try.",
+  "context": "Journal host output for windows service background support for your journal couldn t be checked try.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "reason",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "111cbeac0123c77bc87b3998765330ef9f5e44935a0e1190cf898d139495331f",
+  "max_length": 591,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "break_line",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

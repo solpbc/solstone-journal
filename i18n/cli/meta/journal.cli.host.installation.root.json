@@ -1,0 +1,21 @@
+{
+  "description": "Journal host installation root.",
+  "context": "Journal host installation root.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "directory",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6db07e59572f0fbd5a3a3b349bc924cdec6498bb669118d53a60b9994194d7a1",
+  "max_length": 192,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

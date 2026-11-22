@@ -1,0 +1,33 @@
+{
+  "description": "Journal setup argument validation: sign in invalid.",
+  "context": "Journal setup argument validation: sign in invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3c88e78bf94be070cdc4ed0ca4df8dae8060c87db088e9838fdfc7f49e8c7a43",
+  "max_length": 255,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "sign_in_flag",
+      "value": "--initial-start-at-sign-in",
+      "kind": "flag"
+    },
+    {
+      "name": "choices",
+      "value": "on, off",
+      "kind": "accepted-input"
+    }
+  ]
+}

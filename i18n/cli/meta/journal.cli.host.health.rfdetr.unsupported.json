@@ -1,0 +1,25 @@
+{
+  "description": "Journal host health rfdetr unsupported.",
+  "context": "Journal host health rfdetr unsupported.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "arch",
+      "type": "string"
+    },
+    {
+      "name": "os",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cac3edb9bae20fad958841381656452db92e6ab3e7d0ca29114dd783fee7b7a0",
+  "max_length": 291,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

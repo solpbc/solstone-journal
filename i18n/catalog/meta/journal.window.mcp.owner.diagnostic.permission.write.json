@@ -1,0 +1,21 @@
+{
+  "description": "MCP owner diagnostic for permission write.",
+  "context": "MCP owner diagnostic for permission write.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d43f563f723aa42caaad06e8f4f573e7b0f510c4f1ceaf19b6465f5cd115b17c",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

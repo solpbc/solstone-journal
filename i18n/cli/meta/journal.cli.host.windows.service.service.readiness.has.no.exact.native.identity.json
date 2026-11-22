@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service service readiness has no exact native identity.",
+  "context": "Journal host output for windows service service readiness has no exact native identity.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c9640b0c0994fb1b3573724b8bc5d88ae50b1b2c9bb07fd4dede80a4f61400b2",
+  "max_length": 138,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

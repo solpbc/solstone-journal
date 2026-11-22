@@ -1,0 +1,16 @@
+{
+  "description": "Journal host service route repair service unit is not utf.",
+  "context": "Journal host service route repair service unit is not utf.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3bbd740a5d166dbc222605385682e0f169f41025413267e0d9e7afa05723b6c6",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

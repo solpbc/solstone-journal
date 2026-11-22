@@ -1,0 +1,25 @@
+{
+  "description": "Native install models command, run inner with. Preserve terminal syntax and supplied data.",
+  "context": "Native install models command, run inner with. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "state",
+      "type": "string"
+    },
+    {
+      "name": "suffix",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "45b0244a7c4b1e5756db20326bdfb2195960fa07e7567bd6eb745e324b811740",
+  "max_length": 147,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

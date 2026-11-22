@@ -1,0 +1,33 @@
+{
+  "description": "Terminal diagnostic for parser mcp target specify either token or oauth not both.",
+  "context": "Terminal diagnostic for parser mcp target specify either token or oauth not both.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5269ba38d82ee29dfdf760e94d46806944a3f486f44f66d84402d522b221fc65",
+  "max_length": 210,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "flag",
+      "value": "--token",
+      "kind": "flag"
+    },
+    {
+      "name": "flag_2",
+      "value": "--oauth",
+      "kind": "flag"
+    }
+  ]
+}

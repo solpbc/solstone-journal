@@ -1,0 +1,28 @@
+{
+  "description": "Native contract mod command, run build. Preserve terminal syntax and supplied data.",
+  "context": "Native contract mod command, run build. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d6e3143b8b0fc3e0e575279cdbded9d894c07973e7261082036238dc73b22cbc",
+  "max_length": 171,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_1",
+      "kind": "command",
+      "value": "solstone journal contract build"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal host service malformed systemd property.",
+  "context": "Journal host service malformed systemd property.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e0a9809805329da2310e19dfd99aa2d196eaaffa54801dc8ec2a59631435cc65",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "systemd",
+      "kind": "accepted-input",
+      "value": "systemd"
+    }
+  ]
+}

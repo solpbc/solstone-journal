@@ -1,0 +1,21 @@
+{
+  "description": "Native config command, missing current. Preserve terminal syntax and supplied data.",
+  "context": "Native config command, missing current. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7dcb90aae57040a4f023cebe7f485ff77b3c1f3de44e9f40a3446c3407f5e027",
+  "max_length": 213,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

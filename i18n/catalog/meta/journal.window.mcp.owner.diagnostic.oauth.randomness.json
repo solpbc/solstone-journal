@@ -1,0 +1,23 @@
+{
+  "description": "MCP owner diagnostic for oauth randomness.",
+  "context": "MCP owner diagnostic for oauth randomness.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6ee819599ed918edc16202518e868a689f89fed82adb01130d01299ff734e3d8",
+  "max_length": 165,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_oauth",
+      "kind": "accepted-input",
+      "value": "OAuth"
+    }
+  ]
+}

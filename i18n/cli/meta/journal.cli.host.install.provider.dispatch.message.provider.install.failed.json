@@ -1,0 +1,21 @@
+{
+  "description": "Native install provider command, dispatch message. Preserve terminal syntax and supplied data.",
+  "context": "Native install provider command, dispatch message. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "provider",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "23a617b66b94b8b7d4da76acced1c1407e5c8231c372c538513f7219c4e4979a",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

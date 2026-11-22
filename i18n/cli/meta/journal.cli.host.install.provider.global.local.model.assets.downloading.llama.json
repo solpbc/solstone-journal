@@ -1,0 +1,53 @@
+{
+  "description": "Native install provider command, global. Preserve terminal syntax and supplied data.",
+  "context": "Native install provider command, global. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e2bbafb1724438c9ff505e50722aa452fcea5307dbd2887ce54cb3f2e8014e3c",
+  "max_length": 615,
+  "risk": "legal",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_1",
+      "kind": "accepted-input",
+      "value": "THIRD_PARTY_NOTICES.md"
+    },
+    {
+      "name": "literal_2",
+      "kind": "accepted-input",
+      "value": "updates.solstone.app"
+    },
+    {
+      "name": "literal_3",
+      "kind": "accepted-input",
+      "value": "Apache-2.0"
+    },
+    {
+      "name": "literal_4",
+      "kind": "accepted-input",
+      "value": "llama.cpp"
+    },
+    {
+      "name": "literal_5",
+      "kind": "accepted-input",
+      "value": "NVIDIA"
+    },
+    {
+      "name": "literal_6",
+      "kind": "accepted-input",
+      "value": "CUDA"
+    },
+    {
+      "name": "literal_7",
+      "kind": "accepted-input",
+      "value": "MIT"
+    }
+  ]
+}

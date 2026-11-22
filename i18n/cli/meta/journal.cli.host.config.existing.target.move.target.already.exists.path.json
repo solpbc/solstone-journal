@@ -1,0 +1,21 @@
+{
+  "description": "Native config command, existing target. Preserve terminal syntax and supplied data.",
+  "context": "Native config command, existing target. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8656125dfa602620ccbe2092ba19b073f159f87972363d6447929e5675ac0405",
+  "max_length": 213,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

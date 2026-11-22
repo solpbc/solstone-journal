@@ -1,0 +1,23 @@
+{
+  "description": "Journal host service couldn t confirm that the service uses this journal.",
+  "context": "Journal host service couldn t confirm that the service uses this journal.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7ba7db63d1fde471b446953b4ee68c4bfab1726a2d26384ae93d15403f721355",
+  "max_length": 297,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "setup",
+      "kind": "accepted-input",
+      "value": "solstone journal setup"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service manager enable service.",
+  "context": "Journal host service manager enable service.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "result",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "70de3df07ceb6b0d33c1547acd5f2d246c323fd554defdfca0a4b82c61ecaafa",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

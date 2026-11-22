@@ -1,0 +1,21 @@
+{
+  "description": "Journal host installation executable.",
+  "context": "Journal host installation executable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a4668d1f67c9c057bc53de9245e3a809126bf6f6f8eaa0a643739ae30c2d57ed",
+  "max_length": 144,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

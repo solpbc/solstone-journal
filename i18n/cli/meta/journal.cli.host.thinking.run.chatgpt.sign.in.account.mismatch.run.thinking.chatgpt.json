@@ -1,0 +1,23 @@
+{
+  "description": "Native thinking command, run chatgpt sign in. Preserve terminal syntax and supplied data.",
+  "context": "Native thinking command, run chatgpt sign in. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e88769e877b1276228fb612d8ee32edff27b197928e010ef13c0dfc955f4f259",
+  "max_length": 225,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_1",
+      "kind": "command",
+      "value": "solstone journal thinking chatgpt sign-out --forget"
+    }
+  ]
+}

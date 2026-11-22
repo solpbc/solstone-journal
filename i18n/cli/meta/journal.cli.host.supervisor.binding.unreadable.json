@@ -1,0 +1,16 @@
+{
+  "description": "Journal host supervisor binding unreadable.",
+  "context": "Journal host supervisor binding unreadable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a9699d233dee664ffeda05b0983df14321672333b4d016dbc5a1fb984558641e",
+  "max_length": 150,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

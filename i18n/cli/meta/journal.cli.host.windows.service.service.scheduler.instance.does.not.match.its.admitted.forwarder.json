@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service service scheduler instance does not match its admitted forwarder.",
+  "context": "Journal host output for windows service service scheduler instance does not match its admitted forwarder.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bfd42cb9d3db271079a3261ba029a0fe1d7c814c242dc831f36c1a27bc0dc29c",
+  "max_length": 192,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

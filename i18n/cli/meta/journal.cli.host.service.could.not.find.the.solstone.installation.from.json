@@ -1,0 +1,28 @@
+{
+  "description": "Journal host service could not find the solstone installation from.",
+  "context": "Journal host service could not find the solstone installation from.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a4177f3cfd1d30cf988a6cdeb6625b5ea563af6d53c62b3d3386df1e2b238d77",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone",
+      "kind": "accepted-input",
+      "value": "solstone"
+    }
+  ]
+}

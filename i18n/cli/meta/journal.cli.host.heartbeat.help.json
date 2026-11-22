@@ -1,0 +1,48 @@
+{
+  "description": "Terminal help and usage for heartbeat help.",
+  "context": "Terminal help and usage for heartbeat help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ddcb77a03b183eac9708dd9c3792a020722a28eea8fcaff09f6626ce7954304d",
+  "max_length": 930,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal heartbeat [-h] [--force]",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    },
+    {
+      "name": "option_5",
+      "value": "--force",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_5",
+      "value": "     ",
+      "kind": "whitespace"
+    }
+  ]
+}

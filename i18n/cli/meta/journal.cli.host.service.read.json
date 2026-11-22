@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service read.",
+  "context": "Journal host service read.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fbf60597422e0d30a3f65278e1b7d47a36cab1b858b3199d85de3c9b2982a471",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

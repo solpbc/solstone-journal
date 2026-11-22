@@ -1,0 +1,43 @@
+{
+  "description": "Terminal help and usage for mcp oauth list help.",
+  "context": "Terminal help and usage for mcp oauth list help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ab458917d4818db0d005fd7e9d4fe6ac134ce82be477681e1fa7a28b50e60dbf",
+  "max_length": 654,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal mcp oauth list [-h]",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "term",
+      "value": "OAuth",
+      "kind": "mark-word"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    }
+  ]
+}

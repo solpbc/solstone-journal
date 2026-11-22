@@ -1,0 +1,16 @@
+{
+  "description": "Journal host service service stderr reader panicked.",
+  "context": "Journal host service service stderr reader panicked.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "55841e4f5a8c4b1e502b5feca73c2a4a1847f9bb7aaa568ad5b243a9a13f7105",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

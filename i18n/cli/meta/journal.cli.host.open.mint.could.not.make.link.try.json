@@ -1,0 +1,16 @@
+{
+  "description": "Native open command, mint. Preserve terminal syntax and supplied data.",
+  "context": "Native open command, mint. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2181d8f38ade81f97bfb0e58aa12ac7d1ab770cd0bd0cd81164ca0e7a4eac3ad",
+  "max_length": 138,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Owner terminal count for mcp activity no match.",
+  "context": "Owner terminal count for mcp activity no match.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "examined",
+      "type": "string"
+    },
+    {
+      "name": "examined_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "a47f68feaf022f5c98c1df1ae25cb09ee7aac24a492d58db714f14c66a80a08c",
+  "max_length": 615,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "examined_quantity",
+    "type": "cardinal"
+  }
+}

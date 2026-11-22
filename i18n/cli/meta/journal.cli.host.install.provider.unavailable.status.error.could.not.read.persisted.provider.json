@@ -1,0 +1,25 @@
+{
+  "description": "Native install provider command, unavailable status error. Preserve terminal syntax and supplied data.",
+  "context": "Native install provider command, unavailable status error. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "provider",
+      "type": "string"
+    },
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "28fd5edb6ce69362fbe5f835490ae222df24ea3e0ca79cf8366583113f52b689",
+  "max_length": 195,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

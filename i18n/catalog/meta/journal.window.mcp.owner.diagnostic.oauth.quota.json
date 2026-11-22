@@ -1,0 +1,23 @@
+{
+  "description": "MCP owner diagnostic for oauth quota.",
+  "context": "MCP owner diagnostic for oauth quota.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3f2b5756a42413f0f67e1ab47b5d950685e022583541f3ab6506fd5ceeef071a",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_oauth",
+      "kind": "accepted-input",
+      "value": "OAuth"
+    }
+  ]
+}

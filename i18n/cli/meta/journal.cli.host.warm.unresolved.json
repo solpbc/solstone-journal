@@ -1,0 +1,28 @@
+{
+  "description": "Journal host warm unresolved.",
+  "context": "Journal host warm unresolved.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "library",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bd76442b23a840b9d710acce8707d1e7796f17c365d575d1184606dcc354762d",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "space_2",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ]
+}

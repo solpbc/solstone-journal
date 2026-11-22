@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service manager request launchd unload.",
+  "context": "Journal host service manager request launchd unload.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "result",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b273aa42d0482245096b93fe20edda6d1dee47ea9734a8db7de21b85dd92759a",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

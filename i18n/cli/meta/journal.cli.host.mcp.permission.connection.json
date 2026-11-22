@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output for mcp permission connection.",
+  "context": "Journal host output for mcp permission connection.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "connection",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "295fad6c96319751b8d86499e38d9a558eb087c47bb6c1ee5e8edab4410a0703",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

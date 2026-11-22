@@ -32,23 +32,39 @@ pub(crate) fn run_build(check: bool, root: Option<PathBuf>) -> ExitCode {
         };
         if current != expected {
             eprintln!(
-                "{} is stale; run `solstone journal contract build`",
-                repo_relative(&paths.artifact, &paths.root)
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.contract.run.build.path.stale.run.build",
+                    [("path", &repo_relative(&paths.artifact, &paths.root))]
+                )
             );
             return ExitCode::from(1);
         }
         return ExitCode::SUCCESS;
     }
     if let Err(error) = fs::create_dir_all(paths.artifact.parent().expect("artifact has parent")) {
-        return failure(format!("contract: cannot create bundle directory: {error}"));
-    }
-    if let Err(error) = fs::write(&paths.artifact, expected) {
-        return failure(format!(
-            "contract: cannot write {}: {error}",
-            paths.artifact.display()
+        return failure(solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.contract.run.build.cannot.create.bundle.directory",
+            [("error", &error)],
         ));
     }
-    println!("wrote {}", repo_relative(&paths.artifact, &paths.root));
+    if let Err(error) = fs::write(&paths.artifact, expected) {
+        return failure(solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.contract.run.build.cannot.write.path",
+            [("path", &paths.artifact.display()), ("error", &error)],
+        ));
+    }
+    println!(
+        "{}",
+        solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.contract.run.build.wrote.path",
+            [("path", &repo_relative(&paths.artifact, &paths.root))]
+        )
+    );
     ExitCode::SUCCESS
 }
 
@@ -62,9 +78,10 @@ pub(crate) fn run_check(journals: Vec<PathBuf>, root: Option<PathBuf>) -> ExitCo
         Err(error) => return failure(error),
     };
     if !paths.artifact.is_file() {
-        return failure(format!(
-            "contract: bundle artifact missing: {}",
-            paths.artifact.display()
+        return failure(solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.contract.run.check.bundle.artifact.missing.path",
+            [("path", &paths.artifact.display())],
         ));
     }
     let committed = match read_artifact(&paths.artifact) {
@@ -82,8 +99,12 @@ pub(crate) fn run_check(journals: Vec<PathBuf>, root: Option<PathBuf>) -> ExitCo
     };
     if render(&current) != artifact_text {
         eprintln!(
-            "{} is stale; run `solstone journal contract build`",
-            repo_relative(&paths.artifact, &paths.root)
+            "{}",
+            solstone_core_cli_copy::display_for(
+                crate::host_locale(),
+                "journal.cli.host.contract.run.build.path.stale.run.build",
+                [("path", &repo_relative(&paths.artifact, &paths.root))]
+            )
         );
         failed = true;
     }
@@ -93,9 +114,15 @@ pub(crate) fn run_check(journals: Vec<PathBuf>, root: Option<PathBuf>) -> ExitCo
         }
         Ok(fixture) => {
             eprintln!(
-                "contract: journal tree not found: {} (expected {})",
-                fixture.display(),
-                fixture.join("chronicle").display()
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.contract.run.check.tree.not.found.path.expected",
+                    [
+                        ("path", &fixture.display()),
+                        ("expected", &fixture.join("chronicle").display())
+                    ]
+                )
             );
             failed = true;
         }
@@ -109,8 +136,12 @@ pub(crate) fn run_check(journals: Vec<PathBuf>, root: Option<PathBuf>) -> ExitCo
         // tree. Keep its success status, while making the skipped root visible.
         if !journal.join("chronicle").is_dir() {
             eprintln!(
-                "contract: no contract-covered files found under {}",
-                journal.display()
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.contract.run.check.no.covered.files.found.under",
+                    [("path", &journal.display())]
+                )
             );
             continue;
         }
@@ -132,9 +163,27 @@ fn report_tree(root: &std::path::Path, bundle: &serde_json::Value) -> bool {
             }
             if report.matched > 0 {
                 println!(
-                    "validated {} contract-covered files under {}",
-                    report.matched,
-                    root.display()
+                    "{}",
+                    solstone_core_cli_copy::render_for(
+                        crate::host_locale(),
+                        "journal.cli.host.contract.validated",
+                        &[
+                            (
+                                "quantity",
+                                solstone_core_cli_copy::Value::Cardinal(
+                                    crate::host_count_quantity(report.matched as u64)
+                                )
+                            ),
+                            (
+                                "display_count",
+                                solstone_core_cli_copy::Value::String(&report.matched.to_string())
+                            ),
+                            (
+                                "root",
+                                solstone_core_cli_copy::Value::String(&root.display().to_string())
+                            )
+                        ]
+                    )
                 );
             }
             failed
@@ -157,6 +206,10 @@ fn read_or_missing(path: &Path) -> Result<String, String> {
     match fs::read_to_string(path) {
         Ok(text) => Ok(text),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
-        Err(error) => Err(format!("contract: cannot read {}: {error}", path.display())),
+        Err(error) => Err(solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.contract.walk.schema.files.cannot.read.path",
+            [("path", &path.display()), ("error", &error)],
+        )),
     }
 }

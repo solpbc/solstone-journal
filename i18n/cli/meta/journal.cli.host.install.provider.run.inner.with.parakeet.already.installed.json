@@ -1,0 +1,16 @@
+{
+  "description": "Native install provider command, run inner with. Preserve terminal syntax and supplied data.",
+  "context": "Native install provider command, run inner with. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fbb1b2f434e8195e9d7473ce84f87dd59c104cc692e2cb5ca3165051c7317af4",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

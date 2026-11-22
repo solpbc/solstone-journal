@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service create service health directory.",
+  "context": "Journal host service create service health directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fef2acd6542b2c544a3d12a8608eed68f941e1f360f416014bac93d06f3d4d8c",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

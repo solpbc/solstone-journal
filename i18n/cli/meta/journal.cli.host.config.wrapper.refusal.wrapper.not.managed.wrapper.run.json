@@ -1,0 +1,28 @@
+{
+  "description": "Native config command, wrapper refusal. Preserve terminal syntax and supplied data.",
+  "context": "Native config command, wrapper refusal. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "wrapper",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "13df8076eaeee79f282a67b5dcaf573e7d597468d16365be509d147fd31b6e70",
+  "max_length": 495,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_1",
+      "kind": "command",
+      "value": "solstone journal setup"
+    }
+  ]
+}

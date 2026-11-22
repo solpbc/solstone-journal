@@ -1,0 +1,28 @@
+{
+  "description": "MCP owner diagnostic for oauth unsupported schema.",
+  "context": "MCP owner diagnostic for oauth unsupported schema.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4eb54e7cd463e4d5817f99033d179b0e38339fadcc2b3a14329da141141981fc",
+  "max_length": 201,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_mcp",
+      "kind": "accepted-input",
+      "value": "MCP"
+    },
+    {
+      "name": "literal_oauth",
+      "kind": "accepted-input",
+      "value": "OAuth"
+    }
+  ]
+}

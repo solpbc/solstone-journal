@@ -1,0 +1,16 @@
+{
+  "description": "Native contract bundle command, classify breaking changes. Preserve terminal syntax and supplied data.",
+  "context": "Native contract bundle command, classify breaking changes. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ab1e744d395de523fa5ef2d9ba72064787dc707460cc1ca2479379fde5018415",
+  "max_length": 135,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

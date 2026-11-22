@@ -1,0 +1,32 @@
+{
+  "description": "Terminal diagnostic for parser mcp permission invalid mcp permission command value.",
+  "context": "Terminal diagnostic for parser mcp permission invalid mcp permission command value.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    },
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "dd8a4323f49b979edd0d535696138d862bc21f4884d63142edd5adedd07abf66",
+  "max_length": 207,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "term",
+      "value": "MCP",
+      "kind": "mark-word"
+    }
+  ]
+}

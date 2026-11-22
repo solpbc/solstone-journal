@@ -8,6 +8,10 @@ use serde_json::json;
 use std::path::PathBuf;
 use std::process::Command;
 
+#[path = "../src/host_copy.rs"]
+mod host_copy;
+use host_copy::{host_display, host_text};
+
 #[path = "../src/service_windows/task_scheduler/unowned_control.rs"]
 mod unowned_control;
 

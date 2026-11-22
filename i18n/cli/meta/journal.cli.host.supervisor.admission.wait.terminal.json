@@ -1,0 +1,23 @@
+{
+  "description": "Journal host output for supervisor admission wait terminal.",
+  "context": "Journal host output for supervisor admission wait terminal.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "99df70d21e6ad63feb4e7a994280053b387356851b2ebd697259f6490db8823f",
+  "max_length": 531,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "break_line",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "description": "Terminal diagnostic for service argument range.",
+  "context": "Terminal diagnostic for service argument range.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "text",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a039459d6b7b9e6640bad62cf47c18f2ff1e56816efbd701d243c444b7aec2c5",
+  "max_length": 294,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "flag",
+      "value": "--port",
+      "kind": "flag"
+    },
+    {
+      "name": "argument",
+      "value": "PORT",
+      "kind": "accepted-input"
+    }
+  ]
+}

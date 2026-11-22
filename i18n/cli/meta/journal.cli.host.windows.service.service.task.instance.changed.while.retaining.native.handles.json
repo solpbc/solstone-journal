@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service service task instance changed while retaining native handles.",
+  "context": "Journal host output for windows service service task instance changed while retaining native handles.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c3ed5ed47a16a846bb0612669a3cb0b9a6546187089cf03c16ce8348ac1f73f3",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

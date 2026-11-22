@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service background service is not installed.",
+  "context": "Journal host output for windows service background service is not installed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0c5d9de702e59f59fdb9eac78f943b5acb002a557d3ffc5ee2850451cf90ab4b",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

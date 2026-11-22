@@ -1,0 +1,158 @@
+{
+  "description": "Terminal help and usage for install models help.",
+  "context": "Terminal help and usage for install models help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "88fea5f93951df9f7befb12982766e3e43b4c79e43063117c44cc1fe2b859336",
+  "max_length": 4032,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal install-models [-h] [--check | --force]",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "spaces_30",
+      "value": "                              ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "syntax_4",
+      "value": "[--required-only]",
+      "kind": "command"
+    },
+    {
+      "name": "syntax_5",
+      "value": "[--variant {auto,cpu,cuda,coreml}]",
+      "kind": "command"
+    },
+    {
+      "name": "term",
+      "value": "solstone",
+      "kind": "mark-word"
+    },
+    {
+      "name": "argument",
+      "value": "ML",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "argument_8",
+      "value": "STT",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "term_9",
+      "value": "wespeaker",
+      "kind": "mark-word"
+    },
+    {
+      "name": "path",
+      "value": "/pyannote",
+      "kind": "url"
+    },
+    {
+      "name": "flag",
+      "value": "--force",
+      "kind": "flag"
+    },
+    {
+      "name": "flag_12",
+      "value": "--check",
+      "kind": "flag"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_12",
+      "value": "            ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_16",
+      "value": "--check",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_15",
+      "value": "               ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "spaces_24",
+      "value": "                        ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_19",
+      "value": "--force",
+      "kind": "command"
+    },
+    {
+      "name": "path_20",
+      "value": "/verify",
+      "kind": "url"
+    },
+    {
+      "name": "option_21",
+      "value": "--required-only",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_7",
+      "value": "       ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "flag_23",
+      "value": "--variant",
+      "kind": "flag"
+    },
+    {
+      "name": "choices",
+      "value": "{auto,cpu,cuda,coreml}",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "literal",
+      "value": "auto",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "argument_26",
+      "value": "JOURNAL_VARIANT",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "literal_27",
+      "value": "linux",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "path_28",
+      "value": "/x86_64",
+      "kind": "url"
+    }
+  ]
+}

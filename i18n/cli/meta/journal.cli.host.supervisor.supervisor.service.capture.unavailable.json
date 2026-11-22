@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output for supervisor supervisor service capture unavailable.",
+  "context": "Journal host output for supervisor supervisor service capture unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "65eec098019b01ccf21d1249af7fd887327779e49edaa9e2f7ad54c531a1f109",
+  "max_length": 150,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -65,6 +65,7 @@ mod memory_recall;
 mod memory_tools;
 mod names;
 mod oauth;
+mod owner_diagnostics;
 mod owner_memories;
 mod owner_state;
 mod owner_web;
@@ -109,7 +110,7 @@ use windows_state as unix;
 
 pub use activity::{
     ActivityAnchor, ActivityEntry, ActivityPage, ActivityQuery, ActivityReadError,
-    MAX_EXAMINED_RECORDS, RecordedOutcome, read_activity, tally,
+    MAX_EXAMINED_RECORDS, RecordedOutcome, read_activity, read_activity_for_locale, tally,
 };
 pub use bridge_carrier::McpBridgeCarrierError;
 pub use bridge_session::{McpBridgeSession, McpPublicStream};
@@ -131,7 +132,7 @@ pub use owner_web::owner_routes;
 pub use permissions::{
     ConnectionPermissionRecord, ConnectionReadSnapshot, PermissionDecision, PermissionStore,
     PermissionStoreError, PermissionsFile, ReadPermission, ReadScope, evaluate_connection_read,
-    resolve_permission_facet_names,
+    resolve_permission_facet_names, resolve_permission_facet_names_for,
 };
 pub use service_process::{
     McpServiceError, run_embedded_service, run_native_service_with_hosted_parent,

@@ -1,0 +1,28 @@
+{
+  "description": "Journal host settings url.",
+  "context": "Journal host settings url.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "url",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "82c232fec8083fc4815c6f261191b493ee2ae741c37f2e3adcb52ad4093c9c4b",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "space_5",
+      "kind": "whitespace",
+      "value": "     "
+    }
+  ]
+}

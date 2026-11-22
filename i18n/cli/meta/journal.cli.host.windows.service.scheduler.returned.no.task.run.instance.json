@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service scheduler returned no task run instance.",
+  "context": "Journal host output for windows service scheduler returned no task run instance.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "788a67e0715a893e2e966d1aa2d649bdf9e306993b5a63659fe9b79d763a1b12",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

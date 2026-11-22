@@ -26,7 +26,14 @@ pub(crate) fn run(journal: &Path, force: bool) -> ExitCode {
     match run_inner(journal, force) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("solstone journal heartbeat: {error}");
+            eprintln!(
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.heartbeat.error",
+                    [("detail", &(error))]
+                )
+            );
             ExitCode::from(1)
         }
     }
@@ -132,8 +139,13 @@ fn guarded_pass(journal: &Path, pid_path: &Path) -> io::Result<()> {
 
 fn open_heartbeat_log(journal: &Path, opened: &ZonedDateTime) -> io::Result<OplogWriter> {
     let root = JournalRoot::open(journal).map_err(|error| io::Error::other(error.to_string()))?;
-    create_oplog_at(root, "heartbeat", "pass", OplogFormat::Jsonl, opened)
-        .map_err(|error| io::Error::other(format!("failed to create heartbeat oplog: {error}")))
+    create_oplog_at(root, "heartbeat", "pass", OplogFormat::Jsonl, opened).map_err(|error| {
+        io::Error::other(solstone_core_cli_copy::display_for(
+            crate::host_locale(),
+            "journal.cli.host.heartbeat.oplog",
+            [("detail", &(error))],
+        ))
+    })
 }
 
 fn run_pass(log: &mut OplogWriter) -> io::Result<()> {

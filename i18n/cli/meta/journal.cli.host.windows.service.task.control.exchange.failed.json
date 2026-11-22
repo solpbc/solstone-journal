@@ -1,0 +1,21 @@
+{
+  "description": "Journal host output for windows service task control exchange failed.",
+  "context": "Journal host output for windows service task control exchange failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "10abf8ed506b22fd11387f4f4ef92c09e0ce8939304608adce1c94d7d468b3a7",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "description": "Terminal diagnostic for supervisor lifecycle redirect.",
+  "context": "Terminal diagnostic for supervisor lifecycle redirect.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "supervisor",
+      "type": "string"
+    },
+    {
+      "name": "service_verb",
+      "type": "string"
+    },
+    {
+      "name": "requested",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "350ffa7518bc27a3433b948234fc5c25700bd046acf85dee4b61464332f49a8d",
+  "max_length": 390,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Journal host warm row platform.",
+  "context": "Journal host warm row platform.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "binary",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9f3e46b3de7d9a4971053d84b45e67ff8da1e659657a0413402d56a3aaaf752f",
+  "max_length": 240,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

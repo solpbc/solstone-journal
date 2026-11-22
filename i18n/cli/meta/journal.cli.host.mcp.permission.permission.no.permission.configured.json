@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for mcp permission permission no permission configured.",
+  "context": "Journal host output for mcp permission permission no permission configured.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f68b5f18d253347e00cc7bf0c03ecc99da40a652038d16f429732ba20c2acdd7",
+  "max_length": 128,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

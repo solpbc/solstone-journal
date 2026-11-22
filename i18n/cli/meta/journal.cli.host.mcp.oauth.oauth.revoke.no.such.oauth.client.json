@@ -1,0 +1,28 @@
+{
+  "description": "Journal host output for mcp oauth oauth revoke no such oauth client.",
+  "context": "Journal host output for mcp oauth oauth revoke no such oauth client.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6e521438747638629f0fc8e82da1e3868bdf3ecf681065638f0728570dfb1c78",
+  "max_length": 243,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command_solstone_journal_mcp_oauth_revoke",
+      "kind": "command",
+      "value": "solstone journal mcp oauth revoke"
+    },
+    {
+      "name": "literal_oauth",
+      "kind": "accepted-input",
+      "value": "OAuth"
+    }
+  ]
+}

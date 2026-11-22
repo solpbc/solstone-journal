@@ -1,0 +1,21 @@
+{
+  "description": "Journal host logs grep invalid.",
+  "context": "Journal host logs grep invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "offset",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3e131d72a8e52f3c5fb03e80a016283b8233f728e48f7f281a183fd57ec059a9",
+  "max_length": 144,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

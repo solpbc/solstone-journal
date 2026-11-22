@@ -14,6 +14,7 @@ use std::process::{Command, ExitCode, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
+#[cfg(test)]
 use solstone_core::installation_context::installation_recovery_copy;
 use solstone_core_cli::{ServiceAction, ServiceInstallationGuardArguments};
 use solstone_core_installation_identity::{
@@ -32,7 +33,9 @@ use solstone_core_service_unit::{
 use solstone_core_setup::legacy_health::upgrade_legacy_supervisor_lock;
 use solstone_core_system::lifecycle::{clear_readiness, wait_ready};
 use solstone_core_system::process::SystemProcessInstanceSource;
-use solstone_core_system_health::{SyncRescanDiagnosis, describe_sync_rescan};
+use solstone_core_system_health::{SyncRescanDiagnosis, describe_sync_rescan_in};
+
+use solstone_core_cli_copy::{display_for, render_for};
 
 use crate::{discover_binary_home, resolve_process_journal_path};
 
@@ -48,6 +51,7 @@ const MUTATION_TIMEOUT: Duration = Duration::from_secs(60);
 const READY_TIMEOUT: Duration = Duration::from_secs(120);
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
 const SERVICE_SYNC_DIAGNOSTIC_FILENAME: &str = "service-diagnostic.check";
+#[cfg(test)]
 const READY_TIMEOUT_MESSAGE: &str = "service did not become ready within 120 seconds";
 const SERVICE_GUARD_ENVIRONMENT_NAMES: [&str; 4] = [
     "SOLSTONE_INSTALLATION_NAMESPACE",
@@ -97,24 +101,52 @@ struct CommandResult {
     stderr: Vec<u8>,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum ServiceError {
+    Detail(String),
+    Complete(String),
+}
+
+impl From<String> for ServiceError {
+    fn from(detail: String) -> Self {
+        Self::Detail(detail)
+    }
+}
+
+impl From<ServiceError> for String {
+    fn from(error: ServiceError) -> Self {
+        match error {
+            ServiceError::Detail(text) | ServiceError::Complete(text) => text,
+        }
+    }
+}
+
 pub fn run(action: ServiceAction) -> ExitCode {
     match run_inner(action) {
         Ok(code) => code,
-        Err(message) => {
-            if is_final_sync_diagnosis(&message) || is_installation_recovery_diagnosis(&message) {
-                eprintln!("{message}");
-            } else {
-                eprintln!("error: {}", safe(&message));
-            }
-            ExitCode::from(1)
+        Err(ServiceError::Complete(message)) => {
+            eprintln!("{message}");
+            ExitCode::FAILURE
+        }
+        Err(ServiceError::Detail(message)) => {
+            eprintln!(
+                "{}",
+                display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.service.error.details",
+                    [("detail", &(safe(&message)))]
+                )
+            );
+            ExitCode::FAILURE
         }
     }
 }
 
 /// Only the Windows journal app runs `__app-status` and `__sign-in`.
+#[cfg(test)]
 const WINDOWS_ONLY: &str = "this service command is only available on Windows";
 
-fn run_inner(action: ServiceAction) -> Result<ExitCode, String> {
+fn run_inner(action: ServiceAction) -> Result<ExitCode, ServiceError> {
     // Refused before the platform probe, so the reason is always this one.
     if matches!(
         action,
@@ -123,7 +155,12 @@ fn run_inner(action: ServiceAction) -> Result<ExitCode, String> {
             | ServiceAction::StopForUpdate
             | ServiceAction::RestoreUpdateIntent
     ) {
-        return Err(WINDOWS_ONLY.to_owned());
+        return Err(render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.windows.only",
+            &[],
+        )
+        .into());
     }
     if let ServiceAction::Install {
         port: _,
@@ -131,10 +168,21 @@ fn run_inner(action: ServiceAction) -> Result<ExitCode, String> {
         initial_start_at_sign_in: Some(_),
     } = &action
     {
-        return Err(WINDOWS_ONLY.to_owned());
+        return Err(render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.windows.only",
+            &[],
+        )
+        .into());
     }
     let platform = platform()?;
-    let home = discover_binary_home().map_err(|error| format!("service home: {error:?}"))?;
+    let home = discover_binary_home().map_err(|error| {
+        display_for(
+            crate::host_locale(),
+            "journal.cli.host.service.service.home",
+            [("error", &(format!("{:?}", error)))],
+        )
+    })?;
     match action {
         ServiceAction::Install {
             port,
@@ -142,7 +190,12 @@ fn run_inner(action: ServiceAction) -> Result<ExitCode, String> {
             initial_start_at_sign_in,
         } => {
             if initial_start_at_sign_in.is_some() {
-                return Err(WINDOWS_ONLY.to_owned());
+                return Err(render_for(
+                    crate::host_locale(),
+                    "journal.cli.host.service.windows.only",
+                    &[],
+                )
+                .into());
             }
             let guard = resolve_installation_guard(installation_guard, || {
                 load_existing_installation_guard(&home)
@@ -150,15 +203,21 @@ fn run_inner(action: ServiceAction) -> Result<ExitCode, String> {
             let requested = port
                 .as_ref()
                 .map(|port| port.canonical_decimal().to_owned());
-            install(platform, &home, requested.as_deref(), &guard).map(ExitCode::from)
+            install(platform, &home, requested.as_deref(), &guard)
+                .map(ExitCode::from)
+                .map_err(Into::into)
         }
-        ServiceAction::Uninstall => uninstall(platform, &home).map(ExitCode::from),
+        ServiceAction::Uninstall => uninstall(platform, &home)
+            .map(ExitCode::from)
+            .map_err(Into::into),
         ServiceAction::Start => start(platform, &home).map(ExitCode::from),
-        ServiceAction::Stop | ServiceAction::Down => stop(platform, &home).map(ExitCode::from),
+        ServiceAction::Stop | ServiceAction::Down => stop(platform, &home)
+            .map(ExitCode::from)
+            .map_err(Into::into),
         ServiceAction::Restart { if_installed } => {
             restart(platform, &home, if_installed).map(ExitCode::from)
         }
-        ServiceAction::Status => status(platform, &home),
+        ServiceAction::Status => status(platform, &home).map_err(Into::into),
         ServiceAction::Up => up(platform, &home),
         // Only the Windows installer's update hook runs this.
         ServiceAction::ResumeAfterUpdate => Ok(ExitCode::SUCCESS),
@@ -166,7 +225,12 @@ fn run_inner(action: ServiceAction) -> Result<ExitCode, String> {
         ServiceAction::AppStatus
         | ServiceAction::SignIn { .. }
         | ServiceAction::StopForUpdate
-        | ServiceAction::RestoreUpdateIntent => Err(WINDOWS_ONLY.to_owned()),
+        | ServiceAction::RestoreUpdateIntent => Err(render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.windows.only",
+            &[],
+        )
+        .into()),
         ServiceAction::Logs { .. } => unreachable!("logs dispatch is handled by main"),
     }
 }
@@ -174,31 +238,59 @@ fn run_inner(action: ServiceAction) -> Result<ExitCode, String> {
 fn resolve_installation_guard(
     arguments: Option<ServiceInstallationGuardArguments>,
     load_existing: impl FnOnce() -> Result<GuardFields, String>,
-) -> Result<GuardFields, String> {
+) -> Result<GuardFields, ServiceError> {
     match arguments {
-        Some(arguments) => parse_installation_guard(arguments),
-        None => load_existing().map_err(service_install_recovery),
+        Some(arguments) => parse_installation_guard(arguments).map_err(Into::into),
+        None => {
+            load_existing().map_err(|error| ServiceError::Complete(service_install_recovery(error)))
+        }
     }
 }
 
 fn load_existing_installation_guard(home: &Path) -> Result<GuardFields, String> {
-    let executable = std::env::current_exe()
-        .map_err(|error| format!("could not resolve the solstone executable: {error}"))?;
-    let executable_dir = executable
-        .parent()
-        .ok_or_else(|| "the solstone executable has no containing directory".to_owned())?;
-    let root = resolve_identity_root_from_executable_dir(executable_dir).ok_or_else(|| {
-        format!(
-            "could not find the solstone installation from {}",
-            executable_dir.display()
+    let executable = std::env::current_exe().map_err(|error| {
+        display_for(
+            crate::host_locale(),
+            "journal.cli.host.service.could.not.resolve.the.solstone.executable",
+            [("error", &(error))],
         )
     })?;
-    let root_token = root_token_from_path(&root)
-        .map_err(|error| format!("could not verify the solstone installation: {error}"))?;
-    let owner = OwnerBase::at_home(home.to_path_buf(), PlatformTag::current())
-        .map_err(|error| format!("could not verify the solstone setup storage: {error}"))?;
-    let binding = load_installation_binding(&owner, &root_token)
-        .map_err(|error| format!("could not verify the saved installation: {error}"))?;
+    let executable_dir = executable.parent().ok_or_else(|| {
+        render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.the.solstone.executable.has.no.containing.directory",
+            &[],
+        )
+    })?;
+    let root = resolve_identity_root_from_executable_dir(executable_dir).ok_or_else(|| {
+        display_for(
+            crate::host_locale(),
+            "journal.cli.host.service.could.not.find.the.solstone.installation.from",
+            [("path", &(executable_dir.display()))],
+        )
+    })?;
+    let root_token = root_token_from_path(&root).map_err(|error| {
+        display_for(
+            crate::host_locale(),
+            "journal.cli.host.service.could.not.verify.the.solstone.installation",
+            [("error", &(error))],
+        )
+    })?;
+    let owner =
+        OwnerBase::at_home(home.to_path_buf(), PlatformTag::current()).map_err(|error| {
+            display_for(
+                crate::host_locale(),
+                "journal.cli.host.service.could.not.verify.the.solstone.setup.storage",
+                [("error", &(error))],
+            )
+        })?;
+    let binding = load_installation_binding(&owner, &root_token).map_err(|error| {
+        display_for(
+            crate::host_locale(),
+            "journal.cli.host.service.could.not.verify.the.saved.installation",
+            [("error", &(error))],
+        )
+    })?;
     Ok(GuardFields::from_binding(&binding))
 }
 
@@ -241,7 +333,10 @@ where
 }
 
 fn service_install_recovery(detail: String) -> String {
-    installation_recovery_copy(&detail)
+    solstone_core::installation_context::installation_recovery_copy_for(
+        crate::host_locale(),
+        &detail,
+    )
 }
 
 pub(crate) fn platform() -> Result<Platform, String> {
@@ -250,7 +345,11 @@ pub(crate) fn platform() -> Result<Platform, String> {
     } else if cfg!(target_os = "macos") {
         Ok(Platform::Darwin)
     } else {
-        Err("service management is supported only on linux and mac".to_owned())
+        Err(render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.service.management.is.supported.only.on.linux.and.mac",
+            &[],
+        ))
     }
 }
 
@@ -286,9 +385,19 @@ fn parse_installation_guard(
     ]);
     parse_service_guard_environment(&environment)
         .map_err(|error| {
-            format!("service install: invalid installation identity arguments: {error}")
+            display_for(
+                crate::host_locale(),
+                "journal.cli.host.service.service.install.invalid.installation.identity.arguments",
+                [("error", &(error))],
+            )
         })?
-        .ok_or_else(|| "service install requires installation identity arguments".to_owned())
+        .ok_or_else(|| {
+            render_for(
+                crate::host_locale(),
+                "journal.cli.host.service.service.install.requires.installation.identity.arguments",
+                &[],
+            )
+        })
 }
 
 /// The port a first installation takes when nothing names one.
@@ -329,7 +438,13 @@ fn install(
 ) -> Result<u8, String> {
     let _lock = service_lock(home)?;
     let journal = resolve_process_journal_path()
-        .map_err(|_| "service install: could not resolve journal".to_owned())?
+        .map_err(|_| {
+            render_for(
+                crate::host_locale(),
+                "journal.cli.host.service.service.install.could.not.resolve.journal",
+                &[],
+            )
+        })?
         .path;
     if platform == Platform::Darwin {
         cleanup_stale_launchd(home)?;
@@ -352,21 +467,40 @@ fn install(
         return Err(runtime_error("install", runtime));
     }
 
-    let parent = target
-        .parent()
-        .ok_or_else(|| "service unit has no parent".to_owned())?;
+    let parent = target.parent().ok_or_else(|| {
+        render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.service.unit.has.no.parent",
+            &[],
+        )
+    })?;
     ensure_real_dir_chain(home, parent)?;
     let launcher = home.join(".local/bin/solstone");
-    let launcher_metadata = fs::metadata(&launcher)
-        .map_err(|error| format!("service launcher is unavailable: {error}"))?;
+    let launcher_metadata = fs::metadata(&launcher).map_err(|error| {
+        display_for(
+            crate::host_locale(),
+            "journal.cli.host.service.service.launcher.is.unavailable",
+            [("error", &(error))],
+        )
+    })?;
     if !launcher_metadata.is_file() || launcher_metadata.permissions().mode() & 0o111 == 0 {
-        return Err("service launcher is not an executable regular file".to_owned());
+        return Err(render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.service.launcher.is.not.an.executable.regular.file",
+            &[],
+        ));
     }
     let runtime_dir = std::env::current_exe()
         .ok()
         .and_then(|path| path.parent().map(Path::to_path_buf))
         .map(|dir| version_independent_runtime_dir(&dir))
-        .ok_or_else(|| "service install: current executable has no directory".to_owned())?;
+        .ok_or_else(|| {
+            render_for(
+                crate::host_locale(),
+                "journal.cli.host.service.service.install.current.executable.has.no.directory",
+                &[],
+            )
+        })?;
     let environment = build_service_environment(
         path_text(home)?,
         std::env::var("PATH").ok().as_deref(),
@@ -388,32 +522,58 @@ fn install(
         upgrade_legacy_supervisor_lock(&journal)?;
     }
     require_published(atomic_replace_detailed(&target, &bytes, 0o644))?;
-    println!("wrote {}", path_display(&target));
+    println!(
+        "{}",
+        display_for(
+            crate::host_locale(),
+            "journal.cli.host.service.wrote",
+            [("path", &(path_display(&target)))]
+        )
+    );
 
     match platform {
         Platform::Linux => {
             require_success(
                 run_fixed(systemctl(&["--user", "daemon-reload"]), MUTATION_TIMEOUT)?,
-                "reload systemd",
+                "journal.cli.host.service.manager.reload.systemd",
             )?;
             require_success(
                 run_fixed(systemctl(&["--user", "enable", UNIT]), MUTATION_TIMEOUT)?,
-                "enable service",
+                "journal.cli.host.service.manager.enable.service",
             )?;
-            println!("service enabled");
+            println!(
+                "{}",
+                render_for(
+                    crate::host_locale(),
+                    "journal.cli.host.service.service.enabled",
+                    &[]
+                )
+            );
         }
         Platform::Darwin => {
             let uid = nix::unistd::Uid::effective().as_raw();
-            clear_readiness(&journal)
-                .map_err(|error| format!("could not clear the service's ready state: {error}"))?;
+            clear_readiness(&journal).map_err(|error| {
+                display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.service.could.not.clear.the.service.s.ready.state",
+                    [("error", &(error))],
+                )
+            })?;
             require_success(
                 run_fixed(
                     launchctl(&["bootstrap", &format!("gui/{uid}"), path_text(&target)?]),
                     START_TIMEOUT,
                 )?,
-                "load service",
+                "journal.cli.host.service.manager.load.service",
             )?;
-            println!("service loaded into launchd");
+            println!(
+                "{}",
+                render_for(
+                    crate::host_locale(),
+                    "journal.cli.host.service.service.loaded.into.launchd",
+                    &[]
+                )
+            );
         }
     }
     Ok(0)
@@ -447,20 +607,30 @@ impl JournalRelocation {
         let target = unit_path(platform, home);
         let initial = classify_unit(platform, &target)?;
         if matches!(initial, UnitTruth::Foreign | UnitTruth::Unknown(_)) {
-            return Err(truth_error("change journal folder", &target, &initial));
+            return Err(truth_error("change-journal-folder", &target, &initial));
         }
         let runtime = observe_runtime(platform, &target)?;
         if matches!(runtime, RuntimeTruth::Foreign(_) | RuntimeTruth::Unknown(_)) {
-            return Err(runtime_error("change journal folder", runtime));
+            return Err(runtime_error("change-journal-folder", runtime));
         }
         if matches!(initial, UnitTruth::Absent) && !matches!(runtime, RuntimeTruth::Absent) {
-            return Err("service registration has no matching managed file".into());
+            return Err(render_for(
+                crate::host_locale(),
+                "journal.cli.host.service.service.registration.has.no.matching.managed.file",
+                &[],
+            ));
         }
         let port = match &initial {
             UnitTruth::Managed(snapshot) => match platform {
                 Platform::Linux => systemd_route_repair_port(snapshot, &target)?,
                 Platform::Darwin => solstone_core_service_unit::launchd_plist_port(&snapshot.bytes)
-                    .ok_or_else(|| "service registration has no valid port".to_owned())?,
+                    .ok_or_else(|| {
+                        render_for(
+                            crate::host_locale(),
+                            "journal.cli.host.service.service.registration.has.no.valid.port",
+                            &[],
+                        )
+                    })?,
             },
             _ => DEFAULT_SERVICE_PORT.into(),
         };
@@ -470,7 +640,13 @@ impl JournalRelocation {
             home: home.to_owned(),
             executable_dir: executable
                 .parent()
-                .ok_or("service executable has no parent")?
+                .ok_or_else(|| {
+                    render_for(
+                        crate::host_locale(),
+                        "journal.cli.host.service.executable.parent",
+                        &[],
+                    )
+                })?
                 .to_owned(),
             identity_root: identity_root.to_owned(),
             published_guard: None,
@@ -504,7 +680,10 @@ impl JournalRelocation {
                     STOP_TIMEOUT,
                 )?,
             };
-            require_success(result, "stop service before changing journal folder")?;
+            require_success(
+                result,
+                "journal.cli.host.service.manager.stop.service.before.changing.journal.folder",
+            )?;
             wait_runtime_quiescent(self.platform, &target)?;
         }
         clear_readiness(&self.journal).map_err(|error| error.to_string())
@@ -520,10 +699,14 @@ impl JournalRelocation {
         revalidate_initial(self.platform, &target, &self.initial)?;
         let runtime = observe_runtime(self.platform, &target)?;
         if matches!(runtime, RuntimeTruth::Foreign(_) | RuntimeTruth::Unknown(_)) {
-            return Err(runtime_error("change journal folder", runtime));
+            return Err(runtime_error("change-journal-folder", runtime));
         }
         if matches!(runtime, RuntimeTruth::Managed { active: true }) {
-            return Err("service became active during the journal-folder change".into());
+            return Err(render_for(
+                crate::host_locale(),
+                "journal.cli.host.service.service.became.active.during.the.journal.folder.change",
+                &[],
+            ));
         }
         let runtime_dir = version_independent_runtime_dir(&self.executable_dir);
         let environment = build_service_environment(
@@ -552,7 +735,7 @@ impl JournalRelocation {
         if self.platform == Platform::Linux {
             require_success(
                 run_fixed(systemctl(&["--user", "daemon-reload"]), MUTATION_TIMEOUT)?,
-                "reload service after changing journal folder",
+                "journal.cli.host.service.manager.reload.service.after.changing.journal.folder",
             )?;
         }
         Ok(())
@@ -564,7 +747,7 @@ impl JournalRelocation {
         let runtime = observe_runtime(self.platform, &target)?;
         if matches!(runtime, RuntimeTruth::Foreign(_) | RuntimeTruth::Unknown(_)) {
             return Err(runtime_error(
-                "start after changing journal folder",
+                "start-after-changing-journal-folder",
                 runtime,
             ));
         }
@@ -579,7 +762,7 @@ impl JournalRelocation {
                     ]),
                     START_TIMEOUT,
                 )?,
-                "load service after changing journal folder",
+                "journal.cli.host.service.manager.load.service.after.changing.journal.folder",
             )?;
         }
         let result = match self.platform {
@@ -595,7 +778,10 @@ impl JournalRelocation {
                 START_TIMEOUT,
             )?,
         };
-        require_success(result, "start after changing journal folder")?;
+        require_success(
+            result,
+            "journal.cli.host.service.manager.start.after.changing.journal.folder",
+        )?;
         // The notified supervisor must read identity. A concurrent setup may
         // hold identity while waiting to publish its service unit, so do not
         // retain service authority across that dependency.
@@ -609,7 +795,11 @@ impl JournalRelocation {
             let binding =
                 load_installation_binding(&owner, &token).map_err(|error| error.to_string())?;
             if GuardFields::from_binding(&binding) != *expected {
-                return Err("installation changed while waiting for the new journal folder".into());
+                return Err(render_for(
+                    crate::host_locale(),
+                    "journal.cli.host.service.installation.changed.while.waiting.for.the.new.journal.folder",
+                    &[],
+                ));
             }
         }
         let _lock = service_lock(&self.home)?;
@@ -631,13 +821,22 @@ pub(crate) fn republish_linux_unit_for_route_repair(
     let target = unit_path(Platform::Linux, home);
     let initial = classify_unit(Platform::Linux, &target)?;
     let UnitTruth::Managed(snapshot) = &initial else {
-        return Err(truth_error("route repair", &target, &initial));
+        return Err(truth_error("route-repair", &target, &initial));
     };
     let launcher = home.join(".local/bin/solstone");
-    let launcher_metadata = fs::metadata(&launcher)
-        .map_err(|error| format!("route repair service launcher is unavailable: {error}"))?;
+    let launcher_metadata = fs::metadata(&launcher).map_err(|error| {
+        display_for(
+            crate::host_locale(),
+            "journal.cli.host.service.route.repair.service.launcher.is.unavailable",
+            [("error", &(error))],
+        )
+    })?;
     if !launcher_metadata.is_file() || launcher_metadata.permissions().mode() & 0o111 == 0 {
-        return Err("route repair service launcher is not an executable regular file".to_owned());
+        return Err(render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.route.repair.service.launcher.is.not.an.executable.regular",
+            &[],
+        ));
     }
     let port = systemd_route_repair_port(snapshot, &target)?;
     let runtime_dir = version_independent_runtime_dir(executable_dir);
@@ -664,34 +863,62 @@ where
 {
     require_success(
         run(&["--user", "daemon-reload"], MUTATION_TIMEOUT)?,
-        "reload systemd for route repair",
+        "journal.cli.host.service.manager.reload.systemd.for.route.repair",
     )?;
     if matches!(initial_runtime, RuntimeTruth::Managed { active: true }) {
         require_success(
             run(&["--user", "restart", UNIT], START_TIMEOUT)?,
-            "restart service for route repair",
+            "journal.cli.host.service.manager.restart.service.for.route.repair",
         )?;
     }
     Ok(())
 }
 
 fn systemd_route_repair_port(snapshot: &UnitSnapshot, unit: &Path) -> Result<String, String> {
-    let text = std::str::from_utf8(&snapshot.bytes)
-        .map_err(|_| "route repair service unit is not UTF-8".to_owned())?;
+    let text = std::str::from_utf8(&snapshot.bytes).map_err(|_| {
+        render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.route.repair.service.unit.is.not.utf",
+            &[],
+        )
+    })?;
     let exec = text
         .lines()
         .find_map(|line| line.strip_prefix("ExecStart="))
-        .ok_or_else(|| "route repair service unit has no ExecStart".to_owned())?;
-    let launchers = expected_launchers(Platform::Linux, unit)
-        .ok_or_else(|| "service unit has no trusted home ancestor".to_owned())?;
+        .ok_or_else(|| {
+            render_for(
+                crate::host_locale(),
+                "journal.cli.host.service.route.repair.service.unit.has.no.execstart",
+                &[],
+            )
+        })?;
+    let launchers = expected_launchers(Platform::Linux, unit).ok_or_else(|| {
+        render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.service.unit.has.no.trusted.home.ancestor",
+            &[],
+        )
+    })?;
     let arguments = launchers
         .iter()
         .find_map(|launcher| systemd_unit_arguments(exec, launcher))
-        .ok_or_else(|| "route repair service unit has an invalid ExecStart".to_owned())?;
+        .ok_or_else(|| {
+            render_for(
+                crate::host_locale(),
+                "journal.cli.host.service.route.repair.service.unit.has.an.invalid.execstart",
+                &[],
+            )
+        })?;
     let tail = match arguments.as_slice() {
         [_, journal, rest @ ..] if journal == "journal" => rest,
         [_, rest @ ..] => rest,
-        _ => return Err("route repair service unit has an invalid command tail".to_owned()),
+        _ => {
+            return Err(render_for(
+                crate::host_locale(),
+                "journal.cli.host.service.route.repair.service.unit.has.an.invalid.command.tail",
+                &[],
+            ));
+        }
     };
     match tail {
         [verb, port]
@@ -701,7 +928,11 @@ fn systemd_route_repair_port(snapshot: &UnitSnapshot, unit: &Path) -> Result<Str
             Ok(port.clone())
         }
         [verb] if verb == "supervisor" => Ok("5015".to_owned()),
-        _ => Err("route repair service unit has an invalid command tail".to_owned()),
+        _ => Err(render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.route.repair.service.unit.has.an.invalid.command.tail",
+            &[],
+        )),
     }
 }
 
@@ -719,12 +950,26 @@ fn uninstall(platform: Platform, home: &Path) -> Result<u8, String> {
     if matches!(initial, UnitTruth::Absent) {
         return match runtime {
             RuntimeTruth::Absent => {
-                println!("service was not installed");
+                println!(
+                    "{}",
+                    render_for(
+                        crate::host_locale(),
+                        "journal.cli.host.service.service.was.not.installed",
+                        &[]
+                    )
+                );
                 Ok(0)
             }
             RuntimeTruth::Managed { .. } => {
                 remove_runtime_registration(platform, &target)?;
-                println!("removed stale service registration");
+                println!(
+                    "{}",
+                    render_for(
+                        crate::host_locale(),
+                        "journal.cli.host.service.removed.stale.service.registration",
+                        &[]
+                    )
+                );
                 Ok(0)
             }
             other => Err(runtime_error("uninstall", other)),
@@ -739,11 +984,11 @@ fn uninstall(platform: Platform, home: &Path) -> Result<u8, String> {
             if matches!(runtime, RuntimeTruth::Managed { .. }) {
                 require_success(
                     run_fixed(systemctl(&["--user", "stop", UNIT]), STOP_TIMEOUT)?,
-                    "stop service",
+                    "journal.cli.host.service.manager.stop.service",
                 )?;
                 require_success(
                     run_fixed(systemctl(&["--user", "disable", UNIT]), MUTATION_TIMEOUT)?,
-                    "disable service",
+                    "journal.cli.host.service.manager.disable.service",
                 )?;
             }
         }
@@ -754,7 +999,7 @@ fn uninstall(platform: Platform, home: &Path) -> Result<u8, String> {
                     launchctl(&["bootout", &format!("gui/{uid}/{LABEL}")]),
                     STOP_TIMEOUT,
                 )?,
-                "request launchd unload",
+                "journal.cli.host.service.manager.request.launchd.unload",
             )?;
             wait_runtime_absent(platform, &target)?;
         }
@@ -762,17 +1007,37 @@ fn uninstall(platform: Platform, home: &Path) -> Result<u8, String> {
     }
     verify_snapshot(platform, &target, &snapshot)?;
     if !service_unit_may_be_removed(home, &target, platform) {
-        println!("preserved service unit {}", path_display(&target));
+        println!(
+            "{}",
+            display_for(
+                crate::host_locale(),
+                "journal.cli.host.service.preserved.service.unit",
+                [("path", &(path_display(&target)))]
+            )
+        );
         return Ok(0);
     }
-    fs::remove_file(&target).map_err(|error| format!("remove service unit: {error}"))?;
+    fs::remove_file(&target).map_err(|error| {
+        display_for(
+            crate::host_locale(),
+            "journal.cli.host.service.remove.service.unit",
+            [("error", &(error))],
+        )
+    })?;
     if platform == Platform::Linux {
         require_success(
             run_fixed(systemctl(&["--user", "daemon-reload"]), MUTATION_TIMEOUT)?,
-            "reload systemd",
+            "journal.cli.host.service.manager.reload.systemd",
         )?;
     }
-    println!("removed {}", path_display(&target));
+    println!(
+        "{}",
+        display_for(
+            crate::host_locale(),
+            "journal.cli.host.service.removed",
+            [("path", &(path_display(&target)))]
+        )
+    );
     Ok(0)
 }
 
@@ -819,11 +1084,11 @@ fn remove_runtime_registration(platform: Platform, target: &Path) -> Result<(), 
         Platform::Linux => {
             require_success(
                 run_fixed(systemctl(&["--user", "stop", UNIT]), STOP_TIMEOUT)?,
-                "stop stale service",
+                "journal.cli.host.service.manager.stop.stale.service",
             )?;
             require_success(
                 run_fixed(systemctl(&["--user", "disable", UNIT]), MUTATION_TIMEOUT)?,
-                "disable stale service",
+                "journal.cli.host.service.manager.disable.stale.service",
             )?;
             wait_runtime_quiescent(platform, target)
         }
@@ -834,21 +1099,28 @@ fn remove_runtime_registration(platform: Platform, target: &Path) -> Result<(), 
                     launchctl(&["bootout", &format!("gui/{uid}/{LABEL}")]),
                     STOP_TIMEOUT,
                 )?,
-                "unload stale service",
+                "journal.cli.host.service.manager.unload.stale.service",
             )?;
             wait_runtime_absent(platform, target)
         }
     }
 }
 
-fn start(platform: Platform, home: &Path) -> Result<u8, String> {
+fn start(platform: Platform, home: &Path) -> Result<u8, ServiceError> {
     let journal = kickstart(platform, home)?;
     wait_started(&journal, READY_TIMEOUT, POLL_INTERVAL)?;
-    println!("service started");
+    println!(
+        "{}",
+        render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.service.started",
+            &[]
+        )
+    );
     Ok(0)
 }
 
-fn wait_started(journal: &Path, timeout: Duration, poll: Duration) -> Result<(), String> {
+fn wait_started(journal: &Path, timeout: Duration, poll: Duration) -> Result<(), ServiceError> {
     match wait_ready(journal, timeout, poll) {
         Some(_) => Ok(()),
         None => Err(ready_timeout_message(journal)),
@@ -875,15 +1147,21 @@ fn kickstart_with_journal(
         // An active manager does not republish readiness for a repeated start.
         // Bind the caller's selected journal before preserving its ready marker.
         if !active_service_uses_journal(platform, &unit, &journal) {
-            return Err(
-                "couldn't confirm that the service uses this journal. run 'solstone journal setup' to update its saved location."
-                    .to_owned(),
-            );
+            return Err(render_for(
+                crate::host_locale(),
+                "journal.cli.host.service.couldn.t.confirm.that.the.service.uses.this.journal",
+                &[],
+            ));
         }
         return Ok(journal);
     }
-    clear_readiness(&journal)
-        .map_err(|error| format!("could not clear the service's ready state: {error}"))?;
+    clear_readiness(&journal).map_err(|error| {
+        display_for(
+            crate::host_locale(),
+            "journal.cli.host.service.could.not.clear.the.service.s.ready.state",
+            [("error", &(error))],
+        )
+    })?;
     if platform == Platform::Darwin && matches!(runtime, RuntimeTruth::Absent) {
         require_success(
             run_fixed(
@@ -894,7 +1172,7 @@ fn kickstart_with_journal(
                 ]),
                 START_TIMEOUT,
             )?,
-            "load installed service",
+            "journal.cli.host.service.manager.load.installed.service",
         )?;
     }
     let result = match platform {
@@ -907,7 +1185,7 @@ fn kickstart_with_journal(
             )?
         }
     };
-    require_success(result, "start service")?;
+    require_success(result, "journal.cli.host.service.manager.start.service")?;
     Ok(journal)
 }
 
@@ -972,14 +1250,25 @@ fn stop(platform: Platform, home: &Path) -> Result<u8, String> {
                 )?
             }
         };
-        require_success(result, "stop service")?;
+        require_success(result, "journal.cli.host.service.manager.stop.service")?;
     }
     if let Ok(journal) = resolved_journal() {
         clear_readiness(&journal).map_err(|error| {
-            format!("service stopped, but its ready state could not be cleared: {error}")
+            display_for(
+                crate::host_locale(),
+                "journal.cli.host.service.service.stopped.but.its.ready.state.could.not.be",
+                [("error", &(error))],
+            )
         })?;
     }
-    println!("service stopped");
+    println!(
+        "{}",
+        render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.service.stopped",
+            &[]
+        )
+    );
     Ok(0)
 }
 
@@ -992,26 +1281,31 @@ fn stop_requires_manager(unit: &UnitTruth, runtime: RuntimeTruth) -> Result<bool
     }
 }
 
-fn restart(platform: Platform, home: &Path, if_installed: bool) -> Result<u8, String> {
+fn restart(platform: Platform, home: &Path, if_installed: bool) -> Result<u8, ServiceError> {
     let _lock = service_lock(home)?;
     let target = unit_path(platform, home);
     let unit = classify_unit(platform, &target)?;
     match &unit {
         UnitTruth::Absent => {}
         UnitTruth::Managed(_) => {}
-        other => return Err(truth_error("restart", &target, other)),
+        other => return Err(truth_error("restart", &target, other).into()),
     }
     let runtime = require_owned_runtime(platform, &target, true)?;
     if matches!(unit, UnitTruth::Absent) && matches!(runtime, RuntimeTruth::Absent) {
         return if if_installed {
             Ok(0)
         } else {
-            Err(not_installed())
+            Err(not_installed().into())
         };
     }
     let journal = resolved_journal()?;
-    clear_readiness(&journal)
-        .map_err(|error| format!("could not clear the service's ready state: {error}"))?;
+    clear_readiness(&journal).map_err(|error| {
+        display_for(
+            crate::host_locale(),
+            "journal.cli.host.service.could.not.clear.the.service.s.ready.state",
+            [("error", &(error))],
+        )
+    })?;
     let result = match platform {
         Platform::Linux => run_fixed(systemctl(&["--user", "restart", UNIT]), START_TIMEOUT)?,
         Platform::Darwin => {
@@ -1021,7 +1315,10 @@ fn restart(platform: Platform, home: &Path, if_installed: bool) -> Result<u8, St
                     launchctl(&["kill", "SIGTERM", &format!("gui/{uid}/{LABEL}")]),
                     STOP_TIMEOUT,
                 )?;
-                require_success(kill, "stop service before restart")?;
+                require_success(
+                    kill,
+                    "journal.cli.host.service.manager.stop.service.before.restart",
+                )?;
             }
             run_fixed(
                 launchctl(&["kickstart", &format!("gui/{uid}/{LABEL}")]),
@@ -1029,11 +1326,18 @@ fn restart(platform: Platform, home: &Path, if_installed: bool) -> Result<u8, St
             )?
         }
     };
-    require_success(result, "restart service")?;
+    require_success(result, "journal.cli.host.service.manager.restart.service")?;
     if wait_ready(&journal, READY_TIMEOUT, POLL_INTERVAL).is_none() {
         return Err(ready_timeout_message(&journal));
     }
-    println!("service restarted");
+    println!(
+        "{}",
+        render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.service.restarted",
+            &[]
+        )
+    );
     Ok(0)
 }
 
@@ -1041,30 +1345,63 @@ fn status(platform: Platform, home: &Path) -> Result<ExitCode, String> {
     let target = unit_path(platform, home);
     match classify_unit(platform, &target)? {
         UnitTruth::Absent => {
-            println!("service: not installed");
             println!(
-                "run 'solstone journal setup' or 'solstone journal service install' to install it."
+                "{}",
+                render_for(
+                    crate::host_locale(),
+                    "journal.cli.host.service.service.not.installed",
+                    &[]
+                )
+            );
+            println!(
+                "{}",
+                render_for(
+                    crate::host_locale(),
+                    "journal.cli.host.service.run.solstone.journal.setup.or.solstone.journal.service.install",
+                    &[]
+                )
             );
             print_no_supervisor_sync_diagnosis();
             Ok(ExitCode::from(1))
         }
         UnitTruth::Managed(_) => {
-            println!("service: installed");
+            println!(
+                "{}",
+                render_for(
+                    crate::host_locale(),
+                    "journal.cli.host.service.service.installed",
+                    &[]
+                )
+            );
             match observe_runtime(platform, &target)? {
                 RuntimeTruth::Managed { active: true } => {
                     println!(
-                        "state: running ({})",
-                        if platform == Platform::Linux {
-                            "systemd"
-                        } else {
-                            "launchd"
-                        }
+                        "{}",
+                        display_for(
+                            crate::host_locale(),
+                            "journal.cli.host.service.state.running",
+                            [(
+                                "manager",
+                                &(if platform == Platform::Linux {
+                                    "systemd"
+                                } else {
+                                    "launchd"
+                                })
+                            )]
+                        )
                     );
                     println!();
                     return Ok(crate::health::run(false, false));
                 }
                 RuntimeTruth::Managed { active: false } | RuntimeTruth::Absent => {
-                    println!("state: stopped");
+                    println!(
+                        "{}",
+                        render_for(
+                            crate::host_locale(),
+                            "journal.cli.host.service.state.stopped",
+                            &[]
+                        )
+                    );
                     print_no_supervisor_sync_diagnosis();
                 }
                 other => return Err(runtime_error("status", other)),
@@ -1075,7 +1412,7 @@ fn status(platform: Platform, home: &Path) -> Result<ExitCode, String> {
     }
 }
 
-fn up(platform: Platform, home: &Path) -> Result<ExitCode, String> {
+fn up(platform: Platform, home: &Path) -> Result<ExitCode, ServiceError> {
     let target = unit_path(platform, home);
     require_managed(platform, &target)?;
     let started = match observe_runtime(platform, &target)? {
@@ -1084,23 +1421,41 @@ fn up(platform: Platform, home: &Path) -> Result<ExitCode, String> {
             true
         }
         RuntimeTruth::Managed { active: true } => false,
-        other => return Err(runtime_error("up", other)),
+        other => return Err(runtime_error("up", other).into()),
     };
     let journal = resolved_journal()?;
     wait_started(&journal, READY_TIMEOUT, POLL_INTERVAL)?;
     if started {
-        println!("service started");
+        println!(
+            "{}",
+            render_for(
+                crate::host_locale(),
+                "journal.cli.host.service.service.started",
+                &[]
+            )
+        );
     }
     let _ = status(platform, home)?;
     // The rest of setup, pairing included, happens in the browser, and an owner who brought the
     // journal up from a terminal was never told where that is.
     println!();
     if cfg!(any(target_os = "linux", target_os = "macos")) {
-        println!("open your journal: solstone journal open");
+        println!(
+            "{}",
+            render_for(
+                crate::host_locale(),
+                "journal.cli.host.service.open.your.journal.solstone.journal.open",
+                &[]
+            )
+        );
     } else {
         println!(
-            "open your journal: {}",
-            crate::settings::journal_url(&journal)
+            "{}",
+            display_for(
+                crate::host_locale(),
+                "journal.cli.host.service.open.your.journal",
+                [("url", &(crate::settings::journal_url(&journal)))]
+            )
         );
     }
     Ok(ExitCode::SUCCESS)
@@ -1109,40 +1464,47 @@ fn up(platform: Platform, home: &Path) -> Result<ExitCode, String> {
 fn resolved_journal() -> Result<PathBuf, String> {
     resolve_process_journal_path()
         .map(|line| line.path)
-        .map_err(|_| "could not resolve journal".to_owned())
+        .map_err(|_| {
+            render_for(
+                crate::host_locale(),
+                "journal.cli.host.service.could.not.resolve.journal",
+                &[],
+            )
+        })
 }
 
-fn ready_timeout_message(journal: &Path) -> String {
+fn ready_timeout_message(journal: &Path) -> ServiceError {
     match sync_rescan_diagnosis(journal) {
         Some(message) => message,
-        None => READY_TIMEOUT_MESSAGE.to_owned(),
+        None => ServiceError::Detail(render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.ready.timeout",
+            &[],
+        )),
     }
 }
 
-fn is_final_sync_diagnosis(message: &str) -> bool {
-    message.starts_with("Installation: needs attention\n")
-}
-
-fn is_installation_recovery_diagnosis(message: &str) -> bool {
-    message.starts_with("this installation couldn't be verified.\n")
-}
-
-fn sync_rescan_diagnosis(journal: &Path) -> Option<String> {
+fn sync_rescan_diagnosis(journal: &Path) -> Option<ServiceError> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0.0, |duration| duration.as_secs_f64());
     let process_source = SystemProcessInstanceSource;
-    match describe_sync_rescan(
+    service_sync_error(describe_sync_rescan_in(
         journal,
         SERVICE_SYNC_DIAGNOSTIC_FILENAME,
         now,
         &process_source,
-    ) {
+        crate::host_locale(),
+    ))
+}
+
+fn service_sync_error(diagnosis: SyncRescanDiagnosis) -> Option<ServiceError> {
+    match diagnosis {
         SyncRescanDiagnosis::Clean(_) => None,
-        SyncRescanDiagnosis::Waiting(message)
-        | SyncRescanDiagnosis::HeartbeatNeedsAttention(message)
+        SyncRescanDiagnosis::Waiting(message) => Some(ServiceError::Detail(message)),
+        SyncRescanDiagnosis::HeartbeatNeedsAttention(message)
         | SyncRescanDiagnosis::AdmissionWaitNeedsAttention(message)
-        | SyncRescanDiagnosis::Unsafe(message) => Some(message),
+        | SyncRescanDiagnosis::Unsafe(message) => Some(ServiceError::Complete(message)),
     }
 }
 
@@ -1150,7 +1512,7 @@ fn print_no_supervisor_sync_diagnosis() {
     if let Ok(journal) = resolved_journal()
         && let Some(message) = sync_rescan_diagnosis(&journal)
     {
-        println!("{message}");
+        println!("{}", String::from(message));
     }
 }
 
@@ -1163,7 +1525,13 @@ pub(crate) fn service_lock(
         Duration::from_secs(10),
         Duration::from_millis(50),
     )
-    .map_err(|error| format!("service lock: {error}"))
+    .map_err(|error| {
+        display_for(
+            crate::host_locale(),
+            "journal.cli.host.service.service.lock",
+            [("error", &(error))],
+        )
+    })
 }
 
 pub(crate) fn classify_unit(platform: Platform, path: &Path) -> Result<UnitTruth, String> {
@@ -1177,24 +1545,48 @@ pub(crate) fn classify_unit(platform: Platform, path: &Path) -> Result<UnitTruth
         {
             return Ok(UnitTruth::Absent);
         }
-        Err(error) => return Ok(UnitTruth::Unknown(format!("metadata: {error}"))),
+        Err(error) => {
+            return Ok(UnitTruth::Unknown(display_for(
+                crate::host_locale(),
+                "journal.cli.host.service.metadata",
+                [("error", &(error))],
+            )));
+        }
     };
     if !metadata.file_type().is_file() {
         return Ok(UnitTruth::Foreign);
     }
     if metadata.len() > UNIT_LIMIT {
-        return Ok(UnitTruth::Unknown("unit exceeds 1 MiB".to_owned()));
+        return Ok(UnitTruth::Unknown(render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.unit.exceeds.mib",
+            &[],
+        )));
     }
     let mut bytes = Vec::with_capacity(metadata.len() as usize);
     match File::open(path).and_then(|file| file.take(UNIT_LIMIT + 1).read_to_end(&mut bytes)) {
         Ok(_) if bytes.len() as u64 <= UNIT_LIMIT => {}
-        Ok(_) => return Ok(UnitTruth::Unknown("unit exceeds 1 MiB".to_owned())),
-        Err(error) => return Ok(UnitTruth::Unknown(format!("read: {error}"))),
+        Ok(_) => {
+            return Ok(UnitTruth::Unknown(render_for(
+                crate::host_locale(),
+                "journal.cli.host.service.unit.exceeds.mib",
+                &[],
+            )));
+        }
+        Err(error) => {
+            return Ok(UnitTruth::Unknown(display_for(
+                crate::host_locale(),
+                "journal.cli.host.service.read",
+                [("error", &(error))],
+            )));
+        }
     }
     let Some(launchers) = expected_launchers(platform, path) else {
-        return Ok(UnitTruth::Unknown(
-            "unit path has no trusted home ancestor".to_owned(),
-        ));
+        return Ok(UnitTruth::Unknown(render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.unit.path.has.no.trusted.home.ancestor",
+            &[],
+        )));
     };
     let managed = match platform {
         Platform::Linux => launchers
@@ -1541,18 +1933,38 @@ fn cleanup_stale_launchd(home: &Path) -> Result<(), String> {
     let metadata = match fs::symlink_metadata(&directory) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => return Err(format!("inspect launchd directory: {error}")),
+        Err(error) => {
+            return Err(display_for(
+                crate::host_locale(),
+                "journal.cli.host.service.inspect.launchd.directory",
+                [("error", &(error))],
+            ));
+        }
     };
     if !metadata.file_type().is_dir() {
-        return Err("launchd directory is not a real directory".to_owned());
+        return Err(render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.launchd.directory.is.not.a.real.directory",
+            &[],
+        ));
     }
     let canonical = directory.join(format!("{LABEL}.plist"));
     let mut candidates = fs::read_dir(&directory)
-        .map_err(|error| format!("scan launchd directory: {error}"))?
+        .map_err(|error| {
+            display_for(
+                crate::host_locale(),
+                "journal.cli.host.service.scan.launchd.directory",
+                [("error", &(error))],
+            )
+        })?
         .map(|entry| {
-            entry
-                .map(|entry| entry.path())
-                .map_err(|error| format!("scan launchd entry: {error}"))
+            entry.map(|entry| entry.path()).map_err(|error| {
+                display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.service.scan.launchd.entry",
+                    [("error", &(error))],
+                )
+            })
         })
         .collect::<Result<Vec<_>, _>>()?;
     candidates.sort();
@@ -1560,33 +1972,67 @@ fn cleanup_stale_launchd(home: &Path) -> Result<(), String> {
         if candidate != canonical && !stale_launchd_name(&candidate) {
             continue;
         }
-        let snapshot = read_unit_snapshot(&candidate)
-            .map_err(|error| format!("inspect stale launchd unit: {error}"))?;
-        let value = plist::Value::from_reader_xml(snapshot.bytes.as_slice())
-            .map_err(|error| format!("parse stale launchd unit: {error}"))?;
-        let dictionary = value
-            .as_dictionary()
-            .ok_or_else(|| "stale launchd unit is not a dictionary".to_owned())?;
+        let snapshot = read_unit_snapshot(&candidate).map_err(|error| {
+            display_for(
+                crate::host_locale(),
+                "journal.cli.host.service.inspect.stale.launchd.unit",
+                [("error", &(error))],
+            )
+        })?;
+        let value = plist::Value::from_reader_xml(snapshot.bytes.as_slice()).map_err(|error| {
+            display_for(
+                crate::host_locale(),
+                "journal.cli.host.service.parse.stale.launchd.unit",
+                [("error", &(error))],
+            )
+        })?;
+        let dictionary = value.as_dictionary().ok_or_else(|| {
+            render_for(
+                crate::host_locale(),
+                "journal.cli.host.service.stale.launchd.unit.is.not.a.dictionary",
+                &[],
+            )
+        })?;
         let label = dictionary
             .get("Label")
             .and_then(plist::Value::as_string)
-            .ok_or_else(|| "stale launchd unit has no label".to_owned())?;
+            .ok_or_else(|| {
+                render_for(
+                    crate::host_locale(),
+                    "journal.cli.host.service.stale.launchd.unit.has.no.label",
+                    &[],
+                )
+            })?;
         if label != LABEL && !label.starts_with(&format!("{LABEL}.")) {
-            return Err("stale launchd unit has a foreign label".to_owned());
+            return Err(render_for(
+                crate::host_locale(),
+                "journal.cli.host.service.stale.launchd.unit.has.a.foreign.label",
+                &[],
+            ));
         }
         let arguments = dictionary
             .get("ProgramArguments")
             .and_then(plist::Value::as_array);
         let program = dictionary.get("Program").and_then(plist::Value::as_string);
         if arguments.is_some() && program.is_some() {
-            return Err("stale launchd unit has conflicting program fields".to_owned());
+            return Err(render_for(
+                crate::host_locale(),
+                "journal.cli.host.service.stale.launchd.unit.has.conflicting.program.fields",
+                &[],
+            ));
         }
         let launcher = arguments
             .and_then(|arguments| arguments.first())
             .and_then(plist::Value::as_string)
             .or(program)
             .map(PathBuf::from)
-            .ok_or_else(|| "stale launchd unit has no launcher".to_owned())?;
+            .ok_or_else(|| {
+                render_for(
+                    crate::host_locale(),
+                    "journal.cli.host.service.stale.launchd.unit.has.no.launcher",
+                    &[],
+                )
+            })?;
         let current_launchers = [
             home.join(".local/bin/journal"),
             home.join(".local/bin/solstone"),
@@ -1601,7 +2047,11 @@ fn cleanup_stale_launchd(home: &Path) -> Result<(), String> {
             Some("journal" | "solstone" | "sol")
         ) || !stale_launchd_managed(dictionary, label, &launcher)
         {
-            return Err("stale launchd unit is foreign or unrecognized".to_owned());
+            return Err(render_for(
+                crate::host_locale(),
+                "journal.cli.host.service.stale.launchd.unit.is.foreign.or.unrecognized",
+                &[],
+            ));
         }
         let launchers = [launcher.clone(), launcher.clone()];
         match observe_launchd_registration(label, &candidate, &launchers, program_only)? {
@@ -1613,23 +2063,41 @@ fn cleanup_stale_launchd(home: &Path) -> Result<(), String> {
                         launchctl(&["bootout", &format!("gui/{uid}"), path_text(&candidate)?]),
                         STOP_TIMEOUT,
                     )?,
-                    "unload stale launchd service",
+                    "journal.cli.host.service.manager.unload.stale.launchd.service",
                 )?;
                 wait_launchd_absent(label, &candidate, &launchers, program_only)?;
             }
-            other => return Err(runtime_error("clean stale launchd service", other)),
+            other => return Err(runtime_error("clean-stale-launchd-service", other)),
         }
-        let actual = read_unit_snapshot(&candidate)
-            .map_err(|error| format!("recheck stale launchd unit: {error}"))?;
+        let actual = read_unit_snapshot(&candidate).map_err(|error| {
+            display_for(
+                crate::host_locale(),
+                "journal.cli.host.service.recheck.stale.launchd.unit",
+                [("error", &(error))],
+            )
+        })?;
         if !same_snapshot(&snapshot, &actual) {
-            return Err(format!(
-                "stale launchd plist changed during cleanup; preserved {}",
-                path_display(&candidate)
+            return Err(display_for(
+                crate::host_locale(),
+                "journal.cli.host.service.stale.launchd.plist.changed.during.cleanup.preserved",
+                [("path", &(path_display(&candidate)))],
             ));
         }
-        fs::remove_file(&candidate)
-            .map_err(|error| format!("remove stale launchd unit: {error}"))?;
-        println!("removed stale launchd plist {}", path_display(&candidate));
+        fs::remove_file(&candidate).map_err(|error| {
+            display_for(
+                crate::host_locale(),
+                "journal.cli.host.service.remove.stale.launchd.unit",
+                [("error", &(error))],
+            )
+        })?;
+        println!(
+            "{}",
+            display_for(
+                crate::host_locale(),
+                "journal.cli.host.service.removed.stale.launchd.plist",
+                [("path", &(path_display(&candidate)))]
+            )
+        );
     }
     Ok(())
 }
@@ -1682,19 +2150,43 @@ fn stale_launchd_name(path: &Path) -> bool {
 }
 
 fn read_unit_snapshot(path: &Path) -> Result<UnitSnapshot, String> {
-    let metadata = fs::symlink_metadata(path).map_err(|error| format!("metadata: {error}"))?;
+    let metadata = fs::symlink_metadata(path).map_err(|error| {
+        display_for(
+            crate::host_locale(),
+            "journal.cli.host.service.metadata",
+            [("error", &(error))],
+        )
+    })?;
     if !metadata.file_type().is_file() {
-        return Err("entry is not a regular file".to_owned());
+        return Err(render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.entry.is.not.a.regular.file",
+            &[],
+        ));
     }
     if metadata.len() > UNIT_LIMIT {
-        return Err("unit exceeds 1 MiB".to_owned());
+        return Err(render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.unit.exceeds.mib",
+            &[],
+        ));
     }
     let mut bytes = Vec::with_capacity(metadata.len() as usize);
     File::open(path)
         .and_then(|file| file.take(UNIT_LIMIT + 1).read_to_end(&mut bytes))
-        .map_err(|error| format!("read: {error}"))?;
+        .map_err(|error| {
+            display_for(
+                crate::host_locale(),
+                "journal.cli.host.service.read",
+                [("error", &(error))],
+            )
+        })?;
     if bytes.len() as u64 > UNIT_LIMIT {
-        return Err("unit exceeds 1 MiB".to_owned());
+        return Err(render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.unit.exceeds.mib",
+            &[],
+        ));
     }
     Ok(UnitSnapshot {
         device: metadata.dev(),
@@ -1812,8 +2304,13 @@ pub(crate) fn observe_runtime(
     platform: Platform,
     canonical: &Path,
 ) -> Result<RuntimeTruth, String> {
-    let launchers = expected_launchers(platform, canonical)
-        .ok_or_else(|| "service unit has no trusted home ancestor".to_owned())?;
+    let launchers = expected_launchers(platform, canonical).ok_or_else(|| {
+        render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.service.unit.has.no.trusted.home.ancestor",
+            &[],
+        )
+    })?;
     match platform {
         Platform::Linux => {
             let result = run_fixed(
@@ -1840,18 +2337,27 @@ fn classify_systemd_runtime(
     if result.code != 0 || !result.stderr.is_empty() {
         return Ok(RuntimeTruth::Unknown(result_message(result)));
     }
-    let text = std::str::from_utf8(&result.stdout)
-        .map_err(|_| "systemd observation was not UTF-8".to_owned())?;
+    let text = std::str::from_utf8(&result.stdout).map_err(|_| {
+        render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.systemd.observation.was.not.utf",
+            &[],
+        )
+    })?;
     let mut values = BTreeMap::new();
     for line in text.lines() {
         let Some((key, value)) = line.split_once('=') else {
-            return Ok(RuntimeTruth::Unknown(
-                "malformed systemd property".to_owned(),
-            ));
+            return Ok(RuntimeTruth::Unknown(render_for(
+                crate::host_locale(),
+                "journal.cli.host.service.malformed.systemd.property",
+                &[],
+            )));
         };
         if values.insert(key, value).is_some() {
-            return Ok(RuntimeTruth::Unknown(format!(
-                "duplicate systemd property: {key}"
+            return Ok(RuntimeTruth::Unknown(display_for(
+                crate::host_locale(),
+                "journal.cli.host.service.duplicate.systemd.property",
+                [("key", &(key))],
             )));
         }
     }
@@ -1866,18 +2372,22 @@ fn classify_systemd_runtime(
         "UnitFileState",
     ]);
     let Some(id) = values.get("Id") else {
-        return Ok(RuntimeTruth::Unknown(
-            "incomplete systemd property set".to_owned(),
-        ));
+        return Ok(RuntimeTruth::Unknown(render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.incomplete.systemd.property.set",
+            &[],
+        )));
     };
     let Some(load_state) = values.get("LoadState") else {
-        return Ok(RuntimeTruth::Unknown(
-            "incomplete systemd property set".to_owned(),
-        ));
+        return Ok(RuntimeTruth::Unknown(render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.incomplete.systemd.property.set",
+            &[],
+        )));
     };
     if *id != UNIT {
         return Ok(RuntimeTruth::Foreign(
-            "a different unit answers to this name",
+            "journal.cli.host.service.registration.a.different.unit.answers.to.this.name",
         ));
     }
     if *load_state == "not-found" {
@@ -1891,9 +2401,11 @@ fn classify_systemd_runtime(
         {
             Ok(RuntimeTruth::Absent)
         } else {
-            Ok(RuntimeTruth::Unknown(
-                "conflicting absent systemd state".to_owned(),
-            ))
+            Ok(RuntimeTruth::Unknown(render_for(
+                crate::host_locale(),
+                "journal.cli.host.service.conflicting.absent.systemd.state",
+                &[],
+            )))
         };
     }
     let loaded_keys = BTreeSet::from([
@@ -1908,19 +2420,21 @@ fn classify_systemd_runtime(
         "UnitFileState",
     ]);
     if values.keys().copied().collect::<BTreeSet<_>>() != loaded_keys {
-        return Ok(RuntimeTruth::Unknown(
-            "incomplete systemd property set".to_owned(),
-        ));
+        return Ok(RuntimeTruth::Unknown(render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.incomplete.systemd.property.set",
+            &[],
+        )));
     }
     // Report which check rejected the unit, in the order an operator would fix them.
     if !systemd_drop_ins_are_trusted(values["DropInPaths"]) {
         return Ok(RuntimeTruth::Foreign(
-            "the unit carries a drop-in journal did not write",
+            "journal.cli.host.service.registration.the.unit.carries.a.drop.in.journal.did.not",
         ));
     }
     if values["FragmentPath"] != path_text(canonical)? {
         return Ok(RuntimeTruth::Foreign(
-            "the unit file is not the one journal manages",
+            "journal.cli.host.service.registration.the.unit.file.is.not.the.one.journal.manages",
         ));
     }
     if !launchers
@@ -1928,14 +2442,16 @@ fn classify_systemd_runtime(
         .any(|launcher| systemd_runtime_exec_matches(values["ExecStart"], launcher))
     {
         return Ok(RuntimeTruth::Foreign(
-            "the unit's ExecStart is not a journal launcher",
+            "journal.cli.host.service.registration.the.unit.s.execstart.is.not.a.journal.launcher",
         ));
     }
     if values["LoadState"] != "loaded"
         || !values["SourcePath"].is_empty()
         || !matches!(values["UnitFileState"], "enabled" | "disabled" | "static")
     {
-        return Ok(RuntimeTruth::Foreign("the unit is in an unexpected state"));
+        return Ok(RuntimeTruth::Foreign(
+            "journal.cli.host.service.registration.the.unit.is.in.an.unexpected.state",
+        ));
     }
     let active = match (values["ActiveState"], values["SubState"]) {
         ("active", "running") => true,
@@ -1945,9 +2461,11 @@ fn classify_systemd_runtime(
         | ("deactivating", "stop")
         | ("deactivating", "stop-sigterm") => false,
         _ => {
-            return Ok(RuntimeTruth::Unknown(
-                "unrecognized systemd active/substate pair".to_owned(),
-            ));
+            return Ok(RuntimeTruth::Unknown(render_for(
+                crate::host_locale(),
+                "journal.cli.host.service.unrecognized.systemd.active.substate.pair",
+                &[],
+            )));
         }
     };
     Ok(RuntimeTruth::Managed { active })
@@ -2027,20 +2545,27 @@ fn classify_launchd_runtime(
     if result.code != 0 || !result.stderr.is_empty() {
         return Ok(RuntimeTruth::Unknown(result_message(result)));
     }
-    let text = std::str::from_utf8(&result.stdout)
-        .map_err(|_| "launchd observation was not UTF-8".to_owned())?;
+    let text = std::str::from_utf8(&result.stdout).map_err(|_| {
+        render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.launchd.observation.was.not.utf",
+            &[],
+        )
+    })?;
     if !text.starts_with(&format!("gui/{uid}/{label} = {{\n"))
         || field(text, "path") != Some(path_text(canonical)?)
         || field(text, "type") != Some("LaunchAgent")
     {
         return Ok(RuntimeTruth::Foreign(
-            "the launch agent is not the one journal manages",
+            "journal.cli.host.service.registration.the.launch.agent.is.not.the.one.journal.manages",
         ));
     }
     let Some(arguments) = launchd_arguments(text) else {
-        return Ok(RuntimeTruth::Unknown(
-            "launchd omitted or malformed arguments".to_owned(),
-        ));
+        return Ok(RuntimeTruth::Unknown(render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.launchd.omitted.or.malformed.arguments",
+            &[],
+        )));
     };
     if !launchers.iter().any(|launcher| {
         field(text, "program") == launcher.to_str()
@@ -2048,15 +2573,17 @@ fn classify_launchd_runtime(
     }) || !(managed_command_tail(&arguments[1..]) || (program_only && arguments.len() == 1))
     {
         return Ok(RuntimeTruth::Foreign(
-            "the launch agent's program is not a journal launcher",
+            "journal.cli.host.service.registration.the.launch.agent.s.program.is.not.a.journal",
         ));
     }
     match field(text, "state") {
         Some("running") => Ok(RuntimeTruth::Managed { active: true }),
         Some(_) => Ok(RuntimeTruth::Managed { active: false }),
-        None => Ok(RuntimeTruth::Unknown(
-            "launchd omitted the runtime state".to_owned(),
-        )),
+        None => Ok(RuntimeTruth::Unknown(render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.launchd.omitted.the.runtime.state",
+            &[],
+        ))),
     }
 }
 
@@ -2115,12 +2642,13 @@ fn wait_launchd_absent(
                 thread::sleep(POLL_INTERVAL);
             }
             RuntimeTruth::Managed { .. } => {
-                return Err(
-                    "launchd accepted the unload request, but the service is still present"
-                        .to_owned(),
-                );
+                return Err(render_for(
+                    crate::host_locale(),
+                    "journal.cli.host.service.launchd.accepted.the.unload.request.but.the.service.is",
+                    &[],
+                ));
             }
-            other => return Err(runtime_error("verify unload", other)),
+            other => return Err(runtime_error("verify-unload", other)),
         }
     }
 }
@@ -2136,12 +2664,13 @@ fn wait_runtime_absent(platform: Platform, target: &Path) -> Result<(), String> 
                 thread::sleep(POLL_INTERVAL);
             }
             RuntimeTruth::Managed { .. } => {
-                return Err(
-                    "launchd accepted the unload request, but the service is still present"
-                        .to_owned(),
-                );
+                return Err(render_for(
+                    crate::host_locale(),
+                    "journal.cli.host.service.launchd.accepted.the.unload.request.but.the.service.is",
+                    &[],
+                ));
             }
-            other => return Err(runtime_error("verify unload", other)),
+            other => return Err(runtime_error("verify-unload", other)),
         }
     }
 }
@@ -2158,9 +2687,13 @@ fn wait_runtime_quiescent(platform: Platform, target: &Path) -> Result<(), Strin
                 thread::sleep(POLL_INTERVAL);
             }
             RuntimeTruth::Managed { .. } => {
-                return Err("the previous service did not stop before replacement".to_owned());
+                return Err(render_for(
+                    crate::host_locale(),
+                    "journal.cli.host.service.the.previous.service.did.not.stop.before.replacement",
+                    &[],
+                ));
             }
-            other => return Err(runtime_error("verify service stop", other)),
+            other => return Err(runtime_error("verify-service-stop", other)),
         }
     }
 }
@@ -2194,14 +2727,22 @@ fn revalidate_initial(platform: Platform, path: &Path, initial: &UnitTruth) -> R
         {
             Ok(())
         }
-        _ => Err("service unit changed before publication; nothing was written".to_owned()),
+        _ => Err(render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.service.unit.changed.before.publication.nothing.was.written",
+            &[],
+        )),
     }
 }
 
 fn verify_snapshot(platform: Platform, path: &Path, expected: &UnitSnapshot) -> Result<(), String> {
     match classify_unit(platform, path)? {
         UnitTruth::Managed(actual) if same_snapshot(expected, &actual) => Ok(()),
-        _ => Err("service unit changed during operation; preserved replacement".to_owned()),
+        _ => Err(render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.service.unit.changed.during.operation.preserved.replacement",
+            &[],
+        )),
     }
 }
 
@@ -2210,28 +2751,48 @@ fn same_snapshot(left: &UnitSnapshot, right: &UnitSnapshot) -> bool {
 }
 
 fn ensure_real_dir_chain(home: &Path, target: &Path) -> Result<(), String> {
-    let relative = target
-        .strip_prefix(home)
-        .map_err(|_| "service directory escaped home".to_owned())?;
+    let relative = target.strip_prefix(home).map_err(|_| {
+        render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.service.directory.escaped.home",
+            &[],
+        )
+    })?;
     let mut current = home.to_path_buf();
     for component in relative.components() {
         let std::path::Component::Normal(component) = component else {
-            return Err("service directory contains unsafe component".to_owned());
+            return Err(render_for(
+                crate::host_locale(),
+                "journal.cli.host.service.service.directory.contains.unsafe.component",
+                &[],
+            ));
         };
         current.push(component);
         match fs::symlink_metadata(&current) {
             Ok(metadata) if metadata.file_type().is_dir() => {}
             Ok(_) => {
-                return Err(format!(
-                    "unsafe service directory: {}",
-                    path_display(&current)
+                return Err(display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.service.unsafe.service.directory",
+                    [("path", &(path_display(&current)))],
                 ));
             }
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                fs::create_dir(&current)
-                    .map_err(|source| format!("create service directory: {source}"))?;
+                fs::create_dir(&current).map_err(|source| {
+                    display_for(
+                        crate::host_locale(),
+                        "journal.cli.host.service.create.service.directory",
+                        [("source", &(source))],
+                    )
+                })?;
             }
-            Err(error) => return Err(format!("inspect service directory: {error}")),
+            Err(error) => {
+                return Err(display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.service.inspect.service.directory",
+                    [("error", &(error))],
+                ));
+            }
         }
     }
     Ok(())
@@ -2240,16 +2801,43 @@ fn ensure_real_dir_chain(home: &Path, target: &Path) -> Result<(), String> {
 fn ensure_health_dir(journal: &Path) -> Result<(), String> {
     match fs::symlink_metadata(journal) {
         Ok(metadata) if metadata.file_type().is_dir() => {}
-        Ok(_) => return Err("service journal root is not a real directory".to_owned()),
-        Err(error) => return Err(format!("inspect service journal root: {error}")),
+        Ok(_) => {
+            return Err(render_for(
+                crate::host_locale(),
+                "journal.cli.host.service.service.journal.root.is.not.a.real.directory",
+                &[],
+            ));
+        }
+        Err(error) => {
+            return Err(display_for(
+                crate::host_locale(),
+                "journal.cli.host.service.inspect.service.journal.root",
+                [("error", &(error))],
+            ));
+        }
     }
     let health = journal.join("health");
     match fs::symlink_metadata(&health) {
         Ok(metadata) if metadata.file_type().is_dir() => Ok(()),
-        Ok(_) => Err("service health path is not a real directory".to_owned()),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => fs::create_dir(&health)
-            .map_err(|source| format!("create service health directory: {source}")),
-        Err(error) => Err(format!("inspect service health directory: {error}")),
+        Ok(_) => Err(render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.service.health.path.is.not.a.real.directory",
+            &[],
+        )),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            fs::create_dir(&health).map_err(|source| {
+                display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.service.create.service.health.directory",
+                    [("source", &(source))],
+                )
+            })
+        }
+        Err(error) => Err(display_for(
+            crate::host_locale(),
+            "journal.cli.host.service.inspect.service.health.directory",
+            [("error", &(error))],
+        )),
     }
 }
 
@@ -2258,10 +2846,16 @@ fn require_published(
 ) -> Result<(), String> {
     match result {
         Ok(DetailedAtomicOutcome::Published) => Ok(()),
-        Ok(other) => Err(format!(
-            "service unit published with uncertain durability: {other:?}"
+        Ok(other) => Err(display_for(
+            crate::host_locale(),
+            "journal.cli.host.service.service.unit.published.with.uncertain.durability",
+            [("other", &(format!("{:?}", other)))],
         )),
-        Err(error) => Err(format!("service unit publication failed: {error}")),
+        Err(error) => Err(display_for(
+            crate::host_locale(),
+            "journal.cli.host.service.service.unit.publication.failed",
+            [("error", &(error))],
+        )),
     }
 }
 
@@ -2319,17 +2913,27 @@ fn run_fixed(mut command: Command, timeout: Duration) -> Result<CommandResult, S
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let mut child = command
-        .spawn()
-        .map_err(|error| format!("service command spawn failed: {error}"))?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| "service stdout unavailable".to_owned())?;
-    let stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| "service stderr unavailable".to_owned())?;
+    let mut child = command.spawn().map_err(|error| {
+        display_for(
+            crate::host_locale(),
+            "journal.cli.host.service.service.command.spawn.failed",
+            [("error", &(error))],
+        )
+    })?;
+    let stdout = child.stdout.take().ok_or_else(|| {
+        render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.service.stdout.unavailable",
+            &[],
+        )
+    })?;
+    let stderr = child.stderr.take().ok_or_else(|| {
+        render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.service.stderr.unavailable",
+            &[],
+        )
+    })?;
     let out_thread = thread::spawn(move || read_bounded(stdout));
     let err_thread = thread::spawn(move || read_bounded(stderr));
     let deadline = Instant::now() + timeout;
@@ -2342,23 +2946,39 @@ fn run_fixed(mut command: Command, timeout: Duration) -> Result<CommandResult, S
                 let _ = child.wait();
                 let _ = out_thread.join();
                 let _ = err_thread.join();
-                return Err("service command timed out".to_owned());
+                return Err(render_for(
+                    crate::host_locale(),
+                    "journal.cli.host.service.service.command.timed.out",
+                    &[],
+                ));
             }
             Err(error) => {
                 let _ = child.kill();
                 let _ = child.wait();
                 let _ = out_thread.join();
                 let _ = err_thread.join();
-                return Err(format!("service command wait failed: {error}"));
+                return Err(display_for(
+                    crate::host_locale(),
+                    "journal.cli.host.service.service.command.wait.failed",
+                    [("error", &(error))],
+                ));
             }
         }
     };
-    let stdout = out_thread
-        .join()
-        .map_err(|_| "service stdout reader panicked".to_owned())??;
-    let stderr = err_thread
-        .join()
-        .map_err(|_| "service stderr reader panicked".to_owned())??;
+    let stdout = out_thread.join().map_err(|_| {
+        render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.service.stdout.reader.panicked",
+            &[],
+        )
+    })??;
+    let stderr = err_thread.join().map_err(|_| {
+        render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.service.stderr.reader.panicked",
+            &[],
+        )
+    })??;
     Ok(CommandResult {
         code: status.code().unwrap_or(128 + status.signal().unwrap_or(0)),
         stdout,
@@ -2371,19 +2991,33 @@ fn read_bounded(reader: impl Read) -> Result<Vec<u8>, String> {
     reader
         .take(OUTPUT_LIMIT + 1)
         .read_to_end(&mut bytes)
-        .map_err(|error| format!("service command output failed: {error}"))?;
+        .map_err(|error| {
+            display_for(
+                crate::host_locale(),
+                "journal.cli.host.service.service.command.output.failed",
+                [("error", &(error))],
+            )
+        })?;
     if bytes.len() as u64 > OUTPUT_LIMIT {
-        Err("service command output exceeded 256 KiB".to_owned())
+        Err(render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.service.command.output.exceeded.kib",
+            &[],
+        ))
     } else {
         Ok(bytes)
     }
 }
 
-fn require_success(result: CommandResult, operation: &str) -> Result<(), String> {
+fn require_success(result: CommandResult, id: &str) -> Result<(), String> {
     if result.code == 0 {
         Ok(())
     } else {
-        Err(format!("{operation} failed: {}", result_message(&result)))
+        Err(display_for(
+            crate::host_locale(),
+            id,
+            [("result", &result_message(&result))],
+        ))
     }
 }
 
@@ -2402,41 +3036,68 @@ fn field<'a>(text: &'a str, name: &str) -> Option<&'a str> {
 }
 
 fn truth_error(operation: &str, path: &Path, truth: &UnitTruth) -> String {
-    let detail = match truth {
-        UnitTruth::Foreign => "not recognized as a service file created by journal".to_owned(),
-        UnitTruth::Unknown(cause) => format!("could not verify the service file: {cause}"),
-        UnitTruth::Absent => "absent".to_owned(),
-        UnitTruth::Managed(_) => "managed".to_owned(),
-    };
-    format!(
-        "service {operation} refused {}: {detail}",
-        path_display(path)
-    )
+    match truth {
+        UnitTruth::Foreign => display_for(
+            crate::host_locale(),
+            "journal.cli.host.service.file.foreign",
+            [("operation", &(operation)), ("path", &(path_display(path)))],
+        ),
+        UnitTruth::Unknown(cause) => display_for(
+            crate::host_locale(),
+            "journal.cli.host.service.file.unknown",
+            [
+                ("operation", &(operation)),
+                ("path", &(path_display(path))),
+                ("cause", &(cause)),
+            ],
+        ),
+        UnitTruth::Absent => display_for(
+            crate::host_locale(),
+            "journal.cli.host.service.file.absent",
+            [("operation", &(operation)), ("path", &(path_display(path)))],
+        ),
+        UnitTruth::Managed(_) => display_for(
+            crate::host_locale(),
+            "journal.cli.host.service.file.managed",
+            [("operation", &(operation)), ("path", &(path_display(path)))],
+        ),
+    }
 }
 
 fn runtime_error(operation: &str, truth: RuntimeTruth) -> String {
     match truth {
-        RuntimeTruth::Foreign(reason) => format!(
-            "service {operation} refused: {reason}. journal will not overwrite it. \
-             If that is deliberate, finish the {operation} yourself -- on Linux: \
-             `systemctl --user daemon-reload && systemctl --user restart solstone.service` \
-             -- then confirm the running build with \
-             `readlink /proc/$(systemctl --user show solstone.service -p MainPID --value)/exe`"
-        ),
-        RuntimeTruth::Unknown(cause) => {
-            format!("service {operation} could not check the service registration: {cause}")
+        RuntimeTruth::Foreign(id) => {
+            display_for(crate::host_locale(), id, [("operation", &operation)])
         }
-        _ => format!("service {operation} runtime state was unexpected"),
+        RuntimeTruth::Unknown(cause) => display_for(
+            crate::host_locale(),
+            "journal.cli.host.service.registration.unknown",
+            [("operation", &(operation)), ("cause", &(cause))],
+        ),
+        _ => display_for(
+            crate::host_locale(),
+            "journal.cli.host.service.service.runtime.state.was.unexpected",
+            [("operation", &(operation))],
+        ),
     }
 }
 
 fn not_installed() -> String {
-    "service not installed. run 'solstone journal service install' first.".to_owned()
+    render_for(
+        crate::host_locale(),
+        "journal.cli.host.service.service.not.installed.run.solstone.journal.service.install.first",
+        &[],
+    )
 }
 
 fn path_text(path: &Path) -> Result<&str, String> {
-    path.to_str()
-        .ok_or_else(|| "service path is not UTF-8".to_owned())
+    path.to_str().ok_or_else(|| {
+        render_for(
+            crate::host_locale(),
+            "journal.cli.host.service.service.path.is.not.utf",
+            &[],
+        )
+    })
 }
 
 fn path_display(path: &Path) -> String {
@@ -2514,7 +3175,10 @@ mod tests {
     fn clean_sync_rescan_preserves_ready_timeout_message() {
         let journal = tempfile::tempdir_in("/var/tmp").unwrap();
 
-        assert_eq!(ready_timeout_message(journal.path()), READY_TIMEOUT_MESSAGE);
+        assert_eq!(
+            String::from(ready_timeout_message(journal.path())),
+            READY_TIMEOUT_MESSAGE
+        );
         assert!(!journal.path().join("health").exists());
     }
 
@@ -2529,22 +3193,21 @@ mod tests {
                 Duration::from_millis(200),
                 Duration::from_millis(20),
             ),
-            Err(READY_TIMEOUT_MESSAGE.to_owned())
+            Err(ServiceError::Detail(READY_TIMEOUT_MESSAGE.to_owned()))
         );
     }
 
     #[test]
-    fn final_sync_diagnoses_are_not_wrapped_or_sanitized_again() {
-        assert!(is_final_sync_diagnosis(
-            "Installation: needs attention\nyour journal contains an item that can't be checked safely."
-        ));
-        assert!(is_final_sync_diagnosis(
-            "Installation: needs attention\nstartup status couldn't be verified."
-        ));
-        assert!(!is_final_sync_diagnosis(
-            "Installation: waiting\na recent heartbeat from another run is present."
-        ));
-        assert!(!is_final_sync_diagnosis(READY_TIMEOUT_MESSAGE));
+    fn complete_sync_diagnoses_preserve_their_original_detail() {
+        let detail = "same words, different source".to_owned();
+        assert_eq!(
+            service_sync_error(SyncRescanDiagnosis::Waiting(detail.clone())),
+            Some(ServiceError::Detail(detail.clone()))
+        );
+        assert_eq!(
+            service_sync_error(SyncRescanDiagnosis::Unsafe(detail.clone())),
+            Some(ServiceError::Complete(detail))
+        );
     }
 
     #[cfg(feature = "full-tests")]
@@ -2908,7 +3571,7 @@ mod tests {
         .unwrap_err();
 
         assert_eq!(
-            error,
+            String::from(error),
             installation_recovery_copy("the saved installation record is unreadable")
         );
     }
@@ -3362,7 +4025,9 @@ mod tests {
         // operation by hand -- the bare message was unactionable.
         let refusal = stop_requires_manager(
             &UnitTruth::Absent,
-            RuntimeTruth::Foreign("the unit carries a drop-in journal did not write"),
+            RuntimeTruth::Foreign(
+                "journal.cli.host.service.registration.the.unit.carries.a.drop.in.journal.did.not",
+            ),
         )
         .unwrap_err();
         assert!(
@@ -3535,7 +4200,10 @@ mod tests {
                 installation_guard: None,
                 initial_start_at_sign_in: Some(choice),
             };
-            assert_eq!(run_inner(action), Err(WINDOWS_ONLY.to_owned()));
+            assert_eq!(
+                run_inner(action),
+                Err(ServiceError::Detail(WINDOWS_ONLY.to_owned()))
+            );
         }
     }
 
@@ -3543,11 +4211,11 @@ mod tests {
     fn stop_for_update_is_refused_on_non_windows() {
         assert_eq!(
             run_inner(ServiceAction::StopForUpdate),
-            Err(WINDOWS_ONLY.to_owned())
+            Err(ServiceError::Detail(WINDOWS_ONLY.to_owned()))
         );
         assert_eq!(
             run_inner(ServiceAction::RestoreUpdateIntent),
-            Err(WINDOWS_ONLY.to_owned())
+            Err(ServiceError::Detail(WINDOWS_ONLY.to_owned()))
         );
     }
 }

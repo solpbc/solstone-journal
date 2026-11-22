@@ -1,0 +1,16 @@
+{
+  "description": "Journal host service service journal root is not a real directory.",
+  "context": "Journal host service service journal root is not a real directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7ef5e4563b3b7bb290bad14a7a4b57e66a787ad5fcb4984401cfcab37a0773c3",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

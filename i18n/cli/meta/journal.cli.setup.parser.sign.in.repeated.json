@@ -1,0 +1,23 @@
+{
+  "description": "Journal setup argument validation: sign in repeated.",
+  "context": "Journal setup argument validation: sign in repeated.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ccb55be7c177269aad572b2fe7c76d90a4dae8b293938ad62ac0799c75353a5d",
+  "max_length": 171,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "sign_in_flag",
+      "value": "--initial-start-at-sign-in",
+      "kind": "flag"
+    }
+  ]
+}

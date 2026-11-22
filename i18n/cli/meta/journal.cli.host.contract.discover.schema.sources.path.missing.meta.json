@@ -1,0 +1,25 @@
+{
+  "description": "Native contract bundle command, discover schema sources. Preserve terminal syntax and supplied data.",
+  "context": "Native contract bundle command, discover schema sources. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "contract_meta",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "52ac230cc4798680b3d3591013a7269de04b35b82152439f92e745dc15ddfc94",
+  "max_length": 141,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

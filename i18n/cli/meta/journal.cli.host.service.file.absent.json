@@ -1,0 +1,40 @@
+{
+  "description": "Journal host service file absent.",
+  "context": "Journal host service file absent.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "operation",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "335fccdcb3a95a5bf117a24c0a6acb87bf80e97d2fdc3e0f186528151c484ab2",
+  "max_length": 1509,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "operation",
+    "type": "string",
+    "enum_values": [
+      "change-journal-folder",
+      "install",
+      "operate",
+      "restart",
+      "route-repair",
+      "status",
+      "stop",
+      "uninstall"
+    ],
+    "enum_default": "uninstall"
+  }
+}

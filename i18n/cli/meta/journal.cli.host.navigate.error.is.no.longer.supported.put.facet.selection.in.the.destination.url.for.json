@@ -1,0 +1,38 @@
+{
+  "description": "Terminal diagnostic for navigate error is no longer supported put facet selection in the destination url for.",
+  "context": "Terminal diagnostic for navigate error is no longer supported put facet selection in the destination url for.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "option",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a94063e335b7d8e2ba2860ac755f2d0cbb595d19f985b456e7983afc07e75418",
+  "max_length": 387,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "value": "solstone journal navigate",
+      "kind": "command"
+    },
+    {
+      "name": "term",
+      "value": "URL",
+      "kind": "mark-word"
+    },
+    {
+      "name": "path",
+      "value": "/app/entities?facet=work.",
+      "kind": "url"
+    }
+  ]
+}

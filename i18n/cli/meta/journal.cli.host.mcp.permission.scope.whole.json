@@ -1,0 +1,23 @@
+{
+  "description": "Journal host output for mcp permission scope whole.",
+  "context": "Journal host output for mcp permission scope whole.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "02baeff152b8c073f2c7b07a5b77cc3e36bf7d5248e9dd4197400c06bfb92fac",
+  "max_length": 128,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_whole_journal",
+      "kind": "accepted-input",
+      "value": "whole_journal"
+    }
+  ]
+}

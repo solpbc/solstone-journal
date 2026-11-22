@@ -1,0 +1,33 @@
+{
+  "description": "Journal setup argument validation: sign in encoding.",
+  "context": "Journal setup argument validation: sign in encoding.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "71d7ff9a0b326cfe351af5826d20d00974e87c1c02dedf8de5d8a4804312480a",
+  "max_length": 165,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "sign_in_flag",
+      "value": "--initial-start-at-sign-in",
+      "kind": "flag"
+    },
+    {
+      "name": "on_value",
+      "value": "on",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "off_value",
+      "value": "off",
+      "kind": "accepted-input"
+    }
+  ]
+}

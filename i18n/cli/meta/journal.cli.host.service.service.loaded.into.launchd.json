@@ -1,0 +1,23 @@
+{
+  "description": "Journal host service service loaded into launchd.",
+  "context": "Journal host service service loaded into launchd.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7d0fb3121edf7bb73e77d9850742640414f1ea63caca8435eb52295dfeb4718a",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "launchd",
+      "kind": "accepted-input",
+      "value": "launchd"
+    }
+  ]
+}

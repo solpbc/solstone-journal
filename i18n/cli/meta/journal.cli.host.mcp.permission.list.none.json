@@ -1,0 +1,36 @@
+{
+  "description": "Journal host output for mcp permission list none.",
+  "context": "Journal host output for mcp permission list none.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "connection",
+      "type": "string"
+    },
+    {
+      "name": "generation",
+      "type": "string"
+    },
+    {
+      "name": "evaluation",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "01fe4b0a2b68baf6822b7f4b358b9ae6e2c48b554db37be23a29e41c104743ba",
+  "max_length": 333,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "tab",
+      "kind": "whitespace",
+      "value": "\t"
+    }
+  ]
+}

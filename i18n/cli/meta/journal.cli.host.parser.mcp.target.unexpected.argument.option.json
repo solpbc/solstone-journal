@@ -1,0 +1,25 @@
+{
+  "description": "Terminal diagnostic for parser mcp target unexpected argument option.",
+  "context": "Terminal diagnostic for parser mcp target unexpected argument option.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    },
+    {
+      "name": "option",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5a69ece2a576d7b8080ba7c07666fab9dbadef56d1d85bfe58b64844798c0fb7",
+  "max_length": 159,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

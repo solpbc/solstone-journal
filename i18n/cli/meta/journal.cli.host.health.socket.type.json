@@ -1,0 +1,16 @@
+{
+  "description": "Journal host health socket type.",
+  "context": "Journal host health socket type.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "46ef50b1c12651c0192e426e04f60011c05659b7a13006556ae7321c7b9a8a51",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

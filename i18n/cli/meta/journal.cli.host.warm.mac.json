@@ -1,0 +1,28 @@
+{
+  "description": "Journal host warm mac.",
+  "context": "Journal host warm mac.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "11e33d6709cebc7c74c3e7beb94a246c09012546f899c0db7c990bae157947d8",
+  "max_length": 465,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "library",
+      "kind": "accepted-input",
+      "value": "libSystem"
+    },
+    {
+      "name": "dyld",
+      "kind": "accepted-input",
+      "value": "dyld"
+    }
+  ]
+}

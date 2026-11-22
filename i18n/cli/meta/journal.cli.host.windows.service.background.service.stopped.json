@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service background service stopped.",
+  "context": "Journal host output for windows service background service stopped.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0f3ab767ede1fdbfdc9a7bad140cc89f52099d20bf32e4ae19da4a5760bbfa8f",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

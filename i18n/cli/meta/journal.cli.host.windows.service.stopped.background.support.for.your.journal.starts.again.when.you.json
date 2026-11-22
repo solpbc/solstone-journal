@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service stopped background support for your journal starts again when you.",
+  "context": "Journal host output for windows service stopped background support for your journal starts again when you.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ce11aae9bae8b3d78333eb27c2a280abfb5319eee6c837cf13da0b2d33c3a436",
+  "max_length": 240,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Native navigate command, print navigation. Preserve terminal syntax and supplied data.",
+  "context": "Native navigate command, print navigation. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "817a308880e62726060ba928e3227950a3dd0c0f092600aab44e5b645f4ef3ad",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

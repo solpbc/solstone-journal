@@ -1,0 +1,23 @@
+{
+  "description": "Journal host output for mcp service service is not compiled into this build.",
+  "context": "Journal host output for mcp service service is not compiled into this build.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "724fa327ed77ee1b50384ed6395cc564671e2246fb9880c4d97feac12dfa435c",
+  "max_length": 219,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command_solstone_journal_mcp_service",
+      "kind": "command",
+      "value": "solstone journal mcp service"
+    }
+  ]
+}

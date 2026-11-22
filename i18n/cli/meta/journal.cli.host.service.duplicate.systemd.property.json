@@ -1,0 +1,28 @@
+{
+  "description": "Journal host service duplicate systemd property.",
+  "context": "Journal host service duplicate systemd property.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "key",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5652845c72e8aa7464d48dc6a2c7c936a354f6267ad48be20d5857fb0ef6a4f8",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "systemd",
+      "kind": "accepted-input",
+      "value": "systemd"
+    }
+  ]
+}

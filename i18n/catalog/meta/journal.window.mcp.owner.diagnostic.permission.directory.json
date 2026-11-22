@@ -1,0 +1,21 @@
+{
+  "description": "MCP owner diagnostic for permission directory.",
+  "context": "MCP owner diagnostic for permission directory.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1636e29e34b091f476eb1663a25a9e6062bf4fc30eafd94efa83cfbace49704d",
+  "max_length": 153,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

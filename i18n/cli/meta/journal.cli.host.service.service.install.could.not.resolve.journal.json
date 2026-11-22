@@ -1,0 +1,16 @@
+{
+  "description": "Journal host service service install could not resolve journal.",
+  "context": "Journal host service service install could not resolve journal.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5375d023f2d10892d270c77827a87dbfe66d496a8aea72ee6ef773be4fe9a4bd",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

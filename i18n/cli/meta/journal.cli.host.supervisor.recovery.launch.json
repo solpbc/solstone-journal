@@ -1,0 +1,16 @@
+{
+  "description": "Journal host supervisor recovery launch.",
+  "context": "Journal host supervisor recovery launch.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cb0dc01aa6349edcfbafeae0fea19469a57f4a8dd1f799ca687b3a5ef23d44ac",
+  "max_length": 138,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

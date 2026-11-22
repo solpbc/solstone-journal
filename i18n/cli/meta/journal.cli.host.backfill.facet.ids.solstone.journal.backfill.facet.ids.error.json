@@ -1,0 +1,28 @@
+{
+  "description": "Journal host output for backfill facet ids solstone journal backfill facet ids error.",
+  "context": "Journal host output for backfill facet ids solstone journal backfill facet ids error.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a2298be83ffcf11b2e74b30468326afab87a42076173c33b28fbe6127caec250",
+  "max_length": 201,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command_solstone_journal_backfill_facet_ids",
+      "kind": "command",
+      "value": "solstone journal backfill-facet-ids"
+    }
+  ]
+}

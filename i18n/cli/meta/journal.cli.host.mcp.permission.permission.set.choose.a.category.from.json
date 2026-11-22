@@ -1,0 +1,28 @@
+{
+  "description": "Journal host output for mcp permission permission set choose a category from.",
+  "context": "Journal host output for mcp permission permission set choose a category from.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "categories",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ae2f3826136f486e22cdff16efd7418b83a4a610c82244ce0ef782bbb45d9cd6",
+  "max_length": 264,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command_solstone_journal_mcp_permission_set",
+      "kind": "command",
+      "value": "solstone journal mcp permission set"
+    }
+  ]
+}

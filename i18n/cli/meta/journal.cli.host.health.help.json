@@ -1,0 +1,58 @@
+{
+  "description": "Terminal help and usage for health help.",
+  "context": "Terminal help and usage for health help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ef81a45af53f9e5af986199953cd793d0de905e2b365190dfed60cb9fac95257",
+  "max_length": 1149,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal health [-h] [-v] [-d]",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_5",
+      "value": "     ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option_6",
+      "value": "-v, --verbose",
+      "kind": "command"
+    },
+    {
+      "name": "option_7",
+      "value": "-d, --debug",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_4",
+      "value": "    ",
+      "kind": "whitespace"
+    }
+  ]
+}

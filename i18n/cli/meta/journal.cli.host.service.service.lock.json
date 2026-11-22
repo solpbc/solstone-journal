@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service service lock.",
+  "context": "Journal host service service lock.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b07284434483fb945fb076abbddd5039af7eb8560aca5f9d7c19b4e6774d23cc",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

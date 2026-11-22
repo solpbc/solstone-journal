@@ -1,0 +1,32 @@
+{
+  "description": "Terminal diagnostic for parser direct port value argument direct port invalid int value value.",
+  "context": "Terminal diagnostic for parser direct port value argument direct port invalid int value value.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    },
+    {
+      "name": "value",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6753aaa0649a21f84c7881353d83049495115528b00165b32c80d0f6735bde3b",
+  "max_length": 216,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "flag",
+      "value": "--direct-port",
+      "kind": "flag"
+    }
+  ]
+}

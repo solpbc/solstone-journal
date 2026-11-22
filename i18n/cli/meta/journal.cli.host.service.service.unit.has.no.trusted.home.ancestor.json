@@ -1,0 +1,16 @@
+{
+  "description": "Journal host service service unit has no trusted home ancestor.",
+  "context": "Journal host service service unit has no trusted home ancestor.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4d0afc274b55ffdcb09778268f5c88eadeac6f39d0b7c0c13d71a453b1df3606",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Journal host health timeout.",
+  "context": "Journal host health timeout.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "859627c642fa1156ce1bd62867ddfb36e368b1d5d18292fc35fccc6349775080",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

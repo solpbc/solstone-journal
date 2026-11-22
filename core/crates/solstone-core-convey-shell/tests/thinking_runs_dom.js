@@ -618,6 +618,7 @@ async function main() {
       hash: '',
       href: 'http://127.0.0.1:7658/app/thinking/',
       origin: 'http://127.0.0.1:7658',
+      hostname: '127.0.0.1',
       assigned: null,
       assign(url) {
         this.href = url;
@@ -702,6 +703,7 @@ async function main() {
   runWithJournalCatalog(fs.readFileSync(path.join(manifestDir, 'assets/static/date_format.js'), 'utf8'), context);
   runWithJournalCatalog(fs.readFileSync(path.join(manifestDir, 'assets/static/journal-web-host.js'), 'utf8'), context);
   runWithJournalCatalog(fs.readFileSync(path.join(manifestDir, 'assets/static/external-navigation.js'), 'utf8'), context);
+  runWithJournalCatalog(fs.readFileSync(path.join(manifestDir, 'assets/static/oauth-broker.js'), 'utf8'), context);
   // The shell's focus helpers, as its boot part carries them.
   runWithJournalCatalog(fs.readFileSync(path.join(manifestDir, 'assets/static/focus.js'), 'utf8'), context);
   // The view contract, as far as these cases need it: the registered mount,
@@ -2385,6 +2387,7 @@ async function main() {
   assert.strictEqual(openedWin.location.href, 'https://auth.openai.com/oauth/authorize?test=1', 'opened window navigates to authorize_url');
   assert.strictEqual(thinking.state.chatgpt.screen, 'pending', 'screen is pending');
   assert.strictEqual(nodes.get('chatgptPendingHeading').textContent, 'SENTINEL_PENDING_HEADING', 'pending heading is sentinel');
+  assert.strictEqual(nodes.get('chatgptPendingSub').hidden, false, 'the local browser explains automatic return');
   assert.strictEqual(sessionStorage.getItem(thinking.CHATGPT_ATTEMPT_STORAGE_KEY), JSON.stringify({ id: 'attempt_test', authorizeUrl: 'https://auth.openai.com/oauth/authorize?test=1' }), 'attempt is stored in sessionStorage');
 
   // 3. A poll left unresolved plus advance(2000) does not start a second poll
@@ -4562,8 +4565,8 @@ async function main() {
   // state, and its callback finishes the attempt. A phone app, which can't catch SIWC's
   // loopback return, falls through to the journal's own sign-in.
   {
-    runWithJournalCatalog(fs.readFileSync(path.join(manifestDir, 'assets/static/oauth-broker.js'), 'utf8'), context);
     assert(window.solstoneOAuthBroker, 'the broker loads');
+    thinking.applyCopy({ byo_setup: { chatgpt: { fallback_explanation: 'SENTINEL_FALLBACK_EXPLANATION' } } });
     const BROKER_URI = 'http://127.0.0.1:54321/auth/callback';
     const AUTH_URL = 'https://auth.openai.com/api/accounts/authorize?state=state-broker';
     const CALLBACK = `${BROKER_URI}?code=c1&scope=openid&state=state-broker`;
@@ -4644,6 +4647,7 @@ async function main() {
     assert.strictEqual(authorize.timeout_seconds, 600);
     assert(openedWindows.every((win) => win.closed && win.location.href === 'about:blank'), 'the page opens no sign-in of its own');
     assert.strictEqual(thinking.state.chatgpt.screen, 'pending', 'the owner sees the sign-in under way');
+    assert.strictEqual(nodes.get('chatgptPendingSub').hidden, false, 'the brokered flow explains automatic return');
     authorizeReply.resolve({ outcome: 'callback', callback_url: CALLBACK });
     for (let round = 0; round < 6; round += 1) await settle();
     const finish = calls.find((call) => call.url === '/app/thinking/api/chatgpt/sign-in/attempt_broker/finish');
@@ -4675,6 +4679,10 @@ async function main() {
     assert.strictEqual(openedWindows.length, 1);
     assert.strictEqual(openedWindows[0].location.href, AUTH_URL, 'the page opens the sign-in itself');
     assert.strictEqual(thinking.state.chatgpt.screen, 'pending');
+    assert.strictEqual(nodes.get('chatgptPendingSub').hidden, true, 'the phone cannot promise automatic return');
+    assert.strictEqual(nodes.get('chatgptFallbackHeading').hidden, true, 'pasting is the primary path on the phone');
+    assert.strictEqual(nodes.get('chatgptFallbackExplanation').textContent, 'SENTINEL_FALLBACK_EXPLANATION');
+    assert.strictEqual(nodes.get('chatgptRedirectUrl').hidden, false, 'the phone shows the address field');
 
     thinking.cancelChatGptSignIn();
     await settle();

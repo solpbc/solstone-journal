@@ -1,0 +1,28 @@
+{
+  "description": "Journal setup argument validation: path encoding.",
+  "context": "Journal setup argument validation: path encoding.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "881ab29effbe3d6922f16d93af688c32c2fd845db84b6a3b9f5d174c460d811d",
+  "max_length": 150,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "journal_flag",
+      "value": "--journal",
+      "kind": "flag"
+    },
+    {
+      "name": "encoding",
+      "value": "UTF-8",
+      "kind": "accepted-input"
+    }
+  ]
+}

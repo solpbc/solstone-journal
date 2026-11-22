@@ -1,0 +1,23 @@
+{
+  "description": "MCP owner diagnostic for oauth transaction not found.",
+  "context": "MCP owner diagnostic for oauth transaction not found.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6e3d2f8aa6effabcc08579bdc129dab5e31239b2c46bc51b51c493bb9578ddad",
+  "max_length": 174,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_oauth",
+      "kind": "accepted-input",
+      "value": "OAuth"
+    }
+  ]
+}

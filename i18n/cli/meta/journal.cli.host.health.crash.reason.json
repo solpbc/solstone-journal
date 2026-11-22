@@ -1,0 +1,45 @@
+{
+  "description": "Journal host health crash reason.",
+  "context": "Journal host health crash reason.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "attempts",
+      "type": "string"
+    },
+    {
+      "name": "reason",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "d0156931d269e4a8267791e02c64f7060f3b6dd20d4a25bb35df956d5567522d",
+  "max_length": 579,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "space_2",
+      "kind": "whitespace",
+      "value": "  "
+    }
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

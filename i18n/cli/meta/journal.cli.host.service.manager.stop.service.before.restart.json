@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service manager stop service before restart.",
+  "context": "Journal host service manager stop service before restart.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "result",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "50383c186b17317bd5dae2cab95621c245acd6193176989a5b7a22c0a5f599fd",
+  "max_length": 141,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

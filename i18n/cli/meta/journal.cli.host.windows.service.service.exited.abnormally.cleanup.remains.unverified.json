@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service service exited abnormally cleanup remains unverified.",
+  "context": "Journal host output for windows service service exited abnormally cleanup remains unverified.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "84b9f7e205b9ae308974fe69c5c78e9347aa40b56bcc29789a17449839de67b5",
+  "max_length": 159,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

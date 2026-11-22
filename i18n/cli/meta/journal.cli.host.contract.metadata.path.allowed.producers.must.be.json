@@ -1,0 +1,28 @@
+{
+  "description": "Native contract bundle command, metadata. Preserve terminal syntax and supplied data.",
+  "context": "Native contract bundle command, metadata. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e20cb54d1c43994c2977219234a9ef5a1b2b183e0d571262556572ef6230fd1f",
+  "max_length": 159,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_1",
+      "kind": "accepted-input",
+      "value": "allowed_producers"
+    }
+  ]
+}

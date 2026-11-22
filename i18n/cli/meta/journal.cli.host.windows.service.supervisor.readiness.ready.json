@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service supervisor readiness ready.",
+  "context": "Journal host output for windows service supervisor readiness ready.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bab63f24c530687853348a3f7e0e9f627d173c29c1279fff0117a9af4b3b8c7c",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

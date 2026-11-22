@@ -1,0 +1,23 @@
+{
+  "description": "Journal host output for windows service native windows directory is unavailable.",
+  "context": "Journal host output for windows service native windows directory is unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "85d645b15228ac77538c2e8b00dfb0e281822e7ac79c27176d451815ec1c0844",
+  "max_length": 156,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_windows",
+      "kind": "accepted-input",
+      "value": "Windows"
+    }
+  ]
+}

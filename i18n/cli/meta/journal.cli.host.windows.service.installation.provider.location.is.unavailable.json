@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service installation provider location is unavailable.",
+  "context": "Journal host output for windows service installation provider location is unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6e20dd36381822c388b3460d6d2855eeb3d2fabde0fb5714a54f09a63563ec7e",
+  "max_length": 135,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

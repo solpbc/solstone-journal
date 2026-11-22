@@ -276,7 +276,7 @@ pub fn read_activity(
     )
 }
 
-pub(crate) fn read_activity_for_locale(
+pub fn read_activity_for_locale(
     journal_root: &Path,
     query: &ActivityQuery,
     locale: &str,

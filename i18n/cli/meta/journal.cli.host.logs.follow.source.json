@@ -1,0 +1,29 @@
+{
+  "description": "Journal host logs follow source.",
+  "context": "Journal host logs follow source.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "operation",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "454184058a670aea796ffd46b64204ea0f51e31d562ec543021385c0a9818a4f",
+  "max_length": 144,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

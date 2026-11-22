@@ -1,0 +1,23 @@
+{
+  "description": "Journal host health rfdetr assets.",
+  "context": "Journal host health rfdetr assets.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8c9bca3bd36289c77b8c53dadede96146ca2d6e4c7474bb2677a41076c055ffd",
+  "max_length": 495,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command",
+      "kind": "accepted-input",
+      "value": "solstone journal install-models"
+    }
+  ]
+}

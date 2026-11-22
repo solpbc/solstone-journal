@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service manager restart service for route repair.",
+  "context": "Journal host service manager restart service for route repair.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "result",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d4c62827b24d111973405033b68ce57e0c8cec3cf5ce81c5f3a3a8b63527fdc6",
+  "max_length": 156,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

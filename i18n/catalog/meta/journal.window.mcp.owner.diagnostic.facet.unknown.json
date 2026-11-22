@@ -1,0 +1,21 @@
+{
+  "description": "MCP owner diagnostic for facet unknown.",
+  "context": "MCP owner diagnostic for facet unknown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d9e0ff9b6e63ee823e3b36426fcc69bf6893defc7c6829ef8b08949b553bc525",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

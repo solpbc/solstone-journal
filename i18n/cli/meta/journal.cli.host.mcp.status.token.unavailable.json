@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for mcp status token unavailable.",
+  "context": "Journal host output for mcp status token unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dde0181f4122b06e99a413b336762529e644da8d22981796f91bfdfd1d05fe25",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

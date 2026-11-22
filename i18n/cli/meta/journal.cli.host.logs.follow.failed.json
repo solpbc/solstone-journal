@@ -1,0 +1,25 @@
+{
+  "description": "Journal host logs follow failed.",
+  "context": "Journal host logs follow failed.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "operation",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "910d269bcaf69b9b51f9f3a5fa82c2e8c7c25928807af3f6ae78bf52f584ad65",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

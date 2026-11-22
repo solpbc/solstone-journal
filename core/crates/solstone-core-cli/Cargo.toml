@@ -10,6 +10,7 @@ publish = false
 workspace = true
 
 [dependencies]
+solstone-core-cli-copy.workspace = true
 solstone-core-doctor.workspace = true
 solstone-core-setup.workspace = true
 unicode-general-category.workspace = true

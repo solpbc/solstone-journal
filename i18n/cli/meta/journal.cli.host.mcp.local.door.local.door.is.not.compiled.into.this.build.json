@@ -1,0 +1,23 @@
+{
+  "description": "Journal host output for mcp local door local door is not compiled into this build.",
+  "context": "Journal host output for mcp local door local door is not compiled into this build.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "243cb36719fdda80b6f9ea97dde391331906439638bf720dbfaac450f142eaf4",
+  "max_length": 228,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command_solstone_journal_mcp_local_door",
+      "kind": "command",
+      "value": "solstone journal mcp local-door"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Terminal diagnostic for parser mcp activity limit must be between n1 and n1000.",
+  "context": "Terminal diagnostic for parser mcp activity limit must be between n1 and n1000.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ca2c3a460974157c192d4660cab6b648f252a2425778631865e9575224352670",
+  "max_length": 171,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "flag",
+      "value": "--limit",
+      "kind": "flag"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service windows service binding unavailable.",
+  "context": "Journal host output for windows service windows service binding unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "aac5207f5760e90039cf7f6e8ffbc424c80055f94eb5fe128856c34e6d38af82",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

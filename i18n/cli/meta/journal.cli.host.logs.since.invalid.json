@@ -1,0 +1,28 @@
+{
+  "description": "Journal host logs since invalid.",
+  "context": "Journal host logs since invalid.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "input",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5e7acfd9afcb963749f17a7617799a29e46496410e0ba35d6204302e18c81ef8",
+  "max_length": 153,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "examples",
+      "kind": "accepted-input",
+      "value": "30m, 2h, 1d, 4pm, 16:00"
+    }
+  ]
+}

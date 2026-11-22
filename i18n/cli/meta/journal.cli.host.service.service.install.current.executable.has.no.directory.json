@@ -1,0 +1,16 @@
+{
+  "description": "Journal host service service install current executable has no directory.",
+  "context": "Journal host service service install current executable has no directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0295d5394eb3dcbd5fe36b86449a6f0652224e4acc724964ad9104a2f8b81676",
+  "max_length": 156,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

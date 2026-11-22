@@ -1,0 +1,21 @@
+{
+  "description": "Native contract validate command, validate contract file. Preserve terminal syntax and supplied data.",
+  "context": "Native contract validate command, validate contract file. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "kind",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "63c5144870c2c121da25d42628f47879c76318229d75a0b5669479e331477581",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

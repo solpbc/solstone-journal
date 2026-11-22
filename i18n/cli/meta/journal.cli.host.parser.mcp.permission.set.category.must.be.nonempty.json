@@ -1,0 +1,21 @@
+{
+  "description": "Terminal diagnostic for parser mcp permission set category must be nonempty.",
+  "context": "Terminal diagnostic for parser mcp permission set category must be nonempty.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "command",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d16c55d2b76e99a40d26c6ba3b45690a8ac01671acefa79e57a9dc2b29d84d66",
+  "max_length": 138,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

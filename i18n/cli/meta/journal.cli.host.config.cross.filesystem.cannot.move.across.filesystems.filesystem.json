@@ -1,0 +1,42 @@
+{
+  "description": "Native config command, cross filesystem. Preserve terminal syntax and supplied data.",
+  "context": "Native config command, cross filesystem. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "source_device",
+      "type": "string"
+    },
+    {
+      "name": "target_device",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cb8e518da4a1daac064caff9dd3df44c44918b90c5c60079472639cfb8dd6a1e",
+  "max_length": 822,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "literal_1",
+      "kind": "command",
+      "value": "solstone journal down"
+    },
+    {
+      "name": "literal_2",
+      "kind": "command",
+      "value": "solstone journal up"
+    },
+    {
+      "name": "literal_3",
+      "kind": "accepted-input",
+      "value": "--switch"
+    }
+  ]
+}

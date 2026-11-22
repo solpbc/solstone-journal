@@ -1,0 +1,16 @@
+{
+  "description": "Journal host output for windows service native process birth is missing.",
+  "context": "Journal host output for windows service native process birth is missing.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "11fd83be26ac0814f245933588a5df45cf94e22c6ab9f4c6ba31782dd14ddf7c",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

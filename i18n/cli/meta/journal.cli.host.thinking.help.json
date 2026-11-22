@@ -1,0 +1,93 @@
+{
+  "description": "Terminal help and usage for thinking help.",
+  "context": "Terminal help and usage for thinking help.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "780f147fab116d2698f72e7dd88417a2c9dd668d75bebd2fb4c42b222363df0f",
+  "max_length": 1707,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "value": "solstone journal thinking [-h] {set-lane,chatgpt} ...",
+      "kind": "command"
+    },
+    {
+      "name": "line_break",
+      "value": "\n",
+      "kind": "whitespace"
+    },
+    {
+      "name": "term",
+      "value": "ChatGPT",
+      "kind": "mark-word"
+    },
+    {
+      "name": "spaces_2",
+      "value": "  ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "choices",
+      "value": "{set-lane,chatgpt}",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "spaces_4",
+      "value": "    ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "subcommand",
+      "value": "set-lane",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "spaces_13",
+      "value": "             ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "literal",
+      "value": "local",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "literal_10",
+      "value": "byo",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "literal_11",
+      "value": "confidential",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "subcommand_12",
+      "value": "chatgpt",
+      "kind": "accepted-input"
+    },
+    {
+      "name": "spaces_14",
+      "value": "              ",
+      "kind": "whitespace"
+    },
+    {
+      "name": "option",
+      "value": "-h, --help",
+      "kind": "command"
+    },
+    {
+      "name": "spaces_12",
+      "value": "            ",
+      "kind": "whitespace"
+    }
+  ]
+}

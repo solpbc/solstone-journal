@@ -1,0 +1,21 @@
+{
+  "description": "Journal host service inspect service journal root.",
+  "context": "Journal host service inspect service journal root.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "709ec24f7df280021242d5a816c7f229f6c6f4322222e572cdc8c61d661550e5",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

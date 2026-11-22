@@ -1,0 +1,23 @@
+{
+  "description": "Journal host service the solstone executable has no containing directory.",
+  "context": "Journal host service the solstone executable has no containing directory.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1bb9baa04b1e9d609598c3093526e7ca5008273ae62d989343df7cc766ef8e74",
+  "max_length": 168,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "solstone",
+      "kind": "accepted-input",
+      "value": "solstone"
+    }
+  ]
+}

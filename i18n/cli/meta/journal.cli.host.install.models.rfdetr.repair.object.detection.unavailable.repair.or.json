@@ -1,0 +1,21 @@
+{
+  "description": "Native install models command, rfdetr repair. Preserve terminal syntax and supplied data.",
+  "context": "Native install models command, rfdetr repair. Preserve terminal syntax and supplied data.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "error",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c874aae78bde637be431eec02330160c09c0d8299d94ed695469ce396d427026",
+  "max_length": 231,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

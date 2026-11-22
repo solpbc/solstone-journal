@@ -1,0 +1,23 @@
+{
+  "description": "Journal host output for mcp permission permission management is not compiled into this build.",
+  "context": "Journal host output for mcp permission permission management is not compiled into this build.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e56f44f4a7782e51bd7011de5fc72db8a9b666e59088b1f8d5fcb00f783773c1",
+  "max_length": 261,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "command_solstone_journal_mcp_permission",
+      "kind": "command",
+      "value": "solstone journal mcp permission"
+    }
+  ]
+}
